@@ -227,37 +227,30 @@ function sanitizeConfig(config: Record<string, unknown>): JsonValue {
     if (isSyncSensitiveKey(key)) {
       continue
     }
-    if (key === "body" && typeof value === "string") {
-      sanitized[key] = sanitizeBodyText(value)
-      continue
-    }
-    if (key === "url" && typeof value === "string") {
-      sanitized[key] = sanitizeUrl(value)
-      continue
-    }
-    if (key === "cookies" && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueItems(value, true)
-      continue
-    }
-    if (isKeyValueConfigField(key) && Array.isArray(value)) {
-      sanitized[key] = sanitizeKeyValueItems(value, false)
-      continue
-    }
-    if (key === "auth" && isRecord(value)) {
-      sanitized[key] = sanitizeAuthConfig(value)
-      continue
-    }
-    if (key === "fileUploads" && Array.isArray(value)) {
-      sanitized[key] = sanitizeFileUploads(value)
-      continue
-    }
     // Every remaining string is inspected too (`inspectStringValues`): the
     // server scans *all* config strings for credential material, so a field
     // this sanitizer skips — an assertion's expected value, a script, a
     // GraphQL document — is a field whose workflow silently stops syncing.
-    sanitized[key] = sanitizeValue(value, true)
+    sanitized[key] = sanitizeConfigField(key, value, (nested) => sanitizeValue(nested, true))
   }
   return sanitized
+}
+
+// The config fields with structural handling, shared by the live-config and
+// snapshot passes so the two cannot drift on what a body or a cookie means.
+// They differ only in how they treat everything else, hence `fallback`.
+function sanitizeConfigField(
+  key: string,
+  value: unknown,
+  fallback: (value: unknown) => JsonValue,
+): JsonValue {
+  if (key === "body" && typeof value === "string") return sanitizeBodyText(value)
+  if (key === "url" && typeof value === "string") return sanitizeUrl(value)
+  if (key === "cookies" && Array.isArray(value)) return sanitizeKeyValueItems(value, true)
+  if (isKeyValueConfigField(key) && Array.isArray(value)) return sanitizeKeyValueItems(value, false)
+  if (key === "auth" && isRecord(value)) return sanitizeAuthConfig(value)
+  if (key === "fileUploads" && Array.isArray(value)) return sanitizeFileUploads(value)
+  return fallback(value)
 }
 
 // A `variable` reference just names a workflow variable, not file content, so
@@ -346,21 +339,7 @@ function sanitizeSnapshotValue(value: unknown): JsonValue {
       if (isSyncSensitiveKey(nestedKey)) {
         continue
       }
-      if (nestedKey === "body" && typeof nestedValue === "string") {
-        sanitized[nestedKey] = sanitizeBodyText(nestedValue)
-      } else if (nestedKey === "url" && typeof nestedValue === "string") {
-        sanitized[nestedKey] = sanitizeUrl(nestedValue)
-      } else if (nestedKey === "cookies" && Array.isArray(nestedValue)) {
-        sanitized[nestedKey] = sanitizeKeyValueItems(nestedValue, true)
-      } else if (isKeyValueConfigField(nestedKey) && Array.isArray(nestedValue)) {
-        sanitized[nestedKey] = sanitizeKeyValueItems(nestedValue, false)
-      } else if (nestedKey === "auth" && isRecord(nestedValue)) {
-        sanitized[nestedKey] = sanitizeAuthConfig(nestedValue)
-      } else if (nestedKey === "fileUploads" && Array.isArray(nestedValue)) {
-        sanitized[nestedKey] = sanitizeFileUploads(nestedValue)
-      } else {
-        sanitized[nestedKey] = sanitizeSnapshotValue(nestedValue)
-      }
+      sanitized[nestedKey] = sanitizeConfigField(nestedKey, nestedValue, sanitizeSnapshotValue)
     }
     return sanitized
   }
@@ -430,45 +409,61 @@ function sanitizeBodyText(body: string): string {
   } catch {
     return containsCredentialMaterial(body) ? "" : body
   }
-  let redacted = false
-  const blank = (): JsonValue => {
-    redacted = true
-    return ""
+  const tally = { redacted: false }
+  const sanitized = sanitizeBodyValue(parsed, null, tally)
+  return tally.redacted ? JSON.stringify(sanitized, null, 2) : body
+}
+
+/** Whether anything was withheld, so an untouched body can return verbatim. */
+interface RedactionTally {
+  redacted: boolean
+}
+
+function sanitizeBodyValue(value: unknown, keyName: string | null, tally: RedactionTally): JsonValue {
+  if (keyName !== null && isSyncSensitiveKey(keyName)) {
+    return withheldBodyValue(value, tally)
   }
-  // In a body, a sensitive key name withholds its WHOLE value rather than its
-  // string leaves. The validators are content to walk a container and judge its
-  // leaves by name, which is what lets `auth.apiKey` sync; but inside a request
-  // body there is no schema to lean on, so an opaque credential one level down
-  // (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
-  const walk = (value: unknown, keyName: string | null): JsonValue => {
-    const sensitive = keyName !== null && isSyncSensitiveKey(keyName)
-    if (sensitive) {
-      if (isEmptySyncValue(value)) return value as JsonValue
-      return isCredentialFreeReference(value) ? value as string : blank()
-    }
-    if (Array.isArray(value)) {
-      return value.map((item) => walk(item, null))
-    }
-    if (isRecord(value)) {
-      const out: Record<string, JsonValue> = {}
-      // Mirror the validators' `{key, value}` pair semantics: the sensitivity
-      // of a pair lives in its sibling `key`, not in the literal name `value`.
-      const pairKey = value["key"]
-      const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
-      for (const [key, child] of Object.entries(value)) {
-        out[key] = pairSensitive && key === "value"
-          ? (isEmptySyncValue(child) || isCredentialFreeReference(child) ? child as JsonValue : blank())
-          : walk(child, key)
-      }
-      return out
-    }
-    if (typeof value === "string") {
-      return containsCredentialMaterial(value) ? blank() : value
-    }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeBodyValue(item, null, tally))
+  }
+  if (isRecord(value)) {
+    return sanitizeBodyRecord(value, tally)
+  }
+  if (typeof value === "string") {
+    return containsCredentialMaterial(value) ? blank(tally) : value
+  }
+  return value as JsonValue
+}
+
+function sanitizeBodyRecord(record: Record<string, JsonValue>, tally: RedactionTally): JsonValue {
+  // Mirror the validators' `{key, value}` pair semantics: the sensitivity of a
+  // pair lives in its sibling `key`, not in the literal name `value`.
+  const pairKey = record["key"]
+  const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
+  const sanitized: Record<string, JsonValue> = {}
+  for (const [key, child] of Object.entries(record)) {
+    sanitized[key] = pairSensitive && key === "value"
+      ? withheldBodyValue(child, tally)
+      : sanitizeBodyValue(child, key, tally)
+  }
+  return sanitized
+}
+
+// In a body, a sensitive key name withholds its WHOLE value rather than its
+// string leaves. The validators are content to walk a container and judge its
+// leaves by name, which is what lets `auth.apiKey` sync; but inside a request
+// body there is no schema to lean on, so an opaque credential one level down
+// (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
+function withheldBodyValue(value: unknown, tally: RedactionTally): JsonValue {
+  if (isEmptySyncValue(value) || isCredentialFreeReference(value)) {
     return value as JsonValue
   }
-  const sanitized = walk(parsed, null)
-  return redacted ? JSON.stringify(sanitized, null, 2) : body
+  return blank(tally)
+}
+
+function blank(tally: RedactionTally): JsonValue {
+  tally.redacted = true
+  return ""
 }
 
 function sanitizeUrl(value: string | null): string | null {

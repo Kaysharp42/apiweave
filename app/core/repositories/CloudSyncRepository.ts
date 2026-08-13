@@ -1498,51 +1498,69 @@ function isSecretReferenceMap(value: unknown): boolean {
 // leaves the cursor unadvanced and the same change is re-fetched every sync.
 function findForbiddenPayloadField(value: unknown, path = ""): string | undefined {
   if (Array.isArray(value)) {
-    for (const item of value) {
-      const nested = findForbiddenPayloadField(item, path)
-      if (nested !== undefined) return nested
-    }
-    return undefined
+    return forbiddenFieldInArray(value, path)
   }
   if (value === null || typeof value !== "object") {
-    if (typeof value === "string" && containsCredentialMaterial(value)) {
-      return path
-    }
-    return undefined
+    return typeof value === "string" && containsCredentialMaterial(value) ? path : undefined
   }
-  const record = value as Record<string, unknown>
-  const itemKey = record["key"]
-  if (typeof itemKey === "string" && isSyncSensitiveKey(itemKey) && isWithheldSyncValue(record["value"])) {
-    return path.length === 0 ? itemKey : `${path}.${itemKey}`
-  }
-  for (const [key, nestedValue] of Object.entries(record)) {
-    const nestedPath = path.length === 0 ? key : `${path}.${key}`
-    if (key === "secrets") continue
-    if (isSyncSensitiveKey(key) && isWithheldSyncValue(nestedValue)) {
-      return nestedPath
-    }
-    if (key === "value" && path.toLowerCase().includes("cookies") && isWithheldSyncValue(nestedValue)) {
-      return nestedPath
-    }
-    // A JSON body string is config, not a credential: scan inside it so a
-    // serialized secret leaf is caught the same way the push-side leaf-level
-    // redactor would have withheld it.
-    if (key === "body" && typeof nestedValue === "string") {
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(nestedValue)
-      } catch {
-        parsed = undefined
-      }
-      if (parsed !== undefined) {
-        const nested = findForbiddenPayloadField(parsed, nestedPath)
-        if (nested !== undefined) return nested
-      }
-    }
-    const nested = findForbiddenPayloadField(nestedValue, nestedPath)
-    if (nested !== undefined) return nested
+  return forbiddenFieldInRecord(value as Record<string, unknown>, path)
+}
+
+function forbiddenFieldInArray(items: readonly unknown[], path: string): string | undefined {
+  for (const item of items) {
+    const forbidden = findForbiddenPayloadField(item, path)
+    if (forbidden !== undefined) return forbidden
   }
   return undefined
+}
+
+function forbiddenFieldInRecord(record: Record<string, unknown>, path: string): string | undefined {
+  const itemKey = record["key"]
+  const pairSensitive = typeof itemKey === "string" && isSyncSensitiveKey(itemKey)
+  if (pairSensitive && isWithheldSyncValue(record["value"])) {
+    return path.length === 0 ? itemKey as string : `${path}.${itemKey as string}`
+  }
+  for (const [key, nestedValue] of Object.entries(record)) {
+    if (key === "secrets") continue
+    const nestedPath = path.length === 0 ? key : `${path}.${key}`
+    const forbidden = forbiddenPayloadEntry(key, nestedValue, path, nestedPath)
+    if (forbidden !== undefined) return forbidden
+  }
+  return undefined
+}
+
+function forbiddenPayloadEntry(
+  key: string,
+  value: unknown,
+  parentPath: string,
+  path: string,
+): string | undefined {
+  if (isSyncSensitiveKey(key) && isWithheldSyncValue(value)) {
+    return path
+  }
+  // Cookies routinely carry session material under innocuous names, so a cookie
+  // entry's value is held to the same rule as a sensitive key name.
+  if (key === "value" && parentPath.toLowerCase().includes("cookies") && isWithheldSyncValue(value)) {
+    return path
+  }
+  // A JSON body string is config, not a credential: scan inside it so a
+  // serialized secret leaf is caught the same way the push-side redactor
+  // would have withheld it.
+  if (key === "body" && typeof value === "string") {
+    const inBody = forbiddenFieldInJsonBody(value, path)
+    if (inBody !== undefined) return inBody
+  }
+  return findForbiddenPayloadField(value, path)
+}
+
+function forbiddenFieldInJsonBody(body: string, path: string): string | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  return findForbiddenPayloadField(parsed, path)
 }
 
 function objectProperty(value: Record<string, unknown>, key: string): Record<string, unknown> {
