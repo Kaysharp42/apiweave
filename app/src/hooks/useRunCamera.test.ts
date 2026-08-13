@@ -1,14 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import type { Node, Rect, Viewport } from "reactflow";
+import type { Node, Viewport } from "reactflow";
 import useRunCamera from "./useRunCamera";
-import {
-  boundsOf,
-  framingFor,
-  MAX_MOVE_MS,
-  REST_AFTER_MOVE_MS,
-  RETARGET_COALESCE_MS,
-} from "../utils/runCamera";
+import { centreOf, COMFORT_ZOOM, MIN_READABLE_ZOOM } from "../utils/runCamera";
 import {
   CanvasCornerGutter,
   CanvasToolbarBand,
@@ -17,11 +11,11 @@ import {
 import type { CameraViewport } from "../types/CameraViewport";
 
 /**
- * The hook's job is *which* nodes get framed and *when* — the arithmetic of
- * turning a set of rectangles into a viewport is `runCamera`'s, and is tested
- * there. So the expected values here are computed with those same functions:
- * these tests would still fail if the hook framed the wrong set, and would not
- * churn if the framing constants were retuned.
+ * The hook's job is *what* the camera is aimed at and *when* it is allowed to
+ * move — the motion itself belongs to `runCamera` and is tested there. So these
+ * assert about where the viewport ends up and what it does on the way, never
+ * about a particular curve: they would fail if the hook attended to the wrong
+ * nodes or ignored the user, and would not churn if the springs were retuned.
  */
 
 const CANVAS = { width: 1600, height: 1000 };
@@ -37,415 +31,311 @@ const cameraBox: CameraViewport = {
 const OVERVIEW_ZOOM = 0.08;
 
 /** Somewhere a person might reasonably have left the canvas, node text legible. */
-const WORKING_ZOOM = 0.7;
+const WORKING_ZOOM = 0.68;
 
-function rectOf(node: Node): Rect {
-  return {
-    x: node.position.x,
-    y: node.position.y,
-    width: node.width ?? 280,
-    height: node.height ?? 120,
-  };
-}
-
-function framingOf(nodes: Node[], currentZoom: number | null) {
-  return framingFor(boundsOf(nodes.map(rectOf))!, cameraBox, currentZoom);
-}
+/** Node pitch of a real auto-layout, so "the next node along" means what it means
+ * on the canvas rather than an arbitrary distance. */
+const PITCH = 420;
 
 function makeNode(id: string, x: number, y = 0): Node {
   return { id, position: { x, y }, width: 280, height: 120, data: {} };
 }
 
-/** Fake instance that also *arrives* where it is sent, so the deadzone and the
- * kept-zoom rule are exercised against a viewport that really moved. */
-function makeInstance(initialZoom = OVERVIEW_ZOOM) {
-  let viewport: Viewport = { x: 0, y: 0, zoom: initialZoom };
-
-  const setCenter = vi.fn(
-    (x: number, y: number, options: { zoom: number; duration: number }) => {
-      viewport = {
-        x: CANVAS.width / 2 - x * options.zoom,
-        y: CANVAS.height / 2 - y * options.zoom,
-        zoom: options.zoom,
-      };
-    },
-  );
-
-  return { setCenter, getViewport: () => viewport };
+/** The centre of a node, which is what the camera aims at. */
+function centreX(node: Node): number {
+  return node.position.x + 140;
 }
 
-function makeContainer(): HTMLElement {
+const start = makeNode("start", 0);
+const neighbour = makeNode("near", PITCH);
+const third = makeNode("mid", PITCH * 2);
+const faraway = makeNode("far", PITCH * 30);
+const allNodes = [start, neighbour, third, faraway];
+
+/** A ReactFlow stand-in that actually applies what it is given, so every
+ * decision downstream is made against a viewport that really moved. */
+function makeInstance(zoom = OVERVIEW_ZOOM) {
+  let viewport: Viewport = { x: CANVAS.width / 2, y: CANVAS.height / 2, zoom };
   return {
-    getBoundingClientRect: () => ({
-      width: CANVAS.width,
-      height: CANVAS.height,
+    setViewport: vi.fn((next: Viewport) => {
+      viewport = next;
     }),
-  } as unknown as HTMLElement;
+    getViewport: () => viewport,
+    get current() {
+      return viewport;
+    },
+  };
 }
 
-const start = makeNode("start-1", 0);
-/** Close enough to `start` to sit inside the deadzone at a readable zoom. */
-const neighbour = makeNode("near", 200);
-const first = makeNode("a", 600);
-const second = makeNode("b", 600, 900);
-const distant = makeNode("far", 30000);
+type Instance = ReturnType<typeof makeInstance>;
 
-const allNodes = [start, neighbour, first, second, distant];
+function setup(nodes = allNodes, zoom = OVERVIEW_ZOOM) {
+  const instance = makeInstance(zoom);
+  const container = {
+    getBoundingClientRect: () =>
+      ({ width: CANVAS.width, height: CANVAS.height }) as DOMRect,
+  } as HTMLElement;
 
-function setup(nodes: Node[] = allNodes, initialZoom = OVERVIEW_ZOOM) {
-  const instance = makeInstance(initialZoom);
-  const instanceRef = { current: instance };
-  const nodesRef = { current: nodes };
-  const containerRef = { current: makeContainer() };
-
-  const view = renderHook(() =>
-    useRunCamera({ instanceRef, nodesRef, containerRef }),
+  const rendered = renderHook(() =>
+    useRunCamera({
+      instanceRef: { current: instance },
+      nodesRef: { current: nodes },
+      containerRef: { current: container },
+    }),
   );
 
-  return { ...view, instance };
+  return { ...rendered, instance };
 }
 
-/** Let the coalescing window close and the booked move fire. */
+/** Let the camera have `ms` worth of frames. */
+function frames(ms: number) {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+/** Long enough for any move plus its ease-out to be over. */
 function settle() {
-  act(() => {
-    vi.advanceTimersByTime(RETARGET_COALESCE_MS + 1);
-  });
+  frames(6000);
 }
 
-/** …and then let the move finish and the camera's rest elapse, so the next
- * retarget is free to act rather than being deferred. */
-function rest() {
-  act(() => {
-    vi.advanceTimersByTime(MAX_MOVE_MS + REST_AFTER_MOVE_MS + 1);
-  });
+/** Where the camera is looking now, in flow coordinates. */
+function looking(instance: Instance) {
+  return centreOf(instance.current, cameraBox);
 }
 
-function settleAndRest() {
-  settle();
-  rest();
+/** How far right of the free area's centre a point currently appears. */
+function offsetPx(instance: Instance, flowX: number): number {
+  return (flowX - looking(instance).x) * instance.current.zoom;
 }
 
-/** Every zoom the camera has asked for, in order. */
-function zoomsOf(instance: ReturnType<typeof makeInstance>): number[] {
-  return instance.setCenter.mock.calls.map((call) => call[2].zoom);
+/** Every distinct zoom the viewport was ever put at. */
+function zoomsSeen(instance: Instance): number[] {
+  const seen: number[] = [];
+  let last: number | null = null;
+  for (const [viewport] of instance.setViewport.mock.calls) {
+    if (last === null || Math.abs(last - viewport.zoom) > 1e-9) {
+      seen.push(viewport.zoom);
+      last = viewport.zoom;
+    }
+  }
+  return seen;
 }
 
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.useFakeTimers({
+    toFake: [
+      "setTimeout",
+      "clearTimeout",
+      "requestAnimationFrame",
+      "cancelAnimationFrame",
+      "Date",
+      "performance",
+    ],
+  });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe("useRunCamera", () => {
-  it("ignores node activity outside a run", () => {
+  it("does nothing at all until a run starts", () => {
     const { result, instance } = setup();
 
     act(() => {
-      result.current.camera.onNodeShown("a", "running");
+      result.current.camera.onNodeShown("start", "running");
     });
-    settleAndRest();
+    settle();
 
-    expect(instance.setCenter).not.toHaveBeenCalled();
+    expect(instance.setViewport).not.toHaveBeenCalled();
     expect(result.current.isFollowing).toBe(false);
   });
 
-  it("glides to the entry point when a run starts", () => {
+  it("glides in to the entry point from an overview", () => {
     const { result, instance } = setup();
 
     act(() => {
-      result.current.camera.onRunStart(["start-1"]);
+      result.current.camera.onRunStart(["start"]);
     });
     expect(result.current.isFollowing).toBe(true);
-    // Nothing yet — the move waits for the coalescing window.
-    expect(instance.setCenter).not.toHaveBeenCalled();
+
+    // Not a jump: the establishing move takes many frames, and it is a way
+    // through the zooms rather than a step between two of them.
+    frames(100);
+    expect(instance.setViewport.mock.calls.length).toBeGreaterThan(3);
+    expect(instance.current.zoom).toBeGreaterThan(OVERVIEW_ZOOM);
+    expect(instance.current.zoom).toBeLessThan(COMFORT_ZOOM);
 
     settle();
-
-    const target = framingOf([start], OVERVIEW_ZOOM);
-    expect(instance.setCenter).toHaveBeenCalledTimes(1);
-    expect(instance.setCenter).toHaveBeenCalledWith(
-      target.x,
-      target.y,
-      expect.objectContaining({ zoom: target.zoom }),
-    );
+    expect(instance.current.zoom).toBeCloseTo(COMFORT_ZOOM, 2);
+    // Framed, near the middle — not pixel-centred, because the camera lets go as
+    // soon as it is close enough rather than chasing the last hundred pixels.
+    expect(Math.abs(offsetPx(instance, centreX(start)))).toBeLessThan(200);
   });
 
-  it("issues one move for a batch of releases in the same tick", () => {
-    const { result, instance } = setup();
+  it("keeps a viewport that already reads well, for the whole run", () => {
+    // The failure this replaced: a re-run from a working zoom rescaled to the
+    // camera's own preference and back again, over and over.
+    const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
     act(() => {
-      result.current.camera.onRunStart(["start-1"]);
-    });
-    settleAndRest();
-    instance.setCenter.mockClear();
-
-    // A fan-out: two branches light up inside one drain.
-    act(() => {
-      result.current.camera.onNodeShown("a", "running");
-      result.current.camera.onNodeShown("b", "running");
+      result.current.camera.onRunStart(["start"]);
     });
     settle();
 
-    expect(instance.setCenter).toHaveBeenCalledTimes(1);
+    for (const node of [neighbour, third]) {
+      act(() => {
+        result.current.camera.onNodeShown(node.id, "running");
+      });
+      frames(400);
+      act(() => {
+        result.current.camera.onNodeShown(node.id, "success");
+      });
+      settle();
+    }
+
+    expect(zoomsSeen(instance)).toEqual([WORKING_ZOOM]);
   });
 
-  it("frames every branch that is running at once", () => {
-    const { result, instance } = setup();
+  it("never zooms back in once it has zoomed out", () => {
+    // A wide fan-out and then a lone node, repeatedly: the shape that used to
+    // produce a full zoom round trip every couple of seconds.
+    const wide = [
+      makeNode("a", 0),
+      makeNode("b", PITCH * 3),
+      makeNode("c", PITCH * 6),
+    ];
+    const { result, instance } = setup([...wide, neighbour], WORKING_ZOOM);
 
     act(() => {
-      result.current.camera.onRunStart(["start-1"]);
-    });
-    settleAndRest();
-    instance.setCenter.mockClear();
-
-    act(() => {
-      result.current.camera.onNodeShown("start-1", "success");
-      result.current.camera.onNodeShown("a", "running");
-      result.current.camera.onNodeShown("b", "running");
+      result.current.camera.onRunStart(["a"]);
     });
     settle();
 
-    // The pair is too tall to hold at the zoom the opening settled on, so this
-    // is one of the few moves that is allowed to rescale.
-    const target = framingOf([first, second], 1);
-    expect(instance.setCenter).toHaveBeenCalledWith(
-      target.x,
-      target.y,
-      expect.objectContaining({ zoom: target.zoom }),
-    );
+    for (let take = 0; take < 6; take += 1) {
+      act(() => {
+        for (const node of wide) {
+          result.current.camera.onNodeShown(node.id, "running");
+        }
+      });
+      frames(900);
+      act(() => {
+        for (const node of wide) {
+          result.current.camera.onNodeShown(node.id, "success");
+        }
+        result.current.camera.onNodeShown("near", "running");
+      });
+      settle();
+    }
+
+    const zooms = zoomsSeen(instance);
+    expect(zooms.length).toBeGreaterThan(1);
+    expect([...zooms].sort((a, b) => b - a)).toEqual(zooms);
+    expect(Math.min(...zooms)).toBeGreaterThanOrEqual(MIN_READABLE_ZOOM);
   });
 
-  it("abandons a straggler branch rather than framing the gap", () => {
-    const { result, instance } = setup();
+  it("holds still for a node that is already on screen", () => {
+    const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
     act(() => {
-      result.current.camera.onRunStart(["start-1"]);
+      result.current.camera.onRunStart(["start"]);
     });
-    settleAndRest();
+    settle();
+    const before = instance.current;
+    instance.setViewport.mockClear();
 
-    // `far` is still running from earlier; `a` is the fresh one.
+    act(() => {
+      result.current.camera.onNodeShown("near", "running");
+    });
+    settle();
+
+    expect(instance.setViewport).not.toHaveBeenCalled();
+    expect(instance.current).toEqual(before);
+  });
+
+  it("stops asking for frames once there is nothing left to do", () => {
+    const { result, instance } = setup(allNodes, WORKING_ZOOM);
+
+    act(() => {
+      result.current.camera.onRunStart(["start"]);
+    });
+    settle();
+    instance.setViewport.mockClear();
+    frames(4000);
+
+    expect(instance.setViewport).not.toHaveBeenCalled();
+  });
+
+  it("follows the run to a node that has left the frame", () => {
+    const { result, instance } = setup(allNodes, WORKING_ZOOM);
+
+    act(() => {
+      result.current.camera.onRunStart(["start"]);
+    });
+    settle();
+
     act(() => {
       result.current.camera.onNodeShown("far", "running");
     });
-    settleAndRest();
-    instance.setCenter.mockClear();
+    settle();
+
+    // On screen, and left of centre with the canvas it is heading into in view.
+    const offset = offsetPx(instance, centreX(faraway));
+    expect(Math.abs(offset)).toBeLessThan(CANVAS.width / 2);
+    expect(offset).toBeLessThan(0);
+  });
+
+  it("cuts to a branch too far away to pan to", () => {
+    const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
     act(() => {
-      result.current.camera.onNodeShown("a", "running");
+      result.current.camera.onRunStart(["start"]);
+    });
+    settle();
+    const from = instance.current;
+    instance.setViewport.mockClear();
+
+    act(() => {
+      result.current.camera.onNodeShown("far", "running");
     });
     settle();
 
-    const target = framingOf([first], 1);
-    expect(instance.setCenter).toHaveBeenCalledWith(
-      target.x,
-      target.y,
-      expect.objectContaining({ zoom: target.zoom }),
-    );
+    // One write of arbitrary displacement, rather than a second and a half of
+    // sliding across canvas with nothing on it.
+    expect(instance.setViewport.mock.calls.length).toBe(1);
+    expect(Math.abs(instance.current.x - from.x)).toBeGreaterThan(CANVAS.width);
   });
 
-  it("holds on the node that just finished while nothing is running", () => {
-    const { result, instance } = setup();
-
-    act(() => {
-      result.current.camera.onRunStart(["start-1"]);
-      result.current.camera.onNodeShown("start-1", "success");
-    });
-    settleAndRest();
-    instance.setCenter.mockClear();
-
-    // `a` finishes and nothing has started yet: the active set is empty, and the
-    // camera should follow it there rather than snap back to Start.
-    act(() => {
-      result.current.camera.onNodeShown("a", "running");
-      result.current.camera.onNodeShown("a", "success");
-    });
-    settle();
-
-    const target = framingOf([first], 1);
-    expect(instance.setCenter).toHaveBeenCalledWith(
-      target.x,
-      target.y,
-      expect.objectContaining({ zoom: target.zoom }),
-    );
-  });
-
-  describe("holding still", () => {
-    it("does not move for a node already on screen", () => {
+  describe("the user always wins", () => {
+    it("stops the moment a hand lands on the canvas", () => {
       const { result, instance } = setup();
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
-      instance.setCenter.mockClear();
-
-      // Two node-widths away, well inside the frame: watching it is enough.
-      act(() => {
-        result.current.camera.onNodeShown("near", "running");
-      });
-      settleAndRest();
-
-      expect(instance.setCenter).not.toHaveBeenCalled();
-    });
-
-    it("skips a move it has already made", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-        result.current.camera.onNodeShown("a", "running");
-      });
-      settleAndRest();
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-
-      // The same node reported again — the camera is already framing it.
-      act(() => {
-        result.current.camera.onNodeShown("a", "running");
-      });
-      settleAndRest();
-
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-    });
-
-    it("lets a move finish before starting the next one", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settle();
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-
-      // The run walks on while the opening dolly is still in the air. A camera
-      // that retargets now never arrives anywhere — it just drifts continuously.
-      act(() => {
-        result.current.camera.onNodeShown("far", "running");
-      });
-      settle();
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-
-      rest();
-      expect(instance.setCenter).toHaveBeenCalledTimes(2);
-    });
-
-    it("frames wherever the run got to by the time it is free to move", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settle();
-      instance.setCenter.mockClear();
-
-      // Both arrive during the opening move; only the later one is still lit.
-      act(() => {
-        result.current.camera.onNodeShown("far", "running");
-        result.current.camera.onNodeShown("far", "success");
-      });
-      act(() => {
-        result.current.camera.onNodeShown("a", "running");
-      });
-      rest();
-
-      const target = framingOf([first], 1);
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-      expect(instance.setCenter).toHaveBeenCalledWith(
-        target.x,
-        target.y,
-        expect.objectContaining({ zoom: target.zoom }),
-      );
-    });
-  });
-
-  describe("leaving the zoom alone", () => {
-    it("zooms in only when the view is too far out to read", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settle();
-
-      expect(zoomsOf(instance)[0]).toBeGreaterThan(OVERVIEW_ZOOM);
-    });
-
-    it("pans without rescaling a viewport that already works", () => {
-      const { result, instance } = setup(allNodes, WORKING_ZOOM);
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settleAndRest();
-
-      act(() => {
-        result.current.camera.onNodeShown("start-1", "success");
-        result.current.camera.onNodeShown("a", "running");
-      });
-      settleAndRest();
-
-      act(() => {
-        result.current.camera.onNodeShown("a", "success");
-        result.current.camera.onNodeShown("far", "running");
-      });
-      settleAndRest();
-
-      // The whole run at the zoom it started at. Re-deriving it every hop is
-      // what turned a re-run into a sequence of dolly moves.
-      expect(instance.setCenter).toHaveBeenCalled();
-      for (const zoom of zoomsOf(instance)) {
-        expect(zoom).toBe(WORKING_ZOOM);
-      }
-    });
-
-    it("still pulls back for a set that will not fit as it is", () => {
-      const { result, instance } = setup(allNodes, WORKING_ZOOM);
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-        result.current.camera.onNodeShown("a", "running");
-        result.current.camera.onNodeShown("b", "running");
-      });
-      settle();
-
-      const zooms = zoomsOf(instance);
-      expect(zooms[zooms.length - 1]).toBeLessThan(WORKING_ZOOM);
-    });
-  });
-
-  describe("handing the camera back", () => {
-    it("stops following once the user pans, and stays stopped", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settleAndRest();
-      instance.setCenter.mockClear();
+      frames(100);
 
       act(() => {
         result.current.onViewportInteraction(new MouseEvent("mousedown"));
       });
+      const taken = instance.current;
+      settle();
+
       expect(result.current.isSuspended).toBe(true);
-
-      act(() => {
-        result.current.camera.onNodeShown("a", "running");
-      });
-      settleAndRest();
-
-      expect(instance.setCenter).not.toHaveBeenCalled();
-      expect(result.current.isFollowing).toBe(true);
+      expect(instance.current).toEqual(taken);
     });
 
-    it("does not mistake its own transition for a user pan", () => {
+    it("does not mistake its own frames for a hand", () => {
       const { result } = setup();
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
-
+      // The camera writes the viewport on every frame of this; a transform with
+      // no source event behind it must never be mistaken for a hand.
+      frames(500);
       act(() => {
         result.current.onViewportInteraction(null);
       });
@@ -453,214 +343,213 @@ describe("useRunCamera", () => {
       expect(result.current.isSuspended).toBe(false);
     });
 
-    it("catches up with the live front when following resumes", () => {
+    it("gives way to a viewport change it did not make", () => {
+      // ReactFlow's own zoom and fit-view buttons move the canvas through a
+      // transform with no source event, so `onMoveStart` never hears about them.
+      // Without this the camera would quietly undo them on its next frame.
       const { result, instance } = setup();
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
+      frames(100);
+
+      const elsewhere = { x: -4000, y: -2000, zoom: 0.3 };
+      instance.setViewport(elsewhere);
+      frames(500);
+
+      expect(result.current.isSuspended).toBe(true);
+      expect(instance.current).toEqual(elsewhere);
+    });
+
+    it("keeps tracking while suspended, and resumes onto the live front", () => {
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.suspend();
+        result.current.camera.onRunStart(["start"]);
       });
-      // The run keeps going while the user is looking elsewhere.
+      settle();
       act(() => {
-        result.current.camera.onNodeShown("a", "running");
+        result.current.onViewportInteraction(new MouseEvent("mousedown"));
       });
-      instance.setCenter.mockClear();
+      act(() => {
+        result.current.camera.onNodeShown("mid", "running");
+      });
+      settle();
 
       act(() => {
         result.current.resume();
       });
+      settle();
 
-      // Immediate, not booked: the point of pressing resume is to get there.
-      const target = framingOf([first], 1);
       expect(result.current.isSuspended).toBe(false);
-      expect(instance.setCenter).toHaveBeenCalledWith(
-        target.x,
-        target.y,
-        expect.objectContaining({ zoom: target.zoom }),
+      expect(Math.abs(offsetPx(instance, centreX(third)))).toBeLessThan(
+        CANVAS.width / 2,
       );
     });
 
-    it("takes resume literally even when the target is already framed", () => {
-      const { result, instance } = setup();
+    it("takes resume literally, deadzone or no deadzone", () => {
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
-
-      // Suspend and resume without the run moving on: the deadzone would say
-      // there is nothing to do, but the user asked to be taken back.
+      settle();
       act(() => {
-        result.current.suspend();
+        result.current.onViewportInteraction(new MouseEvent("mousedown"));
       });
-      instance.setCenter.mockClear();
+
+      // Nudged by less than the camera would ever have followed on its own.
+      const taken = instance.current;
+      instance.setViewport({ ...taken, x: taken.x - 300 });
+      const displaced = Math.abs(offsetPx(instance, centreX(start)));
+      instance.setViewport.mockClear();
+
       act(() => {
         result.current.resume();
       });
+      settle();
 
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-    });
-
-    it("suspends only during a run", () => {
-      const { result } = setup();
-
-      act(() => {
-        result.current.suspend();
-      });
-
-      expect(result.current.isSuspended).toBe(false);
+      // Pressing the pill is a request to be taken there, so it recentres rather
+      // than deciding the nudge was close enough.
+      expect(instance.setViewport).toHaveBeenCalled();
+      expect(Math.abs(offsetPx(instance, centreX(start)))).toBeLessThan(
+        displaced / 2,
+      );
     });
   });
 
   describe("end of run", () => {
     it("leaves the camera on the node the run finished at", () => {
-      const { result, instance } = setup();
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-        result.current.camera.onNodeShown("a", "running");
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
-
-      const framed = instance.getViewport();
-      instance.setCenter.mockClear();
+      settle();
+      act(() => {
+        result.current.camera.onNodeShown("far", "running");
+      });
+      settle();
+      const arrived = looking(instance);
 
       act(() => {
+        result.current.camera.onNodeShown("far", "success");
         result.current.camera.onRunSettled();
       });
-      settleAndRest();
+      settle();
 
-      // No parting move of any kind. Pulling back to frame the whole graph
-      // undid the arrival on every run, and a workflow gets run over and over.
-      expect(instance.setCenter).not.toHaveBeenCalled();
-      expect(instance.getViewport()).toEqual(framed);
+      // No pulling back out to the whole graph: the zoom is untouched and the
+      // camera is still where the run ended.
+      expect(instance.current.zoom).toBeCloseTo(WORKING_ZOOM, 6);
+      expect(looking(instance).x).toBeCloseTo(arrived.x, -2);
       expect(result.current.isFollowing).toBe(false);
-      expect(result.current.isSuspended).toBe(false);
     });
 
-    it("pans to the result when the run finished off screen", () => {
-      const { result, instance } = setup();
+    it("still arrives when the run finished before the camera did", () => {
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
+        result.current.camera.onNodeShown("mid", "running");
       });
-      settleAndRest();
-      instance.setCenter.mockClear();
-
-      // A short run can finish while the opening move is still arriving, which
-      // would otherwise leave the camera holding on the entry point with the
-      // result off the edge.
+      // Over almost at once — without the settling pass the camera would be left
+      // holding on the entry point with the actual result off the edge.
+      frames(80);
       act(() => {
-        result.current.camera.onNodeShown("a", "running");
-        result.current.camera.onNodeShown("a", "success");
+        result.current.camera.onNodeShown("mid", "success");
         result.current.camera.onRunSettled();
       });
+      settle();
 
-      const target = framingOf([first], 1);
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
-      expect(instance.setCenter).toHaveBeenCalledWith(
-        target.x,
-        target.y,
-        expect.objectContaining({ zoom: target.zoom }),
+      expect(Math.abs(offsetPx(instance, centreX(third)))).toBeLessThan(
+        CANVAS.width / 2,
       );
+      expect(result.current.isFollowing).toBe(false);
     });
 
-    it("does not let a booked move land after the run is over", () => {
-      const { result, instance } = setup();
+    it("lets go immediately when the user already has the camera", () => {
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
-      settleAndRest();
-
-      // A final flush releases the tail of the queue and settles in the same
-      // turn. Whatever the settling move does, it is the last thing that
-      // happens — the retarget the release booked must not fire behind it.
-      act(() => {
-        result.current.camera.onNodeShown("a", "running");
-        result.current.camera.onRunSettled();
-      });
-      const afterSettle = instance.setCenter.mock.calls.length;
-      settleAndRest();
-
-      expect(instance.setCenter.mock.calls.length).toBe(afterSettle);
-    });
-
-    it("leaves the result alone when it is already framed", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-        result.current.camera.onNodeShown("a", "running");
-      });
-      settleAndRest();
-      act(() => {
-        result.current.camera.onNodeShown("a", "success");
-      });
-      instance.setCenter.mockClear();
-
-      // The camera followed the run all the way; there is nothing left to show.
-      act(() => {
-        result.current.camera.onRunSettled();
-      });
-
-      expect(instance.setCenter).not.toHaveBeenCalled();
-    });
-
-    it("does not pan away from a camera the user took back", () => {
-      const { result, instance } = setup();
-
-      act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-      });
-      settleAndRest();
+      frames(100);
       act(() => {
         result.current.onViewportInteraction(new MouseEvent("mousedown"));
-        result.current.camera.onNodeShown("a", "running");
       });
-      instance.setCenter.mockClear();
+      const taken = instance.current;
 
       act(() => {
         result.current.camera.onRunSettled();
       });
+      settle();
 
-      expect(instance.setCenter).not.toHaveBeenCalled();
+      expect(result.current.isFollowing).toBe(false);
+      expect(instance.current).toEqual(taken);
     });
 
-    it("does not carry a rest debt into the next run", () => {
-      const { result, instance } = setup();
+    it("does not carry anything into the next run", () => {
+      const { result, instance } = setup(allNodes, WORKING_ZOOM);
 
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
-        result.current.camera.onNodeShown("a", "running");
+        result.current.camera.onRunStart(["far"]);
       });
       settle();
       act(() => {
         result.current.camera.onRunSettled();
       });
-      instance.setCenter.mockClear();
+      settle();
 
-      // Run again straight away: the opening move must not be held back by the
-      // rest owed to the previous run's last hop.
       act(() => {
-        result.current.camera.onRunStart(["start-1"]);
+        result.current.camera.onRunStart(["start"]);
       });
       settle();
 
-      expect(instance.setCenter).toHaveBeenCalledTimes(1);
+      expect(Math.abs(offsetPx(instance, centreX(start)))).toBeLessThan(
+        CANVAS.width / 2,
+      );
+      expect(instance.current.zoom).toBeCloseTo(WORKING_ZOOM, 6);
     });
   });
 
-  it("keeps a stable handle so subscriptions are not rebuilt", () => {
-    const { result, rerender } = setup();
-    const handle = result.current.camera;
+  it("ignores a node that is not on this canvas", () => {
+    const { result, instance } = setup([start], WORKING_ZOOM);
 
-    rerender();
+    act(() => {
+      result.current.camera.onRunStart(["start"]);
+    });
+    settle();
+    instance.setViewport.mockClear();
 
-    expect(result.current.camera).toBe(handle);
+    act(() => {
+      result.current.camera.onNodeShown("from-a-sub-workflow", "running");
+    });
+    settle();
+
+    expect(instance.setViewport).not.toHaveBeenCalled();
+  });
+
+  it("waits rather than giving up when the canvas has no size yet", () => {
+    const instance = makeInstance();
+    const { result } = renderHook(() =>
+      useRunCamera({
+        instanceRef: { current: instance },
+        nodesRef: { current: allNodes },
+        containerRef: {
+          current: {
+            getBoundingClientRect: () => ({ width: 0, height: 0 }) as DOMRect,
+          } as HTMLElement,
+        },
+      }),
+    );
+
+    act(() => {
+      result.current.camera.onRunStart(["start"]);
+    });
+    settle();
+
+    expect(instance.setViewport).not.toHaveBeenCalled();
+    expect(result.current.isFollowing).toBe(true);
   });
 });

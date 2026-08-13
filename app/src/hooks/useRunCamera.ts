@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import type { Node, Rect, Viewport } from "reactflow";
+import type { Node, Viewport } from "reactflow";
 import {
   CanvasCornerGutter,
   CanvasToolbarBand,
@@ -16,32 +16,38 @@ import {
 import { NODE_FALLBACK_HEIGHT, NODE_FALLBACK_WIDTH } from "../utils/autoLayout";
 import { isTerminalStatus } from "../utils/runChoreography";
 import {
-  boundsOf,
-  framedSubset,
-  framingFor,
-  moveDurationMs,
-  needsMove,
-  REST_AFTER_MOVE_MS,
-  RETARGET_COALESCE_MS,
+  adoptCamera,
+  attentionFocus,
+  attentionRadius,
+  isAtRest,
+  stepCamera,
+  transformOf,
+  ATTENTION_WINDOW_MS,
 } from "../utils/runCamera";
+import type { AttentionPoint } from "../types/AttentionPoint";
+import type { CameraMotion } from "../types/CameraMotion";
 import type { CameraViewport } from "../types/CameraViewport";
 import type { RunCameraHandle } from "../types/RunCameraHandle";
 
 /** The slice of the ReactFlow instance the camera drives. Narrow on purpose:
  * the canvas captures the instance through `onInit`, and this says exactly what
- * is asked of it. */
+ * is asked of it. `setViewport` rather than `setCenter` because the camera runs
+ * its own animation — it wants the transform applied, not animated to. */
 interface RunCameraInstance {
-  setCenter: (
-    x: number,
-    y: number,
-    options: { zoom: number; duration: number },
-  ) => void;
+  setViewport: (viewport: Viewport) => void;
   getViewport: () => Viewport;
+}
+
+/** What the camera remembers about one node it has been shown. */
+interface SeenNode {
+  running: boolean;
+  since: number;
+  seq: number;
 }
 
 interface UseRunCameraParams {
   instanceRef: MutableRefObject<RunCameraInstance | null>;
-  /** Live canvas nodes, as a ref: the camera reads positions on its own timer,
+  /** Live canvas nodes, as a ref: the camera reads positions on its own frames,
    * and must not be rebuilt every time a node repaints. */
   nodesRef: MutableRefObject<Node[]>;
   /** The element the flow is drawn in — measured for its on-screen size. */
@@ -62,13 +68,24 @@ interface UseRunCameraResult {
 
 /** Cameras are motion, and motion is the thing a reduced-motion preference is
  * about — but refusing to move at all would hide the run rather than calm it.
- * The compromise is a cut instead of a glide, decided per move so a preference
+ * The compromise is a cut instead of a glide, read per frame so a preference
  * changed mid-session is honoured. */
 function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/** Whether this transform is one of the ones the camera put there. Tolerances,
+ * not equality: the value is read back after a round trip through d3. */
+function wasWrittenHere(live: Viewport, written: readonly Viewport[]): boolean {
+  return written.some(
+    (mine) =>
+      Math.abs(live.x - mine.x) < 0.75 &&
+      Math.abs(live.y - mine.y) < 0.75 &&
+      Math.abs(live.zoom - mine.zoom) < 1e-4,
   );
 }
 
@@ -92,20 +109,25 @@ function readViewportBox(element: HTMLElement | null): CameraViewport | null {
 /**
  * Points the camera at whatever the run is currently doing.
  *
- * The active set is built from the *paced* releases rather than the runner's
- * events, so the camera arrives with the light rather than ahead of it, and it
- * is a set rather than a node because a fan-out lights several branches at once.
- * All of the geometry lives in `utils/runCamera`; what is here is the clock, the
- * bookkeeping, and the rule that the user always wins:
+ * The attention set is built from the *paced* releases rather than the runner's
+ * events, so the camera arrives with the light rather than ahead of it. All of
+ * the motion lives in `utils/runCamera`, which is a physical model stepped once
+ * per frame; what is here is the frame loop, the event bookkeeping, and the rule
+ * that the user always wins:
  *
  * - a run starting engages following and glides in from wherever the user was,
  *   though only as far as it has to: a viewport that already reads well is
  *   panned within rather than rescaled;
  * - a hand on the canvas suspends it, and nothing re-engages it but the user;
- * - the end of the playback releases it and leaves the camera where the run
- *   finished, because the alternative — pulling back out to frame the whole
- *   graph — undoes the arrival on every single run, and a workflow gets run
- *   over and over. The overview is one click away on the controls.
+ * - the end of the playback lets the camera coast to a stop where the run
+ *   finished, because pulling back out to frame the whole graph would undo the
+ *   arrival on every run, and a workflow gets run over and over. The overview is
+ *   one click away on the controls.
+ *
+ * The loop runs only while there is something to do — while the camera is still
+ * moving, or while a finished node is still fading out of the aim — and any event
+ * restarts it. A run that spends thirty seconds waiting on one request costs no
+ * frames at all.
  */
 export default function useRunCamera({
   instanceRef,
@@ -115,180 +137,249 @@ export default function useRunCamera({
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
 
-  // The same two facts as refs. Every decision below is made inside a timer or
+  // The same two facts as refs. Every decision below is made inside a frame or
   // an event handler, where the state values would be a render behind.
   const followingRef = useRef(false);
   const suspendedRef = useRef(false);
+  /** The run is over; finish the move in flight and then let go. */
+  const endingRef = useRef(false);
 
-  /** Nodes currently shown as working, and how recently each lit up. Recency is
-   * what decides who the camera keeps when it cannot frame them all. */
-  const activeRef = useRef<Map<string, number>>(new Map());
+  /**
+   * Every node the camera has been shown lately, and when it last mattered.
+   *
+   * Finished nodes stay in here and fade. That is deliberate and it is most of
+   * why the motion is smooth: if a node were removed the moment it completed,
+   * the aim would change discontinuously in that one frame, and no amount of
+   * smoothing downstream recovers from a target that teleports.
+   */
+  const seenRef = useRef<Map<string, SeenNode>>(new Map());
   const seqRef = useRef(0);
 
+  const motionRef = useRef<CameraMotion | null>(null);
+  /** Set when the camera should recentre even though the focus is technically
+   * close enough — the opening move, and the user asking to be taken back. */
+  const engageRef = useRef(false);
+  const frameRef = useRef<number | null>(null);
+  const lastFrameAtRef = useRef(0);
   /**
-   * What to frame when nothing is running.
+   * The last few transforms the camera itself put there, newest first.
    *
-   * Between steps the active set is legitimately empty — a node finishes a beat
-   * before its successor starts — and the entry point is emptier still, released
-   * as `success` without ever being shown working, so it would never enter the
-   * active set at all. Holding on the last thing shown covers both: it is where
-   * the eye already is, and it is the only target the opening move has.
+   * Kept so the camera can recognise a viewport it did not set — the zoom and
+   * fit-view buttons on ReactFlow's own controls move it without any source
+   * event, so `onMoveStart` cannot report them and they would otherwise be
+   * silently undone on the next frame. More than one is remembered because
+   * `setViewport` applies through a zero-duration d3 transition, so the value
+   * read back is a frame or so behind the value written.
    */
-  const holdRef = useRef<readonly string[]>([]);
+  const writtenRef = useRef<Viewport[]>([]);
 
-  /**
-   * When the camera is next allowed to move: the end of the move in flight plus
-   * a beat of stillness.
-   *
-   * A glide that is retargeted while it is still running never arrives — the
-   * viewport just drifts continuously for as long as the run lasts, which is the
-   * difference between a camera and a slow pan across the whole workflow. This
-   * makes every move finish, and be seen to finish.
-   */
-  const restUntilRef = useRef(0);
-
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+  const cancelFrame = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     }
   }, []);
 
-  /** The framing set, most-recently-lit first, as rectangles in flow space. */
-  const collectRects = useCallback((): Rect[] => {
-    const active = activeRef.current;
-    const ids =
-      active.size > 0
-        ? [...active.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .map(([nodeId]) => nodeId)
-        : holdRef.current;
-    if (ids.length === 0) return [];
+  /** What the camera is attending to, newest first. Live work outranks finished
+   * work, and within each the most recent news comes first; `points[0]` is the
+   * anchor everything else is judged against. */
+  const collectPoints = useCallback(
+    (now: number): AttentionPoint[] => {
+      const seen = seenRef.current;
+      if (seen.size === 0) return [];
 
-    const byId = new Map(nodesRef.current.map((node) => [node.id, node]));
-    const rects: Rect[] = [];
-
-    for (const id of ids) {
-      const node = byId.get(id);
-      // Deleted mid-run, or not in this canvas at all (a sub-workflow's node
-      // arriving on the parent's stream) — nothing to point at.
-      if (!node) continue;
-
-      const position = node.positionAbsolute ?? node.position;
-      if (!position) continue;
-
-      rects.push({
-        x: position.x,
-        y: position.y,
-        // ReactFlow fills these in once it has measured; a node still waiting
-        // for its first `dimensions` change gets the layout's own guess.
-        width: node.width ?? NODE_FALLBACK_WIDTH,
-        height: node.height ?? NODE_FALLBACK_HEIGHT,
+      const byId = new Map(nodesRef.current.map((node) => [node.id, node]));
+      const ordered = [...seen.entries()].sort((a, b) => {
+        if (a[1].running !== b[1].running) return a[1].running ? -1 : 1;
+        return b[1].seq - a[1].seq;
       });
-    }
 
-    return rects;
-  }, [nodesRef]);
+      const points: AttentionPoint[] = [];
+      for (const [nodeId, record] of ordered) {
+        // Long finished and far outweighed by anything live: keeping it would
+        // only cost arithmetic. The first entry is always kept, because with
+        // nothing running it is the only thing left to look at.
+        if (
+          points.length > 0 &&
+          !record.running &&
+          now - record.since > ATTENTION_WINDOW_MS
+        ) {
+          continue;
+        }
 
-  /**
-   * Point the camera at the current framing set, if it owes it a move.
-   *
-   * - `scheduled` is the ordinary case: the deadzone may say the action is
-   *   close enough, and a move still in flight is waited out.
-   * - `settling` is the last move of a run, which does not queue behind a rest
-   *   because there will be no later chance to make it.
-   * - `resumed` is the user pressing the pill, which is a request to be taken
-   *   there and so overrules both.
-   */
-  const retarget = useCallback(
-    (mode: "scheduled" | "settling" | "resumed" = "scheduled") => {
-      clearTimer();
-      if (!followingRef.current || suspendedRef.current) return;
+        const node = byId.get(nodeId);
+        // Deleted mid-run, or not in this canvas at all (a sub-workflow's node
+        // arriving on the parent's stream) — nothing to point at.
+        if (!node) continue;
 
-      const instance = instanceRef.current;
-      if (!instance) return;
+        const position = node.positionAbsolute ?? node.position;
+        if (!position) continue;
 
-      const box = readViewportBox(containerRef.current);
-      if (!box) return;
-
-      const rects = collectRects();
-      if (rects.length === 0) return;
-
-      const bounds = boundsOf(framedSubset(rects, box));
-      if (!bounds) return;
-
-      // Wait out the last move rather than interrupting it. Re-booked, not
-      // dropped: whatever is lit when the camera is free again is what it wants,
-      // and by then it may well be somewhere else entirely.
-      const now = Date.now();
-      if (mode === "scheduled" && now < restUntilRef.current) {
-        timerRef.current = setTimeout(
-          () => retarget(),
-          restUntilRef.current - now,
-        );
-        return;
+        points.push({
+          x: position.x,
+          y: position.y,
+          // ReactFlow fills these in once it has measured; a node still waiting
+          // for its first `dimensions` change gets the layout's own guess.
+          width: node.width ?? NODE_FALLBACK_WIDTH,
+          height: node.height ?? NODE_FALLBACK_HEIGHT,
+          running: record.running,
+          since: record.since,
+        });
       }
 
-      const viewport = instance.getViewport();
-      const target = framingFor(bounds, box, viewport.zoom);
-
-      // Still inside the part of the frame the camera is willing to ignore.
-      if (mode !== "resumed" && !needsMove(bounds, target, viewport, box)) {
-        return;
-      }
-
-      const duration = moveDurationMs(
-        target,
-        viewport,
-        box,
-        prefersReducedMotion(),
-      );
-      restUntilRef.current = now + duration + REST_AFTER_MOVE_MS;
-
-      instance.setCenter(target.x, target.y, { zoom: target.zoom, duration });
+      return points;
     },
-    [clearTimer, collectRects, containerRef, instanceRef],
+    [nodesRef],
   );
 
-  /**
-   * Book one move for the end of the current coalescing window.
-   *
-   * A fixed window, not a reset-on-every-event debounce: `drain` releases a
-   * whole batch synchronously, so several branches lighting up arrive in one
-   * tick and must produce one move — but a steady stream of releases must not
-   * be able to postpone the camera indefinitely.
-   */
-  const scheduleRetarget = useCallback(() => {
-    if (!followingRef.current || suspendedRef.current) return;
-    if (timerRef.current !== null) return;
+  /** True once nothing is left to fade: every point is either live (a fixed full
+   * claim on the camera) or old enough to have none. Until then the aim is still
+   * drifting even if no events arrive, so the loop has to keep looking. */
+  const attentionSettled = useCallback((now: number): boolean => {
+    for (const record of seenRef.current.values()) {
+      if (!record.running && now - record.since <= ATTENTION_WINDOW_MS) {
+        return false;
+      }
+    }
+    return true;
+  }, []);
 
-    timerRef.current = setTimeout(() => retarget(), RETARGET_COALESCE_MS);
-  }, [retarget]);
+  const release = useCallback(() => {
+    cancelFrame();
+    followingRef.current = false;
+    suspendedRef.current = false;
+    endingRef.current = false;
+    engageRef.current = false;
+    motionRef.current = null;
+    writtenRef.current = [];
+    seenRef.current.clear();
+    seqRef.current = 0;
+    setIsFollowing(false);
+    setIsSuspended(false);
+  }, [cancelFrame]);
 
   const suspend = useCallback(() => {
     if (!followingRef.current || suspendedRef.current) return;
 
-    clearTimer();
+    cancelFrame();
     suspendedRef.current = true;
     setIsSuspended(true);
-  }, [clearTimer]);
+  }, [cancelFrame]);
+
+  const step = useCallback(() => {
+    frameRef.current = null;
+    if (!followingRef.current || suspendedRef.current) return;
+
+    const instance = instanceRef.current;
+    const box = readViewportBox(containerRef.current);
+    const now = Date.now();
+
+    // Mid-mount, or a canvas with no size yet: come back next frame rather than
+    // giving up on the run.
+    if (!instance || !box) {
+      lastFrameAtRef.current = now;
+      frameRef.current = requestAnimationFrame(step);
+      return;
+    }
+
+    const elapsed =
+      lastFrameAtRef.current > 0 ? now - lastFrameAtRef.current : 0;
+    lastFrameAtRef.current = now;
+
+    const live = instance.getViewport();
+
+    let motion = motionRef.current;
+    if (!motion) {
+      // Adopting the live transform rather than assuming one: the camera is
+      // taking over from the user, who may have left the canvas anywhere.
+      motion = adoptCamera(live, box, engageRef.current);
+      writtenRef.current = [live];
+      engageRef.current = false;
+    } else if (!wasWrittenHere(live, writtenRef.current)) {
+      // Someone else moved it. Almost certainly the zoom or fit-view buttons on
+      // ReactFlow's controls, which pass no source event and so never reach
+      // `onMoveStart` — but whatever it was, it was not the camera, and the rule
+      // is that the camera loses.
+      suspend();
+      return;
+    }
+
+    const focus = attentionFocus(
+      collectPoints(now),
+      now,
+      attentionRadius(box, motion.zoom),
+    );
+
+    motion = stepCamera(motion, focus, box, elapsed, prefersReducedMotion());
+    motionRef.current = motion;
+
+    const next = transformOf(motion, box);
+    const [written] = writtenRef.current;
+    // Sub-pixel changes are invisible and a `setViewport` is not free, so the
+    // tail of every ease-out costs nothing.
+    if (
+      !written ||
+      Math.abs(next.x - written.x) > 0.25 ||
+      Math.abs(next.y - written.y) > 0.25 ||
+      Math.abs(next.zoom - written.zoom) > 0.0002
+    ) {
+      writtenRef.current = [next, ...writtenRef.current].slice(0, 4);
+      instance.setViewport(next);
+    }
+
+    const done = endingRef.current
+      ? isAtRest(motion)
+      : isAtRest(motion) && attentionSettled(now);
+
+    if (done) {
+      if (endingRef.current) release();
+      return;
+    }
+
+    frameRef.current = requestAnimationFrame(step);
+  }, [
+    attentionSettled,
+    collectPoints,
+    containerRef,
+    instanceRef,
+    release,
+    suspend,
+  ]);
+
+  /** Ask for a frame if one is not already coming. */
+  const schedule = useCallback(() => {
+    if (!followingRef.current || suspendedRef.current) return;
+    if (frameRef.current !== null) return;
+
+    // A loop that stopped has no idea how long it was away, and a gap measured
+    // from the last frame of the last burst would be integrated as one long
+    // step. Start the clock fresh instead.
+    lastFrameAtRef.current = 0;
+    frameRef.current = requestAnimationFrame(step);
+  }, [step]);
 
   const resume = useCallback(() => {
     if (!followingRef.current || !suspendedRef.current) return;
 
     suspendedRef.current = false;
     setIsSuspended(false);
-    retarget("resumed");
-  }, [retarget]);
+    // The user's viewport is now the camera's starting point, and asking to be
+    // taken back is a request to be recentred whether or not the deadzone agrees.
+    motionRef.current = null;
+    writtenRef.current = [];
+    engageRef.current = true;
+    schedule();
+  }, [schedule]);
 
   const onViewportInteraction = useCallback(
     (event: MouseEvent | TouchEvent | null) => {
-      // ReactFlow reports its own d3 transitions with no source event, so a
-      // null here is the camera hearing itself. Anything else is a hand on the
-      // canvas — including one that grabs it mid-glide, which is exactly when
-      // someone decides they would rather look somewhere else.
+      // A null source event is the camera hearing itself. ReactFlow already
+      // drops those before `onMoveStart` — its d3 handlers return early without
+      // one — so the camera writing the viewport sixty times a second is silent
+      // here; this stays as the guard that makes that guarantee ours rather than
+      // theirs. Anything else is a hand on the canvas, including one that grabs
+      // it mid-glide, which is exactly when someone decides they would rather
+      // look somewhere else.
       if (!event) return;
       suspend();
     },
@@ -298,62 +389,67 @@ export default function useRunCamera({
   const camera = useMemo<RunCameraHandle>(() => {
     return {
       onRunStart: (entryNodeIds) => {
-        activeRef.current.clear();
+        seenRef.current.clear();
         seqRef.current = 0;
-        // Entry points are the opening target but never join the active set:
-        // they are released as `success`, so they are something to look at
-        // rather than something to watch.
-        holdRef.current = [...entryNodeIds];
-        restUntilRef.current = 0;
+        // Entry points are the opening target but are never shown working: they
+        // are released as `success`, so they are something to look at rather than
+        // something to watch, and they fade like any other result.
+        for (const nodeId of entryNodeIds) {
+          seqRef.current += 1;
+          seenRef.current.set(nodeId, {
+            running: false,
+            since: Date.now(),
+            seq: seqRef.current,
+          });
+        }
+
         followingRef.current = true;
         suspendedRef.current = false;
+        endingRef.current = false;
+        motionRef.current = null;
+        writtenRef.current = [];
+        engageRef.current = true;
         setIsFollowing(true);
         setIsSuspended(false);
 
-        scheduleRetarget();
+        schedule();
       },
 
       onNodeShown: (nodeId, status) => {
-        if (!followingRef.current) return;
+        if (!followingRef.current || endingRef.current) return;
+
+        seqRef.current += 1;
+        // Both cases are dated now: a result starts fading from the moment it
+        // appears, and a node that lit up does not age at all until it finishes,
+        // at which point this is overwritten with that moment.
+        seenRef.current.set(nodeId, {
+          running: !isTerminalStatus(status),
+          since: Date.now(),
+          seq: seqRef.current,
+        });
 
         // Tracked even while suspended, so resuming lands on the live front
         // rather than on wherever the run had got to when the user took over.
-        if (isTerminalStatus(status)) {
-          activeRef.current.delete(nodeId);
-          holdRef.current = [nodeId];
-        } else {
-          seqRef.current += 1;
-          activeRef.current.set(nodeId, seqRef.current);
-        }
-
-        scheduleRetarget();
+        schedule();
       },
 
       onRunSettled: () => {
-        // One last look at where it ended, and only if that is not already on
-        // screen — which after a run long enough to follow, it usually is. This
-        // is what the end-of-run fit used to be for, minus the part that hurt:
-        // a short run can finish while the opening move is still arriving, and
-        // without this the camera would be left holding on the entry point with
-        // the actual result off the edge. It goes through the same framing as
-        // every other move, so it keeps the zoom it has: it can pan to the
-        // result but never pull back out to the overview, which is what made
-        // every run a round trip.
-        // Also clears any booked retarget, so nothing lands after the run.
-        retarget("settling");
+        if (!followingRef.current) return;
 
-        followingRef.current = false;
-        suspendedRef.current = false;
-        activeRef.current.clear();
-        holdRef.current = [];
-        restUntilRef.current = 0;
-        setIsFollowing(false);
-        setIsSuspended(false);
+        // Nothing more will arrive, so the camera finishes whatever it was doing
+        // and lets go. If the user has taken over there is nothing to finish —
+        // the camera is not the one holding it.
+        endingRef.current = true;
+        if (suspendedRef.current) {
+          release();
+          return;
+        }
+        schedule();
       },
     };
-  }, [clearTimer, retarget, scheduleRetarget]);
+  }, [release, schedule]);
 
-  useEffect(() => clearTimer, [clearTimer]);
+  useEffect(() => cancelFrame, [cancelFrame]);
 
   return {
     camera,
