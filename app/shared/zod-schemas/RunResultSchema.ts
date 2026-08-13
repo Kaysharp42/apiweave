@@ -26,6 +26,10 @@ export const RunResultSchema = z
     request: JsonValueSchema.nullable().optional(),
     response: JsonValueSchema.nullable().optional(),
     error: z.string().nullable().optional(),
+    // Configured `expectedStatus` (http-request), echoed back so a matched
+    // negative test (e.g. a passed node showing a 409) is legible without
+    // cross-referencing the node's config.
+    expectedStatus: z.union([z.number(), z.array(z.number())]).optional(),
     assertions: z.array(AssertionEvaluationSchema).nullable().optional(),
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
     // Call Workflow summary only — never the sub-workflow's own raw per-node

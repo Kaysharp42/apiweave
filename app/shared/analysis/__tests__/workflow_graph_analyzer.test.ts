@@ -219,6 +219,201 @@ describe("workflow graph analyzer", () => {
     ]))
   })
 
+  it("emits one aggregated notice when every wired fail handle lands on an end node", () => {
+    const workflow = healthyWorkflow()
+    const withRedundantFailEdge = {
+      ...workflow,
+      edges: [
+        ...workflow.edges,
+        { edgeId: "fail-to-end", source: "assert-login", target: "end", sourceHandle: "fail" },
+      ],
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(withRedundantFailEdge)
+    expect(diagnosis.diagnostics.find((item) => item.code === "assertion_fail_wired_on_all")).toMatchObject({
+      severity: "notice",
+      nodeIds: ["assert-login", "end"],
+      evidence: { edgeIds: ["fail-to-end"], endNodeIds: ["end"] },
+    })
+  })
+
+  it("does not flag a fail handle wired to a distinct action before rejoining end", () => {
+    const workflow = healthyWorkflow()
+    const withDistinctFailPath = {
+      ...workflow,
+      nodes: [
+        ...workflow.nodes,
+        { nodeId: "notify", type: "http-request", position: { x: 200, y: 200 }, config: { url: "https://example.test/notify" } },
+      ],
+      edges: [
+        ...workflow.edges,
+        { edgeId: "fail-to-notify", source: "assert-login", target: "notify", sourceHandle: "fail" },
+        { edgeId: "notify-to-end", source: "notify", target: "end" },
+      ],
+    } as unknown as Workflow
+
+    const codes = analyzeWorkflowGraph(withDistinctFailPath).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("assertion_fail_wired_on_all")
+  })
+
+  it("does not flood when only some wired fail handles land on an end node", () => {
+    const workflow = healthyWorkflow()
+    const partial = {
+      ...workflow,
+      nodes: [
+        ...workflow.nodes,
+        { nodeId: "notify", type: "http-request", position: { x: 200, y: 200 }, config: { url: "https://example.test/notify" } },
+      ],
+      edges: [
+        ...workflow.edges,
+        { edgeId: "fail-to-end", source: "assert-login", target: "end", sourceHandle: "fail" },
+        { edgeId: "fail-to-notify", source: "assert-login", target: "notify", sourceHandle: "fail" },
+      ],
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(partial)
+    const wired = diagnosis.diagnostics.filter((item) => item.code === "assertion_fail_wired_on_all")
+    expect(wired).toHaveLength(0)
+  })
+
+  it("flags a continueOnFail http-request paired with a downstream status-pinning assertion, recommending expectedStatus", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 409 }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(migratable)
+    expect(diagnosis.diagnostics.find((item) => item.code === "continue_on_fail_status_check_migratable")).toMatchObject({
+      severity: "notice",
+      nodeIds: ["assert-login", "login"],
+      evidence: { httpNodeId: "login", assertionNodeId: "assert-login", expectedStatusCode: 409 },
+    })
+  })
+
+  it("does not flag the continueOnFail migration hint once expectedStatus is already set", () => {
+    const workflow = healthyWorkflow()
+    const migrated = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true, expectedStatus: 409 } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: 409 }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const codes = analyzeWorkflowGraph(migrated).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("continue_on_fail_status_check_migratable")
+  })
+
+  it("does not flag the migration hint when the status assertion is non-numeric or out of range", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return { ...node, config: { assertions: [{ source: "status", path: "", operator: "equals", expectedValue: "" }] } }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const codes = analyzeWorkflowGraph(migratable).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("continue_on_fail_status_check_migratable")
+  })
+
+  it("emits one migration hint per pair even when multiple status rules pin the same status", () => {
+    const workflow = healthyWorkflow()
+    const migratable = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => {
+        if (node.nodeId === "login") return { ...node, config: { ...node.config, continueOnFail: true } }
+        if (node.nodeId === "assert-login") {
+          return {
+            ...node,
+            config: {
+              assertions: [
+                { source: "status", path: "", operator: "equals", expectedValue: 409 },
+                { source: "status", path: "", operator: "equals", expectedValue: 409 },
+              ],
+            },
+          }
+        }
+        return node
+      }),
+    } as unknown as Workflow
+
+    const diagnosis = analyzeWorkflowGraph(migratable)
+    const hints = diagnosis.diagnostics.filter((item) => item.code === "continue_on_fail_status_check_migratable")
+    expect(hints).toHaveLength(1)
+  })
+
+  it("does not emit http_request_failed when expectedStatus matches a 4xx response", () => {
+    const workflow = WorkflowSchema.parse({
+      workflowId: "workflow-neg",
+      workspaceId: "workspace-neg",
+      name: "negative test",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        {
+          nodeId: "neg",
+          type: "http-request",
+          label: "neg",
+          position: { x: 100, y: 0 },
+          config: { method: "POST", url: "https://example.test/neg", expectedStatus: 409, continueOnFail: true },
+        },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 }, config: {} },
+      ],
+      edges: [
+        { edgeId: "e2", source: "neg", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }) as unknown as Workflow
+
+    const run = RunSchema.parse({
+      runId: "run-neg",
+      workspaceId: workflow.workspaceId,
+      workflowId: workflow.workflowId,
+      status: "completed",
+      trigger: "manual",
+      variables: {},
+      results: [
+        { nodeId: "start", status: "passed", duration: 1 },
+        {
+          nodeId: "neg",
+          status: "passed",
+          duration: 10,
+          response: { statusCode: 409, body: { error: "conflict" } },
+          expectedStatus: 409,
+        },
+        { nodeId: "end", status: "passed", duration: 1 },
+      ],
+      nodeStatuses: {},
+      failedNodes: [],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    const diagnosis = analyzeWorkflowGraph(workflow, run)
+    expect(diagnosis.summary.errors).toBe(0)
+    expect(diagnosis.diagnostics.map((item) => item.code)).not.toContain("http_request_failed")
+  })
+
   // A real run was blocked on the canvas for `expectedValue: false` while
   // `assertion_validate` accepted it: the canvas gate used a truthiness check
   // rather than a presence check. `false`, `0` and `""` are all legitimate

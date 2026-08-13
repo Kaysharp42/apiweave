@@ -359,22 +359,6 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
 
 function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
-  // One pass collects the assertion nodeIds that wire their `fail` handle; the
-  // notice below needs the whole count per workflow. A real author wired all 65
-  // assertion `fail` handles to a single `end` because the guides could be read
-  // as "every handle must carry an edge" — they read the empty-handle warning as
-  // a mandate. The notice points at the shorter form; leaving `fail` unwired is
-  // the normal expected shape and the run still records the failed assertion.
-  let assertionCount = 0
-  const failWiredIds: string[] = []
-  for (const node of workflow.nodes) {
-    if (node.type !== "assertion") continue
-    assertionCount++
-    const hasFailEdge = workflow.edges.some(
-      (edge) => edge.source === node.nodeId && edge.sourceHandle === "fail",
-    )
-    if (hasFailEdge) failWiredIds.push(node.nodeId)
-  }
   for (const node of workflow.nodes) {
     if (node.type !== "assertion") continue
     const assertions = node.config?.assertions ?? []
@@ -487,6 +471,26 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
         handleCounts.set(handle, (handleCounts.get(handle) ?? 0) + 1)
       }
     }
+
+    // Every `fail` edge that lands directly on an `end` node does exactly what
+    // leaving `fail` unconnected already does — the run records the failure
+    // and the branch stops there — just with extra edges to maintain. Only
+    // flag it when ALL wired fail handles stop at an end node; if any fail
+    // handle routes to a real action, the wiring is meaningful. Notice, not
+    // warning: it is verbose, not wrong.
+    const failEdges = outgoing.filter((edge) => (edge.sourceHandle ?? "") === "fail")
+    if (failEdges.length > 0 && failEdges.every((edge) => nodesById.get(edge.target)?.type === "end")) {
+      diagnostics.push(diagnostic(
+        "assertion_fail_wired_on_all",
+        "notice",
+        "branch",
+        [node.nodeId, ...failEdges.map((edge) => edge.target)],
+        "The fail handle is wired straight to an end node, which is the same as leaving it unconnected.",
+        { edgeIds: failEdges.map((edge) => edge.edgeId), endNodeIds: failEdges.map((edge) => edge.target) },
+        { kind: "remove_redundant_fail_edge", edgeId: failEdges[0]!.edgeId },
+        "high",
+      ))
+    }
     for (const [handle, count] of handleCounts) {
       if (count > 1) {
         diagnostics.push(diagnostic(
@@ -502,21 +506,67 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
       }
     }
   }
+}
 
-  // Single notice per workflow — fires only when every assertion wires its
-  // `fail` handle. Notice, not warning: the graph is verbose, not wrong, and
-  // the run still reports each failed assertion. Suggests the shorter form.
-  if (assertionCount > 0 && failWiredIds.length === assertionCount) {
+/** True when an assertion rule reads the upstream response's status code. */
+function targetsStatusCode(rule: { readonly source: string; readonly path: string }): boolean {
+  if (rule.source === "status") return true
+  return rule.source === "prev" && (rule.path === "statusCode" || rule.path === "response.statusCode")
+}
+
+/**
+ * Migration hint for item 9: an `http-request` using `continueOnFail` purely to
+ * survive an expected non-2xx, paired with a downstream assertion pinning that
+ * exact status, is exactly the graph shape `expectedStatus` replaces — same
+ * negative test, but the node (and the run) goes green on a match instead of
+ * staying permanently red.
+ */
+function isUnmigratedContinueOnFailRequest(node: WorkflowNode): boolean {
+  return node.type === "http-request" && node.config?.continueOnFail === true && node.config?.expectedStatus === undefined
+}
+
+/** True for a schema-valid, non-2xx HTTP status code — the range `expectedStatus` migration targets. */
+function isMigratableStatusCode(value: number): boolean {
+  if (!Number.isInteger(value) || value < 100 || value > 599) return false
+  return value < 200 || value >= 300
+}
+
+/** Pushes a migration diagnostic for each downstream assertion rule that pins a non-2xx status from `node`. */
+function addMigrationDiagnosticsForPair(
+  node: WorkflowNode,
+  assertion: Extract<WorkflowNode, { type: "assertion" }>,
+  diagnostics: WorkflowDiagnostic[],
+): void {
+  for (const rule of assertion.config?.assertions ?? []) {
+    if (rule.operator !== "equals" || !targetsStatusCode(rule)) continue
+    const expectedStatusCode = Number(rule.expectedValue)
+    if (!isMigratableStatusCode(expectedStatusCode)) continue
     diagnostics.push(diagnostic(
-      "assertion_fail_wired_on_all",
+      "continue_on_fail_status_check_migratable",
       "notice",
-      "branch",
-      failWiredIds,
-      "Every assertion wires its `fail` handle. An unwired `fail` is the normal, expected shape: the run records the failed assertion and that branch terminates. Wire `fail` only when you want a distinct failure path (a cleanup request, a notification, a compensating call).",
-      { assertionCount },
-      null,
-      "high",
+      "assertion",
+      [node.nodeId, assertion.nodeId],
+      "This http-request uses continueOnFail with a downstream assertion pinning a specific non-2xx status — expectedStatus expresses the same negative test directly and lets the run go green on a match.",
+      { httpNodeId: node.nodeId, assertionNodeId: assertion.nodeId, expectedStatusCode },
+      { kind: "use_expected_status", nodeId: node.nodeId },
+      "medium",
     ))
+    break
+  }
+}
+
+function addExpectedStatusMigrationDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  const { nodesById, predecessors } = buildGraph(workflow.nodes, workflow.edges)
+  const candidateRequests = workflow.nodes.filter(isUnmigratedContinueOnFailRequest)
+  const assertions = workflow.nodes.filter(
+    (node): node is Extract<WorkflowNode, { type: "assertion" }> => node.type === "assertion",
+  )
+
+  for (const node of candidateRequests) {
+    for (const assertion of assertions) {
+      if (!upstreamHttpSources(assertion.nodeId, nodesById, predecessors).includes(node.nodeId)) continue
+      addMigrationDiagnosticsForPair(node, assertion, diagnostics)
+    }
   }
 }
 
@@ -613,7 +663,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
     if (node.type === "http-request") {
       const statusCode = statusCodeOf(result)
       const response = responseMetadata(result)
-      if ((statusCode !== undefined && statusCode >= 400) || (result.status === "failed" && statusCode === undefined)) {
+      if (result.status === "failed") {
         const descendants = traverse([node.nodeId], successors)
         descendants.delete(node.nodeId)
         const blockedNodeIds = [...descendants].filter((nodeId) => {
@@ -822,6 +872,7 @@ export function analyzeWorkflowGraph(workflow: WorkflowGraphInput, run?: Run): W
   const diagnostics: WorkflowDiagnostic[] = []
   addTopologyDiagnostics(workflow, diagnostics)
   addAssertionAndBranchDiagnostics(workflow, diagnostics)
+  addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 

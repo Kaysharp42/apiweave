@@ -40,6 +40,12 @@ export const HTTPNodeDataSchema = z
     followRedirects: z.boolean().optional(),
     sslVerify: z.boolean().optional(),
     continueOnFail: z.boolean().optional().describe("When true, a failed request lets the run continue down the outgoing edge instead of stopping the branch."),
+    expectedStatus: z
+      .union([z.number().int().min(100).max(599), z.array(z.number().int().min(100).max(599)).min(1)])
+      .optional()
+      .describe(
+        "The status code(s) this request is expected to return. The node passes when the response matches and fails when it does not, including when it returns 2xx. Omit for the default, where any 2xx passes. Use this for negative tests: a request that is supposed to be rejected.",
+      ),
     extractors: z
       .record(z.string(), z.string())
       .optional()

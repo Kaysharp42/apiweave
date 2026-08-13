@@ -103,6 +103,8 @@ export interface ExecuteOptions {
 export interface NodeResult {
   readonly status: string
   readonly statusCode?: number
+  /** Configured `expectedStatus` echoed back so a matched negative test (e.g. a green 409) is legible in the run snapshot. */
+  readonly expectedStatus?: number | readonly number[]
   readonly body?: unknown
   readonly headers?: Record<string, string>
   readonly duration?: number
@@ -547,6 +549,14 @@ export class WorkflowExecutor {
   ): Promise<{ shouldContinue: boolean } | null> {
     const nodeId = node.nodeId
     const nodeType = node.type
+    // A node's own `continueOnFail` (http-request/delay/merge all expose one)
+    // overrides the workflow-level default — the same override `traverseFromNode`
+    // already applies for assertion nodes. Reading only the traversal-level
+    // parameter here was the root cause of continueOnFail being ignored for
+    // every other node type: a per-node `continueOnFail: true` did nothing
+    // unless the workflow also set it globally.
+    const effectiveContinueOnFail =
+      typeof node.config?.["continueOnFail"] === "boolean" ? (node.config["continueOnFail"] as boolean) : continueOnFail
 
     this.updateNodeStatus(nodeId, "running")
     // Stamp the node's execution window on the injected clock so the run
@@ -599,7 +609,7 @@ export class WorkflowExecutor {
       this.results.set(nodeId, result)
 
       // Handle failures
-      if (executionStatus === "error" && nodeType !== "assertion" && !continueOnFail) {
+      if (executionStatus === "error" && nodeType !== "assertion" && !effectiveContinueOnFail) {
         const errorMsg = (result.error as string | undefined) ?? `Node ${nodeId} failed`
         this.hasFailures = true
         this.failedNodes.add(nodeId)
@@ -622,7 +632,7 @@ export class WorkflowExecutor {
       this.failedNodes.add(nodeId)
       this.hasFailures = true
       if (!this.firstErrorMessage) this.firstErrorMessage = `Node ${nodeId} failed`
-      if (!continueOnFail) throw new StopBranch(errorResult.error ?? `Node ${nodeId} failed`)
+      if (!effectiveContinueOnFail) throw new StopBranch(errorResult.error ?? `Node ${nodeId} failed`)
       throw error
     }
   }
@@ -645,6 +655,7 @@ export class WorkflowExecutor {
     const urlEncodedEntries = config["urlEncodedEntries"] as KVField
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
     const extractors = config["extractors"] as Record<string, string> | undefined
+    const expectedStatus = config["expectedStatus"] as number | readonly number[] | undefined
     const withExtractorOutcomes = (result: NodeResult): NodeResult => extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
@@ -742,6 +753,14 @@ export class WorkflowExecutor {
       else if (statusCode >= 500) status = "server_error"
       else status = "unknown"
 
+      // expectedStatus fully replaces the default 2xx-passes rule when set: a
+      // matched non-2xx (e.g. an intentional 409) passes, and an unmatched 2xx
+      // (the guard regressed) fails — polarity a status-range check alone can't express.
+      if (expectedStatus !== undefined) {
+        const expectedList = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus]
+        status = expectedList.includes(statusCode) ? "success" : "error"
+      }
+
       const responseHeaders: Record<string, string> = {}
       response.headers.forEach((value, key) => {
         responseHeaders[key] = value
@@ -750,6 +769,7 @@ export class WorkflowExecutor {
       const result: NodeResult = {
         status,
         statusCode,
+        ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         headers: responseHeaders,
         body: responseBody,
         duration,
@@ -773,6 +793,7 @@ export class WorkflowExecutor {
           method,
           url,
           duration: 0,
+          ...(expectedStatus !== undefined ? { expectedStatus } : {}),
           ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
         })
       }
@@ -782,6 +803,7 @@ export class WorkflowExecutor {
         method,
         url,
         duration: Date.now() - startTime,
+        ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       })
     }
@@ -1789,6 +1811,7 @@ function toJsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue
 }
 
+/** RunResult.request: only the fields that are actually present on the node result. */
 function buildRunResultRequest(result: NodeResult): { method?: string; url?: string } {
   return {
     ...(typeof result["method"] === "string" ? { method: result["method"] } : {}),
@@ -1796,6 +1819,7 @@ function buildRunResultRequest(result: NodeResult): { method?: string; url?: str
   }
 }
 
+/** RunResult.response: the raw response if captured, else a synthesized one from the loose statusCode/headers/body fields. */
 function buildRunResultResponse(result: NodeResult): JsonValue {
   return toJsonValue(result.response ?? {
     ...(result.statusCode !== undefined ? { statusCode: result.statusCode } : {}),
@@ -1828,6 +1852,10 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
     duration: Math.max(0, Math.round(typeof result.duration === "number" ? result.duration : 0)),
     ...(typeof result.startedAt === "string" ? { startedAt: result.startedAt } : {}),
     ...(typeof result.completedAt === "string" ? { completedAt: result.completedAt } : {}),
+    // Echoed back so a matched negative test (e.g. a green 409) is legible in the run snapshot.
+    ...(result.expectedStatus !== undefined
+      ? { expectedStatus: (Array.isArray(result.expectedStatus) ? [...result.expectedStatus] : result.expectedStatus) as number | number[] }
+      : {}),
     ...buildRunResultDiagnostics(result),
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),

@@ -213,6 +213,27 @@ function validateJson(value: string): string | undefined {
   }
 }
 
+function formatExpectedStatus(value: number | number[] | undefined): string {
+  if (value === undefined) return "";
+  return Array.isArray(value) ? value.join(", ") : String(value);
+}
+
+/**
+ * Parses a comma/space-separated list of status codes.
+ * `undefined` = field cleared (no expectedStatus configured).
+ * `null` = does not parse yet (still being typed, or out of 100-599) — the
+ * caller leaves the config untouched rather than clobbering it mid-keystroke.
+ */
+function parseExpectedStatusInput(text: string): number | number[] | undefined | null {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+  if (tokens.some((token) => !/^\d+$/.test(token))) return null;
+  const codes = tokens.map(Number);
+  if (codes.some((code) => !Number.isInteger(code) || code < 100 || code > 599)) return null;
+  return codes.length === 1 ? codes[0]! : codes;
+}
+
 export function HTTPRequestConfigPanel({
   initialConfig,
   workingDataRef,
@@ -230,9 +251,14 @@ export function HTTPRequestConfigPanel({
   const [showManualExtractorForm, setShowManualExtractorForm] = useState(
     () => Object.keys((config ?? initialConfig).extractors ?? {}).length === 0,
   );
+  const [expectedStatusText, setExpectedStatusText] = useState(() =>
+    formatExpectedStatus(normalizeHttpRequestConfig(config ?? initialConfig).expectedStatus),
+  );
 
   useEffect(() => {
-    setDraftConfig(normalizeHttpRequestConfig(config ?? initialConfig));
+    const normalized = normalizeHttpRequestConfig(config ?? initialConfig);
+    setDraftConfig(normalized);
+    setExpectedStatusText(formatExpectedStatus(normalized.expectedStatus));
   }, [config, initialConfig]);
 
   const jsonError = useMemo(
@@ -269,6 +295,21 @@ export function HTTPRequestConfigPanel({
     updateConfig({
       auth: { ...(draftConfig.auth || { type: "none" }), ...authPatch },
     });
+  };
+
+  const expectedStatusError = useMemo(
+    () =>
+      parseExpectedStatusInput(expectedStatusText) === null
+        ? "Enter one or more status codes between 100 and 599, e.g. 409 or 409, 422"
+        : undefined,
+    [expectedStatusText],
+  );
+
+  const handleExpectedStatusChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const text = event.target.value;
+    setExpectedStatusText(text);
+    const parsed = parseExpectedStatusInput(text);
+    if (parsed !== null) updateConfig({ expectedStatus: parsed });
   };
 
   const renderParams = () => (
@@ -615,6 +656,18 @@ export function HTTPRequestConfigPanel({
               onChange={(event) =>
                 updateConfig({ continueOnFail: event.target.checked })
               }
+            />
+          </FormField>
+          <FormField
+            label="Expected status"
+            hint="For negative tests: the request is supposed to be rejected, e.g. 409. Fails on any other status, including 2xx. Omit for the default, where any 2xx passes."
+            {...(expectedStatusError ? { error: expectedStatusError } : {})}
+          >
+            <Input
+              value={expectedStatusText}
+              onChange={handleExpectedStatusChange}
+              placeholder="e.g. 409 or 409, 422"
+              className="font-mono"
             />
           </FormField>
         </div>

@@ -20,6 +20,7 @@ export interface NodeModalHTTPRequestConfig {
   followRedirects?: boolean;
   sslVerify?: boolean;
   continueOnFail?: boolean;
+  expectedStatus?: number | number[] | undefined;
   formDataEntries?: FormDataEntry[];
   urlEncodedEntries?: UrlEncodedEntry[];
 }

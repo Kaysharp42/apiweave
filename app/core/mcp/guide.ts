@@ -109,14 +109,16 @@ Three things to copy from this:
 This graph leaves \`check\`'s \`fail\` handle unwired — the normal, expected shape:
 the run still records the failed assertion and terminates that branch. Wire
 \`fail\` only when you want a distinct failure path (a cleanup request, a
-notification, a compensating call), by adding a node and an edge with
+notification, a compensating call), by adding a node and edges with
 \`"sourceHandle": "fail"\`:
 
 \`\`\`json
 { "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } }
 \`\`\`
+
 \`\`\`json
-{ "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" }
+{ "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" },
+{ "edgeId": "e5", "source": "report_failure", "target": "done" }
 \`\`\`
 
 ## Related
@@ -169,6 +171,13 @@ or array order.
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
 - \`continueOnFail: true\` lets the run continue past a failed request.
+- \`expectedStatus\` — the status code(s) this request is expected to return (a number
+  or an array of numbers, 100-599). The node passes when the response matches and
+  **fails when it does not, including when it returns 2xx**. Omit for the default,
+  where any 2xx passes. Use this for negative tests: a request that is supposed to
+  be rejected, e.g. \`"expectedStatus": 409\` for a state-transition guard. It is
+  orthogonal to \`continueOnFail\`: \`expectedStatus\` decides whether the node
+  failed, \`continueOnFail\` decides whether a failure stops the branch.
 
 ### assertion
 
@@ -184,6 +193,10 @@ Rules live at \`config.assertions\`. See \`apiweave://guide/assertions\`.
 unwired \`fail\` handle is the normal, expected shape — the run records the
 failed assertion and terminates that branch. Wire \`fail\` only when you want a
 distinct failure path (a cleanup request, a notification, a compensating call).
+Wiring every \`fail\` handle straight to the shared \`end\` node does exactly what
+leaving it unconnected already does, just with more edges — \`workflow_diagnose\`
+flags that shape as \`assertion_fail_wired_on_all\` (notice, not warning: it is
+verbose, not wrong).
 
 Both handles also fan out in parallel: more than one edge leaving \`pass\` (or
 \`fail\`) starts all the target branches concurrently — \`workflow_diagnose\` notes
@@ -232,6 +245,10 @@ branch; an edge without a handle is never followed, so the branch stops silently
 mid-run. This is the single most common authoring mistake, and
 \`workflow_diagnose\` reports it as \`assertion_branch_handle_invalid\` — an error
 you can see before running anything.
+
+That rule constrains which handle an edge that *exists* must use — it does not
+require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
+still records the failed assertion and stops that branch there.
 
 Nodes of every other type have one output; leave \`sourceHandle\` unset for them.
 
@@ -431,12 +448,13 @@ Clear every \`error\` before running.
 | --- | --- |
 | \`assertion_branch_handle_invalid\` | an edge leaving an assertion has no \`sourceHandle\`, or one that is not \`pass\`/\`fail\`. The branch stops silently at run time. |
 | \`assertion_branch_duplicate\` | more than one edge leaves one assertion handle — the branches run in parallel (notice, not warning) |
-| \`assertion_fail_wired_on_all\` | every assertion wires its \`fail\` handle — an unwired \`fail\` is the normal expected shape (notice) |
+| \`assertion_fail_wired_on_all\` | a \`fail\` handle is wired straight to \`end\`, which does what leaving it unconnected already does — an unwired \`fail\` is the normal expected shape (notice) |
 | \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, \`http-request\` node reachable upstream |
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
 | \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |
 | \`assertion_rules_missing\` | the node has no rules and always passes |
+| \`continue_on_fail_status_check_migratable\` | a \`continueOnFail\` request with a downstream assertion pinning a non-2xx status — \`expectedStatus\` says the same thing and lets the run go green (notice) |
 
 ## Dataflow
 
