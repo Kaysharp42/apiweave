@@ -17,6 +17,45 @@ interface CanvasShortcutHandlers {
   onToggleJsonEditor: () => void;
 }
 
+/** The Ctrl/⌘ chords the canvas owns. */
+function runModifierChord(
+  e: KeyboardEvent,
+  key: string | undefined,
+  current: CanvasShortcutHandlers,
+): void {
+  if (key === "s") {
+    e.preventDefault();
+    current.onSave();
+    return;
+  }
+  if (key === "r") {
+    if (current.isRunning) return;
+    e.preventDefault();
+    current.onRun();
+    return;
+  }
+  if (key === "j") {
+    e.preventDefault();
+    current.onToggleJsonEditor();
+  }
+}
+
+/** The shortcut itself, once the guards have decided this keystroke is ours. */
+function runCanvasShortcut(
+  e: KeyboardEvent,
+  current: CanvasShortcutHandlers,
+): void {
+  const key = e.key?.toLowerCase?.();
+
+  if (key === "f5") {
+    e.preventDefault();
+    if (!current.isRunning) current.onRun();
+    return;
+  }
+
+  if (e.ctrlKey || e.metaKey) runModifierChord(e, key, current);
+}
+
 /**
  * Canvas-scoped keyboard shortcuts (save/run/JSON editor). These live here
  * rather than in the workspace-level `useKeyboardShortcuts` because their
@@ -54,30 +93,11 @@ export function useCanvasKeyboardShortcuts({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || handlers.current.isEditorOverlayOpen) return;
+      const current = handlers.current;
+      if (e.defaultPrevented || current.isEditorOverlayOpen) return;
       if (isEditableKeyboardTarget(e.target)) return;
 
-      const key = e.key?.toLowerCase?.();
-
-      if (key === "f5") {
-        e.preventDefault();
-        if (!handlers.current.isRunning) handlers.current.onRun();
-        return;
-      }
-
-      if (!(e.ctrlKey || e.metaKey)) return;
-
-      if (key === "s") {
-        e.preventDefault();
-        handlers.current.onSave();
-      } else if (key === "r") {
-        if (handlers.current.isRunning) return;
-        e.preventDefault();
-        handlers.current.onRun();
-      } else if (key === "j") {
-        e.preventDefault();
-        handlers.current.onToggleJsonEditor();
-      }
+      runCanvasShortcut(e, current);
     };
 
     window.addEventListener("keydown", handleKeyDown);

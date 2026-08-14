@@ -32,6 +32,7 @@
  * hook owns the clock and the event stream, this owns the topology.
  */
 
+import { groupEdgesBy } from "./edgeAdjacency";
 import type { RunFront } from "../types/RunFront";
 import type { RunFrontOutlook } from "../types/RunFrontOutlook";
 import type { RunFrontsState } from "../types/RunFrontsState";
@@ -86,22 +87,9 @@ const MERGE_CHAIN_LIMIT = 64;
 export function createFronts(
   edges: readonly { source: string; target: string }[],
 ): RunFrontsState {
-  const successors = new Map<string, string[]>();
-  const predecessors = new Map<string, string[]>();
-
-  for (const edge of edges) {
-    const out = successors.get(edge.source);
-    if (out) out.push(edge.target);
-    else successors.set(edge.source, [edge.target]);
-
-    const into = predecessors.get(edge.target);
-    if (into) into.push(edge.source);
-    else predecessors.set(edge.target, [edge.source]);
-  }
-
   return {
-    successors,
-    predecessors,
+    successors: groupEdgesBy(edges, "source"),
+    predecessors: groupEdgesBy(edges, "target"),
     nodes: new Map(),
     fronts: new Map(),
     extended: new Set(),
@@ -266,6 +254,31 @@ function isDone(state: RunFrontsState, nodeId: string): boolean {
  * could not names the nodes it is waiting for, which is the camera's cue to leave
  * and where to go.
  */
+/**
+ * Whether any step out of `nodeId` could be taken now, recording into
+ * `waitingFor` the nodes that hold back the ones that could not.
+ */
+function frontierReady(
+  state: RunFrontsState,
+  nodeId: string,
+  waitingFor: Set<string>,
+): boolean {
+  let ready = false;
+
+  for (const next of state.successors.get(nodeId) ?? []) {
+    // Already shown: this is not the frontier, whichever front took it.
+    if (state.nodes.has(next)) continue;
+
+    const pending = (state.predecessors.get(next) ?? []).filter(
+      (parentId) => !isDone(state, parentId),
+    );
+    if (pending.length === 0) ready = true;
+    else for (const parentId of pending) waitingFor.add(parentId);
+  }
+
+  return ready;
+}
+
 export function frontOutlook(
   state: RunFrontsState,
   frontId: number | null,
@@ -281,17 +294,7 @@ export function frontOutlook(
 
   for (const nodeId of front.nodeIds) {
     if (!isDone(state, nodeId)) continue;
-
-    for (const next of state.successors.get(nodeId) ?? []) {
-      // Already shown: this is not the frontier, whichever front took it.
-      if (state.nodes.has(next)) continue;
-
-      const pending = (state.predecessors.get(next) ?? []).filter(
-        (parentId) => !isDone(state, parentId),
-      );
-      if (pending.length === 0) ready = true;
-      else for (const parentId of pending) waitingFor.add(parentId);
-    }
+    if (frontierReady(state, nodeId, waitingFor)) ready = true;
   }
 
   return {
@@ -321,6 +324,29 @@ function aliveFronts(state: RunFrontsState): RunFront[] {
   );
 }
 
+/** How much a front is worth watching: 2 = working, 1 = about to move, 0 =
+ * nothing to show. */
+function frontRank(
+  state: RunFrontsState,
+  front: RunFront,
+  now: number,
+): number {
+  const outlook = frontOutlook(state, front.id, now);
+  if (outlook.running > 0) return 2;
+  return outlook.advancing ? 1 : 0;
+}
+
+/** Higher rank wins; between equals the freshest news does. */
+function outranks(
+  rank: number,
+  front: RunFront,
+  bestRank: number,
+  best: RunFront,
+): boolean {
+  if (rank !== bestRank) return rank > bestRank;
+  return front.lastEventAt > best.lastEventAt;
+}
+
 /** Of these fronts, the one most worth watching: something working beats something
  * about to move, and between equals the freshest news wins. */
 function pickBest(
@@ -329,25 +355,18 @@ function pickBest(
   now: number,
 ): number | null {
   let best: RunFront | null = null;
-  let bestRank = -1;
+  let bestRank = 0;
 
   for (const front of fronts) {
-    const outlook = frontOutlook(state, front.id, now);
-    const rank = outlook.running > 0 ? 2 : outlook.advancing ? 1 : 0;
+    const rank = frontRank(state, front, now);
     if (rank === 0) continue;
+    if (best !== null && !outranks(rank, front, bestRank, best)) continue;
 
-    if (
-      rank > bestRank ||
-      (rank === bestRank &&
-        best !== null &&
-        front.lastEventAt > best.lastEventAt)
-    ) {
-      best = front;
-      bestRank = rank;
-    }
+    best = front;
+    bestRank = rank;
   }
 
-  return best?.id ?? null;
+  return best === null ? null : best.id;
 }
 
 /**
@@ -360,6 +379,38 @@ function pickBest(
  * ancestor is often the blocked front itself — every branch of a diamond descends
  * from the same node.
  */
+/**
+ * One layer of the upstream walk: a node the run has shown contributes its front
+ * as a candidate, and one it has not queues its own parents for the next layer.
+ */
+function walkUpstream(
+  state: RunFrontsState,
+  edge: readonly string[],
+  visited: Set<string>,
+  candidates: Set<number>,
+  excluded: number | null,
+): string[] {
+  const next: string[] = [];
+
+  for (const nodeId of edge) {
+    const record = state.nodes.get(nodeId);
+    if (record) {
+      const id = resolveFrontId(state, record.frontId);
+      if (id !== excluded) candidates.add(id);
+      // Shown, so the answer is here or nowhere: walking past it would only find
+      // its ancestors, which are further from the join rather than closer.
+      continue;
+    }
+    for (const parentId of state.predecessors.get(nodeId) ?? []) {
+      if (visited.has(parentId)) continue;
+      visited.add(parentId);
+      next.push(parentId);
+    }
+  }
+
+  return next;
+}
+
 export function causalFront(
   state: RunFrontsState,
   waitingFor: readonly string[],
@@ -376,25 +427,7 @@ export function causalFront(
     walked < CAUSE_WALK_LIMIT && edge.length > 0;
     walked += edge.length
   ) {
-    const next: string[] = [];
-
-    for (const nodeId of edge) {
-      const record = state.nodes.get(nodeId);
-      if (record) {
-        const id = resolveFrontId(state, record.frontId);
-        if (id !== excluded) candidates.add(id);
-        // Shown, so the answer is here or nowhere: walking past it would only find
-        // its ancestors, which are further from the join rather than closer.
-        continue;
-      }
-      for (const parentId of state.predecessors.get(nodeId) ?? []) {
-        if (visited.has(parentId)) continue;
-        visited.add(parentId);
-        next.push(parentId);
-      }
-    }
-
-    edge = next;
+    edge = walkUpstream(state, edge, visited, candidates, excluded);
   }
 
   return pickBest(
@@ -414,6 +447,62 @@ export function causalFront(
  * camera back. When it does change, the caller has a subject somewhere else
  * entirely, and plans a crane move to get there.
  */
+/** Whether the branch being watched still has something to offer — and has had
+ * the camera long enough for the question to even be asked. */
+function holdsCamera(
+  state: RunFrontsState,
+  outlook: RunFrontOutlook,
+  now: number,
+): boolean {
+  if (now - state.subjectSince < SUBJECT_MIN_MS) return true;
+
+  const handedBack = outlook.running === 0 && !outlook.advancing;
+  const outstayed =
+    outlook.running > 0 && now - outlook.lastEventAt >= SUBJECT_PATIENCE_MS;
+
+  return !handedBack && !outstayed;
+}
+
+/**
+ * Where the camera goes when the branch it is on has handed it back.
+ *
+ * Parked at a join: the branch it is waiting for is the one worth watching, and
+ * the graph says which that is. Otherwise, wherever the run is loudest.
+ */
+function handoffFrom(
+  state: RunFrontsState,
+  current: number,
+  outlook: RunFrontOutlook,
+  now: number,
+): number | null {
+  const preferred =
+    outlook.waitingFor.length > 0
+      ? causalFront(state, outlook.waitingFor, current, now)
+      : null;
+
+  return (
+    preferred ??
+    pickBest(
+      state,
+      aliveFronts(state).filter((front) => front.id !== current),
+      now,
+    )
+  );
+}
+
+/** Commit to a subject, starting its dwell now. */
+function commitSubject(
+  state: RunFrontsState,
+  next: number | null,
+  now: number,
+): number | null {
+  if (next === null) return null;
+
+  state.subject = next;
+  state.subjectSince = now;
+  return next;
+}
+
 export function chooseSubject(
   state: RunFrontsState,
   now: number,
@@ -424,45 +513,19 @@ export function chooseSubject(
   // already earned carries over rather than restarting.
   if (current !== state.subject) state.subject = current;
 
-  if (current !== null && state.fronts.has(current)) {
-    const outlook = frontOutlook(state, current, now);
-    const held = now - state.subjectSince;
-
-    const handedBack = outlook.running === 0 && !outlook.advancing;
-    const outstayed =
-      outlook.running > 0 && now - outlook.lastEventAt >= SUBJECT_PATIENCE_MS;
-
-    if (held < SUBJECT_MIN_MS || (!handedBack && !outstayed)) return current;
-
-    // Parked at a join: the branch it is waiting for is the one worth watching,
-    // and the graph says which that is. Otherwise, wherever the run is loudest.
-    const preferred =
-      outlook.waitingFor.length > 0
-        ? causalFront(state, outlook.waitingFor, current, now)
-        : null;
-    const next =
-      preferred ??
-      pickBest(
-        state,
-        aliveFronts(state).filter((front) => front.id !== current),
-        now,
-      );
-
-    // Nothing better on offer: stay, and rest here. Pulling back to frame a graph
-    // nobody is running is not an improvement on holding where it finished.
-    if (next === null || next === current) return current;
-
-    state.subject = next;
-    state.subjectSince = now;
-    return next;
+  if (current === null || !state.fronts.has(current)) {
+    return commitSubject(state, pickBest(state, aliveFronts(state), now), now);
   }
 
-  const first = pickBest(state, aliveFronts(state), now);
-  if (first === null) return null;
+  const outlook = frontOutlook(state, current, now);
+  if (holdsCamera(state, outlook, now)) return current;
 
-  state.subject = first;
-  state.subjectSince = now;
-  return first;
+  // Nothing better on offer: stay, and rest here. Pulling back to frame a graph
+  // nobody is running is not an improvement on holding where it finished.
+  const next = handoffFrom(state, current, outlook, now);
+  if (next === null || next === current) return current;
+
+  return commitSubject(state, next, now);
 }
 
 /**

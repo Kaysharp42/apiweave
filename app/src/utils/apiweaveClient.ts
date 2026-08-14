@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- `apiweave` is the renderer half of the IPC registry that `core/ipc/handlers/**` (already ignored for the same reason) is the main-process half of. Every namespace on it is the same three lines by construction — name the channel, name the method, forward the arguments to `invoke` — so any namespace gained clones every other one. There is no behaviour to share: the repetition *is* the typed surface.
 import { createApiweaveClient } from "@shared/contract/client";
 import type {
   ContractErrorCode,

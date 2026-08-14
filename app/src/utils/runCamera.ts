@@ -57,6 +57,7 @@ import type { CameraViewport } from "../types/CameraViewport";
  * between them was the oscillation: every zoom the camera chose in that band was
  * rejected as unreadable the next time it looked.
  */
+// fallow-ignore-next-line code-duplication -- the "clone" here is one run of documented tuning constants matching another: `export const NAME = <number>;` under a paragraph explaining the number. There is no behaviour in common to extract, and collapsing them into a table would cost each constant the explanation that is the reason it can be trusted.
 export const MIN_READABLE_ZOOM = 0.45;
 
 /** Where the camera zooms to when it has to choose for itself, because the view
@@ -667,6 +668,271 @@ export function planCrossing(
   };
 }
 
+/**
+ * The zoom the run is watched at, which may only be lowered, and only after the
+ * subject has genuinely failed to fit for a while. Frozen mid-crossing, where
+ * what is on screen is the trip rather than the subject.
+ */
+function nextWorkZoom(
+  motion: CameraMotion,
+  focus: CameraFocus | null,
+  viewport: CameraViewport,
+  stepMs: number,
+): { workZoom: number; crampedMs: number } {
+  if (!focus || motion.crossing) {
+    return { workZoom: motion.workZoom, crampedMs: motion.crampedMs };
+  }
+
+  const required = fitZoomFor(focus, viewport);
+  if (required * ZOOM_OUT_SLACK >= motion.workZoom) {
+    return { workZoom: motion.workZoom, crampedMs: 0 };
+  }
+
+  const crampedMs = motion.crampedMs + stepMs;
+  if (crampedMs < ZOOM_OUT_DWELL_MS) {
+    return { workZoom: motion.workZoom, crampedMs };
+  }
+
+  return { workZoom: stepZoomTarget(motion.workZoom, required), crampedMs: 0 };
+}
+
+/**
+ * The crossing still in flight, if it is.
+ *
+ * A crossing ends on arrival rather than on a clock, and arrival is measured at
+ * the crossing's own zoom: the push back in overlaps the last of the pan, which
+ * is what fuses the three phases into one gesture.
+ */
+function liveCrossing(
+  motion: CameraMotion,
+  mark: CameraFraming | null,
+): CameraMotion["crossing"] {
+  const crossing = motion.crossing;
+  if (!crossing) return null;
+  if (!mark) return null;
+
+  const away = Math.hypot(mark.x - motion.x, mark.y - motion.y);
+  return away <= crossing.settleWithin ? null : crossing;
+}
+
+/** Where the camera is aiming, and whether it is correcting at all. */
+interface CameraAim {
+  readonly engagedX: boolean;
+  readonly engagedY: boolean;
+  readonly aimBiasX: number;
+  readonly aimBiasY: number;
+  readonly aimX: number;
+  readonly aimY: number;
+}
+
+/**
+ * One axis of the deadzone latch: engaged when the action leaves the deadzone,
+ * released only once it is back near the mark this correction chose.
+ *
+ * A fresh correction picks that mark past the action, against the direction it
+ * left in; an engaged axis keeps the one it has.
+ */
+function axisLatch(
+  engaged: boolean,
+  bias: number,
+  offset: number,
+  deadzoneHalf: number,
+): { engaged: boolean; bias: number } {
+  if (Math.abs(offset) > deadzoneHalf) {
+    return {
+      engaged: true,
+      bias: engaged ? bias : -Math.sign(offset) * AIM_LEAD * deadzoneHalf,
+    };
+  }
+
+  if (engaged && Math.abs(offset - bias) <= deadzoneHalf * DEADZONE_RELEASE) {
+    return { engaged: false, bias: 0 };
+  }
+
+  return { engaged, bias };
+}
+
+/**
+ * Following: latched per axis, so a correction runs to completion rather than
+ * stopping the instant it has done enough, and so following the run sideways does
+ * not also drive the picture up and down. An axis that is not correcting aims at
+ * where it already is — which is not the same as freezing, because the spring
+ * keeps its momentum and eases the last of it away.
+ */
+function followAim(
+  motion: CameraMotion,
+  focus: CameraFocus,
+  viewport: CameraViewport,
+  zoomTarget: number,
+): CameraAim {
+  const usable = usableSize(viewport);
+  const centred = framingFor(focus, viewport, zoomTarget);
+  const offX = (focus.x - motion.x) * motion.zoom;
+  const offY = (focus.y - motion.y) * motion.zoom - centreShiftPx(viewport);
+
+  const x = axisLatch(
+    motion.engagedX,
+    motion.aimBiasX,
+    offX,
+    deadzoneHalfPx(usable.width, focus.width * motion.zoom),
+  );
+  const y = axisLatch(
+    motion.engagedY,
+    motion.aimBiasY,
+    offY,
+    deadzoneHalfPx(usable.height, focus.height * motion.zoom),
+  );
+
+  return {
+    engagedX: x.engaged,
+    engagedY: y.engaged,
+    aimBiasX: x.bias,
+    aimBiasY: y.bias,
+    aimX: x.engaged ? centred.x - x.bias / zoomTarget : motion.x,
+    aimY: y.engaged ? centred.y - y.bias / zoomTarget : motion.y,
+  };
+}
+
+/** Crossing: one move, one mark, both axes — the deadzone is about staying still
+ * where you are, and this is the case where staying is not on offer. */
+function crossingAim(mark: CameraFraming): CameraAim {
+  return {
+    engagedX: true,
+    engagedY: true,
+    aimBiasX: 0,
+    aimBiasY: 0,
+    aimX: mark.x,
+    aimY: mark.y,
+  };
+}
+
+/** Nothing to look at: hold position and let the springs run out. */
+function idleAim(motion: CameraMotion): CameraAim {
+  return {
+    engagedX: false,
+    engagedY: false,
+    aimBiasX: 0,
+    aimBiasY: 0,
+    aimX: motion.x,
+    aimY: motion.y,
+  };
+}
+
+/**
+ * The pan for one frame, speed-capped in screen terms so the limit means the same
+ * thing at every zoom; the step and the velocity are scaled together so the spring
+ * stays consistent with itself on the frame after. A crossing is allowed to be
+ * brisker than a following pan, because nobody is reading the canvas during one.
+ */
+function integratePan(
+  motion: CameraMotion,
+  aim: CameraAim,
+  viewport: CameraViewport,
+  crossing: CameraMotion["crossing"],
+  dt: number,
+): { x: number; y: number; vx: number; vy: number } {
+  const nextX = criticallyDamped(motion.x, motion.vx, aim.aimX, PAN_OMEGA, dt);
+  const nextY = criticallyDamped(motion.y, motion.vy, aim.aimY, PAN_OMEGA, dt);
+
+  const maxScreensPerS = crossing
+    ? CROSS_PAN_SCREENS_PER_S
+    : MAX_PAN_SCREENS_PER_S;
+  const maxSpeed =
+    (maxScreensPerS * screenDiagonalPx(viewport)) / Math.max(motion.zoom, 1e-6);
+  const stepped = Math.hypot(
+    nextX.position - motion.x,
+    nextY.position - motion.y,
+  );
+  if (stepped <= maxSpeed * dt || stepped <= 0) {
+    return {
+      x: nextX.position,
+      y: nextY.position,
+      vx: nextX.velocity,
+      vy: nextY.velocity,
+    };
+  }
+
+  const scale = (maxSpeed * dt) / stepped;
+  const speed = Math.hypot(nextX.velocity, nextY.velocity);
+  const slow = speed > maxSpeed ? maxSpeed / speed : 1;
+
+  return {
+    x: motion.x + (nextX.position - motion.x) * scale,
+    y: motion.y + (nextY.position - motion.y) * scale,
+    vx: nextX.velocity * slow,
+    vy: nextY.velocity * slow,
+  };
+}
+
+/** The zoom for one frame. Zoom travels in octaves, which is the scale the eye
+ * judges it on: halving and doubling are the same size of change. */
+function integrateZoom(
+  motion: CameraMotion,
+  zoomTarget: number,
+  dt: number,
+): { zoom: number; vZoom: number } {
+  const octaves = Math.log2(Math.max(motion.zoom, 1e-6));
+  const next = criticallyDamped(
+    octaves,
+    motion.vZoom,
+    Math.log2(zoomTarget),
+    ZOOM_OMEGA,
+    dt,
+  );
+
+  const maxOctaves = MAX_ZOOM_OCTAVES_PER_S * dt;
+  if (Math.abs(next.position - octaves) <= maxOctaves) {
+    return { zoom: Math.pow(2, next.position), vZoom: next.velocity };
+  }
+
+  return {
+    zoom: Math.pow(
+      2,
+      octaves + Math.sign(next.position - octaves) * maxOctaves,
+    ),
+    vZoom:
+      Math.sign(next.velocity) *
+      Math.min(Math.abs(next.velocity), MAX_ZOOM_OCTAVES_PER_S),
+  };
+}
+
+/**
+ * Motion is not wanted at all: arrive, and be still.
+ *
+ * The only jump left in the model, and the only one anybody asked for — so it goes
+ * straight to the framing the run is watched at, and a crossing it interrupts is
+ * simply over.
+ */
+function landImmediately(
+  motion: CameraMotion,
+  focus: CameraFocus | null,
+  viewport: CameraViewport,
+  aim: CameraAim,
+  workZoom: number,
+  crampedMs: number,
+): CameraMotion {
+  const landed =
+    focus && (aim.engagedX || aim.engagedY)
+      ? framingFor(focus, viewport, workZoom)
+      : { x: motion.x, y: motion.y };
+
+  return {
+    x: landed.x,
+    y: landed.y,
+    zoom: workZoom,
+    vx: 0,
+    vy: 0,
+    vZoom: 0,
+    engagedX: false,
+    engagedY: false,
+    workZoom,
+    crossing: null,
+    crampedMs,
+    aimBiasX: 0,
+    aimBiasY: 0,
+  };
+}
+
 /** One frame of camera. Pure: the same state and input always produce the same
  * next state, which is what makes a whole run replayable in a test. */
 export function stepCamera(
@@ -678,199 +944,44 @@ export function stepCamera(
 ): CameraMotion {
   const stepMs = Math.min(MAX_FRAME_MS, Math.max(0, dtMs));
   const dt = stepMs / 1000;
-  const usable = usableSize(viewport);
-  const screen = screenDiagonalPx(viewport);
+  const { workZoom, crampedMs } = nextWorkZoom(motion, focus, viewport, stepMs);
 
-  // The zoom the run is watched at, which may only be lowered, and only after the
-  // subject has genuinely failed to fit for a while. Frozen mid-crossing, where
-  // what is on screen is the trip rather than the subject.
-  let workZoom = motion.workZoom;
-  let crampedMs = motion.crampedMs;
-  if (focus && !motion.crossing) {
-    const required = fitZoomFor(focus, viewport);
-    if (required * ZOOM_OUT_SLACK < workZoom) {
-      crampedMs += stepMs;
-      if (crampedMs >= ZOOM_OUT_DWELL_MS) {
-        workZoom = stepZoomTarget(workZoom, required);
-        crampedMs = 0;
-      }
-    } else {
-      crampedMs = 0;
-    }
-  }
-
-  // A crossing ends on arrival rather than on a clock, and arrival is measured at
-  // the crossing's own zoom: the push back in overlaps the last of the pan, which
-  // is what fuses the three phases into one gesture.
-  //
   // The mark is the framing at the *working* zoom throughout, not at the crossing
   // zoom. The two differ by the inset shift, which in flow units is large while
   // zoomed out, so aiming at the wide framing would land the camera somewhere it
   // then had to correct away from once the zoom came back. This way the crossing
   // converges on the exact position the run will be watched from, and the push-in
   // has nothing to do but zoom.
-  let crossing = motion.crossing;
   const mark = focus ? framingFor(focus, viewport, workZoom) : null;
-  if (crossing) {
-    if (!mark) {
-      crossing = null;
-    } else if (
-      Math.hypot(mark.x - motion.x, mark.y - motion.y) <= crossing.settleWithin
-    ) {
-      crossing = null;
-    }
-  }
-
+  const crossing = liveCrossing(motion, mark);
   const zoomTarget = crossing ? crossing.zoom : workZoom;
 
-  // Whether it is correcting, and if so where to. Latched per axis, so a
-  // correction runs to completion rather than stopping the instant it has done
-  // enough, and so following the run sideways does not also drive the picture up
-  // and down.
-  let engagedX = motion.engagedX;
-  let engagedY = motion.engagedY;
-  let aimBiasX = motion.aimBiasX;
-  let aimBiasY = motion.aimBiasY;
-  // Not correcting means aiming at where it already is, which is not the same as
-  // freezing: the spring keeps its momentum and eases the last of it away.
-  let aimX = motion.x;
-  let aimY = motion.y;
+  let aim: CameraAim;
+  if (mark && crossing) aim = crossingAim(mark);
+  else if (focus) aim = followAim(motion, focus, viewport, zoomTarget);
+  else aim = idleAim(motion);
 
-  if (mark && crossing) {
-    // One move, one mark, both axes: the deadzone is about staying still where you
-    // are, and this is the case where staying is not on offer.
-    engagedX = true;
-    engagedY = true;
-    aimBiasX = 0;
-    aimBiasY = 0;
-    aimX = mark.x;
-    aimY = mark.y;
-  } else if (focus) {
-    const centred = framingFor(focus, viewport, zoomTarget);
-    const offX = (focus.x - motion.x) * motion.zoom;
-    const offY = (focus.y - motion.y) * motion.zoom - centreShiftPx(viewport);
-    const dzX = deadzoneHalfPx(usable.width, focus.width * motion.zoom);
-    const dzY = deadzoneHalfPx(usable.height, focus.height * motion.zoom);
-
-    if (Math.abs(offX) > dzX) {
-      // A fresh correction picks its mark: past the action, against the direction
-      // it left in.
-      if (!engagedX) aimBiasX = -Math.sign(offX) * AIM_LEAD * dzX;
-      engagedX = true;
-    } else if (
-      engagedX &&
-      Math.abs(offX - aimBiasX) <= dzX * DEADZONE_RELEASE
-    ) {
-      engagedX = false;
-      aimBiasX = 0;
-    }
-
-    if (Math.abs(offY) > dzY) {
-      if (!engagedY) aimBiasY = -Math.sign(offY) * AIM_LEAD * dzY;
-      engagedY = true;
-    } else if (
-      engagedY &&
-      Math.abs(offY - aimBiasY) <= dzY * DEADZONE_RELEASE
-    ) {
-      engagedY = false;
-      aimBiasY = 0;
-    }
-
-    if (engagedX) aimX = centred.x - aimBiasX / zoomTarget;
-    if (engagedY) aimY = centred.y - aimBiasY / zoomTarget;
-  } else {
-    engagedX = false;
-    engagedY = false;
-    aimBiasX = 0;
-    aimBiasY = 0;
-  }
-
-  // Motion is not wanted at all: arrive, and be still. The only jump left in the
-  // model, and the only one anybody asked for — so it goes straight to the framing
-  // the run is watched at, and a crossing it interrupts is simply over.
   if (reducedMotion) {
-    const landed =
-      focus && (engagedX || engagedY)
-        ? framingFor(focus, viewport, workZoom)
-        : { x: motion.x, y: motion.y };
-
-    return {
-      x: landed.x,
-      y: landed.y,
-      zoom: workZoom,
-      vx: 0,
-      vy: 0,
-      vZoom: 0,
-      engagedX: false,
-      engagedY: false,
-      workZoom,
-      crossing: null,
-      crampedMs,
-      aimBiasX: 0,
-      aimBiasY: 0,
-    };
+    return landImmediately(motion, focus, viewport, aim, workZoom, crampedMs);
   }
 
-  const nextX = criticallyDamped(motion.x, motion.vx, aimX, PAN_OMEGA, dt);
-  const nextY = criticallyDamped(motion.y, motion.vy, aimY, PAN_OMEGA, dt);
-
-  // Pan speed is capped in screen terms, so the limit means the same thing at
-  // every zoom; the step and the velocity are scaled together so the spring
-  // stays consistent with itself on the frame after. A crossing is allowed to be
-  // brisker than a following pan, because nobody is reading the canvas during one.
-  let x = nextX.position;
-  let y = nextY.position;
-  let vx = nextX.velocity;
-  let vy = nextY.velocity;
-  const maxScreensPerS = crossing
-    ? CROSS_PAN_SCREENS_PER_S
-    : MAX_PAN_SCREENS_PER_S;
-  const maxSpeed = (maxScreensPerS * screen) / Math.max(motion.zoom, 1e-6);
-  const stepped = Math.hypot(x - motion.x, y - motion.y);
-  if (stepped > maxSpeed * dt && stepped > 0) {
-    const scale = (maxSpeed * dt) / stepped;
-    x = motion.x + (x - motion.x) * scale;
-    y = motion.y + (y - motion.y) * scale;
-    const speed = Math.hypot(vx, vy);
-    if (speed > maxSpeed) {
-      vx = (vx * maxSpeed) / speed;
-      vy = (vy * maxSpeed) / speed;
-    }
-  }
-
-  // Zoom travels in octaves, which is the scale the eye judges it on: halving
-  // and doubling are the same size of change.
-  const octaves = Math.log2(Math.max(motion.zoom, 1e-6));
-  const nextZoom = criticallyDamped(
-    octaves,
-    motion.vZoom,
-    Math.log2(zoomTarget),
-    ZOOM_OMEGA,
-    dt,
-  );
-  let zoomOctaves = nextZoom.position;
-  let vZoom = nextZoom.velocity;
-  const maxOctaves = MAX_ZOOM_OCTAVES_PER_S * dt;
-  if (Math.abs(zoomOctaves - octaves) > maxOctaves) {
-    zoomOctaves = octaves + Math.sign(zoomOctaves - octaves) * maxOctaves;
-    vZoom =
-      Math.sign(vZoom) * Math.min(Math.abs(vZoom), MAX_ZOOM_OCTAVES_PER_S);
-  }
+  const pan = integratePan(motion, aim, viewport, crossing, dt);
+  const zoom = integrateZoom(motion, zoomTarget, dt);
 
   return {
-    x,
-    y,
-    zoom: Math.pow(2, zoomOctaves),
-    vx,
-    vy,
-    vZoom,
-    engagedX,
-    engagedY,
+    x: pan.x,
+    y: pan.y,
+    zoom: zoom.zoom,
+    vx: pan.vx,
+    vy: pan.vy,
+    vZoom: zoom.vZoom,
+    engagedX: aim.engagedX,
+    engagedY: aim.engagedY,
     workZoom,
     crossing,
     crampedMs,
-    aimBiasX,
-    aimBiasY,
+    aimBiasX: aim.aimBiasX,
+    aimBiasY: aim.aimBiasY,
   };
 }
 

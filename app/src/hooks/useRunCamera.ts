@@ -113,6 +113,85 @@ function wasWrittenHere(live: Viewport, written: readonly Viewport[]): boolean {
   );
 }
 
+/** The subject's nodes, ordered the way the aim wants them: live work first, and
+ * within each the most recent news. */
+function orderedSeen(
+  fronts: RunFrontsState,
+  nodeIds: readonly string[],
+): { nodeId: string; record: SeenRunNode }[] {
+  return nodeIds
+    .map((nodeId) => ({ nodeId, record: fronts.nodes.get(nodeId) }))
+    .filter(
+      (entry): entry is { nodeId: string; record: SeenRunNode } =>
+        entry.record !== undefined,
+    )
+    .sort((a, b) => {
+      if (a.record.running !== b.record.running) {
+        return a.record.running ? -1 : 1;
+      }
+      return b.record.seq - a.record.seq;
+    });
+}
+
+/** Where a node is on the canvas, or null when there is nothing to point at:
+ * deleted mid-run, or not in this canvas at all (a sub-workflow's node arriving
+ * on the parent's stream). */
+function attentionPointFor(
+  node: Node | undefined,
+  record: SeenRunNode,
+): AttentionPoint | null {
+  const position = node?.positionAbsolute ?? node?.position;
+  if (!node || !position) return null;
+
+  return {
+    x: position.x,
+    y: position.y,
+    // ReactFlow fills these in once it has measured; a node still waiting for its
+    // first `dimensions` change gets the layout's own guess.
+    width: node.width ?? NODE_FALLBACK_WIDTH,
+    height: node.height ?? NODE_FALLBACK_HEIGHT,
+    running: record.running,
+    since: record.since,
+  };
+}
+
+/**
+ * What the camera is attending to on the subject branch, newest first.
+ *
+ * Only the subject's nodes. That restriction is the fix for the defect this
+ * replaced: with every branch in here, any weighting scheme re-picked a winner
+ * whenever a different branch reported, and the aim jumped between them at the
+ * event rate. Live work outranks finished work, and within each the most recent
+ * news comes first, so `points[0]` is where the branch is now.
+ */
+function attentionPoints(
+  fronts: RunFrontsState,
+  subject: number | null,
+  nodes: readonly Node[],
+  now: number,
+): AttentionPoint[] {
+  const front = liveFront(fronts, subject);
+  if (!front) return [];
+
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const points: AttentionPoint[] = [];
+
+  for (const { nodeId, record } of orderedSeen(fronts, front.nodeIds)) {
+    if (points.length >= ATTENTION_POINTS_MAX) break;
+
+    // Long finished and far outweighed by anything live: keeping it would only
+    // cost arithmetic. The first entry is always kept, because with nothing
+    // running it is the only thing left to look at.
+    const faded = !record.running && now - record.since > ATTENTION_WINDOW_MS;
+    if (points.length > 0 && faded) continue;
+
+    const point = attentionPointFor(byId.get(nodeId), record);
+    if (point) points.push(point);
+  }
+
+  return points;
+}
+
 function readViewportBox(element: HTMLElement | null): CameraViewport | null {
   if (!element) return null;
 
@@ -128,6 +207,143 @@ function readViewportBox(element: HTMLElement | null): CameraViewport | null {
     // occupies is derived the same way `CanvasActionsBottom` derives its own.
     insetBottom: MiniMapSize.height + CanvasCornerGutter * 2,
   };
+}
+
+/** A loop that stopped has no idea how long it was away, so it starts its clock
+ * fresh rather than integrating the whole gap as one step. */
+function elapsedSince(lastFrameAt: number, now: number): number {
+  return lastFrameAt > 0 ? now - lastFrameAt : 0;
+}
+
+/**
+ * The camera's state for this frame, or null when the live transform is not one
+ * the camera wrote.
+ *
+ * Null is the user having taken over: almost certainly the zoom or fit-view
+ * buttons on ReactFlow's controls, which pass no source event and so never reach
+ * `onMoveStart` — but whatever it was, it was not the camera, and the rule is
+ * that the camera loses. The opening frame has no state to carry, and adopts the
+ * live transform rather than assuming one: the camera is taking over from the
+ * user, who may have left the canvas anywhere.
+ */
+function frameMotion(
+  live: Viewport,
+  box: CameraViewport,
+  motionRef: MutableRefObject<CameraMotion | null>,
+  writtenRef: MutableRefObject<Viewport[]>,
+  engageRef: MutableRefObject<boolean>,
+): CameraMotion | null {
+  const carried = motionRef.current;
+  if (carried) {
+    return wasWrittenHere(live, writtenRef.current) ? carried : null;
+  }
+
+  writtenRef.current = [live];
+  const adopted = adoptCamera(live, box, engageRef.current);
+  engageRef.current = false;
+  return adopted;
+}
+
+/** One frame of camera: choose the branch, aim at it, plan a crane move if the
+ * branch changed, and step the springs. */
+function integrateFrame(
+  motion: CameraMotion,
+  box: CameraViewport,
+  fronts: RunFrontsState,
+  now: number,
+  elapsed: number,
+  points: (subject: number | null, now: number) => AttentionPoint[],
+  subjectRef: MutableRefObject<number | null>,
+): CameraMotion {
+  const subject = chooseSubject(fronts, now);
+  const focus = attentionFocus(
+    points(subject, now),
+    now,
+    attentionRadius(box, motion.zoom),
+    lookingAt(motion, box),
+  );
+
+  // The branch changed — either a handoff, or the opening move of a run, which
+  // is the same problem: the camera is here and the thing to watch is there. A
+  // short trip stays a pan; a long one becomes a crane move.
+  let aimed = motion;
+  if (subject !== subjectRef.current) {
+    subjectRef.current = subject;
+    aimed = planCrossing(motion, focus, box);
+  }
+
+  return stepCamera(aimed, focus, box, elapsed, prefersReducedMotion());
+}
+
+/**
+ * Moving, as a fact the canvas can render from: true for the whole of a burst of
+ * motion, false while the camera waits. Flipped on the camera's own frames, so it
+ * changes at the edges of motion rather than sixty times a second.
+ */
+function noteMoving(
+  motion: CameraMotion,
+  movingRef: MutableRefObject<boolean>,
+  setMoving: (moving: boolean) => void,
+): void {
+  const moving = !isAtRest(motion);
+  if (movingRef.current === moving) return;
+
+  movingRef.current = moving;
+  setMoving(moving);
+}
+
+/** Write the transform, unless it is invisibly close to the last one: sub-pixel
+ * changes are invisible and a `setViewport` is not free, so the tail of every
+ * ease-out costs nothing. Returns the transforms now known to be the camera's. */
+function writeViewport(
+  instance: RunCameraInstance,
+  next: Viewport,
+  written: readonly Viewport[],
+): Viewport[] {
+  const [last] = written;
+  if (
+    last &&
+    Math.abs(next.x - last.x) <= 0.25 &&
+    Math.abs(next.y - last.y) <= 0.25 &&
+    Math.abs(next.zoom - last.zoom) <= 0.0002
+  ) {
+    return [...written];
+  }
+
+  instance.setViewport(next);
+  return [next, ...written].slice(0, 4);
+}
+
+/** Nothing left to integrate: the motion has stopped, and — unless the run is
+ * over, where only the last of the motion was owed — nothing is still fading out
+ * of the aim. */
+function hasArrived(
+  motion: CameraMotion,
+  fronts: RunFrontsState,
+  now: number,
+  ending: boolean,
+): boolean {
+  if (!isAtRest(motion)) return false;
+  return ending || frontsSettled(fronts, now, ATTENTION_WINDOW_MS);
+}
+
+/**
+ * The timer for the one decision that has no event coming to prompt it: leaving
+ * a branch that is working but has gone quiet. Everything else waits for the run.
+ */
+function scheduleHandoff(
+  fronts: RunFrontsState,
+  now: number,
+  wakeRef: MutableRefObject<ReturnType<typeof setTimeout> | null>,
+  schedule: () => void,
+): void {
+  const wakeAt = nextHandoffAt(fronts, now);
+  if (wakeAt === null) return;
+
+  wakeRef.current = setTimeout(() => {
+    wakeRef.current = null;
+    schedule();
+  }, Math.max(MIN_WAKE_MS, wakeAt - now));
 }
 
 /**
@@ -155,6 +371,7 @@ function readViewportBox(element: HTMLElement | null): CameraViewport | null {
  * frames at all; the one decision that has no event to prompt it, handing off from
  * a branch that has gone quiet, gets a timer instead of a spin.
  */
+// fallow-ignore-next-line complexity -- every point of this score is hook-density: one per ref or callback declaration, and the hook's own cyclomatic complexity is 1. The refs are the camera's state (following, suspended, ending, the motion, the fronts, the frame and wake handles), and every decision made from them lives in the pure module-level functions above, in `utils/runCamera` and in `utils/runFronts`. Collapsing them into one record would move the same state behind a second name without removing a branch.
 export default function useRunCamera({
   instanceRef,
   nodesRef,
@@ -221,71 +438,13 @@ export default function useRunCamera({
     }
   }, []);
 
-  /**
-   * What the camera is attending to on the subject branch, newest first.
-   *
-   * Only the subject's nodes. That restriction is the fix for the defect this
-   * replaced: with every branch in here, any weighting scheme re-picked a winner
-   * whenever a different branch reported, and the aim jumped between them at the
-   * event rate. Live work outranks finished work, and within each the most recent
-   * news comes first, so `points[0]` is where the branch is now.
-   */
+  /** The subject branch's attention set, read off the live canvas nodes. */
   const collectPoints = useCallback(
     (subject: number | null, now: number): AttentionPoint[] => {
       const fronts = frontsRef.current;
-      const front = fronts ? liveFront(fronts, subject) : null;
-      if (!fronts || !front) return [];
+      if (!fronts) return [];
 
-      const byId = new Map(nodesRef.current.map((node) => [node.id, node]));
-      const ordered = front.nodeIds
-        .map((nodeId) => ({ nodeId, record: fronts.nodes.get(nodeId) }))
-        .filter(
-          (entry): entry is { nodeId: string; record: SeenRunNode } =>
-            entry.record !== undefined,
-        )
-        .sort((a, b) => {
-          if (a.record.running !== b.record.running) {
-            return a.record.running ? -1 : 1;
-          }
-          return b.record.seq - a.record.seq;
-        });
-
-      const points: AttentionPoint[] = [];
-      for (const { nodeId, record } of ordered) {
-        if (points.length >= ATTENTION_POINTS_MAX) break;
-
-        // Long finished and far outweighed by anything live: keeping it would
-        // only cost arithmetic. The first entry is always kept, because with
-        // nothing running it is the only thing left to look at.
-        if (
-          points.length > 0 &&
-          !record.running &&
-          now - record.since > ATTENTION_WINDOW_MS
-        ) {
-          continue;
-        }
-
-        const node = byId.get(nodeId);
-        // Deleted mid-run, or not in this canvas at all (a sub-workflow's node
-        // arriving on the parent's stream) — nothing to point at.
-        if (!node) continue;
-
-        const position = node.positionAbsolute ?? node.position;
-        if (!position) continue;
-
-        points.push({
-          x: position.x,
-          y: position.y,
-          // ReactFlow fills these in once it has measured; a node still waiting
-          // for its first `dimensions` change gets the layout's own guess.
-          width: node.width ?? NODE_FALLBACK_WIDTH,
-          height: node.height ?? NODE_FALLBACK_HEIGHT,
-          running: record.running,
-          since: record.since,
-        });
-      }
-
-      return points;
+      return attentionPoints(fronts, subject, nodesRef.current, now);
     },
     [nodesRef],
   );
@@ -318,6 +477,20 @@ export default function useRunCamera({
     setIsCameraMoving(false);
   }, [cancelFrame]);
 
+  /** Ask for a frame if one is not already coming. Goes through `stepRef` so the
+   * loop and the things that restart it are not defined in terms of each other. */
+  const schedule = useCallback(() => {
+    if (!followingRef.current || suspendedRef.current) return;
+    if (frameRef.current !== null) return;
+    if (wakeRef.current !== null) {
+      clearTimeout(wakeRef.current);
+      wakeRef.current = null;
+    }
+
+    lastFrameAtRef.current = 0;
+    frameRef.current = requestAnimationFrame(() => stepRef.current());
+  }, []);
+
   const step = useCallback(() => {
     frameRef.current = null;
     if (!followingRef.current || suspendedRef.current) return;
@@ -335,121 +508,55 @@ export default function useRunCamera({
       return;
     }
 
-    const elapsed =
-      lastFrameAtRef.current > 0 ? now - lastFrameAtRef.current : 0;
+    const elapsed = elapsedSince(lastFrameAtRef.current, now);
     lastFrameAtRef.current = now;
 
-    const live = instance.getViewport();
-
-    let motion = motionRef.current;
-    if (!motion) {
-      // Adopting the live transform rather than assuming one: the camera is
-      // taking over from the user, who may have left the canvas anywhere.
-      motion = adoptCamera(live, box, engageRef.current);
-      writtenRef.current = [live];
-      engageRef.current = false;
-    } else if (!wasWrittenHere(live, writtenRef.current)) {
-      // Someone else moved it. Almost certainly the zoom or fit-view buttons on
-      // ReactFlow's controls, which pass no source event and so never reach
-      // `onMoveStart` — but whatever it was, it was not the camera, and the rule
-      // is that the camera loses.
+    const carried = frameMotion(
+      instance.getViewport(),
+      box,
+      motionRef,
+      writtenRef,
+      engageRef,
+    );
+    if (!carried) {
       suspend();
       return;
     }
 
-    const subject = chooseSubject(fronts, now);
-    const focus = attentionFocus(
-      collectPoints(subject, now),
+    const motion = integrateFrame(
+      carried,
+      box,
+      fronts,
       now,
-      attentionRadius(box, motion.zoom),
-      lookingAt(motion, box),
+      elapsed,
+      collectPoints,
+      subjectRef,
+    );
+    motionRef.current = motion;
+    noteMoving(motion, movingRef, setIsCameraMoving);
+    writtenRef.current = writeViewport(
+      instance,
+      transformOf(motion, box),
+      writtenRef.current,
     );
 
-    // The branch changed — either a handoff, or the opening move of a run, which
-    // is the same problem: the camera is here and the thing to watch is there. A
-    // short trip stays a pan; a long one becomes a crane move.
-    if (subject !== subjectRef.current) {
-      subjectRef.current = subject;
-      motion = planCrossing(motion, focus, box);
-    }
-
-    motion = stepCamera(motion, focus, box, elapsed, prefersReducedMotion());
-    motionRef.current = motion;
-
-    // Moving, as a fact the canvas can render from: true for the whole of a
-    // burst of motion, false while the camera waits. Flipped here, on the
-    // camera's own frames, so it changes at the edges of motion rather than
-    // sixty times a second.
-    const moving = !isAtRest(motion);
-    if (movingRef.current !== moving) {
-      movingRef.current = moving;
-      setIsCameraMoving(moving);
-    }
-
-    const next = transformOf(motion, box);
-    const [written] = writtenRef.current;
-    // Sub-pixel changes are invisible and a `setViewport` is not free, so the
-    // tail of every ease-out costs nothing.
-    if (
-      !written ||
-      Math.abs(next.x - written.x) > 0.25 ||
-      Math.abs(next.y - written.y) > 0.25 ||
-      Math.abs(next.zoom - written.zoom) > 0.0002
-    ) {
-      writtenRef.current = [next, ...writtenRef.current].slice(0, 4);
-      instance.setViewport(next);
-    }
-
-    const done = endingRef.current
-      ? isAtRest(motion)
-      : isAtRest(motion) && frontsSettled(fronts, now, ATTENTION_WINDOW_MS);
-
-    if (done) {
+    if (hasArrived(motion, fronts, now, endingRef.current)) {
+      // The run is over and the last of the motion is spent: let go. Otherwise
+      // there is still a run to follow, and nothing to integrate until it says
+      // something — bar the one deadline no event will prompt.
       if (endingRef.current) {
         release();
         return;
       }
-
-      // Still following, but there is nothing to integrate. One decision has no
-      // event coming to prompt it — leaving a branch that is working but has gone
-      // quiet — so it gets a timer, and everything else waits for the run.
-      const wakeAt = nextHandoffAt(fronts, now);
-      if (wakeAt !== null) {
-        wakeRef.current = setTimeout(
-          () => {
-            wakeRef.current = null;
-            if (!followingRef.current || suspendedRef.current) return;
-            if (frameRef.current !== null) return;
-            lastFrameAtRef.current = 0;
-            frameRef.current = requestAnimationFrame(() => stepRef.current());
-          },
-          Math.max(MIN_WAKE_MS, wakeAt - now),
-        );
-      }
+      scheduleHandoff(fronts, now, wakeRef, schedule);
       return;
     }
 
     frameRef.current = requestAnimationFrame(step);
-  }, [collectPoints, containerRef, instanceRef, release, suspend]);
+  }, [collectPoints, containerRef, instanceRef, release, schedule, suspend]);
 
   useEffect(() => {
     stepRef.current = step;
-  }, [step]);
-
-  /** Ask for a frame if one is not already coming. */
-  const schedule = useCallback(() => {
-    if (!followingRef.current || suspendedRef.current) return;
-    if (frameRef.current !== null) return;
-    if (wakeRef.current !== null) {
-      clearTimeout(wakeRef.current);
-      wakeRef.current = null;
-    }
-
-    // A loop that stopped has no idea how long it was away, and a gap measured
-    // from the last frame of the last burst would be integrated as one long
-    // step. Start the clock fresh instead.
-    lastFrameAtRef.current = 0;
-    frameRef.current = requestAnimationFrame(step);
   }, [step]);
 
   const resume = useCallback(() => {

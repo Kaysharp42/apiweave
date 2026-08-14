@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
 import { select } from "d3-selection";
-import { Panel, useStore, useStoreApi } from "reactflow";
+import { Panel, useStore, useStoreApi, type Node } from "reactflow";
 import type { RunMiniMapProps } from "../types/RunMiniMapProps";
 import type { MinimapTransformView } from "../types/MinimapTransformView";
 import {
@@ -35,6 +35,9 @@ const DEFAULT_WIDTH = 200;
 const DEFAULT_HEIGHT = 150;
 const OFFSET_SCALE = 5;
 const ZOOM_STEP = 10;
+const NODE_RADIUS = 5;
+const DEFAULT_NODE_COLOR = "var(--aw-text-muted)";
+const DEFAULT_MASK_COLOR = "color-mix(in srgb, var(--aw-surface) 60%, transparent)";
 
 /** d3 reports delta in lines or pages as well as pixels; normalise to pixels. */
 function wheelDeltaPx(event: WheelEvent): number {
@@ -42,17 +45,30 @@ function wheelDeltaPx(event: WheelEvent): number {
   return event.deltaY * multiplier;
 }
 
+/** A colour knob is either one colour or one per node; the renderer only wants
+ * the second form. */
+function colorFn<TData>(
+  colour: string | ((node: Node<TData>) => string) | undefined,
+  fallback: string,
+): (node: Node<TData>) => string {
+  if (typeof colour === "function") return colour;
+  const fixed = colour ?? fallback;
+  return () => fixed;
+}
+
+/** Chrome draws the node rects faster with crisp edges, and at this scale the
+ * difference is invisible; everything else looks better without it. */
+function shapeRenderingFor(): "crispEdges" | "geometricPrecision" {
+  const chromium = typeof window === "undefined" || "chrome" in window;
+  return chromium ? "crispEdges" : "geometricPrecision";
+}
+
 export function RunMiniMap<TData>({
   nodes,
   frozen,
+  paint = {},
   position = "bottom-right",
   style,
-  className,
-  nodeColor = "var(--aw-text-muted)",
-  nodeStrokeColor = "transparent",
-  nodeStrokeWidth = 2,
-  nodeBorderRadius = 5,
-  maskColor = "color-mix(in srgb, var(--aw-surface) 60%, transparent)",
   zoomable = false,
   pannable = false,
 }: RunMiniMapProps<TData>) {
@@ -183,22 +199,15 @@ export function RunMiniMap<TData>({
     };
   }, [pannable, zoomable, store]);
 
-  const nodeColorFn =
-    typeof nodeColor === "function" ? nodeColor : () => nodeColor;
-  const nodeStrokeColorFn =
-    typeof nodeStrokeColor === "function"
-      ? nodeStrokeColor
-      : () => nodeStrokeColor;
-  const shapeRendering =
-    typeof window === "undefined" || "chrome" in window
-      ? "crispEdges"
-      : "geometricPrecision";
+  const nodeColorFn = colorFn(paint.nodeColor, DEFAULT_NODE_COLOR);
+  const nodeStrokeColorFn = colorFn(paint.nodeStrokeColor, "transparent");
+  const shapeRendering = shapeRenderingFor();
 
   return (
     <Panel
       position={position}
       style={style}
-      className={["react-flow__minimap", className].filter(Boolean).join(" ")}
+      className="react-flow__minimap"
       data-testid="rf__minimap"
     >
       <svg
@@ -215,13 +224,13 @@ export function RunMiniMap<TData>({
             className={`react-flow__minimap-node${rect.selected ? " selected" : ""}`}
             x={rect.x}
             y={rect.y}
-            rx={nodeBorderRadius}
-            ry={nodeBorderRadius}
+            rx={NODE_RADIUS}
+            ry={NODE_RADIUS}
             width={rect.width}
             height={rect.height}
             fill={nodeColorFn(node)}
             stroke={nodeStrokeColorFn(node)}
-            strokeWidth={nodeStrokeWidth}
+            strokeWidth={paint.nodeStrokeWidth ?? 2}
             shapeRendering={shapeRendering}
           />
         ))}
@@ -229,7 +238,7 @@ export function RunMiniMap<TData>({
           className="react-flow__minimap-mask"
           d={`M${x - offset},${y - offset}h${viewBoxWidth + offset * 2}v${viewBoxHeight + offset * 2}h${-(viewBoxWidth + offset * 2)}z
 M${viewBB.x},${viewBB.y}h${viewBB.width}v${viewBB.height}h${-viewBB.width}z`}
-          fill={maskColor}
+          fill={paint.maskColor ?? DEFAULT_MASK_COLOR}
           fillRule="evenodd"
           stroke="none"
           strokeWidth={1}

@@ -722,6 +722,73 @@ describe("three concurrent branches, tens of columns apart", () => {
     return events.sort((a, b) => a.at - b.at);
   }
 
+  type Event = { at: number; nodeId: string; status: string };
+
+  /** Everything due by `now`, and where the stream has got to. */
+  function drain(
+    events: readonly Event[],
+    from: number,
+    now: number,
+  ): { due: Event[]; next: number } {
+    const due: Event[] = [];
+    let next = from;
+
+    for (let event = events[next]; event && event.at <= now; event = events[next]) {
+      due.push(event);
+      next += 1;
+    }
+
+    return { due, next };
+  }
+
+  /** What the run of frames is being measured for. */
+  interface Meter {
+    biggestStepPx: number;
+    movingFrames: number;
+    verticalReversals: number;
+    heading: number;
+  }
+
+  function measureFrame(
+    meter: Meter,
+    previous: { x: number; y: number; zoom: number },
+    at: { x: number; y: number; zoom: number },
+  ): void {
+    const stepPx = Math.hypot(at.x - previous.x, at.y - previous.y) * at.zoom;
+    meter.biggestStepPx = Math.max(meter.biggestStepPx, stepPx);
+    if (stepPx > 0.5) meter.movingFrames += 1;
+
+    // A noise floor, so the last sub-pixel of an ease-out is not counted as the
+    // camera changing its mind.
+    const way = Math.sign(at.y - previous.y);
+    if (Math.abs(at.y - previous.y) <= 1 || way === 0) return;
+
+    if (meter.heading !== 0 && way !== meter.heading) {
+      meter.verticalReversals += 1;
+    }
+    meter.heading = way;
+  }
+
+  /**
+   * The row the camera is following, or -1 while that is unanswerable.
+   *
+   * The branch the camera is following is the one whose live front it can see.
+   * Early in the run the rows have not diverged yet and several are in frame at
+   * once, so the answer is genuinely nobody's: the caller carries the previous
+   * one forward rather than flipping a coin and counting the flip as a handoff.
+   */
+  function rowInFrame(now: number, at: { x: number; zoom: number }): number {
+    const visible = ROWS.flatMap((row, index) => {
+      const step = Math.min(PER_ROW - 1, Math.floor(now / row.beat));
+      const frontX = (step + 1) * PITCH + 140;
+      return Math.abs((frontX - at.x) * at.zoom) < CANVAS.width / 2
+        ? [index]
+        : [];
+    });
+
+    return visible.length === 1 ? visible[0]! : -1;
+  }
+
   function run() {
     const { nodes, edges } = buildGraph();
     const { result, instance } = setup(nodes, WORKING_ZOOM, edges);
@@ -734,10 +801,12 @@ describe("three concurrent branches, tens of columns apart", () => {
 
     let next = 0;
     let previous = looking(instance);
-    let biggestStepPx = 0;
-    let verticalReversals = 0;
-    let heading = 0;
-    let movingFrames = 0;
+    const meter: Meter = {
+      biggestStepPx: 0,
+      movingFrames: 0,
+      verticalReversals: 0,
+      heading: 0,
+    };
     const zooms: number[] = [];
     /** Which row the camera was following, per frame. Rows diverge in column, so
      * the camera's own x is what says which branch it has committed to. */
@@ -746,52 +815,20 @@ describe("three concurrent branches, tens of columns apart", () => {
     const finish = (last ? last.at : 0) + 4000;
 
     for (let now = 0; now <= finish; now += FRAME_MS) {
-      const due: { nodeId: string; status: string }[] = [];
-      for (
-        let event = events[next];
-        event && event.at <= now;
-        event = events[next]
-      ) {
-        due.push(event);
-        next += 1;
-      }
+      const drained = drain(events, next, now);
+      next = drained.next;
       act(() => {
-        for (const event of due) {
+        for (const event of drained.due) {
           result.current.camera.onNodeShown(event.nodeId, event.status);
         }
       });
       frames(FRAME_MS);
 
       const at = looking(instance);
-      const stepPx = Math.hypot(at.x - previous.x, at.y - previous.y) * at.zoom;
-      biggestStepPx = Math.max(biggestStepPx, stepPx);
-      if (stepPx > 0.5) movingFrames += 1;
+      measureFrame(meter, previous, at);
 
-      // A noise floor, so the last sub-pixel of an ease-out is not counted as the
-      // camera changing its mind.
-      const way = Math.sign(at.y - previous.y);
-      if (Math.abs(at.y - previous.y) > 1 && way !== 0) {
-        if (heading !== 0 && way !== heading) verticalReversals += 1;
-        heading = way;
-      }
-
-      // The branch the camera is following is the one whose live front it can see.
-      // Early in the run the rows have not diverged yet and several are in frame at
-      // once; which one the camera is "on" is genuinely unanswerable then, so those
-      // frames carry the previous answer forward instead of flipping a coin and
-      // counting the flip as a handoff.
-      const visible = ROWS.flatMap((row, index) => {
-        const step = Math.min(PER_ROW - 1, Math.floor(now / row.beat));
-        const frontX = (step + 1) * PITCH + 140;
-        return Math.abs((frontX - at.x) * at.zoom) < CANVAS.width / 2
-          ? [index]
-          : [];
-      });
-      followed.push(
-        visible.length === 1
-          ? visible[0]!
-          : (followed[followed.length - 1] ?? -1),
-      );
+      const row = rowInFrame(now, at);
+      followed.push(row === -1 ? (followed[followed.length - 1] ?? -1) : row);
 
       zooms.push(at.zoom);
       previous = at;
@@ -804,10 +841,10 @@ describe("three concurrent branches, tens of columns apart", () => {
 
     return {
       seconds: finish / 1000,
-      biggestStepPx,
+      biggestStepPx: meter.biggestStepPx,
       ceilingPx: (CROSS_PAN_SCREENS_PER_S * screen * FRAME_MS) / 1000,
-      verticalReversals,
-      movingFrames,
+      verticalReversals: meter.verticalReversals,
+      movingFrames: meter.movingFrames,
       totalFrames: Math.floor(finish / FRAME_MS) + 1,
       followed,
       zooms,

@@ -27,6 +27,7 @@
  * when to come back. `useRunChoreography` owns the clock.
  */
 
+import { groupEdgesBy } from "./edgeAdjacency";
 import type { PacedEvent } from "../types/PacedEvent";
 import type { ChoreographyState } from "../types/ChoreographyState";
 import type { DrainResult } from "../types/DrainResult";
@@ -78,14 +79,8 @@ export function fillDurationFor(backlog: number): number {
 export function createChoreographyState(
   edges: readonly { source: string; target: string }[],
 ): ChoreographyState {
-  const predecessors = new Map<string, string[]>();
-  for (const edge of edges) {
-    const sources = predecessors.get(edge.target);
-    if (sources) sources.push(edge.source);
-    else predecessors.set(edge.target, [edge.source]);
-  }
   return {
-    predecessors,
+    predecessors: groupEdgesBy(edges, "target"),
     queue: [],
     shownWorkingAt: new Map(),
     shownFinishedAt: new Map(),

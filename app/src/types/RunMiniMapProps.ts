@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Node, PanelPosition } from "reactflow";
+import type { RunMiniMapPaint } from "./RunMiniMapPaint";
 
 /**
  * A minimap that reads the graph from the canvas state and can be frozen while
@@ -19,14 +20,9 @@ export interface RunMiniMapProps<TData = unknown> {
   nodes: Node<TData>[];
   /** Freeze the viewport rectangle: the run camera is mid-motion. */
   frozen: boolean;
+  paint?: RunMiniMapPaint<TData>;
   position?: PanelPosition;
   style?: CSSProperties;
-  className?: string;
-  nodeColor?: string | ((node: Node<TData>) => string);
-  nodeStrokeColor?: string | ((node: Node<TData>) => string);
-  nodeStrokeWidth?: number;
-  nodeBorderRadius?: number;
-  maskColor?: string;
   zoomable?: boolean;
   pannable?: boolean;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../molecules/Modal";
-import { Toggle } from "../atoms/Toggle";
+import { ToggleSetting } from "../molecules/ToggleSetting";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { HttpSafetySettings } from "../../types";
 
@@ -37,25 +37,18 @@ export function PrivateNetworksModal({ isOpen, onClose }: PrivateNetworksModalPr
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Private networks" size="md">
       <div className="space-y-5 px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-              Allow private network targets
-            </p>
-            <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-              Lets HTTP request nodes and URL imports reach RFC1918 and
-              unique-local addresses (e.g. 192.168.x.x). Off by default; your
-              choice is remembered across restarts. Link-local (169.254.x.x)
-              and multicast targets stay blocked.
-            </p>
-          </div>
-          <Toggle
-            checked={settings.allowPrivateNetworks}
-            onChange={onToggle}
-            disabled={busy}
-            variant="success"
-          />
-        </div>
+        <ToggleSetting
+          title="Allow private network targets"
+          description={
+            "Lets HTTP request nodes and URL imports reach RFC1918 and " +
+            "unique-local addresses (e.g. 192.168.x.x). Off by default; your " +
+            "choice is remembered across restarts. Link-local (169.254.x.x) " +
+            "and multicast targets stay blocked."
+          }
+          checked={settings.allowPrivateNetworks}
+          onToggle={onToggle}
+          disabled={busy}
+        />
       </div>
     </Modal>
   );

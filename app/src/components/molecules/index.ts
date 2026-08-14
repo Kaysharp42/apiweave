@@ -21,4 +21,5 @@ export { SaveVariablePopover } from "./SaveVariablePopover";
 export { SearchInput } from "./SearchInput";
 export { SlidePanel } from "./SlidePanel";
 export { StatusBadge } from "./StatusBadge";
+export { ToggleSetting } from "./ToggleSetting";
 export { WorkspaceEmptyState } from "./WorkspaceEmptyState";

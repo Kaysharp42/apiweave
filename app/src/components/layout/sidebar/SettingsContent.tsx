@@ -1,12 +1,77 @@
-import { useState } from "react";
-import { FolderKanban, Key, Globe, Plug, RefreshCw, Shield } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import {
+  FolderKanban,
+  Key,
+  Globe,
+  Plug,
+  RefreshCw,
+  Shield,
+  type LucideIcon,
+} from "lucide-react";
 import { useParams } from "react-router-dom";
+import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { McpSetupModal } from "../../organisms/McpSetupModal";
 import { UpdateSettingsModal } from "../../organisms/UpdateSettingsModal";
 import { PrivateNetworksModal } from "../../organisms/PrivateNetworksModal";
 import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
+
+const settingItemClass = [
+  "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
+  "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
+  "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+  "cursor-pointer transition-colors",
+].join(" ");
+
+/** What the Updates row says it can do for you right now. */
+function updateDescription(
+  pending: boolean,
+  status: UpdateStatus | null,
+): string {
+  if (!pending) return "Check for and install new versions";
+  if (status?.state === "downloaded") {
+    return `v${status.latestVersion} is ready — restart to install`;
+  }
+  return `v${status?.latestVersion} is available`;
+}
+
+interface SettingItemProps {
+  readonly icon: LucideIcon;
+  readonly title: string;
+  readonly description: ReactNode;
+  readonly onClick: () => void;
+  /** A marker at the far end — the update panel's "something is waiting" dot. */
+  readonly marker?: boolean;
+}
+
+/** One row of the settings list: icon, title, and a line saying what it is for. */
+function SettingItem({
+  icon: Icon,
+  title,
+  description,
+  onClick,
+  marker = false,
+}: SettingItemProps) {
+  return (
+    <li>
+      <button type="button" className={settingItemClass} onClick={onClick}>
+        <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+        <div className="min-w-0 text-left">
+          <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
+            {title}
+          </div>
+          <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            {description}
+          </div>
+        </div>
+        {marker && (
+          <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
+        )}
+      </button>
+    </li>
+  );
+}
 
 /**
  * Renders the settings section of the sidebar.
@@ -27,13 +92,6 @@ export function SettingsContent({
   const workspaceSlug = currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
   const wsBase = `/${orgSlug}/${workspaceSlug}`;
 
-  const settingItemClass = [
-    "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
-    "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
-    "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-    "cursor-pointer transition-colors",
-  ].join(" ");
-
   return (
     <div className="h-full overflow-auto bg-surface-raised dark:bg-surface-dark-raised">
       {/* Workspace-scoped settings */}
@@ -43,75 +101,27 @@ export function SettingsContent({
         </span>
       </div>
       <ul className="w-full px-2 space-y-1">
-        <li>
-          <button
-            type="button"
-            className={[
-              "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
-              "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
-              "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-              "cursor-pointer transition-colors",
-            ].join(" ")}
-            onClick={() => {
-              onSwitchNav("projects");
-              onNavigate(`${wsBase}/workflows`);
-            }}
-          >
-            <FolderKanban className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                Projects
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Organize workflows into projects
-              </div>
-            </div>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            className={[
-              "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
-              "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
-              "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-              "cursor-pointer transition-colors",
-            ].join(" ")}
-            onClick={() => onNavigate(`${wsBase}/settings/environments`)}
-          >
-            <Globe className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                Environments
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Manage scoped environments
-              </div>
-            </div>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            className={[
-              "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
-              "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
-              "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-              "cursor-pointer transition-colors",
-            ].join(" ")}
-            onClick={() => onNavigate(`${wsBase}/settings/secrets`)}
-          >
-            <Key className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                Secrets
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Manage encrypted secrets
-              </div>
-            </div>
-          </button>
-        </li>
+        <SettingItem
+          icon={FolderKanban}
+          title="Projects"
+          description="Organize workflows into projects"
+          onClick={() => {
+            onSwitchNav("projects");
+            onNavigate(`${wsBase}/workflows`);
+          }}
+        />
+        <SettingItem
+          icon={Globe}
+          title="Environments"
+          description="Manage scoped environments"
+          onClick={() => onNavigate(`${wsBase}/settings/environments`)}
+        />
+        <SettingItem
+          icon={Key}
+          title="Secrets"
+          description="Manage encrypted secrets"
+          onClick={() => onNavigate(`${wsBase}/settings/secrets`)}
+        />
       </ul>
 
       {/* App-scoped settings */}
@@ -121,64 +131,25 @@ export function SettingsContent({
         </span>
       </div>
       <ul className="w-full px-2 space-y-1">
-        <li>
-          <button
-            type="button"
-            className={settingItemClass}
-            onClick={() => setPrivateNetworksOpen(true)}
-          >
-            <Shield className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                Private networks
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Allow requests to LAN devices (e.g. 192.168.x.x)
-              </div>
-            </div>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            className={settingItemClass}
-            onClick={() => setMcpOpen(true)}
-          >
-            <Plug className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                MCP Server
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                Let agents drive your workflows
-              </div>
-            </div>
-          </button>
-        </li>
-        <li>
-          <button
-            type="button"
-            className={settingItemClass}
-            onClick={() => setUpdatesOpen(true)}
-          >
-            <RefreshCw className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
-            <div className="min-w-0 text-left">
-              <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
-                Updates
-              </div>
-              <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                {updatePending
-                  ? updateStatus?.state === "downloaded"
-                    ? `v${updateStatus.latestVersion} is ready — restart to install`
-                    : `v${updateStatus?.latestVersion} is available`
-                  : "Check for and install new versions"}
-              </div>
-            </div>
-            {updatePending && (
-              <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
-            )}
-          </button>
-        </li>
+        <SettingItem
+          icon={Shield}
+          title="Private networks"
+          description="Allow requests to LAN devices (e.g. 192.168.x.x)"
+          onClick={() => setPrivateNetworksOpen(true)}
+        />
+        <SettingItem
+          icon={Plug}
+          title="MCP Server"
+          description="Let agents drive your workflows"
+          onClick={() => setMcpOpen(true)}
+        />
+        <SettingItem
+          icon={RefreshCw}
+          title="Updates"
+          description={updateDescription(updatePending, updateStatus)}
+          onClick={() => setUpdatesOpen(true)}
+          marker={updatePending}
+        />
       </ul>
 
       <McpSetupModal isOpen={mcpOpen} onClose={() => setMcpOpen(false)} />

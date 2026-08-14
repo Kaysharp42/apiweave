@@ -75,6 +75,8 @@ import { autoLayout } from "../utils/autoLayout";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
+import type { Workflow } from "@shared/types/Workflow";
+import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
@@ -421,6 +423,28 @@ export function WorkflowCanvas({
 
   // ── Workflow reload from server ─────────────────────────────────────
 
+  /**
+   * Put a server-authoritative workflow on the canvas.
+   *
+   * Nodes keep their per-node runtime state (run status, results) across the
+   * swap — the graph came back from the server, but what the last run did to it
+   * did not. The tab's own copy is refreshed with it, so anything reading the
+   * workflow from there sees the same revision the canvas is showing.
+   */
+  const showWorkflow = useCallback(
+    (canvasState: CanvasWorkflowState, source: Workflow) => {
+      setNodes((previousNodes) =>
+        preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
+      );
+      setEdges(canvasState.edges);
+      updateVariables(canvasState.variables);
+      if (workflowId) {
+        useTabStore.getState().updateTabWorkflow(workflowId, source);
+      }
+    },
+    [workflowId, setNodes, setEdges, updateVariables],
+  );
+
   const reloadWorkflowFromServer = useCallback(async () => {
     if (!workflowId || !scope.workspaceId) return;
 
@@ -430,26 +454,12 @@ export function WorkflowCanvas({
       );
       if (response.ok) {
         const reloadedWorkflow = WorkflowSchema.parse(await response.json());
-        const canvasState = workflowToCanvas(reloadedWorkflow);
-        setNodes((previousNodes) =>
-          preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
-        );
-        setEdges(canvasState.edges);
-        updateVariables(canvasState.variables);
-        useTabStore
-          .getState()
-          .updateTabWorkflow(workflowId, reloadedWorkflow);
+        showWorkflow(workflowToCanvas(reloadedWorkflow), reloadedWorkflow);
       }
     } catch (err) {
       console.error("Error reloading workflow:", err);
     }
-  }, [
-    workflowId,
-    scope.workspaceId,
-    setNodes,
-    setEdges,
-    updateVariables,
-  ]);
+  }, [workflowId, scope.workspaceId, showWorkflow]);
 
   useEffect(() => {
     if (!workflowId) return;
@@ -823,14 +833,7 @@ export function WorkflowCanvas({
             edgeCount: canvasState.edges.length,
           };
           noteSavedWorkflow(savedWorkflow);
-          setNodes((previousNodes) =>
-            preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
-          );
-          setEdges(canvasState.edges);
-          updateVariables(canvasState.variables);
-          useTabStore
-            .getState()
-            .updateTabWorkflow(workflowId, savedWorkflow);
+          showWorkflow(canvasState, savedWorkflow);
 
           setShowJsonEditor(false);
           toast.success("Workflow updated from JSON editor");
@@ -861,13 +864,11 @@ export function WorkflowCanvas({
       }
     },
     [
-      setNodes,
-      setEdges,
+      showWorkflow,
       workflowId,
       scope.workspaceId,
       workflow,
       workflowVariables,
-      updateVariables,
       noteSavedWorkflow,
     ],
   );
@@ -1048,14 +1049,14 @@ export function WorkflowCanvas({
           nodes={nodes}
           frozen={isCameraMoving}
           position="bottom-right"
-          nodeColor={getNodeColor}
-          nodeStrokeColor={getNodeStrokeColor}
-          nodeStrokeWidth={1}
-          maskColor={
-            darkMode
+          paint={{
+            nodeColor: getNodeColor,
+            nodeStrokeColor: getNodeStrokeColor,
+            nodeStrokeWidth: 1,
+            maskColor: darkMode
               ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
-              : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)"
-          }
+              : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)",
+          }}
           style={miniMapStyle}
           zoomable
           pannable
