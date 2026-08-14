@@ -1,6 +1,6 @@
 # Workflows and Nodes
 
-*How to build, edit, and run a workflow on the APIWeave canvas. Covers every node type, the canvas actions in the toolbar, resume behavior after a failed run, the keyboard shortcuts worth memorizing, and the local-first context every workflow lives in.*
+*How to build, edit, and run a workflow on the APIWeave canvas. Covers every node type, the canvas actions in the toolbar, the keyboard shortcuts worth memorizing, and the local-first context every workflow lives in.*
 
 ## Prerequisites
 
@@ -22,16 +22,14 @@
   - [Call Workflow](#call-workflow)
 - [Reusing a Node Configuration](#reusing-a-node-configuration)
 - [Canvas Actions](#canvas-actions)
-- [Resume Behavior](#resume-behavior)
-- [Lineage Hydration on Repeated Resume](#lineage-hydration-on-repeated-resume)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Recommended Build Pattern](#recommended-build-pattern)
 
 ## Where Workflows Live
 
-Every workflow can live inside a project on your local machine. A workflow belongs to at most one project at a time, or can be left outside any project. The sidebar lists every project and every workflow in the project. The selected workflow is the one shown on the canvas. Use the sidebar to navigate; the canvas does not have multi-tenant routing.
+Every workflow can live inside a project on your local machine. A workflow belongs to at most one project at a time, or can be left outside any project. The sidebar lists every project and every workflow in the project. Workflows open as tabs, so you can switch between several open workflows on the canvas with `Ctrl+Tab`.
 
-Workflows are members of a project. A workflow can be inside one project at a time, and the project decides the run order. See [Projects](projects.md) for the grouping flow and the `.awecollection` export.
+Workflows are members of a project. A workflow can be inside one project at a time, and the project list records the order you intend to run them in. See [Projects](projects.md) for the grouping flow and the `.awecollection` export.
 
 ## Building a Workflow
 
@@ -84,15 +82,23 @@ APIWeave ships seven node types. Each does one job. Two of them (Start, End) mar
 | Field | What it does |
 | --- | --- |
 | `method` | `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, or `OPTIONS` |
-| `url` | Full request URL. Supports placeholders like `{{env.BASE_URL}}/users` and `{{secrets.API_KEY}}` |
-| `query params` | `key=value`, one per line |
-| `headers` | `key=value`, one per line |
-| `cookies` | `key=value`, one per line |
-| `body` | Usually JSON text; supports placeholders in any field |
+| `url` | Full request URL. Supports placeholders like `{{env.BASE_URL}}/users`; `{{secrets.*}}` is refused in the URL |
+| `query params` | Structured key/value rows, each with an active toggle |
+| `path variables` | Named segments of the URL path (`/users/:id`) with their values |
+| `headers` | Structured key/value rows, each with an active toggle |
+| `cookies` | Structured key/value rows, each with an active toggle |
+| `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
+| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field |
 | `timeout` | Request timeout in seconds |
+| `follow redirects` | Whether redirect responses are followed (on by default) |
+| `verify SSL` | Whether the TLS certificate is verified (on by default) |
+| `expected status` | Optional expected status code or comma-separated list (see below) |
+| `continue on fail` | Per-node override of the workflow's `continueOnFail` setting |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 **Handles:** one input, one output.
+
+**Expected status (negative tests).** By default a node passes on any 2xx status and fails on everything else. Set **Expected status** — for example `409` or `409, 422` — and that rule is fully replaced: the node passes only when the actual status matches one of the expected values, and fails otherwise, *even for a 2xx response*. This is how you assert a negative test ("the API must reject this with 409") on the request itself. A matched status renders as a green node showing the status text (for example `409 Conflict`). Use it instead of a `continueOnFail` flag plus a downstream assertion that pins a non-2xx status; `workflow_diagnose` suggests exactly that migration when it sees that pattern.
 
 ### Assertion
 
@@ -100,13 +106,18 @@ APIWeave ships seven node types. Each does one job. Two of them (Start, End) mar
 
 | Field | What it does |
 | --- | --- |
+| `assertions` | The list of assertion rules. Each rule has `source`, `path`, `operator`, and `expectedValue` — see below. All rules must pass for the node to pass |
+| `failure mode` | `first` (report only the first failed rule) or `all` (report every failed rule) |
+| `continue on fail` | Whether a failed assertion lets the run continue |
+
+Each assertion rule:
+
+| Rule field | What it does |
+| --- | --- |
 | `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
 | `path` | What it means depends on `source` — see the table below |
 | `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists` |
 | `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
-| `rules` | Multiple assertion rules on the same node. All rules must pass for the node to pass |
-
-`path` is source-dependent:
 
 | `source` | `path` |
 | --- | --- |
@@ -127,7 +138,8 @@ operators.
 
 | Field | What it does |
 | --- | --- |
-| `duration` | How long to wait, in milliseconds |
+| `duration` | How long to wait, in milliseconds (default 1000) |
+| `jitter` | Optional randomized window: the runner waits `duration` plus a random amount between `minMs` and `maxMs` |
 | `label` | Optional display name |
 
 **Handles:** one input, one output.
@@ -138,8 +150,9 @@ operators.
 
 | Field | What it does |
 | --- | --- |
-| `strategy` | `all` (wait for every branch), `any` (continue on the first completion), `first` (continue with the first branch that started), or `conditional` (continue based on per-branch conditions you configure) |
-| `conditions` | Per-branch expressions, used only when `strategy = conditional` |
+| `mergeStrategy` | `all` (wait for every branch), `any` (continue on the first completion), `first` (continue with the first branch that started), or `conditional` (continue based on per-branch conditions you configure) |
+| `conditions` | Per-branch expressions, used only when `mergeStrategy = conditional`. Each is `{branchIndex, field, operator, value}` checked against that branch's result |
+| `conditionLogic` | `AND` (every configured condition must hold) or `OR` (at least one must hold) |
 | `label` | Optional display name |
 
 **Handles:** many inputs (one per upstream branch), one output.
@@ -190,34 +203,16 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 | Action | What it does |
 | --- | --- |
-| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. |
-| **Run from failed** | Resumes the most recent failed run from the first failed node. Only available when the latest run failed. |
-| **Run all failed nodes and continue** | Resumes from every failed node in the latest failed run, then continues downstream. |
-| **Run from this node** | Resumes from a specific failed node (entry appears per failed node). |
+| **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
+| **History** | Opens run history for the workflow, with per-run timeline and detail views. |
+| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it. |
 | **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
 
-The Run dropdown hides resume options when the latest run succeeded. They reappear the next time a run ends in a failed state.
+Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
 
-## Resume Behavior
-
-Resume reuses what already worked and only re-executes what is needed.
-
-- **Variables and successful results carry over.** Workflow variables and the results of any node that passed before the failure are kept, so a resumed node can still read them.
-- **One failed node or many.** Use *Run from failed* to retry a single failed node, or *Run all failed nodes and continue* to retry every failed branch in parallel and keep going downstream.
-- **Lineage-aware retries.** If resume attempt A fails and attempt B fails again, the next resume still hydrates context from the earliest successful upstream attempt. You do not have to start from zero unless you want to.
-- **Success locks the options out.** When the latest run succeeds, the resume actions hide until a new failure occurs. If you want a clean re-run, click **Run** instead.
-
-`continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going, tracking failed node IDs for the resume actions above.
-
-## Lineage Hydration on Repeated Resume
-
-*Run from failed* targets the latest failed run, and it keeps working when a resumed run fails again. The runner treats the chain of attempts as a single lineage rather than discarding earlier work, so a `run -> fail -> resume -> fail -> resume` cycle never forces you to start from zero.
-
-The current run links back to its source through `resumeFromRunId`. On resume, the executor walks that chain from the most recent attempt back to the original run, then hydrates workflow variables and successful node results in order. Variables from the newest attempt win, but anything the original run produced stays readable, and only the nodes that still fail are re-executed.
-
-The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Use *Run* (not resume) when you want a clean execution with no inherited state.
+`continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going. Individual HTTP Request and Assertion nodes can override the workflow setting.
 
 ## Keyboard Shortcuts
 
@@ -229,6 +224,7 @@ The walk is bounded by the `resumeFromRunId` link, so it cannot loop forever. Us
 | `Ctrl+J` | Open the JSON editor |
 | `Ctrl+C` | Copy the selected node (canvas context only) |
 | `Ctrl+V` | Paste a copied node (canvas context only) |
+| `Ctrl+D` | Duplicate the selected node |
 
 The copy and paste shortcuts are context-aware. When the cursor is inside a text editor (request body, response view, or any field in a node modal), normal text copy and paste take precedence.
 
@@ -244,9 +240,7 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 ## Troubleshooting
 
 - **If a node never runs**, the canvas has no edge from an upstream node into its input handle. Drag a connection from the previous node's output handle to this node's input handle.
-- **If the Run dropdown only shows plain Run** and no resume options, the latest run succeeded. Resume actions are hidden on success. Use **Run** for a fresh execution, or introduce a failure to bring them back.
-- **If Run from failed replays too much of the workflow**, the failed node sits upstream of nodes whose results you wanted to keep. Re-run the whole flow, or split the workflow so the failing call is isolated.
-- **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope in the chain. Open **Secrets** for the selected environment or your user store, add the key through the Libsodium write flow, and re-run.
+- **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in the selected environment or the workspace scope. Open **Secrets**, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 - **If a Call Workflow node fails with "no target workflow configured"**, the node was dropped but never pointed at a workflow. Open it and pick a target from the picker.
 - **If a Call Workflow node fails with "recursion depth exceeded"**, the call graph loops (A calls B, B calls A) or nests deeper than 8 levels. Open the target chain and break the loop.

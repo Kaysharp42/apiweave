@@ -5,7 +5,7 @@
 ## Prerequisites
 
 - At least one saved workflow. See [Workflows and Nodes](workflows-and-nodes.md).
-- Familiarity with the `continueOnFail` per-workflow toggle, covered in [Variables, Extractors, and JSON Editor](variables-and-extractors.md) and revisited below.
+- Familiarity with the `continueOnFail` toggle, covered in [Workflows and Nodes](workflows-and-nodes.md#canvas-actions) and revisited below.
 
 ## Table of Contents
 
@@ -24,16 +24,16 @@
 
 ## What is a Project
 
-A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. A project can hold any number of workflows. When you run a project, APIWeave walks the workflow list top to bottom against the environment you select and produces a single project run record that contains the result of every workflow in the group.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. A project can hold any number of workflows. Projects are the unit of export and import: the `.awecollection` file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or private keys.
 
 ```text
 Project: "Checkout API"
-  1. Auth        (workflow)  continueOnFail: false
-  2. Add to cart (workflow)  continueOnFail: false
-  3. Pay         (workflow)  continueOnFail: true
+  1. Auth        (workflow)  continueOnFail: true
+  2. Add to cart (workflow)  continueOnFail: true
+  3. Pay         (workflow)  continueOnFail: false
 ```
 
-Projects are the unit of export and import. The `.awecollection` file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or per-scope private keys.
+One-click ordered project runs are on the roadmap; today you run each workflow on its own from the canvas.
 
 ## Use Cases
 
@@ -76,7 +76,7 @@ Workflows are attached from the workflow side, not from the project side. Two wa
 
 1. Open the project in the project settings page.
 2. Click **Add workflow** and pick from the workflows that are not yet assigned.
-3. The workflow joins the project with `continueOnFail = false` by default. Adjust the per-row flag afterwards.
+3. The workflow joins the project with `continueOnFail = true` by default. Adjust the per-row flag afterwards.
 
 To remove a workflow from a project, return to the workflow's Settings panel and set **Project** back to `None`, or use **Remove** in the project settings.
 
@@ -106,31 +106,24 @@ Project: "Checkout API" (saved order)
 Each row in the project's workflow list carries a `continueOnFail` flag. The flag is independent from the workflow's own `continueOnFail` setting on the canvas:
 
 - **Workflow-level `continueOnFail`** applies to nodes inside that workflow. When false (default), the first failing node stops the workflow.
-- **Project-level `continueOnFail`** applies between workflows. When false (default), a failed workflow stops the project. When true, the project logs the failure and moves to the next workflow.
+- **Project-level `continueOnFail`** records the intent for when ordered project runs ship: continue to the next workflow after a failure (true, the default), or stop the project (false).
 
 You usually want the project-level flag set to `true` for diagnostic workflows and `false` for critical paths. Example:
 
 ```text
 Project: "Checkout API"
-  1. Auth        workflow continueOnFail: false  project continueOnFail: false
-  2. Add to cart workflow continueOnFail: false  project continueOnFail: false
-  3. Pay         workflow continueOnFail: true   project continueOnFail: true
+  1. Auth        workflow continueOnFail: false  project continueOnFail: true
+  2. Add to cart workflow continueOnFail: false  project continueOnFail: true
+  3. Pay         workflow continueOnFail: true   project continueOnFail: false
 ```
 
-The runner reads the project-level flag after each workflow completes. You can change it row by row in the project settings.
+You can change the project-level flag row by row in the project settings.
 
 ## Project Run Behavior
 
-A project run executes workflows sequentially in the configured order. Disabled workflows are skipped. The runner:
+One-click project runs are planned but not available in this release: there is no runner that executes a whole project in order. The project list defines the order, the enabled/disabled state, and the per-workflow `continueOnFail` intent; until the project runner ships, run each workflow from its own canvas, in project order, using the environment you want.
 
-1. Creates a project run record that tracks the overall status and per-workflow results.
-2. Runs the first enabled workflow using the environment selected for the run. The environment applies to every workflow in the project. Use the same environment for the whole project unless you specifically need different scopes per workflow.
-3. Captures each workflow's run record and status.
-4. If the workflow failed and the row's `continueOnFail` is `false`, marks the project run as failed and stops.
-5. Otherwise, advances to the next enabled workflow.
-6. Repeats until the list is exhausted or a stop condition fires.
-
-Variable and secret state does not pass between workflows by default. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
+Variable and secret state does not pass between workflows. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
 
 ## Export and Import (.awecollection)
 
@@ -138,7 +131,7 @@ Projects travel as `.awecollection` files. The file is a JSON archive with three
 
 - **Project metadata**: name, description, color, and workflow order.
 - **Workflows**: every workflow attached to the project, in order, with nodes, edges, variables, and per-workflow settings.
-- **Environment references**: identifiers of the environments the project depends on, plus the public key fingerprints the destination instance needs to re-create the secret bindings. No values, no ciphertext, no private keys.
+- **Environment references**: the environments the project depends on, with their plain variables, plus the secret references the destination operator must re-create. No secret values, no ciphertext, no private keys.
 
 To export:
 
@@ -149,16 +142,15 @@ To export:
 To import:
 
 1. Open the projects list from the sidebar.
-2. Click **Import project**.
-3. Pick the `.awecollection` file.
-4. Review the workflow list and the environment references.
-5. Click **Import** to commit, or **Dry run** first (see below).
+2. Click **Import project** and pick or paste the `.awecollection` file.
+3. Click **Validate** for the dry-run report (see below).
+4. Click **Import** to commit.
 
-Imports always create new workflow records; existing workflows are not overwritten. If the import references an environment that already exists, the import re-uses it. If the referenced environment is missing, the import creates an empty environment shell with the same name and you fill in the variables and secrets through the normal flows.
+Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
 
 ## Dry-Run Validation
 
-Before committing an import, run a dry-run pass. The dry-run reports what the import will create, conflict with, or skip, without writing anything to the database.
+Before committing an import, run the validation pass. It reports what the import will create without writing anything to the database: it validates the bundle schema, lists the workflows and environments that will be created, counts any secret references that will be unresolved after import, and warns when the bundle's schema version is newer than this app understands.
 
 Typical dry-run output:
 
@@ -167,45 +159,44 @@ Import plan for "Checkout API.awecollection":
   + Create workflow: Auth        (new)
   + Create workflow: Add to cart (new)
   + Create workflow: Pay         (new)
-  + Reference environment: "Staging"  (matches existing env)
-  ! Conflict: workflow "Pay" already exists (will create copy "Pay (2)")
+  + Create environment: "Staging" (from the bundle's variables)
+  ! 3 secret references will be unresolved after import; re-enter them locally
 ```
 
-If the dry-run shows only `+` lines, the import is clean and you can proceed. If it shows `!` lines, decide whether to import-as-copy or cancel and rename the workflows in the source bundle first.
+If the dry-run shows only `+` lines, the import is clean and you can proceed. If it shows `!` lines, decide whether to proceed and re-create the missing secrets on the destination, or cancel.
 
 ## References Only (No Secrets in Bundles)
 
 The `.awecollection` schema exports references only. The bundle does not carry:
 
 - Secret values, in any form.
-- Sealed-box ciphertext, because the destination instance has its own scope keypairs.
-- Per-scope private keys. The destination instance derives its own keypair per scope on first secret write.
+- Sealed-box ciphertext, because the destination instance has its own install keypair.
+- Private keys. Each install derives its own single keypair from the local keyfile.
 
 Concretely, the bundle looks like this for the secret side:
 
 ```json
 {
-  "schema": "awecollection/v2",
+  "schemaVersion": "2.0",
+  "type": "awecollection",
   "secretReferences": [
     {
       "name": "API_KEY",
-      "scope": "user",
-      "publicKeyFingerprint": "fp:abc123"
+      "scopeType": "workspace"
     }
   ]
 }
 ```
 
-The fingerprint tells the destination operator which scope the key should live in. The operator re-creates the value through the Libsodium write flow on the destination instance. After import, every `{{secrets.NAME}}` placeholder will resolve to nothing until you re-enter the value in the destination environment.
+The reference tells the destination operator which scope the key should live in. The operator re-creates the value through the Libsodium write flow on the destination instance. After import, every `{{secrets.NAME}}` placeholder will resolve to nothing until you re-enter the value in the destination scope.
 
-This is intentional. Each instance has its own Libsodium keypairs and its own envelope encryption key, and shipping ciphertext across would not help. The bundle is a portable shape, not a portable vault.
+This is intentional. Each instance has its own Libsodium keypair and its own encryption key, and shipping ciphertext across would not help. The bundle is a portable shape, not a portable vault.
 
 ## Troubleshooting
 
-- **If a workflow shows as "locked" inside a project and you cannot delete it from the project list**, open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
+- **If a workflow row in the project will not go away**, click **Remove** on the row, or open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
 - **If the project runs in the wrong order after a drag-and-drop edit**, click **Save order** in the project settings. Drag-and-drop updates the list in memory but does not persist until you save. Reload the page to confirm the new order.
-- **If secrets are missing after import**, open **Secrets** for the destination environment and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
-- **If a project run stops at the first failure but you expected it to continue**, check the per-row `continueOnFail` flag for the failing workflow in the project settings. The default is `false`, which stops the project.
+- **If secrets are missing after import**, open **Secrets** for the destination environment or workspace and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
 - **If an imported workflow fails with `workflow not found` errors when another workflow references it**, the bundle exported with a stale internal ID. Re-export the project from the source instance, then re-import.
 
 ## Related

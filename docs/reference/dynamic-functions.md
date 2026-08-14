@@ -8,7 +8,7 @@ None. This is a reference doc. Read [Concepts](../getting-started/concepts.md) i
 
 ## Note on Function Count
 
-APIWeave exposes 13 dynamic functions for use in placeholders. Two additional internal helpers (`get_function`, `get_all_functions`) exist for runtime resolution but are not part of the public API. You will not see the internal helpers in the function picker, and you should not reference them in workflow configuration.
+APIWeave exposes 13 dynamic functions for use in placeholders. The resolver itself is a single class with internal `getFunction`/`getAllFunctions` methods for runtime lookup; those are not placeholder-callable and are not part of the public API. You will not see the internal helpers in the function picker, and you should not reference them in workflow configuration.
 
 ## Table of Contents
 
@@ -74,7 +74,7 @@ Returns a randomly generated email address you can use when a test needs a uniqu
 
 ```text
 {{randomEmail()}}
-# Example output: user_a8f2k9x@apiweave.test
+# Example output: a8f2k9xZqL@example.com
 ```
 
 ## Number Generators

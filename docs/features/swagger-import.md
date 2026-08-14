@@ -55,7 +55,7 @@ The Swagger URL is a field on an environment document, not a workflow setting. T
 
 4. Save the environment.
 
-The URL must be reachable from the desktop app's main process, not just from your browser. If the app runs behind a private network, the spec has to be on a host the main process can reach. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the field's full context.
+The URL must be reachable from the desktop app's main process, not just from your browser. URL imports go through the same HTTP-safety guard as workflow runs: loopback is always allowed, but hosts on private networks (RFC1918/unique-local, such as `192.168.x.x`) are blocked unless **Settings → Private networks** is enabled. Enable it if your spec lives on a LAN host; the toggle takes effect immediately for refreshes and imports. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the field's full context.
 
 ### Step 2: Select the Environment and Refresh
 
@@ -65,7 +65,7 @@ Now switch to the canvas and pull the spec into the Add Nodes panel.
 2. In the canvas toolbar, open the environment selector and pick the environment you just configured. The selector lists every environment in the local database.
 3. Click **Refresh** in the toolbar. The importer fetches the document, parses the operations, and adds an imported group to the Add Nodes panel.
 
-The imported group is labeled `Swagger: <Environment Name>` so you can tell at a glance which spec the templates came from. Repeat the click whenever the spec changes upstream; the group is regenerated each time.
+The imported group is labeled `Swagger: <Environment Name>` so you can tell at a glance which spec the templates came from. The importer also refreshes the group automatically when you open a workflow against that environment, with one guard: sensitive local targets (loopback and private-network hosts) never auto-refresh — you must click **Refresh** explicitly for those. Clicking **Refresh** at any time re-fetches the document and regenerates the group.
 
 ### Step 3: Drag Imported Requests to the Canvas
 
@@ -122,7 +122,7 @@ If a definition keeps failing, paste its direct spec URL into the environment's 
 | --- | --- |
 | OpenAPI 3.0 and newer (3.0, 3.1) | Yes |
 | Swagger 2.0 | Yes |
-| Swagger 1.0 | No. Deprecated upstream; the importer rejects Swagger 1.0 documents. Migrate the source spec to OpenAPI 3.0 if you control it, or ask the API team to publish a 2.0/3.x spec. |
+| Swagger 1.0 | No. Deprecated upstream and not a supported import format. Migrate the source spec to OpenAPI 3.x if you control it, or ask the API team to publish a 2.0/3.x spec. |
 
 The importer also handles both `.json` and `.yaml` documents and accepts URLs that point either at a raw spec or at a Swagger UI page (Path A only).
 
@@ -130,7 +130,7 @@ The importer also handles both `.json` and `.yaml` documents and accepts URLs th
 
 - **If Refresh reports "Select an environment before refreshing Swagger"**, open the environment selector in the canvas toolbar and pick one. The importer needs an environment to read the Swagger URL from.
 - **If Refresh reports "Environment has no Swagger/OpenAPI URL"**, open the Environment Manager, edit the active environment, and paste the spec URL into the **OpenAPI/Swagger URL** field. See [Environments and Secrets](environments-and-secrets.md#openapiswagger-url) for the exact field.
-- **If Refresh reports "Failed to fetch Swagger URL"**, confirm the URL starts with `http://` or `https://`, that the desktop app can reach the host (not just your browser), and that the host is not on a private network the runner blocks. If a Swagger UI URL fails, try the direct spec URL for the same service.
+- **If Refresh reports "Failed to fetch Swagger URL"**, confirm the URL starts with `http://` or `https://`, that the desktop app can reach the host (not just your browser), and that the host is not on a private network the runner blocks — or enable **Settings → Private networks** if the spec intentionally lives on a LAN host. Link-local addresses (169.254.x.x) and metadata endpoints stay blocked even with the setting enabled. If a Swagger UI URL fails, try the direct spec URL for the same service.
 - **If only some endpoints import from a multi-definition Swagger UI**, one of the definitions is failing while the others succeed. Keep the successful imports, then point the environment's URL at the failing definition's direct spec URL to isolate it.
 - **If a `Check API` badge stays on a node after a refresh**, the importer found a real drift between the node and the refreshed spec. Open the badge for the mismatch reason and either bring the node in line with the spec or accept the drift intentionally.
 - **If Path B's Preview shows zero operations**, the file is not a valid OpenAPI 3.x or Swagger 2.0 document. Open the file and confirm the top-level keys (`openapi` for 3.x, `swagger: "2.0"` for 2.0) are present.

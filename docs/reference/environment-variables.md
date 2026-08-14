@@ -18,8 +18,9 @@ Variables Vite injects into the browser bundle. They are baked in at build time,
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
+| `VITE_APP_VERSION` | No | from `app/package.json` `version` | The app version shown in the footer. Injected by Vite at build time (via `define`), with a `"0.0.0"` fallback when the package version cannot be read. |
 | `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `app/.env.example` and the `ImportMeta` type for compatibility. |
-| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime. |
+| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime; it remains only in `app/.env.example`. |
 
 ### Example frontend `.env`
 
@@ -36,12 +37,12 @@ Variables the Electron main process reads from the host environment. In a packag
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `APIWEAVE_FRONTEND_DIST` | No | resolved from `app.getAppPath()` | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
-| `APIWEAVE_LOG_LEVEL` | No | `info` | Main process log level. One of `debug`, `info`, `warn`, `error`. |
-| `APIWEAVE_DB_PATH` | No | `<userData>/apiweave.db` | Override the SQLite database path. Use a different file to run a second instance against an isolated database. |
-| `APIWEAVE_KEYFILE_PATH` | No | `<userData>/keyfile` | Override the secret store keyfile path. Use the same override as `APIWEAVE_DB_PATH` to keep the keyfile and the database together. |
-| `APIWEAVE_DISABLE_GPU` | No | unset | Set to `1` or `true` to force the software rasterizer. Useful on machines whose GPU driver is incompatible with the renderer's WebGL canvas. |
-| `OZONE_PLATFORM_HINT` | No | `auto` | Linux-only. Hint for the Wayland/X11 selection. Defaults to `auto`, which lets Electron pick. Set to `wayland` or `x11` to force a specific backend. |
+| `APIWEAVE_FRONTEND_DIST` | No | `process.resourcesPath/renderer` (packaged), `app.getAppPath()/dist/renderer` (dev) | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
+| `APIWEAVE_DEV_UPDATES` | No | unset | Set to `1` to rehearse the updater against a local manifest (`app/dev-app-update.yml`) instead of the release channel. |
+| `APIWEAVE_CLOUD_ENTRY_URL` | No | baked-in Cloud entry URL | Override the APIWeave Cloud endpoint the sync client talks to. |
+| `APPIMAGE` | No | set by AppImage runtime | Linux-only. Set automatically when the app runs from an AppImage; the updater uses it to self-update the AppImage in place. |
+
+Most main-process behavior is not environment-driven: the SQLite database path (`<userData>/apiweave.db`), the secret-store keyfile (`<userData>/keyfile.json`), the log level (`info`), and the Linux Wayland hint (`ozone-platform-hint=auto`) are fixed by the app rather than read from the environment. There is no `APIWEAVE_DB_PATH` or `APIWEAVE_KEYFILE_PATH` override.
 
 `<userData>` is the OS-standard user data path for the app:
 
@@ -63,20 +64,16 @@ cd app
 npm run build:renderer
 ```
 
-### Mistake 2: Pointing `APIWEAVE_DB_PATH` at a read-only location
+### Mistake 2: Copying only the database to a new machine
 
-The main process needs write access to the database file. The default `<userData>` location is writable. If you override `APIWEAVE_DB_PATH`, make sure the directory exists and is writable by the user running the app.
-
-### Mistake 3: Forgetting to set `APIWEAVE_KEYFILE_PATH` alongside `APIWEAVE_DB_PATH`
-
-The keyfile and the database must travel together. If you copy the database to a new machine and forget the keyfile, the secret store is unreadable. Override both variables in lockstep, or copy the whole user data directory.
+The keyfile and the database must travel together. If you copy `apiweave.db` to a new machine and forget `keyfile.json`, the secret store is unreadable. Copy the whole user data directory, or re-enter the secrets through the write flow.
 
 ## Troubleshooting
 
 - **If the renderer shows stale build-time configuration**, rebuild the renderer (`npm run build:renderer` from `app/`). The desktop app always loads the built bundle.
-- **If the main process refuses to start with a database error**, the directory pointed at by `APIWEAVE_DB_PATH` is not writable. Check permissions and free disk space.
+- **If the main process refuses to start with a database error**, the user data directory is not writable. Check permissions and free disk space.
 - **If an MCP client cannot connect**, enable the bridge in **Settings** and copy the live loopback URL from the **MCP** panel. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
-- **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.
+- **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile (`keyfile.json`) from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.
 
 ## Related
 

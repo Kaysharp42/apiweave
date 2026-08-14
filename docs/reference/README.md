@@ -17,7 +17,7 @@ None. Reference docs assume you already know what you are looking for. If you ar
 
 ## Configuration
 
-- [Environment Variables](environment-variables.md): every variable the renderer reads, grouped by feature, with defaults and what each one controls.
+- [Environment Variables](environment-variables.md): every variable the app reads, grouped by feature, with defaults and what each one controls.
 
 ## Releasing
 

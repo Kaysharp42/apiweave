@@ -10,17 +10,17 @@
 
 The two guides in this section cover the canvas itself and the data that flows between steps on a single run.
 
-- [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step — canvas actions, resume behavior after a failed run, and keyboard shortcuts.
+- [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step and the expected-status control for negative tests — canvas actions, and keyboard shortcuts.
 - [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
 - [Node Presets](node-presets.md): save a node's configuration under a name and drag it into any workflow in the workspace. Covers saving, renaming, deleting, and what a preset does and does not carry.
-- [Visualization and Debugging](visualization-and-debugging.md): run timeline/waterfall, variable provenance tracing, and masked-secret resolution confidence — three read-only debugging views over existing run and dataflow data.
+- [Visualization and Debugging](visualization-and-debugging.md): run timeline/waterfall, variable provenance tracing, masked-secret resolution confidence, and camera-follow during runs — read-only debugging views over existing run and dataflow data.
 
 ## Configuration
 
 These pages cover the per-environment values a workflow reads at run time, the project that groups workflows, and the secret store that holds the values `{{secrets.NAME}}` resolves to.
 
 - [Environments and Secrets](environments-and-secrets.md): local environments, environment inheritance for shared variables, the encrypted secret store, and the metadata-only display.
-- [Projects](projects.md): ordered groups of workflows that run together. Covers project lifecycle, `.awecollection` export and import, and the references-only behavior of the bundle.
+- [Projects](projects.md): ordered groups of workflows. Covers project lifecycle, `.awecollection` export and import, and the references-only behavior of the bundle.
 
 ## Integration
 

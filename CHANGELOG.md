@@ -9,6 +9,59 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.8] — 2026-08-14
+
+### Added
+
+- **Run camera.** While a run executes, the canvas camera follows the active
+  branch with a physics-based tracker (attention focus plus damped spring) that
+  tracks one run front at a time. Any manual zoom, pan, or fit-view suspends the
+  follow immediately; a **Follow run** pill on the canvas hands control back.
+  The minimap freezes while the camera is in motion and unfreezes the moment you
+  take over.
+- **Expected status on HTTP Request.** A per-node `expectedStatus` (one code or
+  a comma-separated list, e.g. `409` or `409, 422`) fully replaces the default
+  2xx-passes rule, turning the request itself into a negative test: a match
+  passes (a matched 409 renders green with its status text), anything else —
+  even a 2xx — fails. The expected status is echoed on transport errors and
+  persisted in run results. The analyzer suggests this control over the
+  `continueOnFail`-plus-status-assertion pattern
+  (`continue_on_fail_status_check_migratable`), and a new
+  `assertion_fail_wired_on_all` notice flags assertion `fail` handles that all
+  land on `end` (same behavior as leaving them unconnected).
+- **Private networks opt-in.** A new **Settings → Private networks** toggle
+  (off by default) lifts the SSRF block on RFC1918/unique-local hosts (`10/8`,
+  `172.16/12`, `192.168/16`, `fc00::/7`) for HTTP request nodes and URL imports
+  through the one shared `SafeHttp` instance; link-local, metadata, and
+  multicast addresses stay blocked either way. The choice is persisted under
+  `app_settings` (`http.allow_private_networks`) through new
+  `settings.get` / `settings.setPrivateNetworks` handlers, and takes effect
+  immediately.
+- **Auto-update.** The desktop app checks GitHub Releases for newer versions
+  under the policy chosen in **Settings → Updates** (notify by default;
+  automatic only where the platform can self-install), with staged rollouts and
+  a kill switch for bad releases.
+- **Sync failure visibility.** `cloud.listFailedRecords` plus an in-app Failed
+  Records dialog surface dead-lettered sync records; rejected IPC dispatches are
+  logged to `main.log`; the real server rejection reason reaches save toasts
+  instead of a generic failure.
+
+### Fixed
+
+- **Workflow last run disappearing.** Opening a node's editor after a run no
+  longer drops the last run's results from the canvas.
+- **Sync credential redaction.** Push, pull, and export now share one redaction
+  contract: request bodies and headers sync with leaf-level credential
+  redaction (secret-shaped leaves blanked, `{{...}}` references preserved),
+  cookie values are always withheld, URLs are stripped of credentials, and a
+  fail-closed `assertNoSecretValues` pass runs on every outgoing payload.
+  `.awecollection` export redacts bundle bodies leaf-by-leaf with the same walk.
+
+### Security
+
+- The renderer CSP now pins `wasm-unsafe-eval`, closing a vector on the
+  packaged renderer.
+
 ## Current — local-first desktop
 
 APIWeave is a single-process Electron app. The renderer is the ReactFlow canvas;
@@ -52,9 +105,9 @@ no separate backend, worker, or database server, and no Docker stack to run.
   A workflow belongs to at most one project at a time, or to none.
 - **Environments.** Named bundles of variables that you select for a run. The
   effective environment feeds `{{env.*}}` and is the narrowest scope the runner
-  checks for `{{secrets.*}}`. Each workspace has exactly one default environment
-  (`isDefault = true`); a run uses the environment you select for that workflow,
-  or falls back to the default when you have not selected one.
+  checks for `{{secrets.*}}`. The header's **Default environment** selector is a
+  per-machine convenience preference that preselects the environment for new
+  workflows; each workflow keeps its own selection.
 - **Environment inheritance.** An environment can extend a base environment in
   the same workspace (`baseEnvironmentId`), and the run resolves the chain
   base-first with each descendant overriding the names it redefines. Plain
@@ -62,9 +115,10 @@ no separate backend, worker, or database server, and no Docker stack to run.
   unchanged and secrets are never inherited. Self-reference, cross-workspace
   bases, and cycles are rejected, and chains are bounded at 8 levels. The base
   link is not yet part of the Cloud sync payload, so it stays on this machine.
-- **Encrypted secret store.** Per-scope Libsodium sealed-box ingress plus
-  envelope encryption at rest. The keyfile is stored under the user's app data
-  directory. The `{{secrets.NAME}}` placeholder resolves through a local scope
+- **Encrypted secret store.** Libsodium sealed-box write-only ingress against a
+  single per-install keypair; the sealed ciphertext is stored verbatim and
+  opened at run time with the key derived from the per-install keyfile. The
+  `{{secrets.NAME}}` placeholder resolves through a local scope
   chain: the selected environment wins, then the workspace store
   (`environment > workspace`). The metadata-only display shows name, scope, key id,
   and last update time — never the value or ciphertext. There is no read API
@@ -76,8 +130,10 @@ no separate backend, worker, or database server, and no Docker stack to run.
   response payloads live in a separate blob table. A node that two paths
   converge on is entered once: the second arrival joins the first instead of
   re-sending the request and re-walking the subtree behind it.
-- **Resume and lineage.** A failed run can be resumed from a node; the resume
-  walk is bounded by the `resumeFromRunId` link so it cannot loop forever.
+- **Resume groundwork.** Run records carry `resumeFromRunId` / `resumeFromNodeIds`
+  lineage links and the executor supports starting from chosen node ids, but the
+  resume UI is not exposed in this release: **Run** always executes the full
+  workflow from Start.
 - **Local MCP bridge.** An opt-in loopback HTTP server at `127.0.0.1:<port>`
   exposes the IPC handler registry as a second transport so local AI agents on
   the same machine can drive the app. It uses a static per-install token and is
@@ -85,9 +141,8 @@ no separate backend, worker, or database server, and no Docker stack to run.
 - **Import.** OpenAPI 3.x, Swagger 2.0, HAR, and cURL import.
 - **Optional APIWeave Cloud sync.** An optional Cloud account enables two-way
   sync of test structure (workflows, environments, projects, and secret
-  references) and collaboration in shared Cloud Workspaces across machines. The
-  local and Cloud names map: a desktop org corresponds to a Cloud Team, and a
-  desktop team corresponds to a Cloud Workspace. The desktop app is fully usable
+  references) and collaboration in shared Cloud Workspaces (owned by a Cloud
+  Team) across machines. The desktop app is fully usable
   without a Cloud account. Cloud never builds or runs tests, never stores run
   history, and rejects `secrets` and `runs` fields on sync and conflict paths.
 - **Cloud conflict resolution.** When a local and a Cloud copy diverge, the
@@ -119,8 +174,10 @@ no separate backend, worker, or database server, and no Docker stack to run.
   node that lights up holds that state for a minimum dwell. Playback trails the
   run and compresses its tempo as the backlog builds, so a workflow of fast
   responses reads as a sequence instead of arriving in one frame. The toolbar
-  and the end-of-run hydration wait for playback to settle, hydration ignores a
-  result that a newer run has superseded, and the camera never moves on its own.
+  and the end-of-run hydration wait for playback to settle, and hydration
+  ignores a result that a newer run has superseded. The camera now follows the
+  active branch during a run (see [0.7.8](#078--2026-08-14)); any manual zoom or
+  pan takes over immediately.
 - **Node and edge visual language.** All seven node types share one shell that
   carries idle, running, passed, failed, and skipped state. Edges are bezier
   paths that take their state from the node they leave, with a single
@@ -177,8 +234,9 @@ desktop app:
 - `runtime_secrets` ad-hoc run-time secret input. Every secret must exist in the
   local store at the right scope before a run starts.
 - The global `Environment.isActive` flag. The single global "one active
-  environment" model is gone, replaced by a per-workspace default (`isDefault`)
-  plus a per-workflow selection that overrides the default for that run.
+  environment" model is gone, replaced by a per-machine default-environment
+  preference (the header selector) plus a per-workflow selection that overrides
+  the preference for that run.
 - The flat `/api/environments`, `/api/collections`, `/api/workflows`,
   `/api/webhooks`, and `/api/runs` HTTP paths and the
   `/api/orgs/{orgSlug}/...` scoped paths. The desktop renderer talks to the

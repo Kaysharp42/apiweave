@@ -9,7 +9,7 @@
   - **macOS**: macOS 11 (Big Sur) or newer (Intel and Apple Silicon).
   - **Linux**: a current distro with glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora 33+). For the AppImage, FUSE 2 must be installed; on Arch, prefer the `.pacman` package.
 - About 500 MB of free disk space for the installer and the local SQLite database.
-- A network connection on first launch (the desktop app does not phone home afterwards; the database and the secret store stay on your machine).
+- A network connection on first launch. The database and the secret store stay on your machine; after launch, the only network activity is the update check (and Cloud sync, only if you enable it) — see [Updates](#updates).
 
 For contributors who want to build the desktop app from source: Node.js 20+ and npm. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
 
@@ -34,9 +34,11 @@ The installer and binaries are unsigned, so SmartScreen may warn on first launch
 
 1. Open the `.dmg` and drag **APIWeave** to **Applications**.
 2. The build is unsigned and un-notarized, so the first launch is blocked by Gatekeeper. Right-click the app in **Applications** and choose **Open**, or clear the quarantine flag with:
+
    ```bash
    xattr -dr com.apple.quarantine /Applications/APIWeave.app
    ```
+
 3. Launch APIWeave from **Applications** or Spotlight.
 
 ## Linux
@@ -85,18 +87,27 @@ When APIWeave opens for the first time:
   - **macOS**: `~/Library/Application Support/APIWeave`
   - **Linux**: `~/.config/APIWeave`
 - A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied.
-- The keyfile for the encrypted secret store is generated and written to the data directory. Treat this file like a private key: if you copy it elsewhere, the secret store follows it. If you delete it, the secret store is gone for good.
-- The app lands directly on the workflows list. There is no login screen.
+- The keyfile for the encrypted secret store is generated and written to the data directory as `keyfile.json`. Treat this file like a private key: if you copy it elsewhere, the secret store follows it. If you delete it, the secret store is gone for good.
+- The app lands directly on the workflows list. No login is required to use the app; an optional Cloud account adds sync and collaboration later.
 
 ## Optional: Enable the Local MCP Bridge
 
 The local MCP bridge is opt-in. To enable it for a local AI agent:
 
-1. Open the **Settings** panel in the app (the gear icon in the header).
+1. Open **Settings** from the left navigation rail.
 2. Toggle **Enable MCP bridge**.
 3. The app binds a loopback HTTP server on `127.0.0.1` and writes a static per-install token to a file in the data directory. The **MCP** panel in the app shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
+
+## Private Networks (HTTP Safety)
+
+Outbound requests from workflow runs and URL imports pass through an SSRF guard: loopback is always allowed, but hosts on private networks (RFC1918/unique-local, such as `192.168.x.x`) are blocked, and link-local and metadata endpoints are always blocked. To call services on your LAN:
+
+1. Open **Settings → Private networks**.
+2. Toggle **Allow private network targets**.
+
+The setting takes effect immediately for HTTP request nodes and URL imports, is persisted across restarts, and governs the whole app (the same guard backs Swagger/OpenAPI URL imports). See [Workflows and Nodes](../features/workflows-and-nodes.md) and [Swagger and OpenAPI Import](../features/swagger-import.md).
 
 ## Updates
 
@@ -154,7 +165,7 @@ The installer lands in `app/release/`. For day-to-day development, run `cd app &
 A quick checklist after first launch:
 
 1. The window opens at the workflows list. No login screen.
-2. The data directory was created and contains `apiweave.db` and `keyfile`.
+2. The data directory was created and contains `apiweave.db` and `keyfile.json`.
 3. **Settings → Updates** shows the version you installed.
 4. (Optional) Toggle the MCP bridge in **Settings** and confirm the **MCP** panel shows a `127.0.0.1` URL and a token.
 
@@ -163,7 +174,7 @@ A quick checklist after first launch:
 | What | Where |
 |------|-------|
 | Database (SQLite) | `<userData>/apiweave.db` |
-| Secret keyfile | `<userData>/keyfile` |
+| Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
 | Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
 | Main-process log (incl. updates) | `<logs>/main.log`, rotating into `main.old.log` at 1 MB |

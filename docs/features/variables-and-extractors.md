@@ -64,7 +64,7 @@ Workflow variables persist for the duration of the run and are visible in the Va
 ```text
 {{prev.response.body.id}}
 {{prev.response.headers.content-type}}
-{{prev.response.cookies.session}}
+{{prev.response.headers.set-cookie}}
 {{prev.response.statusCode}}
 ```
 
@@ -77,9 +77,9 @@ For parallel branches, the index starts at 0 and matches the branch order on the
 
 ## Secrets
 
-Secrets are declared as named keys at the workspace or environment scope. The runner resolves `{{secrets.NAME}}` through a fixed local chain: the selected environment wins, then your local workspace store. The scope chain lives entirely in the encrypted local store. Collaborators share workflow and environment config but never secret values, so each user resolves their own secrets.
+Secrets are declared as named keys at the workspace or environment scope. The runner resolves `{{secrets.NAME}}` through a fixed local chain: the selected environment wins, then the workspace store. The scope chain lives entirely in the encrypted local store.
 
-Secret values are write-only at every layer. The renderer encrypts the value with a Libsodium sealed box against the scope's public key before the write request leaves. The main process never accepts a plaintext secret value, and no UI, IPC handler, or MCP tool can read a stored value back. The runtime substitutes the plaintext into the field, header, body, or assertion path, and the masking layer scrubs the value before any result is persisted.
+Secret values are write-only at every layer. The renderer encrypts the value with a Libsodium sealed box against the install's public key before the write request leaves. The main process never accepts a plaintext secret value, and no UI, IPC handler, or MCP tool can read a stored value back. The runtime substitutes the plaintext into the field, header, or body, and the masking layer scrubs the value before any result is persisted.
 
 ```text
 {{secrets.API_KEY}}        # resolved from the scope chain, never persisted
@@ -94,8 +94,8 @@ An extractor pulls a value out of an HTTP response and stores it as a workflow v
 
 The quickest way is to pick the value straight out of a response you already have:
 
-1. Open the HTTP Request node and run it, so the **Response** pane holds a body.
-2. On the **Tree** tab, hover the row you want and click the variable icon next to the copy icon.
+1. Run the workflow once, so the **Response** pane of the HTTP Request node holds a body from the last run.
+2. Open the node and, on the **Tree** tab, hover the row you want and click the variable icon next to the copy icon.
 3. Accept or edit the suggested name and press Enter.
 
 The value is now stored. The row keeps a `{{name}}` chip so the mapping stays visible in the response, and clicking that chip removes the variable again. The **Settings** tab counts what the node stores and lists each entry with what it captured from the last response.
@@ -129,7 +129,7 @@ Paths are written in dot notation with `[index]` for arrays. They start with `re
 ```text
 response.statusCode                 # integer status code
 response.headers.content-type       # response header
-response.cookies.session            # response cookie
+response.headers.set-cookie         # response cookie (raw Set-Cookie header)
 response.body.id                    # top-level field
 response.body.user.id               # nested object
 response.body.items[0].id           # first element of an array
@@ -146,7 +146,7 @@ For a full grammar, see the [Placeholders Reference](../reference/placeholders.m
 Open the side panel and switch to the **Variables** tab to work with workflow variables directly.
 
 - **Add**: click **Add variable**, enter a name and a value, save. The value is available as `{{variables.name}}` in any node.
-- **Edit**: click a variable row, change the value, save. The new value is used on the next run; in-flight runs keep the value they captured.
+- **Edit**: click a variable row, change the value, save. The new value is used on the next run.
 - **Delete**: click the trash icon on the row. Any later node that still references the deleted variable will fail until the reference is updated.
 - **Inspect**: after a run, the panel shows the resolved value of every variable, including those created by extractors. Use it to confirm an extractor wrote what you expected.
 
@@ -157,7 +157,7 @@ The Variables panel is also where to confirm the exact placeholder syntax for a 
 - **If a placeholder comes back as plain text in the request or response**, the namespace is misspelled or the key does not exist. The most common typo is `{{variable.token}}` (singular) instead of `{{variables.token}}` (plural). Open the Variables panel or the environment editor and confirm the key exists with the exact name.
 - **If an extractor did not set a value**, the JSONPath does not match the real response shape. Inspect the node's response body for the actual field name (including case) and update the path. Arrays use zero-based indices, so `response.body.items[0].id` reads the first element only.
 - **If a `prev.*` reference is empty after a Merge node**, the index does not match a branch. Branch indices start at 0 and follow the canvas order. Check the run results to confirm how many branches completed and which index each one received.
-- **If `{{secrets.NAME}}` is not resolved at run time**, no scope in the chain declares the key. Open **Secrets** for the selected environment or your user store, and add the key through the Libsodium write flow. The plaintext never appears in the canvas, run history, or `.awecollection` bundle.
+- **If `{{secrets.NAME}}` is not resolved at run time**, no scope in the chain declares the key. Open **Secrets** for the selected environment or the workspace, and add the key through the Libsodium write flow. The plaintext never appears in the canvas, run history, or `.awecollection` bundle.
 
 ## Related
 

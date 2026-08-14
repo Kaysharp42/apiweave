@@ -15,9 +15,12 @@ without driving the renderer.
   It is intentionally smaller than the renderer's complete IPC surface.
 - Secret tools expose names, scopes, and resolution metadata only. They never
   return plaintext or ciphertext and do not allow secret mutation over MCP.
-- Run tools return metadata-only projections. Request and response bodies,
-  headers, cookies, URLs, variable values, assertion actual values, and raw
-  errors remain available only in the local desktop UI.
+- Run tools return metadata-only projections: request and response bodies,
+  headers, cookies, URLs, variable values, and assertion actual values stay in
+  the local desktop UI. The one exception is `runs_getNodeResult`, which returns
+  one node's stored request/response — including its body — after the same
+  blanket secret-redaction pass every MCP read gets, so secret-looking values
+  are withheld there too.
 
 Treat the MCP token like a password. Anyone who can read it while APIWeave is
 running can call every whitelisted tool, including tools that create, update,
@@ -45,6 +48,8 @@ DELETE tears the session down. Sessions are bounded (excess `initialize`
 requests get `503`) and idle-evicted. Retained sessions can subscribe to the run
 resource and receive `notifications/resources/updated`; the notification is a
 change signal, so the client re-reads the resource for the new snapshot.
+
+The bridge speaks MCP protocol version `2025-06-18` (negotiated by the SDK).
 
 ## Enable The Bridge
 
@@ -135,6 +140,10 @@ so a graph mistake — a missing assertion edge handle, an assertion path that
 cannot address a value — is visible in the write's own response instead of
 requiring a live run to discover.
 
+Each of the three also accepts a `return` echo-shape parameter —
+`"diagnosis"` (the default), `"summary"`, or `"full"` — to control how much of
+the written workflow comes back in the response, for clients on a token budget.
+
 ### Projects
 
 - `projects_list`
@@ -180,11 +189,18 @@ environment this one inherits plain variables from; `null` clears it. See
 
 - `runs_create`
 - `runs_get`
+- `runs_getNodeResult`
 - `runs_listByWorkflow`
 - `runs_listByWorkspace`
 - `runs_getLatest`
 - `runs_getLatestFailed`
 - `runs_cancel`
+
+`runs_getNodeResult` is the exception to the metadata-only rule: it returns one
+node's stored request and response from a run, body included, after the same
+secret-redaction pass every MCP read gets. Use it to inspect a single node's
+payload without leaving the agent; secret-shaped values still come back
+withheld.
 
 ### Secret Metadata
 
@@ -296,8 +312,10 @@ Run tools return operational metadata suitable for an agent to monitor a run:
 - Referenced secret names and safe resolved/scope metadata.
 - Resume lineage and record revision.
 
-Run responses intentionally omit raw request/response and variable content. Use
-the desktop response inspector when those payloads are needed.
+Run responses intentionally omit raw request/response and variable content —
+except `runs_getNodeResult`, which returns one node's stored request/response
+under the standard secret-redaction pass. Use the desktop response inspector
+when full payloads for other nodes are needed.
 
 Run tools do not push updates themselves. A session client can subscribe to the
 run resource for `notifications/resources/updated` change signals (see
@@ -465,7 +483,8 @@ Store the token in `APIWEAVE_MCP_TOKEN`, then add the server:
 codex mcp add apiweave --url http://127.0.0.1:47271/mcp --bearer-token-env-var APIWEAVE_MCP_TOKEN
 ```
 
-Checked-in templates are available under `mcp-configs/`.
+Checked-in templates are available under `mcp-configs/` for Claude Desktop,
+Cursor, VS Code, and OpenCode. Codex uses the CLI command above.
 
 ## Agent Workflow Example
 
@@ -490,8 +509,10 @@ Checked-in templates are available under `mcp-configs/`.
   Connect through a native MCP client or a local stdio-to-HTTP adapter.
 - **Tool not found:** Use `tools/list`; old singular names such as
   `workflow_run` and `run_get_status` belonged to the removed backend.
-- **No raw response body:** This is intentional. MCP run tools expose safe
-  metadata; inspect the body in the desktop UI.
+- **No raw response body:** Run tools other than `runs_getNodeResult` expose
+  safe metadata only. Inspect a full body in the desktop UI, or call
+  `runs_getNodeResult` for one node's stored request/response (secret-shaped
+  values still come back redacted).
 - **A config value comes back as `<SECRET>`:** Intentional — the structure is
   intact, the credential value is withheld. It is why an agent cannot re-apply
   an existing preset; drag it onto the canvas in the desktop app instead.
