@@ -40,14 +40,26 @@ describe("sanitizeExportValue", () => {
     expect(sanitized["queryParams"]).toEqual([{ key: "filter", value: "active" }])
   })
 
-  it("redacts a non-empty body and strips URL userinfo/fragment", () => {
+  it("redacts a body leaf by leaf and strips URL userinfo/fragment", () => {
     const config = {
-      body: "{\"password\":\"secret\"}",
+      body: "{\"password\":\"secret\",\"phase_code\":\"INI\"}",
       url: "https://user:pass@example.test/a/b#access_token=abc123",
     }
     const sanitized = sanitizeExportValue(config) as Record<string, unknown>
-    expect(sanitized["body"]).toBe("<SECRET>")
+    // The credential leaf is withheld; the rest of the request payload is
+    // config and has to survive, or the bundle cannot rebuild the workflow.
+    expect(JSON.parse(sanitized["body"] as string)).toEqual({ password: "<SECRET>", phase_code: "INI" })
     expect(sanitized["url"]).toBe("https://example.test/a/b")
+  })
+
+  it("returns an export body with nothing to redact byte-for-byte", () => {
+    const body = '{ "national_identity": "APIW-MP-1",\n  "turnover": 1500000.5 }'
+    expect(sanitizeExportValue({ body })).toEqual({ body })
+  })
+
+  it("withholds a whole non-JSON body that carries credential material", () => {
+    expect(sanitizeExportValue({ body: "Bearer abc123.def" })).toEqual({ body: "<SECRET>" })
+    expect(sanitizeExportValue({ body: "plain text payload" })).toEqual({ body: "plain text payload" })
   })
 
   it("recurses into arrays, e.g. nodeTemplates wrapping a config object", () => {
@@ -113,8 +125,12 @@ describe("sanitizeAgentReadValue — same floor as export, structure kept", () =
     const config = { body: '{"name":"Rex","password":"hunter2","note":"{{secrets.NOTE}}"}' }
     const body = JSON.parse((sanitizeAgentReadValue(config) as { body: string }).body) as Record<string, unknown>
     expect(body).toEqual({ name: "Rex", password: "<SECRET>", note: "{{secrets.NOTE}}" })
-    // Export still flattens: a bundle leaves the machine, so it fails closed.
-    expect(sanitizeExportValue(config)).toEqual({ body: "<SECRET>" })
+    // Export redacts the same way. It withholds more — `hunter2` is not
+    // credential-shaped, so only the sensitive KEY NAME catches it — but the
+    // non-secret leaves survive in both, which is what makes a bundle
+    // re-importable and a read diffable.
+    const exported = JSON.parse((sanitizeExportValue(config) as { body: string }).body) as Record<string, unknown>
+    expect(exported).toEqual({ name: "Rex", password: "<SECRET>", note: "{{secrets.NOTE}}" })
   })
 
   it("returns a body with nothing to redact byte-for-byte, so a read is a usable diff", () => {

@@ -243,6 +243,86 @@ export function isWithheldSyncValue(value: unknown): boolean {
   return !isEmptySyncValue(value) && !isCredentialFreeReference(value)
 }
 
+/**
+ * Redact a request body leaf-by-leaf, writing `blank` in place of each withheld
+ * value. A body is workflow *config* that has to round-trip between devices, so
+ * flattening it wholesale destroys the thing redaction is meant to protect;
+ * only credential-shaped leaves are withheld. JSON bodies are walked
+ * structurally, a non-JSON body is withheld whole only when it carries
+ * credential material, and a body with nothing to redact comes back
+ * byte-for-byte so redaction never shows up as a spurious diff.
+ *
+ * Shared by the cloud-sync push sanitizer (which blanks to `""`) and the export
+ * bundler (which writes `<SECRET>`, so {@link findRedactedPlaceholders} can
+ * catch that placeholder being written back). Only the blank token differs: a
+ * body that syncs but cannot be exported — or the reverse — is exactly the
+ * drift this one function exists to prevent.
+ */
+export function redactBodyLeaves(body: string, blank: string): string {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return containsCredentialMaterial(body) ? blank : body
+  }
+  const tally: RedactionTally = { redacted: false, blank }
+  const sanitized = redactBodyValue(parsed, null, tally)
+  return tally.redacted ? JSON.stringify(sanitized, null, 2) : body
+}
+
+/** Whether anything was withheld, so an untouched body can return verbatim. */
+interface RedactionTally {
+  redacted: boolean
+  readonly blank: string
+}
+
+function redactBodyValue(value: unknown, keyName: string | null, tally: RedactionTally): JsonValue {
+  if (keyName !== null && isSyncSensitiveKey(keyName)) {
+    return withheldBodyValue(value, tally)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactBodyValue(item, null, tally))
+  }
+  if (isRecord(value)) {
+    return redactBodyRecord(value, tally)
+  }
+  if (typeof value === "string") {
+    return containsCredentialMaterial(value) ? blankBody(tally) : value
+  }
+  return value as JsonValue
+}
+
+function redactBodyRecord(record: Record<string, JsonValue>, tally: RedactionTally): JsonValue {
+  // Mirror the validators' `{key, value}` pair semantics: the sensitivity of a
+  // pair lives in its sibling `key`, not in the literal name `value`.
+  const pairKey = record["key"]
+  const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
+  const sanitized: Record<string, JsonValue> = {}
+  for (const [key, child] of Object.entries(record)) {
+    sanitized[key] = pairSensitive && key === "value"
+      ? withheldBodyValue(child, tally)
+      : redactBodyValue(child, key, tally)
+  }
+  return sanitized
+}
+
+// In a body, a sensitive key name withholds its WHOLE value rather than its
+// string leaves. The validators are content to walk a container and judge its
+// leaves by name, which is what lets `auth.apiKey` sync; but inside a request
+// body there is no schema to lean on, so an opaque credential one level down
+// (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
+function withheldBodyValue(value: unknown, tally: RedactionTally): JsonValue {
+  if (isEmptySyncValue(value) || isCredentialFreeReference(value)) {
+    return value as JsonValue
+  }
+  return blankBody(tally)
+}
+
+function blankBody(tally: RedactionTally): JsonValue {
+  tally.redacted = true
+  return tally.blank
+}
+
 function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -498,9 +578,16 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
   // they map from would otherwise be redacted by the key-name heuristic below.
   extractors: (value) => (isRecord(value) ? { ...value } : undefined),
   url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
+  // Export redacts a body leaf-by-leaf rather than flattening it to the
+  // placeholder. A body is workflow config, and the bundle it lands in is what
+  // rebuilds that workflow on another machine — flattening loses every request
+  // payload in the project and, because `<SECRET>` is a valid string for
+  // `HTTPNodeDataSchema.body`, re-importing it writes the placeholder back as
+  // if it were real config. The credential floor is unchanged: this is the same
+  // walk, and the same contract, that the cloud-sync push sanitizer applies.
   body: (value, mode) => {
     if (typeof value !== "string" || value.trim().length === 0) return undefined
-    return mode === "export" ? SECRET_PLACEHOLDER : sanitizeBodyForAgentRead(value)
+    return mode === "export" ? redactBodyLeaves(value, SECRET_PLACEHOLDER) : sanitizeBodyForAgentRead(value)
   },
 }
 
