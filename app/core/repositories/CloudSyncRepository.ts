@@ -31,6 +31,24 @@ export interface CloudOutboxRow {
   readonly is_baseline: boolean
 }
 
+/**
+ * A dead-lettered outbox row, described for the UI. `recordName` is resolved
+ * from the record's own table at read time so the user sees "Actor Module",
+ * not a ULID; it is absent when the record was deleted locally after the push
+ * was queued. `failureReason` is the same user-facing sentence the row already
+ * stores — machine codes never reach it.
+ */
+export interface CloudFailedRecord {
+  readonly outboxId: string
+  readonly kind: CloudOutboxKind
+  readonly recordId: string
+  readonly recordName?: string
+  readonly op: CloudOutboxOp
+  readonly failureReason?: string
+  readonly attempts: number
+  readonly queuedAt: string
+}
+
 export interface CloudDeviceUpsert {
   readonly deviceId: string
   readonly label: string
@@ -495,6 +513,31 @@ export class CloudSyncRepository {
       `SELECT COUNT(*) as total FROM cloud_outbox WHERE retry_count >= ?${workspaceClause}`,
       workspaceId === undefined ? [CLOUD_OUTBOX_MAX_RETRIES] : [CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
     )?.total ?? 0
+  }
+
+  /**
+   * The dead-lettered rows for a workspace, named for display. A count alone
+   * ("1 failed") leaves the user hunting through every workflow for the one
+   * that is stuck, so the UI needs the record behind each failure.
+   */
+  public listDeadLetterOutbox(workspaceId: string): readonly CloudFailedRecord[] {
+    const rows = this.store.query<OutboxDbRow>(
+      "SELECT * FROM cloud_outbox WHERE workspace_id = ? AND retry_count >= ? ORDER BY created_at ASC",
+      [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
+    )
+    return rows.map((row): CloudFailedRecord => {
+      const name = this.getRecordName(row.kind, row.record_id)
+      return {
+        outboxId: row.id,
+        kind: row.kind as CloudOutboxKind,
+        recordId: row.record_id,
+        ...(name !== undefined ? { recordName: name } : {}),
+        op: row.op as CloudOutboxOp,
+        ...(row.failure_reason !== null ? { failureReason: row.failure_reason } : {}),
+        attempts: row.retry_count,
+        queuedAt: new Date(row.created_at).toISOString(),
+      }
+    })
   }
 
   public countPendingConflicts(workspaceId?: string): number {

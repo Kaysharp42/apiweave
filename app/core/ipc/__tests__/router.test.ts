@@ -72,6 +72,78 @@ describe("IpcRouter.dispatch", () => {
   })
 })
 
+describe("IpcRouter error reporting", () => {
+  it("reports a rejected dispatch to the observer with domain, action, code and message", async () => {
+    const reportError = vi.fn()
+    const router = new IpcRouter({ reportError })
+    router.register("test", "echo", {
+      input: echoInput,
+      output: echoOutput,
+      handle: (input) => ({ x: input.x, timestamp: "2026-07-06T00:00:00.000Z" }),
+    })
+    const result = await router.dispatch({ domain: "test", action: "echo", payload: { x: "nope" } })
+    expect(result.ok).toBe(false)
+    expect(reportError).toHaveBeenCalledOnce()
+    const report = reportError.mock.calls[0]?.[0]
+    expect(report).toMatchObject({
+      domain: "test",
+      action: "echo",
+      code: "validation",
+      message: "request validation failed",
+    })
+  })
+
+  it("reports a thrown AppError under its own code", async () => {
+    const reportError = vi.fn()
+    const router = new IpcRouter({ reportError })
+    router.register("workspaces", "get", {
+      input: z.object({ id: z.string() }),
+      output: z.object({ id: z.string() }),
+      handle: () => {
+        throw new NotFoundError("workspace B does not exist")
+      },
+    })
+    const result = await router.dispatch({ domain: "workspaces", action: "get", payload: { id: "B" } })
+    expect(result.ok).toBe(false)
+    expect(reportError.mock.calls[0]?.[0]).toMatchObject({
+      domain: "workspaces",
+      action: "get",
+      code: "not_found",
+      message: "workspace B does not exist",
+    })
+  })
+
+  it("reports an internal handler failure before re-throwing it", async () => {
+    const reportError = vi.fn()
+    const router = new IpcRouter({ reportError })
+    router.register("boom", "now", {
+      input: z.object({}),
+      output: z.object({}),
+      handle: () => {
+        throw new Error("kaboom")
+      },
+    })
+    await expect(router.dispatch({ domain: "boom", action: "now", payload: {} })).rejects.toThrow("kaboom")
+    expect(reportError).toHaveBeenCalledOnce()
+    expect(reportError.mock.calls[0]?.[0]).toMatchObject({ code: "internal", message: "kaboom" })
+  })
+
+  it("still returns the envelope when the observer itself throws", async () => {
+    const router = new IpcRouter({
+      reportError: () => {
+        throw new Error("logger broke")
+      },
+    })
+    router.register("test", "echo", {
+      input: echoInput,
+      output: echoOutput,
+      handle: (input) => ({ x: input.x, timestamp: "2026-07-06T00:00:00.000Z" }),
+    })
+    const result = await router.dispatch({ domain: "test", action: "echo", payload: { x: "nope" } })
+    expect(result.ok).toBe(false)
+  })
+})
+
 describe("createApiweaveClient", () => {
   it("turns client.domain.action(payload) into invoke(domain, action, payload)", async () => {
     const invoke = vi.fn(async () => ({ ok: true as const, data: { echoed: true } }))

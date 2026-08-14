@@ -48,14 +48,20 @@ import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-contr
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import { CLOUD_STATUS_CHANGED_CHANNEL, UPDATE_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
-import { revealLogFile } from "./logging"
+import { ipcLog, revealLogFile } from "./logging"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
-// exposes the same router as a second transport.
-const ipcRouter = new IpcRouter()
+// exposes the same router as a second transport. Every rejected dispatch is
+// reported to the main.log file transport, so a refused workflow save leaves a
+// line that names the domain, action, error code and message.
+const ipcRouter = new IpcRouter({
+  reportError: ({ domain, action, code, message, details }) => {
+    ipcLog.error(`${domain}.${action} rejected (${code}): ${message}`, details ?? "")
+  },
+})
 
 let database: InitializedDatabase | null = null
 let scheduler: RunScheduler | null = null
@@ -584,10 +590,12 @@ if (!hasSingleInstanceLock) {
       // assets are served from app://local, so no CDN script source is needed.
       // Other resource types (fonts, images, styles) are left unrestricted to
       // keep web-font loading working; only script/worker execution is pinned.
+      // 'wasm-unsafe-eval' allows WebAssembly.instantiate (libsodium ships a
+      // wasm build) without granting full eval.
       if (pathname === "/index.html") {
         headers.set(
           "Content-Security-Policy",
-          "script-src 'self' app:; worker-src 'self' app: blob:",
+          "script-src 'self' app: 'wasm-unsafe-eval'; worker-src 'self' app: blob:",
         )
       }
       return new Response(response.body, {

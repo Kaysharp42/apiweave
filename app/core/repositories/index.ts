@@ -20,6 +20,7 @@ export type {
   CloudConflict,
   CloudConflictWinner,
   CloudCursorState,
+  CloudFailedRecord,
   CloudOutboxKind,
   CloudOutboxOp,
   CloudOutboxRow,

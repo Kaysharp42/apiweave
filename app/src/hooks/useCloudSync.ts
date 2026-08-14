@@ -110,6 +110,10 @@ export function useCloudSync(): UseCloudSync {
       run(() => apiweave.cloud.retryDeadLetters(workspaceId)),
     discardDeadLetters: (workspaceId) =>
       run(() => apiweave.cloud.discardDeadLetters(workspaceId)),
+    // A read, not a mutation: it returns records rather than a status, so it
+    // stays outside `run` and never flips `busy`.
+    listFailedRecords: (workspaceId) =>
+      apiweave.cloud.listFailedRecords(workspaceId),
     pull: () => run(() => apiweave.cloud.pull()),
     push: () => run(() => apiweave.cloud.push()),
   };

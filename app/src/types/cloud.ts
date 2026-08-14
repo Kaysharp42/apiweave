@@ -10,6 +10,7 @@ export type { CloudSyncState } from "./CloudSyncState";
 export type { CloudAccountIdentity } from "./CloudAccountIdentity";
 export type { CloudDeviceStatus } from "./CloudDeviceStatus";
 export type { CloudWorkspaceBinding } from "./CloudWorkspaceBinding";
+export type { CloudFailedRecord } from "./CloudFailedRecord";
 export type { CloudWorkspaceCatalogEntry } from "./CloudWorkspaceCatalogEntry";
 export type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
 export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceInput";
