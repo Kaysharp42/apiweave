@@ -26,7 +26,6 @@ const shortcutGroups: ShortcutGroup[] = [
     title: "Panels",
     shortcuts: [
       { keys: ["Ctrl", "B"], description: "Toggle sidebar" },
-      { keys: ["Ctrl", "E"], description: "Toggle environment manager" },
       { keys: ["Ctrl", "J"], description: "Toggle JSON editor" },
     ],
   },

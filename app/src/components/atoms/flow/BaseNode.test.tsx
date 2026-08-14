@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createElement, type ReactElement } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -135,6 +136,45 @@ describe("BaseNode accessible shell", () => {
     expect(
       screen.queryByRole("button", { name: /expand|collapse/i }),
     ).toBeNull();
+  });
+});
+
+describe("BaseNode expanded stacking", () => {
+  /**
+   * The open body has to clear its neighbours, and ReactFlow's node wrapper is
+   * the only element that can move in the stacking order. jsdom computes no
+   * layout, so the two halves of that contract are asserted separately: the
+   * attribute here, the rule that consumes it below.
+   */
+  it("marks nothing while collapsed", () => {
+    const { container } = renderNode(
+      <BaseNode title="Login">{({ isExpanded }) => (isExpanded ? "body" : null)}</BaseNode>,
+    );
+    expect(container.querySelector("[data-node-expanded]")).toBeNull();
+  });
+
+  it("marks the node when the user expands it", async () => {
+    const { container } = renderNode(
+      <BaseNode title="Login">{({ isExpanded }) => (isExpanded ? "body" : null)}</BaseNode>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /expand/i }));
+
+    expect(container.querySelector("[data-node-expanded]")).not.toBeNull();
+  });
+
+  it("lifts the ReactFlow wrapper of a marked node above the selection band", () => {
+    const css = readFileSync(join("src", "index.css"), "utf-8");
+    const rule = css.match(
+      /\.react-flow__node:has\(\[data-node-expanded="true"\]\)\s*\{[^}]*\}/,
+    )?.[0];
+
+    expect(rule, "no rule lifts an expanded node's wrapper").toBeDefined();
+    // Inline z-index on the wrapper only yields to !important, and ReactFlow
+    // puts a selected node at 1000.
+    expect(rule).toContain("!important");
+    const zIndex = Number(rule?.match(/z-index:\s*(\d+)/)?.[1]);
+    expect(zIndex).toBeGreaterThan(1000);
   });
 });
 

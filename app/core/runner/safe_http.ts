@@ -14,7 +14,10 @@ type AddressType = "ipv4" | "ipv6"
  * runner (HTTP request nodes) goes through here. The desktop single-user
  * default sets `allowLoopback = true` so the user's `localhost` dev services
  * are reachable; RFC1918, link-local (cloud metadata at 169.254.169.254),
- * IPv6 unique-local, multicast, and unspecified ranges stay blocked regardless.
+ * IPv6 unique-local, multicast, and unspecified ranges stay blocked unless
+ * the user opts in via `allowPrivateNetworks` (a persisted app setting), which
+ * carves out RFC1918 + unique-local only — link-local/metadata and multicast
+ * remain blocked regardless.
  *
  * Block list via `node:net.BlockList` — stdlib native, no CIDR math to write.
  * Redirects: undici `redirect: 'manual'`, each hop re-validated (no TOCTOU).
@@ -45,6 +48,15 @@ const BLOCKED_IPV6: ReadonlyArray<readonly [string, number]> = [
 ]
 const LOOPBACK_IPV4: ReadonlyArray<readonly [string, number]> = [["127.0.0.0", 8]]
 const LOOPBACK_IPV6: ReadonlyArray<readonly [string, number]> = [["::1", 128]]
+// RFC1918 + IPv6 unique-local. Carved out of the blocklist when the user opts
+// in via `allowPrivateNetworks` so LAN services (e.g. a dev box on
+// 192.168.x.x) are reachable. Link-local/metadata and multicast stay blocked.
+const PRIVATE_IPV4: ReadonlyArray<readonly [string, number]> = [
+  ["10.0.0.0", 8],
+  ["172.16.0.0", 12],
+  ["192.168.0.0", 16],
+]
+const PRIVATE_IPV6: ReadonlyArray<readonly [string, number]> = [["fc00::", 7]]
 const DEV_ALLOWED_HOSTS = new Set(["host.docker.internal"])
 
 const ALLOWED_SCHEMES = new Set(["http", "https"])
@@ -59,6 +71,7 @@ export class SafeUrlError extends Error {
 
 export type SafeHttpOptions = {
   readonly allowLoopback?: boolean
+  readonly allowPrivateNetworks?: boolean
   readonly approvedDomains?: readonly string[]
   readonly maxRedirectHops?: number
   readonly fetchImpl?: typeof fetch
@@ -76,7 +89,9 @@ export type SafeFetchOptions = {
 export class SafeHttp {
   private readonly blocklist: NodeBlockList
   private readonly loopbackList: NodeBlockList
+  private readonly privateList: NodeBlockList
   private readonly allowLoopback: boolean
+  private allowPrivateNetworksEnabled: boolean
   private readonly approvedDomains: readonly string[]
   private readonly approvedDomainsEnabled: boolean
   private readonly maxRedirectHops: number
@@ -86,6 +101,7 @@ export class SafeHttp {
 
   public constructor(opts: SafeHttpOptions = {}) {
     this.allowLoopback = opts.allowLoopback ?? true
+    this.allowPrivateNetworksEnabled = opts.allowPrivateNetworks ?? false
     this.approvedDomains = opts.approvedDomains ?? []
     this.approvedDomainsEnabled = this.approvedDomains.length > 0
     this.maxRedirectHops = opts.maxRedirectHops ?? MAX_REDIRECT_HOPS
@@ -95,6 +111,19 @@ export class SafeHttp {
 
     this.blocklist = buildBlocklist(BLOCKED_IPV4, BLOCKED_IPV6)
     this.loopbackList = buildBlocklist(LOOPBACK_IPV4, LOOPBACK_IPV6)
+    this.privateList = buildBlocklist(PRIVATE_IPV4, PRIVATE_IPV6)
+  }
+
+  /** Whether RFC1918/unique-local targets are currently allowed (opt-in). */
+  public get allowPrivateNetworks(): boolean {
+    return this.allowPrivateNetworksEnabled
+  }
+
+  /** Flip the private-networks opt-in at runtime; the persisted setting lives
+   * with the composition root. Takes effect for every consumer of this
+   * instance (runner, imports) without a restart. */
+  public setAllowPrivateNetworks(enabled: boolean): void {
+    this.allowPrivateNetworksEnabled = enabled
   }
 
   // -------------------- Pure validation (no I/O) --------------------
@@ -269,6 +298,7 @@ export class SafeHttp {
   private isBlockedIp(address: string, family: 4 | 6): boolean {
     const type: AddressType = family === 6 ? "ipv6" : "ipv4"
     if (this.allowLoopback && this.loopbackList.check(address, type)) return false
+    if (this.allowPrivateNetworksEnabled && this.privateList.check(address, type)) return false
     return this.blocklist.check(address, type)
   }
 

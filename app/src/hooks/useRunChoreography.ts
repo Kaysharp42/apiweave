@@ -11,12 +11,13 @@ import {
   enqueue as enqueueEvent,
   flush as flushQueue,
   resetChoreography,
+  EDGE_FILL_CSS_VAR,
   type ChoreographyState,
   type PacedEvent,
 } from "../utils/runChoreography";
 
 /** The token `CustomEdge`'s reveal and its travelling head both animate over. */
-const FILL_VAR = "--aw-dur-edge-fill";
+const FILL_VAR = EDGE_FILL_CSS_VAR;
 
 /** Cancel a pending pump timer, if one is scheduled. Shared by every place
  * that pre-empts the schedule: enqueuing more work, resetting, and flushing. */

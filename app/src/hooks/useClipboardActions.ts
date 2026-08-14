@@ -121,6 +121,11 @@ export function useClipboardActions({
         toast.success("Node copied to clipboard");
       }
 
+      if (action === "duplicate" && selectedNodeRef.current) {
+        e.preventDefault();
+        useCanvasStore.getState().duplicateNode(selectedNodeRef.current.id);
+      }
+
       if (action === "paste") {
         e.preventDefault();
         useCanvasStore.getState().pasteNode();

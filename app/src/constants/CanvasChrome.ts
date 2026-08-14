@@ -17,3 +17,14 @@ export const MiniMapSize = { width: 220, height: 150 } as const;
  * turn sits one gutter above the canvas floor.
  */
 export const CanvasActionsBottom = CanvasCornerGutter * 2 + MiniMapSize.height;
+
+/**
+ * Height of the band the floating toolbar covers at the top of the canvas: its
+ * `top-3` inset plus a row of 32px controls and their padding.
+ *
+ * Only the run camera reads this. The toolbar positions itself with Tailwind
+ * classes and does not need a number, but anything *centring content* in the
+ * canvas does — otherwise it aims at the middle of the container and puts the
+ * node it is framing directly underneath the Run button.
+ */
+export const CanvasToolbarBand = 56;

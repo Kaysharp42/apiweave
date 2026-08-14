@@ -48,6 +48,8 @@
     "axios": "^1.17.0",
     "better-sqlite3": "^12.6.0",
     "dagre": "^0.8.5",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
     "daisyui": "^5.5.18",
     "electron-log": "^5.4.4",
     "electron-updater": "~6.3.9",

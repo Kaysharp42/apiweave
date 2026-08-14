@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Modal } from "../molecules/Modal";
 import { Button } from "../atoms/Button";
-import { Toggle } from "../atoms/Toggle";
+import { ToggleSetting } from "../molecules/ToggleSetting";
 import { mcp } from "../../utils/apiweaveClient";
 import type { McpStatus } from "@shared/types/McpStatus";
 
@@ -67,25 +67,18 @@ export function McpSetupModal({ isOpen, onClose }: McpSetupModalProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="MCP Server" size="md">
       <div className="space-y-5 px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-              Enable local MCP server
-            </p>
-            <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-              Lets an MCP client (Claude, Cursor, …) drive your workflows over a
-              loopback-only HTTP endpoint.               Off until you enable it; your choice is remembered across
-              restarts. A per-install token is required on every request.
-              Secrets are never exposed.
-            </p>
-          </div>
-          <Toggle
-            checked={status.running}
-            onChange={onToggle}
-            disabled={busy || !mcp.isAvailable()}
-            variant="success"
-          />
-        </div>
+        <ToggleSetting
+          title="Enable local MCP server"
+          description={
+            "Lets an MCP client (Claude, Cursor, …) drive your workflows over a " +
+            "loopback-only HTTP endpoint. Off until you enable it; your choice " +
+            "is remembered across restarts. A per-install token is required on " +
+            "every request. Secrets are never exposed."
+          }
+          checked={status.running}
+          onToggle={onToggle}
+          disabled={busy || !mcp.isAvailable()}
+        />
 
         {!mcp.isAvailable() && (
           <p className="text-xs text-status-warning">

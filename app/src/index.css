@@ -46,6 +46,17 @@
   color: var(--aw-text-primary);
 }
 
+/* An expanded node grows downward across whatever sits below it. ReactFlow
+   writes the stacking order inline on this wrapper — 0 at rest, +1000 while
+   selected — and because the wrapper is positioned, that inline z-index makes
+   it a stacking context no descendant can escape. So the lift belongs here, it
+   needs !important to beat the inline value, and it sits above the selection
+   band: an open body must clear its neighbours even when one of them is the
+   selected node. */
+.react-flow__node:has([data-node-expanded="true"]) {
+  z-index: 1001 !important;
+}
+
 /* ──────────────────────────────────────────────
    Edges — state comes from the source node (DESIGN.md §7).
    CustomEdge sets the stroke inline per state; these rules are the
@@ -179,6 +190,13 @@
 .react-flow__handle.aw-node-handle {
   background-color: transparent;
   border: 0;
+  /* BaseNode renders `handleLeft` before the node slab and `handleRight`
+     after it, so with both left to stacking-context default (z-index:
+     auto, painted in DOM order) the left/target socket ends up underneath
+     the slab while the right/source socket sits above it. An explicit
+     z-index takes the handle out of DOM-order painting entirely, so both
+     sockets sit above the slab regardless of which side they're on. */
+  z-index: 1;
 }
 
 .aw-node-handle__dot {

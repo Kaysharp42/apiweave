@@ -16,6 +16,7 @@ import type { WorkflowEdge } from "@shared/types/WorkflowEdge";
 import type { WorkflowNode } from "@shared/types/WorkflowNode";
 import useRunChoreography from "./useRunChoreography";
 import type { PacedEvent } from "../utils/runChoreography";
+import type { RunCameraHandle } from "../types/RunCameraHandle";
 import type { RunResult } from "../types/RunResult";
 
 /** The canvas renders nodes by `executionStatus` in {running, success, error,
@@ -247,6 +248,13 @@ interface UseWorkflowPollingParams {
   saveWorkflowRef?: MutableRefObject<
     ((silent: boolean) => Promise<void>) | null
   > | null;
+  /**
+   * Optional run camera. It is told about the run from here rather than from the
+   * canvas because the two facts it needs — when a run begins, and when a node
+   * actually lights up — are only both visible at this seam: the second one
+   * belongs to the playback, not to the runner.
+   */
+  camera?: RunCameraHandle | null;
 }
 
 interface UseWorkflowPollingResult {
@@ -287,6 +295,7 @@ export default function useWorkflowPolling({
   selectedEnvironment,
   reactFlowInstanceRef,
   saveWorkflowRef,
+  camera,
 }: UseWorkflowPollingParams): UseWorkflowPollingResult {
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
@@ -313,6 +322,11 @@ export default function useWorkflowPolling({
    * ever does arrive, is recognised as a duplicate rather than replayed.
    */
   const entryNodeIdsRef = useRef<ReadonlySet<string>>(new Set());
+
+  // Held in a ref so the camera is never a reason to rebuild `releaseNodeStatus`
+  // — it is handed to a live playback timer and to an IPC subscription.
+  const cameraRef = useRef(camera);
+  cameraRef.current = camera;
 
   const resumeOptions = useMemo(
     () => latestFailedRun?.failedNodes ?? [],
@@ -398,6 +412,11 @@ export default function useWorkflowPolling({
           },
         }),
       );
+      // The camera follows what is on screen, so it is told here and not in
+      // `handleEvent`: the runner can report a node running and finished inside
+      // one frame, and a camera driven off that would arrive at nodes before
+      // they lit up and skip past the ones it paced over.
+      cameraRef.current?.onNodeShown(event.nodeId, event.status);
     },
     [setNodes],
   );
@@ -437,6 +456,10 @@ export default function useWorkflowPolling({
       const runId = event.runId;
       choreography.whenSettled(() => {
         setIsRunning(false);
+        // Released before the hydration, which repaints every node at once: the
+        // camera has nothing left to follow, and a retarget racing that repaint
+        // would be aiming at whatever landed first.
+        cameraRef.current?.onRunSettled();
         void hydrateRunResults(runId);
       });
       void refreshLatestFailedRun();
@@ -606,6 +629,12 @@ export default function useWorkflowPolling({
         // entry point passing, and this side knows the moment it began. The
         // node goes through the same playback as any other, so the traversal
         // out of Start is drawn rather than snapped.
+        //
+        // The camera is engaged just before that, not after: enqueuing pumps the
+        // playback synchronously, so the entry point's release — the camera's
+        // only cue for where the run begins — happens inside the loop below.
+        cameraRef.current?.onRunStart([...entryNodeIdsRef.current]);
+
         for (const nodeId of entryNodeIdsRef.current) {
           choreography.enqueue({ nodeId, status: "success" });
         }
