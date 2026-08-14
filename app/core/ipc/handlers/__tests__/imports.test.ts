@@ -75,6 +75,10 @@ beforeEach(() => {
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver, secretStore, () => "2026-01-01T00:00:00.000Z"),
     imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver),
+    httpSafety: {
+      allowPrivateNetworks: false,
+      setAllowPrivateNetworks: () => undefined,
+    },
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)

@@ -6,8 +6,16 @@ import type { Node, Edge } from "reactflow";
 // are ordinary DAG nodes here; rank assignment converges their multi-inputs and
 // fans out branches naturally, so no special per-type handling is needed.
 // Swap to elkjs only if this measurably falls short on a real workflow.
-const NODE_W = 280;
-const NODE_H = 120;
+/**
+ * What a node is assumed to measure before ReactFlow has measured it. Exported
+ * because the run camera has to frame nodes it may be seeing for the first time
+ * and needs the same guess this layout makes, not a second opinion.
+ */
+export const NODE_FALLBACK_WIDTH = 280;
+export const NODE_FALLBACK_HEIGHT = 120;
+
+const NODE_W = NODE_FALLBACK_WIDTH;
+const NODE_H = NODE_FALLBACK_HEIGHT;
 
 /**
  * Repositions nodes into a clean layered layout based on their edge connections.

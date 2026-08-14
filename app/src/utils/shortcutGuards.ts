@@ -48,7 +48,7 @@ export const hasSelectedText = (
   return selection.toString().trim().length > 0;
 };
 
-type ClipboardAction = "copy" | "paste" | null;
+type ClipboardAction = "copy" | "paste" | "duplicate" | null;
 
 export const getCanvasClipboardShortcutAction = ({
   event,
@@ -65,7 +65,8 @@ export const getCanvasClipboardShortcutAction = ({
 
   const key = event.key?.toLowerCase?.();
   const isClipboardCombo =
-    (event.ctrlKey || event.metaKey) && (key === "c" || key === "v");
+    (event.ctrlKey || event.metaKey) &&
+    (key === "c" || key === "v" || key === "d");
   if (!isClipboardCombo) {
     return null;
   }
@@ -82,6 +83,10 @@ export const getCanvasClipboardShortcutAction = ({
 
   if (key === "c") {
     return hasSelectedNode ? "copy" : null;
+  }
+
+  if (key === "d") {
+    return hasSelectedNode ? "duplicate" : null;
   }
 
   return "paste";

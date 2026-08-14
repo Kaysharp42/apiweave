@@ -187,6 +187,10 @@ function buildRouter(): IpcRouter {
     runs: runService,
     secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver),
+    httpSafety: {
+      allowPrivateNetworks: false,
+      setAllowPrivateNetworks: () => undefined,
+    },
   }
   const router = new IpcRouter()
   registerAllHandlers(router, deps)

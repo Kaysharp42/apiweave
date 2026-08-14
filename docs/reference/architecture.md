@@ -38,7 +38,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Repositories** are the only place that touches better-sqlite3. Every consumer (handlers, services, runner) goes through repository methods. The schema lives in `app/core/db/migrations/`.
 
-**Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls with SSRF guards, and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
+**Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls with SSRF guards (loopback always allowed; RFC1918/unique-local opt-in via **Settings → Private networks**; link-local/metadata and multicast always blocked), and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
 
 **Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path, unwraps them with the scope's private key, and re-encrypts the plaintext under a per-install keyfile. On the read path, it resolves the local scope chain (selected environment, then the user's local store) and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values are per-user and never synced, even when teams share config.
 
