@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest"
 import { z } from "zod"
+import { ZodError } from "zod"
 import type { WebContents } from "electron"
 import { createApiweaveClient } from "@shared/contract/client"
 import { IpcRouter, NotFoundError } from "../index"
 import { emitRunProgress, runProgressChannel } from "../register"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
+import { SECRET_PLACEHOLDER } from "../../services/secret_utils"
 
 const echoInput = z.object({ x: z.number() })
 const echoOutput = z.object({ x: z.number(), timestamp: z.string() })
@@ -69,6 +71,43 @@ describe("IpcRouter.dispatch", () => {
       },
     })
     await expect(router.dispatch({ domain: "boom", action: "now", payload: {} })).rejects.toThrow("kaboom")
+  })
+
+  it("refuses to store a redacted secret placeholder when redactSecrets is set", async () => {
+    const router = echoRouter()
+    const result = await router.dispatch(
+      { domain: "test", action: "echo", payload: { x: SECRET_PLACEHOLDER } },
+      { redactSecrets: true },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error.code).toBe("validation")
+    expect(result.ok === false && result.error.message).toContain(SECRET_PLACEHOLDER)
+  })
+
+  it("throws (HTTP-500 equivalent) when a handler's output fails its own schema", async () => {
+    const router = new IpcRouter()
+    router.register("bad", "output", {
+      input: z.object({}),
+      // The handler lies about its return type — output.parse must reject it.
+      output: z.object({ required: z.string() }),
+      handle: () => ({}) as never,
+    })
+    await expect(router.dispatch({ domain: "bad", action: "output", payload: {} })).rejects.toThrow(ZodError)
+  })
+
+  it("maps a ZodError thrown by a handler to a validation envelope (never throws out)", async () => {
+    const router = new IpcRouter()
+    router.register("parse", "fails", {
+      input: z.object({}),
+      output: z.object({}),
+      handle: () => {
+        z.object({ id: z.string() }).parse({})
+        return {}
+      },
+    })
+    const result = await router.dispatch({ domain: "parse", action: "fails", payload: {} })
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error.code).toBe("validation")
   })
 })
 
@@ -141,6 +180,45 @@ describe("IpcRouter error reporting", () => {
     })
     const result = await router.dispatch({ domain: "test", action: "echo", payload: { x: "nope" } })
     expect(result.ok).toBe(false)
+  })
+
+  it("reports response validation failures under the internal code before re-throwing", async () => {
+    const reportError = vi.fn()
+    const router = new IpcRouter({ reportError })
+    router.register("bad", "output", {
+      input: z.object({}),
+      output: z.object({ required: z.string() }),
+      handle: () => ({}) as never,
+    })
+    await expect(router.dispatch({ domain: "bad", action: "output", payload: {} })).rejects.toThrow(ZodError)
+    expect(reportError).toHaveBeenCalledOnce()
+    expect(reportError.mock.calls[0]?.[0]).toMatchObject({
+      domain: "bad",
+      action: "output",
+      code: "internal",
+      message: "response validation failed",
+    })
+  })
+
+  it("reports a ZodError thrown by a handler as a validation failure", async () => {
+    const reportError = vi.fn()
+    const router = new IpcRouter({ reportError })
+    router.register("parse", "fails", {
+      input: z.object({}),
+      output: z.object({}),
+      handle: () => {
+        z.object({ id: z.string() }).parse({})
+        return {}
+      },
+    })
+    const result = await router.dispatch({ domain: "parse", action: "fails", payload: {} })
+    expect(result.ok).toBe(false)
+    expect(reportError.mock.calls[0]?.[0]).toMatchObject({
+      domain: "parse",
+      action: "fails",
+      code: "validation",
+      message: "response validation failed",
+    })
   })
 })
 

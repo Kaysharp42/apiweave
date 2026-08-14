@@ -159,30 +159,8 @@ export class IpcRouter {
       }
     }
 
-    if (opts?.redactSecrets === true) {
-      const placeholders = findRedactedPlaceholders(request.payload as JsonValue)
-      if (placeholders.length > 0) {
-        const message =
-          `refusing to store the redacted placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}. `
-          + "This value came from a redacted read, which withholds credential values. "
-          + "Send the real value, or a {{secrets.NAME}} reference, or omit the field to leave it unchanged."
-        this.notifyError({
-          domain: request.domain,
-          action: request.action,
-          code: "validation",
-          message,
-          details: { paths: placeholders },
-        })
-        return {
-          ok: false,
-          error: {
-            code: "validation",
-            message,
-            details: { paths: placeholders },
-          },
-        }
-      }
-    }
+    const redactionRejection = this.rejectRedactedPayload(request, opts)
+    if (redactionRejection !== undefined) return redactionRejection
 
     const parsed = handler.input.safeParse(request.payload)
     if (!parsed.success) {
@@ -210,9 +188,43 @@ export class IpcRouter {
     // Output is validated OUTSIDE the try: a bad handler return is a server bug,
     // so its zod failure must throw (HTTP-500 equivalent), not read as a client
     // `validation` error.
-    let validated: unknown
+    const validated = this.parseOutput(handler, request, output)
+    return this.buildSuccessEnvelope(validated, opts)
+  }
+
+  /** A caller whose reads are redacted also has its writes checked for the
+   * `<SECRET>` placeholder: sending it back would persist the placeholder as
+   * the literal credential. Returns the rejection envelope, or undefined when
+   * the payload is clean (or the caller isn't a redacted one). */
+  private rejectRedactedPayload(
+    request: InvokeRequest,
+    opts?: { readonly redactSecrets?: boolean },
+  ): ContractResult<never> | undefined {
+    if (opts?.redactSecrets !== true) return undefined
+    const placeholders = findRedactedPlaceholders(request.payload as JsonValue)
+    if (placeholders.length === 0) return undefined
+    const message =
+      `refusing to store the redacted placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}. `
+      + "This value came from a redacted read, which withholds credential values. "
+      + "Send the real value, or a {{secrets.NAME}} reference, or omit the field to leave it unchanged."
+    this.notifyError({
+      domain: request.domain,
+      action: request.action,
+      code: "validation",
+      message,
+      details: { paths: placeholders },
+    })
+    return {
+      ok: false,
+      error: { code: "validation", message, details: { paths: placeholders } },
+    }
+  }
+
+  /** Validates a handler's return value against its own output schema. A
+   * mismatch is a server bug (HTTP-500 equivalent): logged, then re-thrown. */
+  private parseOutput(handler: StoredHandler, request: InvokeRequest, output: unknown): unknown {
     try {
-      validated = handler.output.parse(output)
+      return handler.output.parse(output)
     } catch (error) {
       this.notifyError({
         domain: request.domain,
@@ -223,6 +235,9 @@ export class IpcRouter {
       })
       throw error
     }
+  }
+
+  private buildSuccessEnvelope(validated: unknown, opts?: { readonly redactSecrets?: boolean }): ContractResult<unknown> {
     return {
       ok: true,
       data: opts?.redactSecrets === true ? sanitizeAgentReadValue(validated as JsonValue) : validated,
