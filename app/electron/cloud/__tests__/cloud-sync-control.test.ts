@@ -308,6 +308,51 @@ describe("DesktopCloudSyncControl", () => {
     expect(repository.countOutbox()).toBe(2)
   })
 
+  it("names the record behind each dead letter so the user can find the stuck workflow", () => {
+    const repository = new CloudSyncRepository(store)
+    store.set(
+      "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json) VALUES (?, ?, ?, ?, ?, ?)",
+      ["workflow-named", WORKSPACE_ID, WORKSPACE_ID, "Actor Module", "actor-module", "{}"],
+    )
+    repository.enqueueOutbox({
+      kind: "workflow",
+      record_id: "workflow-named",
+      workspace_id: WORKSPACE_ID,
+      expected_rev: 0,
+      op: "upsert",
+      payload: new Uint8Array(),
+    })
+    // A record deleted locally after its push was queued: the id is all that's left.
+    repository.enqueueOutbox({
+      kind: "workflow",
+      record_id: "workflow-gone",
+      workspace_id: WORKSPACE_ID,
+      expected_rev: 0,
+      op: "upsert",
+      payload: new Uint8Array(),
+    })
+    store.set("UPDATE cloud_outbox SET retry_count = ?", [CLOUD_OUTBOX_MAX_RETRIES])
+    store.set("UPDATE cloud_outbox SET failure_reason = ? WHERE record_id = ?", [
+      "This record contains data that can't be synced (secrets or run history stay on this device).",
+      "workflow-named",
+    ])
+
+    const failed = repository.listDeadLetterOutbox(WORKSPACE_ID)
+
+    expect(failed).toHaveLength(2)
+    expect(failed[0]).toMatchObject({
+      kind: "workflow",
+      recordId: "workflow-named",
+      recordName: "Actor Module",
+      op: "upsert",
+      attempts: CLOUD_OUTBOX_MAX_RETRIES,
+      failureReason: "This record contains data that can't be synced (secrets or run history stay on this device).",
+    })
+    expect(failed[1]?.recordId).toBe("workflow-gone")
+    expect(failed[1]?.recordName).toBeUndefined()
+    expect(new Date(failed[0]?.queuedAt ?? "").getTime()).not.toBeNaN()
+  })
+
   it("discards dead-lettered rows, keeps the binding and local record, and clears the error state", async () => {
     const repository = new CloudSyncRepository(store)
     const tokenStore = new DeviceTokenStore(repository, keyfilePath)

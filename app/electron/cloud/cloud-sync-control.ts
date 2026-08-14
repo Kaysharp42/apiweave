@@ -20,6 +20,7 @@ import {
   type CloudBindWorkspaceInput,
   type CloudCreateTeamWorkspaceInput,
   type CloudDeadLetterInput,
+  type CloudFailedRecord,
   type CloudInitializeWorkspaceInput,
   type CloudLinkInput,
   type CloudSyncControl,
@@ -448,6 +449,18 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     void this.reconcile()
       .catch(() => undefined)
       .finally(() => this.notifyStatusChanged())
+  }
+
+  /**
+   * The failed changes for a workspace, each named. Read-only and deliberately
+   * separate from `status()`: status is polled on every cloud event, and the
+   * details are only wanted when the user opens them.
+   */
+  public listFailedRecords(input: CloudDeadLetterInput): readonly CloudFailedRecord[] {
+    if (this.repository.getWorkspaceBinding(input.workspaceId) === undefined) {
+      throw new Error("Cloud workspace binding is unavailable")
+    }
+    return this.repository.listDeadLetterOutbox(input.workspaceId)
   }
 
   public async retryDeadLetters(input: CloudDeadLetterInput): Promise<CloudSyncStatus> {

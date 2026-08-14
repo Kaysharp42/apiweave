@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudSyncPage } from "../CloudSyncPage";
-import type { CloudSyncStatus } from "../../../types/cloud";
+import type { CloudFailedRecord, CloudSyncStatus } from "../../../types/cloud";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -40,8 +40,14 @@ function binding(overrides: Partial<CloudSyncStatus["bindings"][number]> = {}) {
   };
 }
 
-function setStatus(status: CloudSyncStatus): void {
-  const invoke = vi.fn(async () => ({ ok: true, data: status }));
+function setStatus(
+  status: CloudSyncStatus,
+  failedRecords: readonly CloudFailedRecord[] = [],
+): void {
+  const invoke = vi.fn(async (_domain: string, action: string) => ({
+    ok: true,
+    data: action === "listFailedRecords" ? failedRecords : status,
+  }));
   const bridge = {
     invoke,
     onRunProgress: vi.fn().mockReturnValue(() => undefined),
@@ -122,6 +128,47 @@ describe("CloudSyncPage", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText(/rejectionReason=|status=3/)).not.toBeInTheDocument();
+  });
+
+  it("names the failing record behind the error, which the sentence alone never does", async () => {
+    setStatus(
+      {
+        ...base,
+        syncState: "error",
+        bindings: [
+          binding({
+            deadLetterCount: 1,
+            lastError:
+              "This record contains data that can't be synced (secrets or run history stay on this device).",
+          }),
+        ],
+      },
+      [
+        {
+          outboxId: "ob-1",
+          kind: "workflow",
+          recordId: "01KZZWSB41B2A3TFZWFCC4212J",
+          recordName: "Actor Module - 3 Actor Types",
+          op: "upsert",
+          failureReason:
+            "This record contains data that can't be synced (secrets or run history stay on this device).",
+          attempts: 10,
+          queuedAt: "2026-08-14T10:23:56.000Z",
+        },
+      ],
+    );
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "1 failed" }));
+
+    // The record's name and id are what let the user go open the right thing.
+    expect(
+      await screen.findByText("Actor Module - 3 Actor Types"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("01KZZWSB41B2A3TFZWFCC4212J"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Workflow/)).toBeInTheDocument();
   });
 
   it("warns that downloaded cloud workspaces are removed on disconnect", async () => {

@@ -17,10 +17,15 @@ import { Badge } from "../../components/atoms/Badge";
 import { Button } from "../../components/atoms/Button";
 import { EmptyState } from "../../components/molecules/EmptyState";
 import { ConfirmDialog } from "../../components/molecules/ConfirmDialog";
+import { FailedRecordsDialog } from "./FailedRecordsDialog";
 import { useCloudSync } from "../../hooks/useCloudSync";
 import { IpcError } from "../../utils/apiweaveClient";
 import type { ContractErrorCode } from "@shared/contract/errors";
-import type { CloudSyncStatus, CloudWorkspaceBinding } from "../../types/cloud";
+import type {
+  CloudFailedRecord,
+  CloudSyncStatus,
+  CloudWorkspaceBinding,
+} from "../../types/cloud";
 
 // Fallback sentences for the rare IpcError with no server message. Codes must
 // never surface raw — every error the user sees is a sentence.
@@ -30,14 +35,20 @@ const CODE_MESSAGES: Partial<Record<ContractErrorCode, string>> = {
   validation: "That request wasn't valid. Try again.",
 };
 
-function reportError(error: unknown): void {
-  let message = "Cloud sync request failed.";
+function errorMessage(error: unknown): string {
   if (error instanceof IpcError) {
-    message = error.message || CODE_MESSAGES[error.code] || message;
-  } else if (error instanceof Error && error.message) {
-    message = error.message;
+    return (
+      error.message || CODE_MESSAGES[error.code] || "Cloud sync request failed."
+    );
   }
-  toast.error(message);
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return "Cloud sync request failed.";
+}
+
+function reportError(error: unknown): void {
+  toast.error(errorMessage(error));
 }
 
 function isLocalOnlyConfirmation(error: unknown): boolean {
@@ -71,6 +82,15 @@ export function CloudSyncPage() {
   const [confirmUnlink, setConfirmUnlink] = useState(false);
   const [confirmLocalOnly, setConfirmLocalOnly] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
+  // The workspace whose failure details are open, plus the fetch result.
+  // `records === null` while loading, so the dialog can show a spinner.
+  const [failuresFor, setFailuresFor] = useState<CloudWorkspaceBinding | null>(
+    null,
+  );
+  const [failedRecords, setFailedRecords] = useState<
+    readonly CloudFailedRecord[] | null
+  >(null);
+  const [failedError, setFailedError] = useState<string | null>(null);
   // Opt-in per disconnect, and deliberately reset every time the dialog opens:
   // deleting local workspaces is never something the user drifts into.
   const [purgeLocalData, setPurgeLocalData] = useState(false);
@@ -87,6 +107,18 @@ export function CloudSyncPage() {
       },
     [],
   );
+
+  const openFailureDetails = (binding: CloudWorkspaceBinding): void => {
+    setFailuresFor(binding);
+    setFailedRecords(null);
+    setFailedError(null);
+    void cloud
+      .listFailedRecords(binding.workspaceId)
+      .then(setFailedRecords)
+      .catch((error: unknown) => {
+        setFailedError(errorMessage(error));
+      });
+  };
 
   const openUnlinkDialog = (): void => {
     setPurgeLocalData(false);
@@ -335,6 +367,7 @@ export function CloudSyncPage() {
                     onDiscardDeadLetters={() =>
                       setConfirmDiscard(binding.workspaceId)
                     }
+                    onShowFailureDetails={() => openFailureDetails(binding)}
                   />
                 ))}
               </ul>
@@ -400,6 +433,13 @@ export function CloudSyncPage() {
         confirmLabel="Discard failed changes"
         intent="error"
       />
+      <FailedRecordsDialog
+        open={failuresFor !== null}
+        workspaceName={failuresFor?.workspaceName ?? ""}
+        records={failedRecords}
+        error={failedError}
+        onClose={() => setFailuresFor(null)}
+      />
     </div>
   );
 }
@@ -412,6 +452,7 @@ interface BindingRowProps {
   readonly onResolve: () => void;
   readonly onRetryDeadLetters: () => void;
   readonly onDiscardDeadLetters: () => void;
+  readonly onShowFailureDetails: () => void;
 }
 
 function BindingRow({
@@ -422,6 +463,7 @@ function BindingRow({
   onResolve,
   onRetryDeadLetters,
   onDiscardDeadLetters,
+  onShowFailureDetails,
 }: BindingRowProps) {
   const initializing = binding.initializationState !== "initialized";
   return (
@@ -456,15 +498,30 @@ function BindingRow({
             </span>
           ) : null}
           {binding.deadLetterCount > 0 ? (
-            <span className="text-status-error dark:text-status-error-dark">
+            <button
+              type="button"
+              onClick={onShowFailureDetails}
+              className="cursor-pointer text-status-error underline underline-offset-2 hover:no-underline dark:text-status-error-dark"
+            >
               {binding.deadLetterCount} failed
-            </span>
+            </button>
           ) : null}
         </div>
         {binding.lastError ? (
           <div className="mt-1 flex items-start gap-1.5 text-[11px] text-status-error dark:text-status-error-dark">
             <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
             <span className="break-words">{binding.lastError}</span>
+            {/* The sentence describes the problem but never names the record.
+                Details is the only way to find out which one is stuck. */}
+            {binding.deadLetterCount > 0 ? (
+              <button
+                type="button"
+                onClick={onShowFailureDetails}
+                className="shrink-0 cursor-pointer underline underline-offset-2 hover:no-underline"
+              >
+                Details
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

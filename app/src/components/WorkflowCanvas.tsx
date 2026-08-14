@@ -70,6 +70,10 @@ import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
 import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
+import {
+  describeThrownSaveError,
+  readSaveFailureEnvelope,
+} from "../utils/workflowSaveFailure";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
 import { asPresetNodeType } from "../utils/nodePresets";
@@ -741,16 +745,47 @@ export function WorkflowCanvas({
             .getState()
             .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         } else {
-          console.error("Failed to save workflow");
-          toast.error("Failed to save workflow — your changes are not saved", {
-            id: `workflow-save-error-${workflowId}`,
+          // The server says WHY it refused (a missing environment, a stale
+          // workspace, a rejected node). Both the toast and the console log
+          // must name that reason, or nobody — user or debugger — can tell
+          // what to fix.
+          const { detail, code, issues } = await readSaveFailureEnvelope(
+            response,
+          );
+          const cause =
+            detail ??
+            issues[0] ??
+            (code ? `the request was rejected (${code})` : undefined);
+          console.error("[workflow-save-failed]", {
+            workflowId,
+            status: response.status,
+            code: code ?? null,
+            detail: detail ?? null,
+            issues,
           });
+          toast.error(
+            cause
+              ? `Failed to save workflow — ${cause}`
+              : "Failed to save workflow — your changes are not saved",
+            { id: `workflow-save-error-${workflowId}` },
+          );
         }
       } catch (error) {
-        console.error("Save error:", error);
-        toast.error("Failed to save workflow — your changes are not saved", {
-          id: `workflow-save-error-${workflowId}`,
+        // The save never reached the server: the canvas state failed local
+        // validation, or the fetch itself threw. Log the full error for the
+        // debugging session and put its most specific sentence in the toast.
+        const cause = describeThrownSaveError(error);
+        console.error("[workflow-save-failed]", {
+          workflowId,
+          cause: cause ?? null,
+          error,
         });
+        toast.error(
+          cause
+            ? `Failed to save workflow — ${cause}`
+            : "Failed to save workflow — your changes are not saved",
+          { id: `workflow-save-error-${workflowId}` },
+        );
       }
     },
     [

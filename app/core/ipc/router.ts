@@ -1,5 +1,5 @@
 import { ZodError, type z } from "zod"
-import type { ContractResult } from "@shared/contract/errors"
+import type { ContractErrorCode, ContractResult } from "@shared/contract/errors"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { AppError } from "./errors"
 import { findRedactedPlaceholders, sanitizeAgentReadValue, SECRET_PLACEHOLDER } from "../services/secret_utils"
@@ -43,6 +43,28 @@ export type HandlerRegistration<I extends z.ZodType, O extends z.ZodType> = {
 /** A registered handler, read-only. Lets a second transport (MCP) reuse the same input schema + handler. */
 export type RegisteredHandler = HandlerRegistration<z.ZodType, z.ZodType>
 
+/** A rejected dispatch, ready for a log line. `code` is one of the contract
+ * codes, or "internal" for a handler failure that will be re-thrown (the IPC
+ * equivalent of an HTTP 500 — a bug, not a client mistake). */
+export type IpcErrorReport = {
+  readonly domain: string
+  readonly action: string
+  readonly code: ContractErrorCode | "internal"
+  readonly message: string
+  readonly details?: unknown
+}
+
+export interface IpcRouterOptions {
+  /**
+   * Observes every rejected dispatch — unregistered actions, request
+   * validation failures, `AppError`s, and internal handler failures alike.
+   * The composition root wires this to electron-log's file transport so a
+   * refused save leaves a line in `logs/main.log` that names the cause,
+   * rather than dying silently in a toast. Never invoked for `ok` results.
+   */
+  readonly reportError?: (report: IpcErrorReport) => void
+}
+
 type StoredHandler = RegisteredHandler
 
 function key(domain: string, action: string): string {
@@ -76,6 +98,11 @@ function toErrorEnvelope(error: unknown): ContractResult<never> {
  */
 export class IpcRouter {
   private readonly handlers = new Map<string, StoredHandler>()
+  private readonly reportError: ((report: IpcErrorReport) => void) | undefined
+
+  constructor(options: IpcRouterOptions = {}) {
+    this.reportError = options.reportError
+  }
 
   register<I extends z.ZodType, O extends z.ZodType>(
     domain: string,
@@ -124,31 +151,26 @@ export class IpcRouter {
   async dispatch(request: InvokeRequest, opts?: { readonly redactSecrets?: boolean }): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
     if (handler === undefined) {
+      const message = `no IPC handler: ${key(request.domain, request.action)}`
+      this.notifyError({ domain: request.domain, action: request.action, code: "not_found", message })
       return {
         ok: false,
-        error: { code: "not_found", message: `no IPC handler: ${key(request.domain, request.action)}` },
+        error: { code: "not_found", message },
       }
     }
 
-    if (opts?.redactSecrets === true) {
-      const placeholders = findRedactedPlaceholders(request.payload as JsonValue)
-      if (placeholders.length > 0) {
-        return {
-          ok: false,
-          error: {
-            code: "validation",
-            message:
-              `refusing to store the redacted placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}. `
-              + "This value came from a redacted read, which withholds credential values. "
-              + "Send the real value, or a {{secrets.NAME}} reference, or omit the field to leave it unchanged.",
-            details: { paths: placeholders },
-          },
-        }
-      }
-    }
+    const redactionRejection = this.rejectRedactedPayload(request, opts)
+    if (redactionRejection !== undefined) return redactionRejection
 
     const parsed = handler.input.safeParse(request.payload)
     if (!parsed.success) {
+      this.notifyError({
+        domain: request.domain,
+        action: request.action,
+        code: "validation",
+        message: "request validation failed",
+        details: parsed.error.issues,
+      })
       return {
         ok: false,
         error: { code: "validation", message: "request validation failed", details: parsed.error.issues },
@@ -159,16 +181,107 @@ export class IpcRouter {
     try {
       output = await handler.handle(parsed.data)
     } catch (error) {
+      this.notifyHandlerError(request, error)
       return toErrorEnvelope(error)
     }
 
     // Output is validated OUTSIDE the try: a bad handler return is a server bug,
     // so its zod failure must throw (HTTP-500 equivalent), not read as a client
     // `validation` error.
-    const validated = handler.output.parse(output)
+    const validated = this.parseOutput(handler, request, output)
+    return this.buildSuccessEnvelope(validated, opts)
+  }
+
+  /** A caller whose reads are redacted also has its writes checked for the
+   * `<SECRET>` placeholder: sending it back would persist the placeholder as
+   * the literal credential. Returns the rejection envelope, or undefined when
+   * the payload is clean (or the caller isn't a redacted one). */
+  private rejectRedactedPayload(
+    request: InvokeRequest,
+    opts?: { readonly redactSecrets?: boolean },
+  ): ContractResult<never> | undefined {
+    if (opts?.redactSecrets !== true) return undefined
+    const placeholders = findRedactedPlaceholders(request.payload as JsonValue)
+    if (placeholders.length === 0) return undefined
+    const message =
+      `refusing to store the redacted placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}. `
+      + "This value came from a redacted read, which withholds credential values. "
+      + "Send the real value, or a {{secrets.NAME}} reference, or omit the field to leave it unchanged."
+    this.notifyError({
+      domain: request.domain,
+      action: request.action,
+      code: "validation",
+      message,
+      details: { paths: placeholders },
+    })
+    return {
+      ok: false,
+      error: { code: "validation", message, details: { paths: placeholders } },
+    }
+  }
+
+  /** Validates a handler's return value against its own output schema. A
+   * mismatch is a server bug (HTTP-500 equivalent): logged, then re-thrown. */
+  private parseOutput(handler: StoredHandler, request: InvokeRequest, output: unknown): unknown {
+    try {
+      return handler.output.parse(output)
+    } catch (error) {
+      this.notifyError({
+        domain: request.domain,
+        action: request.action,
+        code: "internal",
+        message: "response validation failed",
+        details: error instanceof ZodError ? error.issues : undefined,
+      })
+      throw error
+    }
+  }
+
+  private buildSuccessEnvelope(validated: unknown, opts?: { readonly redactSecrets?: boolean }): ContractResult<unknown> {
     return {
       ok: true,
       data: opts?.redactSecrets === true ? sanitizeAgentReadValue(validated as JsonValue) : validated,
     }
+  }
+
+  /** Feed a rejected dispatch to the observer. A throwing logger must never
+   * break the IPC contract, so its own failures are swallowed. */
+  private notifyError(report: IpcErrorReport): void {
+    try {
+      this.reportError?.(report)
+    } catch {
+      // Logging is best-effort; the envelope still reaches the caller.
+    }
+  }
+
+  private notifyHandlerError(request: InvokeRequest, error: unknown): void {
+    if (error instanceof AppError) {
+      this.notifyError({
+        domain: request.domain,
+        action: request.action,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      })
+      return
+    }
+    if (error instanceof ZodError) {
+      this.notifyError({
+        domain: request.domain,
+        action: request.action,
+        code: "validation",
+        message: "response validation failed",
+        details: error.issues,
+      })
+      return
+    }
+    // Anything else is an internal bug and is re-thrown by toErrorEnvelope —
+    // the IPC equivalent of an HTTP 500. Still worth the log line.
+    this.notifyError({
+      domain: request.domain,
+      action: request.action,
+      code: "internal",
+      message: error instanceof Error ? error.message : String(error),
+    })
   }
 }

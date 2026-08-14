@@ -34,6 +34,16 @@ log.transports.file.level = "info"
  */
 export const updaterLog = log.scope("updater")
 
+/**
+ * Logger for rejected IPC dispatches. The router is electron-free, so the
+ * composition root passes this in as `reportError`; every refused call — a
+ * workflow save rejected by validation, a denied action, an internal handler
+ * failure — lands in `main.log` as `[ipc] <domain>.<action> rejected (...)`.
+ * This is the line a support report should quote, since toasts are transient
+ * and the renderer console dies with the window.
+ */
+export const ipcLog = log.scope("ipc")
+
 /** Absolute path to the current log file. Resolved on demand rather than at
  * import: the path depends on `app.getPath`, which is only meaningful once
  * Electron has decided where userData lives. */

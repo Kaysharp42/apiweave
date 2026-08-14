@@ -34,6 +34,7 @@ import type { Workspace } from "../types/Workspace";
 import type {
   CloudBindWorkspaceInput,
   CloudCreateTeamWorkspaceInput,
+  CloudFailedRecord,
   CloudSyncStatus,
   CloudUnlinkOptions,
 } from "../types/cloud";
@@ -573,6 +574,10 @@ export const apiweave = {
       invoke<CloudSyncStatus>("cloud", "retryDeadLetters", { workspaceId }),
     discardDeadLetters: (workspaceId: string) =>
       invoke<CloudSyncStatus>("cloud", "discardDeadLetters", { workspaceId }),
+    listFailedRecords: (workspaceId: string) =>
+      invoke<readonly CloudFailedRecord[]>("cloud", "listFailedRecords", {
+        workspaceId,
+      }),
     pull: () => invoke<CloudSyncStatus>("cloud", "pull", {}),
     push: () => invoke<CloudSyncStatus>("cloud", "push", {}),
   },

@@ -1,4 +1,5 @@
 import type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
+import type { CloudFailedRecord } from "./CloudFailedRecord";
 import type { CloudSyncStatus } from "./CloudSyncStatus";
 import type { CloudUnlinkOptions } from "./CloudUnlinkOptions";
 
@@ -21,6 +22,9 @@ export interface UseCloudSync {
   readonly refreshWorkspaceCatalog: () => Promise<CloudSyncStatus>;
   readonly retryDeadLetters: (workspaceId: string) => Promise<CloudSyncStatus>;
   readonly discardDeadLetters: (workspaceId: string) => Promise<CloudSyncStatus>;
+  readonly listFailedRecords: (
+    workspaceId: string,
+  ) => Promise<readonly CloudFailedRecord[]>;
   readonly pull: () => Promise<CloudSyncStatus>;
   readonly push: () => Promise<CloudSyncStatus>;
 }

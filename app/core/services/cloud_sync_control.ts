@@ -37,6 +37,18 @@ export interface CloudDeadLetterInput {
   readonly workspaceId: string
 }
 
+/** One dead-lettered change, named so the user can find the record it belongs to. */
+export interface CloudFailedRecord {
+  readonly outboxId: string
+  readonly kind: string
+  readonly recordId: string
+  readonly recordName?: string
+  readonly op: string
+  readonly failureReason?: string
+  readonly attempts: number
+  readonly queuedAt: string
+}
+
 export class CloudUnlinkRequiresConfirmationError extends Error {
   public constructor() {
     super(
@@ -164,6 +176,7 @@ export interface CloudSyncControl {
   readonly refreshWorkspaceCatalog: () => Promise<CloudSyncStatus>
   readonly retryDeadLetters: (input: CloudDeadLetterInput) => Promise<CloudSyncStatus>
   readonly discardDeadLetters: (input: CloudDeadLetterInput) => CloudSyncStatus
+  readonly listFailedRecords: (input: CloudDeadLetterInput) => readonly CloudFailedRecord[]
   readonly pull: () => Promise<CloudSyncStatus>
   readonly push: () => Promise<CloudSyncStatus>
 }

@@ -124,6 +124,18 @@ const unlinkInput = z
 const unbindWorkspaceInput = z.object({ workspaceId: z.string().min(1) }).strict()
 const initializeWorkspaceInput = z.object({ workspaceId: z.string().min(1) }).strict()
 const deadLetterInput = z.object({ workspaceId: z.string().min(1) }).strict()
+const failedRecordsSchema = z.array(
+  z.object({
+    outboxId: z.string().min(1),
+    kind: z.string().min(1),
+    recordId: z.string().min(1),
+    recordName: z.string().min(1).optional(),
+    op: z.string().min(1),
+    failureReason: z.string().min(1).optional(),
+    attempts: z.number().int().nonnegative(),
+    queuedAt: z.string().min(1),
+  }).strict(),
+)
 
 export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const control = deps.cloud
@@ -220,6 +232,12 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
     input: deadLetterInput,
     output: statusSchema,
     handle: (input) => required(control).retryDeadLetters(input),
+  })
+
+  router.register("cloud", "listFailedRecords", {
+    input: deadLetterInput,
+    output: failedRecordsSchema,
+    handle: (input) => required(control).listFailedRecords(input),
   })
 
   router.register("cloud", "discardDeadLetters", {

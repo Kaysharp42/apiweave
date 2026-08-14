@@ -11,6 +11,7 @@ import {
   isCredentialFreeReference,
   isEmptySyncValue,
   isSyncSensitiveKey,
+  redactBodyLeaves,
 } from "../services/secret_utils"
 import type { SyncProvider } from "./SyncProvider"
 
@@ -417,74 +418,11 @@ function blankUnlessReference(value: unknown): JsonValue {
   return isCredentialFreeReference(value) ? value as string : ""
 }
 
-// Redact a request body leaf-by-leaf instead of blanking it wholesale: the body
-// is workflow config and must round-trip, but no credential-shaped leaf may
-// leave the machine. JSON bodies are walked structurally; a non-JSON body is
-// blanked whole only when it carries credential material. Credential-free
-// `{{...}}` references survive, and when nothing was redacted the original
-// string returns verbatim so the sanitizer never introduces spurious diffs.
+// The body walk lives in `services/secret_utils` because the export bundler
+// runs the identical one: push blanks a withheld leaf to `""` and export writes
+// `<SECRET>`, and that token is the only difference between them.
 function sanitizeBodyText(body: string): string {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(body)
-  } catch {
-    return containsCredentialMaterial(body) ? "" : body
-  }
-  const tally = { redacted: false }
-  const sanitized = sanitizeBodyValue(parsed, null, tally)
-  return tally.redacted ? JSON.stringify(sanitized, null, 2) : body
-}
-
-/** Whether anything was withheld, so an untouched body can return verbatim. */
-interface RedactionTally {
-  redacted: boolean
-}
-
-function sanitizeBodyValue(value: unknown, keyName: string | null, tally: RedactionTally): JsonValue {
-  if (keyName !== null && isSyncSensitiveKey(keyName)) {
-    return withheldBodyValue(value, tally)
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeBodyValue(item, null, tally))
-  }
-  if (isRecord(value)) {
-    return sanitizeBodyRecord(value, tally)
-  }
-  if (typeof value === "string") {
-    return containsCredentialMaterial(value) ? blank(tally) : value
-  }
-  return value as JsonValue
-}
-
-function sanitizeBodyRecord(record: Record<string, JsonValue>, tally: RedactionTally): JsonValue {
-  // Mirror the validators' `{key, value}` pair semantics: the sensitivity of a
-  // pair lives in its sibling `key`, not in the literal name `value`.
-  const pairKey = record["key"]
-  const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
-  const sanitized: Record<string, JsonValue> = {}
-  for (const [key, child] of Object.entries(record)) {
-    sanitized[key] = pairSensitive && key === "value"
-      ? withheldBodyValue(child, tally)
-      : sanitizeBodyValue(child, key, tally)
-  }
-  return sanitized
-}
-
-// In a body, a sensitive key name withholds its WHOLE value rather than its
-// string leaves. The validators are content to walk a container and judge its
-// leaves by name, which is what lets `auth.apiKey` sync; but inside a request
-// body there is no schema to lean on, so an opaque credential one level down
-// (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
-function withheldBodyValue(value: unknown, tally: RedactionTally): JsonValue {
-  if (isEmptySyncValue(value) || isCredentialFreeReference(value)) {
-    return value as JsonValue
-  }
-  return blank(tally)
-}
-
-function blank(tally: RedactionTally): JsonValue {
-  tally.redacted = true
-  return ""
+  return redactBodyLeaves(body, "")
 }
 
 function sanitizeUrl(value: string | null): string | null {
