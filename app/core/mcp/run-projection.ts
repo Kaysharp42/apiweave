@@ -6,7 +6,10 @@ import type { RunResult } from "@shared/types/RunResult"
 /**
  * MCP run reads intentionally expose operational metadata only. The desktop UI
  * still receives full local run payloads over IPC, while agents cannot read
- * bodies, headers, cookies, URLs, variable values, or assertion actual values.
+ * bodies, headers, cookies, URLs, variable values, or assertion actual values
+ * through the projected run tools. The one exception is runs.getNodeResult,
+ * which returns a single node's stored request/response after the shared
+ * secret-redaction pass; it does not go through this projection.
  */
 export function projectRunToolResult(value: unknown): unknown {
   if (value === null) return null

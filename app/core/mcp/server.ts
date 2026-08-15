@@ -13,7 +13,7 @@ export const MCP_SERVER_NAME = "APIWeave"
 /**
  * Build a fresh MCP server exposing the whitelisted IPC handlers as tools. A new
  * instance is created per HTTP request (stateless transport — see host.ts), which
- * is cheap: registration is a loop over ~35 specs.
+ * is cheap: registration is a loop over the whitelisted tool specs.
  *
  * ponytail: no custom "discovery" tool is ported from Python (~490 LOC). MCP's
  * native `tools/list` already enumerates every tool with its schema + description,

@@ -524,8 +524,12 @@ usually omit it — patch only touches the nodes you name.
 Runs are metadata only: status, timing, per-node status and status code,
 assertion outcomes with the *type* and *state* of actual values but never the
 values themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge, on any tool, ever. To see a response body, open the run in the
-desktop app.
+cross this bridge on any run tool except one: \`runs_getNodeResult\` returns the
+full stored request/response for a single node of a run, body included, after
+the same secret-redaction pass every other read gets — secret-shaped values in
+the body, headers, URL or request come back withheld. Everything else about
+runs stays metadata-only; to see other payloads, open the run in the desktop
+app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response
 server-side and returns *rules*, so you get verified paths without the payload.

@@ -116,7 +116,7 @@ A local agent connected through the [MCP bridge](mcp-integration.md) can manage 
 | `nodePresets_update` | Rename a preset or replace its config |
 | `nodePresets_delete` | Delete a preset |
 
-One limitation matters. Every MCP read passes through the same blanket redaction that protects workflow reads, so `nodePresets_list` returns each preset's name, node type, and identifiers, but reports `<SECRET>` for its request body, URL, and header values. An agent can therefore catalogue the library, create presets from configuration it wrote itself, and tidy names — but it cannot faithfully re-emit an existing preset's config into a workflow, because it never sees the literal values. Dragging a preset onto a canvas remains a desktop action.
+One limitation matters. Every MCP read passes through the same blanket redaction that protects workflow reads, so `nodePresets_list` returns each preset's name, node type, and identifiers, but reports `<SECRET>` for its request body, withholds sensitive header values, and redacts a URL only when it actually carries credentials. An agent can therefore catalogue the library, create presets from configuration it wrote itself, and tidy names — but it cannot faithfully re-emit an existing preset's config into a workflow, because it never sees the literal values. Dragging a preset onto a canvas remains a desktop action.
 
 ## Troubleshooting
 

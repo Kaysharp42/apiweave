@@ -4,13 +4,13 @@
 
 ## What APIWeave Looks Like
 
-APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no login screen, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
+APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
 
-Work is organized locally into **orgs and teams**: an org is the top-level container for your APIWeave work, and a team is a group inside an org that shares workflows, environments, and projects. Orgs and teams are a local structure on *this machine*. No account is required, and everything stays on your computer by default.
+Work is organized locally into **workspaces**: a personal workspace is created for you, and you can create more. No account is required, and everything stays on your computer by default.
 
-Optional APIWeave Cloud sync and collaboration turn on when you sign in with an optional Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) and lets multiple machines collaborate in shared Cloud Workspaces; secret values and run history stay local and are rejected from sync payloads. The local and Cloud names map: a desktop **org** corresponds to a Cloud **Team**, and a desktop **team** corresponds to a Cloud **Workspace**. Cloud never builds or runs tests — all execution stays on the desktop.
+Optional APIWeave Cloud sync and collaboration turn on when you sign in with an optional Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) and lets multiple machines collaborate in shared **Cloud Workspaces**, which belong to a **Cloud Team** from the Cloud account; secret values and run history stay local and are rejected from sync payloads. Cloud never builds or runs tests — all execution stays on the desktop.
 
-There is no SSO, no webhooks, and no remote trigger. You run a workflow by clicking **Run** in the app, by scheduling it locally, or by having a local AI agent drive the app through the loopback MCP bridge.
+There is no SSO and no webhook for local use. You run a workflow by clicking **Run** in the app, or by having a local AI agent drive the app through the loopback MCP bridge. (Locally scheduled runs are on the roadmap.)
 
 If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. An optional Cloud account adds sync and collaboration across machines, but the desktop app is fully usable without it.
 
@@ -34,10 +34,11 @@ Start with installation, build your first workflow, then read the concepts gloss
 
 Jump straight to the feature guide. Each one is self-contained: concepts, prerequisites, worked examples, and troubleshooting for that feature.
 
-- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, resume after a failed run.
+- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, keyboard shortcuts.
 - [Variables and Extractors](features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Node Presets](features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
-- [Projects](features/projects.md): ordered groups of workflows, project runs, and `.awecollection` export and import (references only).
+- [Visualization and Debugging](features/visualization-and-debugging.md): the run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
+- [Projects](features/projects.md): ordered groups of workflows and `.awecollection` export and import (references only).
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
 - [Swagger and OpenAPI Import](features/swagger-import.md): turn a spec into reusable request templates.
@@ -66,6 +67,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Workflows and Nodes](features/workflows-and-nodes.md): build, edit, and run workflows on the canvas.
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
 - [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.
+- [Visualization and Debugging](features/visualization-and-debugging.md): timeline, provenance, secret confidence, and the run camera.
 - [Projects](features/projects.md): group workflows into ordered runs and export them as `.awecollection` bundles.
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the loopback HTTP bridge for local AI agents.
@@ -73,14 +75,15 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 
 ## Reference
 
-The five reference pages are lookup tables and tours, not tutorials. Use them when you need the exact syntax, the full list, or a map of the surface area.
+The six reference pages are lookup tables and tours, not tutorials. Use them when you need the exact syntax, the full list, or a map of the surface area.
 
 - [Reference Index](reference/README.md)
 - [Architecture](reference/architecture.md): how the components fit together and how a run moves through the system.
 - [Placeholders](reference/placeholders.md): the four placeholder namespaces and the substitution order.
 - [Dynamic Functions](reference/dynamic-functions.md): the functions callable inside placeholders.
-- [Environment Variables](reference/environment-variables.md): every Vite variable the renderer reads, with defaults.
+- [Environment Variables](reference/environment-variables.md): every variable the app reads, with defaults.
 - [IPC API](reference/api.md): the typed IPC handler registry the renderer and the local MCP bridge call.
+- [Release and Updates](reference/release-and-updates.md): the update channel, policies, and rollout mechanics.
 
 ## What Goes Where
 

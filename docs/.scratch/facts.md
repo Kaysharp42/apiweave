@@ -2,72 +2,56 @@
 
 <!-- INTERNAL: scratch file. Not user-facing. Pin counts from source code at write time. -->
 
-Generated: 2026-06-13. Updated 2026-07-18 for the local-first Electron architecture.
+Generated: 2026-06-13. Updated 2026-08-14 for the 0.7.8 surface.
 
 > The earlier Python/FastAPI/MongoDB backend was retired. The desktop app is now
 > a single Electron process. Sections below reflect the current source paths.
 
 ## 1. MCP Tools
 
-- **Source**: the local MCP bridge in `desktop/core/mcp/` exposes the IPC
+- **Source**: the local MCP bridge in `app/core/mcp/` exposes the IPC
   handler registry as a second transport. There is no `backend/app/mcp/` tree.
 - **Used by**: features/mcp-integration.md.
+- **Count**: 50 (49 whitelisted domain tools plus `server_info`).
 - **Note**: the old "56 tools" count came from the removed FastMCP backend and
-  no longer applies. Count tools by enumerating the registered IPC handlers the
-  bridge exposes; see `desktop/core/ipc/handlers/index.ts`.
+  no longer applies. Count tools from `MCP_TOOLS` in `app/core/mcp/tools.ts`.
 
 ## 2. Dynamic Functions
 
-- **Count**: 15 (13 dynamic utility functions + 2 helper/meta functions).
-- **Names**:
-  - `randomString(length: int = 10) -> str`
-  - `randomNumber(size: int = 6) -> str`
-  - `randomEmail() -> str`
-  - `uuid() -> str`
-  - `timestamp() -> str`
-  - `iso_timestamp() -> str`
-  - `date(format: str = "%Y-%m-%d") -> str`
-  - `futureDate(days: int = 1, format: str = "%Y-%m-%d") -> str`
-  - `pastDate(days: int = 1, format: str = "%Y-%m-%d") -> str`
-  - `randomChoice(options: str) -> str`
-  - `randomAlpha(length: int = 10) -> str`
-  - `randomNumeric(length: int = 10) -> str`
-  - `randomHex(length: int = 16) -> str`
-  - `get_function(name: str)` — meta/helper
-  - `get_all_functions() -> Dict[str, str]` — meta/helper
-- **Source**: `desktop/core/runner/dynamic_functions.ts`.
+- **Count**: 13 public functions.
+- **Names**: `randomString`, `randomAlpha`, `randomNumeric`, `randomHex`,
+  `randomEmail`, `randomNumber`, `uuid`, `timestamp`, `iso_timestamp`, `date`,
+  `futureDate`, `pastDate`, `randomChoice`.
+- **Source**: `app/core/runner/dynamic_functions.ts`.
 - **Used by**: reference/dynamic-functions.md.
-- **Note**: 13 dynamic utility functions plus 2 internal helpers
-  (`get_function`, `get_all_functions`). reference/dynamic-functions.md already
-  reconciles the 13-vs-15 distinction.
+- **Note**: the resolver class has internal `getFunction` / `getAllFunctions`
+  lookup methods that are not placeholder-callable and not public API.
 
 ## 3. Main-process env vars
 
 - **Source**: `docs/reference/environment-variables.md` (Main Process table).
-- **Note**: The retired backend's env vars (`MONGODB_URL`, `SECRET_KEY`,
+- **Note**: the retired backend's env vars (`MONGODB_URL`, `SECRET_KEY`,
   `SESSION_SECRET_KEY`, `GITHUB_CLIENT_ID`, `WEBHOOK_REQUIRE_HMAC`,
   `MCP_API_KEY`, `MCP_ALLOW_SECRET_WRITES`, `WORKER_POLL_INTERVAL`,
   `WORKER_MAX_RETRIES`, `SETUP_MODE_ENABLED`, `ARTIFACTS_PATH`, etc.) are gone.
-  The current main process reads a small set of `APIWEAVE_*` and `OZONE_*`
-  variables from the host environment; see the reference doc.
+  The current main process reads `APIWEAVE_FRONTEND_DIST`, `APIWEAVE_DEV_UPDATES`,
+  `APIWEAVE_CLOUD_ENTRY_URL`, and `APPIMAGE`; see the reference doc.
 
 ## 4. Renderer env vars
 
-- **Count**: 2 (legacy, not read at runtime).
-- **Names**: `VITE_API_URL`, `VITE_API_WEAVE_URL`.
-- **Source**: `frontend/.env.example` and the `ImportMeta` type in
-  `frontend/src/utils/apiweaveClient.ts`.
+- **Runtime read**: 1 — `VITE_APP_VERSION` (build-time, from `app/package.json`).
+- **Legacy, not read at runtime**: `VITE_API_URL`, `VITE_API_WEAVE_URL`.
+- **Source**: `app/.env.example` and the `ImportMeta` type in
+  `app/src/utils/apiweaveClient.ts`.
 - **Used by**: reference/environment-variables.md.
 - **Note**: the renderer always talks to the bundled main process over the
-  typed IPC channel and does not call a separate HTTP backend. These variables
-  are not read at runtime; kept for compatibility.
+  typed IPC channel and does not call a separate HTTP backend.
 
 ## 5. Node Types
 
-- **Count**: 6 (TSX component files + 1 index.ts barrel export).
+- **Count**: 7 node types (6 node components plus the Call Workflow node).
 - **Component files**: `AssertionNode.tsx`, `DelayNode.tsx`, `EndNode.tsx`,
-  `HTTPRequestNode.tsx`, `MergeNode.tsx`, `StartNode.tsx`.
-- **Also present**: `index.ts` (barrel export, not a node component).
-- **Source**: `frontend/src/components/nodes/`.
+  `HTTPRequestNode.tsx`, `MergeNode.tsx`, `StartNode.tsx`; Call Workflow uses
+  node `type: "workflow"` in the schema.
+- **Source**: `app/src/components/nodes/`, `app/shared/zod-schemas/`.
 - **Used by**: features/workflows-and-nodes.md.
-- **Expected**: 6 (HTTP Request, Assertion, Delay, Merge, Start, End) — matches.

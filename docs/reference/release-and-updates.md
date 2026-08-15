@@ -17,7 +17,7 @@ Two paths, depending on whether the app can install its own update.
 
 Every one of those files is fetched through the same documented GitHub permalink:
 
-```
+```text
 https://github.com/Kaysharp42/apiweave/releases/latest/download/<asset>
 ```
 

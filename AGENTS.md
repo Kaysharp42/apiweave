@@ -50,7 +50,7 @@ npm run build            # Build the installable desktop package
 ### Frontend
 
 - **WorkflowContext is Sacred**: `app/src/contexts/WorkflowContext.tsx` is the single source of truth for canvas state. Bypassing it for variables or settings will cause sync bugs.
-- **Auto-Save Only**: State changes trigger a 700ms debounced auto-save over IPC. NEVER implement manual "Save" buttons.
+- **Auto-Save with explicit flush**: State changes trigger a 700ms debounced auto-save over IPC. A **Save** toolbar button and `Ctrl+S` flush to disk immediately, bypassing the debounce. Do not add any other manual save paths.
 - **TypeScript STRICT**: `.ts`/`.tsx` ONLY. `any` is strictly forbidden.
 - **ONE Type Per File**: Every interface/type MUST be in its own file under `src/types/` and exported via `index.ts`.
 - **UI Reusability**: Never use raw HTML elements with Tailwind classes when a component exists. Always use `Button`, `IconButton`, `Panel`, `FormField`, `Card`, etc. (See `apiweave-context.md`).
@@ -76,18 +76,16 @@ npm run build            # Build the installable desktop package
 
 ## Commits & Work Tracking
 
-- Check `todo.md` for current phase tasks and the required commit message format.
-- **NEVER stage or commit**: `todo.md`, `progress/learnings.md`, or any file in the `progress/` directory.
+- Commit messages follow conventional-commit style (`feat(scope):`, `fix(scope):`, `refactor(scope):`, `docs(scope):`), as used throughout the git history.
+- **NEVER stage or commit** local working notes, scratch files, or any file under `docs/.scratch/`.
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+This project keeps a knowledge graph at graphify-out/ (chunk, AST, and semantic caches) with god nodes, community structure, and cross-file relationships.
 
 When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
 Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- For codebase questions, run `graphify query "<question>"` when a queryable graph is available. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than a full report or raw grep output.
+- Dirty or intermediate graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

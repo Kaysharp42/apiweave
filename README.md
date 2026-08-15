@@ -8,6 +8,8 @@ APIWeave is a local-first, open-source desktop app for visual API testing. You a
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
+Optional APIWeave Cloud sync adds collaboration: sign in with a Cloud account and workflows, environments, and projects sync across your machines (and team workspaces), while secret values and run history always stay local. The app is fully usable without any account.
+
 ## Quick Start
 
 **Recommended for most users:** download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). The installer puts a self-contained app on your machine. No Python, no Node, no database, no Docker.
@@ -50,10 +52,11 @@ The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newe
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, resume after a failed run.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, expected-status negative tests.
 - [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
-- [Projects](docs/features/projects.md): ordered groups of workflows, project runs, and `.awecollection` v2 export and import (references only).
+- [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
+- [Projects](docs/features/projects.md): ordered groups of workflows and `.awecollection` v2 export and import (references only).
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
@@ -62,15 +65,15 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine.
+There is no operations section in the desktop app: no authentication to set up for local use (an optional Cloud account adds sync and collaboration), no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md).
 
 ## Tech Stack
 
 - Frontend (renderer): React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
-- Desktop shell: Electron 33, esbuild, electron-builder.
+- Desktop shell: Electron 33, esbuild, electron-builder, electron-updater.
 - Local store: better-sqlite3 (embedded SQLite, single file).
 - IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.
-- Secrets: Libsodium sealed-box write-only ingress plus envelope encryption at rest. No plaintext on the wire, no read API for stored values.
+- Secrets: Libsodium sealed-box write-only ingress, opened at run time with the per-install keyfile. No plaintext on the wire, no read API for stored values.
 - Execution: an in-process `RunScheduler` driven by IPC events streamed to the renderer.
 
 ## Project Layout
@@ -85,7 +88,6 @@ apiweave/
     package.json
   scripts/     setup / start / build scripts (Linux + Windows)
   docs/        User-facing documentation (the hub and all guides)
-  progress/    Internal implementation notes and history
 ```
 
 ## License

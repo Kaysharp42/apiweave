@@ -20,7 +20,7 @@ For desktop-side bugs, also include the contents of the main process log (the te
 
 Do not file security vulnerabilities on GitHub Issues. Public disclosure gives attackers a head start before a fix lands.
 
-Report privately through GitHub Security Advisories for this repository, or email the maintainers at the address listed in the repo's security contact. Include the vulnerability, its impact, and a proof of concept or reproduction steps. We aim to acknowledge reports within two business days and will coordinate disclosure timing with you.
+Report privately through GitHub Security Advisories for this repository. Include the vulnerability, its impact, and a proof of concept or reproduction steps. We aim to acknowledge reports within two business days and will coordinate disclosure timing with you.
 
 ## Feature Requests
 
@@ -42,7 +42,7 @@ The PR description should explain the why. The diff already shows the what.
 ## Publishing A Release
 
 1. Update the version in both `app/package.json` and `app/package-lock.json`, then merge the release commit into `main`.
-2. Tag that commit with a semantic version such as `v0.6.0` and push the tag.
+2. Tag that commit with a semantic version such as `v0.7.8` and push the tag.
 3. The desktop release workflow verifies that the tag is on `main` and matches the package version before building and publishing the GitHub release.
 
 The workflow publishes Windows x64, macOS Intel and Apple Silicon, and Linux x64 installers. Linux includes AppImage, Debian, RPM, and Pacman formats. Release notes are generated from merged changes and every release includes SHA-256 checksums.

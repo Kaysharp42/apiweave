@@ -55,8 +55,9 @@ completedAt?: string | null // ISO timestamp the node finished
 ```
 
 These ride in the run's persisted results and flow to the renderer over the
-existing `runs.get` IPC channel. The lean `node.completed` progress stream is
-unchanged — the timeline is a post-run read.
+existing `runs.get` IPC channel. The lean live progress stream
+(`run.started` / `node.status` / `run.finished` events) is unchanged — the
+timeline is a post-run read.
 
 ---
 
@@ -138,18 +139,37 @@ ever receiving a value.
 
 ---
 
-## Privacy and safety
+## 4. Camera-follow during runs
+
+While a run executes, the canvas can track it so the active node stays in view
+on large workflows.
+
+### What it does
+
+- When a run starts, the camera smoothly follows execution one branch at a
+  time (a damped-spring tracker that picks the active "run front" — the deepest
+  in-progress node on the branch the camera is following).
+- **Any manual gesture takes over.** Zooming, panning, or using fit-view while
+  the camera is moving stops the follow immediately, so your view is never
+  stolen.
+- A **Follow run** pill appears at the top of the canvas whenever the camera is
+  not currently following. Click it to hand control back and resume tracking
+  the run.
+- The **minimap freezes** while the camera is in motion, so the moving
+  viewport does not smear the minimap; it unfreezes the moment you take over.
+
+### Privacy and safety
 
 - No secret **value**, ciphertext, or key material is stored, streamed, or shown
   by any of these features. Only names, scopes, booleans, and timestamps.
 - The existing `sanitizeVariablesForExport` pass still redacts secret-looking
-  variables in live `node.completed` snapshots and run history.
+  variables in live `node.status` snapshots and run history.
 - URLs continue to forbid `{{secrets.*}}` substitution (the executor's
   `allowSecrets: false` guard is unchanged).
 
 ## Related
 
-- [Workflows and Nodes](workflows-and-nodes.md) — node types, running, and resume.
+- [Workflows and Nodes](workflows-and-nodes.md) — node types, running, and the run camera.
 - [Variables and Extractors](variables-and-extractors.md) — the placeholder
   namespaces and extractor model that provenance traces.
 - [Environments and Secrets](environments-and-secrets.md) — the encrypted secret
