@@ -18,6 +18,15 @@ export const RESOURCE_RUNS = "runs"
 export const RESOURCE_SECRETS = "secrets"
 /** Workspace-scoped reusable node presets (FEATURE-IDEAS §6.2). */
 export const RESOURCE_NODE_PRESETS = "node_presets"
+/**
+ * Coding-agent roster, local project paths and launched sessions.
+ *
+ * Launching is modelled as `run` rather than `create` — the session row is a
+ * side effect, the privileged act is starting a process. That keeps `read`
+ * (see the roster and which agents are installed) grantable to a role that
+ * cannot execute anything.
+ */
+export const RESOURCE_AGENTS = "agents"
 
 export type Resource =
   | typeof RESOURCE_WORKFLOWS
@@ -26,6 +35,7 @@ export type Resource =
   | typeof RESOURCE_RUNS
   | typeof RESOURCE_SECRETS
   | typeof RESOURCE_NODE_PRESETS
+  | typeof RESOURCE_AGENTS
 
 export const ACTION_CREATE = "create"
 export const ACTION_READ = "read"
@@ -94,6 +104,13 @@ export const PERMISSIONS_BY_RESOURCE: Readonly<Record<Resource, readonly string[
     permission(RESOURCE_NODE_PRESETS, ACTION_UPDATE),
     permission(RESOURCE_NODE_PRESETS, ACTION_DELETE),
   ],
+  agents: [
+    permission(RESOURCE_AGENTS, ACTION_READ),
+    permission(RESOURCE_AGENTS, ACTION_CREATE),
+    permission(RESOURCE_AGENTS, ACTION_UPDATE),
+    permission(RESOURCE_AGENTS, ACTION_DELETE),
+    permission(RESOURCE_AGENTS, ACTION_RUN),
+  ],
 }
 
 export const ALL_PERMISSIONS: readonly string[] = Object.values(PERMISSIONS_BY_RESOURCE).flat()
@@ -105,6 +122,7 @@ export const ACTIONS_BY_RESOURCE: Readonly<Record<Resource, readonly string[]>> 
   runs: PERMISSIONS_BY_RESOURCE.runs.map((p) => p.split(":")[1]!),
   secrets: PERMISSIONS_BY_RESOURCE.secrets.map((p) => p.split(":")[1]!),
   node_presets: PERMISSIONS_BY_RESOURCE.node_presets.map((p) => p.split(":")[1]!),
+  agents: PERMISSIONS_BY_RESOURCE.agents.map((p) => p.split(":")[1]!),
 }
 
 /** Workspace role hierarchy — kept for the cloud-provider seam. Local-only ignores it. */
@@ -137,6 +155,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
     permission(RESOURCE_NODE_PRESETS, ACTION_READ),
+    permission(RESOURCE_AGENTS, ACTION_READ),
   ],
   triage: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -147,6 +166,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
     permission(RESOURCE_NODE_PRESETS, ACTION_READ),
+    permission(RESOURCE_AGENTS, ACTION_READ),
   ],
   write: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -165,6 +185,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
     ...PERMISSIONS_BY_RESOURCE.node_presets,
+    ...PERMISSIONS_BY_RESOURCE.agents,
   ],
   maintain: [
     permission(RESOURCE_WORKFLOWS, ACTION_READ),
@@ -187,6 +208,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_SECRETS, ACTION_READ),
     ...PERMISSIONS_BY_RESOURCE.node_presets,
+    ...PERMISSIONS_BY_RESOURCE.agents,
   ],
   admin: ALL_PERMISSIONS,
 }

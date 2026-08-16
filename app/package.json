@@ -13,7 +13,7 @@
     "dev:renderer": "vite --host 127.0.0.1",
     "prestart": "npm run rebuild:electron && npm run build:app",
     "start": "electron .",
-    "build": "npm run build:app && electron-builder",
+    "build": "npm run rebuild:electron && npm run build:app && electron-builder",
     "build:app": "npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "node esbuild.config.cjs",
@@ -44,6 +44,9 @@
     "@monaco-editor/react": "^4.6.0",
     "@tippyjs/react": "^4.2.6",
     "@types/dagre": "^0.7.54",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0",
     "allotment": "^1.20.4",
     "axios": "^1.17.0",
     "better-sqlite3": "^12.6.0",
@@ -60,6 +63,7 @@
     "lucide-react": "^0.548.0",
     "monaco-editor": "0.55.1",
     "mousetrap": "^1.6.5",
+    "node-pty": "^1.2.0-beta.15",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
@@ -124,6 +128,7 @@
         "repo": "apiweave"
       }
     ],
+    "npmRebuild": false,
     "files": [
       "dist/desktop/**/*"
     ],
@@ -134,7 +139,8 @@
       }
     ],
     "asarUnpack": [
-      "node_modules/better-sqlite3/**/*"
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/node-pty/**/*"
     ],
     "win": {
       "target": [

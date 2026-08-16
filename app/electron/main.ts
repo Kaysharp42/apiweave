@@ -7,6 +7,7 @@ import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
 import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_workflows"
 import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
+  AgentRepository,
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
@@ -17,6 +18,7 @@ import {
 } from "../core/repositories"
 import { createKeyfile, readKeyfile, keyfileExists } from "../core/secrets/keyfile"
 import {
+  AgentService,
   ScopeResolver,
   type ScopeExistence,
   WorkspaceService,
@@ -39,6 +41,11 @@ import { McpHost } from "../core/mcp"
 import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
 import { MCP_PROMPTS } from "../core/mcp/prompts"
 import { MCP_RESOURCES } from "../core/mcp/resources"
+import { AgentEventBroker } from "../core/agents/agent_event_broker"
+import { AgentProcessManager } from "./agent_process_manager"
+import type { AgentDefinition } from "@shared/types/AgentDefinition"
+import type { AgentScope } from "@shared/types/AgentScope"
+import type { AgentEmbeddedLaunchRequest, AgentLaunchRequest } from "@shared/types/AgentsBridge"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
@@ -46,7 +53,12 @@ import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
-import { CLOUD_STATUS_CHANGED_CHANNEL, UPDATE_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
+import {
+  AGENT_OUTPUT_PORT_CHANNEL,
+  AGENT_SESSION_CHANGED_CHANNEL,
+  CLOUD_STATUS_CHANGED_CHANNEL,
+  UPDATE_STATUS_CHANGED_CHANNEL,
+} from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { ipcLog, revealLogFile } from "./logging"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
@@ -66,6 +78,9 @@ const ipcRouter = new IpcRouter({
 let database: InitializedDatabase | null = null
 let scheduler: RunScheduler | null = null
 let mcpHost: McpHost | null = null
+// Module scope for the same reason `mcpHost` is: `before-quit` has to reach it,
+// and it is built inside the composition root.
+let agentProcesses: AgentProcessManager | null = null
 let isQuitting = false
 
 if (process.platform === "linux") {
@@ -216,6 +231,7 @@ if (!hasSingleInstanceLock) {
     const environments = new EnvironmentRepository(database.kvStore)
     const collections = new CollectionRepository(database.kvStore)
     const nodePresets = new NodePresetRepository(database.kvStore)
+    const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
 
     // Auth + sync seams: single-owner always-allow, local-only no-op.
@@ -546,6 +562,162 @@ if (!hasSingleInstanceLock) {
       "updates:openLogFile",
       requireTrustedSender((): void => revealLogFile()),
     )
+
+    // Coding agents. Off the router for the same reason as mcp:* and updates:*
+    // above, and more sharply: the router is the MCP bridge's handler list, so
+    // registering "spawn a process with this working directory" there would put
+    // it one whitelist entry from being callable by a local agent over loopback
+    // HTTP. A fourth privileged preload world makes that structural instead of
+    // remembered.
+    //
+    // The PTY host is forked lazily, on the first embedded launch, and its
+    // events land here rather than in the manager: what a session row should
+    // say about a dead process is policy, and the manager only knows processes.
+    // Order matters — the broker dedupes terminal transitions first, then the
+    // one subscriber persists and pushes, so the renderer never sees an event
+    // whose row has not been written yet.
+    const agentEvents = new AgentEventBroker({ now: () => clock.isoNow() })
+    const agentPtyHost = new AgentProcessManager({
+      hostEntryPath: path.join(__dirname, "pty-host.cjs"),
+      onEvent: (event) => agentEvents.publish(event),
+    })
+    agentProcesses = agentPtyHost
+    const agentService = new AgentService(agents, workflows, collections, permissions, scopeResolver, {
+      // The picker runs here, in main, so the path the renderer eventually sees
+      // came from the OS rather than from the renderer.
+      pickDirectory: async ({ title, defaultPath }) => {
+        const { dialog } = await import("electron")
+        const result = await dialog.showOpenDialog({
+          title,
+          properties: ["openDirectory", "createDirectory"],
+          ...(defaultPath === undefined ? {} : { defaultPath }),
+        })
+        return result.canceled ? null : (result.filePaths[0] ?? null)
+      },
+      getMcpConfig: () => mcpHost?.getConfig() ?? null,
+      agentFilesDir: path.join(app.getPath("userData"), "agent-files"),
+      pty: agentPtyHost,
+    })
+    agentEvents.subscribe((event) => {
+      agentService.recordProcessEvent(event)
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(AGENT_SESSION_CHANGED_CHANNEL, event)
+      }
+    })
+    // Anything still marked live is a leftover from a crash — the process it
+    // named did not outlive the app that owned it.
+    const orphaned = agents.markOrphanedSessionsFailed()
+    if (orphaned > 0) {
+      console.info(`[agents] marked ${orphaned} orphaned agent session(s) failed`)
+    }
+    ipcMain.handle(
+      "agents:listRoster",
+      requireTrustedSender((workspaceId: string) => agentService.listRoster(workspaceId)),
+    )
+    ipcMain.handle(
+      "agents:refreshAvailability",
+      requireTrustedSender((workspaceId: string) => agentService.refreshAvailability(workspaceId)),
+    )
+    ipcMain.handle(
+      "agents:saveCustomAgent",
+      requireTrustedSender((workspaceId: string, definition: AgentDefinition) =>
+        agentService.saveCustomAgent(workspaceId, definition),
+      ),
+    )
+    ipcMain.handle(
+      "agents:deleteCustomAgent",
+      requireTrustedSender((workspaceId: string, agentKey: string) =>
+        agentService.deleteCustomAgent(workspaceId, agentKey),
+      ),
+    )
+    ipcMain.handle(
+      "agents:getDefaultAgentKey",
+      requireTrustedSender((workspaceId: string) => agentService.getDefaultAgentKey(workspaceId)),
+    )
+    ipcMain.handle(
+      "agents:setDefaultAgentKey",
+      requireTrustedSender((workspaceId: string, agentKey: string) =>
+        agentService.setDefaultAgentKey(workspaceId, agentKey),
+      ),
+    )
+    ipcMain.handle(
+      "agents:resolveLocalPath",
+      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
+        agentService.resolveLocalPath(workspaceId, scope),
+      ),
+    )
+    ipcMain.handle(
+      "agents:chooseLocalPath",
+      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
+        agentService.chooseLocalPath(workspaceId, scope),
+      ),
+    )
+    ipcMain.handle(
+      "agents:clearLocalPath",
+      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
+        agentService.clearLocalPath(workspaceId, scope),
+      ),
+    )
+    ipcMain.handle(
+      "agents:listSessions",
+      requireTrustedSender((workspaceId: string) => agentService.listSessions(workspaceId)),
+    )
+    ipcMain.handle(
+      "agents:launchExternal",
+      requireTrustedSender((request: AgentLaunchRequest) => agentService.launchExternal(request)),
+    )
+    ipcMain.handle(
+      "agents:launchEmbedded",
+      requireTrustedSender((request: AgentEmbeddedLaunchRequest) => agentService.launchEmbedded(request)),
+    )
+    ipcMain.handle(
+      "agents:write",
+      requireTrustedSender((sessionId: string, data: string) => agentService.writeToSession(sessionId, data)),
+    )
+    ipcMain.handle(
+      "agents:resize",
+      requireTrustedSender((sessionId: string, cols: number, rows: number) =>
+        agentService.resizeSession(sessionId, cols, rows),
+      ),
+    )
+    ipcMain.handle(
+      "agents:setPaused",
+      requireTrustedSender((sessionId: string, paused: boolean) =>
+        agentService.setSessionPaused(sessionId, paused),
+      ),
+    )
+    ipcMain.handle(
+      "agents:killSession",
+      requireTrustedSender((sessionId: string) => agentService.killSession(sessionId)),
+    )
+    // The one agents handler written out rather than wrapped: it has to reply
+    // with a `MessagePort`, which cannot be returned through `invoke` at all —
+    // only sent in a transfer list. So it needs the event, and `requireTrustedSender`
+    // exists precisely to hide the event from handlers that do not.
+    ipcMain.handle("agents:attach", async (event, sessionId: string): Promise<boolean> => {
+      if (!isTrustedSender(event)) {
+        return Promise.reject(new Error("untrusted sender"))
+      }
+      const { attachable } = await agentService.authorizeSessionRead(sessionId)
+      if (!attachable) {
+        return false
+      }
+      const port = agentPtyHost.attach(sessionId)
+      if (port === null) {
+        return false
+      }
+      // Straight to the frame that asked, not to the window: another frame is
+      // another document, and this port is one document's terminal.
+      const frame = event.senderFrame
+      if (frame === null || frame === undefined) {
+        // The caller navigated away while we were authorizing. Nothing to
+        // deliver to, and an unclosed port would keep the host writing into it.
+        port.close()
+        return false
+      }
+      frame.postMessage(AGENT_OUTPUT_PORT_CHANNEL, { sessionId }, [port])
+      return true
+    })
     // Owns its own timers: one check just after launch, then one every few
     // hours so a window left open for days still notices a release.
     //
@@ -626,9 +798,32 @@ app.on("before-quit", (event) => {
   void mcpHost?.stop()
   mcpHost = null
 
+  // Two things can now need time before the database may close, so they are
+  // collected rather than handled with two copies of the deferred-quit dance.
+  const shutdowns: Promise<unknown>[] = []
+
+  if (agentProcesses !== null) {
+    // Agent processes are the user's own CLIs, running under a PTY this app
+    // owns. Quitting without killing them leaves processes attached to a
+    // terminal that no longer exists — so this is waited on when there is
+    // anything to wait for, and merely started when there is not.
+    const hasLiveSessions = agentProcesses.liveSessionIds().length > 0
+    const disposal = agentProcesses.dispose()
+    agentProcesses = null
+    if (hasLiveSessions) {
+      shutdowns.push(disposal)
+    } else {
+      void disposal
+    }
+  }
+
   if (scheduler && scheduler.getActiveCount() > 0) {
+    shutdowns.push(scheduler.shutdown(2000))
+  }
+
+  if (shutdowns.length > 0) {
     event.preventDefault()
-    void scheduler.shutdown(2000).finally(() => {
+    void Promise.allSettled(shutdowns).finally(() => {
       database?.close()
       database = null
       app.quit()

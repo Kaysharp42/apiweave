@@ -6,8 +6,13 @@ import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
+import type { AgentsBridge } from "@shared/types/AgentsBridge"
+import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
+import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import {
+  AGENT_OUTPUT_PORT_CHANNEL,
+  AGENT_SESSION_CHANGED_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
   runProgressChannel,
@@ -34,6 +39,11 @@ function subscribe<T>(channel: string, callback: (value: T) => void): () => void
  */
 function call<T>(channel: string): () => Promise<T> {
   return () => ipcRenderer.invoke(channel) as Promise<T>
+}
+
+/** The argument-taking counterpart of {@link call}, for bridges whose methods carry a payload. */
+function invoke<T>(channel: string, ...args: readonly unknown[]): Promise<T> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<T>
 }
 
 /**
@@ -119,3 +129,58 @@ const updatesBridge: UpdatesBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_UPDATES__", updatesBridge)
+
+/**
+ * Coding-agent roster, project paths and launching.
+ *
+ * A fourth privileged world rather than a domain on `__APIWEAVE_IPC__`, because
+ * that channel routes through `IpcRouter` — which the MCP bridge also serves as
+ * a loopback-HTTP transport. Registering process spawning there would put it one
+ * whitelist entry away from being callable by a local agent. Same reasoning, and
+ * the same shape, as the `mcp:*` and `updates:*` handlers above.
+ */
+const agentsBridge: AgentsBridge = {
+  listRoster: (workspaceId) => invoke("agents:listRoster", workspaceId),
+  refreshAvailability: (workspaceId) => invoke("agents:refreshAvailability", workspaceId),
+  saveCustomAgent: (workspaceId, definition) => invoke("agents:saveCustomAgent", workspaceId, definition),
+  deleteCustomAgent: (workspaceId, agentKey) => invoke("agents:deleteCustomAgent", workspaceId, agentKey),
+  getDefaultAgentKey: (workspaceId) => invoke("agents:getDefaultAgentKey", workspaceId),
+  setDefaultAgentKey: (workspaceId, agentKey) => invoke("agents:setDefaultAgentKey", workspaceId, agentKey),
+  resolveLocalPath: (workspaceId, scope) => invoke("agents:resolveLocalPath", workspaceId, scope),
+  chooseLocalPath: (workspaceId, scope) => invoke("agents:chooseLocalPath", workspaceId, scope),
+  clearLocalPath: (workspaceId, scope) => invoke("agents:clearLocalPath", workspaceId, scope),
+  listSessions: (workspaceId) => invoke("agents:listSessions", workspaceId),
+  launchExternal: (request) => invoke("agents:launchExternal", request),
+  launchEmbedded: (request) => invoke("agents:launchEmbedded", request),
+  write: (sessionId, data) => invoke("agents:write", sessionId, data),
+  resize: (sessionId, cols, rows) => invoke("agents:resize", sessionId, cols, rows),
+  setPaused: (sessionId, paused) => invoke("agents:setPaused", sessionId, paused),
+  killSession: (sessionId) => invoke("agents:killSession", sessionId),
+  attach: (sessionId) => invoke("agents:attach", sessionId),
+  onSessionChanged: (callback) => subscribe<AgentSessionEvent>(AGENT_SESSION_CHANGED_CHANNEL, callback),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_AGENTS__", agentsBridge)
+
+/**
+ * The one thing that cannot travel over `contextBridge`: a session's output port.
+ *
+ * `contextBridge` clones what it passes, and a `MessagePort` is transferable but
+ * not cloneable — it has to move, not copy. Preload and the page do share one
+ * frame, though, so re-posting it with `window.postMessage` and the port in the
+ * transfer list carries it across the isolation boundary. This is Electron's own
+ * documented pattern for reaching the main world with a port.
+ *
+ * Registered once at load rather than per subscriber. A port is delivered to
+ * exactly one context, so a second listener here would be a second claimant on
+ * something that can only be claimed once.
+ *
+ * It exposes nothing the page did not already have: any script that could listen
+ * for this message is running in the page and can call
+ * `window.__APIWEAVE_AGENTS__` directly, which is strictly more capability.
+ */
+ipcRenderer.on(AGENT_OUTPUT_PORT_CHANNEL, (event, payload: { readonly sessionId: string }) => {
+  const port = event.ports[0]
+  if (port === undefined) return
+  window.postMessage({ [AGENT_OUTPUT_PORT_MESSAGE_KEY]: payload.sessionId }, "*", [port])
+})

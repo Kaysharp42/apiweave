@@ -8,6 +8,17 @@
 // stale .forge-meta marker). Driving prebuild-install directly with an explicit
 // runtime+target fetches the correct prebuilt every time — no compiler needed.
 //
+// This script is now the ONLY thing that prepares a native addon for the app:
+// `build.npmRebuild` is false in package.json, and `npm run build` calls this
+// first. That is not tidiness, it is what makes packaging possible without a
+// C++ toolchain. electron-builder rebuilds every native dependency it finds,
+// and node-pty's install script (`node scripts/prebuild.js || node-gyp rebuild`)
+// answers by deleting its own shipped prebuilds and demanding a compiler — so a
+// packaging run died on "Could not find any Visual Studio installation" for a
+// module that needed no rebuild at all, being N-API with prebuilds for every
+// target this app ships. A new native dependency therefore has to be handled
+// here, deliberately, rather than picked up by a rebuild nobody configured.
+//
 // Usage: node scripts/rebuild-sqlite.mjs <node|electron>
 import { execFileSync } from "node:child_process"
 import { createRequire } from "node:module"

@@ -212,6 +212,24 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  /**
+   * The agents surface spawns processes with a caller-influenced working
+   * directory. The MCP bridge is a second transport over the same router, so
+   * anything reachable there is reachable by a local agent over loopback HTTP —
+   * which would turn "an agent can drive APIWeave" into "an agent can execute
+   * arbitrary code". It is kept off the router entirely (a privileged preload
+   * world instead), and this asserts it stays that way.
+   */
+  it("exposes no agents tools — agent launching is not on the router at all", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("agents")
+    }
+    const names = new Set(MCP_TOOLS.map((t) => `${t.domain}.${t.action}`))
+    for (const excluded of ["agents.launchExternal", "agents.chooseLocalPath", "agents.saveCustomAgent"]) {
+      expect(names.has(excluded), excluded).toBe(false)
+    }
+  })
+
   it("exposes no webhook or import tools (dropped/deferred surface)", () => {
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("webhooks")
