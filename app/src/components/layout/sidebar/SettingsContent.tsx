@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import {
+  Bot,
   FolderKanban,
   Key,
   Globe,
@@ -12,6 +13,7 @@ import { useParams } from "react-router-dom";
 import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
+import { AgentsSettingsModal } from "../../organisms/AgentsSettingsModal";
 import { McpSetupModal } from "../../organisms/McpSetupModal";
 import { UpdateSettingsModal } from "../../organisms/UpdateSettingsModal";
 import { PrivateNetworksModal } from "../../organisms/PrivateNetworksModal";
@@ -84,6 +86,7 @@ export function SettingsContent({
   const { currentOrg, currentWorkspace } = useWorkspace();
   const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(false);
   const [updatesOpen, setUpdatesOpen] = useState(false);
   const [privateNetworksOpen, setPrivateNetworksOpen] = useState(false);
   const { pending: updatePending, status: updateStatus } = useUpdateStatus();
@@ -132,6 +135,12 @@ export function SettingsContent({
       </div>
       <ul className="w-full px-2 space-y-1">
         <SettingItem
+          icon={Bot}
+          title="Agents"
+          description="Launch a coding agent in your project folder"
+          onClick={() => setAgentsOpen(true)}
+        />
+        <SettingItem
           icon={Shield}
           title="Private networks"
           description="Allow requests to LAN devices (e.g. 192.168.x.x)"
@@ -153,6 +162,10 @@ export function SettingsContent({
       </ul>
 
       <McpSetupModal isOpen={mcpOpen} onClose={() => setMcpOpen(false)} />
+      <AgentsSettingsModal
+        isOpen={agentsOpen}
+        onClose={() => setAgentsOpen(false)}
+      />
       <UpdateSettingsModal
         isOpen={updatesOpen}
         onClose={() => setUpdatesOpen(false)}

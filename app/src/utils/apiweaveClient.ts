@@ -5,6 +5,19 @@ import type {
   ContractResult,
 } from "@shared/contract/errors";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import type { AgentDefinition } from "@shared/types/AgentDefinition";
+import type { AgentScope } from "@shared/types/AgentScope";
+import type { AgentSession } from "@shared/types/AgentSession";
+import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent";
+import type { AgentOutputEvent } from "@shared/types/AgentOutputEvent";
+import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent";
+import type {
+  AgentEmbeddedLaunchRequest,
+  AgentLaunchRequest,
+  AgentPathResolution,
+  AgentRosterEntry,
+  AgentsBridge,
+} from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
@@ -93,6 +106,7 @@ declare global {
     __APIWEAVE_DESKTOP__?: DesktopBridge;
     __APIWEAVE_MCP__?: McpBridge;
     __APIWEAVE_UPDATES__?: UpdatesBridge;
+    __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_RUNTIME__?: {
       readonly apiUrl?: string;
       readonly uiToken?: string;
@@ -113,6 +127,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_DESKTOP__?: DesktopBridge;
   __APIWEAVE_MCP__?: McpBridge;
   __APIWEAVE_UPDATES__?: UpdatesBridge;
+  __APIWEAVE_AGENTS__?: AgentsBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -685,6 +700,136 @@ export const updates = {
     getUpdatesBridge()?.openLogFile?.() ?? Promise.resolve(),
   onStatusChanged: (callback: (status: UpdateStatus) => void): (() => void) =>
     getUpdatesBridge()?.onStatusChanged(callback) ?? (() => undefined),
+} as const;
+
+function getAgentsBridge(): AgentsBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_AGENTS__ ?? globalApiweave.__APIWEAVE_AGENTS__
+  );
+}
+
+/**
+ * Coding-agent roster, project paths and launching.
+ *
+ * Deliberately a sibling of `mcp` and `updates` rather than a domain on the
+ * router facade: the router doubles as the MCP bridge's handler surface, and
+ * process spawning does not belong there. See `AgentsBridge`.
+ *
+ * Every method degrades rather than throws when the bridge is absent, which is
+ * the web preview outside Electron — there is no PATH to probe and nothing to
+ * launch there, so an empty roster is the honest answer.
+ */
+export const agents = {
+  isAvailable: (): boolean => getAgentsBridge() !== undefined,
+  listRoster: (workspaceId: string): Promise<readonly AgentRosterEntry[]> =>
+    getAgentsBridge()?.listRoster(workspaceId) ?? Promise.resolve([]),
+  refreshAvailability: (
+    workspaceId: string,
+  ): Promise<readonly AgentRosterEntry[]> =>
+    getAgentsBridge()?.refreshAvailability(workspaceId) ?? Promise.resolve([]),
+  saveCustomAgent: (
+    workspaceId: string,
+    definition: AgentDefinition,
+  ): Promise<AgentRosterEntry> =>
+    getAgentsBridge()?.saveCustomAgent(workspaceId, definition) ??
+    Promise.reject(new Error("Agents are only available in the desktop app")),
+  deleteCustomAgent: (workspaceId: string, agentKey: string): Promise<void> =>
+    getAgentsBridge()?.deleteCustomAgent(workspaceId, agentKey) ??
+    Promise.resolve(),
+  getDefaultAgentKey: (workspaceId: string): Promise<string> =>
+    getAgentsBridge()?.getDefaultAgentKey(workspaceId) ?? Promise.resolve(""),
+  setDefaultAgentKey: (workspaceId: string, agentKey: string): Promise<void> =>
+    getAgentsBridge()?.setDefaultAgentKey(workspaceId, agentKey) ??
+    Promise.resolve(),
+  resolveLocalPath: (
+    workspaceId: string,
+    scope: AgentScope,
+  ): Promise<AgentPathResolution> =>
+    getAgentsBridge()?.resolveLocalPath(workspaceId, scope) ??
+    Promise.resolve({ localPath: null, source: "none" as const }),
+  chooseLocalPath: (
+    workspaceId: string,
+    scope: AgentScope,
+  ): Promise<string | null> =>
+    getAgentsBridge()?.chooseLocalPath(workspaceId, scope) ??
+    Promise.resolve(null),
+  clearLocalPath: (workspaceId: string, scope: AgentScope): Promise<void> =>
+    getAgentsBridge()?.clearLocalPath(workspaceId, scope) ?? Promise.resolve(),
+  listSessions: (workspaceId: string): Promise<readonly AgentSession[]> =>
+    getAgentsBridge()?.listSessions(workspaceId) ?? Promise.resolve([]),
+  launchExternal: (request: AgentLaunchRequest): Promise<AgentSession> =>
+    getAgentsBridge()?.launchExternal(request) ??
+    Promise.reject(new Error("Agents are only available in the desktop app")),
+  launchEmbedded: (request: AgentEmbeddedLaunchRequest): Promise<AgentSession> =>
+    getAgentsBridge()?.launchEmbedded(request) ??
+    Promise.reject(new Error("Agents are only available in the desktop app")),
+  write: (sessionId: string, data: string): Promise<void> =>
+    getAgentsBridge()?.write(sessionId, data) ?? Promise.resolve(),
+  resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
+    getAgentsBridge()?.resize(sessionId, cols, rows) ?? Promise.resolve(),
+  setPaused: (sessionId: string, paused: boolean): Promise<void> =>
+    getAgentsBridge()?.setPaused(sessionId, paused) ?? Promise.resolve(),
+  killSession: (sessionId: string): Promise<AgentSession> =>
+    getAgentsBridge()?.killSession(sessionId) ??
+    Promise.reject(new Error("Agents are only available in the desktop app")),
+  onSessionChanged: (
+    callback: (event: AgentSessionEvent) => void,
+  ): (() => void) =>
+    getAgentsBridge()?.onSessionChanged(callback) ?? (() => undefined),
+  /**
+   * Attach to one session's live output.
+   *
+   * The listener goes on before the request, not after: the port is delivered by
+   * a `window.postMessage` that main triggers while `attach` is still in flight,
+   * so registering afterwards is a race this would lose about as often as it won.
+   *
+   * Resolves the unsubscribe when a live process was attached to, and `null`
+   * when there was none — an ended session, or one from a previous run of the
+   * app. The caller shows that as history rather than as a dead terminal.
+   */
+  attachOutput: async (
+    sessionId: string,
+    onEvent: (event: AgentOutputEvent) => void,
+  ): Promise<(() => void) | null> => {
+    const bridge = getAgentsBridge();
+    if (bridge === undefined) return null;
+
+    let port: MessagePort | null = null;
+    const onWindowMessage = (event: MessageEvent<unknown>): void => {
+      const data = event.data;
+      if (typeof data !== "object" || data === null) return;
+      const announced = (data as Record<string, unknown>)[
+        AGENT_OUTPUT_PORT_MESSAGE_KEY
+      ];
+      const delivered = event.ports[0];
+      if (announced !== sessionId || delivered === undefined) return;
+      port = delivered;
+      delivered.onmessage = (message: MessageEvent<AgentOutputEvent>) => {
+        onEvent(message.data);
+      };
+      // `onmessage` starts the port implicitly; `start()` here would be a
+      // second, redundant claim.
+    };
+    window.addEventListener("message", onWindowMessage);
+
+    const teardown = (): void => {
+      window.removeEventListener("message", onWindowMessage);
+      port?.close();
+      port = null;
+    };
+
+    try {
+      const attached = await bridge.attach(sessionId);
+      if (!attached) {
+        teardown();
+        return null;
+      }
+      return teardown;
+    } catch (error) {
+      teardown();
+      throw error;
+    }
+  },
 } as const;
 
 export const API_BASE_URL = "ipc://apiweave";

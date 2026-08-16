@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
+import AgentsManager from "../AgentsManager";
 import MCPManager from "../MCPManager";
 import { SidebarHeader } from "./SidebarHeader";
 import { WorkflowList } from "./sidebar/WorkflowList";
@@ -502,6 +503,7 @@ export function Sidebar() {
                 onAssignWorkflowToProject={handleAssignWorkflowToProject}
               />
             </div>
+          {selectedNav === "agents" && <AgentsManager className="h-full" />}
           {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent

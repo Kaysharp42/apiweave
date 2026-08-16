@@ -22,6 +22,7 @@ import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { PromptDialog } from "./molecules/PromptDialog";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
+import { AgentLaunchButton } from "./organisms/AgentLaunchButton";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { Toggle } from "./atoms/Toggle";
@@ -824,6 +825,16 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                         </div>
                       </div>
                       <div className="flex gap-1.5 flex-shrink-0">
+                        {/*
+                          The project's local folder is the one most users will
+                          ever set — a workflow-level path only matters inside a
+                          monorepo. `collectionId` rather than `getProjectId`:
+                          the path table keys on the DB primary key.
+                        */}
+                        <AgentLaunchButton
+                          scopeKind="project"
+                          scopeId={project.collectionId}
+                        />
                         <Button
                           variant="ghost"
                           size="xs"

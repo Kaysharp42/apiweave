@@ -1,6 +1,7 @@
 import React from "react";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import {
+  Bot,
   Home,
   Settings,
   LayoutGrid,
@@ -37,6 +38,14 @@ const navItems: NavItemConfig[] = [
     id: AppNavBarItems.projects!.value,
     label: AppNavBarItems.projects!.displayValue,
     icon: LayoutGrid,
+  },
+  // "Agents", never the name of any one vendor's CLI: this launches whatever the
+  // user has installed, under their own credentials, and the roster is where the
+  // individual tools are named.
+  {
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
   },
   {
     id: "mcp",

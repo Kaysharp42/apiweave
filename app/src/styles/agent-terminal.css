@@ -1,0 +1,109 @@
+/*
+ * Agent terminal — the one scoped exception to DESIGN.md's colour rules.
+ *
+ * A terminal is an inherently dark monospace surface with sixteen ANSI colours
+ * it does not control: the agent, and every tool the agent runs, decides what
+ * they mean. DESIGN.md §7's exception covers the node layer only and explicitly
+ * does not extend past the canvas, so this needs its own decision, made the same
+ * way — a scoped token family, `--aw-term-*`, exactly as the node layer got
+ * `--aw-radius-node*`. The token names are what enforce the boundary; nothing
+ * outside a terminal has any reason to reach for a name starting `--aw-term-`.
+ *
+ * One palette, not two. A terminal stays dark in the light theme, the way it
+ * does in every editor that has one: the sixteen slots have to stay legible
+ * against a background the app does not own, and inverting them for light mode
+ * would mean re-deciding sixteen colours that tools already assume are dark-on.
+ * The chrome *around* the terminal is ordinary app chrome and does follow the
+ * theme.
+ *
+ * The sixteen slots are mapped onto tokens that already exist — the status hues
+ * and the HTTP method hues — so an agent's red is APIWeave's red. Dark-theme
+ * values are used verbatim rather than referencing the variables, because these
+ * must not follow the theme.
+ */
+
+.aw-agent-terminal {
+  /* Surface — zinc-950 on zinc-300, the darkest step the design system has. */
+  --aw-term-bg: #09090b;
+  --aw-term-fg: #d4d4d8;
+  /* Cursor and selection are the one place the brand accent belongs: they are
+     APIWeave's own UI drawn inside the terminal, not the agent's output. */
+  --aw-term-cursor: #2dd4bf;
+  --aw-term-cursor-accent: #09090b;
+  --aw-term-selection: rgb(45 212 191 / 26%);
+  --aw-term-selection-inactive: rgb(212 212 216 / 14%);
+
+  /* The sixteen ANSI slots. Normal, then bright. */
+  --aw-term-black: #27272a;
+  --aw-term-red: #f87171;
+  --aw-term-green: #4ade80;
+  --aw-term-yellow: #fbbf24;
+  --aw-term-blue: #60a5fa;
+  --aw-term-magenta: #a78bfa;
+  --aw-term-cyan: #2dd4bf;
+  --aw-term-white: #d4d4d8;
+  --aw-term-bright-black: #52525b;
+  --aw-term-bright-red: #fca5a5;
+  --aw-term-bright-green: #86efac;
+  --aw-term-bright-yellow: #fde047;
+  --aw-term-bright-blue: #93c5fd;
+  --aw-term-bright-magenta: #c4b5fd;
+  --aw-term-bright-cyan: #5eead4;
+  --aw-term-bright-white: #fafafa;
+
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--aw-term-bg);
+}
+
+/*
+ * xterm.js measures its own geometry from the element it renders into, so that
+ * element gets the padding and nothing else does. Padding on an ancestor would
+ * be measured as terminal width and the last column would sit under the edge.
+ */
+.aw-agent-terminal__viewport {
+  height: 100%;
+  padding: 8px 4px 8px 10px;
+}
+
+/* The scrollbar is xterm's own element, so it is themed here rather than by the
+   global scrollbar rules, which are keyed to app surfaces. */
+.aw-agent-terminal .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+
+.aw-agent-terminal .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.aw-agent-terminal .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aw-agent-terminal .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border: 3px solid var(--aw-term-bg);
+  border-radius: 9999px;
+}
+
+/* Claude Code emits OSC 8 hyperlinks, and xterm renders them as real links.
+   Underlining only on hover keeps a wall of output from turning into a wall of
+   underlines. */
+.aw-agent-terminal .xterm-screen a {
+  color: var(--aw-term-bright-cyan);
+  text-decoration: none;
+}
+
+.aw-agent-terminal .xterm-screen a:hover {
+  text-decoration: underline;
+}
+
+/* Focus is drawn on the wrapper: xterm's textarea is a 1px offscreen element,
+   so a ring on it would be invisible. */
+.aw-agent-terminal:focus-within {
+  outline: var(--aw-focus-ring-width) solid var(--aw-primary);
+  outline-offset: calc(var(--aw-focus-ring-offset) * -1);
+}

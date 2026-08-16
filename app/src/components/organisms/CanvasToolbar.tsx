@@ -13,6 +13,8 @@ import {
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import ButtonSelect from "../ButtonSelect";
+import { AgentLaunchButton } from "./AgentLaunchButton";
+import useAgentDockStore from "../../stores/AgentDockStore";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
 import { buildEnvironmentOptions } from "./canvasToolbarUtils";
@@ -50,6 +52,7 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const runMenuRef = useRef<HTMLDivElement>(null);
+  const openAgentSession = useAgentDockStore((state) => state.openSession);
   const safeResumeOptions = resumeOptions ?? EMPTY_RESUME_OPTIONS;
 
   const hasResumeOptions = safeResumeOptions.length > 0;
@@ -141,6 +144,17 @@ export function CanvasToolbar({
           {isSwaggerRefreshing ? "Refreshing" : "Refresh"}
         </span>
       </Button>
+
+      {workflowId !== undefined && workflowId !== "" && (
+        <AgentLaunchButton
+          scopeKind="workflow"
+          scopeId={workflowId}
+          // The workflow view owns the bottom dock, so a launch from here runs
+          // in it. The store rather than a prop chain: the dock is a sibling of
+          // the canvas, not a child of this toolbar.
+          onEmbeddedSession={openAgentSession}
+        />
+      )}
 
       <div
         className="w-px h-6 bg-border dark:bg-border-dark mx-0.5"

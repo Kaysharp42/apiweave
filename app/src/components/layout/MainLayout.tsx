@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router-dom";
@@ -7,11 +7,14 @@ import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
 import { MainHeader } from "./MainHeader";
 import { MainFooter } from "./MainFooter";
+import { AgentSessionsProvider } from "../../contexts/AgentSessionsContext";
+import useAgentDockStore from "../../stores/AgentDockStore";
 import useNavigationStore from "../../stores/NavigationStore";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
+import { AgentDock } from "../organisms/AgentDock";
 import { UpdateReadyBanner } from "../organisms/UpdateReadyBanner";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
@@ -85,7 +88,12 @@ export function MainLayout({ children }: MainLayoutProps) {
   const paneMax = 480;
 
   return (
-    <>
+    // The agent-sessions subscription is mounted here rather than around each
+    // route's shell: this component has two mount points (a route shell and
+    // `pages/Home`), and a provider added above it is a provider one of them
+    // will be missing. Inside it, every consumer of the nav section and the
+    // terminal dock is covered by construction.
+    <AgentSessionsProvider>
       {/* Skip to main content link */}
       <a
         href="#main-content"
@@ -103,6 +111,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
       <UpdateReadyBanner />
 
+      <WithAgentDock>
       {/* Desktop layout (lg+): Allotment split panes */}
       <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
         {/* key forces re-layout on collapse toggle — Allotment only reads
@@ -168,13 +177,57 @@ export function MainLayout({ children }: MainLayoutProps) {
           {children !== undefined ? children : <Workspace />}
         </main>
       </div>
+      </WithAgentDock>
 
       <HorizontalDivider />
 
       <footer>
         <MainFooter />
       </footer>
-    </>
+    </AgentSessionsProvider>
+  );
+}
+
+/**
+ * The whole content area, with the agent terminal docked beneath it when one is
+ * open.
+ *
+ * A dock rather than a page of its own: the argument for wiring the MCP bridge
+ * into a launch is that the agent edits the workflow while you watch, and a
+ * terminal that replaced the canvas would throw that away.
+ *
+ * It wraps *both* responsive layout branches rather than sitting inside each
+ * one's `<main>`, which is what the first version did — and both branches are
+ * always in the DOM, only one of them displayed. That mounted two terminals for
+ * one session, and since a port is delivered to exactly one holder, the hidden
+ * one took it: launching produced a visible terminal that stayed blank. One
+ * instance is not a tidiness preference here, it is the difference between
+ * working and not.
+ *
+ * The split is mounted unconditionally and the dock pane is collapsed while
+ * nothing is open, rather than swapping between a bare fragment and an
+ * Allotment. React cannot reconcile those two shapes, so the swap unmounted
+ * the whole subtree — canvas included — and opening the dock discarded
+ * unsaved node/edge edits. A hidden pane leaves the tree shape untouched, so
+ * opening or closing the dock is now an ordinary re-render.
+ */
+export function WithAgentDock({ children }: { readonly children: ReactNode }) {
+  const openSessionId = useAgentDockStore((state) => state.openSessionId);
+  return (
+    <Allotment vertical className="min-h-0 flex-1">
+      <Allotment.Pane>
+        {/* Allotment lays its panes out absolutely, so the branches inside need
+            a flex column of their own to keep their `flex-1 min-h-0`. */}
+        <div className="flex h-full min-h-0 flex-col">{children}</div>
+      </Allotment.Pane>
+      <Allotment.Pane
+        preferredSize={300}
+        minSize={110}
+        visible={openSessionId !== null}
+      >
+        <AgentDock />
+      </Allotment.Pane>
+    </Allotment>
   );
 }
 

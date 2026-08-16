@@ -309,3 +309,4 @@ export type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
 export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceInput";
 export type { CloudSyncStatus } from "./CloudSyncStatus";
 export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
+export type { AgentLaunchMenuItem } from "./AgentLaunchMenuItem";

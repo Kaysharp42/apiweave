@@ -118,6 +118,8 @@ export function SidebarHeader({
         return "Workflows";
       case "projects":
         return "Projects";
+      case "agents":
+        return "Agents";
       case "mcp":
         return "MCP";
       case "settings":
