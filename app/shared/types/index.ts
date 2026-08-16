@@ -1,3 +1,19 @@
+export type { AgentAvailability, AgentAvailabilityState } from "./AgentAvailability"
+export type { AgentDefinition, AgentPromptMode, StoredAgentDefinition } from "./AgentDefinition"
+export { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "./AgentOutputEvent"
+export type { AgentOutputEvent } from "./AgentOutputEvent"
+export type { AgentLaunchMode, AgentSession, AgentSessionStatus } from "./AgentSession"
+export type { AgentEvent, AgentSessionEvent } from "./AgentSessionEvent"
+export { AGENT_SCOPE_KINDS, isAgentScopeKind } from "./AgentScope"
+export type { AgentScope, AgentScopeKind } from "./AgentScope"
+export type {
+  AgentsBridge,
+  AgentEmbeddedLaunchRequest,
+  AgentLaunchRequest,
+  AgentLocalPathEntry,
+  AgentPathResolution,
+  AgentRosterEntry,
+} from "./AgentsBridge"
 export type { AssertionEvaluation } from "./AssertionEvaluation"
 export type { AssertionApplyResult } from "./AssertionApplyResult"
 export type { AssertionItem } from "./AssertionItem"

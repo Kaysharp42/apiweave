@@ -1,6 +1,8 @@
 export { ScopeResolver, LOCAL_OWNER_ID } from "./scope_resolver"
 export type { ScopeResolution, ScopeExistence } from "./scope_resolver"
 export { authorizeWorkspace } from "./authorize"
+export { AgentService } from "./agent_service"
+export type { AgentEnvironment } from "./agent_service"
 export { WorkflowService } from "./workflow_service"
 export { WorkflowAnalysisService } from "./workflow_analysis_service"
 export { AssertionAuthoringService } from "./assertion_authoring_service"

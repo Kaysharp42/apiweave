@@ -1,3 +1,6 @@
+export { AgentAvailabilitySchema, AgentAvailabilityStateSchema } from "./AgentAvailabilitySchema"
+export { AgentDefinitionSchema, AgentPromptModeSchema, StoredAgentDefinitionSchema } from "./AgentDefinitionSchema"
+export { AgentLaunchModeSchema, AgentSessionSchema, AgentSessionStatusSchema } from "./AgentSessionSchema"
 export { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
 export { AssertionApplyResultSchema } from "./AssertionApplyResultSchema"
 export { AssertionItemSchema } from "./AssertionItemSchema"
