@@ -23,6 +23,13 @@ import {
   sweepLauncherScripts,
 } from "../agents/external_terminal"
 import { deleteAgentMcpConfig, renderMcpConfigArgs, sweepAgentMcpConfigs, writeAgentMcpConfig } from "../agents/mcp_config"
+import {
+  buildSessionBriefing,
+  deleteSessionBriefing,
+  renderBriefingArgs,
+  sweepSessionBriefings,
+  writeSessionBriefing,
+} from "../agents/session_briefing"
 import type { PtyLauncher } from "../agents/pty_launcher"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { Action } from "../auth/permissions"
@@ -613,7 +620,7 @@ export class AgentService {
   sweepScratchFiles(): number {
     this.sweptScratch = true
     const directory = this.environment.agentFilesDir
-    return sweepAgentMcpConfigs(directory) + sweepLauncherScripts(directory)
+    return sweepAgentMcpConfigs(directory) + sweepLauncherScripts(directory) + sweepSessionBriefings(directory)
   }
 
   // ── internals ───────────────────────────────────────────────────────────
@@ -652,7 +659,43 @@ export class AgentService {
       promptArgs: promptArgsFor(definition, request.prompt),
       stdinPrompt: stdinPromptFor(definition, request.prompt),
       env: this.launchEnvFor(request, definition),
+      briefing: this.briefingFor(request, definition, cwd),
     }
+  }
+
+  /**
+   * What the agent is told about this session before the user types anything, or
+   * null for an agent with nowhere to put it.
+   *
+   * Built here rather than at spawn time because this is where the scope has
+   * just been proved to belong to the workspace — the name below is read back
+   * out of the same row that check used, so a briefing can never describe a
+   * workflow the caller was not authorized for.
+   */
+  private briefingFor(request: AgentLaunchRequest, definition: AgentDefinition, cwd: string): string | null {
+    if (definition.briefingArgs.length === 0) {
+      return null
+    }
+    return buildSessionBriefing({
+      workspaceId: request.workspaceId,
+      scopeKind: request.scope.kind,
+      scopeId: request.scope.id,
+      scopeName: this.scopeNameFor(request.workspaceId, request.scope),
+      cwd,
+      // Both halves have to hold: an agent that takes no MCP flags never gets a
+      // config, and neither does any agent while the bridge is off. Telling an
+      // agent to reach for tools it has not been given is worse than telling it
+      // there are none — it spends the session looking for them.
+      mcpWired: definition.mcpConfigArgs.length > 0 && this.environment.getMcpConfig() !== null,
+    })
+  }
+
+  /** The workflow's or project's own name, or null when the row has none. */
+  private scopeNameFor(workspaceId: string, scope: AgentScope): string | null {
+    if (scope.kind === "workflow") {
+      return this.workflows.getByIdInWorkspace(scope.id, workspaceId)?.name ?? null
+    }
+    return this.collections.getById(scope.id)?.name ?? null
   }
 
   /**
@@ -677,8 +720,26 @@ export class AgentService {
       // the one that works for both.
       ...sessionArgs,
       ...this.mcpArgsFor(prepared.definition, sessionId),
+      ...this.briefingArgsFor(prepared, sessionId),
       ...prepared.promptArgs,
     ]
+  }
+
+  /**
+   * Write this session's briefing and point the agent at it.
+   *
+   * Named for the session like the MCP config beside it, and for the same
+   * reason: the file has exactly one owner, so something can delete it. Two
+   * launches at once would otherwise share a path, and the second would rewrite
+   * the first's briefing under it — describing the wrong workflow to an agent
+   * that has already been told to trust it.
+   */
+  private briefingArgsFor(prepared: PreparedLaunch, sessionId: string): readonly string[] {
+    if (prepared.briefing === null) {
+      return []
+    }
+    const briefingPath = writeSessionBriefing(this.environment.agentFilesDir, sessionId, prepared.briefing)
+    return renderBriefingArgs(prepared.definition.briefingArgs, briefingPath)
   }
 
   /**
@@ -733,6 +794,7 @@ export class AgentService {
   private discardSessionScratch(sessionId: string): void {
     deleteAgentMcpConfig(this.environment.agentFilesDir, sessionId)
     deleteLauncherScript(this.environment.agentFilesDir, sessionId)
+    deleteSessionBriefing(this.environment.agentFilesDir, sessionId)
   }
 
   /**
@@ -943,14 +1005,6 @@ export class AgentService {
   }
 }
 
-/**
- * The resolved, authorized launch — shared by the external and embedded paths.
- *
- * Note that it carries argv *fragments* rather than the finished argv: the MCP
- * config file is named for the session, and the session row does not exist until
- * after everything here has been resolved and validated. `AgentService.argsFor`
- * assembles the three pieces once there is an id.
- */
 /** What a launch calls its conversation: the id to store, and the argv carrying it. */
 interface SessionIdentity {
   readonly ref: string | null
@@ -962,6 +1016,14 @@ function fillTemplate(template: readonly string[], id: string): readonly string[
   return template.map((part) => part.replaceAll("{id}", id))
 }
 
+/**
+ * The resolved, authorized launch — shared by the external and embedded paths.
+ *
+ * Note that it carries argv *fragments* rather than the finished argv: the MCP
+ * config and the briefing are both files named for the session, and the session
+ * row does not exist until after everything here has been resolved and
+ * validated. `AgentService.argsFor` assembles the pieces once there is an id.
+ */
 interface PreparedLaunch {
   readonly definition: AgentDefinition
   readonly cwd: string
@@ -971,6 +1033,12 @@ interface PreparedLaunch {
   /** The prompt to type into the PTY, for `promptMode: "stdin"`. */
   readonly stdinPrompt: string | null
   readonly env: Readonly<Record<string, string>>
+  /**
+   * The session briefing, or null for an agent with no flag to carry one. The
+   * text and not the path: writing the file needs a session id, and the point of
+   * this type is everything that is known before there is one.
+   */
+  readonly briefing: string | null
 }
 
 function clampDimension(value: number, minimum: number): number {
@@ -991,6 +1059,7 @@ function toDefinition(stored: AgentDefinition): AgentDefinition {
     promptMode: stored.promptMode,
     promptFlag: stored.promptFlag ?? null,
     mcpConfigArgs: stored.mcpConfigArgs,
+    briefingArgs: stored.briefingArgs,
     unsupportedPlatforms: stored.unsupportedPlatforms,
     installUrl: stored.installUrl ?? null,
     // This function is an explicit field list rather than a spread, which is

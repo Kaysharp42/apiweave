@@ -25,6 +25,7 @@ type AgentDefinitionOptions = Pick<
   | "promptMode"
   | "promptFlag"
   | "mcpConfigArgs"
+  | "briefingArgs"
   | "unsupportedPlatforms"
   | "installUrl"
   | "sessionIdMode"
@@ -128,6 +129,7 @@ export class AgentRepository {
           promptMode: input.promptMode,
           promptFlag: input.promptFlag ?? null,
           mcpConfigArgs: input.mcpConfigArgs,
+          briefingArgs: input.briefingArgs,
           unsupportedPlatforms: input.unsupportedPlatforms,
           installUrl: input.installUrl ?? null,
           sessionIdMode: input.sessionIdMode,
@@ -416,6 +418,9 @@ function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
     promptMode: options.promptMode ?? "none",
     promptFlag: options.promptFlag ?? null,
     mcpConfigArgs: options.mcpConfigArgs ?? [],
+    // A definition stored before the briefing existed launches without one,
+    // which is the same thing an agent whose CLI has no such flag does.
+    briefingArgs: options.briefingArgs ?? [],
     unsupportedPlatforms: options.unsupportedPlatforms ?? [],
     installUrl: options.installUrl ?? null,
     // A definition stored before migration 016 has none of these, and the

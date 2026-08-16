@@ -650,6 +650,24 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     await client.close()
   })
 
+  /**
+   * `instructions` rides in the `initialize` result, so it is the only
+   * documentation a client is handed without asking. Most of the agent roster
+   * has no CLI flag for standing instructions, which makes this the whole of
+   * what those agents are told about APIWeave before their first call — and the
+   * only place that says a workflow is not a file in the working directory.
+   */
+  it("introduces itself in the initialize result", async () => {
+    const client = await connectClient()
+
+    const instructions = client.getInstructions() ?? ""
+    expect(instructions).toContain("APIWeave")
+    expect(instructions).toContain("not files")
+    expect(instructions).toContain("APIWEAVE_WORKFLOW_ID")
+    expect(instructions).toContain(guideUri("start-here"))
+    await client.close()
+  })
+
   it("points at the guides from server_info, for clients that never read resources", async () => {
     const client = await connectClient()
     const info = JSON.parse(

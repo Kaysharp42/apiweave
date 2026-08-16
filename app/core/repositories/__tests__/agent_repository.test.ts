@@ -325,3 +325,73 @@ describe("AgentRepository — the conversation behind a session", () => {
     ])
   })
 })
+
+/**
+ * The behavioural half of a definition lives in one `options_json` blob, which
+ * is what lets a field be added without a migration — and is also how a field
+ * gets silently dropped, since every one of them is named twice: once on the way
+ * in and once on the way out.
+ */
+describe("AgentRepository — definition options", () => {
+  it("round-trips the briefing flag through the options blob", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "briefed",
+      name: "Briefed",
+      detectCmd: "briefed",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      briefingArgs: ["--append-system-prompt-file", "{path}"],
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+
+    expect(agents.getDefinition(workspaceId, "briefed")?.briefingArgs).toEqual([
+      "--append-system-prompt-file",
+      "{path}",
+    ])
+  })
+
+  /**
+   * A row written before the briefing existed has no honest value for it, and
+   * the fallback is what keeps that agent launching — as one that simply gets no
+   * briefing, which is what it was when it was written.
+   */
+  it("launches a definition stored before the field existed", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "legacy",
+      name: "Legacy",
+      detectCmd: "legacy",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      briefingArgs: [],
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+    // The blob as an older build would have written it: no `briefingArgs` key.
+    db.kvStore.set("UPDATE agent_definitions SET options_json = ? WHERE workspace_id = ? AND agent_key = ?", [
+      JSON.stringify({ promptMode: "none", mcpConfigArgs: [] }),
+      workspaceId,
+      "legacy",
+    ])
+
+    expect(agents.getDefinition(workspaceId, "legacy")?.briefingArgs).toEqual([])
+  })
+})

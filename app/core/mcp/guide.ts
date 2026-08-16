@@ -541,6 +541,44 @@ name binds to — never a value, plaintext or encrypted. Secrets cannot be creat
 changed or deleted over MCP; that is a desktop action.
 `
 
+/**
+ * What the server says about itself in `initialize`, before a single tool has
+ * been called.
+ *
+ * This is the one piece of documentation an MCP client is handed rather than
+ * having to ask for, which makes it the only orientation that reaches an agent
+ * whose CLI has no flag for standing instructions — most of the roster. It says
+ * what APIWeave is, where the session's own ids are, and which guide to read; it
+ * does not restate the guides, because it is paid for on every connection.
+ *
+ * Kept next to the guides so the two are edited together. A pointer here to a
+ * slug that no longer exists is worse than no pointer at all.
+ */
+export const MCP_INSTRUCTIONS = `APIWeave is a desktop app for building and running API test workflows. A
+workflow is a graph of nodes — HTTP requests, assertions, delays — that a user
+runs against a real service. These tools read and write the user's real
+workflows in the app they have open in front of them.
+
+The workflows are not files. They live in APIWeave's database, and these tools
+are the only way to reach one — searching the working directory for it will
+find nothing.
+
+If you were launched from APIWeave, the session's own ids are in your
+environment: APIWEAVE_WORKSPACE_ID, and APIWEAVE_WORKFLOW_ID or
+APIWEAVE_PROJECT_ID for what the user was looking at. Start there rather than
+asking which workflow they mean.
+
+Read \`${GUIDE_URI_PREFIX}start-here\` before authoring anything. It is short, and
+it is the order of operations that catches mistakes statically instead of with
+live HTTP requests. \`server_info\` lists the other guides.
+
+Four things that are easy to get wrong: prefer \`workflows_patch\` over
+\`workflows_update\`; send the \`rev\` you last read as \`expectedRevision\` and
+re-read on a conflict; read the \`diagnosis\` returned by every write; and
+remember that \`runs_create\` sends real HTTP to a real service while everything
+else is free. Reads withhold secret values by design — never write an observed
+credential into a workflow, reference it as {{secrets.NAME}}.`
+
 export const MCP_GUIDES: readonly McpGuide[] = [
   {
     slug: "start-here",

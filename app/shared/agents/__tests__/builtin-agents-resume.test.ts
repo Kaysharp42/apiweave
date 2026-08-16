@@ -112,6 +112,35 @@ describe("built-in agent definitions", () => {
       }
     }
   })
+
+  /**
+   * The briefing is a file path, so a template that names a flag has to have
+   * somewhere to put one. A flag with no `{path}` would launch the agent with a
+   * dangling option and no briefing — the worst of both.
+   */
+  it("gives every briefing template a place for the path", () => {
+    for (const agent of BUILTIN_AGENTS) {
+      if ((agent.briefingArgs ?? []).length === 0) {
+        continue
+      }
+      expect(agent.briefingArgs?.join(" "), agent.agentKey).toContain("{path}")
+    }
+  })
+
+  /**
+   * Claude Code is the only entry with a confirmed flag today, and *append* is
+   * the load-bearing word: `--system-prompt` replaces Claude Code's own, which
+   * would leave the agent briefed about APIWeave and ignorant of its own tools.
+   * Anything else in this list is a claim someone has to have checked.
+   */
+  it("ships a briefing flag only where one was confirmed", () => {
+    const briefed = BUILTIN_AGENTS.filter((agent) => (agent.briefingArgs ?? []).length > 0).map(
+      (agent) => agent.agentKey,
+    )
+
+    expect(briefed).toEqual(["claude"])
+    expect(findBuiltinAgent("claude")?.briefingArgs).toEqual(["--append-system-prompt-file", "{path}"])
+  })
 })
 
 describe("session id patterns, against the output they were written for", () => {

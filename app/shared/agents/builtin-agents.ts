@@ -19,6 +19,11 @@ import type { AgentDefinition } from "../types/AgentDefinition"
  * reason: a wrong resume flag does not fail at the roster, it fails at the one
  * moment the user is trying to get a conversation back. Left empty, an agent
  * simply never offers Resume, which is a smaller loss than an offer that errors.
+ *
+ * `briefingArgs` is the same rule again, and the easiest of the three to leave
+ * empty: an agent without it still learns what APIWeave is and which workflow it
+ * is attached to from the MCP server's `instructions`. The flag only makes that
+ * context standing rather than something the client may or may not surface.
  */
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
   {
@@ -33,6 +38,14 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     // Confirmed against CLI 2.1.226: `--mcp-config <path|json>` and
     // `--strict-mcp-config` (restricts the session to only the named servers).
     mcpConfigArgs: ["--mcp-config", "{path}", "--strict-mcp-config"],
+    // Confirmed against CLI 2.1.233. The flag is absent from the top-level
+    // `--help` list — it appears only inside another option's prose, as
+    // `--append-system-prompt[-file]` — so it was checked the way an unknown
+    // flag proves itself: `claude --append-system-prompt-file <path> mcp list`
+    // runs, where `claude --bogus-flag mcp list` exits with "unknown option".
+    // *Append*, not `--system-prompt`, which replaces Claude Code's own system
+    // prompt and would leave the agent without its tool instructions.
+    briefingArgs: ["--append-system-prompt-file", "{path}"],
     // Confirmed against CLI 2.1.233. `--session-id <uuid>` names the
     // conversation at launch — "must be a valid UUID", which is why the id is
     // minted as one — and `--resume <id>` reopens it. Assigning beats scanning:
@@ -55,6 +68,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // Confirmed against the clap definitions in codex rust-v0.147.0. Two things
     // make codex the awkward one:
     //
@@ -88,6 +102,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // Confirmed in `packages/cli/src/config/config.ts` at v0.55.1: `--session-id`
     // ("Start a new session with a manually provided UUID") and `--resume`,
     // which are mutually exclusive — never both, and this only ever sends one.
@@ -115,6 +130,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // Confirmed against the CLI's own `--help`: `-s, --session <id>` continues a
     // session, and there is deliberately no flag to name one at launch — so the
     // id has to be read back rather than assigned. OpenCode prints it as it
@@ -142,6 +158,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // `--resume <chatId>` is confirmed in Cursor's CLI docs, and is recorded
     // here so it is ready — but the mode stays `none`, so nothing ever offers
     // it. Cursor prints its `session_id` only under `--output-format json` and
@@ -171,6 +188,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "flag",
     promptFlag: "--message",
     mcpConfigArgs: [],
+    briefingArgs: [],
     // Aider has no session id, and this is the one entry where that is a
     // finding rather than a gap: its argument parser (`aider/args.py`) contains
     // no `--session`, `--resume` or `--continue` at all. Resuming is
@@ -202,6 +220,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // `--session-id=<uuid>` "starts new sessions with a specific UUID" as well
     // as resuming known ones (docs + changelog from 1.0.51), and `--resume <id>`
     // reopens one. Assigning sidesteps the one thing the documentation does not
@@ -223,6 +242,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // `--session-id <uuid>` is validated as a UUID and refuses an id that
     // already exists, which is exactly the contract a minted id wants; `--resume
     // <id>` reopens one. Mutually exclusive with `--continue`/`--resume`, and
@@ -244,6 +264,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // No way to assign an id, so this is a scan — and the thing it scans for is
     // not the session's UUID but the 7-character hash Crush prints in the
     // resume command on its way out (`Continue crush -s <hash>`). That hash is
@@ -266,6 +287,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     promptMode: "argv",
     promptFlag: null,
     mcpConfigArgs: [],
+    briefingArgs: [],
     // `--session <id>` is recorded and works, but the mode stays `none`, so
     // nothing offers it — the same shape as `cursor-agent`. Pi emits its id as
     // the first line of `--mode json` output and shows it in the TUI only behind

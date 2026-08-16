@@ -254,6 +254,10 @@ export function AgentsSettingsModal({
         promptFlag:
           draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
         mcpConfigArgs: splitArgs(draft.mcpArgs),
+        // Carried over, not restated: the briefing flag is not on this form
+        // either, and an edit that blanked it would leave the agent launching
+        // without the context that tells it which workflow it is working on.
+        briefingArgs: edited?.briefingArgs ?? [],
         unsupportedPlatforms: edited?.unsupportedPlatforms ?? [],
         installUrl: edited?.installUrl ?? null,
         // Carried over for the same reason as the three above, and it matters

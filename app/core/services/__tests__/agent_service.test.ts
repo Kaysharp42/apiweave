@@ -1238,3 +1238,207 @@ describe("AgentService — resuming a session", () => {
     expect(pty.spawned).toHaveLength(4)
   })
 })
+
+/**
+ * The briefing: what an agent is told about the session before the user types a
+ * word. Everything here is a fact APIWeave already knows at launch and the agent
+ * cannot discover — which is the whole argument for sending it automatically.
+ */
+describe("AgentService — session briefings", () => {
+  const BRIEFED_AGENT: AgentDefinition = {
+    ...realExecutableAgent(),
+    agentKey: "briefed-runner",
+    briefingArgs: ["--brief-file", "{path}"],
+  }
+
+  function briefedService(mcpOn: boolean): AgentService {
+    return new AgentService(
+      agentRepository,
+      workflows,
+      collections,
+      new LocalOwnerProvider(),
+      new ScopeResolver({
+        workspaceExists: (id) => workspaces.getById(id) !== undefined,
+        environmentExists: () => false,
+      }),
+      {
+        pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
+        getMcpConfig: () =>
+          mcpOn ? { url: "http://127.0.0.1:47271", token: "secret-token", port: 47271 } : null,
+        agentFilesDir,
+        pty,
+      },
+    )
+  }
+
+  async function seedBriefed(definition: AgentDefinition = BRIEFED_AGENT, mcpOn = true) {
+    const seeded = seed()
+    const briefed = briefedService(mcpOn)
+    await briefed.saveCustomAgent(seeded.workspaceId, definition)
+    pickDirectory.mockResolvedValue(tempDir)
+    await briefed.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return { seeded, briefed }
+  }
+
+  /** The path the agent was handed, and what was in the file at that path. */
+  function briefingHandedOver(): { readonly path: string; readonly text: string } | null {
+    const args = pty.spawned[0]?.args ?? []
+    const index = args.indexOf("--brief-file")
+    if (index === -1) return null
+    const filePath = String(args[index + 1])
+    return { path: filePath, text: fs.readFileSync(filePath, "utf8") }
+  }
+
+  function briefingFiles(): readonly string[] {
+    return fs.existsSync(agentFilesDir)
+      ? fs.readdirSync(agentFilesDir).filter((name) => name.startsWith("briefing-"))
+      : []
+  }
+
+  /**
+   * The point of the feature. Without this the user retypes "you are in
+   * APIWeave, the workflow is not in this folder, here is its id" every session.
+   */
+  it("hands the agent a briefing naming the workflow it was launched from", async () => {
+    const { seeded, briefed } = await seedBriefed()
+
+    await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "workflow", id: seeded.workflowId },
+      cols: 100,
+      rows: 30,
+    })
+
+    const handed = briefingHandedOver()
+    expect(handed).not.toBeNull()
+    expect(handed?.text).toContain(seeded.workflowId)
+    // The workflow's own name, read back out of the row the scope check just
+    // proved belongs to this workspace.
+    expect(handed?.text).toContain("Checkout")
+    expect(handed?.text).toContain(tempDir)
+  })
+
+  /**
+   * A briefing is named for its session for the same reason the MCP config is:
+   * two launches at once would otherwise share a path, and the second would
+   * rewrite the first's briefing under an agent already told to trust it.
+   */
+  it("writes one briefing per session", async () => {
+    const { seeded, briefed } = await seedBriefed()
+    const request = {
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "project" as const, id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    }
+
+    const first = await briefed.launchEmbedded(request)
+    const second = await briefed.launchEmbedded(request)
+
+    expect(briefingFiles()).toHaveLength(2)
+    expect(briefingFiles().some((name) => name.includes(first.sessionId))).toBe(true)
+    expect(briefingFiles().some((name) => name.includes(second.sessionId))).toBe(true)
+  })
+
+  /** An agent with no flag to carry one is launched exactly as it was before. */
+  it("writes nothing for an agent that names no briefing flag", async () => {
+    const { seeded, briefed } = await seedBriefed({ ...realExecutableAgent(), briefingArgs: [] })
+
+    await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+
+    expect(briefingFiles()).toHaveLength(0)
+    expect(pty.spawned[0]?.args).not.toContain("--brief-file")
+  })
+
+  /**
+   * Telling an agent to reach for MCP tools it was never given sends it hunting
+   * for them. The briefing only claims the bridge when the agent takes the flags
+   * *and* the bridge is running.
+   */
+  it("does not promise MCP tools the session was not given", async () => {
+    const { seeded, briefed } = await seedBriefed(BRIEFED_AGENT, false)
+
+    await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+
+    expect(briefingHandedOver()?.text).toContain("without APIWeave's MCP server")
+  })
+
+  /** Scratch is scratch: it goes when the session that owned it is over. */
+  it("deletes the briefing when the session reaches a terminal state", async () => {
+    const { seeded, briefed } = await seedBriefed()
+    const session = await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+    expect(briefingFiles()).toHaveLength(1)
+
+    briefed.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    expect(briefingFiles()).toHaveLength(0)
+  })
+
+  /**
+   * A resumed conversation is a fresh process with a fresh system prompt, and it
+   * needs the briefing as much as the first one did — the exited session's copy
+   * was deleted when it ended.
+   */
+  it("briefs a resumed session again", async () => {
+    const { seeded, briefed } = await seedBriefed({
+      ...BRIEFED_AGENT,
+      sessionIdMode: "assign",
+      newSessionArgs: ["--session-id", "{id}"],
+      resumeArgs: ["--resume", "{id}"],
+    })
+    const session = await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+    briefed.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+    expect(briefingFiles()).toHaveLength(0)
+
+    await briefed.resumeSession(session.sessionId, 100, 30)
+
+    expect(briefingFiles()).toHaveLength(1)
+    const resumed = pty.spawned[1]?.args ?? []
+    expect(resumed).toContain("--brief-file")
+  })
+
+  /** A crash leaves one per session with nothing tracking it. */
+  it("sweeps briefings left by a previous run", async () => {
+    const { seeded, briefed } = await seedBriefed()
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    fs.writeFileSync(path.join(agentFilesDir, "briefing-crashed-run.md"), "# stale\n")
+
+    const session = await briefed.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "briefed-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+
+    const remaining = fs.readdirSync(agentFilesDir)
+    expect(remaining).not.toContain("briefing-crashed-run.md")
+    expect(remaining.some((name) => name.startsWith("briefing-") && name.includes(session.sessionId))).toBe(true)
+  })
+})

@@ -113,8 +113,12 @@ export function sweepScratch(directory: string, matches: (name: string) => boole
  * value becomes a filename, and a path separator arriving in one would write
  * the token somewhere other than the scratch directory. Cheap enough to be
  * unconditional rather than an assumption about a caller three layers away.
+ *
+ * Exported for the same reason {@link sweepScratch} is: every per-session
+ * scratch file names itself this way, and a second copy of the rule is a second
+ * chance to get it wrong.
  */
-function sanitizeSessionId(sessionId: string): string {
+export function sanitizeSessionId(sessionId: string): string {
   return sessionId.replaceAll(/[^A-Za-z0-9_-]/g, "_")
 }
 

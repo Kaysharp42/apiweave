@@ -66,6 +66,23 @@ export const AgentDefinitionSchema = z
      * produces an agent that refuses to start with an unknown-flag error.
      */
     mcpConfigArgs: z.array(z.string()).default([]),
+    /**
+     * The argv that hands the agent APIWeave's session briefing — what the
+     * session is attached to, and how to work on it — with `{path}` standing in
+     * for the generated file. Empty means the agent is launched without one.
+     *
+     * A *system prompt* flag and not a prompt flag: `promptMode` carries the
+     * question the user asked, which the agent answers and the user sees. This
+     * carries context the user should never have to type and never has to read,
+     * so it belongs wherever the CLI puts standing instructions. Very few CLIs
+     * have such a flag; the rest learn the same things from the MCP server's own
+     * `instructions`, which is why this being empty is not a hole.
+     *
+     * A path rather than the text inline, deliberately: on Windows a `.cmd` shim
+     * is run through `cmd.exe /c`, where the briefing's own newlines and `&`
+     * would be parsed as command syntax.
+     */
+    briefingArgs: z.array(z.string()).default([]),
     /** How the agent's own session id becomes known; see {@link AgentSessionIdModeSchema}. */
     sessionIdMode: AgentSessionIdModeSchema.default("none"),
     /**
