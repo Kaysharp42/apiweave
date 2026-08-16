@@ -51,6 +51,56 @@ describe("AgentEventBroker", () => {
     expect(broker.isTerminal("b")).toBe(false)
   })
 
+  /**
+   * Activity is the one non-transition here, so the exactly-once rule above
+   * does not cover it — nothing about "it printed something" is terminal. It
+   * still has to stop at the end: a chunk the host was mid-way through
+   * reporting when the child exited would otherwise arrive behind the exit and
+   * tell every subscriber a finished agent is working.
+   */
+  it("delivers activity while a session lives and drops it after the end", () => {
+    const { broker, seen } = brokerWithSink()
+
+    broker.publish({ kind: "agent.started", sessionId: "a", pid: 1 })
+    broker.publish({ kind: "agent.activity", sessionId: "a", busy: true })
+    broker.publish({ kind: "agent.exited", sessionId: "a", exitCode: 0 })
+    broker.publish({ kind: "agent.activity", sessionId: "a", busy: true })
+
+    expect(seen.map((event) => event.kind)).toEqual([
+      "agent.started",
+      "agent.activity",
+      "agent.exited",
+    ])
+  })
+
+  /**
+   * Resuming keeps the row, and therefore the session id. Without clearing the
+   * terminal flag on a fresh start, the second run's exit would be swallowed as
+   * a duplicate of the first's — leaving a finished agent showing as running for
+   * as long as the app stays open.
+   */
+  it("lets a resumed session settle again under the same id", () => {
+    const { broker, seen } = brokerWithSink()
+
+    broker.publish({ kind: "agent.started", sessionId: "a", pid: 1 })
+    broker.publish({ kind: "agent.exited", sessionId: "a", exitCode: 1 })
+    expect(broker.isTerminal("a")).toBe(true)
+
+    broker.publish({ kind: "agent.started", sessionId: "a", pid: 2 })
+    expect(broker.isTerminal("a")).toBe(false)
+    broker.publish({ kind: "agent.exited", sessionId: "a", exitCode: 0 })
+
+    expect(seen.map((event) => event.kind)).toEqual([
+      "agent.started",
+      "agent.exited",
+      "agent.started",
+      "agent.exited",
+    ])
+    // Still exactly once per run: the duplicate rule is reset, not removed.
+    broker.publish({ kind: "agent.failed", sessionId: "a", message: "host died" })
+    expect(seen).toHaveLength(4)
+  })
+
   it("keeps a throwing subscriber from starving the others", () => {
     const broker = new AgentEventBroker({ now: () => "2026-08-11T00:00:00.000Z" })
     const reached: string[] = []

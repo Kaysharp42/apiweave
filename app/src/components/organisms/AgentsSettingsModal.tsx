@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Pencil, Plus, RefreshCw, Star, Trash2 } from "lucide-react";
 import type { AgentAvailabilityState } from "@shared/types/AgentAvailability";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
@@ -6,6 +6,7 @@ import type { AgentRosterEntry } from "@shared/types/AgentsBridge";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { IconButton } from "../atoms/IconButton";
+import { Spinner } from "../atoms/Spinner";
 import { TextArea } from "../atoms/TextArea";
 import { EmptyState } from "../molecules/EmptyState";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
@@ -13,6 +14,7 @@ import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
 import { StatusBadge } from "../molecules/StatusBadge";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import useAgentRosterStore from "../../stores/AgentRosterStore";
 import { agents } from "../../utils/apiweaveClient";
 import type { StatusBadgeProps } from "../../types";
 
@@ -80,6 +82,21 @@ export function AgentsSettingsModal({
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentRosterEntry | null>(null);
+  // Mounted *and* open, which are not the same thing here: `SettingsContent`
+  // renders this once and only toggles `isOpen`, so a plain mounted check is
+  // true for the life of the app and guards nothing. A probe of a missing CLI
+  // takes seconds, and one settling after the user closed the panel wrote its
+  // result anyway — an error arriving after the close-reset below survived to
+  // the next open, blaming a refresh the user had already walked away from.
+  const liveRef = useRef(false);
+  const rosterChanged = useAgentRosterStore((state) => state.rosterChanged);
+
+  useEffect(() => {
+    liveRef.current = isOpen;
+    return () => {
+      liveRef.current = false;
+    };
+  }, [isOpen]);
 
   const load = useCallback(
     (refresh: boolean) => {
@@ -90,30 +107,63 @@ export function AgentsSettingsModal({
         : agents.listRoster(workspaceId);
       void request
         .then((next) => {
+          if (!liveRef.current) return;
           setRoster(next);
           setError(null);
         })
-        .catch((cause: unknown) => setError(describe(cause)))
-        .finally(() => setBusy(false));
+        .catch((cause: unknown) => {
+          if (liveRef.current) setError(describe(cause));
+        })
+        .finally(() => {
+          if (liveRef.current) setBusy(false);
+        });
     },
     [workspaceId],
   );
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Closing is the only reset this form gets. Nothing unmounts it, so an
+      // abandoned half-typed draft, the error that made the user give up, and an
+      // open delete confirmation all survive until the next open — where they
+      // reappear as a form the user did not ask for, over a roster that has since
+      // been re-read. The roster itself is kept: it is a cache of main's list,
+      // and dropping it would flash an empty panel on every reopen.
+      setAdding(false);
+      setEditingKey(null);
+      setDraft(EMPTY_DRAFT);
+      setError(null);
+      setFormError(null);
+      setDeleteTarget(null);
+      return;
+    }
     load(false);
   }, [isOpen, load]);
 
   const available = agents.isAvailable();
   const formOpen = adding || editingKey !== null;
 
+  /**
+   * What every committed roster change does afterwards.
+   *
+   * `rosterChanged` is the half that is not about this modal: the launch controls
+   * in the canvas toolbar hold their own copy of the roster and nothing pushes
+   * one to them, so a new default set here was invisible to the button that
+   * launches it until the toolbar next remounted.
+   */
+  const afterRosterChange = (): void => {
+    rosterChanged();
+    if (liveRef.current) load(false);
+  };
+
   const onSetDefault = (agentKey: string): void => {
     if (workspaceId === null) return;
     setBusy(true);
     void agents
       .setDefaultAgentKey(workspaceId, agentKey)
-      .then(() => load(false))
+      .then(afterRosterChange)
       .catch((cause: unknown) => {
+        if (!liveRef.current) return;
         setError(describe(cause));
         setBusy(false);
       });
@@ -126,8 +176,9 @@ export function AgentsSettingsModal({
     setBusy(true);
     void agents
       .deleteCustomAgent(workspaceId, agentKey)
-      .then(() => load(false))
+      .then(afterRosterChange)
       .catch((cause: unknown) => {
+        if (!liveRef.current) return;
         setError(describe(cause));
         setBusy(false);
       });
@@ -176,6 +227,19 @@ export function AgentsSettingsModal({
     }
     setFormError(null);
     setBusy(true);
+    // `saveCustomAgent` is a full replacement, and this form owns only part of a
+    // definition. The three fields below are not on it — `expectedProcess` names
+    // the process a shim actually spawns, `unsupportedPlatforms` greys the agent
+    // out where it cannot run, `installUrl` is the Install link — so an edit that
+    // restated them as empty silently deleted them from an agent the user was
+    // only renaming. Carried over from the entry being edited; blank only for a
+    // genuinely new agent, which has nothing to carry.
+    const edited =
+      editingKey === null
+        ? null
+        : (roster.find(
+            (entry) => entry.definition.agentKey === editingKey,
+          )?.definition ?? null);
     void agents
       .saveCustomAgent(workspaceId, {
         agentKey,
@@ -184,20 +248,31 @@ export function AgentsSettingsModal({
         // Split on whitespace rather than shell-parsing: the value is an argv
         // array all the way down to `spawn`, and never reaches a shell.
         argv: splitArgs(draft.argv),
-        expectedProcess: null,
+        expectedProcess: edited?.expectedProcess ?? null,
         env,
         promptMode: draft.promptMode,
         promptFlag:
           draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
         mcpConfigArgs: splitArgs(draft.mcpArgs),
-        unsupportedPlatforms: [],
-        installUrl: null,
+        unsupportedPlatforms: edited?.unsupportedPlatforms ?? [],
+        installUrl: edited?.installUrl ?? null,
+        // Carried over for the same reason as the three above, and it matters
+        // more here: these four are how a session is reopened later, so an edit
+        // that reset them would quietly make every future session of a
+        // renamed agent unresumable. A new custom agent starts without them —
+        // resume flags differ per CLI and guessing one produces an agent that
+        // fails at the moment someone tries to recover a conversation.
+        sessionIdMode: edited?.sessionIdMode ?? "none",
+        newSessionArgs: edited?.newSessionArgs ?? [],
+        resumeArgs: edited?.resumeArgs ?? [],
+        sessionIdPattern: edited?.sessionIdPattern ?? null,
       })
       .then(() => {
-        closeForm();
-        load(false);
+        if (liveRef.current) closeForm();
+        afterRosterChange();
       })
       .catch((cause: unknown) => {
+        if (!liveRef.current) return;
         setFormError(describe(cause));
         setBusy(false);
       });
@@ -241,7 +316,20 @@ export function AgentsSettingsModal({
           </p>
         )}
 
-        {available && roster.length === 0 && !busy ? (
+        {/*
+          Three states, not two. The first open has no roster and a probe in
+          flight — every built-in agent is being looked for on PATH, which is
+          slow enough to see — and the earlier version rendered an empty `<ul>`
+          for it: a blank panel that looks like a broken modal rather than a
+          loading one. The spinner is only for that first fetch; a Refresh over
+          an existing list keeps the list on screen, because replacing rows the
+          user is reading with a spinner is the worse trade.
+        */}
+        {available && busy && roster.length === 0 ? (
+          <div className="flex justify-center py-8">
+            <Spinner />
+          </div>
+        ) : available && roster.length === 0 && !busy ? (
           <EmptyState
             title="No agents configured"
             description="Install a supported CLI, or add your own command below."
@@ -439,6 +527,7 @@ interface AgentRowProps {
 function AgentRow({ entry, busy, onSetDefault, onEdit, onDelete }: AgentRowProps) {
   const badge = AVAILABILITY_BADGE[entry.availability.state];
   const installUrl = entry.definition.installUrl;
+  const detail = entry.availability.detail ?? entry.definition.detectCmd;
   return (
     <li className="flex items-center gap-3 rounded border border-border px-3 py-2 dark:border-border-dark">
       <div className="min-w-0 flex-1">
@@ -456,9 +545,22 @@ function AgentRow({ entry, busy, onSetDefault, onEdit, onDelete }: AgentRowProps
           The failure text goes on screen verbatim. An agent that resolves on
           PATH and then refuses to run is otherwise indistinguishable from one
           that works, and the reason is always in its own error message.
+
+          Which is why `broken` is the one state that must not be truncated:
+          the healthy details are short and interchangeable ("1.18.18",
+          "installed"), but a failure names a path and a cause, and clipping it
+          at one line leaves exactly the actionable half off screen. Measured:
+          the Windows loader refusing a stub `opencode.exe` reads "This version
+          of <200 chars of path> is not compatible with…" — everything past the
+          ellipsis is the part that says what to do.
         */}
-        <p className="mt-0.5 truncate text-xs text-text-secondary dark:text-text-secondary-dark">
-          {entry.availability.detail ?? entry.definition.detectCmd}
+        <p
+          title={detail}
+          className={`mt-0.5 text-xs text-text-secondary dark:text-text-secondary-dark ${
+            entry.availability.state === "broken" ? "break-words" : "truncate"
+          }`}
+        >
+          {detail}
         </p>
       </div>
       <StatusBadge status={badge.status} label={badge.label} size="xs" />

@@ -25,6 +25,7 @@ function launch(env: Readonly<Record<string, string>>): ExternalLaunch {
     cwd: tempRoot,
     env,
     scratchDir: path.join(tempRoot, "scratch"),
+    sessionId: "session-under-test",
   }
 }
 

@@ -152,10 +152,12 @@ const agentsBridge: AgentsBridge = {
   listSessions: (workspaceId) => invoke("agents:listSessions", workspaceId),
   launchExternal: (request) => invoke("agents:launchExternal", request),
   launchEmbedded: (request) => invoke("agents:launchEmbedded", request),
+  resumeSession: (sessionId, cols, rows) => invoke("agents:resumeSession", sessionId, cols, rows),
   write: (sessionId, data) => invoke("agents:write", sessionId, data),
   resize: (sessionId, cols, rows) => invoke("agents:resize", sessionId, cols, rows),
   setPaused: (sessionId, paused) => invoke("agents:setPaused", sessionId, paused),
   killSession: (sessionId) => invoke("agents:killSession", sessionId),
+  deleteSession: (sessionId) => invoke("agents:deleteSession", sessionId),
   attach: (sessionId) => invoke("agents:attach", sessionId),
   onSessionChanged: (callback) => subscribe<AgentSessionEvent>(AGENT_SESSION_CHANGED_CHANNEL, callback),
 }

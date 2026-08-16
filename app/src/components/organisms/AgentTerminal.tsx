@@ -31,6 +31,16 @@ interface AgentTerminalProps {
    * go anywhere. xterm swallows stdin entirely in this mode.
    */
   readonly readOnly?: boolean;
+  /**
+   * A value that changes each time the user asks for this session.
+   *
+   * Everything this hosts is a prompt waiting to be typed at, so opening one and
+   * landing outside it means reaching for the mouse before the first keystroke.
+   * The terminal takes the keyboard when it mounts and again whenever this
+   * changes — the second half being what covers reopening the session that is
+   * already showing, where nothing else about the props moves.
+   */
+  readonly focusRequest?: number;
   readonly className?: string;
 }
 
@@ -53,6 +63,7 @@ export function AgentTerminal({
   sessionId,
   onExit,
   readOnly = false,
+  focusRequest,
   className,
 }: AgentTerminalProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -61,6 +72,12 @@ export function AgentTerminal({
   // caller passing a fresh closure each render must not tear down the PTY.
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  // Same reasoning as `onExitRef`, plus one more: the build effect must seed the
+  // new terminal with the *current* read-only state. Depending on `readOnly`
+  // there would rebuild the terminal — and throw away the scrollback — every
+  // time a session exited under an open dock.
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const terminalRef = useRef<Terminal | null>(null);
 
   useEffect(() => {
@@ -72,6 +89,12 @@ export function AgentTerminal({
       allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
+      // Seeded here as well as reapplied below, because the terminal is rebuilt
+      // whenever `sessionId` changes: xterm's constructor default is
+      // `disableStdin: false`, so a terminal built for an already-exited session
+      // would take keystrokes for a process that is gone until `readOnly`
+      // happened to change value.
+      disableStdin: readOnlyRef.current,
       // xterm's screen-reader live region: terminal content is otherwise a
       // canvas no assistive technology can read.
       screenReaderMode: true,
@@ -177,6 +200,17 @@ export function AgentTerminal({
           writeChunk(event.data);
           return;
         }
+        if (event.kind === "replayReleased") {
+          // The host is about to close the port because this finished session's
+          // scrollback was dropped to make room for a newer one. Said here
+          // rather than in the host: the wording is UI, and the host has no
+          // business owning a user-facing string. Without it the terminal just
+          // stops, which reads exactly like a hung agent.
+          terminal.write(
+            "\r\n\x1b[2m[APIWeave released this session's scrollback]\x1b[0m\r\n",
+          );
+          return;
+        }
         // Written into the terminal rather than shown as chrome beside it: the
         // exit belongs at the end of the output it ends, where the user is
         // already looking.
@@ -195,7 +229,13 @@ export function AgentTerminal({
           return;
         }
         detach = unsubscribe;
-        terminal.focus();
+        // Deliberately not focused here, even though the terminal *is* focused
+        // on open — see the effect below. Attach completes asynchronously, so a
+        // `focus()` at this point lands at an unpredictable moment after the
+        // dock appears, which by then may be long after the user moved on to
+        // another field; their keystrokes would go to the agent instead. Focus
+        // belongs in the commit that shows the terminal, not in the resolution
+        // of a promise that has nothing to do with the user.
       })
       .catch((cause: unknown) => {
         terminal.write(
@@ -226,10 +266,35 @@ export function AgentTerminal({
   // that exits while its terminal is open flips to read-only without throwing
   // away the scrollback the user is still reading. `disableStdin` is what makes
   // keystrokes stop at xterm instead of travelling to a process that is gone.
+  // `sessionId` is a dependency even though the constructor above already seeds
+  // the value: the two must not be able to disagree, and a rebuild that landed
+  // without this would leave the option wherever the previous terminal left it.
   useEffect(() => {
     const terminal = terminalRef.current;
     if (terminal !== null) terminal.options.disableStdin = readOnly;
-  }, [readOnly]);
+  }, [readOnly, sessionId]);
+
+  /**
+   * Put the keyboard in the terminal when the user asks for the session.
+   *
+   * Runs after the build effect on purpose: that one is declared first, so
+   * `terminalRef` is already holding the terminal this is about to focus — on a
+   * rebuild too, where both effects run in the same commit.
+   *
+   * A read-only terminal is left alone. There is no prompt behind it to type at,
+   * and the control worth reaching on a finished session is the Resume button
+   * underneath — taking the focus off it to give it to a dead process would be
+   * the same mistake in the other direction.
+   *
+   * `readOnlyRef` rather than the prop, so a session that exits under an open
+   * dock does not count as a focus request: the flag flips, and the user is
+   * left reading the transcript exactly where they were.
+   */
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal === null || readOnlyRef.current) return;
+    terminal.focus();
+  }, [sessionId, focusRequest]);
 
   return (
     <div
@@ -237,7 +302,11 @@ export function AgentTerminal({
       className={`aw-agent-terminal ${className ?? ""}`}
       data-testid="agent-terminal"
       role="group"
-      aria-label="Agent terminal"
+      // Not "Agent terminal": the panel around this already carries that name,
+      // and a group with the same label nested inside it makes a screen reader
+      // announce the same thing twice on the way in. This names the part — the
+      // output surface — rather than repeating the whole.
+      aria-label="Terminal output"
     >
       <div ref={viewportRef} className="aw-agent-terminal__viewport" />
     </div>

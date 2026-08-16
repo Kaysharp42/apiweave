@@ -26,6 +26,18 @@ const SPAWN_TIMEOUT_MS = 10_000
  */
 const SHUTDOWN_GRACE_MS = 2_000
 
+/**
+ * How long a session id stays in {@link AgentProcessManager.abandoned}.
+ *
+ * The set exists to swallow one late reply for a spawn nobody is waiting on any
+ * more, and every path that produces such a reply produces it within moments of
+ * the spawn. An id that is never reported again — the node-pty hang the spawn
+ * timeout exists for, where no `spawned`, `exited` or `failed` is ever coming —
+ * would otherwise be held for the manager's whole lifetime. Generously longer
+ * than {@link SPAWN_TIMEOUT_MS}, because the only cost of waiting is one string.
+ */
+const ABANDONED_TTL_MS = 60_000
+
 export interface AgentProcessManagerOptions {
   /** Absolute path to the built `pty-host.cjs`, resolved by the caller against `__dirname`. */
   readonly hostEntryPath: string
@@ -71,9 +83,28 @@ export class AgentProcessManager {
    * Sessions whose spawn was cancelled while the host might still report back —
    * the caller gave up, so the row already says failed. A late `spawned`,
    * `exited` or `failed` for one of these must not rewrite it.
+   *
+   * Keyed by session id to its own expiry timer; see {@link ABANDONED_TTL_MS}
+   * for why membership is temporary.
    */
-  private readonly abandoned = new Set<string>()
-  private disposed = false
+  private readonly abandoned = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * The in-flight {@link dispose}, or `null` when the manager is usable.
+   *
+   * A promise rather than a boolean for two reasons. Disposal is recoverable —
+   * `start()` is refused only while a teardown is actually running, not for
+   * ever after one, because the class supports more than one lifetime (tests
+   * build several, and a future "restart the terminal backend" is the same
+   * shape) and a permanent flag would make the second lifetime silently dead.
+   * And a second `dispose()` while the first is still waiting on the host joins
+   * it instead of sending a second `shutdown` and starting a second grace
+   * timer, which the quit path can genuinely do.
+   */
+  private disposal: Promise<void> | null = null
+  /** Whether the fork ever reached `spawn`; a host that never did failed to start. */
+  private hostSpawned = false
+  /** A V8 fatal error the host reported, kept so its `exit` can be named properly. */
+  private hostFatalError: string | null = null
 
   constructor(private readonly options: AgentProcessManagerOptions) {}
 
@@ -85,7 +116,7 @@ export class AgentProcessManager {
    * gone" reach the user as text instead of as an empty terminal.
    */
   async start(request: PtySpawnRequest): Promise<number> {
-    if (this.disposed) {
+    if (this.disposal !== null) {
       throw new Error("APIWeave is shutting down")
     }
     const host = this.ensureHost()
@@ -96,7 +127,7 @@ export class AgentProcessManager {
         // but the spawn request is already with the host and may still report
         // back. Abandoning rather than simply deleting is what stops a late
         // `spawned` from resurrecting the session after its failure was shown.
-        this.abandoned.add(request.sessionId)
+        this.abandon(request.sessionId)
         reject(new Error("The terminal backend did not start. Restart APIWeave and try again."))
       }, SPAWN_TIMEOUT_MS)
       this.pending.set(request.sessionId, { resolve, reject, timer })
@@ -171,14 +202,41 @@ export class AgentProcessManager {
    * it exits once every child has actually died — and the grace period below
    * only fires when the host is stuck, not when a child merely ignores its
    * polite kill.
+   *
+   * Recoverable, and re-entrant: see {@link disposal}. Once it resolves the
+   * manager is empty rather than dead, so a later `start()` forks a new host
+   * instead of throwing at a caller who is entitled to one.
    */
   async dispose(): Promise<void> {
-    this.disposed = true
+    const running = this.disposal
+    if (running !== null) {
+      return running
+    }
+    let done = (): void => undefined
+    // Published before the teardown runs, not after: its first steps are
+    // synchronous — including the `shutdown` it posts and any host `exit` that
+    // follows — and everything that asks "is this manager stopping?" must
+    // already be told yes by then.
+    this.disposal = new Promise<void>((resolve) => {
+      done = resolve
+    })
+    try {
+      await this.tearDown()
+    } finally {
+      // Deliberately cleared: the manager is now exactly as it was before its
+      // first `start()`, host and all, so the next one re-forks rather than
+      // throwing at an owner who has every right to start again.
+      this.disposal = null
+      done()
+    }
+  }
+
+  private async tearDown(): Promise<void> {
     const host = this.host
     // Same race as the spawn timeout, on the way out: a spawn that reports back
     // while the host is stopping must not flip its already-failed row.
     for (const sessionId of this.pending.keys()) {
-      this.abandoned.add(sessionId)
+      this.abandon(sessionId)
     }
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer)
@@ -186,7 +244,7 @@ export class AgentProcessManager {
     }
     this.pending.clear()
     if (host === null) {
-      this.abandoned.clear()
+      this.forgetAbandoned()
       return
     }
     await new Promise<void>((resolve) => {
@@ -201,8 +259,36 @@ export class AgentProcessManager {
       host.postMessage({ type: "shutdown" } satisfies PtyHostRequest)
     })
     this.host = null
+    this.hostSpawned = false
+    this.hostFatalError = null
     this.live.clear()
     this.retained.clear()
+    this.forgetAbandoned()
+  }
+
+  /** Ignore one late reply for this session — until {@link ABANDONED_TTL_MS} runs out. */
+  private abandon(sessionId: string): void {
+    const existing = this.abandoned.get(sessionId)
+    if (existing !== undefined) clearTimeout(existing)
+    this.abandoned.set(
+      sessionId,
+      setTimeout(() => this.abandoned.delete(sessionId), ABANDONED_TTL_MS),
+    )
+  }
+
+  /** Whether this reply is a late one for an abandoned spawn, consuming the record if so. */
+  private wasAbandoned(sessionId: string): boolean {
+    const timer = this.abandoned.get(sessionId)
+    if (timer === undefined) return false
+    clearTimeout(timer)
+    this.abandoned.delete(sessionId)
+    return true
+  }
+
+  private forgetAbandoned(): void {
+    for (const timer of this.abandoned.values()) {
+      clearTimeout(timer)
+    }
     this.abandoned.clear()
   }
 
@@ -230,6 +316,21 @@ export class AgentProcessManager {
     host.on("message", (message: PtyHostReply) => {
       this.onHostMessage(message)
     })
+    // `spawn` is the only positive confirmation that the fork got as far as
+    // running code. Without it, an `exit` is a fork that never started — a
+    // missing or unloadable `pty-host.cjs`, most likely a packaging mistake —
+    // and calling that "stopped unexpectedly" sends whoever reads the message
+    // looking for a crash that never happened.
+    host.once("spawn", () => {
+      this.hostSpawned = true
+    })
+    // A V8 fatal error: OOM, or a failed native assertion in node-pty. Electron
+    // emits `exit` after it regardless, so this only has to record the reason
+    // the exit code cannot carry.
+    host.on("error", (type: string, location: string) => {
+      this.hostFatalError = `The terminal backend crashed (${type}${location === "" ? "" : ` at ${location}`})`
+      console.error(`[pty-host] ${type} ${location}`)
+    })
     host.once("exit", (code) => {
       this.onHostExit(code)
     })
@@ -250,12 +351,16 @@ export class AgentProcessManager {
           return
         }
         this.live.add(message.sessionId)
+        // A resumed session comes back under the id it already had, and the host
+        // has just replaced the entry this was tracking. It is live again, not
+        // retained scrollback from the run before.
+        this.retained.delete(message.sessionId)
         this.options.onEvent({ kind: "agent.started", sessionId: message.sessionId, pid: message.pid })
         return
       }
       case "exited": {
         this.live.delete(message.sessionId)
-        if (this.abandoned.delete(message.sessionId)) {
+        if (this.wasAbandoned(message.sessionId)) {
           // The reap of a spawn nobody was still waiting for. The row already
           // records the failure, and an `agent.exited` would overwrite it.
           return
@@ -274,6 +379,49 @@ export class AgentProcessManager {
         this.retained.delete(message.sessionId)
         return
       }
+      case "activity": {
+        // Only for a session this manager still considers live. The host sends
+        // these from its data callback, so one can be in flight when the child
+        // exits, or belong to a spawn nobody is waiting for any more — and
+        // either would put a row that has already settled back to "working".
+        if (!this.live.has(message.sessionId)) {
+          return
+        }
+        this.options.onEvent({
+          kind: "agent.activity",
+          sessionId: message.sessionId,
+          busy: message.busy,
+        })
+        return
+      }
+      case "sessionRef": {
+        // Deliberately *not* gated on `live`, unlike activity. The agents that
+        // need scanning print their session id in the banner they write on the
+        // way out, so this routinely arrives in the same breath as the exit —
+        // and dropping it there would throw away the one thing that makes the
+        // finished session resumable. It cannot resurrect a row: the service
+        // writes it as metadata and never touches status.
+        if (this.abandoned.has(message.sessionId)) {
+          return
+        }
+        this.options.onEvent({
+          kind: "agent.sessionRef",
+          sessionId: message.sessionId,
+          ref: message.ref,
+        })
+        return
+      }
+      case "title": {
+        if (this.abandoned.has(message.sessionId)) {
+          return
+        }
+        this.options.onEvent({
+          kind: "agent.title",
+          sessionId: message.sessionId,
+          title: message.title,
+        })
+        return
+      }
       case "failed": {
         this.live.delete(message.sessionId)
         // A spawn that failed is reported to its caller, which turns it into an
@@ -282,7 +430,7 @@ export class AgentProcessManager {
         const settled = this.settle(message.sessionId, (pending) =>
           pending.reject(new Error(message.message)),
         )
-        if (settled || this.abandoned.delete(message.sessionId)) {
+        if (settled || this.wasAbandoned(message.sessionId)) {
           return
         }
         this.options.onEvent({
@@ -303,8 +451,14 @@ export class AgentProcessManager {
    * which is exactly what the next launch does anyway.
    */
   private onHostExit(code: number): void {
-    const reason = `The terminal backend stopped unexpectedly (exit ${String(code)})`
+    const reason =
+      this.hostFatalError ??
+      (this.hostSpawned
+        ? `The terminal backend stopped unexpectedly (exit ${String(code)})`
+        : `The terminal backend could not start (exit ${String(code)})`)
     this.host = null
+    this.hostSpawned = false
+    this.hostFatalError = null
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer)
       pending.reject(new Error(reason))
@@ -312,11 +466,14 @@ export class AgentProcessManager {
     this.pending.clear()
     // A dead host cannot send any of the late replies `abandoned` exists for,
     // and its replay buffers went with it.
-    this.abandoned.clear()
+    this.forgetAbandoned()
     this.retained.clear()
     const stranded = [...this.live]
     this.live.clear()
-    if (this.disposed) {
+    // An exit we asked for. The sessions went down with the app, not under it,
+    // and `agent.failed` on the way out would write a crash onto rows the quit
+    // path is already settling.
+    if (this.disposal !== null) {
       return
     }
     for (const sessionId of stranded) {

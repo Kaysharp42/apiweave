@@ -1,16 +1,20 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { AgentDefinition, StoredAgentDefinition } from "@shared/types/AgentDefinition"
 import type { AgentScope, AgentScopeKind } from "@shared/types/AgentScope"
-import type { AgentSession, AgentSessionStatus } from "@shared/types/AgentSession"
+import type { AgentSession } from "@shared/types/AgentSession"
+import { isAgentScopeKind } from "@shared/types/AgentScope"
+import { AgentLaunchModeSchema, AgentSessionStatusSchema } from "@shared/zod-schemas/AgentSessionSchema"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
 
 export type AgentDefinitionUpsert = AgentDefinition & { readonly isCustom?: boolean }
 
 export type AgentSessionCreate = Pick<AgentSession, "workspaceId" | "agentKey" | "launchMode" | "status" | "cwd"> &
-  Partial<Pick<AgentSession, "scopeKind" | "scopeId" | "pid">>
+  Partial<Pick<AgentSession, "scopeKind" | "scopeId" | "pid" | "agentSessionRef">>
 
-export type AgentSessionUpdate = Partial<Pick<AgentSession, "status" | "pid" | "exitCode" | "error">>
+export type AgentSessionUpdate = Partial<
+  Pick<AgentSession, "status" | "pid" | "exitCode" | "error" | "agentSessionRef" | "title">
+>
 
 const DEFINITION_COLUMNS =
   "id, workspace_id, agent_key, name, detect_cmd, argv_json, expected_process, env_json, options_json, is_custom, rev, createdAt, updatedAt"
@@ -18,11 +22,22 @@ const DEFINITION_COLUMNS =
 /** The behavioural half of a definition — see `options_json` in migration 015. */
 type AgentDefinitionOptions = Pick<
   AgentDefinition,
-  "promptMode" | "promptFlag" | "mcpConfigArgs" | "unsupportedPlatforms" | "installUrl"
+  | "promptMode"
+  | "promptFlag"
+  | "mcpConfigArgs"
+  | "unsupportedPlatforms"
+  | "installUrl"
+  | "sessionIdMode"
+  | "newSessionArgs"
+  | "resumeArgs"
+  | "sessionIdPattern"
 >
 
 const SESSION_COLUMNS =
-  "id, workspace_id, agent_key, launch_mode, status, cwd, scope_kind, scope_id, pid, exit_code, error, startedAt, endedAt"
+  "id, workspace_id, agent_key, launch_mode, status, cwd, scope_kind, scope_id, pid, exit_code, error, agent_session_ref, title, startedAt, endedAt"
+
+/** How many session rows a workspace keeps — see {@link AgentRepository.pruneSessions}. */
+const SESSION_HISTORY_LIMIT = 200
 
 interface AgentDefinitionRow extends SqliteRow {
   readonly id: string
@@ -58,6 +73,8 @@ interface AgentSessionRow extends SqliteRow {
   readonly pid: number | null
   readonly exit_code: number | null
   readonly error: string | null
+  readonly agent_session_ref: string | null
+  readonly title: string | null
   readonly startedAt: string
   readonly endedAt: string | null
 }
@@ -113,6 +130,10 @@ export class AgentRepository {
           mcpConfigArgs: input.mcpConfigArgs,
           unsupportedPlatforms: input.unsupportedPlatforms,
           installUrl: input.installUrl ?? null,
+          sessionIdMode: input.sessionIdMode,
+          newSessionArgs: input.newSessionArgs,
+          resumeArgs: input.resumeArgs,
+          sessionIdPattern: input.sessionIdPattern ?? null,
         } satisfies AgentDefinitionOptions),
         isCustom ? 1 : 0,
       ],
@@ -169,6 +190,17 @@ export class AgentRepository {
     ])
   }
 
+  /**
+   * Forget the stored preference so the roster falls back to the built-in
+   * default. The setting is a loose key/value pair with no FK to the definition
+   * it names, so deleting an agent leaves the key pointing at nothing — the
+   * roster then marks no row as default at all, and `getDefaultAgentKey`
+   * happily reports a key the user cannot launch.
+   */
+  public clearDefaultAgentKey(workspaceId: string): boolean {
+    return this.store.delete("DELETE FROM app_settings WHERE key = ?", [defaultAgentSettingKey(workspaceId)]).changes > 0
+  }
+
   // ── local paths ─────────────────────────────────────────────────────────
 
   public getLocalPath(scope: AgentScope): string | undefined {
@@ -201,8 +233,8 @@ export class AgentRepository {
   public createSession(input: AgentSessionCreate): AgentSession {
     const id = generateId()
     this.store.set(
-      `INSERT INTO agent_sessions (id, workspace_id, agent_key, launch_mode, status, cwd, scope_kind, scope_id, pid)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO agent_sessions (id, workspace_id, agent_key, launch_mode, status, cwd, scope_kind, scope_id, pid, agent_session_ref)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         input.workspaceId,
@@ -213,9 +245,42 @@ export class AgentRepository {
         input.scopeKind ?? null,
         input.scopeId ?? null,
         input.pid ?? null,
+        // Set at insert for an `assign` agent, whose ref APIWeave mints before
+        // the process exists, and for a resume, which inherits the ref of the
+        // conversation it is continuing. Null for a `scan` agent until its
+        // output gives one up.
+        input.agentSessionRef ?? null,
       ],
     )
+    this.pruneSessions(input.workspaceId)
     return mustExist(this.getSession(id), `agent session ${id} missing after insert`)
+  }
+
+  /**
+   * Sessions were append-only: `listSessions` reads at most 50, so an unbounded
+   * table was invisible until the file it lives in was, and every launch added
+   * a row for ever. Pruning on insert rather than on a timer keeps it to the one
+   * moment the table can actually grow.
+   *
+   * Only terminal rows are eligible, and the window counts *all* rows so a
+   * workspace full of live sessions can never prune one that is still running.
+   * 200 is four times what the list can show, which leaves the history that
+   * scrolling and future filters need without keeping it for ever.
+   */
+  public pruneSessions(workspaceId: string, keep = SESSION_HISTORY_LIMIT): number {
+    return this.store.delete(
+      `DELETE FROM agent_sessions
+        WHERE workspace_id = ?
+          AND status IN ('exited', 'failed')
+          AND id NOT IN (
+            SELECT id FROM agent_sessions WHERE workspace_id = ? ORDER BY startedAt DESC, id DESC LIMIT ?
+          )`,
+      [workspaceId, workspaceId, keep],
+    ).changes
+  }
+
+  public deleteSession(sessionId: string): boolean {
+    return this.store.delete("DELETE FROM agent_sessions WHERE id = ?", [sessionId]).changes > 0
   }
 
   public getSession(sessionId: string): AgentSession | undefined {
@@ -237,27 +302,74 @@ export class AgentRepository {
   /**
    * `endedAt` is stamped by the terminal statuses rather than passed in, so a
    * session cannot be recorded as exited while still claiming to be open.
+   *
+   * Two things this refuses to do. It will not move a session *out* of a
+   * terminal status: `exited` and `failed` are the end of the row's life, and a
+   * late `agent.started` from a host that is being torn down would otherwise
+   * resurrect a dead session as running for ever. And it never nulls an
+   * `endedAt` that is already set — the previous form wrote `NULL` for any
+   * non-terminal status, so one such patch on an ended row would have produced
+   * a session that has both an exit code and no end time.
    */
-  // fallow-ignore-next-line complexity -- the branches preserve untouched patch fields and stamp endedAt only on terminal statuses; the CRAP score is the estimated-coverage artifact for a method exercised through agent_service.test.ts
+  // fallow-ignore-next-line complexity -- the branches preserve untouched patch fields, pin a terminal status, and stamp endedAt only on terminal statuses; the CRAP score is the estimated-coverage artifact for a method exercised through agent_service.test.ts
   public updateSession(sessionId: string, patch: AgentSessionUpdate): AgentSession | undefined {
     const existing = this.getSession(sessionId)
     if (existing === undefined) {
       return undefined
     }
-    const status = patch.status ?? existing.status
-    const isTerminal = status === "exited" || status === "failed"
+    const status = isTerminalStatus(existing.status) ? existing.status : (patch.status ?? existing.status)
+    const endedAt = isTerminalStatus(status) ? (existing.endedAt ?? nowIso()) : (existing.endedAt ?? null)
     this.store.set(
       `UPDATE agent_sessions
-         SET status = ?, pid = ?, exit_code = ?, error = ?, endedAt = ?
+         SET status = ?, pid = ?, exit_code = ?, error = ?, agent_session_ref = ?, title = ?, endedAt = ?
        WHERE id = ?`,
       [
         status,
         patch.pid === undefined ? (existing.pid ?? null) : patch.pid,
         patch.exitCode === undefined ? (existing.exitCode ?? null) : patch.exitCode,
         patch.error === undefined ? (existing.error ?? null) : patch.error,
-        isTerminal ? (existing.endedAt ?? nowIso()) : null,
+        // Deliberately outside the terminal-status pin above. A `scan` agent
+        // prints its session id in the banner it writes on the way *out*, so the
+        // ref and the title routinely arrive for a row that has already ended —
+        // and refusing them there would throw away the only thing that makes a
+        // finished session resumable. Neither field can resurrect a row: they
+        // are not status, and `endedAt` is computed without them.
+        patch.agentSessionRef === undefined ? (existing.agentSessionRef ?? null) : patch.agentSessionRef,
+        patch.title === undefined ? (existing.title ?? null) : patch.title,
+        endedAt,
         sessionId,
       ],
+    )
+    return this.getSession(sessionId)
+  }
+
+  /**
+   * Put a finished session back to `starting` so its conversation can be run
+   * again in the same row.
+   *
+   * Its own method rather than a flag on {@link updateSession}, because that
+   * method's refusal to move a row out of a terminal status is load-bearing: it
+   * is what stops a late `agent.started` from a host being torn down
+   * resurrecting a dead session for ever. Resuming is the one legitimate way out
+   * of that state, and it is a deliberate act by the user rather than an event
+   * arriving from a process — so it gets a door of its own instead of widening
+   * the one that is holding.
+   *
+   * The previous run's outcome is cleared, not kept. A row that showed `exit 1`
+   * and a pid from a process that is now gone, while a new process runs under
+   * it, would be describing neither. `startedAt` moves to now for the same
+   * reason — it is when *this* run began — and, usefully, it floats the resumed
+   * session back to the top of a list ordered by it.
+   */
+  public reviveSession(sessionId: string): AgentSession | undefined {
+    if (this.getSession(sessionId) === undefined) {
+      return undefined
+    }
+    this.store.set(
+      `UPDATE agent_sessions
+         SET status = 'starting', pid = NULL, exit_code = NULL, error = NULL, endedAt = NULL, startedAt = ?
+       WHERE id = ?`,
+      [nowIso(), sessionId],
     )
     return this.getSession(sessionId)
   }
@@ -280,8 +392,12 @@ function defaultAgentSettingKey(workspaceId: string): string {
   return `agents.default_agent.${workspaceId}`
 }
 
+function isTerminalStatus(status: AgentSession["status"]): boolean {
+  return status === "exited" || status === "failed"
+}
+
 function nowIso(): string {
-  return new Date().toISOString().replace(/(\.\d{3})Z$/, "$1Z")
+  return new Date().toISOString()
 }
 
 function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
@@ -302,6 +418,13 @@ function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
     mcpConfigArgs: options.mcpConfigArgs ?? [],
     unsupportedPlatforms: options.unsupportedPlatforms ?? [],
     installUrl: options.installUrl ?? null,
+    // A definition stored before migration 016 has none of these, and the
+    // fallbacks are what make it launch anyway — as an agent that simply does
+    // not offer resume, which is what it was when it was written.
+    sessionIdMode: options.sessionIdMode ?? "none",
+    newSessionArgs: options.newSessionArgs ?? [],
+    resumeArgs: options.resumeArgs ?? [],
+    sessionIdPattern: options.sessionIdPattern ?? null,
     isCustom: row.is_custom === 1,
     rev: row.rev,
     createdAt: row.createdAt,
@@ -309,20 +432,47 @@ function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
   }
 }
 
+/**
+ * The three string unions are parsed, not asserted.
+ *
+ * A `CHECK` constraint only binds the schema the file was created with, so a
+ * database restored from an older build, hand-edited, or written by a future
+ * migration can hold a `status` outside the union — and a bare `as` cast hands
+ * that straight to a renderer whose `switch` is exhaustive over four cases and
+ * silently renders nothing for the fifth. Parsing turns it into a throw at the
+ * read, next to the row that is wrong.
+ *
+ * Only the unions go through zod, not the whole session: `listSessions` runs
+ * this per row, and every other column is already typed by SQLite's own
+ * declared type. `scopeKind` uses the shared guard rather than a schema because
+ * it is legitimately null for a session launched without a scope.
+ */
 function rowToSession(row: AgentSessionRow): AgentSession {
   return {
     sessionId: row.id,
     workspaceId: row.workspace_id,
     agentKey: row.agent_key,
-    launchMode: row.launch_mode as AgentSession["launchMode"],
-    status: row.status as AgentSessionStatus,
+    launchMode: AgentLaunchModeSchema.parse(row.launch_mode),
+    status: AgentSessionStatusSchema.parse(row.status),
     cwd: row.cwd,
-    scopeKind: row.scope_kind as AgentScopeKind | null,
+    scopeKind: toScopeKind(row.scope_kind, row.id),
     scopeId: row.scope_id,
     pid: row.pid,
     exitCode: row.exit_code,
     error: row.error,
+    agentSessionRef: row.agent_session_ref,
+    title: row.title,
     startedAt: row.startedAt,
     endedAt: row.endedAt,
   }
+}
+
+function toScopeKind(value: string | null, sessionId: string): AgentScopeKind | null {
+  if (value === null) {
+    return null
+  }
+  if (!isAgentScopeKind(value)) {
+    throw new Error(`agent session ${sessionId} has an unknown scope_kind: ${value}`)
+  }
+  return value
 }

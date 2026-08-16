@@ -24,6 +24,23 @@ export const AgentSessionSchema = z
     pid: z.number().int().nullable().optional(),
     exitCode: z.number().int().nullable().optional(),
     error: z.string().nullable().optional(),
+    /**
+     * The agent CLI's *own* identifier for the conversation — `claude`'s session
+     * UUID, `opencode`'s `ses_…`. Not APIWeave's `sessionId`, which names the
+     * row and means nothing to the agent.
+     *
+     * Its presence is what makes a finished session resumable, and the UI reads
+     * it that way: a ref is only ever stored for an agent whose definition
+     * declares how to resume one, so `agentSessionRef !== null` is the whole
+     * test. Null for agents that cannot resume, and for sessions launched before
+     * this was recorded.
+     */
+    agentSessionRef: z.string().nullable().optional(),
+    /**
+     * What the agent called the work, harvested from the terminal title it sets.
+     * Null until it sets one — the row falls back to the agent's name.
+     */
+    title: z.string().nullable().optional(),
     startedAt: TimestampSchema,
     endedAt: TimestampSchema.nullable().optional(),
   })

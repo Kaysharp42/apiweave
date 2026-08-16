@@ -763,6 +763,18 @@ export const agents = {
   launchEmbedded: (request: AgentEmbeddedLaunchRequest): Promise<AgentSession> =>
     getAgentsBridge()?.launchEmbedded(request) ??
     Promise.reject(new Error("Agents are only available in the desktop app")),
+  /**
+   * Reopen a finished session's conversation. Rejects rather than resolving
+   * without a bridge, as the launches do: there is a button behind this, and it
+   * has to be able to say why nothing happened.
+   */
+  resumeSession: (
+    sessionId: string,
+    cols: number,
+    rows: number,
+  ): Promise<AgentSession> =>
+    getAgentsBridge()?.resumeSession(sessionId, cols, rows) ??
+    Promise.reject(new Error("Agents are only available in the desktop app")),
   write: (sessionId: string, data: string): Promise<void> =>
     getAgentsBridge()?.write(sessionId, data) ?? Promise.resolve(),
   resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
@@ -772,6 +784,13 @@ export const agents = {
   killSession: (sessionId: string): Promise<AgentSession> =>
     getAgentsBridge()?.killSession(sessionId) ??
     Promise.reject(new Error("Agents are only available in the desktop app")),
+  /**
+   * Forget a finished session's record. Resolves rather than rejects without a
+   * bridge, matching `deleteCustomAgent`: outside the desktop shell there is no
+   * session table, so there is nothing left to remove and nothing to report.
+   */
+  deleteSession: (sessionId: string): Promise<void> =>
+    getAgentsBridge()?.deleteSession(sessionId) ?? Promise.resolve(),
   onSessionChanged: (
     callback: (event: AgentSessionEvent) => void,
   ): (() => void) =>

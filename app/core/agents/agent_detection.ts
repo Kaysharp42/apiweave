@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
 import type { AgentAvailability } from "@shared/types/AgentAvailability"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
+import { AgentAvailabilitySchema } from "@shared/zod-schemas/AgentAvailabilitySchema"
 import { resolveExecutable, spawnCommandFor } from "./executable"
 
 /** A hung `--version` must not hang the roster; every agent gets its own budget. */
@@ -15,6 +16,12 @@ const PROBE_TIMEOUT_MS = 5_000
  * launch a dead process, and the user would have no idea why. So `ready`
  * requires the probe to succeed too, and `broken` carries the failure text
  * straight into the UI where it can be acted on.
+ *
+ * Every return goes through `AgentAvailabilitySchema`. This is the one place an
+ * availability row is *manufactured* — half of it out of a child process's
+ * stderr — and it crosses IPC untouched from here, so the schema that defines
+ * the contract is the thing that decides whether a row satisfies it. Once per
+ * probe, next to a `spawn`: the cost does not register.
  */
 export async function detectAgent(
   definition: AgentDefinition,
@@ -23,34 +30,34 @@ export async function detectAgent(
   const checkedAt = Date.now()
 
   if (definition.unsupportedPlatforms.includes(process.platform)) {
-    return {
+    return AgentAvailabilitySchema.parse({
       agentKey: definition.agentKey,
       state: "unsupported",
       resolvedPath: null,
       detail: `Not supported on ${process.platform}`,
       checkedAt,
-    }
+    })
   }
 
   const resolvedPath = resolveExecutable(definition.detectCmd, env)
   if (resolvedPath === undefined) {
-    return {
+    return AgentAvailabilitySchema.parse({
       agentKey: definition.agentKey,
       state: "not-found",
       resolvedPath: null,
       detail: `${definition.detectCmd} was not found on PATH`,
       checkedAt,
-    }
+    })
   }
 
   const probe = await probeVersion(resolvedPath, env)
-  return {
+  return AgentAvailabilitySchema.parse({
     agentKey: definition.agentKey,
     state: probe.ok ? "ready" : "broken",
     resolvedPath,
     detail: probe.detail,
     checkedAt,
-  }
+  })
 }
 
 export async function detectAgents(

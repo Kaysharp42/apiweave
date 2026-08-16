@@ -610,6 +610,14 @@ if (!hasSingleInstanceLock) {
     if (orphaned > 0) {
       console.info(`[agents] marked ${orphaned} orphaned agent session(s) failed`)
     }
+    // The same crash leaves scratch files behind, and those are not inert: an
+    // agent's MCP config carries a live bearer token for this app. The launch
+    // path sweeps too, but only on the next launch — a user who never starts
+    // another agent would keep the last run's token on disk indefinitely.
+    const swept = agentService.sweepScratchFiles()
+    if (swept > 0) {
+      console.info(`[agents] reclaimed ${swept} stale agent scratch file(s)`)
+    }
     ipcMain.handle(
       "agents:listRoster",
       requireTrustedSender((workspaceId: string) => agentService.listRoster(workspaceId)),
@@ -671,6 +679,12 @@ if (!hasSingleInstanceLock) {
       requireTrustedSender((request: AgentEmbeddedLaunchRequest) => agentService.launchEmbedded(request)),
     )
     ipcMain.handle(
+      "agents:resumeSession",
+      requireTrustedSender((sessionId: string, cols: number, rows: number) =>
+        agentService.resumeSession(sessionId, cols, rows),
+      ),
+    )
+    ipcMain.handle(
       "agents:write",
       requireTrustedSender((sessionId: string, data: string) => agentService.writeToSession(sessionId, data)),
     )
@@ -689,6 +703,10 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "agents:killSession",
       requireTrustedSender((sessionId: string) => agentService.killSession(sessionId)),
+    )
+    ipcMain.handle(
+      "agents:deleteSession",
+      requireTrustedSender((sessionId: string) => agentService.deleteSession(sessionId)),
     )
     // The one agents handler written out rather than wrapped: it has to reply
     // with a `MessagePort`, which cannot be returned through `invoke` at all —
@@ -715,7 +733,17 @@ if (!hasSingleInstanceLock) {
         port.close()
         return false
       }
-      frame.postMessage(AGENT_OUTPUT_PORT_CHANNEL, { sessionId }, [port])
+      try {
+        frame.postMessage(AGENT_OUTPUT_PORT_CHANNEL, { sessionId }, [port])
+      } catch {
+        // `senderFrame` is non-null for a frame object that has already been
+        // detached — the document navigated or its window closed while we were
+        // awaiting authorization — and posting into one throws. The null check
+        // above does not cover it, and an unclosed port would leave the host
+        // writing chunks into a channel whose other end nobody holds.
+        port.close()
+        return false
+      }
       return true
     })
     // Owns its own timers: one check just after launch, then one every few

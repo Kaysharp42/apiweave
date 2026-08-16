@@ -52,10 +52,33 @@ export class AgentEventBroker {
    */
   publish(event: AgentEvent): void {
     const state = this.ensure(event.sessionId)
+    // A session that is starting is, by definition, not over. This is what makes
+    // the exactly-once rule below compatible with resuming: a resumed session
+    // keeps its row and therefore its id, so without this its second run could
+    // never publish an exit — the broker would still be holding the first run's
+    // terminal flag and would swallow it, leaving the row at `running` for ever.
+    // Safe against the race the rule exists for, because `agent.started` is only
+    // ever published for a spawn the host actually confirmed.
+    if (event.kind === "agent.started") {
+      state.terminal = false
+    }
     if (event.kind === "agent.exited" || event.kind === "agent.failed") {
       if (state.terminal) return
       state.terminal = true
     }
+    // Activity is the one non-transition here, and the exactly-once rule above
+    // does not cover it — nothing about "it printed something" is terminal. It
+    // is dropped after the end instead: a chunk the host was mid-way through
+    // reporting when the child exited would otherwise arrive behind the exit
+    // and tell every subscriber a finished agent is working.
+    //
+    // `agent.sessionRef` and `agent.title` are the deliberate exceptions, and
+    // must NOT be dropped here. An agent that mints its own session id prints it
+    // in the banner it writes as it exits, so the ref for a resumable session
+    // arrives *after* the session is terminal, essentially always. Dropping it
+    // would leave exactly the rows a user most wants to recover — the ones that
+    // just ended — with nothing to resume from.
+    if (event.kind === "agent.activity" && state.terminal) return
 
     const stamped = { ...event, seq: ++state.seq, ts: this.now() } as AgentSessionEvent
     for (const listener of this.subscribers) {

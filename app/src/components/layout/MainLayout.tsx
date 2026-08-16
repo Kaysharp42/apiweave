@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { Allotment } from "allotment";
+import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router-dom";
 import { AppNavBar } from "./AppNavBar";
@@ -12,6 +12,7 @@ import useAgentDockStore from "../../stores/AgentDockStore";
 import useNavigationStore from "../../stores/NavigationStore";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
@@ -19,12 +20,24 @@ import { UpdateReadyBanner } from "../organisms/UpdateReadyBanner";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
+/**
+ * Below Tailwind's `md`, where the layout drops to a single content column.
+ * Written as its complement so it is one source of truth with the `md:` classes
+ * on the two branches — 767.98 rather than 767 because the viewport can land on
+ * a fractional width under a non-integer device pixel ratio.
+ */
+const COMPACT_LAYOUT_QUERY = "(max-width: 767.98px)";
+
+/** Roughly 60 columns of the terminal's 12px monospace, plus its chrome. */
+const AGENT_PANE_PREFERRED = 420;
+const AGENT_PANE_MIN = 280;
+const AGENT_PANE_MAX = 900;
+
 export function MainLayout({ children }: MainLayoutProps) {
   const navigationSelectedValue = useNavigationStore(
     (state) => state.selectedNavVal,
   );
   const setNavState = useNavigationStore((state) => state.setNavState);
-  const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const mobileSidebarOpen = useNavigationStore(
     (state) => state.mobileSidebarOpen,
   );
@@ -77,22 +90,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mobileSidebarOpen, setMobileSidebarOpen]);
 
-  // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
-  // visible either way. Pane width = rail width + list width.
-  const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute;
-  const railExpanded = AppNavBarStyles.expandedNavBarWidth!.absolute;
-  const listWidth = 236;
-  const expandedPreferred = railExpanded + listWidth;
-  const collapsedPreferred = railCollapsed + listWidth;
-  const paneMin = collapsedPreferred;
-  const paneMax = 480;
+  // Which branch below is the *displayed* one. Both are in the DOM, so anything
+  // that may exist exactly once — the agent terminal and its MessagePort — has
+  // to be mounted by whichever branch the viewport actually shows.
+  const isCompact = useMediaQuery(COMPACT_LAYOUT_QUERY);
+  const openAgentSessionId = useAgentDockStore((state) => state.openSessionId);
 
   return (
     // The agent-sessions subscription is mounted here rather than around each
     // route's shell: this component has two mount points (a route shell and
     // `pages/Home`), and a provider added above it is a provider one of them
     // will be missing. Inside it, every consumer of the nav section and the
-    // terminal dock is covered by construction.
+    // agent panel is covered by construction.
     <AgentSessionsProvider>
       {/* Skip to main content link */}
       <a
@@ -111,44 +120,13 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
       <UpdateReadyBanner />
 
-      <WithAgentDock>
-      {/* Desktop layout (lg+): Allotment split panes */}
+      {/* Desktop layout (md+): Allotment split panes */}
       <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
-        {/* key forces re-layout on collapse toggle — Allotment only reads
-            preferredSize on mount, so without this the pane keeps its old width.
-            proportionalLayout={false} keeps the sidebar pane at a fixed width
-            when the window resizes; the canvas pane absorbs the whole delta. */}
-        <Allotment
-          key={isNavBarCollapsed ? "collapsed" : "expanded"}
-          proportionalLayout={false}
-        >
-          <Allotment.Pane
-            preferredSize={
-              isNavBarCollapsed ? collapsedPreferred : expandedPreferred
-            }
-            minSize={paneMin}
-            maxSize={paneMax}
-            snap={false}
-          >
-            <div className="flex h-full w-full text-xs">
-              <nav aria-label="Main navigation">
-                <AppNavBar />
-              </nav>
-              <aside
-                className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
-                aria-label="Sidebar"
-              >
-                <Sidebar />
-              </aside>
-            </div>
-          </Allotment.Pane>
-
-          <Allotment.Pane>
-            <main id="main-content" className="h-full">
-              {children !== undefined ? children : <Workspace />}
-            </main>
-          </Allotment.Pane>
-        </Allotment>
+        <DesktopSplit mountsAgentPanel={!isCompact}>
+          <main id="main-content" className="h-full">
+            {children !== undefined ? children : <Workspace />}
+          </main>
+        </DesktopSplit>
       </div>
 
       {/* Mobile layout (< lg): flex with collapsible sidebar overlay */}
@@ -173,11 +151,25 @@ export function MainLayout({ children }: MainLayoutProps) {
           </>
         )}
 
+        {/* Too narrow for a third column, so the agent takes the same left
+            drawer slot the sidebar uses here — still anchored to the left edge,
+            still beside the canvas rather than on top of it. Mounted only on
+            this branch's turn: the desktop pane holds the other copy, and two
+            terminals would fight over one session's port.
+
+            The wrapper is deliberately unlabelled: `AgentDock` renders its own
+            labelled <section>, and naming this too makes a screen reader
+            announce the same region twice on the way in. */}
+        {isCompact && openAgentSessionId !== null && (
+          <aside className="fixed bottom-8 left-11 top-12 z-40 flex w-[min(22rem,calc(100vw-3.5rem))] flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+            <AgentDock />
+          </aside>
+        )}
+
         <main id="main-content" className="flex-1 min-w-0 overflow-hidden">
           {children !== undefined ? children : <Workspace />}
         </main>
       </div>
-      </WithAgentDock>
 
       <HorizontalDivider />
 
@@ -189,44 +181,95 @@ export function MainLayout({ children }: MainLayoutProps) {
 }
 
 /**
- * The whole content area, with the agent terminal docked beneath it when one is
- * open.
+ * The desktop content area: navigation, the agent terminal, and the workspace,
+ * as three resizable columns.
  *
- * A dock rather than a page of its own: the argument for wiring the MCP bridge
- * into a launch is that the agent edits the workflow while you watch, and a
- * terminal that replaced the canvas would throw that away.
+ * The agent sits *between* the sidebar and the canvas rather than in a strip
+ * below it. A column on the left reads as part of the app's own structure — the
+ * same rail → list → content progression the rest of the layout already has —
+ * and it leaves the canvas beside it rather than under it. Keeping the canvas
+ * visible is the entire argument for wiring MCP into a launch: the agent edits
+ * the workflow while you watch it happen.
  *
- * It wraps *both* responsive layout branches rather than sitting inside each
- * one's `<main>`, which is what the first version did — and both branches are
- * always in the DOM, only one of them displayed. That mounted two terminals for
- * one session, and since a port is delivered to exactly one holder, the hidden
- * one took it: launching produced a visible terminal that stayed blank. One
- * instance is not a tidiness preference here, it is the difference between
- * working and not.
- *
- * The split is mounted unconditionally and the dock pane is collapsed while
- * nothing is open, rather than swapping between a bare fragment and an
- * Allotment. React cannot reconcile those two shapes, so the swap unmounted
- * the whole subtree — canvas included — and opening the dock discarded
- * unsaved node/edge edits. A hidden pane leaves the tree shape untouched, so
- * opening or closing the dock is now an ordinary re-render.
+ * Every pane is mounted unconditionally and the agent pane is collapsed with
+ * `visible` while nothing is open, rather than adding and removing it. React
+ * reconciles by position, so a pane that appears and disappears shifts the
+ * canvas pane's index and remounts the whole workspace subtree — which
+ * discarded unsaved node and edge edits every time an agent was launched. A
+ * hidden pane leaves the tree shape untouched, so opening or closing the panel
+ * is an ordinary re-render. `DesktopSplit.test.tsx` guards exactly this.
  */
-export function WithAgentDock({ children }: { readonly children: ReactNode }) {
+export function DesktopSplit({
+  children,
+  mountsAgentPanel,
+}: {
+  readonly children: ReactNode;
+  readonly mountsAgentPanel: boolean;
+}) {
+  const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
   const openSessionId = useAgentDockStore((state) => state.openSessionId);
+
+  // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
+  // visible either way. Pane width = rail width + list width.
+  const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute;
+  const railExpanded = AppNavBarStyles.expandedNavBarWidth!.absolute;
+  const listWidth = 236;
+  const expandedPreferred = railExpanded + listWidth;
+  const collapsedPreferred = railCollapsed + listWidth;
+  const paneMin = collapsedPreferred;
+  const paneMax = 480;
+
   return (
-    <Allotment vertical className="min-h-0 flex-1">
-      <Allotment.Pane>
-        {/* Allotment lays its panes out absolutely, so the branches inside need
-            a flex column of their own to keep their `flex-1 min-h-0`. */}
-        <div className="flex h-full min-h-0 flex-col">{children}</div>
-      </Allotment.Pane>
+    /* key forces re-layout on collapse toggle — Allotment only reads
+       preferredSize on mount, so without this the pane keeps its old width.
+       proportionalLayout={false} keeps the sidebar and agent panes at fixed
+       widths when the window resizes; the canvas pane absorbs the whole
+       delta. */
+    <Allotment
+      key={isNavBarCollapsed ? "collapsed" : "expanded"}
+      proportionalLayout={false}
+    >
       <Allotment.Pane
-        preferredSize={300}
-        minSize={110}
-        visible={openSessionId !== null}
+        preferredSize={
+          isNavBarCollapsed ? collapsedPreferred : expandedPreferred
+        }
+        minSize={paneMin}
+        maxSize={paneMax}
+        snap={false}
+        priority={LayoutPriority.Low}
       >
-        <AgentDock />
+        <div className="flex h-full w-full text-xs">
+          <nav aria-label="Main navigation">
+            <AppNavBar />
+          </nav>
+          <aside
+            className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
+            aria-label="Sidebar"
+          >
+            <Sidebar />
+          </aside>
+        </div>
       </Allotment.Pane>
+
+      {/* maxSize as well as minSize: a terminal that can be dragged to fill the
+          window would hide the canvas it is supposed to be editing, and the
+          column cannot be shrunk below a legible line of monospace. */}
+      <Allotment.Pane
+        preferredSize={AGENT_PANE_PREFERRED}
+        minSize={AGENT_PANE_MIN}
+        maxSize={AGENT_PANE_MAX}
+        snap={false}
+        priority={LayoutPriority.Low}
+        visible={mountsAgentPanel && openSessionId !== null}
+      >
+        {mountsAgentPanel ? <AgentDock /> : null}
+      </Allotment.Pane>
+
+      {/* The only pane that gives up space. Without an explicit priority
+          Allotment took the agent column's width out of the pane next to it, so
+          opening an agent crushed the sidebar down to truncated single words
+          while the canvas — the pane with room to spare — kept every pixel. */}
+      <Allotment.Pane priority={LayoutPriority.High}>{children}</Allotment.Pane>
     </Allotment>
   );
 }

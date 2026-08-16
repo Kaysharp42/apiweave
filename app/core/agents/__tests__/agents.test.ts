@@ -5,7 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import { detectAgent } from "../agent_detection"
 import { resolveExecutable, spawnCommandFor } from "../executable"
-import { AGENT_MCP_CONFIG_FILENAME, renderMcpConfigArgs, writeAgentMcpConfig } from "../mcp_config"
+import {
+  agentMcpConfigFilename,
+  deleteAgentMcpConfig,
+  renderMcpConfigArgs,
+  sweepAgentMcpConfigs,
+  writeAgentMcpConfig,
+} from "../mcp_config"
 
 const isWindows = process.platform === "win32"
 
@@ -157,13 +163,13 @@ describe("MCP wiring", () => {
    */
   it("writes the config into the given directory and keeps the token out of argv", () => {
     const configDir = path.join(tempRoot, "agent-files")
-    const written = writeAgentMcpConfig(configDir, {
-      url: "http://127.0.0.1:47271/mcp",
-      token: "secret-token",
-      port: 47271,
-    })
+    const written = writeAgentMcpConfig(
+      configDir,
+      { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 },
+      "session-1",
+    )
 
-    expect(written).toBe(path.join(configDir, AGENT_MCP_CONFIG_FILENAME))
+    expect(written).toBe(path.join(configDir, agentMcpConfigFilename("session-1")))
     const parsed = JSON.parse(fs.readFileSync(written, "utf8")) as {
       mcpServers: { apiweave: { url: string; headers: Record<string, string> } }
     }
@@ -187,5 +193,56 @@ describe("MCP wiring", () => {
       "--config",
       "/tmp/apiweave.json",
     ])
+  })
+
+  /**
+   * The defect a single fixed `apiweave.json` had: the second launch rewrote
+   * the token the first agent was already using, and the file had no owner that
+   * could ever delete it.
+   */
+  it("gives every session its own file, so two launches cannot overwrite each other", () => {
+    const configDir = path.join(tempRoot, "agent-files")
+    const first = writeAgentMcpConfig(configDir, { url: "http://a", token: "token-a", port: 1 }, "session-a")
+    const second = writeAgentMcpConfig(configDir, { url: "http://b", token: "token-b", port: 2 }, "session-b")
+
+    expect(first).not.toBe(second)
+    expect(fs.readFileSync(first, "utf8")).toContain("token-a")
+    expect(fs.readFileSync(second, "utf8")).toContain("token-b")
+  })
+
+  it("deletes one session's config and leaves the others alone", () => {
+    const configDir = path.join(tempRoot, "agent-files")
+    const doomed = writeAgentMcpConfig(configDir, { url: "http://a", token: "token-a", port: 1 }, "session-a")
+    const kept = writeAgentMcpConfig(configDir, { url: "http://b", token: "token-b", port: 2 }, "session-b")
+
+    expect(deleteAgentMcpConfig(configDir, "session-a")).toBe(true)
+    expect(fs.existsSync(doomed)).toBe(false)
+    expect(fs.existsSync(kept)).toBe(true)
+    // A file already gone is not a failure — the caller is a terminal
+    // transition that must not fail over a scratch file.
+    expect(deleteAgentMcpConfig(configDir, "session-a")).toBe(true)
+  })
+
+  /**
+   * A crash or a hard quit leaves a live bearer token in userData with nothing
+   * tracking it. The sweep is the only thing that ever reclaims those.
+   */
+  it("sweeps stale configs at startup without touching anything else in the directory", () => {
+    const configDir = path.join(tempRoot, "agent-files")
+    writeAgentMcpConfig(configDir, { url: "http://a", token: "token-a", port: 1 }, "session-a")
+    writeAgentMcpConfig(configDir, { url: "http://b", token: "token-b", port: 2 }, "session-b")
+    const bystander = path.join(configDir, "notes.txt")
+    fs.writeFileSync(bystander, "not ours")
+
+    expect(sweepAgentMcpConfigs(configDir)).toBe(2)
+    expect(fs.readdirSync(configDir)).toEqual(["notes.txt"])
+    // A directory that does not exist yet is the first-run case, not an error.
+    expect(sweepAgentMcpConfigs(path.join(tempRoot, "never-created"))).toBe(0)
+  })
+
+  /** The session id becomes a filename; a separator in one would escape the directory. */
+  it("never lets a session id steer the write out of the scratch directory", () => {
+    expect(agentMcpConfigFilename("../../etc/passwd")).not.toContain("/")
+    expect(agentMcpConfigFilename("../../etc/passwd")).not.toContain("\\")
   })
 })

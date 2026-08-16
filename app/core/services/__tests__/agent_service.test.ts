@@ -20,6 +20,7 @@ let service: AgentService
 let pickDirectory: ReturnType<typeof vi.fn>
 let pty: FakePtyLauncher
 let tempDir: string
+let agentFilesDir: string
 
 /**
  * Stands in for `AgentProcessManager`. Records what it was asked to spawn,
@@ -92,10 +93,11 @@ beforeEach(() => {
   pickDirectory = vi.fn()
   pty = new FakePtyLauncher()
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-agent-cwd-"))
+  agentFilesDir = path.join(tempDir, "agent-files")
   const environment: AgentEnvironment = {
     pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
     getMcpConfig: () => null,
-    agentFilesDir: "/tmp/apiweave-agent-files",
+    agentFilesDir,
     pty,
   }
   service = new AgentService(
@@ -184,6 +186,77 @@ describe("AgentService — roster", () => {
   it("rejects a default agent that is not in the roster", async () => {
     const { workspaceId } = seed()
     await expect(service.setDefaultAgentKey(workspaceId, "nope")).rejects.toThrow(/not found/)
+  })
+
+  /**
+   * The default lives in `app_settings` with no FK to the definition it names,
+   * so deleting the agent it points at used to leave the roster with no default
+   * marked at all — and `getDefaultAgentKey` reporting a key nothing can launch.
+   */
+  it("clears the stored default when the agent it named is deleted", async () => {
+    const { workspaceId } = seed()
+    await service.saveCustomAgent(workspaceId, CUSTOM_AGENT)
+    await service.setDefaultAgentKey(workspaceId, "my-agent")
+
+    await service.deleteCustomAgent(workspaceId, "my-agent")
+
+    await expect(service.getDefaultAgentKey(workspaceId)).resolves.toBe("claude")
+    const roster = await service.listRoster(workspaceId)
+    expect(roster.filter((entry) => entry.isDefault)).toHaveLength(1)
+  })
+
+  it("leaves another agent's default alone when a custom agent is deleted", async () => {
+    const { workspaceId } = seed()
+    await service.saveCustomAgent(workspaceId, CUSTOM_AGENT)
+    await service.setDefaultAgentKey(workspaceId, "codex")
+
+    await service.deleteCustomAgent(workspaceId, "my-agent")
+
+    await expect(service.getDefaultAgentKey(workspaceId)).resolves.toBe("codex")
+  })
+
+  /**
+   * The roster hides the delete button for a built-in override, but the handler
+   * behind it is reachable regardless of what the UI chose to render — and
+   * deleting one silently reverts the user's edited `detectCmd` to the shipped
+   * definition.
+   */
+  it("refuses to delete a built-in override through the service", async () => {
+    const { workspaceId } = seed()
+    agentRepository.upsertDefinition(workspaceId, {
+      ...CUSTOM_AGENT,
+      agentKey: "claude",
+      detectCmd: "claude-wrapper",
+      isCustom: false,
+    })
+
+    await expect(service.deleteCustomAgent(workspaceId, "claude")).rejects.toThrow(/built-in/)
+    const roster = await service.listRoster(workspaceId)
+    expect(roster.find((entry) => entry.definition.agentKey === "claude")?.definition.detectCmd).toBe("claude-wrapper")
+  })
+
+  /**
+   * The cache is invalidated on save and delete, but those are not the only
+   * ways the definition list changes — a row written straight through the
+   * repository, or a built-in added by an app update, lands inside a warm TTL.
+   * The miss used to fall through to a hardcoded `not-found`, telling the user
+   * an agent they have installed is not installed.
+   */
+  it("probes an agent the warm cache never saw instead of calling it not-found", async () => {
+    const { workspaceId } = seed()
+    // Warm the cache with the built-in roster only.
+    await service.listRoster(workspaceId)
+
+    agentRepository.upsertDefinition(workspaceId, {
+      ...realExecutableAgent(),
+      agentKey: "late-arrival",
+      name: "Late Arrival",
+    })
+
+    const roster = await service.listRoster(workspaceId)
+    const entry = roster.find((row) => row.definition.agentKey === "late-arrival")
+    expect(entry?.availability.state).toBe("ready")
+    expect(entry?.availability.resolvedPath).not.toBeNull()
   })
 
   /**
@@ -384,7 +457,7 @@ describe("AgentService — embedded sessions", () => {
       {
         pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
         getMcpConfig: () => ({ url: "http://127.0.0.1:47271", token: "secret-token", port: 47271 }),
-        agentFilesDir: path.join(tempDir, "agent-files"),
+        agentFilesDir,
         pty,
       },
     )
@@ -439,7 +512,7 @@ describe("AgentService — embedded sessions", () => {
       {
         pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
         getMcpConfig: () => null,
-        agentFilesDir: "/tmp/apiweave-agent-files",
+        agentFilesDir,
       },
     )
 
@@ -541,5 +614,627 @@ describe("AgentService — embedded sessions", () => {
     const sessions = await service.listSessions(seeded.workspaceId)
     expect(sessions[0]?.status).toBe("failed")
     expect(sessions[0]?.error).toMatch(/stopped unexpectedly/)
+  })
+
+  /**
+   * The host emits after a child is already gone: a teardown `agent.failed`
+   * arrives behind each child's own exit, and a respawned host re-announces ids
+   * it remembers. Either would overwrite the real exit code with a generic
+   * message, or move a dead session back to running.
+   */
+  it("ignores an event that would move a finished session backwards", async () => {
+    const seeded = await seedLaunchable()
+    const session = await service.launchEmbedded(launchRequest(seeded))
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    service.recordProcessEvent({
+      kind: "agent.failed",
+      sessionId: session.sessionId,
+      message: "The terminal backend stopped unexpectedly",
+    })
+    service.recordProcessEvent({ kind: "agent.started", sessionId: session.sessionId, pid: 777 })
+
+    const sessions = await service.listSessions(seeded.workspaceId)
+    expect(sessions[0]?.status).toBe("exited")
+    expect(sessions[0]?.exitCode).toBe(0)
+    expect(sessions[0]?.error).toBeNull()
+    expect(sessions[0]?.endedAt).not.toBeNull()
+  })
+
+  it("shrugs at an event for a session that no longer exists", () => {
+    expect(() =>
+      service.recordProcessEvent({ kind: "agent.exited", sessionId: "no-such-session", exitCode: 0 }),
+    ).not.toThrow()
+  })
+})
+
+describe("AgentService — per-session MCP config", () => {
+  /** A service whose MCP bridge is up, so the config file is actually written. */
+  function wiredService(): AgentService {
+    return new AgentService(
+      agentRepository,
+      workflows,
+      collections,
+      new LocalOwnerProvider(),
+      new ScopeResolver({
+        workspaceExists: (id) => workspaces.getById(id) !== undefined,
+        environmentExists: () => false,
+      }),
+      {
+        pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
+        getMcpConfig: () => ({ url: "http://127.0.0.1:47271", token: "secret-token", port: 47271 }),
+        agentFilesDir,
+        pty,
+      },
+    )
+  }
+
+  async function seedWired() {
+    const seeded = seed()
+    const wired = wiredService()
+    await wired.saveCustomAgent(seeded.workspaceId, {
+      ...realExecutableAgent(),
+      mcpConfigArgs: ["--mcp-config", "{path}"],
+    })
+    pickDirectory.mockResolvedValue(tempDir)
+    await wired.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return { seeded, wired }
+  }
+
+  function launchRequest(projectId: string, workspaceId: string) {
+    return {
+      workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project" as const, id: projectId },
+      cols: 100,
+      rows: 30,
+    }
+  }
+
+  function configFiles(): readonly string[] {
+    return fs.existsSync(agentFilesDir)
+      ? fs.readdirSync(agentFilesDir).filter((name) => name.startsWith("apiweave-mcp-"))
+      : []
+  }
+
+  /**
+   * The critical half of the fix. One fixed `apiweave.json` meant the second of
+   * two concurrent launches rewrote the token the first agent had already been
+   * handed — and the bridge mints a fresh token per run, so the first agent's
+   * config could stop authenticating mid-session.
+   */
+  it("writes a distinct config per session so concurrent launches cannot collide", async () => {
+    const { seeded, wired } = await seedWired()
+
+    const first = await wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))
+    const second = await wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))
+
+    const paths = pty.spawned.map((request) => request.args[request.args.indexOf("--mcp-config") + 1])
+    expect(paths[0]).not.toBe(paths[1])
+    expect(paths[0]).toContain(first.sessionId)
+    expect(paths[1]).toContain(second.sessionId)
+    expect(configFiles()).toHaveLength(2)
+  })
+
+  /** A live bearer token must not outlive the session that was handed it. */
+  it("deletes the config when an embedded session reaches a terminal state", async () => {
+    const { seeded, wired } = await seedWired()
+    const session = await wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))
+    expect(configFiles()).toHaveLength(1)
+
+    wired.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    expect(configFiles()).toHaveLength(0)
+  })
+
+  it("deletes the config when the spawn never starts", async () => {
+    const { seeded, wired } = await seedWired()
+    pty.failWith = "the terminal backend did not start"
+
+    await expect(wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))).rejects.toThrow()
+
+    expect(configFiles()).toHaveLength(0)
+  })
+
+  /**
+   * A crash leaves the token in userData with nothing tracking it. The sweep is
+   * the only thing that reclaims those — and it must run before this process
+   * writes one of its own, or it would delete a live session's config.
+   */
+  it("sweeps a previous run's leftovers on the first launch of this one", async () => {
+    const { seeded, wired } = await seedWired()
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    fs.writeFileSync(path.join(agentFilesDir, "apiweave-mcp-crashed-run.json"), "{}")
+    fs.writeFileSync(path.join(agentFilesDir, "launch-crashed-run.command"), "#!/bin/sh\n")
+
+    const session = await wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))
+
+    const remaining = fs.readdirSync(agentFilesDir)
+    expect(remaining).not.toContain("apiweave-mcp-crashed-run.json")
+    expect(remaining).not.toContain("launch-crashed-run.command")
+    // The launch's own config survived the sweep it triggered.
+    expect(remaining.some((name) => name.includes(session.sessionId))).toBe(true)
+  })
+
+  it("sweeps on demand for the composition root, and only once", async () => {
+    const { seeded, wired } = await seedWired()
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    fs.writeFileSync(path.join(agentFilesDir, "apiweave-mcp-crashed-run.json"), "{}")
+
+    expect(wired.sweepScratchFiles()).toBe(1)
+
+    const session = await wired.launchEmbedded(launchRequest(seeded.projectId, seeded.workspaceId))
+    expect(fs.readdirSync(agentFilesDir).some((name) => name.includes(session.sessionId))).toBe(true)
+  })
+})
+
+describe("AgentService — stdin prompts", () => {
+  async function seedStdinAgent() {
+    const seeded = seed()
+    await service.saveCustomAgent(seeded.workspaceId, {
+      ...realExecutableAgent(),
+      promptMode: "stdin",
+      promptFlag: null,
+    })
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return seeded
+  }
+
+  /**
+   * `stdin` used to be accepted by the schema, stored by the repository, and
+   * then silently discarded: the prompt reached neither argv nor the terminal,
+   * so the agent came up having never been asked anything.
+   */
+  it("types the prompt into the PTY after the spawn, with the newline that submits it", async () => {
+    const seeded = await seedStdinAgent()
+
+    const session = await service.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      prompt: "why did the checkout workflow fail?",
+      cols: 100,
+      rows: 30,
+    })
+
+    expect(pty.writes).toEqual([
+      { sessionId: session.sessionId, data: "why did the checkout workflow fail?\n" },
+    ])
+    // And it stays out of argv, where `stdin` mode says it does not belong.
+    expect(pty.spawned[0]?.args).toEqual(["--version"])
+  })
+
+  it("writes nothing when a stdin agent is launched without a prompt", async () => {
+    const seeded = await seedStdinAgent()
+    await service.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+
+    expect(pty.writes).toHaveLength(0)
+  })
+
+  /**
+   * There is no stdin to write to once the process has been handed to an
+   * emulator. Launching anyway would open an agent that never received the
+   * question, which reads as the agent ignoring the user.
+   */
+  it("refuses an external launch that would drop the prompt", async () => {
+    const seeded = await seedStdinAgent()
+
+    await expect(
+      service.launchExternal({
+        workspaceId: seeded.workspaceId,
+        agentKey: "stub-runner",
+        scope: { kind: "project", id: seeded.projectId },
+        prompt: "why did the checkout workflow fail?",
+      }),
+    ).rejects.toThrow(/embedded terminal/)
+    // Refused before anything was recorded — a session row for a launch that
+    // never happened is a row the user has to wonder about.
+    await expect(service.listSessions(seeded.workspaceId)).resolves.toHaveLength(0)
+  })
+})
+
+describe("AgentService — external sessions and deletion", () => {
+  async function seedExternal() {
+    const seeded = seed()
+    await service.saveCustomAgent(seeded.workspaceId, realExecutableAgent())
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return seeded
+  }
+
+  /** A session recorded by hand, because launching a real emulator in a test is not on. */
+  function recordExternalSession(workspaceId: string, status: "running" | "exited") {
+    return agentRepository.createSession({
+      workspaceId,
+      agentKey: "stub-runner",
+      launchMode: "external",
+      status,
+      cwd: tempDir,
+    })
+  }
+
+  /**
+   * `pty.kill` matched nothing for an external session — the PTY host never
+   * started it and the pid APIWeave spawned was the emulator's — so the caller
+   * was told the agent had been stopped while it carried on running.
+   */
+  it("refuses to pretend it can kill a session running in the user's own terminal", async () => {
+    const seeded = await seedExternal()
+    const session = recordExternalSession(seeded.workspaceId, "running")
+
+    await expect(service.killSession(session.sessionId)).rejects.toThrow(/your own terminal/)
+    expect(pty.killed).toHaveLength(0)
+  })
+
+  it("still kills an embedded session", async () => {
+    const seeded = await seedExternal()
+    const session = await service.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 80,
+      rows: 24,
+    })
+
+    await service.killSession(session.sessionId)
+    expect(pty.killed).toEqual([session.sessionId])
+  })
+
+  /**
+   * Deleting the row of a running process orphans that process: nothing is left
+   * to attach to it, stop it, or record its exit. Stopping stays the user's
+   * explicit second decision.
+   */
+  it("refuses to remove a session that is still live", async () => {
+    const seeded = await seedExternal()
+    const session = await service.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 80,
+      rows: 24,
+    })
+
+    await expect(service.deleteSession(session.sessionId)).rejects.toThrow(/stop the session before removing it/)
+    await expect(service.listSessions(seeded.workspaceId)).resolves.toHaveLength(1)
+  })
+
+  it("removes a finished embedded session and its scratch files", async () => {
+    const seeded = await seedExternal()
+    const session = agentRepository.createSession({
+      workspaceId: seeded.workspaceId,
+      agentKey: "stub-runner",
+      launchMode: "embedded",
+      status: "exited",
+      cwd: tempDir,
+    })
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    const config = path.join(agentFilesDir, `apiweave-mcp-${session.sessionId}.json`)
+    const script = path.join(agentFilesDir, `launch-${session.sessionId}.command`)
+    fs.writeFileSync(config, "{}")
+    fs.writeFileSync(script, "#!/bin/sh\n")
+
+    await service.deleteSession(session.sessionId)
+
+    await expect(service.listSessions(seeded.workspaceId)).resolves.toHaveLength(0)
+    expect(fs.existsSync(config)).toBe(false)
+    expect(fs.existsSync(script)).toBe(false)
+  })
+
+  /**
+   * An external row reads `exited` from the instant the emulator is spawned, so
+   * it is removable while the agent it handed off is still running in the user's
+   * terminal — still reading the MCP config that unlinking would take away.
+   * Removing the row is a request to tidy a list, and it must not reach into a
+   * live process to honour it; the startup sweep reclaims the file, which is
+   * what `launchExternal` already relies on for the same reason.
+   */
+  it("leaves an external session's scratch files for the sweep", async () => {
+    const seeded = await seedExternal()
+    const session = recordExternalSession(seeded.workspaceId, "exited")
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    const config = path.join(agentFilesDir, `apiweave-mcp-${session.sessionId}.json`)
+    fs.writeFileSync(config, "{}")
+
+    await service.deleteSession(session.sessionId)
+
+    await expect(service.listSessions(seeded.workspaceId)).resolves.toHaveLength(0)
+    expect(fs.existsSync(config)).toBe(true)
+  })
+
+  it("refuses to remove a session it cannot find", async () => {
+    await expect(service.deleteSession("no-such-session")).rejects.toThrow(/not found/)
+  })
+})
+
+/**
+ * Resuming: handing a finished conversation back to the CLI that owns it.
+ *
+ * The unit under test is the composition — which id is minted, when it is
+ * stored, what argv it ends up in — because that is the part APIWeave decides.
+ * Whether `--resume` is the right flag for a given CLI is a claim made by the
+ * roster and checked in `shared/agents/__tests__`.
+ */
+describe("AgentService — resuming a session", () => {
+  /** An agent APIWeave names the session for, the way `claude` and `gemini` do. */
+  const ASSIGNING_AGENT: AgentDefinition = {
+    ...CUSTOM_AGENT,
+    agentKey: "assigner",
+    name: "Assigning Agent",
+    detectCmd: process.execPath,
+    argv: ["--version"],
+    promptMode: "none",
+    promptFlag: null,
+    mcpConfigArgs: [],
+    sessionIdMode: "assign",
+    newSessionArgs: ["--session-id", "{id}"],
+    resumeArgs: ["--resume", "{id}"],
+    sessionIdPattern: null,
+  }
+
+  /** An agent that mints its own and prints it, the way `opencode` and `codex` do. */
+  const SCANNING_AGENT: AgentDefinition = {
+    ...ASSIGNING_AGENT,
+    agentKey: "scanner",
+    name: "Scanning Agent",
+    sessionIdMode: "scan",
+    newSessionArgs: [],
+    resumeArgs: ["--session", "{id}"],
+    sessionIdPattern: "ses_[A-Za-z0-9]+",
+  }
+
+  async function seedWith(definition: AgentDefinition) {
+    const seeded = seed()
+    await service.saveCustomAgent(seeded.workspaceId, definition)
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return seeded
+  }
+
+  function request(seeded: ReturnType<typeof seed>, agentKey: string) {
+    return {
+      workspaceId: seeded.workspaceId,
+      agentKey,
+      scope: { kind: "project" as const, id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    }
+  }
+
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+  /**
+   * The point of `assign`: the row is resumable before the process has printed
+   * anything, so even a session that dies during startup can be picked up.
+   */
+  it("mints an id, tells the agent, and stores it on the row", async () => {
+    const seeded = await seedWith(ASSIGNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "assigner"))
+
+    expect(session.agentSessionRef).toMatch(UUID)
+    expect(pty.spawned[0]?.args).toContain("--session-id")
+    expect(pty.spawned[0]?.args).toContain(session.agentSessionRef)
+    // Nothing to watch for: the answer is already known.
+    expect(pty.spawned[0]?.sessionIdPattern).toBeNull()
+  })
+
+  it("watches the output of an agent that mints its own id instead", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+
+    expect(session.agentSessionRef ?? null).toBeNull()
+    expect(pty.spawned[0]?.sessionIdPattern).toBe("ses_[A-Za-z0-9]+")
+    expect(pty.spawned[0]?.args).not.toContain("--session-id")
+  })
+
+  /**
+   * The row is the conversation, not the process that hosted it. Resuming the
+   * same agent three times must not leave three near-identical rows in a list
+   * that cannot show which is which.
+   */
+  it("runs the conversation again in the same row", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    const resumed = await service.resumeSession(session.sessionId, 120, 40)
+
+    expect(resumed.sessionId).toBe(session.sessionId)
+    expect(resumed.agentSessionRef).toBe("ses_abc123")
+    expect(pty.spawned[1]?.args).toEqual(expect.arrayContaining(["--session", "ses_abc123"]))
+    await expect(service.listSessions(seeded.workspaceId)).resolves.toHaveLength(1)
+  })
+
+  /**
+   * The previous run's outcome has to go with it. A row showing `exit 1` and a
+   * dead pid while a new process runs underneath describes neither of them.
+   */
+  it("clears the previous run's outcome and reports the new one", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 1 })
+
+    pty.nextPid = 5150
+    const resumed = await service.resumeSession(session.sessionId, 120, 40)
+
+    expect(resumed.status).toBe("running")
+    expect(resumed.exitCode).toBeNull()
+    expect(resumed.error).toBeNull()
+    expect(resumed.endedAt).toBeNull()
+    expect(resumed.pid).toBe(5150)
+  })
+
+  /** The identity of the conversation is exactly what a resume must not lose. */
+  it("keeps the conversation id, title and folder across a resume", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+    service.recordProcessEvent({ kind: "agent.title", sessionId: session.sessionId, title: "Fix the auth test" })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    const resumed = await service.resumeSession(session.sessionId, 120, 40)
+
+    expect(resumed.agentSessionRef).toBe("ses_abc123")
+    expect(resumed.title).toBe("Fix the auth test")
+    expect(resumed.cwd).toBe(session.cwd)
+  })
+
+  it("refuses to resume a session that is still running", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+
+    await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/still running/)
+  })
+
+  /**
+   * The row was cleared before the spawn precisely so this can be recorded: a
+   * row left at `exited` could not be moved to `failed`, because
+   * `updateSession` pins terminal statuses against late events.
+   */
+  it("records a failed resume on the row it was clearing", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    pty.failWith = "the terminal backend did not start"
+    await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/did not start/)
+
+    const rows = await service.listSessions(seeded.workspaceId)
+    expect(rows[0]?.status).toBe("failed")
+    expect(rows[0]?.error).toMatch(/did not start/)
+    // Still resumable: the conversation is not what failed.
+    expect(rows[0]?.agentSessionRef).toBe("ses_abc123")
+  })
+
+  /**
+   * The ref routinely arrives *after* the exit — agents that mint their own id
+   * print it in the banner they write on the way out. A guard that refused to
+   * write to a terminal row would discard exactly the sessions worth resuming.
+   */
+  it("still records an id that arrives after the session has ended", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_late" })
+
+    const rows = await service.listSessions(seeded.workspaceId)
+    expect(rows[0]?.agentSessionRef).toBe("ses_late")
+    // And the exit it arrived behind is untouched.
+    expect(rows[0]?.status).toBe("exited")
+    expect(rows[0]?.exitCode).toBe(0)
+  })
+
+  /**
+   * An agent asked about its own history prints other sessions' ids, and nothing
+   * tells those apart from its own after the fact. First one wins.
+   */
+  it("keeps the first id it was given", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_first" })
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_second" })
+
+    const rows = await service.listSessions(seeded.workspaceId)
+    expect(rows[0]?.agentSessionRef).toBe("ses_first")
+  })
+
+  it("stores the title the agent set, without disturbing the status", async () => {
+    const seeded = await seedWith(ASSIGNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "assigner"))
+
+    service.recordProcessEvent({ kind: "agent.title", sessionId: session.sessionId, title: "Fix the auth test" })
+
+    const rows = await service.listSessions(seeded.workspaceId)
+    expect(rows[0]?.title).toBe("Fix the auth test")
+    expect(rows[0]?.status).toBe("running")
+  })
+
+  it("refuses to resume a session that never recorded an id", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/no conversation id/)
+  })
+
+  it("refuses to resume an agent that cannot resume", async () => {
+    const seeded = seed()
+    await service.saveCustomAgent(seeded.workspaceId, {
+      ...ASSIGNING_AGENT,
+      agentKey: "no-resume",
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+    })
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    const session = agentRepository.createSession({
+      workspaceId: seeded.workspaceId,
+      agentKey: "no-resume",
+      launchMode: "embedded",
+      status: "exited",
+      cwd: tempDir,
+      scopeKind: "project",
+      scopeId: seeded.projectId,
+      agentSessionRef: "ses_orphan",
+    })
+
+    await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/does not support resuming/)
+  })
+
+  it("refuses to resume a session it cannot find", async () => {
+    await expect(service.resumeSession("no-such-session", 100, 30)).rejects.toThrow(/not found/)
+  })
+
+  /**
+   * An agent that assigns its own ids is handed the *stored* one on a resume,
+   * not a fresh one — otherwise every resume would silently start a new
+   * conversation while claiming to continue the old.
+   */
+  it("reuses the stored id rather than minting another when resuming", async () => {
+    const seeded = await seedWith(ASSIGNING_AGENT)
+    const first = await service.launchEmbedded(request(seeded, "assigner"))
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: first.sessionId, exitCode: 0 })
+
+    const resumed = await service.resumeSession(first.sessionId, 100, 30)
+
+    expect(resumed.agentSessionRef).toBe(first.agentSessionRef)
+    expect(pty.spawned[1]?.args).toEqual(expect.arrayContaining(["--resume", first.agentSessionRef ?? ""]))
+    expect(pty.spawned[1]?.args).not.toContain("--session-id")
+  })
+
+  /**
+   * Resuming twice is ordinary — an agent worked, stopped, was picked up, worked
+   * again. Each one has to land in the same row, or the second resume
+   * reintroduces exactly the duplication the first was fixed to avoid.
+   */
+  it("stays in one row across repeated resumes", async () => {
+    const seeded = await seedWith(ASSIGNING_AGENT)
+    const first = await service.launchEmbedded(request(seeded, "assigner"))
+
+    for (let round = 0; round < 3; round++) {
+      service.recordProcessEvent({ kind: "agent.exited", sessionId: first.sessionId, exitCode: 0 })
+      await service.resumeSession(first.sessionId, 100, 30)
+    }
+
+    const rows = await service.listSessions(seeded.workspaceId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.sessionId).toBe(first.sessionId)
+    expect(rows[0]?.agentSessionRef).toBe(first.agentSessionRef)
+    expect(pty.spawned).toHaveLength(4)
   })
 })

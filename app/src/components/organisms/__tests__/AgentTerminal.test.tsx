@@ -18,6 +18,7 @@ const { terminalInstances, attachOutputMock, setPausedMock } = vi.hoisted(() => 
   terminalInstances: [] as {
     readonly writes: FakeWrite[];
     readonly disposed: boolean;
+    readonly focusCalls: number;
     readonly options: { disableStdin?: boolean; screenReaderMode?: boolean };
     readonly customKeyHandler: ((event: KeyboardEvent) => boolean) | null;
     loadAddon: (addon: unknown) => void;
@@ -34,6 +35,9 @@ vi.mock("@xterm/xterm", () => ({
     rows = 24
     writes: FakeWrite[] = []
     disposed = false
+    // Counted rather than latched: "focused again" is the whole point of the
+    // focus request, and a boolean cannot tell a second call from the first.
+    focusCalls = 0
     options: { disableStdin?: boolean; screenReaderMode?: boolean } = {}
     customKeyHandler: ((event: KeyboardEvent) => boolean) | null = null
     constructor(options: { disableStdin?: boolean }) {
@@ -66,7 +70,9 @@ vi.mock("@xterm/xterm", () => ({
         },
       }
     }
-    focus = (): void => undefined
+    focus = (): void => {
+      this.focusCalls += 1
+    }
     dispose = (): void => {
       this.disposed = true
     }
@@ -189,6 +195,95 @@ describe("AgentTerminal", () => {
     // The same instance, not a rebuilt one: flipping to read-only must not
     // throw away the scrollback the user is still reading.
     expect(terminalInstances).toHaveLength(1)
+  })
+
+  /**
+   * The terminal is rebuilt when `sessionId` changes, and xterm's constructor
+   * default is `disableStdin: false`. A new terminal for an already-exited
+   * session would take keystrokes for a process that is gone until `readOnly`
+   * next happened to change value — which, for a session that was read-only from
+   * the start, is never.
+   */
+  it("seeds a rebuilt terminal with the current read-only state", async () => {
+    const { rerender } = render(<AgentTerminal sessionId="session-1" readOnly />)
+    await act(async () => {})
+
+    rerender(<AgentTerminal sessionId="session-2" readOnly />)
+    await act(async () => {})
+
+    expect(terminalInstances).toHaveLength(2)
+    expect(terminalInstances[1]?.options.disableStdin).toBe(true)
+  })
+
+  /**
+   * The agents this hosts are all prompts. Landing outside one means reaching
+   * for the mouse before the first keystroke, which is exactly what opening the
+   * session was meant to avoid.
+   */
+  it("takes the keyboard when the session opens", async () => {
+    render(<AgentTerminal sessionId="session-1" />)
+    await act(async () => {})
+
+    expect(terminalInstances[0]?.focusCalls).toBe(1)
+  })
+
+  /**
+   * Focus is tied to the user's gesture, not to the attach — that resolves at an
+   * unpredictable moment afterwards, by which time the user may have moved on to
+   * another field and their keystrokes would go to the agent instead. Here the
+   * attach never resolves at all, and the terminal is still focused.
+   */
+  it("does not wait for the attach to focus", async () => {
+    attachOutputMock.mockImplementation(() => new Promise(() => undefined))
+    render(<AgentTerminal sessionId="session-1" />)
+    await act(async () => {})
+
+    expect(terminalInstances[0]?.focusCalls).toBe(1)
+  })
+
+  /**
+   * Nothing behind a read-only terminal can be typed at, and the control worth
+   * reaching on a finished session is the Resume button below it.
+   */
+  it("leaves focus alone for a session that has ended", async () => {
+    render(<AgentTerminal sessionId="session-1" readOnly />)
+    await act(async () => {})
+
+    expect(terminalInstances[0]?.focusCalls).toBe(0)
+  })
+
+  /**
+   * A session that exits under an open dock is not a focus request: the user is
+   * reading the transcript, and pulling the keyboard about because a process
+   * ended would be the app talking over them.
+   */
+  it("does not refocus when a live session becomes read-only", async () => {
+    const { rerender } = render(<AgentTerminal sessionId="session-1" />)
+    await act(async () => {})
+    expect(terminalInstances[0]?.focusCalls).toBe(1)
+
+    rerender(<AgentTerminal sessionId="session-1" readOnly />)
+    await act(async () => {})
+
+    expect(terminalInstances[0]?.focusCalls).toBe(1)
+  })
+
+  /**
+   * Clicking a row that is already open changes nothing else about this
+   * component — same session, same terminal — so the request is the only thing
+   * that can carry "the user asked to type at this agent" through.
+   */
+  it("takes the keyboard again on a fresh focus request", async () => {
+    const { rerender } = render(
+      <AgentTerminal sessionId="session-1" focusRequest={1} />,
+    )
+    await act(async () => {})
+
+    rerender(<AgentTerminal sessionId="session-1" focusRequest={2} />)
+    await act(async () => {})
+
+    expect(terminalInstances).toHaveLength(1)
+    expect(terminalInstances[0]?.focusCalls).toBe(2)
   })
 
   it("writes the exit into the terminal and announces it to the owner", async () => {

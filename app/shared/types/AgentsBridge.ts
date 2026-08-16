@@ -82,11 +82,39 @@ export interface AgentsBridge {
   readonly listSessions: (workspaceId: string) => Promise<readonly AgentSession[]>
   readonly launchExternal: (request: AgentLaunchRequest) => Promise<AgentSession>
   readonly launchEmbedded: (request: AgentEmbeddedLaunchRequest) => Promise<AgentSession>
+  /**
+   * Run a finished session's conversation again, in the row it is already in.
+   *
+   * Resolves to that same session, now `running` with the previous run's exit
+   * code and error cleared and a fresh `startedAt`. It does not create a second
+   * row: the row is the conversation, and a list of near-identical rows is not
+   * something the user can navigate.
+   *
+   * Takes the id of an existing *row*, never a conversation id: main looks up
+   * what that row was for and decides what to hand the CLI. That is the same
+   * rule the launch requests follow — the renderer names things, main resolves
+   * them — and here it is what stops a caller asking APIWeave to pass an
+   * arbitrary string to a process as its session id.
+   *
+   * Rejects when the row has no recorded conversation id, when its agent cannot
+   * resume, or when it is still running. The caller should only offer this for a
+   * finished session whose `agentSessionRef` is set, which is precisely the
+   * condition for it working.
+   */
+  readonly resumeSession: (sessionId: string, cols: number, rows: number) => Promise<AgentSession>
   readonly write: (sessionId: string, data: string) => Promise<void>
   readonly resize: (sessionId: string, cols: number, rows: number) => Promise<void>
   /** Ask the PTY to stop producing while the terminal catches up, and to start again. */
   readonly setPaused: (sessionId: string, paused: boolean) => Promise<void>
   readonly killSession: (sessionId: string) => Promise<AgentSession>
+  /**
+   * Forget a session entirely: its row, and with it the history the list shows.
+   *
+   * Distinct from {@link killSession}, which stops a process and leaves the
+   * record behind on purpose — the exit code and the scrollback are what the
+   * user reopens it for. This is the one that removes it.
+   */
+  readonly deleteSession: (sessionId: string) => Promise<void>
   /**
    * Ask main for this session's output port. Resolves `false` when there is no
    * live process to attach to — an ended session, or one from a previous run of

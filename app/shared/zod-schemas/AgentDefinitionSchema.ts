@@ -15,6 +15,23 @@ import { TimestampSchema } from "./TimestampSchema"
 export const AgentPromptModeSchema = z.enum(["none", "argv", "flag", "stdin"])
 
 /**
+ * How APIWeave comes to know the agent's own session identifier — the thing
+ * `resumeArgs` needs, and the one piece of the resume story that is not the same
+ * for two CLIs.
+ *
+ * - `assign` — APIWeave mints the id and hands it over at launch
+ *   (`claude --session-id <uuid>`). Known before the process starts, so it
+ *   survives a session that is killed before it ever prints anything.
+ * - `scan`   — the agent mints its own and prints it; APIWeave reads it out of
+ *   the output stream with {@link AgentDefinitionSchema.shape.sessionIdPattern}.
+ *   `opencode` is this: it accepts `--session <id>` to continue one but has no
+ *   flag to name one at launch, and prints `opencode -s ses_…` when it exits.
+ * - `none`   — no resume support. The default, and the honest answer for every
+ *   agent whose flags have not been confirmed against a real CLI.
+ */
+export const AgentSessionIdModeSchema = z.enum(["none", "assign", "scan"])
+
+/**
  * A launchable agent CLI.
  *
  * `argv` is an array and never a command string. A string has to be split by a
@@ -49,6 +66,39 @@ export const AgentDefinitionSchema = z
      * produces an agent that refuses to start with an unknown-flag error.
      */
     mcpConfigArgs: z.array(z.string()).default([]),
+    /** How the agent's own session id becomes known; see {@link AgentSessionIdModeSchema}. */
+    sessionIdMode: AgentSessionIdModeSchema.default("none"),
+    /**
+     * The argv that names the session at launch, with `{id}` standing in for the
+     * id APIWeave mints. Only read when `sessionIdMode` is `assign`.
+     */
+    newSessionArgs: z.array(z.string()).default([]),
+    /**
+     * The argv that reopens a stored session, with `{id}` standing in for its
+     * `agentSessionRef`. An empty array means the agent cannot resume, whatever
+     * `sessionIdMode` says — this is the field the UI's Resume affordance
+     * ultimately rests on, so it stays empty until the flags are confirmed
+     * against an installed CLI, exactly as `mcpConfigArgs` does.
+     */
+    resumeArgs: z.array(z.string()).default([]),
+    /**
+     * A regular expression, as source text, matching the agent's own session id
+     * in its output. Only read when `sessionIdMode` is `scan`.
+     *
+     * Source text rather than a `RegExp` because a definition is persisted as
+     * JSON and travels through IPC, and neither carries a compiled regex. The
+     * PTY host compiles it, and treats a pattern it cannot compile as no pattern
+     * at all — a user-supplied agent must not be able to take the host down with
+     * a bad expression. Anchor it tightly: the first match wins, and a loose
+     * pattern will happily capture an id the agent merely quoted.
+     *
+     * If the pattern defines a capture group, group 1 is taken as the id and the
+     * rest of the match is context. That is what makes an agent whose id is a
+     * bare UUID tractable — a naked UUID pattern would match the first one to
+     * appear in the agent's own output, which is as likely to be from a file it
+     * is reading as its own. Anchor on the words the CLI prints around it.
+     */
+    sessionIdPattern: z.string().nullable().optional(),
     /** Platforms the agent does not work on, so the roster can grey it out. */
     unsupportedPlatforms: z.array(z.string()).default([]),
     /** Documentation URL, shown when the agent is missing so it can be installed. */

@@ -16,6 +16,7 @@ import type { AgentLaunchMenuItem } from "../../types";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import useAgentRosterStore from "../../stores/AgentRosterStore";
 import { agents } from "../../utils/apiweaveClient";
 import { AgentLaunchMenu } from "./AgentLaunchMenu";
 
@@ -79,8 +80,21 @@ export function AgentLaunchButton({
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerWrapRef = useRef<HTMLSpanElement>(null);
   const menuId = useId();
+  // Every await below can outlive the toolbar: the canvas toolbar unmounts on a
+  // view change, and a folder picker is open for as long as the user takes to
+  // pick. Writing state after that is a React warning and, worse, a launch whose
+  // failure is reported nowhere.
+  const mountedRef = useRef(true);
+  const rosterVersion = useAgentRosterStore((state) => state.version);
 
   const available = agents.isAvailable();
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const refresh = useCallback(() => {
     if (workspaceId === null || !available) return;
@@ -89,13 +103,24 @@ export function AgentLaunchButton({
       agents.listRoster(workspaceId),
     ])
       .then(([resolved, entries]) => {
+        if (!mountedRef.current) return;
         setPath(resolved);
         setRoster(entries);
       })
-      .catch((cause: unknown) => setError(describe(cause)));
+      .catch((cause: unknown) => {
+        if (mountedRef.current) setError(describe(cause));
+      });
   }, [workspaceId, scope, available]);
 
-  useEffect(refresh, [refresh]);
+  useEffect(() => {
+    // `rosterVersion` is read for its dependency and nothing else. The roster is
+    // fetched, not pushed — main announces session transitions but says nothing
+    // about the agent list — so an add, edit, delete or new default made in
+    // Settings → Agents would leave this button offering the old list until it
+    // remounted. The store is the renderer's own change ticket.
+    void rosterVersion;
+    refresh();
+  }, [refresh, rosterVersion]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -122,32 +147,52 @@ export function AgentLaunchButton({
 
   if (!available || workspaceId === null) return null;
 
-  const chooseFolder = (): void => {
+  /**
+   * What every action does before it starts.
+   *
+   * The error clear is the point: an error left over from the last attempt sits
+   * on screen contradicting the action now in flight, and the user has no way to
+   * tell which attempt it belongs to. Each action owns the message slot for its
+   * own outcome.
+   */
+  const beginAction = (): void => {
     setMenuOpen(false);
+    setError(null);
     setBusy(true);
+  };
+
+  const settle = (): void => {
+    if (mountedRef.current) setBusy(false);
+  };
+
+  const fail = (cause: unknown): void => {
+    if (mountedRef.current) setError(describe(cause));
+  };
+
+  const chooseFolder = (): void => {
+    beginAction();
     void agents
       .chooseLocalPath(workspaceId, scope)
       .then((chosen) => {
-        if (chosen !== null) refresh();
+        if (chosen !== null && mountedRef.current) refresh();
       })
-      .catch((cause: unknown) => setError(describe(cause)))
-      .finally(() => setBusy(false));
+      .catch(fail)
+      .finally(settle);
   };
 
   const clearFolder = (): void => {
-    setMenuOpen(false);
-    setBusy(true);
+    beginAction();
     void agents
       .clearLocalPath(workspaceId, scope)
-      .then(() => refresh())
-      .catch((cause: unknown) => setError(describe(cause)))
-      .finally(() => setBusy(false));
+      .then(() => {
+        if (mountedRef.current) refresh();
+      })
+      .catch(fail)
+      .finally(settle);
   };
 
   const launch = (agentKey: string, embedded: boolean): void => {
-    setMenuOpen(false);
-    setBusy(true);
-    setError(null);
+    beginAction();
     const started =
       embedded && onEmbeddedSession !== undefined
         ? agents
@@ -158,26 +203,63 @@ export function AgentLaunchButton({
               cols: INITIAL_COLS,
               rows: INITIAL_ROWS,
             })
-            .then((session) => onEmbeddedSession(session.sessionId))
+            .then((session) => {
+              // Opening the dock for a toolbar that has gone would leave a
+              // terminal pinned to a view the user has already left.
+              if (mountedRef.current) onEmbeddedSession(session.sessionId);
+            })
         : agents.launchExternal({ workspaceId, agentKey, scope });
-    void started
-      .catch((cause: unknown) => setError(describe(cause)))
-      .finally(() => setBusy(false));
+    void started.catch(fail).finally(settle);
   };
+
+  /**
+   * The failure popover, built once and rendered by both branches below.
+   *
+   * The folder-picker branch needs it as much as the launcher branch does — a
+   * picker that fails is exactly where the user has no other clue what went
+   * wrong — and the earlier version, which only rendered it after a folder was
+   * set, swallowed every one of those.
+   */
+  const errorPopover =
+    error === null ? null : (
+      <div
+        className="absolute top-9 right-0 z-50 flex max-w-[320px] items-start gap-1 rounded-sm border border-status-error/40 bg-surface-raised px-3 py-2 dark:bg-surface-dark-raised"
+        role="alert"
+      >
+        <p className="min-w-0 flex-1 text-xs text-status-error">{error}</p>
+        {/*
+          Dismissable because the next action may never come: a user who reads a
+          launch failure and goes to Settings to fix it would otherwise leave
+          this floating over the toolbar for the rest of the session.
+        */}
+        <IconButton
+          tooltip="Dismiss"
+          aria-label="Dismiss this error"
+          size="xs"
+          variant="ghost"
+          onClick={() => setError(null)}
+        >
+          <X className="h-3.5 w-3.5" />
+        </IconButton>
+      </div>
+    );
 
   if (path.localPath === null) {
     return (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={chooseFolder}
-        disabled={busy}
-        className={`h-8 whitespace-nowrap ${className ?? ""}`}
-        title="Choose the local folder for this project, so agents launch in the right place"
-        icon={<FolderOpen className="h-4 w-4" />}
-      >
-        <span className="hidden lg:inline">Set folder</span>
-      </Button>
+      <span className={`relative inline-flex ${className ?? ""}`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={chooseFolder}
+          disabled={busy}
+          className="h-8 whitespace-nowrap"
+          title="Choose the local folder for this project, so agents launch in the right place"
+          icon={<FolderOpen className="h-4 w-4" />}
+        >
+          <span className="hidden lg:inline">Set folder</span>
+        </Button>
+        {errorPopover}
+      </span>
     );
   }
 
@@ -280,7 +362,14 @@ export function AgentLaunchButton({
         </IconButton>
       </span>
 
-      {menuOpen && (
+      {/*
+        One popover slot, not two. The menu and the error both hang off the same
+        `top-9 right-0` anchor, and rendering them together stacked an
+        unreadable error on top of the menu items it was describing. The error
+        does not go away while the menu is open — it is state, and it comes back
+        when the menu closes without a choice being made.
+      */}
+      {menuOpen ? (
         <AgentLaunchMenu
           id={menuId}
           headerLabel={
@@ -293,15 +382,8 @@ export function AgentLaunchButton({
           items={menuItems}
           onClose={closeMenu}
         />
-      )}
-
-      {error !== null && (
-        <p
-          className="absolute top-9 right-0 z-50 max-w-[320px] rounded-sm border border-status-error/40 bg-surface-raised px-3 py-2 text-xs text-status-error dark:bg-surface-dark-raised"
-          role="alert"
-        >
-          {error}
-        </p>
+      ) : (
+        errorPopover
       )}
     </div>
   );

@@ -33,3 +33,16 @@ export type AgentOutputEvent =
       readonly sessionId: string
       readonly exitCode: number
     }
+  /**
+   * The host has dropped this finished session's scrollback to make room for a
+   * newer one, and is about to close the port.
+   *
+   * Sent because the alternative is worse: closing the port on its own leaves a
+   * terminal that simply stops, indistinguishable from an agent that went quiet.
+   * The renderer says so in the transcript instead. Nothing follows this event
+   * on the port.
+   */
+  | {
+      readonly kind: "replayReleased"
+      readonly sessionId: string
+    }

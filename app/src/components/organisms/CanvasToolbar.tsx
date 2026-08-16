@@ -81,8 +81,18 @@ export function CanvasToolbar({
   }, [isRunMenuOpen]);
 
   return (
+    // `max-w` + `flex-wrap`, because this bar is centred and absolutely
+    // positioned: once its content is wider than the canvas it overhangs both
+    // edges equally and the first and last controls are simply cut off. That is
+    // reachable now that the agent panel takes a column out of the canvas, but
+    // it was always reachable by making the window narrow enough.
+    //
+    // Wrapping rather than `overflow-x-auto`: the Run and agent controls open
+    // popovers that hang below this bar, and a scroll container would clip them
+    // instead. A second row is ugly at the width where it happens; a menu that
+    // cannot be read is broken.
     <div
-      className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
+      className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto flex max-w-[calc(100%-1.5rem)] flex-wrap items-center justify-center gap-1.5 px-2 py-1.5 rounded-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
       role="toolbar"
       aria-label="Workflow actions"
     >
@@ -149,9 +159,9 @@ export function CanvasToolbar({
         <AgentLaunchButton
           scopeKind="workflow"
           scopeId={workflowId}
-          // The workflow view owns the bottom dock, so a launch from here runs
-          // in it. The store rather than a prop chain: the dock is a sibling of
-          // the canvas, not a child of this toolbar.
+          // The workflow view owns the agent panel, so a launch from here runs
+          // in it. The store rather than a prop chain: the panel is a sibling
+          // column of the canvas, not a child of this toolbar.
           onEmbeddedSession={openAgentSession}
         />
       )}

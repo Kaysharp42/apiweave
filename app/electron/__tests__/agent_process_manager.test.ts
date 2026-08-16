@@ -35,6 +35,21 @@ class FakeHost {
       ;(listener as (payload: PtyHostReply) => void)(message)
     }
   }
+  /**
+   * Play the fork actually starting. Electron emits this once the child is
+   * running code, so a host that dies without it never started at all.
+   */
+  spawned(): void {
+    for (const listener of this.listeners.get("spawn") ?? []) {
+      ;(listener as () => void)()
+    }
+  }
+  /** Play a V8 fatal error — OOM, or a failed assertion in the native addon. */
+  fatal(type: string, location: string): void {
+    for (const listener of this.listeners.get("error") ?? []) {
+      ;(listener as (type: string, location: string, report: string) => void)(type, location, "{}")
+    }
+  }
   /** Play the host dying. */
   exit(code: number): void {
     for (const listener of this.listeners.get("exit") ?? []) {
@@ -72,6 +87,7 @@ function spawnRequest(sessionId: string): PtySpawnRequest {
     env: {},
     cols: 80,
     rows: 24,
+    sessionIdPattern: null,
   }
 }
 
@@ -84,9 +100,14 @@ function managerWithSink() {
   return { manager, events }
 }
 
+// The manager logs a host's fatal error; the test asserting it does not need
+// the report printed across the run.
+const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
 beforeEach(() => {
   hosts = []
   closedPorts.length = 0
+  consoleErrorSpy.mockClear()
 })
 
 describe("AgentProcessManager", () => {
@@ -135,6 +156,63 @@ describe("AgentProcessManager", () => {
     expect(manager.liveSessionIds()).toEqual([])
   })
 
+  it("passes on what the host says about a live session's output", async () => {
+    const { manager, events } = managerWithSink()
+
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+    await started
+    hosts[0]?.reply({ type: "activity", sessionId: "a", busy: true })
+    hosts[0]?.reply({ type: "activity", sessionId: "a", busy: false })
+
+    expect(events.filter((event) => event.kind === "agent.activity")).toEqual([
+      { kind: "agent.activity", sessionId: "a", busy: true },
+      { kind: "agent.activity", sessionId: "a", busy: false },
+    ])
+  })
+
+  /**
+   * The host reports activity from its data callback, so one can be in flight
+   * when the child exits. Published, it would put a row that has already
+   * settled back to "working" — with a spinner, for ever.
+   */
+  it("drops activity for a session that is no longer live", async () => {
+    const { manager, events } = managerWithSink()
+
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+    await started
+    hosts[0]?.reply({ type: "exited", sessionId: "a", exitCode: 0, signal: null })
+    hosts[0]?.reply({ type: "activity", sessionId: "a", busy: true })
+
+    expect(events.filter((event) => event.kind === "agent.activity")).toEqual([])
+  })
+
+  /**
+   * The opposite rule to activity, and the reason the two are handled
+   * separately. An agent that mints its own session id prints it in the banner
+   * it writes as it exits, so the ref for a resumable session lands *after* the
+   * exit essentially always. Gating it on `live` would discard exactly the rows
+   * a user most wants to recover.
+   */
+  it("passes on a session id that arrives after the session has exited", async () => {
+    const { manager, events } = managerWithSink()
+
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+    await started
+    hosts[0]?.reply({ type: "exited", sessionId: "a", exitCode: 0, signal: null })
+    hosts[0]?.reply({ type: "sessionRef", sessionId: "a", ref: "ses_abc123" })
+    hosts[0]?.reply({ type: "title", sessionId: "a", title: "Fix the auth test" })
+
+    expect(events).toEqual([
+      { kind: "agent.started", sessionId: "a", pid: 11 },
+      { kind: "agent.exited", sessionId: "a", exitCode: 0 },
+      { kind: "agent.sessionRef", sessionId: "a", ref: "ses_abc123" },
+      { kind: "agent.title", sessionId: "a", title: "Fix the auth test" },
+    ])
+  })
+
   /**
    * A native crash in node-pty takes the host with it. Every session it held is
    * now a process APIWeave cannot see, so each is reported failed — the
@@ -144,6 +222,7 @@ describe("AgentProcessManager", () => {
     const { manager, events } = managerWithSink()
 
     const started = manager.start(spawnRequest("a"))
+    hosts[0]?.spawned()
     hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
     await started
     const pendingWhenItDied = manager.start(spawnRequest("b"))
@@ -166,6 +245,7 @@ describe("AgentProcessManager", () => {
 
     const first = manager.start(spawnRequest("a"))
     const rejects = expect(first).rejects.toThrow(/stopped unexpectedly/)
+    hosts[0]?.spawned()
     hosts[0]?.exit(1)
     await rejects
 
@@ -360,11 +440,109 @@ describe("AgentProcessManager", () => {
     expect(manager.isLive("a")).toBe(false)
   })
 
-  it("refuses to start anything once disposed", async () => {
+  it("refuses to start anything while a teardown is running", async () => {
+    const { manager } = managerWithSink()
+    const started = manager.start(spawnRequest("a"))
+    const rejects = expect(started).rejects.toThrow(/shutting down/)
+    const disposal = manager.dispose()
+
+    await expect(manager.start(spawnRequest("b"))).rejects.toThrow(/shutting down/)
+    hosts[0]?.exit(0)
+    await disposal
+    await rejects
+  })
+
+  /**
+   * Disposal is a teardown, not a tombstone. The class supports more than one
+   * lifetime — tests build several, and "restart the terminal backend" is the
+   * same shape — so a manager that refused every later launch would be a
+   * feature quietly lost to the app-quit path it was written for.
+   */
+  it("can be started again after a completed disposal", async () => {
     const { manager } = managerWithSink()
     await manager.dispose()
 
-    await expect(manager.start(spawnRequest("a"))).rejects.toThrow(/shutting down/)
-    expect(hosts).toHaveLength(0)
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+
+    await expect(started).resolves.toBe(11)
+    expect(hosts).toHaveLength(1)
+  })
+
+  /** The quit path can reach dispose twice; the second must join, not restart it. */
+  it("joins a disposal already in flight instead of sending a second shutdown", async () => {
+    const { manager } = managerWithSink()
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+    await started
+
+    const first = manager.dispose()
+    const second = manager.dispose()
+    hosts[0]?.exit(0)
+    await Promise.all([first, second])
+
+    const shutdowns = hosts[0]?.posted.filter(
+      (entry) => (entry.message as { type: string }).type === "shutdown",
+    )
+    expect(shutdowns).toHaveLength(1)
+  })
+
+  /**
+   * A fork that never runs code is a packaging failure — `pty-host.cjs` missing
+   * from the build, most often — and "stopped unexpectedly (exit 1)" sends
+   * whoever reads it looking for a crash that never happened.
+   */
+  it("says a host that never spawned could not start", async () => {
+    const { manager } = managerWithSink()
+    const started = manager.start(spawnRequest("a"))
+    const rejects = expect(started).rejects.toThrow(/could not start/)
+    hosts[0]?.exit(1)
+    await rejects
+  })
+
+  /**
+   * A V8 fatal error carries what the exit code cannot: what actually went
+   * wrong, and where. Electron emits `exit` after it either way, so the error
+   * is only useful if it is what the exit ends up reporting.
+   */
+  it("reports a fatal error from the host as itself", async () => {
+    const { manager, events } = managerWithSink()
+    const started = manager.start(spawnRequest("a"))
+    hosts[0]?.spawned()
+    hosts[0]?.reply({ type: "spawned", sessionId: "a", pid: 11 })
+    await started
+
+    hosts[0]?.fatal("FatalError", "napi_get_value_string_utf8")
+    hosts[0]?.exit(134)
+
+    expect(events.at(-1)).toEqual({
+      kind: "agent.failed",
+      sessionId: "a",
+      message: "The terminal backend crashed (FatalError at napi_get_value_string_utf8)",
+    })
+  })
+
+  /**
+   * `abandoned` swallows one late reply for a spawn nobody is waiting on. The
+   * failure mode it exists for — node-pty hanging with no reply ever coming —
+   * is precisely the one where nothing ever removes the entry, so it expires.
+   */
+  it("stops holding an abandoned session id for ever", async () => {
+    vi.useFakeTimers()
+    try {
+      const { manager } = managerWithSink()
+      const started = manager.start(spawnRequest("a"))
+      const rejects = expect(started).rejects.toThrow(/did not start/)
+      await vi.advanceTimersByTimeAsync(10_000)
+      await rejects
+
+      await vi.advanceTimersByTimeAsync(60_000)
+      // Past the TTL the id is simply unknown again, so a reply for it is
+      // treated on its own terms rather than silently dropped for ever.
+      hosts[0]?.reply({ type: "exited", sessionId: "a", exitCode: 0, signal: null })
+      expect(manager.canAttach("a")).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
