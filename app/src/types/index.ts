@@ -113,6 +113,7 @@ export type { WorkspaceProps } from "./WorkspaceProps";
 export type { TabBarProps } from "./TabBarProps";
 export type { CanvasToolbarProps } from "./CanvasToolbarProps";
 export type { ToolbarButtonProps } from "./ToolbarButtonProps";
+export type { ToolbarDensity } from "./ToolbarDensity";
 export type { KeyboardShortcutsHelpProps } from "./KeyboardShortcutsHelpProps";
 export type { ShortcutGroup } from "./ShortcutGroup";
 export type { ContextMenuState } from "./ContextMenuState";
