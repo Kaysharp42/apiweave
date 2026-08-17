@@ -31,6 +31,13 @@ interface AgentLaunchButtonProps {
   readonly scopeId: string;
   readonly className?: string;
   /**
+   * Off collapses the trigger to its icon. The canvas toolbar drives this from
+   * the width it was actually given, so the label survives or goes with the
+   * rest of that bar's labels rather than on a viewport breakpoint of its own.
+   * Defaults to on, for callers with room to spare.
+   */
+  readonly showLabel?: boolean;
+  /**
    * Given by callers that have somewhere to show a terminal — the canvas
    * toolbar, whose view owns the bottom dock. Its presence is what makes the
    * primary action an embedded session; without it the primary action opens the
@@ -64,6 +71,7 @@ export function AgentLaunchButton({
   scopeKind,
   scopeId,
   className,
+  showLabel = true,
   onEmbeddedSession,
 }: AgentLaunchButtonProps) {
   const { currentWorkspace } = useWorkspace();
@@ -248,9 +256,10 @@ export function AgentLaunchButton({
           disabled={busy}
           className="h-8 whitespace-nowrap"
           title="Choose the local folder for this project, so agents launch in the right place"
+          aria-label="Set folder"
           icon={<FolderOpen className="h-4 w-4" />}
         >
-          <span className="hidden lg:inline">Set folder</span>
+          {showLabel && <span>Set folder</span>}
         </Button>
         {errorPopover}
       </span>
@@ -333,9 +342,9 @@ export function AgentLaunchButton({
           )
         }
       >
-        <span className="hidden lg:inline">
-          {preferred === null ? "No agent" : preferred.definition.name}
-        </span>
+        {showLabel && (
+          <span>{preferred === null ? "No agent" : preferred.definition.name}</span>
+        )}
       </Button>
       <span ref={triggerWrapRef} className="inline-flex">
         <IconButton

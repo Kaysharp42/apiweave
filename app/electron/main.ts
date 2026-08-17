@@ -119,8 +119,11 @@ async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 960,
-    minHeight: 600,
+    // The floor the canvas toolbar was sized against: below this the sidebar,
+    // the agent panel and a usable canvas stop fitting side by side. Still
+    // narrow enough to snap to half of a 1080p screen.
+    minWidth: 1024,
+    minHeight: 700,
     frame: false,
     backgroundColor: "#0b0b0f",
     // Packaged Windows/macOS builds get the taskbar/dock icon from the exe's

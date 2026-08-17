@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useCallback } from "react";
+import { useReducer, useCallback } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import WorkflowCanvas from "../WorkflowCanvas";
@@ -6,13 +6,7 @@ import VariablesPanel from "../VariablesPanel";
 import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
 import DynamicFunctionsHelper from "../DynamicFunctionsHelper";
 import { WorkflowProvider } from "../../contexts/WorkflowContext";
-import {
-  Settings,
-  Sparkles,
-  Package,
-  PanelRightClose,
-  Globe,
-} from "lucide-react";
+import { Settings, Sparkles, Package, PanelRightClose } from "lucide-react";
 import { TabBar } from "../organisms/TabBar";
 import { KeyboardShortcutsHelp } from "../organisms/KeyboardShortcutsHelp";
 import { WorkspaceEmptyState } from "../molecules/WorkspaceEmptyState";
@@ -20,10 +14,8 @@ import { PromptDialog } from "../molecules/PromptDialog";
 import { Panel } from "../molecules/Panel";
 import { PanelTabs } from "../molecules/PanelTabs";
 import { IconButton } from "../atoms/IconButton";
-import { Badge } from "../atoms/Badge";
 import useTabStore from "../../stores/TabStore";
 import useSidebarStore from "../../stores/SidebarStore";
-import useEnvironmentStore from "../../stores/EnvironmentStore";
 import useNavigationStore from "../../stores/NavigationStore";
 import useKeyboardShortcuts from "../../hooks/useKeyboardShortcuts";
 import { useScopeContext } from "../../hooks/useScopeContext";
@@ -32,7 +24,7 @@ import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { TabItem } from "../../types/TabItem";
 import type { Workflow } from "../../types/Workflow";
 import { authenticatedFetch } from "../../utils/apiweaveClient";
-import { environmentsUrl, workflowsUrl } from "../../utils/apiweaveClient";
+import { workflowsUrl } from "../../utils/apiweaveClient";
 import { toast } from "sonner";
 
 const panelTabs: TabItem[] = [
@@ -50,13 +42,11 @@ export function Workspace(_props: WorkspaceProps) {
     activateNextTab,
     activatePrevTab,
   } = useTabStore();
-  const { workspaceId, orgId, isReady: isScopeReady } = useScopeContext();
+  const { workspaceId, isReady: isScopeReady } = useScopeContext();
 
   type WorkspaceState = {
     showVariablesPanel: boolean;
     activePanelTab: string;
-    environmentNames: Record<string, string>;
-    environmentNamesLoaded: boolean;
     showShortcutsHelp: boolean;
     showNewWorkflowPrompt: boolean;
   };
@@ -64,7 +54,6 @@ export function Workspace(_props: WorkspaceProps) {
   type WorkspaceAction =
     | { type: "set-show-variables-panel"; value: boolean }
     | { type: "set-active-panel-tab"; value: string }
-    | { type: "set-environment-names"; value: Record<string, string> }
     | { type: "set-show-shortcuts-help"; value: boolean }
     | { type: "set-show-new-workflow-prompt"; value: boolean };
 
@@ -75,12 +64,6 @@ export function Workspace(_props: WorkspaceProps) {
           return { ...current, showVariablesPanel: action.value };
         case "set-active-panel-tab":
           return { ...current, activePanelTab: action.value };
-        case "set-environment-names":
-          return {
-            ...current,
-            environmentNames: action.value,
-            environmentNamesLoaded: true,
-          };
         case "set-show-shortcuts-help":
           return { ...current, showShortcutsHelp: action.value };
         case "set-show-new-workflow-prompt":
@@ -92,8 +75,6 @@ export function Workspace(_props: WorkspaceProps) {
     {
       showVariablesPanel: false,
       activePanelTab: "variables",
-      environmentNames: {},
-      environmentNamesLoaded: false,
       showShortcutsHelp: false,
       showNewWorkflowPrompt: false,
     },
@@ -102,46 +83,6 @@ export function Workspace(_props: WorkspaceProps) {
   const activeTab: WorkspaceTab | undefined = tabs.find(
     (t) => t.id === activeTabId,
   );
-
-  const fetchEnvironmentNames = useCallback(async () => {
-    if (!isScopeReady || !workspaceId) {
-      dispatch({ type: "set-environment-names", value: {} });
-      return;
-    }
-
-    try {
-      const response = await authenticatedFetch(
-        environmentsUrl(workspaceId, "all-accessible", orgId),
-      );
-      if (response.ok) {
-        const data = (await response.json()) as
-          | { environments: Array<{ environmentId: string; name: string }> }
-          | Array<{ environmentId: string; name: string }>;
-        const envs = Array.isArray(data) ? data : (data.environments ?? []);
-        const namesMap: Record<string, string> = {};
-        envs.forEach((env) => {
-          namesMap[env.environmentId] = env.name;
-        });
-        dispatch({ type: "set-environment-names", value: namesMap });
-      } else {
-        dispatch({ type: "set-environment-names", value: {} });
-      }
-    } catch (error) {
-      console.error("Error fetching environments:", error);
-      dispatch({ type: "set-environment-names", value: {} });
-    }
-  }, [isScopeReady, orgId, workspaceId]);
-
-  useEffect(() => {
-    void fetchEnvironmentNames();
-  }, [fetchEnvironmentNames]);
-
-  const environmentVersion = useEnvironmentStore((s) => s.environmentVersion);
-  useEffect(() => {
-    if (environmentVersion > 0) {
-      void fetchEnvironmentNames();
-    }
-  }, [environmentVersion, fetchEnvironmentNames]);
 
   const handleNewWorkflow = useCallback(() => {
     dispatch({ type: "set-show-new-workflow-prompt", value: true });
@@ -211,29 +152,6 @@ export function Workspace(_props: WorkspaceProps) {
             workflowId={activeTab.id}
             initialWorkflow={activeTab.workflow ?? undefined}
           >
-            {/* Environment banner — compact, only when active */}
-            {activeTab.workflow?.selectedEnvironmentId && (
-              <div className="flex min-w-0 items-center gap-2 border-b border-primary/20 bg-primary/5 px-3 py-1.5 text-xs dark:border-primary-light/20 dark:bg-primary-light/10">
-                <Globe
-                  className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light"
-                  aria-hidden="true"
-                />
-                <span className="text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
-                  Environment:
-                </span>
-                <Badge variant="primary" size="sm" className="min-w-0 truncate">
-                  <span className="min-w-0 truncate">
-                    {state.environmentNames[
-                      activeTab.workflow.selectedEnvironmentId
-                    ] ??
-                      (state.environmentNamesLoaded
-                        ? "Environment unavailable"
-                        : "Loading…")}
-                  </span>
-                </Badge>
-              </div>
-            )}
-
             <div className="flex-1 overflow-hidden">
               <Allotment className="h-full">
                 <Allotment.Pane>
