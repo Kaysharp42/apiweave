@@ -360,16 +360,25 @@ export class AgentRepository {
    * it, would be describing neither. `startedAt` moves to now for the same
    * reason — it is when *this* run began — and, usefully, it floats the resumed
    * session back to the top of a list ordered by it.
+   *
+   * `cwd` is passed in for that same reason rather than left alone. A resume
+   * re-resolves the folder from the row's *scope*, and the folder a scope maps
+   * to is a setting the user can change between two runs — so the row would go
+   * on naming the folder the first run used while the new process ran somewhere
+   * else. That is not only a wrong label: `claude --resume <uuid>` looks its
+   * conversation up per directory, so the run that "could not find the
+   * conversation" and the row insisting it ran where it always did are the same
+   * bug seen from two ends.
    */
-  public reviveSession(sessionId: string): AgentSession | undefined {
+  public reviveSession(sessionId: string, cwd: string): AgentSession | undefined {
     if (this.getSession(sessionId) === undefined) {
       return undefined
     }
     this.store.set(
       `UPDATE agent_sessions
-         SET status = 'starting', pid = NULL, exit_code = NULL, error = NULL, endedAt = NULL, startedAt = ?
+         SET status = 'starting', pid = NULL, exit_code = NULL, error = NULL, endedAt = NULL, startedAt = ?, cwd = ?
        WHERE id = ?`,
-      [nowIso(), sessionId],
+      [nowIso(), cwd, sessionId],
     )
     return this.getSession(sessionId)
   }

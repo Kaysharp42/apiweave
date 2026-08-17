@@ -267,6 +267,56 @@ describe("AgentsSettingsModal", () => {
     expect(useAgentRosterStore.getState().version).toBe(1);
   });
 
+  /**
+   * Built-ins are editable, and that is the only way to point the roster at a
+   * `claude` behind a wrapper script. The row used to offer nothing at all, so
+   * the override that the service, the schema and migration 015 all describe
+   * had no entry point anywhere in the product.
+   */
+  it("offers to edit a built-in it has never been told to override", async () => {
+    agentsMock.listRoster.mockResolvedValue([BUILTIN]);
+    render(<AgentsSettingsModal isOpen onClose={() => undefined} />);
+    await screen.findByText("Alpha");
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit Alpha" }));
+
+    // The key is fixed while editing, so an edit cannot fork a built-in into a
+    // second agent claiming its identity.
+    expect(field("Key")).toHaveValue("alpha");
+    expect(field("Key")).toBeDisabled();
+    // Nothing to reset yet: the shipped definition is what is on screen.
+    expect(
+      screen.queryByRole("button", {
+        name: "Reset Alpha to its default settings",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * An edit the user can make and never undo is how a wrong `detectCmd` becomes
+   * permanent — so an overridden built-in earns a reset, and it must not read as
+   * the deletion the same control performs for a custom agent.
+   */
+  it("resets an overridden built-in instead of removing it", async () => {
+    agentsMock.listRoster.mockResolvedValue([
+      { ...BUILTIN, isOverridden: true },
+    ]);
+    render(<AgentsSettingsModal isOpen onClose={() => undefined} />);
+    await screen.findByText("Alpha");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Reset Alpha to its default settings",
+      }),
+    );
+    expect(await screen.findByText(/stays on the roster/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      expect(agentsMock.deleteCustomAgent).toHaveBeenCalledWith("ws-1", "alpha");
+    });
+  });
+
   it("reports a new default to every other roster reader", async () => {
     agentsMock.listRoster.mockResolvedValue([CUSTOM, BUILTIN]);
     render(<AgentsSettingsModal isOpen onClose={() => undefined} />);

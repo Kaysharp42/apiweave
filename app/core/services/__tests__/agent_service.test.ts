@@ -157,30 +157,51 @@ describe("AgentService — roster", () => {
     expect(entry?.definition.mcpConfigArgs).toEqual(["--mcp-config", "{path}"])
   })
 
-  it("refuses a custom agent that shadows a built-in key", async () => {
+  /**
+   * The override path, reachable at last. `saveCustomAgent` is the only writer
+   * of a stored row, so an earlier guard that refused a built-in key whose row
+   * did not already exist refused every built-in key there could ever be — and
+   * with it the `is_custom` flag, migration 015's stated purpose, and any way
+   * for a user whose `claude` lives behind a wrapper script to say so.
+   */
+  it("saves a built-in key as an override of the shipped definition", async () => {
     const { workspaceId } = seed()
-    await expect(service.saveCustomAgent(workspaceId, { ...CUSTOM_AGENT, agentKey: "claude" })).rejects.toThrow(
-      /built-in/,
-    )
-  })
-
-  it("lets a built-in be overridden, and the override replaces the shipped definition", async () => {
-    const { workspaceId } = seed()
-    agentRepository.upsertDefinition(workspaceId, {
+    const saved = await service.saveCustomAgent(workspaceId, {
       ...CUSTOM_AGENT,
       agentKey: "claude",
       name: "Claude (wrapper)",
       detectCmd: "claude-wrapper",
-      isCustom: false,
     })
+
+    // Not user-created: removing it reverts rather than deletes, and the roster
+    // shows a different control for each.
+    expect(saved.isCustom).toBe(false)
+    expect(saved.isOverridden).toBe(true)
 
     const roster = await service.listRoster(workspaceId)
     const claude = roster.find((entry) => entry.definition.agentKey === "claude")
     expect(claude?.definition.detectCmd).toBe("claude-wrapper")
-    // An override is not a user-created agent, so it cannot be deleted away.
-    expect(claude?.isCustom).toBe(false)
     // Overriding must not duplicate the row it replaced.
     expect(roster.filter((entry) => entry.definition.agentKey === "claude")).toHaveLength(1)
+  })
+
+  /** A built-in nobody has edited has no stored row, and nothing to reset. */
+  it("does not call an untouched built-in overridden", async () => {
+    const { workspaceId } = seed()
+    const roster = await service.listRoster(workspaceId)
+    const claude = roster.find((entry) => entry.definition.agentKey === "claude")
+
+    expect(claude?.isOverridden).toBe(false)
+    expect(claude?.isCustom).toBe(false)
+  })
+
+  /** A custom agent's stored row *is* its definition — there is nothing under it. */
+  it("does not call a custom agent overridden", async () => {
+    const { workspaceId } = seed()
+    const saved = await service.saveCustomAgent(workspaceId, CUSTOM_AGENT)
+
+    expect(saved.isCustom).toBe(true)
+    expect(saved.isOverridden).toBe(false)
   })
 
   it("rejects a default agent that is not in the roster", async () => {
@@ -216,23 +237,46 @@ describe("AgentService — roster", () => {
   })
 
   /**
-   * The roster hides the delete button for a built-in override, but the handler
-   * behind it is reachable regardless of what the UI chose to render — and
-   * deleting one silently reverts the user's edited `detectCmd` to the shipped
-   * definition.
+   * The other half of the override: an edit the user can make and never undo is
+   * how a wrong `detectCmd` becomes permanent. Removing the stored row uncovers
+   * the definition APIWeave ships rather than taking the agent off the roster.
    */
-  it("refuses to delete a built-in override through the service", async () => {
+  it("resets a built-in to the shipped definition instead of removing it", async () => {
     const { workspaceId } = seed()
-    agentRepository.upsertDefinition(workspaceId, {
+    const shipped = (await service.listRoster(workspaceId)).find(
+      (entry) => entry.definition.agentKey === "claude",
+    )?.definition.detectCmd
+    await service.saveCustomAgent(workspaceId, {
       ...CUSTOM_AGENT,
       agentKey: "claude",
       detectCmd: "claude-wrapper",
-      isCustom: false,
     })
 
-    await expect(service.deleteCustomAgent(workspaceId, "claude")).rejects.toThrow(/built-in/)
+    await service.deleteCustomAgent(workspaceId, "claude")
+
     const roster = await service.listRoster(workspaceId)
-    expect(roster.find((entry) => entry.definition.agentKey === "claude")?.definition.detectCmd).toBe("claude-wrapper")
+    const claude = roster.find((entry) => entry.definition.agentKey === "claude")
+    expect(claude?.definition.detectCmd).toBe(shipped)
+    expect(claude?.isOverridden).toBe(false)
+  })
+
+  /**
+   * The default is cleared when the key it names leaves the roster — which a
+   * reset does not do. Clearing it there would silently move the user's chosen
+   * agent back to `claude` because they undid an edit.
+   */
+  it("keeps a built-in as the default after its override is reset", async () => {
+    const { workspaceId } = seed()
+    await service.saveCustomAgent(workspaceId, {
+      ...CUSTOM_AGENT,
+      agentKey: "codex",
+      detectCmd: "codex-wrapper",
+    })
+    await service.setDefaultAgentKey(workspaceId, "codex")
+
+    await service.deleteCustomAgent(workspaceId, "codex")
+
+    await expect(service.getDefaultAgentKey(workspaceId)).resolves.toBe("codex")
   })
 
   /**
@@ -1095,6 +1139,64 @@ describe("AgentService — resuming a session", () => {
     service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
 
     await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/still running/)
+  })
+
+  /**
+   * Nothing else here catches an external row. It is `exited` from the instant
+   * the emulator is spawned, and an `assign` agent minted its ref before the
+   * process started — so every other guard passes and the resume would spawn a
+   * real PTY under a row that still says `external`. `killSession` would then
+   * refuse to stop a process it is looking straight at, the badge would read
+   * "detached", and `deleteSession` would skip the scratch cleanup for a session
+   * that really did own its files.
+   */
+  it("refuses to resume a session that ran in the user's own terminal", async () => {
+    const seeded = await seedWith(ASSIGNING_AGENT)
+    // Recorded by hand rather than launched: opening a real emulator in a test
+    // is not on, and this is exactly the row `launchExternal` writes for an
+    // `assign` agent — terminal from the start, and carrying a ref it minted
+    // before the process existed.
+    const session = agentRepository.createSession({
+      workspaceId: seeded.workspaceId,
+      agentKey: "assigner",
+      launchMode: "external",
+      status: "exited",
+      cwd: tempDir,
+      scopeKind: "project",
+      scopeId: seeded.projectId,
+      agentSessionRef: "11111111-2222-3333-4444-555555555555",
+    })
+
+    await expect(service.resumeSession(session.sessionId, 100, 30)).rejects.toThrow(/own terminal/)
+    // And nothing was spawned under it.
+    expect(pty.spawned).toHaveLength(0)
+  })
+
+  /**
+   * A resume re-resolves the folder from the row's scope, and the folder a scope
+   * maps to is a setting the user can change between two runs. The row used to
+   * go on naming the first run's folder while the new process ran somewhere else
+   * — and for a cwd-scoped `--resume`, that is also why the conversation would
+   * not be found.
+   */
+  it("re-records the folder when the scope has been repointed since the last run", async () => {
+    const seeded = await seedWith(SCANNING_AGENT)
+    const session = await service.launchEmbedded(request(seeded, "scanner"))
+    service.recordProcessEvent({ kind: "agent.sessionRef", sessionId: session.sessionId, ref: "ses_abc123" })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    const moved = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-moved-"))
+    try {
+      pickDirectory.mockResolvedValue(moved)
+      await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+
+      const resumed = await service.resumeSession(session.sessionId, 120, 40)
+
+      expect(pty.spawned[1]?.cwd).toBe(moved)
+      expect(resumed.cwd).toBe(moved)
+    } finally {
+      fs.rmSync(moved, { recursive: true, force: true })
+    }
   })
 
   /**

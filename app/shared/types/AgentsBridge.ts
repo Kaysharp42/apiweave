@@ -8,8 +8,16 @@ import type { AgentSessionEvent } from "./AgentSessionEvent"
 export interface AgentRosterEntry {
   readonly definition: AgentDefinition
   readonly availability: AgentAvailability
-  /** User-defined, so it can be edited and deleted. Built-ins can only be overridden. */
+  /** User-defined, so removing it removes the agent. Built-ins are overridden instead. */
   readonly isCustom: boolean
+  /**
+   * A built-in the user has edited, so `definition` is their version rather
+   * than the shipped one. Distinct from {@link isCustom} because the two earn
+   * different controls: a custom agent is removed, an overridden built-in is
+   * reset back to what APIWeave ships. Always false for a custom agent, whose
+   * stored row *is* the definition and has nothing to fall back to.
+   */
+  readonly isOverridden: boolean
   readonly isDefault: boolean
 }
 

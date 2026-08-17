@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Pencil, Plus, RefreshCw, Star, Trash2 } from "lucide-react";
+import {
+  ExternalLink,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Star,
+  Trash2,
+} from "lucide-react";
 import type { AgentAvailabilityState } from "@shared/types/AgentAvailability";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
 import type { AgentRosterEntry } from "@shared/types/AgentsBridge";
@@ -243,6 +251,11 @@ export function AgentsSettingsModal({
     draft.name.trim().length > 0 &&
     draft.detectCmd.trim().length > 0;
 
+  // What the confirm dialog is actually about. `isCustom` rather than
+  // `isOverridden` is the question asked, because those are the only two rows
+  // that reach the dialog and a custom agent is the destructive one.
+  const resetsToDefault = deleteTarget !== null && !deleteTarget.isCustom;
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
       <div className="space-y-5 px-5 py-4">
@@ -462,14 +475,25 @@ export function AgentsSettingsModal({
         </div>
       </div>
 
+      {/*
+        One dialog, two questions, because the same control removes the same
+        stored row — and the consequences are not comparable. Removing a custom
+        agent takes it off the roster; resetting a built-in only discards the
+        user's edit. Sharing the destructive wording for both would ask someone
+        to confirm a deletion that is not happening.
+      */}
       <ConfirmDialog
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={onConfirmDelete}
-        title="Remove agent"
-        message={`Remove ${deleteTarget?.definition.name ?? "this agent"}? The roster entry is deleted; sessions already launched keep their records.`}
-        confirmLabel="Remove"
-        intent="error"
+        title={resetsToDefault ? "Reset agent" : "Remove agent"}
+        message={
+          resetsToDefault
+            ? `Reset ${deleteTarget?.definition.name ?? "this agent"} to its default settings? Your changes to it are discarded; the agent stays on the roster.`
+            : `Remove ${deleteTarget?.definition.name ?? "this agent"}? The roster entry is deleted; sessions already launched keep their records.`
+        }
+        confirmLabel={resetsToDefault ? "Reset" : "Remove"}
+        intent={resetsToDefault ? "warning" : "error"}
       />
     </Modal>
   );
@@ -548,28 +572,49 @@ function AgentRow({ entry, busy, onSetDefault, onEdit, onDelete }: AgentRowProps
           <Star className="h-3.5 w-3.5" />
         </IconButton>
       )}
-      {entry.isCustom && (
+      {/*
+        Every row is editable, built-ins included. A stored row under a built-in
+        key is an *override* — the service replaces the shipped definition with
+        it — and it is the only way to point the roster at a `claude` that lives
+        behind a wrapper script, or at a binary the CLI's installer put
+        somewhere PATH cannot see. The key stays fixed while editing, so an edit
+        can never fork a built-in into a second agent claiming its identity.
+      */}
+      <IconButton
+        tooltip="Edit"
+        aria-label={`Edit ${entry.definition.name}`}
+        size="sm"
+        variant="ghost"
+        disabled={busy}
+        onClick={() => onEdit(entry)}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </IconButton>
+      {/*
+        The same stored row, removed — which means two different things and so
+        reads as two different controls. For a custom agent it is the agent;
+        for an overridden built-in it is only the user's edit, and dropping it
+        uncovers the definition APIWeave ships. A built-in with no override has
+        nothing to offer here at all.
+      */}
+      {(entry.isCustom || entry.isOverridden) && (
         <IconButton
-          tooltip="Edit"
-          aria-label={`Edit ${entry.definition.name}`}
+          tooltip={entry.isCustom ? "Remove" : "Reset to default"}
+          aria-label={
+            entry.isCustom
+              ? `Remove ${entry.definition.name}`
+              : `Reset ${entry.definition.name} to its default settings`
+          }
           size="sm"
-          variant="ghost"
-          disabled={busy}
-          onClick={() => onEdit(entry)}
-        >
-          <Pencil className="h-3.5 w-3.5" />
-        </IconButton>
-      )}
-      {entry.isCustom && (
-        <IconButton
-          tooltip="Remove"
-          aria-label={`Remove ${entry.definition.name}`}
-          size="sm"
-          variant="error"
+          variant={entry.isCustom ? "error" : "ghost"}
           disabled={busy}
           onClick={() => onDelete(entry)}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          {entry.isCustom ? (
+            <Trash2 className="h-3.5 w-3.5" />
+          ) : (
+            <RotateCcw className="h-3.5 w-3.5" />
+          )}
         </IconButton>
       )}
     </li>

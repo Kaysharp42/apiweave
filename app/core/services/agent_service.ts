@@ -119,6 +119,23 @@ export class AgentService {
     return this.buildRoster(workspaceId, true)
   }
 
+  /**
+   * Save a user-defined agent, or a user's edit of a built-in one.
+   *
+   * The same door for both, because they are the same row: `effectiveDefinitions`
+   * replaces a built-in with the stored row of the same key, so a stored built-in
+   * key is an override rather than a second agent claiming the identity — no
+   * duplicate for the roster to show and nothing for `launch` to guess between.
+   * `isCustom` is what separates them afterwards, and it is derived here rather
+   * than taken from the caller: it decides whether removing the row deletes an
+   * agent or reverts one, which is not the renderer's to assert.
+   *
+   * An earlier form refused every built-in key whose row did not already exist.
+   * Since this method is the only writer of a row, that row could never exist,
+   * so the refusal was total — and it made the override path, the `is_custom`
+   * flag and migration 015's stated purpose unreachable. A user whose `claude`
+   * lives behind a wrapper script had no way to point the roster at it.
+   */
   async saveCustomAgent(workspaceId: string, input: AgentDefinition): Promise<AgentRosterEntry> {
     await this.authorize(workspaceId, "create")
     const parsed = AgentDefinitionSchema.safeParse(input)
@@ -126,13 +143,7 @@ export class AgentService {
       throw new ValidationError("agent definition is not valid", parsed.error.issues)
     }
     const definition = parsed.data
-    // A custom agent that shadows a built-in key would make the roster show two
-    // rows claiming the same identity, and `launch` would have to guess.
     const isBuiltinKey = BUILTIN_AGENTS.some((agent) => agent.agentKey === definition.agentKey)
-    const existing = this.agents.getDefinition(workspaceId, definition.agentKey)
-    if (isBuiltinKey && existing === undefined) {
-      throw new ValidationError(`${definition.agentKey} is a built-in agent — pick a different key`)
-    }
     this.agents.upsertDefinition(workspaceId, { ...definition, isCustom: !isBuiltinKey })
     this.availabilityCache.delete(workspaceId)
 
@@ -144,25 +155,36 @@ export class AgentService {
     return entry
   }
 
+  /**
+   * Remove a user-defined agent, or reset an edited built-in to what APIWeave
+   * ships.
+   *
+   * One operation, because the row is the same row: dropping it removes a custom
+   * agent from the roster entirely, and for a built-in it uncovers the shipped
+   * definition `effectiveDefinitions` was overriding. Reverting has to be
+   * possible — the alternative is an edit the user can make and never undo,
+   * which is how a wrong `detectCmd` becomes permanent.
+   *
+   * `NotFoundError` for a built-in with no stored row, which is the honest
+   * answer: there is nothing to reset, and the roster only offers the control
+   * for a row that exists.
+   */
   async deleteCustomAgent(workspaceId: string, agentKey: string): Promise<void> {
     await this.authorize(workspaceId, "delete")
-    const existing = this.agents.getDefinition(workspaceId, agentKey)
-    if (existing === undefined) {
+    if (this.agents.getDefinition(workspaceId, agentKey) === undefined) {
       throw new NotFoundError(`agent ${agentKey} not found`)
-    }
-    // A stored row with `isCustom: false` is an *override* of a built-in, not a
-    // user-created agent, and deleting it silently reverts the user's edited
-    // `detectCmd`/`argv` to the shipped definition. The roster hides the button
-    // for these, but the handler behind it is reachable regardless of what the
-    // UI chose to render — a check in the renderer is a hint, not a rule.
-    if (!existing.isCustom) {
-      throw new ValidationError(`${agentKey} is a built-in agent — edit its override instead of deleting it`)
     }
     this.agents.deleteDefinition(workspaceId, agentKey)
     // The default is a loose `app_settings` key with no FK to the row it names,
     // so deleting the agent it points at leaves the roster with no default
     // marked at all and `getDefaultAgentKey` reporting a key nothing can launch.
-    if (this.agents.getDefaultAgentKey(workspaceId) === agentKey) {
+    //
+    // Only when the key really left the roster, which a reset does not do: the
+    // shipped built-in is still there under the same key, and clearing the
+    // default for it would silently move the user's chosen agent to `claude`
+    // because they undid an edit.
+    const stillOnRoster = BUILTIN_AGENTS.some((agent) => agent.agentKey === agentKey)
+    if (!stillOnRoster && this.agents.getDefaultAgentKey(workspaceId) === agentKey) {
       this.agents.clearDefaultAgentKey(workspaceId)
     }
     this.availabilityCache.delete(workspaceId)
@@ -372,6 +394,7 @@ export class AgentService {
     const previous = await this.mustAuthorizeSession(sessionId, "run")
     const ref = this.requireResumeRef(previous)
     this.assertSessionNotRunning(previous)
+    this.assertResumable(previous)
     const scope = this.requireResumeScope(previous)
     const definition = this.mustGetDefinition(previous.workspaceId, previous.agentKey)
     if (definition.resumeArgs.length === 0) {
@@ -388,8 +411,11 @@ export class AgentService {
       this.argsFor(prepared, sessionId, fillTemplate(definition.resumeArgs, ref)),
     )
     // Cleared before the spawn, not after it: everything below reports through
-    // `updateSession`, which will not move a row out of a terminal status.
-    const revived = this.agents.reviveSession(sessionId) ?? previous
+    // `updateSession`, which will not move a row out of a terminal status. The
+    // folder goes back with it, because `prepareLaunch` has just re-resolved it
+    // from the scope and the user may have repointed that scope since the last
+    // run — see {@link AgentRepository.reviveSession}.
+    const revived = this.agents.reviveSession(sessionId, prepared.cwd) ?? previous
 
     try {
       const pid = await pty.start({
@@ -861,6 +887,29 @@ export class AgentService {
     }
   }
 
+  /**
+   * Resuming means running under a PTY this app owns, which an external row is
+   * not and never was.
+   *
+   * Nothing else here catches it. An external session is `exited` from the
+   * instant the emulator is spawned, so {@link assertSessionNotRunning} passes;
+   * an `assign` agent minted its ref before the process started, so
+   * {@link requireResumeRef} passes too. The resume would then spawn a real PTY
+   * under a row that still says `external` — and every consumer of that column
+   * would be wrong at once: {@link killSession} refuses to stop a process it is
+   * looking straight at, the badge reads "detached", and
+   * {@link deleteSession} skips the scratch cleanup for a session that really
+   * did own its files. The renderer already hides the control; this is the rule
+   * behind the hint.
+   */
+  private assertResumable(previous: AgentSession): void {
+    if (previous.launchMode === "external") {
+      throw new ValidationError(
+        "This session ran in your own terminal window — launch it embedded to resume the conversation here",
+      )
+    }
+  }
+
   /** The scope a resume re-launches against, or a refusal when the row has none. */
   private requireResumeScope(previous: AgentSession): AgentScope {
     if (
@@ -880,14 +929,22 @@ export class AgentService {
     const defaultKey = this.agents.getDefaultAgentKey(workspaceId) ?? DEFAULT_AGENT_KEY
     const stored = new Map(this.agents.listDefinitions(workspaceId).map((row) => [row.agentKey, row]))
 
-    return definitions.map((definition) => ({
-      definition,
-      availability:
-        availability.find((entry) => entry.agentKey === definition.agentKey) ??
-        unknownAvailability(definition.agentKey),
-      isCustom: stored.get(definition.agentKey)?.isCustom ?? false,
-      isDefault: definition.agentKey === defaultKey,
-    }))
+    return definitions.map((definition) => {
+      const row = stored.get(definition.agentKey)
+      return {
+        definition,
+        availability:
+          availability.find((entry) => entry.agentKey === definition.agentKey) ??
+          unknownAvailability(definition.agentKey),
+        isCustom: row?.isCustom ?? false,
+        // A stored row under a built-in key is that built-in, edited. `isCustom`
+        // alone cannot say so — an override stores `false`, and so does a
+        // built-in with no row at all — and the two earn different controls, so
+        // the distinction is drawn here rather than guessed at in the renderer.
+        isOverridden: row !== undefined && !row.isCustom,
+        isDefault: definition.agentKey === defaultKey,
+      }
+    })
   }
 
   /**
