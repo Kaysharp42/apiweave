@@ -120,7 +120,7 @@ parentPort.on("message", (event) => {
     handle(request, event.ports)
   } catch (error) {
     if ("sessionId" in request) {
-      reply({ type: "failed", sessionId: request.sessionId, message: describeError(error) })
+      fail(request.sessionId, describeError(error))
     }
   }
 })
@@ -466,7 +466,42 @@ function guard(sessionId: string, run: () => void): void {
   try {
     run()
   } catch (error) {
-    reply({ type: "failed", sessionId, message: describeError(error) })
+    fail(sessionId, describeError(error))
+  }
+}
+
+/**
+ * Report a session as failed — and make that report true.
+ *
+ * `failed` is the end of a row's life: main removes the session from its live
+ * set, writes the row terminal, and unlinks the scratch files named after it,
+ * including the MCP config holding a live bearer token. All of that is correct
+ * for the case this reply was written for, a spawn that never produced a child.
+ *
+ * It is a lie for the other case. Every operation on an *existing* session
+ * reaches the same dispatch try/catch — a node-pty `write` that throws on a
+ * broken pipe is the ordinary example — and reporting that as `failed` left the
+ * child running with nothing tracking it: the Stop button disappears with the
+ * live flag, the terminal can no longer be attached, and the real `exited`
+ * arrives to a row that is already terminal and drops it. An agent process with
+ * no owner and no way to reach it, holding a config file that was just deleted
+ * out from under it.
+ *
+ * So the kill comes with the message. Whatever went wrong, the session really
+ * is over by the time main is told it is — and the exit that follows is the
+ * same news arriving second, which the terminal-status pin already ignores.
+ */
+function fail(sessionId: string, message: string): void {
+  reply({ type: "failed", sessionId, message })
+  const session = sessions.get(sessionId)
+  if (session === undefined || session.exited) {
+    return
+  }
+  try {
+    session.pty.kill()
+  } catch {
+    // Already gone, or unreachable. `forceKill` is shutdown's escalation and
+    // has no business here: this session is being abandoned, not the host.
   }
 }
 

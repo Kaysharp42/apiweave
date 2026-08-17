@@ -964,6 +964,35 @@ describe("pty host guards", () => {
     // The host's one dispatch try/catch kept the live session untouched.
     parentPort.dispatch({ type: "write", sessionId: "alive", data: "still here" })
     expect(alive.writes).toEqual(["still here"])
+    // And nothing was killed: there is no child behind a spawn that threw.
+    expect(alive.kills).toEqual([])
+  })
+
+  /**
+   * `failed` is terminal for the row main keeps: it drops the session from the
+   * live set, writes the row, and unlinks the scratch files named after it —
+   * including the MCP config holding a live bearer token. Reporting it for a
+   * session whose child is still running therefore orphaned that child: the
+   * Stop button goes with the live flag, the terminal can no longer attach, and
+   * the real exit arrives to a row the terminal-status pin has already closed.
+   * Whatever the failure was, the session has to actually be over.
+   */
+  it("kills the child when it reports a live session as failed", () => {
+    const pty = startSession("a")
+    pty.write = (): void => {
+      throw new Error("write EPIPE")
+    }
+
+    parentPort.dispatch({ type: "write", sessionId: "a", data: "hello" })
+
+    expect(parentPort.sent).toContainEqual({
+      type: "failed",
+      sessionId: "a",
+      message: "write EPIPE",
+    })
+    // The no-argument form: the polite kill, which is all a single abandoned
+    // session gets. SIGKILL escalation belongs to shutdown.
+    expect(pty.kills).toEqual([undefined])
   })
 
   /**
