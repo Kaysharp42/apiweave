@@ -69,9 +69,25 @@ export function AgentSessionsProvider({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  /**
+   * Which list read is still the one worth publishing.
+   *
+   * `mountedRef` alone cannot answer that. A read is issued per workspace, and
+   * a switch starts a second one while the first is still in flight — so the
+   * slower response wins and the panel shows another workspace's sessions until
+   * the next transition event happens to force a re-read. Every call takes a
+   * ticket here and only the newest one may write, which also covers the
+   * mutators: `removeSession` refreshes explicitly, and its read must not be
+   * overtaken by an event-driven one issued a moment earlier.
+   */
+  const requestRef = useRef(0);
   const isAvailable = agents.isAvailable();
 
   const refresh = useCallback(async () => {
+    requestRef.current += 1;
+    const request = requestRef.current;
+    const isCurrent = (): boolean =>
+      mountedRef.current && requestRef.current === request;
     if (workspaceId === null || !isAvailable) {
       setSessions([]);
       setLoading(false);
@@ -79,19 +95,35 @@ export function AgentSessionsProvider({
     }
     try {
       const next = await agents.listSessions(workspaceId);
-      if (mountedRef.current) {
+      if (isCurrent()) {
         setSessions(next);
         setError(null);
       }
     } catch (cause: unknown) {
-      if (mountedRef.current) setError(describe(cause));
+      if (isCurrent()) setError(describe(cause));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [workspaceId, isAvailable]);
 
+  /**
+   * Mount and unmount, and nothing else.
+   *
+   * Its own effect because the subscription below re-runs whenever `refresh`
+   * changes — which is on every workspace switch — and setting the flag back to
+   * `true` there undid the cleanup that had just set it to `false`, in the same
+   * commit. The one thing the flag exists to prevent was therefore the one
+   * thing it could not: a response arriving after the provider was gone still
+   * found a live ref and wrote to unmounted state.
+   */
   useEffect(() => {
     mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     void refresh();
     // Subscribed even when there is no workspace yet: the subscription is to
     // main, not to a workspace, and re-subscribing per workspace switch would
@@ -117,7 +149,6 @@ export function AgentSessionsProvider({
       void refresh();
     });
     return () => {
-      mountedRef.current = false;
       unsubscribe();
     };
   }, [refresh]);

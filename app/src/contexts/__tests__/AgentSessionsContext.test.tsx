@@ -19,9 +19,22 @@ const { agentsMock } = vi.hoisted(() => ({
   },
 }));
 
+/**
+ * Mutable so a test can switch workspaces the way the app does — the provider
+ * reads this on every render, and a re-render is what a real switch produces.
+ */
+const { workspaceRef } = vi.hoisted(() => ({
+  workspaceRef: { current: "ws-1" as string | null },
+}));
+
 vi.mock("../../utils/apiweaveClient", () => ({ agents: agentsMock }));
 vi.mock("../WorkspaceContext", () => ({
-  useWorkspace: () => ({ currentWorkspace: { workspaceId: "ws-1" } }),
+  useWorkspace: () => ({
+    currentWorkspace:
+      workspaceRef.current === null
+        ? null
+        : { workspaceId: workspaceRef.current },
+  }),
 }));
 
 import {
@@ -80,6 +93,7 @@ async function mount(): Promise<void> {
 beforeEach(() => {
   vi.clearAllMocks();
   captured = null;
+  workspaceRef.current = "ws-1";
   agentsMock.isAvailable.mockReturnValue(true);
   agentsMock.onSessionChanged.mockReturnValue(() => undefined);
   agentsMock.listSessions.mockResolvedValue([session()]);
@@ -162,6 +176,47 @@ describe("AgentSessionsProvider", () => {
       expect(captured?.busySessionIds.has("session-1")).toBe(false);
     });
     expect(agentsMock.listSessions.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  /**
+   * A read belongs to the workspace it was issued for. Switching starts a
+   * second one while the first is still in flight, and whichever main answers
+   * last used to win — so a slow first response painted the previous
+   * workspace's sessions over the current one's, and nothing corrected it until
+   * some unrelated transition event forced another read.
+   */
+  it("ignores a slow list read for a workspace the user has already left", async () => {
+    let releaseFirst: (rows: readonly AgentSession[]) => void = () => undefined;
+    agentsMock.listSessions.mockImplementationOnce(
+      () =>
+        new Promise<readonly AgentSession[]>((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+    const view = render(
+      <AgentSessionsProvider>
+        <Probe />
+      </AgentSessionsProvider>,
+    );
+
+    workspaceRef.current = "ws-2";
+    agentsMock.listSessions.mockResolvedValue([
+      session({ sessionId: "from-ws-2", workspaceId: "ws-2" }),
+    ]);
+    view.rerender(
+      <AgentSessionsProvider>
+        <Probe />
+      </AgentSessionsProvider>,
+    );
+    await waitFor(() => {
+      expect(captured?.sessions[0]?.sessionId).toBe("from-ws-2");
+    });
+
+    await act(async () => {
+      releaseFirst([session({ sessionId: "from-ws-1" })]);
+    });
+
+    expect(captured?.sessions[0]?.sessionId).toBe("from-ws-2");
   });
 
   it("rejects to the caller when a delete fails, and leaves the list alone", async () => {
