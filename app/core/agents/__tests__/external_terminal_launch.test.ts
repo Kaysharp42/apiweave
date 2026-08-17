@@ -84,9 +84,32 @@ function makeFakeExecutable(name: string): string {
   return filePath
 }
 
-function cleanPathEnv(): Record<string, string> {
-  return { PATH: "", Path: "" }
+/**
+ * A bundle with the emulator's own CLI in it — the only way to start an
+ * emulator that does not register a shell-script document type, and therefore
+ * the only way most of the roster can be started at all.
+ */
+function makeFakeAppBundleWithBinary(name: string, binary: string): string {
+  const bundle = makeFakeAppBundle(name)
+  const binDir = path.join(bundle, "Contents", "MacOS")
+  fs.mkdirSync(binDir, { recursive: true })
+  const filePath = path.join(binDir, binary)
+  fs.writeFileSync(filePath, "")
+  fs.chmodSync(filePath, 0o755)
+  return filePath
 }
+
+function cleanPathEnv(): Record<string, string> {
+  return { PATH: "", Path: "", ...NO_PREFERENCE }
+}
+
+/**
+ * The launcher merges `launch.env` over the *real* `process.env`, so a
+ * developer running these tests from Ghostty or WezTerm would otherwise have
+ * their own `TERM_PROGRAM` reorder the registry under the assertions. Empty is
+ * read as unset, which is what a test about the default order needs.
+ */
+const NO_PREFERENCE: Record<string, string> = { TERM_PROGRAM: "", TERMINAL: "" }
 
 async function withPlatform<T>(platform: NodeJS.Platform, fn: () => Promise<T>): Promise<T> {
   const original = process.platform
@@ -104,7 +127,7 @@ describe("launchInExternalTerminal — successful launches", () => {
       const wt = makeFakeExecutable("wt.exe")
       const child = new FakeChild()
       spawnMock.mockReturnValue(child)
-      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot } })
+      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot, ...NO_PREFERENCE } })
 
       const done = launchInExternalTerminal(launchSpec)
       child.emit("spawn")
@@ -150,7 +173,7 @@ describe("launchInExternalTerminal — successful launches", () => {
       makeFakeExecutable("wt.exe")
       const child = new FakeChild()
       spawnMock.mockReturnValue(child)
-      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot } })
+      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot, ...NO_PREFERENCE } })
 
       const done = launchInExternalTerminal(launchSpec)
       child.emit("error", new Error("EACCES: permission denied"))
@@ -163,7 +186,7 @@ describe("launchInExternalTerminal — successful launches", () => {
       const emulator = makeFakeExecutable("x-terminal-emulator")
       const child = new FakeChild()
       spawnMock.mockReturnValue(child)
-      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot } })
+      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot, ...NO_PREFERENCE } })
 
       const done = launchInExternalTerminal(launchSpec)
       child.emit("spawn")
@@ -187,6 +210,7 @@ describe("launchInExternalTerminal — successful launches", () => {
         env: {
           PATH: tempRoot,
           Path: tempRoot,
+          ...NO_PREFERENCE,
           WEIRD: "it's $HOME `tick`",
         },
       })
@@ -207,7 +231,7 @@ describe("launchInExternalTerminal — successful launches", () => {
       const bundle = makeFakeAppBundle("Terminal")
       const child = new FakeChild()
       spawnMock.mockReturnValue(child)
-      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot, HOME: tempRoot } })
+      const launchSpec = launch({ env: { PATH: tempRoot, Path: tempRoot, HOME: tempRoot, ...NO_PREFERENCE } })
 
       const done = launchInExternalTerminal(launchSpec)
       child.emit("spawn")
@@ -263,6 +287,168 @@ describe("launchInExternalTerminal — successful launches", () => {
   })
 
   /**
+   * The silent failure that made half the macOS roster useless. `open -a` runs
+   * a `.command` only for an app that registers a shell-script document type —
+   * Terminal.app and iTerm do, Ghostty does not — so handing Ghostty the script
+   * through LaunchServices opened a plain shell and the agent never ran, while
+   * `open` exited zero and the launch was recorded as a success. The emulator's
+   * own CLI is what actually starts it.
+   */
+  it("execs the emulator's own CLI for an app that cannot open a script", async () => {
+    await withPlatform("darwin", async () => {
+      makeFakeAppBundle("Terminal")
+      const ghostty = makeFakeAppBundleWithBinary("Ghostty", "ghostty")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { ...cleanPathEnv(), HOME: tempRoot, TERM_PROGRAM: "ghostty" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      expect(spawnMock).toHaveBeenCalledWith(
+        ghostty,
+        ["-e", readLauncherScript(launchSpec)],
+        expect.objectContaining({ cwd: launchSpec.cwd }),
+      )
+    })
+  })
+
+  /**
+   * Homebrew installs `wezterm`, `kitty` and `alacritty` as links in
+   * `/opt/homebrew/bin`, and an app bundle that is not in one of the four
+   * places {@link findMacosApp} looks is not evidence that the emulator is
+   * missing — only that it is not where the search expected.
+   */
+  it("falls back to the CLI on PATH when the bundle is somewhere else", async () => {
+    await withPlatform("darwin", async () => {
+      makeFakeAppBundle("Terminal")
+      const wezterm = makeFakeExecutable("wezterm")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { PATH: tempRoot, Path: tempRoot, HOME: tempRoot, TERM_PROGRAM: "WezTerm", TERMINAL: "" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      expect(spawnMock).toHaveBeenCalledWith(
+        wezterm,
+        ["start", "--", readLauncherScript(launchSpec)],
+        expect.objectContaining({ cwd: launchSpec.cwd }),
+      )
+    })
+  })
+
+  /**
+   * Warp, Hyper and Tabby set `TERM_PROGRAM` but cannot be told to run a
+   * command, so they are not in the registry at all. Recognising the name and
+   * then opening an empty window would be the same silent failure in a new
+   * place; running the agent in Terminal.app is not where the user asked for
+   * it, but it is the thing they asked for.
+   */
+  it("runs the agent in Terminal.app rather than an emulator it cannot drive", async () => {
+    await withPlatform("darwin", async () => {
+      const terminal = makeFakeAppBundle("Terminal")
+      makeFakeAppBundle("Warp")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { ...cleanPathEnv(), HOME: tempRoot, TERM_PROGRAM: "WarpTerminal" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      expect(spawnMock.mock.calls[0]?.[1]).toEqual(["-a", terminal, readLauncherScript(launchSpec)])
+    })
+  })
+
+  /**
+   * `$TERMINAL` is the POSIX convention for "open terminals with this", so it
+   * is an instruction rather than the ambient evidence `TERM_PROGRAM` provides
+   * — and it outranks both the default order and the emulator APIWeave happens
+   * to have been started from.
+   */
+  it("honours $TERMINAL over the default order on Linux", async () => {
+    await withPlatform("linux", async () => {
+      makeFakeExecutable("x-terminal-emulator")
+      const kitty = makeFakeExecutable("kitty")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { PATH: tempRoot, Path: tempRoot, TERM_PROGRAM: "", TERMINAL: "/usr/bin/kitty" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      // kitty takes the program as a positional, which is why the registry
+      // carries a recipe per emulator rather than one `-e` for all of them.
+      expect(spawnMock).toHaveBeenCalledWith(
+        kitty,
+        [readLauncherScript(launchSpec)],
+        expect.objectContaining({ cwd: launchSpec.cwd }),
+      )
+    })
+  })
+
+  /**
+   * The escape hatch for an emulator nobody has heard of. `-e <command>` is
+   * near-universal but still a guess, so it is tried only after every known
+   * emulator has been ruled out — and only for `$TERMINAL`, never for
+   * `TERM_PROGRAM`, which inside tmux would hand `-e` to tmux and run nothing.
+   */
+  it("tries an unknown $TERMINAL last rather than giving up on Linux", async () => {
+    await withPlatform("linux", async () => {
+      const exotic = makeFakeExecutable("my-terminal")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { PATH: tempRoot, Path: tempRoot, TERM_PROGRAM: "", TERMINAL: "my-terminal" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      expect(spawnMock).toHaveBeenCalledWith(
+        exotic,
+        ["-e", readLauncherScript(launchSpec)],
+        expect.objectContaining({ cwd: launchSpec.cwd }),
+      )
+    })
+  })
+
+  it("prefers the user's own emulator over Windows Terminal on Windows", async () => {
+    await withPlatform("win32", async () => {
+      makeFakeExecutable("wt.exe")
+      const wezterm = makeFakeExecutable("wezterm.exe")
+      const child = new FakeChild()
+      spawnMock.mockReturnValue(child)
+      const launchSpec = launch({
+        env: { PATH: tempRoot, Path: tempRoot, TERMINAL: "", TERM_PROGRAM: "WezTerm" },
+      })
+
+      const done = launchInExternalTerminal(launchSpec)
+      child.emit("spawn")
+      await done
+
+      expect(spawnMock).toHaveBeenCalledWith(
+        wezterm,
+        ["start", "--cwd", launchSpec.cwd, "--", launchSpec.executablePath, ...launchSpec.args],
+        expect.objectContaining({ cwd: launchSpec.cwd }),
+      )
+    })
+  })
+
+  /**
    * The failure `open -a Terminal` could never report. A detached spawn resolves
    * on `spawn`, long before `open` exits non-zero for a missing app, so the old
    * code told the user the agent had launched and nothing appeared.
@@ -302,7 +488,7 @@ describe("launcher scripts — naming and cleanup", () => {
         queueMicrotask(() => child.emit("spawn"))
         return child
       })
-      const env = { PATH: tempRoot, Path: tempRoot }
+      const env = { PATH: tempRoot, Path: tempRoot, ...NO_PREFERENCE }
 
       await Promise.all([
         launchInExternalTerminal(launch({ env, sessionId: "session-a" })),
@@ -356,7 +542,7 @@ describe("Windows Terminal argument escaping", () => {
       const child = new FakeChild()
       spawnMock.mockReturnValue(child)
       const launchSpec = launch({
-        env: { PATH: tempRoot, Path: tempRoot },
+        env: { PATH: tempRoot, Path: tempRoot, ...NO_PREFERENCE },
         args: ["--prompt", "fix this; then run tests"],
       })
 
