@@ -3,7 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { resolveExecutable, spawnCommandFor } from "./executable"
-import { sweepScratch } from "./mcp_config"
+import { scratchFileKind } from "./scratch_files"
 
 export interface ExternalLaunch {
   /** Absolute path to the agent executable, already resolved. */
@@ -24,8 +24,15 @@ export class NoTerminalFoundError extends Error {
   }
 }
 
-const SCRIPT_PREFIX = "launch-"
-const SCRIPT_SUFFIX = ".command"
+/**
+ * The launcher-script scratch kind. `deleteOne` drops a script for a launch
+ * that never reached an emulator; `sweep` reclaims scripts left by a previous
+ * run — every one of them holds the launched agent's environment in plain
+ * text, and before the TTL unlink existed none of them was ever deleted. A
+ * crash between spawn and unlink still leaves one, so the sweep stays even
+ * now that the happy path cleans up after itself.
+ */
+export const LAUNCHER_SCRATCH = scratchFileKind("launch-", ".command")
 
 /**
  * How long the generated script survives after the emulator has been spawned.
@@ -54,31 +61,6 @@ export async function launchInExternalTerminal(launch: ExternalLaunch): Promise<
     return
   }
   await launchPosix(launch)
-}
-
-/** Name of the script a given session would generate — the cleanup key. */
-export function launcherScriptName(sessionId: string): string {
-  return `${SCRIPT_PREFIX}${sessionId.replaceAll(/[^A-Za-z0-9_-]/g, "_")}${SCRIPT_SUFFIX}`
-}
-
-/** Drop one session's script now, for a launch that never reached an emulator. */
-export function deleteLauncherScript(scratchDir: string, sessionId: string): boolean {
-  try {
-    fs.rmSync(path.join(scratchDir, launcherScriptName(sessionId)), { force: true })
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Reclaim scripts left by a previous run. Every one of them holds the launched
- * agent's environment in plain text, and before the TTL unlink existed none of
- * them was ever deleted — a crash between spawn and unlink still leaves one, so
- * the sweep stays even now that the happy path cleans up after itself.
- */
-export function sweepLauncherScripts(scratchDir: string): number {
-  return sweepScratch(scratchDir, (name) => name.startsWith(SCRIPT_PREFIX) && name.endsWith(SCRIPT_SUFFIX))
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────
@@ -284,7 +266,7 @@ const LINUX_TERMINALS: readonly LinuxTerminal[] = [
  */
 function writeLauncherScript(launch: ExternalLaunch): string {
   fs.mkdirSync(launch.scratchDir, { recursive: true, mode: 0o700 })
-  const scriptPath = path.join(launch.scratchDir, launcherScriptName(launch.sessionId))
+  const scriptPath = path.join(launch.scratchDir, LAUNCHER_SCRATCH.filename(launch.sessionId))
   const exports = Object.entries(launch.env).map(([key, value]) => `export ${key}=${shellQuote(value)}`)
   const script = [
     "#!/bin/sh",

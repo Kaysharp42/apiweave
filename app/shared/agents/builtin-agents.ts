@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a documented data table: every entry shares one field shape by design ("adding an agent is a row, not code"), and each entry's own comments are sourced independently from a different CLI's docs, not copied from a neighbour; fallow 2.104 has no range form, so file-level is the narrowest marker that still covers the groups
 import type { AgentDefinition } from "../types/AgentDefinition"
 
 /**

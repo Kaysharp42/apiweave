@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- independent domain schemas that only share the idiomatic `z.object({...}).strict()` opening every zod schema has; the fields themselves belong to different domains and there is no shared behaviour to extract; fallow 2.104 has no range form, so file-level is the narrowest marker that still covers the groups
 import { z } from "zod"
 import { TimestampSchema } from "./TimestampSchema"
 

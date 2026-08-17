@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Save,
   History,
@@ -14,7 +14,8 @@ import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import ButtonSelect from "../ButtonSelect";
 import { AgentLaunchButton } from "./AgentLaunchButton";
-import useAgentDockStore from "../../stores/AgentDockStore";
+import { useOpenAgentSession } from "../../hooks/useAgentDockControls";
+import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
 import { buildEnvironmentOptions } from "./canvasToolbarUtils";
@@ -52,33 +53,12 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const runMenuRef = useRef<HTMLDivElement>(null);
-  const openAgentSession = useAgentDockStore((state) => state.openSession);
+  const openAgentSession = useOpenAgentSession();
   const safeResumeOptions = resumeOptions ?? EMPTY_RESUME_OPTIONS;
 
   const hasResumeOptions = safeResumeOptions.length > 0;
 
-  useEffect(() => {
-    if (!isRunMenuOpen) return undefined;
-
-    const onDocClick = (event: MouseEvent) => {
-      if (!runMenuRef.current?.contains(event.target as Node)) {
-        setIsRunMenuOpen(false);
-      }
-    };
-
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsRunMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onEscape);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onEscape);
-    };
-  }, [isRunMenuOpen]);
+  useCloseOnOutsideOrEscape(isRunMenuOpen, () => setIsRunMenuOpen(false), runMenuRef);
 
   return (
     // `max-w` + `flex-wrap`, because this bar is centred and absolutely

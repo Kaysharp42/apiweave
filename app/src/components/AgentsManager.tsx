@@ -13,7 +13,8 @@ import { AgentSessionStatusBadge } from "./molecules/AgentSessionStatusBadge";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { EmptyState } from "./molecules/EmptyState";
 import { useAgentSessions } from "../contexts/AgentSessionsContext";
-import useAgentDockStore from "../stores/AgentDockStore";
+import { useAgentDockSelection } from "../hooks/useAgentDockControls";
+import { useKillSessionAction } from "../hooks/useKillSessionAction";
 import { describeError } from "../utils/describeError";
 
 interface AgentsManagerProps {
@@ -43,9 +44,7 @@ export function AgentsManager({ className }: AgentsManagerProps) {
     killSession,
     removeSession,
   } = useAgentSessions();
-  const openSessionId = useAgentDockStore((state) => state.openSessionId);
-  const openSession = useAgentDockStore((state) => state.openSession);
-  const closeDock = useAgentDockStore((state) => state.close);
+  const { openSessionId, openSession, closeDock } = useAgentDockSelection();
 
   const [removeTarget, setRemoveTarget] = useState<AgentSession | null>(null);
   /**
@@ -80,12 +79,7 @@ export function AgentsManager({ className }: AgentsManagerProps) {
    * with a Stop button that appeared to do nothing at all. Silence is the worst
    * possible answer here: the user's next move is to press it again.
    */
-  const onStop = (sessionId: string): void => {
-    setActionError(null);
-    void killSession(sessionId).catch((cause: unknown) => {
-      if (mountedRef.current) setActionError(describeError(cause));
-    });
-  };
+  const onStop = useKillSessionAction(killSession, setActionError);
 
   const onConfirmRemove = (): void => {
     const target = removeTarget;

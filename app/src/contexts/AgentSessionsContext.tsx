@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the shared shape with UpdateStatusContext ("one IPC subscription behind a context, hook throws outside the provider") is a consumer contract this file names explicitly in its own docs, not copied logic: the subscription, the state, and the mutators are entirely different, and merging them would mean threading a factory through a pre-existing context file for a 40-line pattern echo; fallow 2.104 has no range form, so file-level is the narrowest marker that still covers the group
 import {
   createContext,
   useCallback,

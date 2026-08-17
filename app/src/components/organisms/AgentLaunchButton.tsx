@@ -17,6 +17,7 @@ import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import useAgentRosterStore from "../../stores/AgentRosterStore";
+import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
 import { agents } from "../../utils/apiweaveClient";
 import { AgentLaunchMenu } from "./AgentLaunchMenu";
 
@@ -122,24 +123,17 @@ export function AgentLaunchButton({
     refresh();
   }, [refresh, rosterVersion]);
 
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const onDocClick = (event: MouseEvent): void => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const onEscape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        focusTrigger();
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onEscape);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onEscape);
-    };
-  }, [menuOpen]);
+  // Closing on outside click keeps `menuOpen` authoritative for the menu, but
+  // Escape also hands focus back to the trigger — a keyboard user who opened
+  // the menu with Enter expects to keep tabbing from where they were.
+  useCloseOnOutsideOrEscape(
+    menuOpen,
+    (reason) => {
+      setMenuOpen(false);
+      if (reason === "escape") focusTrigger();
+    },
+    menuRef,
+  );
 
   const focusTrigger = (): void => {
     triggerWrapRef.current?.querySelector("button")?.focus();

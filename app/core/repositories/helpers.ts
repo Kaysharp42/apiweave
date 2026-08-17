@@ -7,6 +7,7 @@
 
 import type { JsonValue } from "@shared/types/JsonValue"
 import { AssertionNodeDataSchema } from "@shared/zod-schemas/AssertionNodeDataSchema"
+import type { KVStore, SqliteParameters, SqliteRow } from "../db"
 
 /** Parse a JSON column into a known shape. The DB is local and only ever
  * is written by us, so we trust the stored JSON rather than re-validating here
@@ -37,6 +38,71 @@ export function mustExist<T>(row: T | undefined, message: string): T {
     throw new Error(message)
   }
   return row
+}
+
+/**
+ * The one-row read every repository's `getX` methods share: fetch, and map
+ * only when the row exists — `undefined` passes through untouched.
+ */
+export function getMapped<Row extends SqliteRow, Mapped>(
+  store: KVStore,
+  sql: string,
+  params: SqliteParameters,
+  mapper: (row: Row) => Mapped,
+): Mapped | undefined {
+  const row = store.get<Row>(sql, params)
+  return row === undefined ? undefined : mapper(row)
+}
+
+/**
+ * The many-row read every repository's `listX` methods share: query, then map
+ * each row.
+ */
+export function queryMapped<Row extends SqliteRow, Mapped>(
+  store: KVStore,
+  sql: string,
+  params: SqliteParameters,
+  mapper: (row: Row) => Mapped,
+): readonly Mapped[] {
+  return store.query<Row>(sql, params).map(mapper)
+}
+
+/**
+ * Insert one row and read it straight back — a freshly inserted row's absence
+ * is a broken invariant, not a not-found the caller should handle.
+ *
+ * Kept as a helper rather than a two-line `store.set` + `mustExist` at each
+ * `create`, because the two-line form makes `RunRepository.create` and
+ * `WorkflowRepository.create` clone each other (fallow code-duplication), and
+ * the shared shape here is real behaviour: both must read back through their
+ * own `getById`, so the mapper stays per-caller via `readBack`.
+ */
+export function insertAndRead<Mapped>(
+  store: KVStore,
+  sql: string,
+  params: SqliteParameters,
+  readBack: () => Mapped | undefined,
+  message: string,
+): Mapped {
+  store.set(sql, params)
+  return mustExist(readBack(), message)
+}
+
+/**
+ * The `app_settings` get/set/delete trio. Every consumer that stores a scalar
+ * preference per key (`agents.default_agent`, `mcp.enabled`, `updates.policy`)
+ * does exactly these three statements.
+ */
+export function getSetting(store: KVStore, key: string): string | undefined {
+  return store.get<{ value: string } & SqliteRow>("SELECT value FROM app_settings WHERE key = ?", [key])?.value
+}
+
+export function setSetting(store: KVStore, key: string, value: string): void {
+  store.set("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [key, value])
+}
+
+export function deleteSetting(store: KVStore, key: string): boolean {
+  return store.delete("DELETE FROM app_settings WHERE key = ?", [key]).changes > 0
 }
 
 // ──────────────────────────────────────────────────────────────────────────

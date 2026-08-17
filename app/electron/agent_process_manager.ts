@@ -296,6 +296,11 @@ export class AgentProcessManager {
     this.host?.postMessage(request)
   }
 
+  /** Hand one raw transition to the broker wired at construction (`options.onEvent`). */
+  private emit(event: AgentEvent): void {
+    this.options.onEvent(event)
+  }
+
   private ensureHost(): UtilityProcess {
     const existing = this.host
     if (existing !== null) {
@@ -340,106 +345,100 @@ export class AgentProcessManager {
 
   private onHostMessage(message: PtyHostReply): void {
     switch (message.type) {
-      case "spawned": {
-        if (!this.settle(message.sessionId, (pending) => pending.resolve(message.pid))) {
-          // The caller already gave up — the spawn timeout fired, or the app is
-          // shutting down — and the row says failed. This PTY now exists but
-          // nobody owns it, and publishing `agent.started` would flip the row
-          // back to running. Kill it instead; the host's `exited` for it is
-          // suppressed below.
-          this.send({ type: "kill", sessionId: message.sessionId })
-          return
-        }
-        this.live.add(message.sessionId)
-        // A resumed session comes back under the id it already had, and the host
-        // has just replaced the entry this was tracking. It is live again, not
-        // retained scrollback from the run before.
-        this.retained.delete(message.sessionId)
-        this.options.onEvent({ kind: "agent.started", sessionId: message.sessionId, pid: message.pid })
+      case "spawned":
+        this.onSpawned(message)
         return
-      }
-      case "exited": {
-        this.live.delete(message.sessionId)
-        if (this.wasAbandoned(message.sessionId)) {
-          // The reap of a spawn nobody was still waiting for. The row already
-          // records the failure, and an `agent.exited` would overwrite it.
-          return
-        }
-        // The host retains the session's replay for re-attach — nothing to
-        // announce to the renderer yet, but `attach` must keep accepting it.
-        this.retained.add(message.sessionId)
-        this.options.onEvent({
-          kind: "agent.exited",
-          sessionId: message.sessionId,
-          exitCode: message.exitCode,
-        })
+      case "exited":
+        this.onExited(message)
         return
-      }
-      case "pruned": {
+      case "pruned":
         this.retained.delete(message.sessionId)
         return
-      }
-      case "activity": {
-        // Only for a session this manager still considers live. The host sends
-        // these from its data callback, so one can be in flight when the child
-        // exits, or belong to a spawn nobody is waiting for any more — and
-        // either would put a row that has already settled back to "working".
-        if (!this.live.has(message.sessionId)) {
-          return
-        }
-        this.options.onEvent({
-          kind: "agent.activity",
-          sessionId: message.sessionId,
-          busy: message.busy,
-        })
+      case "activity":
+        this.onActivity(message)
         return
-      }
-      case "sessionRef": {
-        // Deliberately *not* gated on `live`, unlike activity. The agents that
-        // need scanning print their session id in the banner they write on the
-        // way out, so this routinely arrives in the same breath as the exit —
-        // and dropping it there would throw away the one thing that makes the
-        // finished session resumable. It cannot resurrect a row: the service
-        // writes it as metadata and never touches status.
-        if (this.abandoned.has(message.sessionId)) {
-          return
-        }
-        this.options.onEvent({
-          kind: "agent.sessionRef",
-          sessionId: message.sessionId,
-          ref: message.ref,
-        })
+      case "sessionRef":
+        this.onMetadata(message)
         return
-      }
-      case "title": {
-        if (this.abandoned.has(message.sessionId)) {
-          return
-        }
-        this.options.onEvent({
-          kind: "agent.title",
-          sessionId: message.sessionId,
-          title: message.title,
-        })
+      case "title":
+        this.onMetadata(message)
         return
-      }
-      case "failed": {
-        this.live.delete(message.sessionId)
-        // A spawn that failed is reported to its caller, which turns it into an
-        // error the user can read. Publishing it as well would record the same
-        // failure on the session row twice, in two different wordings.
-        const settled = this.settle(message.sessionId, (pending) =>
-          pending.reject(new Error(message.message)),
-        )
-        if (settled || this.wasAbandoned(message.sessionId)) {
-          return
-        }
-        this.options.onEvent({
-          kind: "agent.failed",
-          sessionId: message.sessionId,
-          message: message.message,
-        })
-      }
+      case "failed":
+        this.onFailed(message)
     }
+  }
+
+  private onSpawned(message: Extract<PtyHostReply, { type: "spawned" }>): void {
+    if (!this.settle(message.sessionId, (pending) => pending.resolve(message.pid))) {
+      // The caller already gave up — the spawn timeout fired, or the app is
+      // shutting down — and the row says failed. This PTY now exists but
+      // nobody owns it, and publishing `agent.started` would flip the row
+      // back to running. Kill it instead; the host's `exited` for it is
+      // suppressed in `onExited`, which sees the record via `wasAbandoned`.
+      this.send({ type: "kill", sessionId: message.sessionId })
+      return
+    }
+    this.live.add(message.sessionId)
+    // A resumed session comes back under the id it already had, and the host
+    // has just replaced the entry this was tracking. It is live again, not
+    // retained scrollback from the run before.
+    this.retained.delete(message.sessionId)
+    this.emit({ kind: "agent.started", sessionId: message.sessionId, pid: message.pid })
+  }
+
+  private onExited(message: Extract<PtyHostReply, { type: "exited" }>): void {
+    this.live.delete(message.sessionId)
+    if (this.wasAbandoned(message.sessionId)) {
+      // The reap of a spawn nobody was still waiting for. The row already
+      // records the failure, and an `agent.exited` would overwrite it.
+      return
+    }
+    // The host retains the session's replay for re-attach — nothing to
+    // announce to the renderer yet, but `attach` must keep accepting it.
+    this.retained.add(message.sessionId)
+    this.emit({ kind: "agent.exited", sessionId: message.sessionId, exitCode: message.exitCode })
+  }
+
+  private onActivity(message: Extract<PtyHostReply, { type: "activity" }>): void {
+    // Only for a session this manager still considers live. The host sends
+    // these from its data callback, so one can be in flight when the child
+    // exits, or belong to a spawn nobody is waiting for any more — and
+    // either would put a row that has already settled back to "working".
+    if (!this.live.has(message.sessionId)) {
+      return
+    }
+    this.emit({ kind: "agent.activity", sessionId: message.sessionId, busy: message.busy })
+  }
+
+  private onMetadata(message: Extract<PtyHostReply, { type: "sessionRef" | "title" }>): void {
+    // Deliberately *not* gated on `live`, unlike activity. The agents that
+    // need scanning print their session id in the banner they write on the
+    // way out, so this routinely arrives in the same breath as the exit —
+    // and dropping it there would throw away the one thing that makes the
+    // finished session resumable. It cannot resurrect a row: the service
+    // writes it as metadata and never touches status.
+    if (this.abandoned.has(message.sessionId)) {
+      return
+    }
+    if (message.type === "sessionRef") {
+      this.emit({ kind: "agent.sessionRef", sessionId: message.sessionId, ref: message.ref })
+    } else {
+      this.emit({ kind: "agent.title", sessionId: message.sessionId, title: message.title })
+    }
+  }
+
+  private onFailed(message: Extract<PtyHostReply, { type: "failed" }>): void {
+    this.live.delete(message.sessionId)
+    // A spawn that failed is reported to its caller, which turns it into an
+    // error the user can read. Publishing it as well would record the same
+    // failure on the session row twice, in two different wordings.
+    const settled = this.settle(message.sessionId, (pending) =>
+      pending.reject(new Error(message.message)),
+    )
+    if (settled || this.wasAbandoned(message.sessionId)) {
+      return
+    }
+    this.emit({ kind: "agent.failed", sessionId: message.sessionId, message: message.message })
   }
 
   /**

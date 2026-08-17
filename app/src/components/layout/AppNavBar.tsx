@@ -12,7 +12,7 @@ import {
 import { Transition } from "@headlessui/react";
 import Tippy from "@tippyjs/react";
 import { IconButton } from "../atoms/IconButton";
-import useNavigationStore from "../../stores/NavigationStore";
+import { useNavigationSelection, useNavBarCollapse } from "../../hooks/useNavigationControls";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { AppNavBarItems } from "../../constants/AppNavBar";
 import type { NavSection } from "../../types/NavSection";
@@ -67,16 +67,8 @@ export function AppNavBar() {
     orgSlug?: string;
     workspaceSlug?: string;
   }>();
-  const navigationSelectedValue = useNavigationStore(
-    (state) => state.selectedNavVal,
-  );
-  const updateNavigationSelectedValue = useNavigationStore(
-    (state) => state.setNavState,
-  );
-  const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const toggleNavBarCollapse = useNavigationStore(
-    (state) => state.toggleNavBarCollapse,
-  );
+  const { navigationSelectedValue, setNavState } = useNavigationSelection();
+  const { isNavBarCollapsed, toggleNavBarCollapse } = useNavBarCollapse();
   const { currentOrg, currentWorkspace } = useWorkspace();
   const isOnSettingsRoute = isSettingsRoute(location.pathname);
   const resolvedOrgSlug = currentOrg?.slug ?? orgSlug ?? "personal";
@@ -123,7 +115,7 @@ export function AppNavBar() {
                 if (disabled) return;
                 // Clicking a nav icon only switches section — it never changes
                 // the collapse state. The Collapse/Expand button owns that.
-                updateNavigationSelectedValue(id as NavSection);
+                setNavState(id as NavSection);
                 if (id === "settings") {
                   if (!isOnSettingsRoute) navigate(settingsPath);
                 } else if (isOnSettingsRoute) {

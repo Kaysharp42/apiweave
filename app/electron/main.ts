@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -54,6 +55,7 @@ import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
+  AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
@@ -618,101 +620,44 @@ if (!hasSingleInstanceLock) {
     if (swept > 0) {
       console.info(`[agents] reclaimed ${swept} stale agent scratch file(s)`)
     }
-    ipcMain.handle(
-      "agents:listRoster",
-      requireTrustedSender((workspaceId: string) => agentService.listRoster(workspaceId)),
-    )
-    ipcMain.handle(
-      "agents:refreshAvailability",
-      requireTrustedSender((workspaceId: string) => agentService.refreshAvailability(workspaceId)),
-    )
-    ipcMain.handle(
-      "agents:saveCustomAgent",
-      requireTrustedSender((workspaceId: string, definition: AgentDefinition) =>
-        agentService.saveCustomAgent(workspaceId, definition),
-      ),
-    )
-    ipcMain.handle(
-      "agents:deleteCustomAgent",
-      requireTrustedSender((workspaceId: string, agentKey: string) =>
-        agentService.deleteCustomAgent(workspaceId, agentKey),
-      ),
-    )
-    ipcMain.handle(
-      "agents:getDefaultAgentKey",
-      requireTrustedSender((workspaceId: string) => agentService.getDefaultAgentKey(workspaceId)),
-    )
-    ipcMain.handle(
-      "agents:setDefaultAgentKey",
-      requireTrustedSender((workspaceId: string, agentKey: string) =>
-        agentService.setDefaultAgentKey(workspaceId, agentKey),
-      ),
-    )
-    ipcMain.handle(
-      "agents:resolveLocalPath",
-      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
-        agentService.resolveLocalPath(workspaceId, scope),
-      ),
-    )
-    ipcMain.handle(
-      "agents:chooseLocalPath",
-      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
-        agentService.chooseLocalPath(workspaceId, scope),
-      ),
-    )
-    ipcMain.handle(
-      "agents:clearLocalPath",
-      requireTrustedSender((workspaceId: string, scope: AgentScope) =>
-        agentService.clearLocalPath(workspaceId, scope),
-      ),
-    )
-    ipcMain.handle(
-      "agents:listSessions",
-      requireTrustedSender((workspaceId: string) => agentService.listSessions(workspaceId)),
-    )
-    ipcMain.handle(
-      "agents:launchExternal",
-      requireTrustedSender((request: AgentLaunchRequest) => agentService.launchExternal(request)),
-    )
-    ipcMain.handle(
-      "agents:launchEmbedded",
-      requireTrustedSender((request: AgentEmbeddedLaunchRequest) => agentService.launchEmbedded(request)),
-    )
-    ipcMain.handle(
-      "agents:resumeSession",
-      requireTrustedSender((sessionId: string, cols: number, rows: number) =>
-        agentService.resumeSession(sessionId, cols, rows),
-      ),
-    )
-    ipcMain.handle(
-      "agents:write",
-      requireTrustedSender((sessionId: string, data: string) => agentService.writeToSession(sessionId, data)),
-    )
-    ipcMain.handle(
-      "agents:resize",
-      requireTrustedSender((sessionId: string, cols: number, rows: number) =>
-        agentService.resizeSession(sessionId, cols, rows),
-      ),
-    )
-    ipcMain.handle(
-      "agents:setPaused",
-      requireTrustedSender((sessionId: string, paused: boolean) =>
-        agentService.setSessionPaused(sessionId, paused),
-      ),
-    )
-    ipcMain.handle(
-      "agents:killSession",
-      requireTrustedSender((sessionId: string) => agentService.killSession(sessionId)),
-    )
-    ipcMain.handle(
-      "agents:deleteSession",
-      requireTrustedSender((sessionId: string) => agentService.deleteSession(sessionId)),
-    )
+    /**
+     * Register one agents channel behind the trusted-sender guard, exactly like
+     * the other privileged domains above. Every registration is the same two
+     * steps — name the channel, wrap the service call — so the shape lives here
+     * once, and the channel→method mapping itself is the table below: adding a
+     * channel is a row, not a registration statement.
+     */
+    const onAgents = <Args extends unknown[], R>(channel: string, handler: (...args: Args) => R): void => {
+      ipcMain.handle(channel, requireTrustedSender(handler))
+    }
+    const agentHandlers: ReadonlyArray<readonly [channel: string, handler: (...args: never[]) => unknown]> = [
+      [AGENT_CHANNELS.listRoster, (workspaceId: string) => agentService.listRoster(workspaceId)],
+      [AGENT_CHANNELS.refreshAvailability, (workspaceId: string) => agentService.refreshAvailability(workspaceId)],
+      [AGENT_CHANNELS.saveCustomAgent, (workspaceId: string, definition: AgentDefinition) => agentService.saveCustomAgent(workspaceId, definition)],
+      [AGENT_CHANNELS.deleteCustomAgent, (workspaceId: string, agentKey: string) => agentService.deleteCustomAgent(workspaceId, agentKey)],
+      [AGENT_CHANNELS.getDefaultAgentKey, (workspaceId: string) => agentService.getDefaultAgentKey(workspaceId)],
+      [AGENT_CHANNELS.setDefaultAgentKey, (workspaceId: string, agentKey: string) => agentService.setDefaultAgentKey(workspaceId, agentKey)],
+      [AGENT_CHANNELS.resolveLocalPath, (workspaceId: string, scope: AgentScope) => agentService.resolveLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.chooseLocalPath, (workspaceId: string, scope: AgentScope) => agentService.chooseLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.clearLocalPath, (workspaceId: string, scope: AgentScope) => agentService.clearLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.listSessions, (workspaceId: string) => agentService.listSessions(workspaceId)],
+      [AGENT_CHANNELS.launchExternal, (request: AgentLaunchRequest) => agentService.launchExternal(request)],
+      [AGENT_CHANNELS.launchEmbedded, (request: AgentEmbeddedLaunchRequest) => agentService.launchEmbedded(request)],
+      [AGENT_CHANNELS.resumeSession, (sessionId: string, cols: number, rows: number) => agentService.resumeSession(sessionId, cols, rows)],
+      [AGENT_CHANNELS.write, (sessionId: string, data: string) => agentService.writeToSession(sessionId, data)],
+      [AGENT_CHANNELS.resize, (sessionId: string, cols: number, rows: number) => agentService.resizeSession(sessionId, cols, rows)],
+      [AGENT_CHANNELS.setPaused, (sessionId: string, paused: boolean) => agentService.setSessionPaused(sessionId, paused)],
+      [AGENT_CHANNELS.killSession, (sessionId: string) => agentService.killSession(sessionId)],
+      [AGENT_CHANNELS.deleteSession, (sessionId: string) => agentService.deleteSession(sessionId)],
+    ]
+    for (const [channel, handler] of agentHandlers) {
+      onAgents(channel, handler)
+    }
     // The one agents handler written out rather than wrapped: it has to reply
     // with a `MessagePort`, which cannot be returned through `invoke` at all —
     // only sent in a transfer list. So it needs the event, and `requireTrustedSender`
     // exists precisely to hide the event from handlers that do not.
-    ipcMain.handle("agents:attach", async (event, sessionId: string): Promise<boolean> => {
+    ipcMain.handle(AGENT_CHANNELS.attach, async (event, sessionId: string): Promise<boolean> => {
       if (!isTrustedSender(event)) {
         return Promise.reject(new Error("untrusted sender"))
       }

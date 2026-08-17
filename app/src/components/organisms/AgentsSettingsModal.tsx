@@ -156,32 +156,30 @@ export function AgentsSettingsModal({
     if (liveRef.current) load(false);
   };
 
+  /**
+   * What every committed roster change runs through: busy while it is in
+   * flight, then {@link afterRosterChange}, with the failure reported in the
+   * panel rather than swallowed.
+   */
+  const runRosterAction = (action: Promise<unknown>): void => {
+    setBusy(true);
+    void action.then(afterRosterChange).catch((cause: unknown) => {
+      if (!liveRef.current) return;
+      setError(describe(cause));
+      setBusy(false);
+    });
+  };
+
   const onSetDefault = (agentKey: string): void => {
     if (workspaceId === null) return;
-    setBusy(true);
-    void agents
-      .setDefaultAgentKey(workspaceId, agentKey)
-      .then(afterRosterChange)
-      .catch((cause: unknown) => {
-        if (!liveRef.current) return;
-        setError(describe(cause));
-        setBusy(false);
-      });
+    runRosterAction(agents.setDefaultAgentKey(workspaceId, agentKey));
   };
 
   const onConfirmDelete = (): void => {
     if (workspaceId === null || deleteTarget === null) return;
     const agentKey = deleteTarget.definition.agentKey;
     setDeleteTarget(null);
-    setBusy(true);
-    void agents
-      .deleteCustomAgent(workspaceId, agentKey)
-      .then(afterRosterChange)
-      .catch((cause: unknown) => {
-        if (!liveRef.current) return;
-        setError(describe(cause));
-        setBusy(false);
-      });
+    runRosterAction(agents.deleteCustomAgent(workspaceId, agentKey));
   };
 
   const openAdd = (): void => {
@@ -214,26 +212,13 @@ export function AgentsSettingsModal({
     ) {
       return;
     }
-    if (draft.promptMode === "flag" && draft.promptFlag.trim().length === 0) {
-      setFormError("A prompt flag is required when the prompt is passed as a flag value.");
-      return;
-    }
-    let env: Record<string, string>;
-    try {
-      env = parseEnvLines(draft.env);
-    } catch (cause) {
-      setFormError(describe(cause));
+    const parsed = submissionEnv(draft);
+    if (!parsed.ok) {
+      setFormError(parsed.error);
       return;
     }
     setFormError(null);
     setBusy(true);
-    // `saveCustomAgent` is a full replacement, and this form owns only part of a
-    // definition. The three fields below are not on it — `expectedProcess` names
-    // the process a shim actually spawns, `unsupportedPlatforms` greys the agent
-    // out where it cannot run, `installUrl` is the Install link — so an edit that
-    // restated them as empty silently deleted them from an agent the user was
-    // only renaming. Carried over from the entry being edited; blank only for a
-    // genuinely new agent, which has nothing to carry.
     const edited =
       editingKey === null
         ? null
@@ -241,36 +226,7 @@ export function AgentsSettingsModal({
             (entry) => entry.definition.agentKey === editingKey,
           )?.definition ?? null);
     void agents
-      .saveCustomAgent(workspaceId, {
-        agentKey,
-        name: draft.name.trim(),
-        detectCmd: draft.detectCmd.trim(),
-        // Split on whitespace rather than shell-parsing: the value is an argv
-        // array all the way down to `spawn`, and never reaches a shell.
-        argv: splitArgs(draft.argv),
-        expectedProcess: edited?.expectedProcess ?? null,
-        env,
-        promptMode: draft.promptMode,
-        promptFlag:
-          draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
-        mcpConfigArgs: splitArgs(draft.mcpArgs),
-        // Carried over, not restated: the briefing flag is not on this form
-        // either, and an edit that blanked it would leave the agent launching
-        // without the context that tells it which workflow it is working on.
-        briefingArgs: edited?.briefingArgs ?? [],
-        unsupportedPlatforms: edited?.unsupportedPlatforms ?? [],
-        installUrl: edited?.installUrl ?? null,
-        // Carried over for the same reason as the three above, and it matters
-        // more here: these four are how a session is reopened later, so an edit
-        // that reset them would quietly make every future session of a
-        // renamed agent unresumable. A new custom agent starts without them —
-        // resume flags differ per CLI and guessing one produces an agent that
-        // fails at the moment someone tries to recover a conversation.
-        sessionIdMode: edited?.sessionIdMode ?? "none",
-        newSessionArgs: edited?.newSessionArgs ?? [],
-        resumeArgs: edited?.resumeArgs ?? [],
-        sessionIdPattern: edited?.sessionIdPattern ?? null,
-      })
+      .saveCustomAgent(workspaceId, savePayload(draft, agentKey, parsed.env, edited))
       .then(() => {
         if (liveRef.current) closeForm();
         afterRosterChange();
@@ -648,6 +604,110 @@ function toDraft(definition: AgentDefinition): AgentDraft {
 
 function splitArgs(text: string): string[] {
   return text.split(/\s+/).filter((part) => part.length > 0);
+}
+
+/**
+ * Validate the two parts of a draft that can fail in `submit` — the flag-mode
+ * prompt flag, and the env text — and return either the parsed env or the
+ * error the user should see.
+ */
+function submissionEnv(
+  draft: AgentDraft,
+): { readonly ok: true; readonly env: Record<string, string> } | { readonly ok: false; readonly error: string } {
+  if (draft.promptMode === "flag" && draft.promptFlag.trim().length === 0) {
+    return {
+      ok: false,
+      error: "A prompt flag is required when the prompt is passed as a flag value.",
+    };
+  }
+  try {
+    return { ok: true, env: parseEnvLines(draft.env) };
+  } catch (cause) {
+    return { ok: false, error: describe(cause) };
+  }
+}
+
+/**
+ * What the carry-over fields fall back to for a genuinely new agent — the same
+ * "empty" values a fresh `AgentDefinition` would carry, in one place so
+ * {@link savePayload} spreads them per field under the edited entry instead of
+ * spelling a chain of per-field `??` decisions.
+ */
+const CARRIED_DEFAULTS: Pick<
+  AgentDefinition,
+  | "expectedProcess"
+  | "briefingArgs"
+  | "unsupportedPlatforms"
+  | "installUrl"
+  | "sessionIdMode"
+  | "newSessionArgs"
+  | "resumeArgs"
+  | "sessionIdPattern"
+> = {
+  expectedProcess: null,
+  briefingArgs: [],
+  unsupportedPlatforms: [],
+  installUrl: null,
+  sessionIdMode: "none",
+  newSessionArgs: [],
+  resumeArgs: [],
+  sessionIdPattern: null,
+};
+
+/**
+ * The definition `submit` saves. The form owns only part of a definition —
+ * `saveCustomAgent` is a full replacement — so every field that is not on it
+ * is carried over from the entry being edited, or from
+ * {@link CARRIED_DEFAULTS} for a genuinely new agent.
+ *
+ * Defaults spread *under* the edited entry, so each field falls back per
+ * field rather than per object: an edited definition may legitimately omit an
+ * optional field (a built-in roster entry simply has no `expectedProcess`
+ * key), and an omitted field must reach the payload as the schema's null or
+ * empty value, never as `undefined` — the modal normalises what it sends.
+ *
+ * `expectedProcess` names the process a shim actually spawns,
+ * `unsupportedPlatforms` greys the agent out where it cannot run, `installUrl`
+ * is the Install link: restating any of them as empty would silently delete
+ * them from an agent the user was only renaming.
+ *
+ * The same carry-over matters more for the briefing and resume fields, which
+ * are also not on the form. `briefingArgs` blanked would leave the agent
+ * launching without the context that tells it which workflow it is working
+ * on; the session-identity four are how a session is reopened later, so
+ * resetting them would quietly make every future session of a renamed agent
+ * unresumable. A new custom agent starts without them — resume flags differ
+ * per CLI, and guessing one produces an agent that fails at the moment
+ * someone tries to recover a conversation.
+ */
+function savePayload(
+  draft: AgentDraft,
+  agentKey: string,
+  env: Record<string, string>,
+  edited: AgentDefinition | null,
+): AgentDefinition {
+  const carried = { ...CARRIED_DEFAULTS, ...edited };
+  return {
+    agentKey,
+    name: draft.name.trim(),
+    detectCmd: draft.detectCmd.trim(),
+    // Split on whitespace rather than shell-parsing: the value is an argv
+    // array all the way down to `spawn`, and never reaches a shell.
+    argv: splitArgs(draft.argv),
+    expectedProcess: carried.expectedProcess,
+    env,
+    promptMode: draft.promptMode,
+    promptFlag:
+      draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
+    mcpConfigArgs: splitArgs(draft.mcpArgs),
+    briefingArgs: carried.briefingArgs,
+    unsupportedPlatforms: carried.unsupportedPlatforms,
+    installUrl: carried.installUrl,
+    sessionIdMode: carried.sessionIdMode,
+    newSessionArgs: carried.newSessionArgs,
+    resumeArgs: carried.resumeArgs,
+    sessionIdPattern: carried.sessionIdPattern,
+  };
 }
 
 /**

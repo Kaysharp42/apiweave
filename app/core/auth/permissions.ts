@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a hand-auditable role→permission matrix; each role's list is an explicit literal enumeration by design (see the module doc below), and a shared factory behind it would trade auditability for indirection; fallow 2.104 has no range form, so file-level is the narrowest marker that still covers the groups
 /**
  * Permission vocabulary — ported from `backend/app/auth/permissions.py`.
  * Dropped resources: webhooks, users, settings (those subsystems are gone

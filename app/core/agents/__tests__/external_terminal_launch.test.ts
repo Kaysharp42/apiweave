@@ -4,11 +4,9 @@ import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ExternalLaunch } from "../external_terminal"
 import {
-  deleteLauncherScript,
+  LAUNCHER_SCRATCH,
   launchInExternalTerminal,
-  launcherScriptName,
   NoTerminalFoundError,
-  sweepLauncherScripts,
 } from "../external_terminal"
 
 /**
@@ -276,7 +274,7 @@ describe("launchInExternalTerminal — successful launches", () => {
       expect(spawnMock).not.toHaveBeenCalled()
       // And the script, which holds the agent's whole environment, does not
       // outlive the launch that failed.
-      expect(fs.existsSync(path.join(launchSpec.scratchDir, launcherScriptName(launchSpec.sessionId)))).toBe(false)
+      expect(fs.existsSync(path.join(launchSpec.scratchDir, LAUNCHER_SCRATCH.filename(launchSpec.sessionId)))).toBe(false)
     })
   })
 
@@ -313,7 +311,7 @@ describe("launcher scripts — naming and cleanup", () => {
 
       const scratchDir = path.join(tempRoot, "scratch")
       expect(fs.readdirSync(scratchDir).sort()).toEqual(
-        [launcherScriptName("session-a"), launcherScriptName("session-b")].sort(),
+        [LAUNCHER_SCRATCH.filename("session-a"), LAUNCHER_SCRATCH.filename("session-b")].sort(),
       )
     })
   })
@@ -326,22 +324,22 @@ describe("launcher scripts — naming and cleanup", () => {
   it("sweeps stale scripts and leaves the rest of the directory alone", () => {
     const scratchDir = path.join(tempRoot, "scratch")
     fs.mkdirSync(scratchDir, { recursive: true })
-    fs.writeFileSync(path.join(scratchDir, launcherScriptName("old-a")), "#!/bin/sh\n")
-    fs.writeFileSync(path.join(scratchDir, launcherScriptName("old-b")), "#!/bin/sh\n")
+    fs.writeFileSync(path.join(scratchDir, LAUNCHER_SCRATCH.filename("old-a")), "#!/bin/sh\n")
+    fs.writeFileSync(path.join(scratchDir, LAUNCHER_SCRATCH.filename("old-b")), "#!/bin/sh\n")
     fs.writeFileSync(path.join(scratchDir, "apiweave-mcp-old.json"), "{}")
 
-    expect(sweepLauncherScripts(scratchDir)).toBe(2)
+    expect(LAUNCHER_SCRATCH.sweep(scratchDir)).toBe(2)
     expect(fs.readdirSync(scratchDir)).toEqual(["apiweave-mcp-old.json"])
   })
 
   it("deletes one session's script by id, and shrugs when it is already gone", () => {
     const scratchDir = path.join(tempRoot, "scratch")
     fs.mkdirSync(scratchDir, { recursive: true })
-    fs.writeFileSync(path.join(scratchDir, launcherScriptName("session-1")), "#!/bin/sh\n")
+    fs.writeFileSync(path.join(scratchDir, LAUNCHER_SCRATCH.filename("session-1")), "#!/bin/sh\n")
 
-    expect(deleteLauncherScript(scratchDir, "session-1")).toBe(true)
+    expect(LAUNCHER_SCRATCH.deleteOne(scratchDir, "session-1")).toBe(true)
     expect(fs.readdirSync(scratchDir)).toEqual([])
-    expect(deleteLauncherScript(scratchDir, "session-1")).toBe(true)
+    expect(LAUNCHER_SCRATCH.deleteOne(scratchDir, "session-1")).toBe(true)
   })
 })
 
@@ -379,6 +377,6 @@ function readLauncherScript(launchSpec: ExternalLaunch): string {
   expect(scripts).toHaveLength(1)
   const script = scripts[0]
   if (script === undefined) throw new Error("no launcher script was written")
-  expect(script).toBe(launcherScriptName(launchSpec.sessionId))
+  expect(script).toBe(LAUNCHER_SCRATCH.filename(launchSpec.sessionId))
   return path.join(launchSpec.scratchDir, script)
 }

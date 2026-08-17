@@ -7,9 +7,14 @@ import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
 import { MainHeader } from "./MainHeader";
 import { MainFooter } from "./MainFooter";
+import { useShallow } from "zustand/react/shallow";
 import { AgentSessionsProvider } from "../../contexts/AgentSessionsContext";
-import useAgentDockStore from "../../stores/AgentDockStore";
-import useNavigationStore from "../../stores/NavigationStore";
+import { useOpenAgentSessionId } from "../../hooks/useAgentDockControls";
+import {
+  useMobileSidebarControls,
+  useNavigationSelection,
+  useNavBarCollapse,
+} from "../../hooks/useNavigationControls";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -34,20 +39,23 @@ const AGENT_PANE_MIN = 280;
 const AGENT_PANE_MAX = 900;
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const navigationSelectedValue = useNavigationStore(
-    (state) => state.selectedNavVal,
-  );
-  const setNavState = useNavigationStore((state) => state.setNavState);
-  const mobileSidebarOpen = useNavigationStore(
-    (state) => state.mobileSidebarOpen,
-  );
-  const setMobileSidebarOpen = useNavigationStore(
-    (state) => state.setMobileSidebarOpen,
-  );
+  const { navigationSelectedValue, setNavState } = useNavigationSelection();
+  const { mobileSidebarOpen, setMobileSidebarOpen } =
+    useMobileSidebarControls();
   const location = useLocation();
-  const refreshAll = useSidebarStore((state) => state.refreshAll);
-  const resetPagination = useSidebarStore((state) => state.resetPagination);
-  const activeWorkspaceId = useSidebarStore((state) => state.activeWorkspaceId);
+  // One selector rather than three. The claim `useShallow` supports here is
+  // narrow: the two actions in this object are stable references, so the
+  // object identity changes exactly when `activeWorkspaceId` does — which is
+  // the same re-render the three separate subscriptions produced. The other
+  // stores above and below use separate selectors per consumer for exactly
+  // this reason; do not merge them into one.
+  const { refreshAll, resetPagination, activeWorkspaceId } = useSidebarStore(
+    useShallow((state) => ({
+      refreshAll: state.refreshAll,
+      resetPagination: state.resetPagination,
+      activeWorkspaceId: state.activeWorkspaceId,
+    })),
+  );
 
   useEffect(() => {
     const workspaceId = useSidebarStore.getState().activeWorkspaceId;
@@ -94,7 +102,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   // that may exist exactly once — the agent terminal and its MessagePort — has
   // to be mounted by whichever branch the viewport actually shows.
   const isCompact = useMediaQuery(COMPACT_LAYOUT_QUERY);
-  const openAgentSessionId = useAgentDockStore((state) => state.openSessionId);
+  const openAgentSessionId = useOpenAgentSessionId();
 
   return (
     // The agent-sessions subscription is mounted here rather than around each
@@ -206,8 +214,8 @@ export function DesktopSplit({
   readonly children: ReactNode;
   readonly mountsAgentPanel: boolean;
 }) {
-  const isNavBarCollapsed = useNavigationStore((state) => state.collapseNavBar);
-  const openSessionId = useAgentDockStore((state) => state.openSessionId);
+  const { isNavBarCollapsed } = useNavBarCollapse();
+  const openSessionId = useOpenAgentSessionId();
 
   // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
   // visible either way. Pane width = rail width + list width.
@@ -253,9 +261,18 @@ export function DesktopSplit({
 
       {/* maxSize as well as minSize: a terminal that can be dragged to fill the
           window would hide the canvas it is supposed to be editing, and the
-          column cannot be shrunk below a legible line of monospace. */}
+          column cannot be shrunk below a legible line of monospace.
+
+          preferredSize is 0 while closed rather than a constant 420: Allotment
+          applies every pane's preferredSize once at mount, before `visible`
+          is, so a fixed 420 here reserved the width up front and then had
+          nowhere to put it back once the pane collapsed — the sidebar (the
+          only other Low-priority pane) absorbed the permanent 64px deficit.
+          At a narrow desktop width that was enough to crush the workflow list
+          into the hover-affordance column next to it, which is what
+          `node-modal.spec.ts`'s 768px viewport caught. */}
       <Allotment.Pane
-        preferredSize={AGENT_PANE_PREFERRED}
+        preferredSize={mountsAgentPanel && openSessionId !== null ? AGENT_PANE_PREFERRED : 0}
         minSize={AGENT_PANE_MIN}
         maxSize={AGENT_PANE_MAX}
         snap={false}

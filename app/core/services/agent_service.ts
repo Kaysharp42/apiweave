@@ -17,17 +17,15 @@ import { AgentDefinitionSchema } from "@shared/zod-schemas/AgentDefinitionSchema
 import { detectAgents } from "../agents/agent_detection"
 import { resolveExecutable, spawnCommandFor } from "../agents/executable"
 import {
-  deleteLauncherScript,
+  LAUNCHER_SCRATCH,
   launchInExternalTerminal,
   NoTerminalFoundError,
-  sweepLauncherScripts,
 } from "../agents/external_terminal"
-import { deleteAgentMcpConfig, renderMcpConfigArgs, sweepAgentMcpConfigs, writeAgentMcpConfig } from "../agents/mcp_config"
+import { MCP_CONFIG_SCRATCH, renderMcpConfigArgs, writeAgentMcpConfig } from "../agents/mcp_config"
 import {
+  BRIEFING_SCRATCH,
   buildSessionBriefing,
-  deleteSessionBriefing,
   renderBriefingArgs,
-  sweepSessionBriefings,
   writeSessionBriefing,
 } from "../agents/session_briefing"
 import type { PtyLauncher } from "../agents/pty_launcher"
@@ -112,17 +110,17 @@ export class AgentService {
   // ── roster ──────────────────────────────────────────────────────────────
 
   async listRoster(workspaceId: string): Promise<readonly AgentRosterEntry[]> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "read")
     return this.buildRoster(workspaceId, false)
   }
 
   async refreshAvailability(workspaceId: string): Promise<readonly AgentRosterEntry[]> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "read")
     return this.buildRoster(workspaceId, true)
   }
 
   async saveCustomAgent(workspaceId: string, input: AgentDefinition): Promise<AgentRosterEntry> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "create")
     const parsed = AgentDefinitionSchema.safeParse(input)
     if (!parsed.success) {
       throw new ValidationError("agent definition is not valid", parsed.error.issues)
@@ -147,7 +145,7 @@ export class AgentService {
   }
 
   async deleteCustomAgent(workspaceId: string, agentKey: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "delete")
     const existing = this.agents.getDefinition(workspaceId, agentKey)
     if (existing === undefined) {
       throw new NotFoundError(`agent ${agentKey} not found`)
@@ -171,12 +169,12 @@ export class AgentService {
   }
 
   async getDefaultAgentKey(workspaceId: string): Promise<string> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "read")
     return this.agents.getDefaultAgentKey(workspaceId) ?? DEFAULT_AGENT_KEY
   }
 
   async setDefaultAgentKey(workspaceId: string, agentKey: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "update")
     this.mustGetDefinition(workspaceId, agentKey)
     this.agents.setDefaultAgentKey(workspaceId, agentKey)
   }
@@ -184,7 +182,7 @@ export class AgentService {
   // ── local paths ─────────────────────────────────────────────────────────
 
   async resolveLocalPath(workspaceId: string, scope: AgentScope): Promise<AgentPathResolution> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "read")
     return this.resolvePathForScope(workspaceId, scope)
   }
 
@@ -193,7 +191,7 @@ export class AgentService {
    * main process, so the value comes from the OS rather than from the renderer.
    */
   async chooseLocalPath(workspaceId: string, scope: AgentScope): Promise<string | null> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "update")
     this.assertScopeInWorkspace(workspaceId, scope)
     const current = this.agents.getLocalPath(scope)
     const chosen = await this.environment.pickDirectory({
@@ -208,7 +206,7 @@ export class AgentService {
   }
 
   async clearLocalPath(workspaceId: string, scope: AgentScope): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "update")
     this.assertScopeInWorkspace(workspaceId, scope)
     this.agents.deleteLocalPath(scope)
   }
@@ -216,7 +214,7 @@ export class AgentService {
   // ── sessions ────────────────────────────────────────────────────────────
 
   async listSessions(workspaceId: string): Promise<readonly AgentSession[]> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_AGENTS)
+    await this.authorize(workspaceId, "read")
     return this.agents.listSessions(workspaceId)
   }
 
@@ -245,16 +243,7 @@ export class AgentService {
     // before the process started, so a conversation handed to the user's own
     // terminal can still be picked back up in the dock afterwards.
     const identity = this.sessionIdentityFor(prepared.definition)
-    const session = this.agents.createSession({
-      workspaceId: request.workspaceId,
-      agentKey: prepared.definition.agentKey,
-      launchMode: "external",
-      status: "starting",
-      cwd: prepared.cwd,
-      scopeKind: request.scope.kind,
-      scopeId: request.scope.id,
-      agentSessionRef: identity.ref,
-    })
+    const session = this.createSessionRow(request, prepared, "external", identity)
 
     try {
       await launchInExternalTerminal({
@@ -304,19 +293,10 @@ export class AgentService {
     const prepared = await this.prepareLaunch(request)
     const identity = this.sessionIdentityFor(prepared.definition)
 
-    const session = this.agents.createSession({
-      workspaceId: request.workspaceId,
-      agentKey: prepared.definition.agentKey,
-      launchMode: "embedded",
-      status: "starting",
-      cwd: prepared.cwd,
-      scopeKind: request.scope.kind,
-      scopeId: request.scope.id,
-      // Written at insert, not after the spawn. A launch that fails — a missing
-      // binary, a folder that vanished — still leaves a row that knows which
-      // conversation it was for, which is exactly the row a user retries from.
-      agentSessionRef: identity.ref,
-    })
+    // Written at insert, not after the spawn. A launch that fails — a missing
+    // binary, a folder that vanished — still leaves a row that knows which
+    // conversation it was for, which is exactly the row a user retries from.
+    const session = this.createSessionRow(request, prepared, "embedded", identity)
     // `.cmd`/`.bat` shims cannot be executed directly on Windows, in a PTY any
     // more than anywhere else. The same composition the external path uses.
     // Built after the row exists because the MCP config file is named for the
@@ -390,23 +370,9 @@ export class AgentService {
     // `run`, not `read`: this starts a process. A role that may watch an agent
     // does not thereby get to launch one.
     const previous = await this.mustAuthorizeSession(sessionId, "run")
-    const ref = previous.agentSessionRef ?? null
-    if (ref === null) {
-      throw new ValidationError("This session cannot be resumed — no conversation id was recorded for it")
-    }
-    if (previous.status === "starting" || previous.status === "running") {
-      // Two processes on one conversation both write to its history, and the
-      // agent's own store is not built for that.
-      throw new ValidationError("This session is still running")
-    }
-    if (
-      previous.scopeKind === null ||
-      previous.scopeKind === undefined ||
-      previous.scopeId === null ||
-      previous.scopeId === undefined
-    ) {
-      throw new ValidationError("This session cannot be resumed — it was not launched against a project or workflow")
-    }
+    const ref = this.requireResumeRef(previous)
+    this.assertSessionNotRunning(previous)
+    const scope = this.requireResumeScope(previous)
     const definition = this.mustGetDefinition(previous.workspaceId, previous.agentKey)
     if (definition.resumeArgs.length === 0) {
       throw new ValidationError(`${definition.name} does not support resuming a session`)
@@ -415,7 +381,7 @@ export class AgentService {
     const prepared = await this.prepareLaunch({
       workspaceId: previous.workspaceId,
       agentKey: previous.agentKey,
-      scope: { kind: previous.scopeKind, id: previous.scopeId },
+      scope,
     })
     const command = spawnCommandFor(
       prepared.executablePath,
@@ -559,14 +525,22 @@ export class AgentService {
       this.agents.updateSession(event.sessionId, { title: event.title })
       return
     }
+    this.recordTerminalTransition(event)
+  }
+
+  /**
+   * Persist one of the three status transitions, guarded by the terminal rule.
+   *
+   * `exited` and `failed` are the end of a row's life. The host can still emit
+   * after one — a `agent.failed` for the whole host as it tears down arrives
+   * after each child's own `agent.exited`, and a respawned host re-announces
+   * ids it remembers — and any of those would otherwise overwrite a real exit
+   * code with a generic message, or move a dead session back to `running`.
+   * The repository pins the status too; this stops the row being rewritten at
+   * all, so `error` and `exitCode` survive as well.
+   */
+  private recordTerminalTransition(event: AgentEvent): void {
     const session = this.agents.getSession(event.sessionId)
-    // `exited` and `failed` are the end of a row's life. The host can still emit
-    // after one — a `agent.failed` for the whole host as it tears down arrives
-    // after each child's own `agent.exited`, and a respawned host re-announces
-    // ids it remembers — and any of those would otherwise overwrite a real exit
-    // code with a generic message, or move a dead session back to `running`.
-    // The repository pins the status too; this stops the row being rewritten at
-    // all, so `error` and `exitCode` survive as well.
     if (session === undefined || session.status === "exited" || session.status === "failed") {
       return
     }
@@ -620,10 +594,46 @@ export class AgentService {
   sweepScratchFiles(): number {
     this.sweptScratch = true
     const directory = this.environment.agentFilesDir
-    return sweepAgentMcpConfigs(directory) + sweepLauncherScripts(directory) + sweepSessionBriefings(directory)
+    return (
+      MCP_CONFIG_SCRATCH.sweep(directory) +
+      LAUNCHER_SCRATCH.sweep(directory) +
+      BRIEFING_SCRATCH.sweep(directory)
+    )
   }
 
   // ── internals ───────────────────────────────────────────────────────────
+
+  /**
+   * Authorize one action against the `agents` resource in a workspace — the
+   * first step of every method that takes a workspace, so the resource and the
+   * provider stay named in exactly one place.
+   */
+  private async authorize(workspaceId: string, action: Action): Promise<void> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_AGENTS)
+  }
+
+  /**
+   * The session row both launch paths insert — same columns, same identity
+   * semantics; only `launchMode` differs. See {@link sessionIdentityFor} for
+   * how `agentSessionRef` arrives.
+   */
+  private createSessionRow(
+    request: AgentLaunchRequest,
+    prepared: PreparedLaunch,
+    launchMode: "external" | "embedded",
+    identity: SessionIdentity,
+  ): AgentSession {
+    return this.agents.createSession({
+      workspaceId: request.workspaceId,
+      agentKey: prepared.definition.agentKey,
+      launchMode,
+      status: "starting",
+      cwd: prepared.cwd,
+      scopeKind: request.scope.kind,
+      scopeId: request.scope.id,
+      agentSessionRef: identity.ref,
+    })
+  }
 
   /**
    * Everything both launch paths need, resolved and authorized once.
@@ -633,7 +643,7 @@ export class AgentService {
    * read and edit files the user never pointed it at.
    */
   private async prepareLaunch(request: AgentLaunchRequest): Promise<PreparedLaunch> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, request.workspaceId, "run", RESOURCE_AGENTS)
+    await this.authorize(request.workspaceId, "run")
     this.assertScopeInWorkspace(request.workspaceId, request.scope)
     this.ensureScratchSwept()
 
@@ -792,9 +802,9 @@ export class AgentService {
    * is reclaimed by {@link sweepScratchFiles} on the next start.
    */
   private discardSessionScratch(sessionId: string): void {
-    deleteAgentMcpConfig(this.environment.agentFilesDir, sessionId)
-    deleteLauncherScript(this.environment.agentFilesDir, sessionId)
-    deleteSessionBriefing(this.environment.agentFilesDir, sessionId)
+    MCP_CONFIG_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
+    LAUNCHER_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
+    BRIEFING_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
   }
 
   /**
@@ -827,8 +837,41 @@ export class AgentService {
     if (session === undefined) {
       throw new NotFoundError(`agent session ${sessionId} not found`)
     }
-    await authorizeWorkspace(this.scopeResolver, this.permissions, session.workspaceId, action, RESOURCE_AGENTS)
+    await this.authorize(session.workspaceId, action)
     return session
+  }
+
+  /**
+   * The conversation ref a resume reopens, or a refusal when the row never
+   * recorded one.
+   */
+  private requireResumeRef(previous: AgentSession): string {
+    const ref = previous.agentSessionRef ?? null
+    if (ref === null) {
+      throw new ValidationError("This session cannot be resumed — no conversation id was recorded for it")
+    }
+    return ref
+  }
+
+  /** Two processes on one conversation both write to its history, and the
+   * agent's own store is not built for that. */
+  private assertSessionNotRunning(previous: AgentSession): void {
+    if (previous.status === "starting" || previous.status === "running") {
+      throw new ValidationError("This session is still running")
+    }
+  }
+
+  /** The scope a resume re-launches against, or a refusal when the row has none. */
+  private requireResumeScope(previous: AgentSession): AgentScope {
+    if (
+      previous.scopeKind === null ||
+      previous.scopeKind === undefined ||
+      previous.scopeId === null ||
+      previous.scopeId === undefined
+    ) {
+      throw new ValidationError("This session cannot be resumed — it was not launched against a project or workflow")
+    }
+    return { kind: previous.scopeKind, id: previous.scopeId }
   }
 
   private async buildRoster(workspaceId: string, force: boolean): Promise<readonly AgentRosterEntry[]> {
@@ -887,16 +930,27 @@ export class AgentService {
     }
     const probed = new Set(cached.items.map((entry) => entry.agentKey))
     const missing = definitions.filter((definition) => !probed.has(definition.agentKey))
-    if (missing.length === 0) {
-      return cached.items
-    }
+    return missing.length === 0 ? cached.items : this.probeMissing(workspaceId, cached, missing)
+  }
+
+  /**
+   * Probe only the definitions a warm cache entry does not cover, and merge
+   * the results in — see {@link availabilityFor} for why a hit is not a hit
+   * for agents that were never probed.
+   *
+   * Re-read before publishing. A probe can sit here for seconds per agent, and
+   * an explicit Refresh — or the invalidation a save or delete performs — can
+   * land inside that window. Writing the pre-await snapshot back would undo
+   * the user's refresh and restore rows for a definition they just deleted,
+   * with the stale entry then serving the TTL out. Identity, not timestamp:
+   * an invalidation removes the entry entirely.
+   */
+  private async probeMissing(
+    workspaceId: string,
+    cached: { readonly at: number; readonly items: readonly AgentAvailability[] },
+    missing: readonly AgentDefinition[],
+  ): Promise<readonly AgentAvailability[]> {
     const fresh = await detectAgents(missing)
-    // Re-read before publishing. A probe can sit here for seconds per agent, and
-    // an explicit Refresh — or the invalidation a save or delete performs — can
-    // land inside that window. Writing the pre-await snapshot back would undo
-    // the user's refresh and restore rows for a definition they just deleted,
-    // with the stale entry then serving the TTL out. Identity, not timestamp:
-    // an invalidation removes the entry entirely.
     const current = this.availabilityCache.get(workspaceId)
     if (current !== cached) {
       const have = new Set((current?.items ?? []).map((entry) => entry.agentKey))

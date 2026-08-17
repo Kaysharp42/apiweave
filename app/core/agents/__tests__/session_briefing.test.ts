@@ -3,11 +3,9 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  BRIEFING_SCRATCH,
   buildSessionBriefing,
-  deleteSessionBriefing,
   renderBriefingArgs,
-  sessionBriefingFilename,
-  sweepSessionBriefings,
   writeSessionBriefing,
   type AgentBriefingContext,
 } from "../session_briefing"
@@ -99,7 +97,7 @@ describe("session briefing files", () => {
   it("writes the briefing under a name owned by one session", () => {
     const filePath = writeSessionBriefing(scratchDir, "session-1", "hello")
 
-    expect(path.basename(filePath)).toBe(sessionBriefingFilename("session-1"))
+    expect(path.basename(filePath)).toBe(BRIEFING_SCRATCH.filename("session-1"))
     expect(fs.readFileSync(filePath, "utf8")).toBe("hello")
   })
 
@@ -108,7 +106,7 @@ describe("session briefing files", () => {
    * and a separator in one would write outside the scratch directory.
    */
   it("keeps a path separator out of the filename", () => {
-    const name = sessionBriefingFilename("../../escape")
+    const name = BRIEFING_SCRATCH.filename("../../escape")
 
     expect(name).not.toContain("/")
     expect(name).not.toContain("\\")
@@ -118,8 +116,8 @@ describe("session briefing files", () => {
   it("deletes one session's briefing and reports a missing one honestly", () => {
     writeSessionBriefing(scratchDir, "session-1", "hello")
 
-    expect(deleteSessionBriefing(scratchDir, "session-1")).toBe(true)
-    expect(fs.existsSync(path.join(scratchDir, sessionBriefingFilename("session-1")))).toBe(false)
+    expect(BRIEFING_SCRATCH.deleteOne(scratchDir, "session-1")).toBe(true)
+    expect(fs.existsSync(path.join(scratchDir, BRIEFING_SCRATCH.filename("session-1")))).toBe(false)
   })
 
   /**
@@ -131,12 +129,12 @@ describe("session briefing files", () => {
     writeSessionBriefing(scratchDir, "session-2", "two")
     fs.writeFileSync(path.join(scratchDir, "apiweave-mcp-session-1.json"), "{}")
 
-    expect(sweepSessionBriefings(scratchDir)).toBe(2)
+    expect(BRIEFING_SCRATCH.sweep(scratchDir)).toBe(2)
     expect(fs.readdirSync(scratchDir)).toEqual(["apiweave-mcp-session-1.json"])
   })
 
   it("survives a scratch directory that does not exist", () => {
-    expect(sweepSessionBriefings(path.join(scratchDir, "nope"))).toBe(0)
+    expect(BRIEFING_SCRATCH.sweep(path.join(scratchDir, "nope"))).toBe(0)
   })
 })
 

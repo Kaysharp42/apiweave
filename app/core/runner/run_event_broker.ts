@@ -1,4 +1,5 @@
 import type { RunEvent, RunProgressEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
+import { BoundedEventBroker, type TrackedState } from "../shared/bounded_event_broker"
 
 export interface RunEventBrokerOptions {
   /** ISO clock — injected so tests are deterministic and the app shares its ClockProvider. */
@@ -12,15 +13,11 @@ export interface RunEventBrokerOptions {
 const DEFAULT_MAX_REPLAY = 200
 const DEFAULT_MAX_RUNS = 500
 
-interface RunState {
-  seq: number
-  terminal: boolean
+interface RunState extends TrackedState {
   status: RunTerminalStatus | "running" | "pending"
   /** Most-recent stamped events, bounded to maxReplayEventsPerRun. */
   readonly recent: RunProgressEvent[]
 }
-
-type Listener = (event: RunProgressEvent) => void
 
 /**
  * Process-local run-event broker (Phase 6). Owned by the Electron composition
@@ -40,23 +37,21 @@ type Listener = (event: RunProgressEvent) => void
  * No raw payloads ever pass through here — events carry only the safe metadata
  * the scheduler already sanitized.
  */
-export class RunEventBroker {
-  private readonly runs = new Map<string, RunState>()
-  private readonly subscribers = new Set<Listener>()
-  private readonly now: () => string
+export class RunEventBroker extends BoundedEventBroker<RunProgressEvent, RunState> {
   private readonly maxReplay: number
-  private readonly maxRuns: number
 
   constructor(options: RunEventBrokerOptions) {
-    this.now = options.now
+    super({
+      now: options.now,
+      maxTracked: options.maxTrackedRuns ?? DEFAULT_MAX_RUNS,
+    })
     this.maxReplay = options.maxReplayEventsPerRun ?? DEFAULT_MAX_REPLAY
-    this.maxRuns = options.maxTrackedRuns ?? DEFAULT_MAX_RUNS
   }
 
   /** Stamp, buffer, and fan out one raw run transition. Terminal events are
    *  idempotent per run. Bad subscribers are isolated (never rethrow). */
   publish(runId: string, event: RunEvent): void {
-    const state = this.ensure(runId)
+    const state = this.ensure(runId, () => ({ seq: 0, terminal: false, status: "pending", recent: [] }))
     if (event.kind === "run.finished") {
       if (state.terminal) return // exactly-once terminal
       state.terminal = true
@@ -65,52 +60,21 @@ export class RunEventBroker {
       if (!state.terminal) state.status = "running"
     }
 
-    const stamped = { ...event, seq: ++state.seq, ts: this.now() } as RunProgressEvent
+    // Buffer before dispatch: a subscriber that calls `getReplay` from inside
+    // its own callback must see the event it was just handed, and the run-
+    // progress subscribe path depends on replay-vs-live ordering.
+    const stamped = this.stamp(state, event)
     state.recent.push(stamped)
     if (state.recent.length > this.maxReplay) state.recent.shift()
-
-    for (const listener of this.subscribers) {
-      try {
-        listener(stamped)
-      } catch {
-        // A single failing subscriber must never strand the run or starve the
-        // other subscribers. Swallow — there is no safe channel to report to here.
-      }
-    }
+    this.dispatch(stamped)
   }
 
-  /** Subscribe to every run's events. Returns an idempotent unsubscribe. */
-  subscribe(listener: Listener): () => void {
-    this.subscribers.add(listener)
-    return () => {
-      this.subscribers.delete(listener)
-    }
-  }
-
-  /** Latest published sequence for a run (0 before its first event). */
-  getLatestSequence(runId: string): number {
-    return this.runs.get(runId)?.seq ?? 0
-  }
-
-  isTerminal(runId: string): boolean {
-    return this.runs.get(runId)?.terminal ?? false
-  }
-
-  /** Bounded replay buffer for a run (most recent first-in order). */
+  /**
+   * Bounded replay buffer for a run (most recent first-in order). Up to date
+   * with the live event by the time any subscriber's callback runs — see
+   * {@link publish}.
+   */
   getReplay(runId: string): readonly RunProgressEvent[] {
-    return this.runs.get(runId)?.recent ?? []
-  }
-
-  private ensure(runId: string): RunState {
-    const existing = this.runs.get(runId)
-    if (existing) return existing
-    // Evict the oldest tracked run when at capacity (Map preserves insertion order).
-    if (this.runs.size >= this.maxRuns) {
-      const oldest = this.runs.keys().next().value
-      if (oldest !== undefined) this.runs.delete(oldest)
-    }
-    const created: RunState = { seq: 0, terminal: false, status: "pending", recent: [] }
-    this.runs.set(runId, created)
-    return created
+    return this.getState(runId)?.recent ?? []
   }
 }

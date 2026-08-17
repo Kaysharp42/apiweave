@@ -1,7 +1,5 @@
-import fs from "node:fs"
-import path from "node:path"
 import type { AgentScopeKind } from "@shared/types/AgentScope"
-import { sanitizeSessionId, sweepScratch } from "./mcp_config"
+import { scratchFileKind, writeScratchFile } from "./scratch_files"
 
 /**
  * What a launched agent is told about the session before the user types a word.
@@ -29,12 +27,19 @@ export interface AgentBriefingContext {
   readonly mcpWired: boolean
 }
 
-const BRIEFING_PREFIX = "briefing-"
-const BRIEFING_SUFFIX = ".md"
-
-export function sessionBriefingFilename(sessionId: string): string {
-  return `${BRIEFING_PREFIX}${sanitizeSessionId(sessionId)}${BRIEFING_SUFFIX}`
-}
+/**
+ * The briefing scratch kind. Exported as the object rather than re-exported
+ * field by field, so the surface stays the factory's: `filename`, `deleteOne`,
+ * `sweep` — no per-kind aliases to drift apart.
+ *
+ * `deleteOne` is best-effort by design (see `scratch_files.deleteScratchFile`):
+ * the caller is a terminal state transition, and a session that already ended
+ * must not fail to be recorded because a scratch file was already gone (or is
+ * held open on Windows). `sweep` reclaims what a crash left; it runs for the
+ * weaker of the two reasons the config sweep exists — no secret is at stake
+ * here, only files that would otherwise accumulate one per session for ever.
+ */
+export const BRIEFING_SCRATCH = scratchFileKind("briefing-", ".md")
 
 /**
  * The briefing text for one session.
@@ -121,30 +126,7 @@ you did not create.
  * the user's projects and folders, and it lives in the same directory.
  */
 export function writeSessionBriefing(scratchDir: string, sessionId: string, text: string): string {
-  fs.mkdirSync(scratchDir, { recursive: true, mode: 0o700 })
-  const filePath = path.join(scratchDir, sessionBriefingFilename(sessionId))
-  fs.writeFileSync(filePath, text, { encoding: "utf8", mode: 0o600 })
-  return filePath
-}
-
-/** Drop one session's briefing. Best-effort, exactly as {@link deleteAgentMcpConfig} is. */
-export function deleteSessionBriefing(scratchDir: string, sessionId: string): boolean {
-  try {
-    fs.rmSync(path.join(scratchDir, sessionBriefingFilename(sessionId)), { force: true })
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * Reclaim briefings left by a previous run of the app. Called only from the
- * startup sweep, and for the weaker of the two reasons the config sweep exists:
- * no secret is at stake here, only files that would otherwise accumulate one per
- * session for ever.
- */
-export function sweepSessionBriefings(scratchDir: string): number {
-  return sweepScratch(scratchDir, (name) => name.startsWith(BRIEFING_PREFIX) && name.endsWith(BRIEFING_SUFFIX))
+  return writeScratchFile(scratchDir, BRIEFING_SCRATCH.filename(sessionId), text, 0o600)
 }
 
 /**

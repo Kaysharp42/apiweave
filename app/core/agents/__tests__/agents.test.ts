@@ -6,10 +6,8 @@ import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import { detectAgent } from "../agent_detection"
 import { resolveExecutable, spawnCommandFor } from "../executable"
 import {
-  agentMcpConfigFilename,
-  deleteAgentMcpConfig,
+  MCP_CONFIG_SCRATCH,
   renderMcpConfigArgs,
-  sweepAgentMcpConfigs,
   writeAgentMcpConfig,
 } from "../mcp_config"
 
@@ -169,7 +167,7 @@ describe("MCP wiring", () => {
       "session-1",
     )
 
-    expect(written).toBe(path.join(configDir, agentMcpConfigFilename("session-1")))
+    expect(written).toBe(path.join(configDir, MCP_CONFIG_SCRATCH.filename("session-1")))
     const parsed = JSON.parse(fs.readFileSync(written, "utf8")) as {
       mcpServers: { apiweave: { url: string; headers: Record<string, string> } }
     }
@@ -215,12 +213,12 @@ describe("MCP wiring", () => {
     const doomed = writeAgentMcpConfig(configDir, { url: "http://a", token: "token-a", port: 1 }, "session-a")
     const kept = writeAgentMcpConfig(configDir, { url: "http://b", token: "token-b", port: 2 }, "session-b")
 
-    expect(deleteAgentMcpConfig(configDir, "session-a")).toBe(true)
+    expect(MCP_CONFIG_SCRATCH.deleteOne(configDir, "session-a")).toBe(true)
     expect(fs.existsSync(doomed)).toBe(false)
     expect(fs.existsSync(kept)).toBe(true)
     // A file already gone is not a failure — the caller is a terminal
     // transition that must not fail over a scratch file.
-    expect(deleteAgentMcpConfig(configDir, "session-a")).toBe(true)
+    expect(MCP_CONFIG_SCRATCH.deleteOne(configDir, "session-a")).toBe(true)
   })
 
   /**
@@ -234,15 +232,15 @@ describe("MCP wiring", () => {
     const bystander = path.join(configDir, "notes.txt")
     fs.writeFileSync(bystander, "not ours")
 
-    expect(sweepAgentMcpConfigs(configDir)).toBe(2)
+    expect(MCP_CONFIG_SCRATCH.sweep(configDir)).toBe(2)
     expect(fs.readdirSync(configDir)).toEqual(["notes.txt"])
     // A directory that does not exist yet is the first-run case, not an error.
-    expect(sweepAgentMcpConfigs(path.join(tempRoot, "never-created"))).toBe(0)
+    expect(MCP_CONFIG_SCRATCH.sweep(path.join(tempRoot, "never-created"))).toBe(0)
   })
 
   /** The session id becomes a filename; a separator in one would escape the directory. */
   it("never lets a session id steer the write out of the scratch directory", () => {
-    expect(agentMcpConfigFilename("../../etc/passwd")).not.toContain("/")
-    expect(agentMcpConfigFilename("../../etc/passwd")).not.toContain("\\")
+    expect(MCP_CONFIG_SCRATCH.filename("../../etc/passwd")).not.toContain("/")
+    expect(MCP_CONFIG_SCRATCH.filename("../../etc/passwd")).not.toContain("\\")
   })
 })

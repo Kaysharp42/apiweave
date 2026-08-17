@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the bridge objects at the bottom are the typed surface of the registry they front: every property names a channel and forwards to `invoke`, so any method gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`, and the same file-level form); fallow 2.104 has no range form
 import { contextBridge, ipcRenderer } from "electron"
 import type { ContractResult } from "@shared/contract/errors"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
@@ -11,6 +12,7 @@ import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import {
+  AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
@@ -41,9 +43,16 @@ function call<T>(channel: string): () => Promise<T> {
   return () => ipcRenderer.invoke(channel) as Promise<T>
 }
 
-/** The argument-taking counterpart of {@link call}, for bridges whose methods carry a payload. */
-function invoke<T>(channel: string, ...args: readonly unknown[]): Promise<T> {
-  return ipcRenderer.invoke(channel, ...args) as Promise<T>
+/**
+ * The argument-taking counterpart of {@link call}: a bridge-method factory that
+ * forwards one channel through `ipcRenderer.invoke`, with the method's own
+ * parameter and return types supplied by the bridge interface it is assigned
+ * into. Every request-style method of the agents bridge is this same line, and
+ * writing it out per method means the channel name and the types are asserted
+ * in n places instead of one.
+ */
+function invokeBridge<Args extends readonly unknown[], Result>(channel: string): (...args: Args) => Promise<Result> {
+  return (...args: Args) => ipcRenderer.invoke(channel, ...args) as Promise<Result>
 }
 
 /**
@@ -140,25 +149,25 @@ contextBridge.exposeInMainWorld("__APIWEAVE_UPDATES__", updatesBridge)
  * the same shape, as the `mcp:*` and `updates:*` handlers above.
  */
 const agentsBridge: AgentsBridge = {
-  listRoster: (workspaceId) => invoke("agents:listRoster", workspaceId),
-  refreshAvailability: (workspaceId) => invoke("agents:refreshAvailability", workspaceId),
-  saveCustomAgent: (workspaceId, definition) => invoke("agents:saveCustomAgent", workspaceId, definition),
-  deleteCustomAgent: (workspaceId, agentKey) => invoke("agents:deleteCustomAgent", workspaceId, agentKey),
-  getDefaultAgentKey: (workspaceId) => invoke("agents:getDefaultAgentKey", workspaceId),
-  setDefaultAgentKey: (workspaceId, agentKey) => invoke("agents:setDefaultAgentKey", workspaceId, agentKey),
-  resolveLocalPath: (workspaceId, scope) => invoke("agents:resolveLocalPath", workspaceId, scope),
-  chooseLocalPath: (workspaceId, scope) => invoke("agents:chooseLocalPath", workspaceId, scope),
-  clearLocalPath: (workspaceId, scope) => invoke("agents:clearLocalPath", workspaceId, scope),
-  listSessions: (workspaceId) => invoke("agents:listSessions", workspaceId),
-  launchExternal: (request) => invoke("agents:launchExternal", request),
-  launchEmbedded: (request) => invoke("agents:launchEmbedded", request),
-  resumeSession: (sessionId, cols, rows) => invoke("agents:resumeSession", sessionId, cols, rows),
-  write: (sessionId, data) => invoke("agents:write", sessionId, data),
-  resize: (sessionId, cols, rows) => invoke("agents:resize", sessionId, cols, rows),
-  setPaused: (sessionId, paused) => invoke("agents:setPaused", sessionId, paused),
-  killSession: (sessionId) => invoke("agents:killSession", sessionId),
-  deleteSession: (sessionId) => invoke("agents:deleteSession", sessionId),
-  attach: (sessionId) => invoke("agents:attach", sessionId),
+  listRoster: invokeBridge(AGENT_CHANNELS.listRoster),
+  refreshAvailability: invokeBridge(AGENT_CHANNELS.refreshAvailability),
+  saveCustomAgent: invokeBridge(AGENT_CHANNELS.saveCustomAgent),
+  deleteCustomAgent: invokeBridge(AGENT_CHANNELS.deleteCustomAgent),
+  getDefaultAgentKey: invokeBridge(AGENT_CHANNELS.getDefaultAgentKey),
+  setDefaultAgentKey: invokeBridge(AGENT_CHANNELS.setDefaultAgentKey),
+  resolveLocalPath: invokeBridge(AGENT_CHANNELS.resolveLocalPath),
+  chooseLocalPath: invokeBridge(AGENT_CHANNELS.chooseLocalPath),
+  clearLocalPath: invokeBridge(AGENT_CHANNELS.clearLocalPath),
+  listSessions: invokeBridge(AGENT_CHANNELS.listSessions),
+  launchExternal: invokeBridge(AGENT_CHANNELS.launchExternal),
+  launchEmbedded: invokeBridge(AGENT_CHANNELS.launchEmbedded),
+  resumeSession: invokeBridge(AGENT_CHANNELS.resumeSession),
+  write: invokeBridge(AGENT_CHANNELS.write),
+  resize: invokeBridge(AGENT_CHANNELS.resize),
+  setPaused: invokeBridge(AGENT_CHANNELS.setPaused),
+  killSession: invokeBridge(AGENT_CHANNELS.killSession),
+  deleteSession: invokeBridge(AGENT_CHANNELS.deleteSession),
+  attach: invokeBridge(AGENT_CHANNELS.attach),
   onSessionChanged: (callback) => subscribe<AgentSessionEvent>(AGENT_SESSION_CHANGED_CHANNEL, callback),
 }
 

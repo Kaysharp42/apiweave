@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { CircleStop, RotateCcw, Terminal, X } from "lucide-react";
+import type { AgentSession } from "@shared/types/AgentSession";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { AgentSessionStatusBadge } from "../molecules/AgentSessionStatusBadge";
 import { useAgentSessions } from "../../contexts/AgentSessionsContext";
-import useAgentDockStore from "../../stores/AgentDockStore";
 import { describeError } from "../../utils/describeError";
+import { useAgentDockControls } from "../../hooks/useAgentDockControls";
+import { useKillSessionAction } from "../../hooks/useKillSessionAction";
 import { AgentTerminal } from "./AgentTerminal";
 
 /**
@@ -27,10 +29,8 @@ import { AgentTerminal } from "./AgentTerminal";
  * APIWeave's to choose.
  */
 export function AgentDock() {
-  const openSessionId = useAgentDockStore((state) => state.openSessionId);
-  const openSession = useAgentDockStore((state) => state.openSession);
-  const focusRequest = useAgentDockStore((state) => state.focusRequest);
-  const close = useAgentDockStore((state) => state.close);
+  const { openSessionId, openSession, focusRequest, closeDock } =
+    useAgentDockControls();
   const { sessions, busySessionIds, killSession, resumeSession } =
     useAgentSessions();
   const [stopError, setStopError] = useState<string | null>(null);
@@ -43,6 +43,8 @@ export function AgentDock() {
       mountedRef.current = false;
     };
   }, []);
+
+  const onStop = useKillSessionAction(killSession, setStopError);
 
   const session = sessions.find((row) => row.sessionId === openSessionId);
   const isLive = session?.status === "running" || session?.status === "starting";
@@ -63,19 +65,6 @@ export function AgentDock() {
     session.agentSessionRef !== undefined;
 
   /**
-   * A kill can be refused — the process may already be gone, or the session may
-   * not be ours to stop. The earlier `void killSession(...)` turned that into an
-   * unhandled rejection behind a button that appeared to do nothing, which
-   * invites the user to press it again.
-   */
-  const onStop = (sessionId: string): void => {
-    setStopError(null);
-    void killSession(sessionId).catch((cause: unknown) => {
-      if (mountedRef.current) setStopError(describeError(cause));
-    });
-  };
-
-  /**
    * Hand the conversation back to the agent, and point the dock at the new
    * session it produced.
    *
@@ -91,6 +80,7 @@ export function AgentDock() {
       .then((resumedId) => {
         if (mountedRef.current) openSession(resumedId);
       })
+      // fallow-ignore-next-line code-duplication -- the mounted-guard catch/finally tail is the idiomatic error-handling tail used across the codebase (see `describeError`); a shared wrapper would be more machinery than the 8 lines it saves
       .catch((cause: unknown) => {
         if (mountedRef.current) setStopError(describeError(cause));
       })
@@ -106,76 +96,14 @@ export function AgentDock() {
       className="flex h-full min-h-0 flex-col border-x border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
       aria-label="Agent terminal"
     >
-      {/* Two rows rather than one. The column is ~420px wide, and a single row
-          holding the agent name, the status and two buttons leaves the working
-          directory a few characters before the ellipsis — which is the one part
-          a user actually reads to check the agent is pointed somewhere sane. */}
-      <header className="flex flex-shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 dark:border-border-dark">
-        <div className="flex items-center gap-2">
-          <Terminal
-            className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
-            aria-hidden="true"
-          />
-          <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary dark:text-text-primary-dark">
-            {session?.agentKey ?? "agent"}
-          </span>
-          {session !== undefined && (
-            <AgentSessionStatusBadge
-              session={session}
-              busy={busySessionIds.has(session.sessionId)}
-            />
-          )}
-          {canStop && (
-            <IconButton
-              tooltip="Stop this session"
-              aria-label="Stop this session"
-              size="xs"
-              variant="ghost"
-              onClick={() => onStop(openSessionId)}
-            >
-              <CircleStop className="h-4 w-4" />
-            </IconButton>
-          )}
-          <IconButton
-            tooltip={
-              isLive
-                ? "Close the terminal — the session keeps running"
-                : "Close the terminal"
-            }
-            aria-label="Close the terminal"
-            size="xs"
-            variant="ghost"
-            onClick={close}
-          >
-            <X className="h-4 w-4" />
-          </IconButton>
-        </div>
-        {/* The agent's own name for the work, when it has set one. Above the
-            path and below the agent key, because it is the line that actually
-            distinguishes two sessions of the same agent in the same folder —
-            which is the case the header was previously unable to tell apart. */}
-        {session?.title !== null && session?.title !== undefined && (
-          <span
-            className="min-w-0 truncate text-xs text-text-secondary dark:text-text-secondary-dark"
-            title={session.title}
-          >
-            {session.title}
-          </span>
-        )}
-        {session !== undefined && (
-          // `dir="rtl"` truncates from the *left*, so a deep path keeps the
-          // leaf directory — the part that identifies the project — instead of
-          // ellipsing it away behind a drive letter every path here shares.
-          <span
-            dir="rtl"
-            className="min-w-0 truncate text-left font-mono text-[11px] text-text-muted dark:text-text-muted-dark"
-            title={session.cwd}
-          >
-            {session.cwd}
-          </span>
-        )}
-      </header>
-
+      <DockHeader
+        session={session}
+        busy={session !== undefined && busySessionIds.has(session.sessionId)}
+        isLive={isLive}
+        canStop={canStop}
+        onStop={() => onStop(openSessionId)}
+        onClose={closeDock}
+      />
       {stopError !== null && (
         <p
           className="flex-shrink-0 border-b border-status-error/40 px-3 py-2 text-xs text-status-error"
@@ -226,25 +154,146 @@ export function AgentDock() {
           Below the transcript is also where the eye lands after reading why the
           agent stopped, which is when the user decides to pick it back up. */}
       {canResume && (
-        <footer className="flex-shrink-0 border-t border-border px-3 py-2 dark:border-border-dark">
-          <Button
-            variant="secondary"
-            size="sm"
-            fullWidth
-            loading={resuming}
-            disabled={resuming}
-            icon={<RotateCcw className="h-3.5 w-3.5" />}
-            onClick={() => onResume(openSessionId)}
-          >
-            {resuming ? "Resuming…" : "Resume this session"}
-          </Button>
-          <p className="mt-1.5 text-center text-[11px] text-text-muted dark:text-text-muted-dark">
-            Reopens the conversation in {session?.agentKey ?? "the agent"} —
-            starts a new run.
-          </p>
-        </footer>
+        <DockFooter
+          resuming={resuming}
+          agentKey={session?.agentKey}
+          onResume={() => onResume(openSessionId)}
+        />
       )}
     </section>
+  );
+}
+
+/**
+ * The dock's two-row header: agent key, status badge and actions, then the
+ * session's own meta rows.
+ *
+ * Two rows rather than one. The column is ~420px wide, and a single row
+ * holding the agent name, the status and two buttons leaves the working
+ * directory a few characters before the ellipsis — which is the one part
+ * a user actually reads to check the agent is pointed somewhere sane.
+ */
+function DockHeader({
+  session,
+  busy,
+  isLive,
+  canStop,
+  onStop,
+  onClose,
+}: {
+  /** The session for the badge; `undefined` means the dock holds a dead id. */
+  readonly session: AgentSession | undefined;
+  readonly busy: boolean;
+  readonly isLive: boolean;
+  readonly canStop: boolean;
+  readonly onStop: () => void;
+  readonly onClose: () => void;
+}) {
+  return (
+    <header className="flex flex-shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 dark:border-border-dark">
+      <div className="flex items-center gap-2">
+        <Terminal
+          className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary dark:text-text-primary-dark">
+          {session?.agentKey ?? "agent"}
+        </span>
+        {session !== undefined && (
+          <AgentSessionStatusBadge session={session} busy={busy} />
+        )}
+        {canStop && (
+          <IconButton
+            tooltip="Stop this session"
+            aria-label="Stop this session"
+            size="xs"
+            variant="ghost"
+            onClick={onStop}
+          >
+            <CircleStop className="h-4 w-4" />
+          </IconButton>
+        )}
+        <IconButton
+          tooltip={
+            isLive
+              ? "Close the terminal — the session keeps running"
+              : "Close the terminal"
+          }
+          aria-label="Close the terminal"
+          size="xs"
+          variant="ghost"
+          onClick={onClose}
+        >
+          <X className="h-4 w-4" />
+        </IconButton>
+      </div>
+      <DockMeta session={session} />
+    </header>
+  );
+}
+
+/**
+ * The session's own meta rows: the title the agent set, and the folder it is
+ * running in. Both key off `session` and neither is interactive, so they live
+ * together under the action row.
+ */
+function DockMeta({ session }: { readonly session: AgentSession | undefined }) {
+  const title = session?.title ?? null;
+  const cwd = session?.cwd;
+  return (
+    <>
+      {/* The agent's own name for the work, when it has set one. Above the
+          path and below the agent key, because it is the line that actually
+          distinguishes two sessions of the same agent in the same folder —
+          which is the case the header was previously unable to tell apart. */}
+      {title !== null && (
+        <span
+          className="min-w-0 truncate text-xs text-text-secondary dark:text-text-secondary-dark"
+          title={title}
+        >
+          {title}
+        </span>
+      )}
+      {cwd !== undefined && (
+        // `dir="rtl"` truncates from the *left*, so a deep path keeps the
+        // leaf directory — the part that identifies the project — instead of
+        // ellipsing it away behind a drive letter every path here shares.
+        <span
+          dir="rtl"
+          className="min-w-0 truncate text-left font-mono text-[11px] text-text-muted dark:text-text-muted-dark"
+          title={cwd}
+        >
+          {cwd}
+        </span>
+      )}
+    </>
+  );
+}
+
+interface DockFooterProps {
+  readonly resuming: boolean;
+  readonly agentKey: string | undefined;
+  readonly onResume: () => void;
+}
+
+function DockFooter({ resuming, agentKey, onResume }: DockFooterProps) {
+  return (
+    <footer className="flex-shrink-0 border-t border-border px-3 py-2 dark:border-border-dark">
+      <Button
+        variant="secondary"
+        size="sm"
+        fullWidth
+        loading={resuming}
+        disabled={resuming}
+        icon={<RotateCcw className="h-3.5 w-3.5" />}
+        onClick={onResume}
+      >
+        {resuming ? "Resuming…" : "Resume this session"}
+      </Button>
+      <p className="mt-1.5 text-center text-[11px] text-text-muted dark:text-text-muted-dark">
+        Reopens the conversation in {agentKey ?? "the agent"} — starts a new run.
+      </p>
+    </footer>
   );
 }
 
@@ -255,4 +304,3 @@ export function AgentDock() {
  */
 const RESUME_COLS = 80;
 const RESUME_ROWS = 24;
-

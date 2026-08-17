@@ -5,7 +5,7 @@ import type { AgentSession } from "@shared/types/AgentSession"
 import { isAgentScopeKind } from "@shared/types/AgentScope"
 import { AgentLaunchModeSchema, AgentSessionStatusSchema } from "@shared/zod-schemas/AgentSessionSchema"
 import { generateId } from "../id"
-import { mustExist, parseJson, toJson } from "./helpers"
+import { deleteSetting, getMapped, getSetting, mustExist, parseJson, setSetting, toJson } from "./helpers"
 
 export type AgentDefinitionUpsert = AgentDefinition & { readonly isCustom?: boolean }
 
@@ -147,11 +147,12 @@ export class AgentRepository {
   }
 
   public getDefinition(workspaceId: string, agentKey: string): StoredAgentDefinition | undefined {
-    const row = this.store.get<AgentDefinitionRow>(
+    return getMapped<AgentDefinitionRow, StoredAgentDefinition>(
+      this.store,
       `SELECT ${DEFINITION_COLUMNS} FROM agent_definitions WHERE workspace_id = ? AND agent_key = ?`,
       [workspaceId, agentKey],
+      rowToDefinition,
     )
-    return row === undefined ? undefined : rowToDefinition(row)
   }
 
   public listDefinitions(workspaceId: string): readonly StoredAgentDefinition[] {
@@ -180,16 +181,11 @@ export class AgentRepository {
    * `updates.policy` already use.
    */
   public getDefaultAgentKey(workspaceId: string): string | undefined {
-    return this.store.get<{ value: string } & SqliteRow>("SELECT value FROM app_settings WHERE key = ?", [
-      defaultAgentSettingKey(workspaceId),
-    ])?.value
+    return getSetting(this.store, defaultAgentSettingKey(workspaceId))
   }
 
   public setDefaultAgentKey(workspaceId: string, agentKey: string): void {
-    this.store.set("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [
-      defaultAgentSettingKey(workspaceId),
-      agentKey,
-    ])
+    setSetting(this.store, defaultAgentSettingKey(workspaceId), agentKey)
   }
 
   /**
@@ -200,7 +196,7 @@ export class AgentRepository {
    * happily reports a key the user cannot launch.
    */
   public clearDefaultAgentKey(workspaceId: string): boolean {
-    return this.store.delete("DELETE FROM app_settings WHERE key = ?", [defaultAgentSettingKey(workspaceId)]).changes > 0
+    return deleteSetting(this.store, defaultAgentSettingKey(workspaceId))
   }
 
   // ── local paths ─────────────────────────────────────────────────────────
@@ -286,10 +282,12 @@ export class AgentRepository {
   }
 
   public getSession(sessionId: string): AgentSession | undefined {
-    const row = this.store.get<AgentSessionRow>(`SELECT ${SESSION_COLUMNS} FROM agent_sessions WHERE id = ?`, [
-      sessionId,
-    ])
-    return row === undefined ? undefined : rowToSession(row)
+    return getMapped<AgentSessionRow, AgentSession>(
+      this.store,
+      `SELECT ${SESSION_COLUMNS} FROM agent_sessions WHERE id = ?`,
+      [sessionId],
+      rowToSession,
+    )
   }
 
   public listSessions(workspaceId: string, limit = 50): readonly AgentSession[] {
@@ -403,8 +401,6 @@ function nowIso(): string {
 }
 
 function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
-  // Rows written by an earlier phase can legally predate a field added to
-  // `options_json`, so each one falls back rather than trusting the blob.
   const options = parseJson<Partial<AgentDefinitionOptions>>(row.options_json)
   return {
     definitionId: row.id,
@@ -415,25 +411,46 @@ function rowToDefinition(row: AgentDefinitionRow): StoredAgentDefinition {
     argv: parseJson<string[]>(row.argv_json),
     expectedProcess: row.expected_process,
     env: parseJson<Record<string, string>>(row.env_json),
-    promptMode: options.promptMode ?? "none",
-    promptFlag: options.promptFlag ?? null,
-    mcpConfigArgs: options.mcpConfigArgs ?? [],
-    // A definition stored before the briefing existed launches without one,
-    // which is the same thing an agent whose CLI has no such flag does.
-    briefingArgs: options.briefingArgs ?? [],
-    unsupportedPlatforms: options.unsupportedPlatforms ?? [],
-    installUrl: options.installUrl ?? null,
-    // A definition stored before migration 016 has none of these, and the
-    // fallbacks are what make it launch anyway — as an agent that simply does
-    // not offer resume, which is what it was when it was written.
-    sessionIdMode: options.sessionIdMode ?? "none",
-    newSessionArgs: options.newSessionArgs ?? [],
-    resumeArgs: options.resumeArgs ?? [],
-    sessionIdPattern: options.sessionIdPattern ?? null,
+    ...optionsToDefinition(options),
     isCustom: row.is_custom === 1,
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  }
+}
+
+/**
+ * The behavioural half of a stored definition, with one fallback per option.
+ * Rows written by an earlier phase can legally predate a field added to
+ * `options_json`, so each one falls back rather than trusting the blob — and
+ * a definition stored before the briefing or resume fields existed launches
+ * exactly as it did when it was written: without a briefing, and as an agent
+ * that simply does not offer resume.
+ */
+function optionsToDefinition(options: Partial<AgentDefinitionOptions>): AgentDefinitionOptions {
+  const {
+    promptMode = "none",
+    promptFlag = null,
+    mcpConfigArgs = [],
+    briefingArgs = [],
+    unsupportedPlatforms = [],
+    installUrl = null,
+    sessionIdMode = "none",
+    newSessionArgs = [],
+    resumeArgs = [],
+    sessionIdPattern = null,
+  } = options
+  return {
+    promptMode,
+    promptFlag,
+    mcpConfigArgs,
+    briefingArgs,
+    unsupportedPlatforms,
+    installUrl,
+    sessionIdMode,
+    newSessionArgs,
+    resumeArgs,
+    sessionIdPattern,
   }
 }
 
