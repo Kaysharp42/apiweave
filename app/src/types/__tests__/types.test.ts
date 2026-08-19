@@ -192,6 +192,7 @@ const _mockKeyValue: KeyValue = {
 const _mockTab: WorkspaceTab = {
   id: "wf-1",
   workflowId: "wf-1",
+  workspaceId: "ws-1",
   name: "Test Workflow",
   isDirty: false,
 };

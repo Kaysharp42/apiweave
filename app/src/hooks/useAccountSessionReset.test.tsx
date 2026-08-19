@@ -48,11 +48,12 @@ function seedSession(): void {
       {
         id: "wf-old",
         workflowId: "wf-old",
+        workspaceId: "ws-old",
         name: "Old account workflow",
         isDirty: false,
       },
     ],
-    activeTabId: "wf-old",
+    activeTabIdByWorkspace: { "ws-old": "wf-old" },
   });
   useSidebarStore.setState({ activeWorkspaceId: "ws-old" });
   localStorage.setItem("defaultEnvironment", "env-old");
@@ -79,7 +80,7 @@ describe("useAccountSessionReset", () => {
     emitCloudStatusChanged?.();
 
     await waitFor(() => expect(useTabStore.getState().tabs).toHaveLength(0));
-    expect(useTabStore.getState().activeTabId).toBeNull();
+    expect(useTabStore.getState().activeTabIdByWorkspace).toEqual({});
     expect(useSidebarStore.getState().activeWorkspaceId).toBeNull();
     expect(localStorage.getItem("defaultEnvironment")).toBeNull();
     expect(navigate).toHaveBeenCalledWith("/app", { replace: true });
