@@ -53,7 +53,7 @@ export function useSwaggerRefresh({
   setNodes,
 }: UseSwaggerRefreshParams) {
   const { addImportedGroup, removeImportedGroup } = usePalette();
-  const { workspaceId } = useScopeContext();
+  const { workspaceId, isReady } = useScopeContext();
   const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
   const swaggerRefreshSignatureRef = useRef("");
   const swaggerRefreshRequestIdRef = useRef(0);
@@ -83,6 +83,14 @@ export function useSwaggerRefresh({
       force = false,
       showSuccessToast = false,
     } = {}): Promise<SwaggerRefreshResult> => {
+      // The refresh builds a workspace-scoped import URL. Never fire it while
+      // WorkspaceContext is still loading — the URL would carry an empty
+      // workspace segment (`/api/workspaces//workflows/...`) and fail as an
+      // unroutable IPC request. The effect re-runs once the scope is ready.
+      if (!isReady || !workspaceId) {
+        return { skipped: true, reason: "workspace-not-ready" };
+      }
+
       const selectedEnvId =
         selectedEnvironment && selectedEnvironment.trim()
           ? selectedEnvironment.trim()
@@ -128,11 +136,7 @@ export function useSwaggerRefresh({
 
       try {
         const response = await authenticatedFetch(
-          workflowImportOpenapiRemoteUrl(
-            workspaceId || "",
-            swaggerDocUrl,
-            true,
-          ),
+          workflowImportOpenapiRemoteUrl(workspaceId, swaggerDocUrl, true),
         );
 
         if (!response.ok) {
@@ -356,6 +360,7 @@ export function useSwaggerRefresh({
     [
       workflowId,
       workspaceId,
+      isReady,
       selectedEnvironment,
       environments,
       envSwaggerGroupId,

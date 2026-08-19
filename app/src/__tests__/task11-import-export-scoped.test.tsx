@@ -156,5 +156,11 @@ describe("Task 11: Import panels and Swagger refresh migration", () => {
       expect(source).not.toContain("workspaceId || \"\"");
       expect(source).toContain("resolveWorkspaceId");
     });
+
+    it("useSwaggerRefresh does not build swagger URLs with an empty workspace fallback", () => {
+      const source = readFileSync(resolve(hooksDir, "useSwaggerRefresh.ts"), "utf-8");
+      expect(source).not.toContain("workspaceId || \"\"");
+      expect(source).toContain("workspace-not-ready");
+    });
   });
 });
