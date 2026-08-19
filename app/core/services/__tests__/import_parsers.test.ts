@@ -6,7 +6,8 @@ import {
   parseSpecText,
   openApiPreview,
   harDryRun,
-  extractSwaggerSpecUrls,
+  extractSwaggerHints,
+  definitionsFromSwaggerConfig,
   resetIdCounter,
 } from "../import_parsers"
 
@@ -210,29 +211,88 @@ paths: {}
   })
 })
 
-describe("extractSwaggerSpecUrls", () => {
+describe("parseOpenApiSpec edge cases", () => {
+  it("survives a self-referential schema instead of blowing the stack", () => {
+    const spec = {
+      openapi: "3.0.1",
+      info: { title: "Recursive", version: "1.0" },
+      paths: {
+        "/tree": {
+          post: {
+            operationId: "createTree",
+            requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Node" } } } },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Node: {
+            type: "object",
+            properties: { name: { type: "string" }, child: { $ref: "#/components/schemas/Node" } },
+          },
+        },
+      },
+    }
+    const wf = parseOpenApiSpec(spec)
+    const node = wf.nodes.find((n) => n.type === "http-request")!
+    expect(JSON.parse((node as { config: { body: string } }).config.body)).toEqual({ name: "string" })
+  })
+
+  it("does not double up slashes on a relative servers entry", () => {
+    const spec = {
+      openapi: "3.0.1",
+      info: { title: "Rel", version: "1.0" },
+      servers: [{ url: "/" }],
+      paths: { "/api/v1/x": { get: { operationId: "x" } } },
+    }
+    const withoutSource = parseOpenApiSpec(spec)
+    expect((withoutSource.nodes[1] as { config: { url: string } }).config.url).toBe("/api/v1/x")
+    const withSource = parseOpenApiSpec(spec, { source: { definitionSpecUrl: "https://gw.test/swagger/x/v3/api-docs" } })
+    expect((withSource.nodes[1] as { config: { url: string } }).config.url).toBe("https://gw.test/api/v1/x")
+  })
+})
+
+describe("extractSwaggerHints", () => {
   it("extracts url from SwaggerUIBundle config", () => {
     const html = `<script>SwaggerUIBundle({ url: "https://petstore.swagger.io/v2/swagger.json" })</script>`
-    const urls = extractSwaggerSpecUrls(html, "https://petstore.swagger.io")
-    expect(urls).toContain("https://petstore.swagger.io/v2/swagger.json")
+    const hints = extractSwaggerHints(html, "https://petstore.swagger.io")
+    expect(hints.specUrls).toContain("https://petstore.swagger.io/v2/swagger.json")
   })
 
-  it("extracts configUrl", () => {
+  it("extracts configUrl, including the JSON-quoted key springdoc emits", () => {
     const html = `<script>SwaggerUIBundle({ configUrl: "https://example.com/swagger-config.json" })</script>`
-    const urls = extractSwaggerSpecUrls(html, "https://example.com")
-    expect(urls).toContain("https://example.com/swagger-config.json")
+    expect(extractSwaggerHints(html, "https://example.com").configUrls).toContain("https://example.com/swagger-config.json")
+    const js = `SwaggerUIBundle({ "configUrl" : "/v3/api-docs/swagger-config" })`
+    expect(extractSwaggerHints(js, "https://example.com/webjars/swagger-ui/swagger-initializer.js").configUrls)
+      .toContain("https://example.com/v3/api-docs/swagger-config")
   })
 
-  it("extracts urls array", () => {
-    const html = `<script>SwaggerUIBundle({ urls: [{ url: "https://a.com/spec.json" }, { url: "https://b.com/spec.json" }] })</script>`
-    const urls = extractSwaggerSpecUrls(html, "https://example.com")
-    expect(urls).toContain("https://a.com/spec.json")
-    expect(urls).toContain("https://b.com/spec.json")
+  it("extracts the multi-definition urls array with names", () => {
+    const html = `<script>SwaggerUIBundle({ urls: [{ url: "https://a.com/spec.json", name: "A" }, { url: "https://b.com/spec.json" }] })</script>`
+    const hints = extractSwaggerHints(html, "https://example.com")
+    expect(hints.definitions).toEqual([
+      { name: "A", specUrl: "https://a.com/spec.json" },
+      { name: "https://b.com/spec.json", specUrl: "https://b.com/spec.json" },
+    ])
   })
 
   it("extracts href links to spec files", () => {
     const html = `<a href="/openapi.json">API</a>`
-    const urls = extractSwaggerSpecUrls(html, "https://example.com")
-    expect(urls).toContain("https://example.com/openapi.json")
+    expect(extractSwaggerHints(html, "https://example.com").specUrls).toContain("https://example.com/openapi.json")
+  })
+
+  it("collects page scripts to follow but skips swagger-ui's own bundles", () => {
+    const html = `<script src="./swagger-ui-bundle.js"></script><script src="./swagger-initializer.js"></script>`
+    const hints = extractSwaggerHints(html, "https://example.com/webjars/swagger-ui/index.html")
+    expect(hints.scriptUrls).toEqual(["https://example.com/webjars/swagger-ui/swagger-initializer.js"])
+  })
+})
+
+describe("definitionsFromSwaggerConfig", () => {
+  it("resolves relative definition urls against the config url", () => {
+    const config = { urls: [{ url: "/swagger/actors/v3/api-docs", name: "Actor Service" }] }
+    expect(definitionsFromSwaggerConfig(config, "https://gw.example.com/v3/api-docs/swagger-config")).toEqual([
+      { name: "Actor Service", specUrl: "https://gw.example.com/swagger/actors/v3/api-docs" },
+    ])
   })
 })
