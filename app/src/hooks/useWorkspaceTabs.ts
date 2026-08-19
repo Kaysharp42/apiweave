@@ -1,15 +1,7 @@
 import { useMemo } from "react";
 import useTabStore from "../stores/TabStore";
 import { useScopeContext } from "./useScopeContext";
-import type { WorkspaceTab } from "../types/WorkspaceTab";
-
-export interface WorkspaceTabsView {
-  /** The workspace the slice belongs to; null while the scope is still loading. */
-  readonly workspaceId: string | null;
-  readonly tabs: readonly WorkspaceTab[];
-  readonly activeTabId: string | null;
-  readonly activeTab: WorkspaceTab | undefined;
-}
+import type { WorkspaceTabsView } from "../types/WorkspaceTabsView";
 
 /**
  * The open tabs of the workspace the user is currently in.
