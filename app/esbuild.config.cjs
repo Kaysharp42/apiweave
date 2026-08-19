@@ -46,10 +46,16 @@ const common = {
   // electron-builder expects, sharing the one hoisted builder-util-runtime
   // that wrote latest.yml at build time. It does bundle cleanly today, but
   // that's the unsupported path and nothing would catch it silently drifting.
+  // node-pty requires its native binding through a computed string
+  // (`prebuilds/${platform}-${arch}/pty.node`), which esbuild cannot analyse,
+  // and on Windows it resolves a worker script from `__dirname` — neither
+  // survives bundling. It must stay a plain require against the unpacked
+  // module directory (see build.asarUnpack in package.json).
   external: [
     "better-sqlite3",
     "electron",
     "electron-updater",
+    "node-pty",
     "zod",
     "libsodium-wrappers",
   ],
@@ -70,6 +76,16 @@ Promise.all([
     ...common,
     entryPoints: ["electron/preload.ts"],
     outfile: "dist/desktop/preload.cjs",
+  }),
+  // The PTY host runs as an Electron utilityProcess, forked by
+  // core/agents/agent_process_manager.ts from `__dirname` next to main.cjs. A
+  // third entry point rather than a lazy import inside main: the whole point of
+  // the utility process is that node-pty's native addon is loaded in a process
+  // that can crash without taking main or a renderer with it.
+  esbuild.build({
+    ...common,
+    entryPoints: ["electron/pty_host.ts"],
+    outfile: "dist/desktop/pty-host.cjs",
   }),
 ])
   .then(copyMigrations)

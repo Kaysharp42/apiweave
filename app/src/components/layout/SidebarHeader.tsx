@@ -1,4 +1,5 @@
 import { useReducer } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { Upload, Plus, FolderOpen, Download, Terminal } from "lucide-react";
 import WorkflowExportImport from "../WorkflowExportImport";
@@ -107,9 +108,15 @@ export function SidebarHeader({
 }: SidebarHeaderProps) {
   const [state, dispatch] = useReducer(sidebarHeaderReducer, initialState);
 
-  const searchQuery = useSidebarStore((s) => s.searchQuery);
-  const setSearchQuery = useSidebarStore((s) => s.setSearchQuery);
-  const activeWorkspaceId = useSidebarStore((s) => s.activeWorkspaceId);
+  // One selector rather than three; `useShallow` keeps re-renders identical
+  // to the separate subscriptions it replaces.
+  const { searchQuery, setSearchQuery, activeWorkspaceId } = useSidebarStore(
+    useShallow((s) => ({
+      searchQuery: s.searchQuery,
+      setSearchQuery: s.setSearchQuery,
+      activeWorkspaceId: s.activeWorkspaceId,
+    })),
+  );
   const { currentWorkspace } = useWorkspace();
 
   const getNavLabel = (): string => {
@@ -118,6 +125,8 @@ export function SidebarHeader({
         return "Workflows";
       case "projects":
         return "Projects";
+      case "agents":
+        return "Agents";
       case "mcp":
         return "MCP";
       case "settings":

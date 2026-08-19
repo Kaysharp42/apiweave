@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
+import AgentsManager from "../AgentsManager";
 import MCPManager from "../MCPManager";
 import { SidebarHeader } from "./SidebarHeader";
 import { WorkflowList } from "./sidebar/WorkflowList";
@@ -24,6 +25,7 @@ import { authenticatedFetch } from "../../utils/apiweaveClient";
 import useNavigationStore from "../../stores/NavigationStore";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
+import { useNavigationSelection } from "../../hooks/useNavigationControls";
 import {
   workflowUrl,
   workflowsUrl,
@@ -32,8 +34,13 @@ import {
 } from "../../utils/apiweaveClient";
 
 export function Sidebar() {
-  const selectedNav = useNavigationStore((s) => s.selectedNavVal);
-  const setNavState = useNavigationStore((s) => s.setNavState);
+  const { navigationSelectedValue: selectedNav, setNavState } =
+    useNavigationSelection();
+  // fallow-ignore-next-line code-duplication -- the run of one `useState` per
+  // independent piece of modal state here echoes the same run in
+  // CollectionExportImport.tsx; both are the React idiom every stateful modal
+  // shares by construction, and consolidating either into one reducer over
+  // unrelated flags would add machinery, not remove behaviour
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
     null,
   );
@@ -502,6 +509,7 @@ export function Sidebar() {
                 onAssignWorkflowToProject={handleAssignWorkflowToProject}
               />
             </div>
+          {selectedNav === "agents" && <AgentsManager className="h-full" />}
           {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent

@@ -3,7 +3,7 @@ import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { registerBridgeTools } from "./bridge"
-import { MCP_GUIDES, guideUri } from "./guide"
+import { MCP_GUIDES, MCP_INSTRUCTIONS, guideUri } from "./guide"
 import { registerResources } from "./resources"
 import { MCP_PROMPTS } from "./prompts"
 import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
@@ -20,7 +20,11 @@ export const MCP_SERVER_NAME = "APIWeave"
  * which is exactly what an agent needs to discover the surface.
  */
 export function createMcpServer(router: IpcRouter, version: string, broker?: RunEventBroker): McpServer {
-  const server = new McpServer({ name: MCP_SERVER_NAME, version })
+  // `instructions` rides along in the `initialize` result, which is the only
+  // documentation a client receives without asking for it. Most of the agent
+  // roster has no flag for standing instructions, so for those agents this is
+  // the whole of what they are told about APIWeave before their first call.
+  const server = new McpServer({ name: MCP_SERVER_NAME, version }, { instructions: MCP_INSTRUCTIONS })
 
   registerBridgeTools(server, router)
   registerResources(server, router, broker)

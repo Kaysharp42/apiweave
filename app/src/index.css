@@ -4,6 +4,9 @@
 /* Node layer keyframes (canvas only — see DESIGN.md §7) */
 @import "./styles/node-motion.css";
 
+/* Agent terminal tokens (terminal surface only — see the file's own header) */
+@import "./styles/agent-terminal.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

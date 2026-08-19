@@ -7,8 +7,10 @@ import type { AssertionItem } from "@shared/types/AssertionItem"
 import { generateId } from "../id"
 import {
   canonicalizeWorkflowGraph,
-  mustExist,
+  getMapped,
+  insertAndRead,
   parseJson,
+  queryMapped,
   slugify,
   toJson,
 } from "./helpers"
@@ -30,6 +32,9 @@ export type WorkflowUpdate = Partial<
 
 const COLUMNS =
   "id, workspace_id, name, graph_json, variables_json, settings_json, rev, createdAt, updatedAt"
+
+/** The one-row read `getById` shares with `create`'s read-back. */
+const GET_BY_ID_SQL = `SELECT ${COLUMNS} FROM workflows WHERE id = ?`
 
 interface WorkflowRow extends SqliteRow {
   readonly id: string
@@ -69,24 +74,26 @@ export class WorkflowRepository {
       selectedEnvironmentId: input.selectedEnvironmentId ?? null,
       nodeTemplates: input.nodeTemplates ?? [],
     }
-    this.store.set(
+    return insertAndRead(
+      this.store,
       "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [id, input.workspaceId, input.workspaceId, input.name, slugify(input.name, id), toJson(graph), toJson(input.variables ?? {}), toJson(settings)],
+      () => this.getById(id),
+      `workflow ${id} missing after insert`,
     )
-    return mustExist(this.getById(id), `workflow ${id} missing after insert`)
   }
 
   public getById(workflowId: string): Workflow | undefined {
-    const row = this.store.get<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows WHERE id = ?`, [workflowId])
-    return row === undefined ? undefined : rowToWorkflow(row)
+    return getMapped<WorkflowRow, Workflow>(this.store, GET_BY_ID_SQL, [workflowId], rowToWorkflow)
   }
 
   public getByIdInWorkspace(workflowId: string, workspaceId: string): Workflow | undefined {
-    const row = this.store.get<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows WHERE id = ? AND workspace_id = ?`, [
-      workflowId,
-      workspaceId,
-    ])
-    return row === undefined ? undefined : rowToWorkflow(row)
+    return getMapped<WorkflowRow, Workflow>(
+      this.store,
+      `SELECT ${COLUMNS} FROM workflows WHERE id = ? AND workspace_id = ?`,
+      [workflowId, workspaceId],
+      rowToWorkflow,
+    )
   }
 
   /**
@@ -100,22 +107,23 @@ export class WorkflowRepository {
    * real column if a workspace ever holds enough to matter.
    */
   public listByWorkspace(workspaceId: string, includeAttached = false): { items: readonly Workflow[]; total: number } {
-    const all = this.store
-      .query<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`, [
-        workspaceId,
-      ])
-      .map(rowToWorkflow)
+    const all = queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`,
+      [workspaceId],
+      rowToWorkflow,
+    )
     const items = includeAttached ? all : all.filter((workflow) => workflow.collectionId == null)
     return { items, total: items.length }
   }
 
   public listByCollection(workspaceId: string, collectionId: string): { items: readonly Workflow[]; total: number } {
-    const items = this.store
-      .query<WorkflowRow>(`SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`, [
-        workspaceId,
-      ])
-      .map(rowToWorkflow)
-      .filter((workflow) => workflow.collectionId === collectionId)
+    const items = queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM workflows WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`,
+      [workspaceId],
+      rowToWorkflow,
+    ).filter((workflow) => workflow.collectionId === collectionId)
     return { items, total: items.length }
   }
 

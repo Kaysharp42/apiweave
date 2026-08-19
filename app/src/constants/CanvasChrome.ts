@@ -26,5 +26,10 @@ export const CanvasActionsBottom = CanvasCornerGutter * 2 + MiniMapSize.height;
  * classes and does not need a number, but anything *centring content* in the
  * canvas does — otherwise it aims at the middle of the container and puts the
  * node it is framing directly underneath the Run button.
+ *
+ * One row is a guarantee, not an observation: the toolbar is `flex-nowrap` and
+ * sheds labels into an overflow menu as it runs out of width (see
+ * `resolveToolbarDensity`) precisely so this number stays true at every window
+ * size. A wrapping toolbar would silently make the camera aim too high.
  */
 export const CanvasToolbarBand = 56;

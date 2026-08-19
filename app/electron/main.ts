@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -7,6 +8,7 @@ import { registerAllHandlers, type HandlerDeps } from "../core/ipc/handlers"
 import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_workflows"
 import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
+  AgentRepository,
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
@@ -17,6 +19,7 @@ import {
 } from "../core/repositories"
 import { createKeyfile, readKeyfile, keyfileExists } from "../core/secrets/keyfile"
 import {
+  AgentService,
   ScopeResolver,
   type ScopeExistence,
   WorkspaceService,
@@ -39,6 +42,11 @@ import { McpHost } from "../core/mcp"
 import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
 import { MCP_PROMPTS } from "../core/mcp/prompts"
 import { MCP_RESOURCES } from "../core/mcp/resources"
+import { AgentEventBroker } from "../core/agents/agent_event_broker"
+import { AgentProcessManager } from "./agent_process_manager"
+import type { AgentDefinition } from "@shared/types/AgentDefinition"
+import type { AgentScope } from "@shared/types/AgentScope"
+import type { AgentEmbeddedLaunchRequest, AgentLaunchRequest } from "@shared/types/AgentsBridge"
 import type { McpStatus } from "@shared/types/McpStatus"
 import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
@@ -46,7 +54,13 @@ import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
-import { CLOUD_STATUS_CHANGED_CHANNEL, UPDATE_STATUS_CHANGED_CHANNEL } from "../core/ipc/channels"
+import {
+  AGENT_CHANNELS,
+  AGENT_OUTPUT_PORT_CHANNEL,
+  AGENT_SESSION_CHANGED_CHANNEL,
+  CLOUD_STATUS_CHANGED_CHANNEL,
+  UPDATE_STATUS_CHANGED_CHANNEL,
+} from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { ipcLog, revealLogFile } from "./logging"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
@@ -66,6 +80,9 @@ const ipcRouter = new IpcRouter({
 let database: InitializedDatabase | null = null
 let scheduler: RunScheduler | null = null
 let mcpHost: McpHost | null = null
+// Module scope for the same reason `mcpHost` is: `before-quit` has to reach it,
+// and it is built inside the composition root.
+let agentProcesses: AgentProcessManager | null = null
 let isQuitting = false
 
 if (process.platform === "linux") {
@@ -102,8 +119,11 @@ async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 960,
-    minHeight: 600,
+    // The floor the canvas toolbar was sized against: below this the sidebar,
+    // the agent panel and a usable canvas stop fitting side by side. Still
+    // narrow enough to snap to half of a 1080p screen.
+    minWidth: 1024,
+    minHeight: 700,
     frame: false,
     backgroundColor: "#0b0b0f",
     // Packaged Windows/macOS builds get the taskbar/dock icon from the exe's
@@ -216,6 +236,7 @@ if (!hasSingleInstanceLock) {
     const environments = new EnvironmentRepository(database.kvStore)
     const collections = new CollectionRepository(database.kvStore)
     const nodePresets = new NodePresetRepository(database.kvStore)
+    const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
 
     // Auth + sync seams: single-owner always-allow, local-only no-op.
@@ -546,6 +567,133 @@ if (!hasSingleInstanceLock) {
       "updates:openLogFile",
       requireTrustedSender((): void => revealLogFile()),
     )
+
+    // Coding agents. Off the router for the same reason as mcp:* and updates:*
+    // above, and more sharply: the router is the MCP bridge's handler list, so
+    // registering "spawn a process with this working directory" there would put
+    // it one whitelist entry from being callable by a local agent over loopback
+    // HTTP. A fourth privileged preload world makes that structural instead of
+    // remembered.
+    //
+    // The PTY host is forked lazily, on the first embedded launch, and its
+    // events land here rather than in the manager: what a session row should
+    // say about a dead process is policy, and the manager only knows processes.
+    // Order matters — the broker dedupes terminal transitions first, then the
+    // one subscriber persists and pushes, so the renderer never sees an event
+    // whose row has not been written yet.
+    const agentEvents = new AgentEventBroker({ now: () => clock.isoNow() })
+    const agentPtyHost = new AgentProcessManager({
+      hostEntryPath: path.join(__dirname, "pty-host.cjs"),
+      onEvent: (event) => agentEvents.publish(event),
+    })
+    agentProcesses = agentPtyHost
+    const agentService = new AgentService(agents, workflows, collections, permissions, scopeResolver, {
+      // The picker runs here, in main, so the path the renderer eventually sees
+      // came from the OS rather than from the renderer.
+      pickDirectory: async ({ title, defaultPath }) => {
+        const { dialog } = await import("electron")
+        const result = await dialog.showOpenDialog({
+          title,
+          properties: ["openDirectory", "createDirectory"],
+          ...(defaultPath === undefined ? {} : { defaultPath }),
+        })
+        return result.canceled ? null : (result.filePaths[0] ?? null)
+      },
+      getMcpConfig: () => mcpHost?.getConfig() ?? null,
+      agentFilesDir: path.join(app.getPath("userData"), "agent-files"),
+      pty: agentPtyHost,
+    })
+    agentEvents.subscribe((event) => {
+      agentService.recordProcessEvent(event)
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(AGENT_SESSION_CHANGED_CHANNEL, event)
+      }
+    })
+    // Anything still marked live is a leftover from a crash — the process it
+    // named did not outlive the app that owned it.
+    const orphaned = agents.markOrphanedSessionsFailed()
+    if (orphaned > 0) {
+      console.info(`[agents] marked ${orphaned} orphaned agent session(s) failed`)
+    }
+    // The same crash leaves scratch files behind, and those are not inert: an
+    // agent's MCP config carries a live bearer token for this app. The launch
+    // path sweeps too, but only on the next launch — a user who never starts
+    // another agent would keep the last run's token on disk indefinitely.
+    const swept = agentService.sweepScratchFiles()
+    if (swept > 0) {
+      console.info(`[agents] reclaimed ${swept} stale agent scratch file(s)`)
+    }
+    /**
+     * Register one agents channel behind the trusted-sender guard, exactly like
+     * the other privileged domains above. Every registration is the same two
+     * steps — name the channel, wrap the service call — so the shape lives here
+     * once, and the channel→method mapping itself is the table below: adding a
+     * channel is a row, not a registration statement.
+     */
+    const onAgents = <Args extends unknown[], R>(channel: string, handler: (...args: Args) => R): void => {
+      ipcMain.handle(channel, requireTrustedSender(handler))
+    }
+    const agentHandlers: ReadonlyArray<readonly [channel: string, handler: (...args: never[]) => unknown]> = [
+      [AGENT_CHANNELS.listRoster, (workspaceId: string) => agentService.listRoster(workspaceId)],
+      [AGENT_CHANNELS.refreshAvailability, (workspaceId: string) => agentService.refreshAvailability(workspaceId)],
+      [AGENT_CHANNELS.saveCustomAgent, (workspaceId: string, definition: AgentDefinition) => agentService.saveCustomAgent(workspaceId, definition)],
+      [AGENT_CHANNELS.deleteCustomAgent, (workspaceId: string, agentKey: string) => agentService.deleteCustomAgent(workspaceId, agentKey)],
+      [AGENT_CHANNELS.getDefaultAgentKey, (workspaceId: string) => agentService.getDefaultAgentKey(workspaceId)],
+      [AGENT_CHANNELS.setDefaultAgentKey, (workspaceId: string, agentKey: string) => agentService.setDefaultAgentKey(workspaceId, agentKey)],
+      [AGENT_CHANNELS.resolveLocalPath, (workspaceId: string, scope: AgentScope) => agentService.resolveLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.chooseLocalPath, (workspaceId: string, scope: AgentScope) => agentService.chooseLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.clearLocalPath, (workspaceId: string, scope: AgentScope) => agentService.clearLocalPath(workspaceId, scope)],
+      [AGENT_CHANNELS.listSessions, (workspaceId: string) => agentService.listSessions(workspaceId)],
+      [AGENT_CHANNELS.launchExternal, (request: AgentLaunchRequest) => agentService.launchExternal(request)],
+      [AGENT_CHANNELS.launchEmbedded, (request: AgentEmbeddedLaunchRequest) => agentService.launchEmbedded(request)],
+      [AGENT_CHANNELS.resumeSession, (sessionId: string, cols: number, rows: number) => agentService.resumeSession(sessionId, cols, rows)],
+      [AGENT_CHANNELS.write, (sessionId: string, data: string) => agentService.writeToSession(sessionId, data)],
+      [AGENT_CHANNELS.resize, (sessionId: string, cols: number, rows: number) => agentService.resizeSession(sessionId, cols, rows)],
+      [AGENT_CHANNELS.setPaused, (sessionId: string, paused: boolean) => agentService.setSessionPaused(sessionId, paused)],
+      [AGENT_CHANNELS.killSession, (sessionId: string) => agentService.killSession(sessionId)],
+      [AGENT_CHANNELS.deleteSession, (sessionId: string) => agentService.deleteSession(sessionId)],
+    ]
+    for (const [channel, handler] of agentHandlers) {
+      onAgents(channel, handler)
+    }
+    // The one agents handler written out rather than wrapped: it has to reply
+    // with a `MessagePort`, which cannot be returned through `invoke` at all —
+    // only sent in a transfer list. So it needs the event, and `requireTrustedSender`
+    // exists precisely to hide the event from handlers that do not.
+    ipcMain.handle(AGENT_CHANNELS.attach, async (event, sessionId: string): Promise<boolean> => {
+      if (!isTrustedSender(event)) {
+        return Promise.reject(new Error("untrusted sender"))
+      }
+      const { attachable } = await agentService.authorizeSessionRead(sessionId)
+      if (!attachable) {
+        return false
+      }
+      const port = agentPtyHost.attach(sessionId)
+      if (port === null) {
+        return false
+      }
+      // Straight to the frame that asked, not to the window: another frame is
+      // another document, and this port is one document's terminal.
+      const frame = event.senderFrame
+      if (frame === null || frame === undefined) {
+        // The caller navigated away while we were authorizing. Nothing to
+        // deliver to, and an unclosed port would keep the host writing into it.
+        port.close()
+        return false
+      }
+      try {
+        frame.postMessage(AGENT_OUTPUT_PORT_CHANNEL, { sessionId }, [port])
+      } catch {
+        // `senderFrame` is non-null for a frame object that has already been
+        // detached — the document navigated or its window closed while we were
+        // awaiting authorization — and posting into one throws. The null check
+        // above does not cover it, and an unclosed port would leave the host
+        // writing chunks into a channel whose other end nobody holds.
+        port.close()
+        return false
+      }
+      return true
+    })
     // Owns its own timers: one check just after launch, then one every few
     // hours so a window left open for days still notices a release.
     //
@@ -626,9 +774,32 @@ app.on("before-quit", (event) => {
   void mcpHost?.stop()
   mcpHost = null
 
+  // Two things can now need time before the database may close, so they are
+  // collected rather than handled with two copies of the deferred-quit dance.
+  const shutdowns: Promise<unknown>[] = []
+
+  if (agentProcesses !== null) {
+    // Agent processes are the user's own CLIs, running under a PTY this app
+    // owns. Quitting without killing them leaves processes attached to a
+    // terminal that no longer exists — so this is waited on when there is
+    // anything to wait for, and merely started when there is not.
+    const hasLiveSessions = agentProcesses.liveSessionIds().length > 0
+    const disposal = agentProcesses.dispose()
+    agentProcesses = null
+    if (hasLiveSessions) {
+      shutdowns.push(disposal)
+    } else {
+      void disposal
+    }
+  }
+
   if (scheduler && scheduler.getActiveCount() > 0) {
+    shutdowns.push(scheduler.shutdown(2000))
+  }
+
+  if (shutdowns.length > 0) {
     event.preventDefault()
-    void scheduler.shutdown(2000).finally(() => {
+    void Promise.allSettled(shutdowns).finally(() => {
       database?.close()
       database = null
       app.quit()

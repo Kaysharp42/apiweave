@@ -1,0 +1,79 @@
+import type { AgentEvent, AgentSessionEvent } from "@shared/types/AgentSessionEvent"
+import { BoundedEventBroker, type TrackedState } from "../shared/bounded_event_broker"
+
+export interface AgentEventBrokerOptions {
+  /** ISO clock — injected so tests are deterministic and the app shares its ClockProvider. */
+  readonly now: () => string
+  /** Bounded number of tracked sessions; the oldest is evicted past this (memory backstop). */
+  readonly maxTrackedSessions?: number
+}
+
+const DEFAULT_MAX_SESSIONS = 200
+
+/** An agent session's broker state: sequence and terminal flag, nothing more. */
+type SessionState = TrackedState
+
+/**
+ * Process-local broker for agent session transitions, sitting between the PTY
+ * host and every subscriber so a transition is published once and fanned out
+ * consistently.
+ *
+ * Modelled on {@link RunEventBroker} — same stamping, same exactly-once terminal
+ * rule, same subscriber isolation — but a separate class rather than a second
+ * mode of that one. Two reasons, and the first is the one that matters: the run
+ * broker is also consumed by the MCP bridge's resource subscriptions, so a local
+ * agent watching run progress would start receiving notifications about agent
+ * processes, including its own. The second is that its state is per *run* and
+ * carries a replay buffer these events do not need — an agent's replay is its
+ * terminal scrollback, which lives in the PTY host.
+ *
+ * Exactly-once terminal matters here for a concrete race: killing a session
+ * makes the host report an exit, and a host that dies while doing it reports a
+ * failure. Both are terminal, one session should settle once.
+ */
+export class AgentEventBroker extends BoundedEventBroker<AgentSessionEvent, SessionState> {
+  constructor(options: AgentEventBrokerOptions) {
+    super({
+      now: options.now,
+      maxTracked: options.maxTrackedSessions ?? DEFAULT_MAX_SESSIONS,
+    })
+  }
+
+  /**
+   * Stamp and fan out one transition. Takes only the event, which already names
+   * its session — `RunEventBroker.publish` takes the id separately as well, and
+   * two sources of truth for one identifier is a bug waiting to be written.
+   */
+  publish(event: AgentEvent): void {
+    const state = this.ensure(event.sessionId, () => ({ seq: 0, terminal: false }))
+    // A session that is starting is, by definition, not over. This is what makes
+    // the exactly-once rule below compatible with resuming: a resumed session
+    // keeps its row and therefore its id, so without this its second run could
+    // never publish an exit — the broker would still be holding the first run's
+    // terminal flag and would swallow it, leaving the row at `running` for ever.
+    // Safe against the race the rule exists for, because `agent.started` is only
+    // ever published for a spawn the host actually confirmed.
+    if (event.kind === "agent.started") {
+      state.terminal = false
+    }
+    if (event.kind === "agent.exited" || event.kind === "agent.failed") {
+      if (state.terminal) return
+      state.terminal = true
+    }
+    // Activity is the one non-transition here, and the exactly-once rule above
+    // does not cover it — nothing about "it printed something" is terminal. It
+    // is dropped after the end instead: a chunk the host was mid-way through
+    // reporting when the child exited would otherwise arrive behind the exit
+    // and tell every subscriber a finished agent is working.
+    //
+    // `agent.sessionRef` and `agent.title` are the deliberate exceptions, and
+    // must NOT be dropped here. An agent that mints its own session id prints it
+    // in the banner it writes as it exits, so the ref for a resumable session
+    // arrives *after* the session is terminal, essentially always. Dropping it
+    // would leave exactly the rows a user most wants to recover — the ones that
+    // just ended — with nothing to resume from.
+    if (event.kind === "agent.activity" && state.terminal) return
+
+    this.publishStamped(state, event)
+  }
+}

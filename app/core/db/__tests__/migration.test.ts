@@ -23,6 +23,9 @@ describe("database migrations", () => {
       expect(db.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
       expect(db.database.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
       expect(tableNames(store)).toEqual([
+        "agent_definitions",
+        "agent_local_paths",
+        "agent_sessions",
         "app_settings",
         "cloud_conflicts",
         "cloud_devices",

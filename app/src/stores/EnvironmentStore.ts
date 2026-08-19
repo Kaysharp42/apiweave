@@ -6,13 +6,11 @@ import * as scopedApi from "../utils/apiweaveClient";
 interface EnvironmentState {
   environments: ScopedEnvironment[];
   selectedEnvironmentByWorkflow: Record<string, string | null>;
-  environmentVersion: number;
   isLoading: boolean;
 
   fetchEnvironments: (workspaceId: string) => Promise<void>;
   setSelectedEnv: (workflowId: string, envId: string) => void;
   clearSelectedEnv: (workflowId: string) => void;
-  signalRefresh: () => void;
   setDefaultEnv: (envId: string) => void;
 }
 
@@ -39,7 +37,6 @@ function normalizeScopedEnvironment(raw: Partial<ScopedEnvironment>): ScopedEnvi
 const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
   environments: [],
   selectedEnvironmentByWorkflow: {},
-  environmentVersion: 0,
   isLoading: false,
 
   fetchEnvironments: async (workspaceId: string) => {
@@ -83,9 +80,6 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
         [workflowId]: null,
       },
     })),
-
-  signalRefresh: () =>
-    set((s) => ({ environmentVersion: s.environmentVersion + 1 })),
 
   setDefaultEnv: (envId: string) => {
     localStorage.setItem("defaultEnvironment", envId);

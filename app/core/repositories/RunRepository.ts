@@ -5,7 +5,7 @@ import type { RunResult } from "@shared/types/RunResult"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
-import { mustExist, parseJson, toJson } from "./helpers"
+import { getMapped, insertAndRead, parseJson, queryMapped, toJson } from "./helpers"
 import { AssertionEvaluationSchema } from "@shared/zod-schemas/AssertionEvaluationSchema"
 import { RunResultSchema } from "@shared/zod-schemas/RunResultSchema"
 
@@ -90,7 +90,9 @@ export class RunRepository {
       resumeMode: null,
       resolvedSecrets: [],
     }
-    this.store.set(
+    const readBack = (): Run | undefined => this.getById(id)
+    return insertAndRead(
+      this.store,
       "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         id,
@@ -102,13 +104,13 @@ export class RunRepository {
         toJson(input.variables ?? {}),
         toJson(metadata),
       ],
+      readBack,
+      `run ${id} missing after insert`,
     )
-    return mustExist(this.getById(id), `run ${id} missing after insert`)
   }
 
   public getById(runId: string): Run | undefined {
-    const row = this.store.get<RunRow>(`SELECT ${COLUMNS} FROM runs WHERE id = ?`, [runId])
-    return row === undefined ? undefined : rowToRun(row)
+    return getMapped<RunRow, Run>(this.store, `SELECT ${COLUMNS} FROM runs WHERE id = ?`, [runId], rowToRun)
   }
 
   // Reads are scoped by workspace as well as workflow: RunService authorizes the
@@ -116,36 +118,41 @@ export class RunRepository {
   // columns stops a caller from reading another workspace's runs via a foreign
   // workflowId (existence-hiding: a mismatch just returns empty/undefined).
   public listByWorkflow(workflowId: string, workspaceId: string): { items: readonly Run[]; total: number } {
-    const items = this.store
-      .query<RunRow>(
-        `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? ORDER BY createdAt DESC, id DESC`,
-        [workflowId, workspaceId],
-      )
-      .map(rowToRun)
+    const items = queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? ORDER BY createdAt DESC, id DESC`,
+      [workflowId, workspaceId],
+      rowToRun,
+    )
     return { items, total: items.length }
   }
 
   public listByWorkspace(workspaceId: string): { items: readonly Run[]; total: number } {
-    const items = this.store
-      .query<RunRow>(`SELECT ${COLUMNS} FROM runs WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`, [workspaceId])
-      .map(rowToRun)
+    const items = queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM runs WHERE workspace_id = ? ORDER BY createdAt DESC, id DESC`,
+      [workspaceId],
+      rowToRun,
+    )
     return { items, total: items.length }
   }
 
   public getLatestRun(workflowId: string, workspaceId: string): Run | undefined {
-    const row = this.store.get<RunRow>(
+    return getMapped<RunRow, Run>(
+      this.store,
       `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? ORDER BY createdAt DESC, id DESC LIMIT 1`,
       [workflowId, workspaceId],
+      rowToRun,
     )
-    return row === undefined ? undefined : rowToRun(row)
   }
 
   public getLatestFailedRun(workflowId: string, workspaceId: string): Run | undefined {
-    const row = this.store.get<RunRow>(
+    return getMapped<RunRow, Run>(
+      this.store,
       `SELECT ${COLUMNS} FROM runs WHERE workflow_id = ? AND workspace_id = ? AND status = 'failed' ORDER BY createdAt DESC, id DESC LIMIT 1`,
       [workflowId, workspaceId],
+      rowToRun,
     )
-    return row === undefined ? undefined : rowToRun(row)
   }
 
   /**
@@ -154,9 +161,12 @@ export class RunRepository {
    * never auto-resumes (decision: re-run is the user's choice).
    */
   public listNonTerminal(): readonly Run[] {
-    return this.store
-      .query<RunRow>(`SELECT ${COLUMNS} FROM runs WHERE status IN ('pending', 'running') ORDER BY createdAt ASC, id ASC`)
-      .map(rowToRun)
+    return queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM runs WHERE status IN ('pending', 'running') ORDER BY createdAt ASC, id ASC`,
+      [],
+      rowToRun,
+    )
   }
 
   public update(runId: string, patch: RunUpdate): Run | undefined {
