@@ -33,7 +33,7 @@ const panelTabs: TabItem[] = [
   { key: "settings", icon: Settings, label: "Settings" },
 ];
 
-export function Workspace(_props: WorkspaceProps) {
+export function Workspace({ active = true }: WorkspaceProps) {
   const {
     tabs,
     activeTabId,
@@ -130,6 +130,7 @@ export function Workspace(_props: WorkspaceProps) {
   );
 
   useKeyboardShortcuts({
+    enabled: active,
     onNewWorkflow: handleNewWorkflow,
     onCloseTab: () => {
       if (activeTabId) closeTab(activeTabId);

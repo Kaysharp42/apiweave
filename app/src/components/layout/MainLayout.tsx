@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router-dom";
@@ -9,6 +9,7 @@ import { MainHeader } from "./MainHeader";
 import { MainFooter } from "./MainFooter";
 import { useShallow } from "zustand/react/shallow";
 import { AgentSessionsProvider } from "../../contexts/AgentSessionsContext";
+import { CanvasSurfaceContext } from "../../contexts/CanvasSurfaceContext";
 import { useOpenAgentSessionId } from "../../hooks/useAgentDockControls";
 import {
   useMobileSidebarControls,
@@ -27,9 +28,13 @@ import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
 /**
  * Below Tailwind's `md`, where the layout drops to a single content column.
- * Written as its complement so it is one source of truth with the `md:` classes
- * on the two branches — 767.98 rather than 767 because the viewport can land on
- * a fractional width under a non-integer device pixel ratio.
+ * 767.98 rather than 767 because the viewport can land on a fractional width
+ * under a non-integer device pixel ratio.
+ *
+ * This now *chooses* a branch rather than hiding one: crossing it swaps
+ * `CompactShell` for `DesktopSplit`, which remounts the content. The desktop
+ * shell clamps its window to `minWidth: 1024`, so only the browser build can
+ * cross it, and only by a deliberate resize.
  */
 const COMPACT_LAYOUT_QUERY = "(max-width: 767.98px)";
 
@@ -40,8 +45,6 @@ const AGENT_PANE_MAX = 900;
 
 export function MainLayout({ children }: MainLayoutProps) {
   const { navigationSelectedValue, setNavState } = useNavigationSelection();
-  const { mobileSidebarOpen, setMobileSidebarOpen } =
-    useMobileSidebarControls();
   const location = useLocation();
   // One selector rather than three. The claim `useShallow` supports here is
   // narrow: the two actions in this object are stable references, so the
@@ -87,7 +90,107 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
   }, [navigationSelectedValue, activeWorkspaceId, refreshAll, resetPagination]);
 
-  // Close mobile sidebar on Escape
+  // Which shell to build. Exactly one of the two is mounted, so nothing inside
+  // `<main>`, and nothing either branch owns, exists twice.
+  const isCompact = useMediaQuery(COMPACT_LAYOUT_QUERY);
+
+  // Set by whichever page route currently covers the canvas; see
+  // `CanvasSurfaceContext` for why the surface reports this instead of the
+  // layout matching the path.
+  const [isCanvasCovered, setCanvasCovered] = useState(false);
+  const canvasSurface = useMemo(() => ({ setCovered: setCanvasCovered }), []);
+
+  // One `<main>`, built once and handed to whichever branch renders.
+  const content = (
+    <main
+      id="main-content"
+      className="relative h-full min-w-0 flex-1 overflow-hidden"
+    >
+      {/* The canvas outlives the route. It used to be the route element for
+          the workflows paths, so opening Settings unmounted it and coming back
+          built a new ReactFlow from scratch — which reset the viewport and threw
+          away unsaved node and edge edits, the same loss `DesktopSplit` describes
+          for a pane that appears and disappears.
+
+          `display` rather than `visibility`: ReactFlow's stylesheet sets
+          `visibility: visible` on `.react-flow__node`, and the descendant wins
+          that declaration — so under a hidden ancestor the nodes and their
+          buttons stayed painted, focusable and announced behind the page.
+          `display: none` cannot be overridden from below, and ReactFlow holds its
+          transform across the round trip, so the viewport comes back exactly
+          where it was left rather than refitting. */}
+      <div
+        className="absolute inset-0"
+        style={isCanvasCovered ? { display: "none" } : undefined}
+      >
+        <Workspace active={!isCanvasCovered} />
+      </div>
+
+      {children}
+    </main>
+  );
+
+  return (
+    // The agent-sessions subscription is mounted here rather than in `App`'s
+    // shell route, so it covers every consumer of the nav section and the agent
+    // panel by construction. It also survives navigation: the shell above is a
+    // layout route, so this provider and the terminal's MessagePort under it are
+    // created once per session rather than once per route.
+    <AgentSessionsProvider>
+      <CanvasSurfaceContext.Provider value={canvasSurface}>
+        {/* Skip to main content link */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-primary focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark dark:focus:outline-primary-light"
+        >
+          Skip to main content
+        </a>
+
+        <header>
+          <MainHeader />
+        </header>
+
+        <HorizontalDivider />
+
+        {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
+        <UpdateReadyBanner />
+
+        <div className="flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
+          {isCompact ? (
+            <CompactShell>{content}</CompactShell>
+          ) : (
+            <DesktopSplit>{content}</DesktopSplit>
+          )}
+        </div>
+
+        <HorizontalDivider />
+
+        <footer>
+          <MainFooter />
+        </footer>
+      </CanvasSurfaceContext.Provider>
+    </AgentSessionsProvider>
+  );
+}
+
+/**
+ * The content area under Tailwind's `md`, where there is no room for three
+ * columns: the icon rail stays put, and the sidebar and the agent become drawers
+ * over the canvas.
+ *
+ * A sibling of `DesktopSplit`, and only one of the two is ever mounted. Both
+ * used to sit in the DOM at once, toggled by `hidden md:flex`, so everything
+ * inside `<main>` was instantiated twice — two canvases, two `WorkflowProvider`s,
+ * two tab bars — and the agent terminal's `MessagePort`, which has exactly one
+ * holder, went to the copy nobody could see.
+ */
+function CompactShell({ children }: { readonly children: ReactNode }) {
+  const { mobileSidebarOpen, setMobileSidebarOpen } =
+    useMobileSidebarControls();
+  const openSessionId = useOpenAgentSessionId();
+
+  // Only this branch has a dismissable drawer, so the Escape handler lives here
+  // rather than in the layout above.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && mobileSidebarOpen) {
@@ -98,93 +201,43 @@ export function MainLayout({ children }: MainLayoutProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [mobileSidebarOpen, setMobileSidebarOpen]);
 
-  // Which branch below is the *displayed* one. Both are in the DOM, so anything
-  // that may exist exactly once — the agent terminal and its MessagePort — has
-  // to be mounted by whichever branch the viewport actually shows.
-  const isCompact = useMediaQuery(COMPACT_LAYOUT_QUERY);
-  const openAgentSessionId = useOpenAgentSessionId();
-
   return (
-    // The agent-sessions subscription is mounted here rather than around each
-    // route's shell: this component has two mount points (a route shell and
-    // `pages/Home`), and a provider added above it is a provider one of them
-    // will be missing. Inside it, every consumer of the nav section and the
-    // agent panel is covered by construction.
-    <AgentSessionsProvider>
-      {/* Skip to main content link */}
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-primary focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark dark:focus:outline-primary-light"
-      >
-        Skip to main content
-      </a>
+    <>
+      {/* No wrapping landmark: `AppNavBar` renders its own labelled <nav>, and
+          naming this too made a screen reader announce "Main navigation" twice
+          on the way in — the same duplication the agent drawer below avoids. */}
+      <AppNavBar />
 
-      <header>
-        <MainHeader />
-      </header>
+      {mobileSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-text-primary/30 motion-reduce:transition-none dark:bg-text-primary-dark/30"
+            onClick={() => setMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          {/* A plain positioning wrapper: `Sidebar` is the labelled landmark,
+              and labelling the drawer too announced "Sidebar" twice. */}
+          <div className="fixed bottom-8 left-11 top-12 z-50 flex w-72 flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+            <Sidebar />
+          </div>
+        </>
+      )}
 
-      <HorizontalDivider />
+      {/* Too narrow for a third column, so the agent takes the same left drawer
+          slot the sidebar uses here — still anchored to the left edge, still
+          beside the canvas rather than on top of it.
 
-      {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
-      <UpdateReadyBanner />
+          The wrapper is deliberately unlabelled: `AgentDock` renders its own
+          labelled <section>, and naming this too makes a screen reader announce
+          the same region twice on the way in. */}
+      {openSessionId !== null && (
+        <aside className="fixed bottom-8 left-11 top-12 z-40 flex w-[min(22rem,calc(100vw-3.5rem))] flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+          <AgentDock />
+        </aside>
+      )}
 
-      {/* Desktop layout (md+): Allotment split panes */}
-      <div className="hidden md:flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
-        <DesktopSplit mountsAgentPanel={!isCompact}>
-          <main id="main-content" className="h-full">
-            {children !== undefined ? children : <Workspace />}
-          </main>
-        </DesktopSplit>
-      </div>
-
-      {/* Mobile layout (< lg): flex with collapsible sidebar overlay */}
-      <div className="flex md:hidden flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
-        <nav aria-label="Main navigation">
-          <AppNavBar />
-        </nav>
-
-        {mobileSidebarOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-40 bg-text-primary/30 motion-reduce:transition-none dark:bg-text-primary-dark/30"
-              onClick={() => setMobileSidebarOpen(false)}
-              aria-hidden="true"
-            />
-            <aside
-              className="fixed bottom-8 left-11 top-12 z-50 flex w-72 flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
-              aria-label="Sidebar"
-            >
-              <Sidebar />
-            </aside>
-          </>
-        )}
-
-        {/* Too narrow for a third column, so the agent takes the same left
-            drawer slot the sidebar uses here — still anchored to the left edge,
-            still beside the canvas rather than on top of it. Mounted only on
-            this branch's turn: the desktop pane holds the other copy, and two
-            terminals would fight over one session's port.
-
-            The wrapper is deliberately unlabelled: `AgentDock` renders its own
-            labelled <section>, and naming this too makes a screen reader
-            announce the same region twice on the way in. */}
-        {isCompact && openAgentSessionId !== null && (
-          <aside className="fixed bottom-8 left-11 top-12 z-40 flex w-[min(22rem,calc(100vw-3.5rem))] flex-col overflow-hidden border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
-            <AgentDock />
-          </aside>
-        )}
-
-        <main id="main-content" className="flex-1 min-w-0 overflow-hidden">
-          {children !== undefined ? children : <Workspace />}
-        </main>
-      </div>
-
-      <HorizontalDivider />
-
-      <footer>
-        <MainFooter />
-      </footer>
-    </AgentSessionsProvider>
+      {children}
+    </>
   );
 }
 
@@ -209,10 +262,8 @@ export function MainLayout({ children }: MainLayoutProps) {
  */
 export function DesktopSplit({
   children,
-  mountsAgentPanel,
 }: {
   readonly children: ReactNode;
-  readonly mountsAgentPanel: boolean;
 }) {
   const { isNavBarCollapsed } = useNavBarCollapse();
   const openSessionId = useOpenAgentSessionId();
@@ -247,15 +298,13 @@ export function DesktopSplit({
         priority={LayoutPriority.Low}
       >
         <div className="flex h-full w-full text-xs">
-          <nav aria-label="Main navigation">
-            <AppNavBar />
-          </nav>
-          <aside
-            className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised"
-            aria-label="Sidebar"
-          >
+          {/* Unwrapped for the same reason as the compact branch: the rail is
+              already a labelled <nav>. */}
+          <AppNavBar />
+          {/* Sizing only — the landmark is `Sidebar`'s own <aside>. */}
+          <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
             <Sidebar />
-          </aside>
+          </div>
         </div>
       </Allotment.Pane>
 
@@ -272,14 +321,14 @@ export function DesktopSplit({
           into the hover-affordance column next to it, which is what
           `node-modal.spec.ts`'s 768px viewport caught. */}
       <Allotment.Pane
-        preferredSize={mountsAgentPanel && openSessionId !== null ? AGENT_PANE_PREFERRED : 0}
+        preferredSize={openSessionId !== null ? AGENT_PANE_PREFERRED : 0}
         minSize={AGENT_PANE_MIN}
         maxSize={AGENT_PANE_MAX}
         snap={false}
         priority={LayoutPriority.Low}
-        visible={mountsAgentPanel && openSessionId !== null}
+        visible={openSessionId !== null}
       >
-        {mountsAgentPanel ? <AgentDock /> : null}
+        <AgentDock />
       </Allotment.Pane>
 
       {/* The only pane that gives up space. Without an explicit priority
