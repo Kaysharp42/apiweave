@@ -32,7 +32,21 @@ export interface HttpRequestNode {
     readonly timeout: number
     readonly followRedirects: boolean
     readonly extractors: Record<string, string>
+    readonly openapiMeta?: OpenApiNodeMeta | undefined
   }
+}
+
+/** Endpoint identity carried on OpenAPI-imported nodes, used to detect spec drift on refresh. */
+export interface OpenApiNodeMeta {
+  readonly source: "openapi"
+  readonly method: string
+  readonly path: string
+  readonly operationId: string | null
+  readonly fingerprint: string
+  readonly definitionName?: string | undefined
+  readonly definitionSpecUrl?: string | undefined
+  readonly definitionScope?: string | undefined
+  readonly sourceUiUrl?: string | undefined
 }
 
 export interface EndNode {
@@ -63,6 +77,22 @@ export interface OpenApiParseOptions {
   readonly baseUrl?: string
   readonly tagFilter?: readonly string[]
   readonly sanitize?: boolean
+  /** Which discovered Swagger definition this spec came from (multi-definition UIs). */
+  readonly source?: OpenApiSourceContext
+}
+
+export interface OpenApiSourceContext {
+  readonly definitionName?: string | undefined
+  readonly definitionSpecUrl?: string | undefined
+  readonly definitionScope?: string | undefined
+  readonly sourceUiUrl?: string | undefined
+}
+
+/** One spec fetched from a Swagger UI definition list ("Select a definition" dropdown). */
+export interface OpenApiDefinition {
+  readonly name: string
+  readonly specUrl: string
+  readonly spec: Record<string, unknown>
 }
 
 export interface HarParseOptions {
@@ -97,14 +127,25 @@ export interface OpenApiPreviewData {
   readonly nodes: readonly ImportedNode[]
   readonly availableServers: readonly { readonly url: string; readonly description: string }[]
   readonly availableTags: readonly { readonly name: string; readonly description: string }[]
-  readonly stats: { readonly apiTitle: string; readonly apiVersion: string; readonly totalEndpoints: number }
+  readonly stats: {
+    readonly apiTitle: string
+    readonly apiVersion: string
+    readonly totalEndpoints: number
+    /** Definitions imported / discovered-but-unusable (multi-definition Swagger UIs). */
+    readonly definitionCount?: number
+    readonly failedDefinitionCount?: number
+  }
   readonly workflow: { readonly nodeCount: number }
+  /** Definitions that were discovered but could not be fetched/parsed. */
+  readonly warnings?: readonly string[]
 }
 
-export interface SwaggerDiscoveryResult {
-  readonly spec: Record<string, unknown>
-  readonly sourceUrl: string
-  readonly warnings: readonly string[]
+/** What a Swagger UI page (or its initializer script / swagger-config JSON) points at. */
+export interface SwaggerHints {
+  readonly configUrls: readonly string[]
+  readonly definitions: readonly { readonly name: string; readonly specUrl: string }[]
+  readonly specUrls: readonly string[]
+  readonly scriptUrls: readonly string[]
 }
 
 let idCounter = 0
@@ -510,6 +551,13 @@ export function parseOpenApiSpec(
       if (host) baseUrl = `${schemes[0] ?? "https"}://${host}${basePath}`
     }
   }
+  // A relative `servers` entry (springdoc's default is "/") is relative to wherever
+  // the spec was served from, so requests must point at that host, not at "//path".
+  if (baseUrl.startsWith("/") && opts.source?.definitionSpecUrl) {
+    const absolute = safeUrl(new URL(baseUrl, opts.source.definitionSpecUrl).toString())
+    if (absolute) baseUrl = absolute.toString()
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "")
 
   const tagFilter = opts.tagFilter && opts.tagFilter.length > 0 ? new Set(opts.tagFilter) : null
 
@@ -559,7 +607,8 @@ export function parseOpenApiSpec(
       const pos = positionForIndex(httpNodes.length)
 
       const normalizedPath = normalizeOpenApiPath(path)
-      void normalizedPath
+      const src = opts.source ?? {}
+      const scope = src.definitionScope ?? ""
 
       const config: HttpRequestNode["config"] = {
         method: normalizeMethod(method),
@@ -571,6 +620,17 @@ export function parseOpenApiSpec(
         followRedirects: true,
         extractors: {},
         ...(body !== undefined ? { body } : {}),
+        openapiMeta: {
+          source: "openapi",
+          method: method.toUpperCase(),
+          path: normalizedPath,
+          operationId: operationId || null,
+          fingerprint: `${scope}|${method.toUpperCase()}|${normalizedPath}|${operationId}`,
+          ...(src.definitionName ? { definitionName: src.definitionName } : {}),
+          ...(src.definitionSpecUrl ? { definitionSpecUrl: src.definitionSpecUrl } : {}),
+          ...(scope ? { definitionScope: scope } : {}),
+          ...(src.sourceUiUrl ? { sourceUiUrl: src.sourceUiUrl } : {}),
+        },
       }
 
       httpNodes.push({
@@ -648,12 +708,19 @@ function normalizeOpenApiPath(path: string): string {
   return normalized
 }
 
-function generateExampleFromSchema(schema: Record<string, unknown>, rootSpec: Record<string, unknown>): unknown {
+function generateExampleFromSchema(
+  schema: Record<string, unknown>,
+  rootSpec: Record<string, unknown>,
+  // Self-referential schemas ($ref back to an ancestor) are legal and common;
+  // without this the walk recurses until the stack blows.
+  activeRefs: ReadonlySet<string> = new Set(),
+): unknown {
   if (schema["example"] !== undefined) return schema["example"]
   const ref = schema["$ref"] as string | undefined
   if (ref) {
+    if (activeRefs.has(ref)) return null
     const resolved = resolveRef(ref, rootSpec)
-    if (resolved) return generateExampleFromSchema(resolved, rootSpec)
+    if (resolved) return generateExampleFromSchema(resolved, rootSpec, new Set([...activeRefs, ref]))
     return null
   }
   const type = schema["type"] as string | undefined
@@ -661,7 +728,7 @@ function generateExampleFromSchema(schema: Record<string, unknown>, rootSpec: Re
     const props = (schema["properties"] as Record<string, Record<string, unknown>>) ?? {}
     const result: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(props)) {
-      const example = generateExampleFromSchema(v, rootSpec)
+      const example = generateExampleFromSchema(v, rootSpec, activeRefs)
       if (example !== null) result[k] = example
     }
     return result
@@ -669,7 +736,7 @@ function generateExampleFromSchema(schema: Record<string, unknown>, rootSpec: Re
   if (type === "array") {
     const items = schema["items"] as Record<string, unknown> | undefined
     if (items) {
-      const example = generateExampleFromSchema(items, rootSpec)
+      const example = generateExampleFromSchema(items, rootSpec, activeRefs)
       return example !== null ? [example] : []
     }
     return []
@@ -709,41 +776,141 @@ function safeUrl(url: string): URL | null {
 
 // ── Swagger UI discovery ──────────────────────────────────────────────────────
 
-export function extractSwaggerSpecUrls(html: string, baseUrl: string): readonly string[] {
-  const urls: string[] = []
-  const seen = new Set<string>()
+// Swagger UI stores its own config in JS (`SwaggerUIBundle({...})`), in a
+// separate `swagger-initializer.js`, or behind a `configUrl` that returns JSON —
+// so the same regexes have to run over HTML, JS and JSON alike.
+const CONFIG_URL_RE = /["']?configUrl["']?\s*[:=]\s*["']([^"']+)["']/g
+const URLS_ARRAY_RE = /["']?urls["']?\s*[:=]\s*\[([\s\S]*?)\]/
+const URL_ENTRY_RE = /\{[^{}]*\}/g
+const SINGLE_URL_RE = /["']?url["']?\s*[:=]\s*["']([^"']+)["']/g
+const SCRIPT_SRC_RE = /<script[^>]+src\s*=\s*["']([^"']+)["']/gi
+const SPEC_LINK_RE = /(?:href|src)\s*=\s*["']([^"']*(?:swagger|openapi|api-docs)[^"']*(?:\.(?:json|ya?ml))?)["']/gi
+// swagger-ui's own bundles are megabytes of library code with no config in them.
+const UI_ASSET_RE = /swagger-ui(-bundle|-standalone-preset|-es-bundle[\w-]*)?\.js$/i
 
-  const addUrl = (candidate: string) => {
-    if (!candidate) return
-    let resolved: string
-    try {
-      resolved = new URL(candidate, baseUrl).toString()
-    } catch { return }
-    if (!seen.has(resolved)) {
-      seen.add(resolved)
-      urls.push(resolved)
+export function extractSwaggerHints(text: string, baseUrl: string): SwaggerHints {
+  const resolve = (candidate: string): string | null => {
+    const trimmed = candidate.trim()
+    if (!trimmed) return null
+    try { return new URL(trimmed, baseUrl).toString() } catch { return null }
+  }
+  const configUrls = new Set<string>()
+  const specUrls = new Set<string>()
+  const scriptUrls = new Set<string>()
+  const definitions: { name: string; specUrl: string }[] = []
+
+  for (const m of text.matchAll(CONFIG_URL_RE)) {
+    const resolved = m[1] ? resolve(m[1]) : null
+    if (resolved) configUrls.add(resolved)
+  }
+
+  // The `urls: [...]` array is the multi-definition dropdown; pull it out first
+  // so the single-`url` match below can't pick up one of its entries.
+  const urlsBlock = text.match(URLS_ARRAY_RE)
+  const rest = urlsBlock ? text.replace(urlsBlock[0], "") : text
+  for (const entry of (urlsBlock?.[1] ?? "").match(URL_ENTRY_RE) ?? []) {
+    const urlMatch = entry.match(/["']?url["']?\s*:\s*["']([^"']+)["']/)
+    if (!urlMatch?.[1]) continue
+    const resolved = resolve(urlMatch[1])
+    if (!resolved) continue
+    const nameMatch = entry.match(/["']?name["']?\s*:\s*["']([^"']+)["']/)
+    definitions.push({ name: nameMatch?.[1]?.trim() || urlMatch[1].trim(), specUrl: resolved })
+  }
+
+  for (const m of rest.matchAll(SINGLE_URL_RE)) {
+    const resolved = m[1] ? resolve(m[1]) : null
+    if (resolved) specUrls.add(resolved)
+  }
+  for (const m of text.matchAll(SPEC_LINK_RE)) {
+    const resolved = m[1] ? resolve(m[1]) : null
+    if (resolved) specUrls.add(resolved)
+  }
+  for (const m of text.matchAll(SCRIPT_SRC_RE)) {
+    const resolved = m[1] ? resolve(m[1]) : null
+    if (resolved && !UI_ASSET_RE.test(resolved)) scriptUrls.add(resolved)
+  }
+
+  return {
+    configUrls: [...configUrls],
+    definitions,
+    specUrls: [...specUrls].filter((u) => !configUrls.has(u)),
+    scriptUrls: [...scriptUrls],
+  }
+}
+
+/** Definition list from a swagger-config document (`{"urls": [{url, name}]}`). */
+export function definitionsFromSwaggerConfig(
+  config: Record<string, unknown>,
+  configUrl: string,
+): readonly { readonly name: string; readonly specUrl: string }[] {
+  const resolve = (candidate: string): string | null => {
+    try { return new URL(candidate.trim(), configUrl).toString() } catch { return null }
+  }
+  const out: { name: string; specUrl: string }[] = []
+  for (const item of (Array.isArray(config["urls"]) ? config["urls"] : []) as Record<string, unknown>[]) {
+    const raw = typeof item?.["url"] === "string" ? item["url"] : ""
+    const resolved = raw ? resolve(raw) : null
+    if (!resolved) continue
+    const name = typeof item["name"] === "string" ? item["name"].trim() : ""
+    out.push({ name: name || raw.trim(), specUrl: resolved })
+  }
+  const single = typeof config["url"] === "string" ? resolve(config["url"]) : null
+  if (single) out.push({ name: "Default", specUrl: single })
+  return out
+}
+
+export function definitionScope(name: string, specUrl: string): string {
+  const seed = name.trim() || specUrl.trim() || "definition"
+  return seed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "definition"
+}
+
+// ── Multi-definition merge ───────────────────────────────────────────────────
+
+/** Merge per-definition workflows into one graph, labelling nodes by definition. */
+export function mergeParsedWorkflows(
+  parts: readonly { readonly name: string; readonly workflow: ParsedWorkflow }[],
+): ParsedWorkflow {
+  if (parts.length === 1) return parts[0]!.workflow
+  const start = makeStartNode()
+  const httpNodes: HttpRequestNode[] = []
+  for (const part of parts) {
+    for (const node of part.workflow.nodes) {
+      if (node.type !== "http-request") continue
+      httpNodes.push({ ...node, label: `[${part.name}] ${node.label}`, position: positionForIndex(httpNodes.length) })
     }
   }
+  const end = makeEndNode(httpNodes.length)
+  const now = new Date().toISOString().replace("T", " ").slice(0, 16)
+  return {
+    name: `Imported from OpenAPI - Multiple APIs - ${now}`,
+    description: `Imported ${httpNodes.length} endpoints from ${parts.length} OpenAPI definitions`,
+    nodes: [start, ...httpNodes, end],
+    edges: chainEdges(start.nodeId, httpNodes.map((n) => n.nodeId), end.nodeId),
+    variables: {},
+    tags: ["openapi-import"],
+  }
+}
 
-  const configUrlMatch = html.match(/configUrl\s*[:=]\s*["']([^"']+)["']/)
-  if (configUrlMatch?.[1]) addUrl(configUrlMatch[1])
-
-  const urlMatch = html.match(/\burl\s*[:=]\s*["']([^"']+)["']/)
-  if (urlMatch?.[1]) addUrl(urlMatch[1])
-
-  const urlsArrayMatch = html.match(/urls\s*[:=]\s*\[([^\]]+)\]/s)
-  if (urlsArrayMatch?.[1]) {
-    for (const m of urlsArrayMatch[1].matchAll(/["']?url["']?\s*:\s*["']([^"']+)["']/g)) {
-      if (m[1]) addUrl(m[1])
+/** Merge per-definition previews into one, labelling nodes by definition. */
+export function mergeOpenApiPreviews(
+  parts: readonly { readonly name: string; readonly preview: OpenApiPreviewData }[],
+): OpenApiPreviewData {
+  if (parts.length === 1) return parts[0]!.preview
+  const nodes: ImportedNode[] = []
+  const servers = new Map<string, string>()
+  const tags = new Map<string, string>()
+  for (const part of parts) {
+    for (const node of part.preview.nodes) {
+      nodes.push(node.type === "http-request" ? { ...node, label: `[${part.name}] ${node.label}` } : node)
     }
+    for (const server of part.preview.availableServers) if (!servers.has(server.url)) servers.set(server.url, server.description)
+    for (const tag of part.preview.availableTags) if (!tags.has(tag.name)) tags.set(tag.name, tag.description)
   }
-
-  for (const m of html.matchAll(/href\s*=\s*["']([^"']*(?:swagger|openapi)[^"']*\.(?:json|yaml|yml))["']/gi)) {
-    if (m[1]) addUrl(m[1])
+  return {
+    nodes,
+    availableServers: [...servers].map(([url, description]) => ({ url, description })),
+    availableTags: [...tags].map(([name, description]) => ({ name, description })),
+    stats: { apiTitle: "Multiple APIs", apiVersion: "", totalEndpoints: nodes.length },
+    workflow: { nodeCount: nodes.length + 2 },
   }
-  for (const m of html.matchAll(/src\s*=\s*["']([^"']*(?:swagger|openapi)[^"']*\.(?:json|yaml|yml))["']/gi)) {
-    if (m[1]) addUrl(m[1])
-  }
-
-  return urls
 }

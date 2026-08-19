@@ -31,6 +31,11 @@ import { SafeHttp } from "../runner/safe_http"
 // enough for real specs, small enough that a malicious/slow URL can't exhaust
 // main-process memory or hang the refresh. Bump only if real specs need more.
 const MAX_REMOTE_SPEC_BYTES = 10 * 1024 * 1024
+// ponytail: fixed discovery budget — a Swagger UI needs a handful of hops to
+// reach its swagger-config; more than that means we are guessing.
+const MAX_DISCOVERY_FETCHES = 16
+const MAX_SPEC_DEFINITIONS = 50
+const DEFINITION_FETCH_CONCURRENCY = 6
 import { canonicalizeWorkflowGraph } from "../repositories/helpers"
 import {
   parseCurlCommands,
@@ -39,7 +44,11 @@ import {
   parseSpecText,
   openApiPreview,
   harDryRun,
-  extractSwaggerSpecUrls,
+  extractSwaggerHints,
+  definitionsFromSwaggerConfig,
+  definitionScope,
+  mergeParsedWorkflows,
+  mergeOpenApiPreviews,
   type ParsedWorkflow,
   type ImportedNode,
   type HttpRequestNode,
@@ -49,6 +58,7 @@ import {
   type HarDryRunResult,
   type CurlDryRunResult,
   type OpenApiPreviewData,
+  type OpenApiDefinition,
 } from "./import_parsers"
 
 export interface ExportedEnvironment {
@@ -338,65 +348,203 @@ export class ImportService {
   }
 
   async fetchRemoteOpenApi(opts: RemoteOpenApiOptions): Promise<ParsedWorkflow> {
-    const { spec } = await this.discoverAndFetchSpec(opts.url)
-    const parseOpts = buildParseOpts(opts)
-    return parseOpenApiSpec(spec, parseOpts)
+    const { definitions, warnings } = await this.discoverDefinitions(opts.url)
+    const parts = this.perDefinition(definitions, warnings, opts, (spec, parseOpts) => parseOpenApiSpec(spec, parseOpts))
+    return mergeParsedWorkflows(parts.map((p) => ({ name: p.name, workflow: p.value })))
   }
 
   async fetchRemoteOpenApiPreview(opts: RemoteOpenApiOptions): Promise<OpenApiPreviewData> {
-    const { spec } = await this.discoverAndFetchSpec(opts.url)
-    const parseOpts = buildParseOpts(opts)
-    return openApiPreview(spec, parseOpts)
+    const { definitions, warnings, discovered } = await this.discoverDefinitions(opts.url)
+    const parts = this.perDefinition(definitions, warnings, opts, (spec, parseOpts) => openApiPreview(spec, parseOpts))
+    const merged = mergeOpenApiPreviews(parts.map((p) => ({ name: p.name, preview: p.value })))
+    return {
+      ...merged,
+      warnings,
+      stats: {
+        ...merged.stats,
+        definitionCount: parts.length,
+        failedDefinitionCount: Math.max(0, discovered - parts.length),
+      },
+    }
   }
 
-  private async discoverAndFetchSpec(url: string): Promise<{ spec: Record<string, unknown>; sourceUrl: string; warnings: string[] }> {
+  /** Parse each definition on its own so one unusable spec cannot sink the import. */
+  private perDefinition<T>(
+    definitions: readonly OpenApiDefinition[],
+    warnings: string[],
+    opts: RemoteOpenApiOptions,
+    parse: (spec: Record<string, unknown>, parseOpts: OpenApiParseOptions) => T,
+  ): { name: string; value: T }[] {
+    const parts: { name: string; value: T }[] = []
+    for (const def of definitions) {
+      try {
+        parts.push({ name: def.name, value: parse(def.spec, this.defParseOpts(opts, def)) })
+      } catch (e) {
+        warnings.push(`Definition "${def.name}" skipped: ${e instanceof Error ? e.message : String(e)}`)
+      }
+    }
+    if (parts.length === 0) throw new ValidationError(`No importable OpenAPI definition: ${warnings.join("; ")}`)
+    return parts
+  }
+
+  private defParseOpts(opts: RemoteOpenApiOptions, def: OpenApiDefinition): OpenApiParseOptions {
+    return {
+      ...buildParseOpts(opts),
+      source: {
+        definitionName: def.name,
+        definitionSpecUrl: def.specUrl,
+        definitionScope: definitionScope(def.name, def.specUrl),
+        sourceUiUrl: opts.url,
+      },
+    }
+  }
+
+  /**
+   * Resolve a user-supplied URL to one or more OpenAPI specs. The URL may be
+   * the spec itself (.json/.yaml or any endpoint returning one), or a Swagger UI
+   * page — in which case the definition list is discovered from the page, its
+   * initializer script, an explicit/conventional swagger-config endpoint, or the
+   * `configUrl`/`url`/`urls.primaryName` query hints Swagger UI puts in its own URL.
+   */
+  private async discoverDefinitions(url: string): Promise<{ definitions: OpenApiDefinition[]; warnings: string[]; discovered: number }> {
     this.safeHttp.validateUrl(url)
     const warnings: string[] = []
 
-    const response = await this.safeHttp.safeGet(url)
-    if (!response.ok) throw new ValidationError(`Failed to fetch URL: HTTP ${response.status}`)
+    const root = await this.fetchCapped(url)
+    if (!root.ok) throw new ValidationError(`Failed to fetch ${url}: ${root.error}`)
 
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? ""
-    const { text, truncated } = await this.safeHttp.readTextCapped(response, MAX_REMOTE_SPEC_BYTES)
-    if (truncated) throw new ValidationError(`Response from ${url} exceeds the ${MAX_REMOTE_SPEC_BYTES} byte limit for OpenAPI/Swagger docs`)
+    const directSpec = asSpec(root.text, root.contentType)
+    if (directSpec) return { definitions: [{ name: specTitle(directSpec), specUrl: url, spec: directSpec }], warnings, discovered: 1 }
 
-    if (isJsonSpec(text, contentType)) {
-      const spec = parseSpecText(text)
-      if (spec["paths"] !== undefined) return { spec, sourceUrl: url, warnings }
+    const targets = await this.discoverSpecTargets(url, root.text, warnings)
+    if (targets.length === 0) {
+      throw new ValidationError(
+        "No OpenAPI/Swagger spec found at URL and no spec URLs discovered. Point at the spec itself (e.g. /v3/api-docs) or a Swagger UI page that exposes its config.",
+      )
+    }
+    if (targets.length > MAX_SPEC_DEFINITIONS) {
+      throw new ValidationError(`Discovered ${targets.length} definitions, which exceeds the limit of ${MAX_SPEC_DEFINITIONS}`)
     }
 
-    if (isYamlSpec(text, contentType)) {
-      const spec = parseSpecText(text)
-      if (spec["paths"] !== undefined) return { spec, sourceUrl: url, warnings }
-    }
-
-    const candidates = extractSwaggerSpecUrls(text, url)
-    if (candidates.length === 0) {
-      throw new ValidationError("No OpenAPI/Swagger spec found at URL and no spec URLs discovered in HTML")
-    }
-
-    for (const candidate of candidates) {
-      try {
-        this.safeHttp.validateUrl(candidate)
-        const specResponse = await this.safeHttp.safeGet(candidate)
-        if (!specResponse.ok) {
-          warnings.push(`Failed to fetch candidate ${candidate}: HTTP ${specResponse.status}`)
-          continue
-        }
-        const { text: specText, truncated } = await this.safeHttp.readTextCapped(specResponse, MAX_REMOTE_SPEC_BYTES)
-        if (truncated) {
-          warnings.push(`Candidate ${candidate} exceeds the ${MAX_REMOTE_SPEC_BYTES} byte limit`)
-          continue
-        }
-        const spec = parseSpecText(specText)
-        if (spec["paths"] !== undefined) return { spec, sourceUrl: candidate, warnings }
-        warnings.push(`Candidate ${candidate} did not contain paths`)
-      } catch (e) {
-        warnings.push(`Candidate ${candidate} failed: ${e instanceof Error ? e.message : String(e)}`)
+    const definitions: OpenApiDefinition[] = []
+    for (let i = 0; i < targets.length; i += DEFINITION_FETCH_CONCURRENCY) {
+      const batch = targets.slice(i, i + DEFINITION_FETCH_CONCURRENCY)
+      const fetched = await Promise.all(batch.map(async (target) => {
+        const res = await this.fetchCapped(target.specUrl)
+        if (!res.ok) return `Failed to fetch definition "${target.name}" (${target.specUrl}): ${res.error}`
+        const spec = asSpec(res.text, res.contentType)
+        if (!spec) return `Definition "${target.name}" (${target.specUrl}) is not an OpenAPI document`
+        return { name: target.name, specUrl: target.specUrl, spec }
+      }))
+      for (const result of fetched) {
+        if (typeof result === "string") warnings.push(result)
+        else definitions.push(result)
       }
     }
 
-    throw new ValidationError(`No valid OpenAPI spec found among ${candidates.length} candidate(s)`)
+    if (definitions.length === 0) {
+      throw new ValidationError(`No valid OpenAPI spec found among ${targets.length} candidate(s): ${warnings.join("; ")}`)
+    }
+    return { definitions, warnings, discovered: targets.length }
+  }
+
+  /** Walk Swagger UI's config chain (page → scripts/config endpoints) to the spec URLs. */
+  private async discoverSpecTargets(
+    uiUrl: string,
+    html: string,
+    warnings: string[],
+  ): Promise<{ name: string; specUrl: string }[]> {
+    const query = new URL(uiUrl).searchParams
+    let primaryName = query.get("urls.primaryName")?.trim() ?? ""
+
+    const targets: { name: string; specUrl: string }[] = []
+    const seenTarget = new Set<string>()
+    const addTarget = (name: string, specUrl: string) => {
+      if (seenTarget.has(specUrl)) return
+      seenTarget.add(specUrl)
+      targets.push({ name: name || specUrl, specUrl })
+    }
+
+    const queryUrl = query.get("url")?.trim()
+    if (queryUrl) addTarget(primaryName || "Default", new URL(queryUrl, uiUrl).toString())
+
+    const hints = extractSwaggerHints(html, uiUrl)
+    for (const def of hints.definitions) addTarget(def.name, def.specUrl)
+
+    // Cheap targeted JSON first, page scripts last: the stock swagger-initializer.js
+    // carries a petstore.swagger.io placeholder `url` that must never win over the
+    // real swagger-config.
+    const pending: string[] = []
+    const queryConfig = query.get("configUrl")?.trim()
+    if (queryConfig) pending.push(new URL(queryConfig, uiUrl).toString())
+    pending.push(...hints.configUrls, ...conventionalConfigUrls(uiUrl), ...hints.scriptUrls)
+    const fallbackSpecUrls = [...hints.specUrls]
+
+    const seenFetch = new Set<string>([uiUrl])
+    let fetches = 0
+    while (pending.length > 0 && fetches < MAX_DISCOVERY_FETCHES) {
+      const candidate = pending.shift()!
+      if (seenFetch.has(candidate)) continue
+      seenFetch.add(candidate)
+      fetches++
+
+      const res = await this.fetchCapped(candidate)
+      if (!res.ok) continue
+
+      const spec = asSpec(res.text, res.contentType)
+      if (spec) {
+        addTarget(specTitle(spec), candidate)
+        break
+      }
+
+      const json = tryParseJson(res.text)
+      if (json) {
+        const defs = definitionsFromSwaggerConfig(json, candidate)
+        if (defs.length > 0) {
+          const configPrimary = json["urls.primaryName"]
+          if (!primaryName && typeof configPrimary === "string") primaryName = configPrimary.trim()
+          for (const def of defs) addTarget(def.name, def.specUrl)
+          break
+        }
+        continue
+      }
+
+      // HTML/JS: mine it for the next hop (initializer scripts, nested configs).
+      const sub = extractSwaggerHints(res.text, candidate)
+      pending.unshift(...sub.configUrls)
+      for (const def of sub.definitions) addTarget(def.name, def.specUrl)
+      fallbackSpecUrls.push(...sub.specUrls)
+    }
+
+    if (targets.length === 0) {
+      for (const specUrl of fallbackSpecUrls) addTarget(specUrl, specUrl)
+      if (targets.length > 0) warnings.push("No swagger-config found; falling back to spec URLs found in the page")
+    }
+
+    if (primaryName) {
+      const selected = targets.filter((t) => t.name.trim().toLowerCase() === primaryName.toLowerCase())
+      if (selected.length > 0) return selected
+    }
+    return targets
+  }
+
+  private async fetchCapped(url: string): Promise<FetchedText> {
+    try {
+      this.safeHttp.validateUrl(url)
+      const response = await this.safeHttp.safeGet(url, {
+        headers: { Accept: "application/json, application/vnd.oai.openapi+json, application/yaml, text/html, */*" },
+      })
+      if (!response.ok) {
+        await response.body?.cancel()
+        return { ok: false, error: `HTTP ${response.status}` }
+      }
+      const { text, truncated } = await this.safeHttp.readTextCapped(response, MAX_REMOTE_SPEC_BYTES)
+      if (truncated) throw new ValidationError(`Response from ${url} exceeds the ${MAX_REMOTE_SPEC_BYTES} byte limit for OpenAPI/Swagger docs`)
+      return { ok: true, text, contentType: response.headers.get("content-type")?.toLowerCase() ?? "" }
+    } catch (e) {
+      if (e instanceof ValidationError) throw e
+      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+    }
   }
 
   parseHar(data: Record<string, unknown>, opts: HarParseOptions = {}): ParsedWorkflow {
@@ -560,14 +708,73 @@ function buildParseOpts(opts: RemoteOpenApiOptions): OpenApiParseOptions {
   return result as OpenApiParseOptions
 }
 
-function isJsonSpec(text: string, contentType: string): boolean {
-  if (contentType.includes("json")) return true
+type FetchedText =
+  | { readonly ok: true; readonly text: string; readonly contentType: string }
+  | { readonly ok: false; readonly error: string }
+
+function tryParseJson(text: string): Record<string, unknown> | null {
   const trimmed = text.trim()
-  return trimmed.startsWith("{") || trimmed.startsWith("[")
+  if (!trimmed.startsWith("{")) return null
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
 }
 
-function isYamlSpec(text: string, contentType: string): boolean {
-  if (contentType.includes("yaml") || contentType.includes("yml")) return true
-  const trimmed = text.trimStart()
-  return trimmed.startsWith("openapi:") || trimmed.startsWith("swagger:")
+/** The document if it is an OpenAPI/Swagger spec (JSON or YAML), else null. */
+function asSpec(text: string, contentType: string): Record<string, unknown> | null {
+  const trimmed = text.trim()
+  const looksJson = contentType.includes("json") || trimmed.startsWith("{")
+  const looksYaml =
+    contentType.includes("yaml") || contentType.includes("yml") ||
+    trimmed.startsWith("openapi:") || trimmed.startsWith("swagger:")
+  if (!looksJson && !looksYaml) return null
+  try {
+    const spec = parseSpecText(trimmed)
+    return spec["paths"] !== undefined ? spec : null
+  } catch {
+    return null
+  }
+}
+
+function specTitle(spec: Record<string, unknown>): string {
+  const info = (spec["info"] ?? {}) as Record<string, unknown>
+  return typeof info["title"] === "string" && info["title"].trim() ? info["title"].trim() : "Default"
+}
+
+/**
+ * Where springdoc/swagger-ui setups conventionally serve swagger-config when the
+ * page does not say (springdoc puts it at <context>/v3/api-docs/swagger-config,
+ * which is not under the /webjars/swagger-ui/ path the user pastes).
+ */
+function conventionalConfigUrls(uiUrl: string): string[] {
+  const parsed = new URL(uiUrl)
+  const origin = parsed.origin
+  const path = parsed.pathname || "/"
+  const directory = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+
+  const prefixes = new Set<string>([""])
+  for (const marker of ["/webjars/swagger-ui/", "/swagger-ui/", "/webjars/"]) {
+    if (path.includes(marker)) prefixes.add(path.slice(0, path.indexOf(marker)))
+  }
+
+  const out: string[] = []
+  const push = (candidate: string) => {
+    const resolved = new URL(candidate, origin).toString()
+    if (!out.includes(resolved)) out.push(resolved)
+  }
+  if (directory) push(`${directory}/swagger-config`)
+  for (const prefix of prefixes) {
+    const base = prefix.replace(/\/$/, "")
+    for (const suffix of [
+      "/v3/api-docs/swagger-config",
+      "/api-docs/swagger-config",
+      "/swagger/v3/api-docs/swagger-config",
+      "/swagger/v1/swagger-config",
+      "/swagger/swagger-config",
+    ]) push(`${base}${suffix}`)
+  }
+  return out
 }
