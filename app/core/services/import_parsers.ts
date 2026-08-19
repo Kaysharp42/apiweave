@@ -717,34 +717,50 @@ function generateExampleFromSchema(
 ): unknown {
   if (schema["example"] !== undefined) return schema["example"]
   const ref = schema["$ref"] as string | undefined
-  if (ref) {
-    if (activeRefs.has(ref)) return null
-    const resolved = resolveRef(ref, rootSpec)
-    if (resolved) return generateExampleFromSchema(resolved, rootSpec, new Set([...activeRefs, ref]))
-    return null
-  }
+  if (ref) return exampleFromRef(ref, rootSpec, activeRefs)
   const type = schema["type"] as string | undefined
-  if (type === "object") {
-    const props = (schema["properties"] as Record<string, Record<string, unknown>>) ?? {}
-    const result: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(props)) {
-      const example = generateExampleFromSchema(v, rootSpec, activeRefs)
-      if (example !== null) result[k] = example
-    }
-    return result
-  }
-  if (type === "array") {
-    const items = schema["items"] as Record<string, unknown> | undefined
-    if (items) {
-      const example = generateExampleFromSchema(items, rootSpec, activeRefs)
-      return example !== null ? [example] : []
-    }
-    return []
-  }
+  if (type === "object") return exampleForObject(schema, rootSpec, activeRefs)
+  if (type === "array") return exampleForArray(schema, rootSpec, activeRefs)
   if (type === "string") return "string"
   if (type === "integer" || type === "number") return 0
   if (type === "boolean") return false
   return null
+}
+
+function exampleFromRef(
+  ref: string,
+  rootSpec: Record<string, unknown>,
+  activeRefs: ReadonlySet<string>,
+): unknown {
+  if (activeRefs.has(ref)) return null
+  const resolved = resolveRef(ref, rootSpec)
+  if (resolved) return generateExampleFromSchema(resolved, rootSpec, new Set([...activeRefs, ref]))
+  return null
+}
+
+function exampleForObject(
+  schema: Record<string, unknown>,
+  rootSpec: Record<string, unknown>,
+  activeRefs: ReadonlySet<string>,
+): Record<string, unknown> {
+  const props = (schema["properties"] as Record<string, Record<string, unknown>>) ?? {}
+  const result: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(props)) {
+    const example = generateExampleFromSchema(v, rootSpec, activeRefs)
+    if (example !== null) result[k] = example
+  }
+  return result
+}
+
+function exampleForArray(
+  schema: Record<string, unknown>,
+  rootSpec: Record<string, unknown>,
+  activeRefs: ReadonlySet<string>,
+): unknown[] {
+  const items = schema["items"] as Record<string, unknown> | undefined
+  if (!items) return []
+  const example = generateExampleFromSchema(items, rootSpec, activeRefs)
+  return example !== null ? [example] : []
 }
 
 function resolveRef(ref: string, root: Record<string, unknown>): Record<string, unknown> | null {
@@ -788,51 +804,55 @@ const SPEC_LINK_RE = /(?:href|src)\s*=\s*["']([^"']*(?:swagger|openapi|api-docs)
 // swagger-ui's own bundles are megabytes of library code with no config in them.
 const UI_ASSET_RE = /swagger-ui(-bundle|-standalone-preset|-es-bundle[\w-]*)?\.js$/i
 
-export function extractSwaggerHints(text: string, baseUrl: string): SwaggerHints {
-  const resolve = (candidate: string): string | null => {
-    const trimmed = candidate.trim()
-    if (!trimmed) return null
-    try { return new URL(trimmed, baseUrl).toString() } catch { return null }
-  }
-  const configUrls = new Set<string>()
-  const specUrls = new Set<string>()
-  const scriptUrls = new Set<string>()
-  const definitions: { name: string; specUrl: string }[] = []
+function resolveSpecUrl(candidate: string, baseUrl: string): string | null {
+  const trimmed = candidate.trim()
+  if (!trimmed) return null
+  try { return new URL(trimmed, baseUrl).toString() } catch { return null }
+}
 
-  for (const m of text.matchAll(CONFIG_URL_RE)) {
-    const resolved = m[1] ? resolve(m[1]) : null
-    if (resolved) configUrls.add(resolved)
+function collectSpecUrls(text: string, pattern: RegExp, baseUrl: string): Set<string> {
+  const urls = new Set<string>()
+  for (const m of text.matchAll(pattern)) {
+    const resolved = m[1] ? resolveSpecUrl(m[1], baseUrl) : null
+    if (resolved) urls.add(resolved)
   }
+  return urls
+}
 
+function collectDefinitions(text: string, baseUrl: string): { name: string; specUrl: string }[] {
   // The `urls: [...]` array is the multi-definition dropdown; pull it out first
   // so the single-`url` match below can't pick up one of its entries.
   const urlsBlock = text.match(URLS_ARRAY_RE)
-  const rest = urlsBlock ? text.replace(urlsBlock[0], "") : text
+  const definitions: { name: string; specUrl: string }[] = []
   for (const entry of (urlsBlock?.[1] ?? "").match(URL_ENTRY_RE) ?? []) {
     const urlMatch = entry.match(/["']?url["']?\s*:\s*["']([^"']+)["']/)
     if (!urlMatch?.[1]) continue
-    const resolved = resolve(urlMatch[1])
+    const resolved = resolveSpecUrl(urlMatch[1], baseUrl)
     if (!resolved) continue
     const nameMatch = entry.match(/["']?name["']?\s*:\s*["']([^"']+)["']/)
     definitions.push({ name: nameMatch?.[1]?.trim() || urlMatch[1].trim(), specUrl: resolved })
   }
+  return definitions
+}
 
-  for (const m of rest.matchAll(SINGLE_URL_RE)) {
-    const resolved = m[1] ? resolve(m[1]) : null
-    if (resolved) specUrls.add(resolved)
-  }
-  for (const m of text.matchAll(SPEC_LINK_RE)) {
-    const resolved = m[1] ? resolve(m[1]) : null
-    if (resolved) specUrls.add(resolved)
-  }
-  for (const m of text.matchAll(SCRIPT_SRC_RE)) {
-    const resolved = m[1] ? resolve(m[1]) : null
-    if (resolved && !UI_ASSET_RE.test(resolved)) scriptUrls.add(resolved)
+export function extractSwaggerHints(text: string, baseUrl: string): SwaggerHints {
+  const configUrls = collectSpecUrls(text, CONFIG_URL_RE, baseUrl)
+
+  // Strip the `urls: [...]` block before the single-`url` scan so its entries
+  // can't be picked up as a lone definition.
+  const urlsBlock = text.match(URLS_ARRAY_RE)
+  const rest = urlsBlock ? text.replace(urlsBlock[0], "") : text
+  const specUrls = collectSpecUrls(rest, SINGLE_URL_RE, baseUrl)
+  for (const url of collectSpecUrls(text, SPEC_LINK_RE, baseUrl)) specUrls.add(url)
+
+  const scriptUrls = new Set<string>()
+  for (const url of collectSpecUrls(text, SCRIPT_SRC_RE, baseUrl)) {
+    if (!UI_ASSET_RE.test(url)) scriptUrls.add(url)
   }
 
   return {
     configUrls: [...configUrls],
-    definitions,
+    definitions: collectDefinitions(text, baseUrl),
     specUrls: [...specUrls].filter((u) => !configUrls.has(u)),
     scriptUrls: [...scriptUrls],
   }
@@ -899,13 +919,7 @@ export function mergeOpenApiPreviews(
   const nodes: ImportedNode[] = []
   const servers = new Map<string, string>()
   const tags = new Map<string, string>()
-  for (const part of parts) {
-    for (const node of part.preview.nodes) {
-      nodes.push(node.type === "http-request" ? { ...node, label: `[${part.name}] ${node.label}` } : node)
-    }
-    for (const server of part.preview.availableServers) if (!servers.has(server.url)) servers.set(server.url, server.description)
-    for (const tag of part.preview.availableTags) if (!tags.has(tag.name)) tags.set(tag.name, tag.description)
-  }
+  for (const part of parts) mergeOpenApiPart(part, nodes, servers, tags)
   return {
     nodes,
     availableServers: [...servers].map(([url, description]) => ({ url, description })),
@@ -913,4 +927,17 @@ export function mergeOpenApiPreviews(
     stats: { apiTitle: "Multiple APIs", apiVersion: "", totalEndpoints: nodes.length },
     workflow: { nodeCount: nodes.length + 2 },
   }
+}
+
+function mergeOpenApiPart(
+  part: { readonly name: string; readonly preview: OpenApiPreviewData },
+  nodes: ImportedNode[],
+  servers: Map<string, string>,
+  tags: Map<string, string>,
+): void {
+  for (const node of part.preview.nodes) {
+    nodes.push(node.type === "http-request" ? { ...node, label: `[${part.name}] ${node.label}` } : node)
+  }
+  for (const server of part.preview.availableServers) if (!servers.has(server.url)) servers.set(server.url, server.description)
+  for (const tag of part.preview.availableTags) if (!tags.has(tag.name)) tags.set(tag.name, tag.description)
 }

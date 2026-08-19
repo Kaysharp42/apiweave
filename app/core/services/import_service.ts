@@ -465,11 +465,47 @@ export class ImportService {
       targets.push({ name: name || specUrl, specUrl })
     }
 
+    this.seedDiscoveryTargets(uiUrl, query, html, primaryName, addTarget)
+
+    const fallbackSpecUrls = await this.runDiscoveryLoop(
+      uiUrl,
+      query,
+      html,
+      (name) => { if (!primaryName) primaryName = name },
+      addTarget,
+    )
+
+    this.applyDiscoveryFallback(targets, fallbackSpecUrls, warnings, addTarget)
+
+    if (primaryName) {
+      const selected = targets.filter((t) => t.name.trim().toLowerCase() === primaryName.toLowerCase())
+      if (selected.length > 0) return selected
+    }
+    return targets
+  }
+
+  private seedDiscoveryTargets(
+    uiUrl: string,
+    query: URLSearchParams,
+    html: string,
+    primaryName: string,
+    addTarget: (name: string, specUrl: string) => void,
+  ): void {
     const queryUrl = query.get("url")?.trim()
     if (queryUrl) addTarget(primaryName || "Default", new URL(queryUrl, uiUrl).toString())
 
     const hints = extractSwaggerHints(html, uiUrl)
     for (const def of hints.definitions) addTarget(def.name, def.specUrl)
+  }
+
+  private async runDiscoveryLoop(
+    uiUrl: string,
+    query: URLSearchParams,
+    html: string,
+    setPrimaryName: (name: string) => void,
+    addTarget: (name: string, specUrl: string) => void,
+  ): Promise<string[]> {
+    const hints = extractSwaggerHints(html, uiUrl)
 
     // Cheap targeted JSON first, page scripts last: the stock swagger-initializer.js
     // carries a petstore.swagger.io placeholder `url` that must never win over the
@@ -487,45 +523,65 @@ export class ImportService {
       if (seenFetch.has(candidate)) continue
       seenFetch.add(candidate)
       fetches++
+      const step = await this.discoveryStep(candidate, pending, fallbackSpecUrls, setPrimaryName, addTarget)
+      if (step === "stop") break
+    }
+    return fallbackSpecUrls
+  }
 
-      const res = await this.fetchCapped(candidate)
-      if (!res.ok) continue
+  private async discoveryStep(
+    candidate: string,
+    pending: string[],
+    fallbackSpecUrls: string[],
+    setPrimaryName: (name: string) => void,
+    addTarget: (name: string, specUrl: string) => void,
+  ): Promise<"stop" | "continue"> {
+    const res = await this.fetchCapped(candidate)
+    if (!res.ok) return "continue"
 
-      const spec = asSpec(res.text, res.contentType)
-      if (spec) {
-        addTarget(specTitle(spec), candidate)
-        break
-      }
+    const outcome = this.discoveryOutcome(candidate, res, setPrimaryName, addTarget)
+    if (outcome === "spec-found" || outcome === "config-found") return "stop"
+    if (outcome === "config-skipped") return "continue"
 
-      const json = tryParseJson(res.text)
-      if (json) {
-        const defs = definitionsFromSwaggerConfig(json, candidate)
-        if (defs.length > 0) {
-          const configPrimary = json["urls.primaryName"]
-          if (!primaryName && typeof configPrimary === "string") primaryName = configPrimary.trim()
-          for (const def of defs) addTarget(def.name, def.specUrl)
-          break
-        }
-        continue
-      }
+    // HTML/JS: mine it for the next hop (initializer scripts, nested configs).
+    const sub = extractSwaggerHints(res.text, candidate)
+    pending.unshift(...sub.configUrls)
+    for (const def of sub.definitions) addTarget(def.name, def.specUrl)
+    fallbackSpecUrls.push(...sub.specUrls)
+    return "continue"
+  }
 
-      // HTML/JS: mine it for the next hop (initializer scripts, nested configs).
-      const sub = extractSwaggerHints(res.text, candidate)
-      pending.unshift(...sub.configUrls)
-      for (const def of sub.definitions) addTarget(def.name, def.specUrl)
-      fallbackSpecUrls.push(...sub.specUrls)
+  private applyDiscoveryFallback(
+    targets: { name: string; specUrl: string }[],
+    fallbackSpecUrls: string[],
+    warnings: string[],
+    addTarget: (name: string, specUrl: string) => void,
+  ): void {
+    if (targets.length > 0) return
+    for (const specUrl of fallbackSpecUrls) addTarget(specUrl, specUrl)
+    if (targets.length > 0) warnings.push("No swagger-config found; falling back to spec URLs found in the page")
+  }
+
+  private discoveryOutcome(
+    candidate: string,
+    res: Extract<FetchedText, { ok: true }>,
+    setPrimaryName: (name: string) => void,
+    addTarget: (name: string, specUrl: string) => void,
+  ): "spec-found" | "config-found" | "config-skipped" | "needs-mining" {
+    const spec = asSpec(res.text, res.contentType)
+    if (spec) {
+      addTarget(specTitle(spec), candidate)
+      return "spec-found"
     }
 
-    if (targets.length === 0) {
-      for (const specUrl of fallbackSpecUrls) addTarget(specUrl, specUrl)
-      if (targets.length > 0) warnings.push("No swagger-config found; falling back to spec URLs found in the page")
-    }
-
-    if (primaryName) {
-      const selected = targets.filter((t) => t.name.trim().toLowerCase() === primaryName.toLowerCase())
-      if (selected.length > 0) return selected
-    }
-    return targets
+    const json = tryParseJson(res.text)
+    if (!json) return "needs-mining"
+    const defs = definitionsFromSwaggerConfig(json, candidate)
+    if (defs.length === 0) return "config-skipped"
+    const configPrimary = json["urls.primaryName"]
+    if (typeof configPrimary === "string") setPrimaryName(configPrimary.trim())
+    for (const def of defs) addTarget(def.name, def.specUrl)
+    return "config-found"
   }
 
   private async fetchCapped(url: string): Promise<FetchedText> {
