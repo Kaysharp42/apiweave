@@ -2,6 +2,12 @@ import { useEffect, useRef } from "react";
 import Mousetrap from "mousetrap";
 
 interface UseKeyboardShortcutsParams {
+  /**
+   * False while the surface these shortcuts belong to is covered. The canvas
+   * stays mounted behind a page route so its state survives the trip, and a
+   * hidden canvas must not answer Ctrl+W or Ctrl+N on that page's behalf.
+   */
+  enabled?: boolean;
   onNewWorkflow?: () => void;
   onCloseTab?: () => void;
   onNextTab?: () => void;
@@ -20,6 +26,7 @@ interface ShortcutCallbacks {
 }
 
 export default function useKeyboardShortcuts({
+  enabled = true,
   onNewWorkflow,
   onCloseTab,
   onNextTab,
@@ -41,6 +48,8 @@ export default function useKeyboardShortcuts({
   });
 
   useEffect(() => {
+    if (!enabled) return;
+
     const call =
       (name: keyof ShortcutCallbacks) =>
       (e: Mousetrap.ExtendedKeyboardEvent) => {
@@ -70,5 +79,5 @@ export default function useKeyboardShortcuts({
       Mousetrap.unbind("ctrl+b");
       Mousetrap.unbind("?");
     };
-  }, []);
+  }, [enabled]);
 }

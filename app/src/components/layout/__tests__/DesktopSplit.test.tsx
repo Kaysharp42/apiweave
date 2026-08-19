@@ -82,7 +82,7 @@ describe("DesktopSplit", () => {
 
   it("keeps its children mounted across open and close", () => {
     const { unmount } = render(
-      <DesktopSplit mountsAgentPanel>
+      <DesktopSplit>
         <MountCounter />
       </DesktopSplit>,
     );
@@ -100,7 +100,7 @@ describe("DesktopSplit", () => {
 
   it("collapses the agent pane between the sidebar and the canvas while nothing is open", () => {
     render(
-      <DesktopSplit mountsAgentPanel>
+      <DesktopSplit>
         <div>canvas</div>
       </DesktopSplit>,
     );
@@ -115,7 +115,7 @@ describe("DesktopSplit", () => {
 
   it("renders the canvas after the agent column, not before it", () => {
     render(
-      <DesktopSplit mountsAgentPanel>
+      <DesktopSplit>
         <div>canvas</div>
       </DesktopSplit>,
     );
@@ -129,23 +129,20 @@ describe("DesktopSplit", () => {
     expect(panes[AGENT_PANE_INDEX + 1]).toHaveTextContent("canvas");
   });
 
-  // The compact branch mounts its own copy. A session's output port is handed to
-  // exactly one holder, so a second terminal in the hidden branch takes it and
-  // leaves the visible one blank — the bug that put the panel here in the first
-  // place. The pane still exists so the canvas pane keeps its index.
-  it("mounts no terminal when the compact branch owns it", () => {
+  // The terminal is mounted whether or not the pane is showing: `visible` hides
+  // the column, and a dock that came and went would take its session's
+  // MessagePort with it. The pane also always exists, so the canvas pane keeps
+  // its index.
+  it("keeps the terminal mounted while its pane is collapsed", () => {
     render(
-      <DesktopSplit mountsAgentPanel={false}>
+      <DesktopSplit>
         <div>canvas</div>
       </DesktopSplit>,
     );
 
-    act(() => useAgentDockStore.getState().openSession("session-1"));
-
-    expect(screen.queryByTestId("agent-dock")).toBeNull();
-    expect(screen.getAllByTestId("allotment-pane")).toHaveLength(3);
-    expect(
-      screen.getAllByTestId("allotment-pane")[AGENT_PANE_INDEX],
-    ).toHaveAttribute("data-visible", "false");
+    const panes = screen.getAllByTestId("allotment-pane");
+    expect(panes).toHaveLength(3);
+    expect(panes[AGENT_PANE_INDEX]).toHaveAttribute("data-visible", "false");
+    expect(screen.getByTestId("agent-dock")).toBeInTheDocument();
   });
 });

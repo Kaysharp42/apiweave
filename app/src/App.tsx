@@ -1,9 +1,10 @@
 import {
   useState,
   useEffect,
+  useLayoutEffect,
+  useContext,
   createContext,
   type ReactNode,
-  useRef,
   useMemo,
 } from "react";
 import {
@@ -12,8 +13,8 @@ import {
   Routes,
   Route,
   Navigate,
+  Outlet,
 } from "react-router-dom";
-import Home from "./pages/Home";
 import LandingPage from "./pages/LandingPage";
 import SetupPage from "./pages/SetupPage";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
@@ -33,7 +34,8 @@ import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
-import type { WorkspacePageShellProps } from "./types/WorkspacePageShellProps";
+import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
+import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
 import type { AppContextType } from "./types/AppContextType";
 
 const STORAGE_PREFIX = "apiweave:v1:";
@@ -173,28 +175,93 @@ function DefaultWorkspaceRedirect() {
   );
 }
 
-function WorkspacePageShell({
-  children,
-  navState = "settings",
-}: WorkspacePageShellProps) {
-  const setNavState = useNavigationStore((state) => state.setNavState);
-  const hasSet = useRef(false);
-
-  useEffect(() => {
-    if (!hasSet.current) {
-      setNavState(navState);
-      hasSet.current = true;
-    }
-  }, [setNavState, navState]);
-
+/**
+ * Auth and the workspace list for every signed-in route, mounted once above the
+ * router's outlet instead of once per route element.
+ *
+ * A pathless layout route, deliberately. When each route built its own
+ * `ProtectedRoute` → `WorkspaceProvider` → shell tree, a hop between two of
+ * them handed React a different component type in the same position, so it tore
+ * the subtree down and built a new one: the workspace list was refetched, the
+ * canvas and its ReactFlow instance were recreated, and the window sat blank for
+ * ~150ms every trip in or out of Settings. Sharing one parent element keeps
+ * these instances mounted across those navigations and swaps only what
+ * `<Outlet />` renders.
+ */
+function AuthedRoutes() {
   return (
     <ProtectedRoute>
       <WorkspaceProvider>
-        <div className="relative flex flex-col h-screen font-sans text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised">
-          <MainLayout>{children}</MainLayout>
-        </div>
+        <Outlet />
       </WorkspaceProvider>
     </ProtectedRoute>
+  );
+}
+
+/**
+ * The app chrome — header, nav rail, sidebar, agent pane, footer — for the
+ * routes that show it, nested inside `AuthedRoutes` so the providers above it
+ * persist too. See the note there for why this is a layout route rather than a
+ * wrapper each route renders for itself.
+ */
+function AppShellRoutes() {
+  return (
+    <div className="relative flex h-screen flex-col bg-surface font-sans text-text-primary dark:bg-surface-dark dark:text-text-primary-dark">
+      <MainLayout>
+        <Outlet />
+      </MainLayout>
+    </div>
+  );
+}
+
+/**
+ * What a workflows path renders: nothing.
+ *
+ * The canvas is not a route element — `MainLayout` keeps one mounted for the
+ * whole session, so a route that produced it would unmount it on the way to
+ * Settings and rebuild it on the way back. Explicitly nothing rather than an
+ * elementless `<Route>`, which React Router warns about as a likely mistake.
+ */
+const CanvasRoute = () => null;
+
+/**
+ * A page that sits over the canvas: the settings pages and a project's page.
+ *
+ * It owns the two things a page has to say for itself now that the shell
+ * outlives the route:
+ *
+ * - **Its nav section.** The shell was rebuilt on every navigation before, so
+ *   claiming the section once per shell mount was enough. `MainLayout` still
+ *   owns the way back out — it drops "settings" as soon as the path stops being
+ *   a settings route.
+ * - **That the canvas is covered.** `MainLayout` keeps one canvas mounted for
+ *   the whole session; this is what tells it to stand down. `useLayoutEffect`
+ *   rather than `useEffect` so the canvas is hidden in the same commit that
+ *   paints this surface, with no frame showing both.
+ *
+ * The surface is absolute and opaque so the canvas keeps its own box underneath
+ * and never sees a resize — see the note on `content` in `MainLayout`.
+ */
+function WorkspacePageRoute({
+  children,
+  navState = "settings",
+}: WorkspacePageRouteProps) {
+  const setNavState = useNavigationStore((state) => state.setNavState);
+  const { setCovered } = useContext(CanvasSurfaceContext);
+
+  useEffect(() => {
+    setNavState(navState);
+  }, [setNavState, navState]);
+
+  useLayoutEffect(() => {
+    setCovered(true);
+    return () => setCovered(false);
+  }, [setCovered]);
+
+  return (
+    <div className="absolute inset-0 z-10 overflow-hidden bg-surface dark:bg-surface-dark">
+      {children}
+    </div>
   );
 }
 
@@ -318,141 +385,84 @@ function App() {
                   )
                 }
               />
-              <Route
-                path="/app"
-                element={
-                  <ProtectedRoute>
-                    <DefaultWorkspaceRedirect />
-                  </ProtectedRoute>
-                }
-              />
               <Route path="/login" element={<Navigate to="/app" replace />} />
               <Route path="/setup" element={<SetupEntry />} />
-              <Route
-                path="/cloud/conflicts/:conflictId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <ConflictDetailPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/cloud/conflicts"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <ConflictsPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/cloud/sync"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <CloudSyncPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:workspaceSlug/workflows/:workflowId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:workspaceSlug/workflows"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/settings/secrets"
-                element={
-                  <WorkspacePageShell>
-                    <WorkspaceSecretsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/settings/environments"
-                element={
-                  <WorkspacePageShell>
-                    <WorkspaceEnvironmentsPage />
-                  </WorkspacePageShell>
-                }
-              />
-              {/* Slug-based workspace routes */}
-              <Route
-                path="/:orgSlug/personal"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Navigate to="workflows" replace />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Navigate to="workflows" replace />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/projects/:projectId"
-                element={
-                  <WorkspacePageShell navState="projects">
-                    <WorkspaceProjectPage />
-                  </WorkspacePageShell>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/:orgSlug/:workspaceSlug/workflows"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <Home />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <WorkspaceProvider>
-                      <NotFoundPage />
-                    </WorkspaceProvider>
-                  </ProtectedRoute>
-                }
-              />
+
+              {/* Every signed-in route shares one auth + workspace parent, so
+                  moving between them never remounts the providers. */}
+              <Route element={<AuthedRoutes />}>
+                <Route path="/app" element={<DefaultWorkspaceRedirect />} />
+
+                <Route
+                  path="/cloud/conflicts/:conflictId"
+                  element={<ConflictDetailPage />}
+                />
+                <Route path="/cloud/conflicts" element={<ConflictsPage />} />
+                <Route path="/cloud/sync" element={<CloudSyncPage />} />
+
+                {/* Slug-based workspace routes. Redirects only, kept outside
+                    the shell so they never paint an empty one on the way
+                    through. */}
+                <Route
+                  path="/:orgSlug/personal"
+                  element={<Navigate to="workflows" replace />}
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug"
+                  element={<Navigate to="workflows" replace />}
+                />
+
+                {/* Everything that shows the app chrome. One shell element for
+                    all of them is what keeps a hop between the canvas and
+                    Settings from rebuilding the app. */}
+                <Route element={<AppShellRoutes />}>
+                  {/* These match the shell and put nothing over the canvas
+                      it already holds — see `CanvasRoute`. */}
+                  <Route
+                    path="/:workspaceSlug/workflows"
+                    element={<CanvasRoute />}
+                  />
+                  <Route
+                    path="/:workspaceSlug/workflows/:workflowId"
+                    element={<CanvasRoute />}
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/workflows"
+                    element={<CanvasRoute />}
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
+                    element={<CanvasRoute />}
+                  />
+
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/settings/environments"
+                    element={
+                      <WorkspacePageRoute>
+                        <WorkspaceEnvironmentsPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/settings/secrets"
+                    element={
+                      <WorkspacePageRoute>
+                        <WorkspaceSecretsPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/projects/:projectId"
+                    element={
+                      <WorkspacePageRoute navState="projects">
+                        <WorkspaceProjectPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                </Route>
+
+                <Route path="/*" element={<NotFoundPage />} />
+              </Route>
             </Routes>
           </RouterComponent>
         </AuthProvider>
