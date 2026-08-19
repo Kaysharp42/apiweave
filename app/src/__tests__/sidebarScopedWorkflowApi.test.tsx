@@ -183,7 +183,7 @@ function resetStores(): void {
     projectVersion: 0,
     activeWorkspaceId: null,
   });
-  useTabStore.setState({ tabs: [], activeTabId: null });
+  useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
 }
 
 function installFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {

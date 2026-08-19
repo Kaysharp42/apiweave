@@ -2,12 +2,15 @@ import { useRef, useState, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight, Circle } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
 import useTabStore from "../../stores/TabStore";
+import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { ContextMenuState } from "../../types/ContextMenuState";
 
 export function TabBar() {
-  const { tabs, activeTabId, setActive, closeTab, closeOthers, closeAll } =
-    useTabStore();
+  // Only this workspace's tabs: the store also holds the ones left open in the
+  // workspaces the user switched away from.
+  const { workspaceId, tabs, activeTabId } = useWorkspaceTabs();
+  const { setActive, closeTab, closeOthers, closeAll } = useTabStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const checkOverflowRef = useRef<() => void>(() => {});
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -176,7 +179,9 @@ export function TabBar() {
             type="button"
             className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-[var(--aw-status-error)] cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
             onClick={() => {
-              closeAll();
+              // Scoped: "Close All" closes this workspace's tabs, and leaves
+              // the ones waiting in the other workspaces alone.
+              if (workspaceId !== null) closeAll(workspaceId);
               setContextMenu(null);
             }}
           >

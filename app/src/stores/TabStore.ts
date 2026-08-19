@@ -3,24 +3,42 @@ import type { WorkspaceTab } from "../types/WorkspaceTab";
 import type { Workflow } from "../types/Workflow";
 
 interface TabStoreState {
+  /**
+   * Every open tab, from every workspace visited this session. Tabs are kept
+   * rather than dropped on a workspace switch so switching back restores what
+   * was open — including tabs with unsaved edits, which closing would discard.
+   * Views read their own workspace's slice through `useWorkspaceTabs`.
+   */
   tabs: WorkspaceTab[];
-  activeTabId: string | null;
+  /** Last active tab per workspace, so a switch back lands where it left. */
+  activeTabIdByWorkspace: Record<string, string | null>;
   openTab: (workflow: Workflow) => void;
   setActive: (id: string) => void;
   closeTab: (id: string) => void;
   closeOthers: (id: string) => void;
-  closeAll: () => void;
+  /** Scoped to one workspace, or every workspace when the id is omitted. */
+  closeAll: (workspaceId?: string) => void;
   markDirty: (id: string) => void;
   markClean: (id: string) => void;
   renameTab: (id: string, name: string) => void;
   updateTabWorkflow: (workflowId: string, workflow: Workflow | null) => void;
-  activateNextTab: () => void;
-  activatePrevTab: () => void;
+  activateNextTab: (workspaceId: string) => void;
+  activatePrevTab: (workspaceId: string) => void;
 }
+
+/**
+ * The tabs of one workspace, in the order they were opened.
+ *
+ * Cycling and close-neighbour selection are relative to what the user can
+ * actually see, so both are computed from this slice rather than from the flat
+ * list that spans workspaces.
+ */
+const tabsIn = (tabs: readonly WorkspaceTab[], workspaceId: string): WorkspaceTab[] =>
+  tabs.filter((t) => t.workspaceId === workspaceId);
 
 const useTabStore = create<TabStoreState>()((set, get) => ({
   tabs: [],
-  activeTabId: null,
+  activeTabIdByWorkspace: {},
 
   openTab: (workflow: Workflow) => {
     const { tabs } = get();
@@ -28,12 +46,16 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
 
     if (existing) {
       set((s) => ({
-        activeTabId: existing.id,
+        activeTabIdByWorkspace: {
+          ...s.activeTabIdByWorkspace,
+          [workflow.workspaceId]: existing.id,
+        },
         tabs: s.tabs.map((t) =>
           t.workflowId === workflow.workflowId
             ? {
                 ...t,
                 name: workflow.name || t.name,
+                workspaceId: workflow.workspaceId,
                 workflow,
               }
             : t,
@@ -45,49 +67,77 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
     const newTab: WorkspaceTab = {
       id: workflow.workflowId,
       workflowId: workflow.workflowId,
+      workspaceId: workflow.workspaceId,
       name: workflow.name || "Untitled",
       workflow,
       isDirty: false,
     };
 
-    set({ tabs: [...tabs, newTab], activeTabId: newTab.id });
+    set((s) => ({
+      tabs: [...s.tabs, newTab],
+      activeTabIdByWorkspace: {
+        ...s.activeTabIdByWorkspace,
+        [newTab.workspaceId]: newTab.id,
+      },
+    }));
   },
 
-  setActive: (id: string) => set({ activeTabId: id }),
+  setActive: (id: string) =>
+    set((s) => {
+      const target = s.tabs.find((t) => t.id === id);
+      if (!target) return s;
+      return {
+        activeTabIdByWorkspace: {
+          ...s.activeTabIdByWorkspace,
+          [target.workspaceId]: id,
+        },
+      };
+    }),
 
   closeTab: (id: string) => {
-    const { tabs, activeTabId } = get();
-    const idx = tabs.findIndex((t) => t.id === id);
-    if (idx === -1) return;
+    const { tabs, activeTabIdByWorkspace } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return;
 
-    const newTabs = tabs.filter((t) => t.id !== id);
+    const workspaceId = target.workspaceId;
+    const siblings = tabsIn(tabs, workspaceId);
+    const idx = siblings.findIndex((t) => t.id === id);
+    const remaining = siblings.filter((t) => t.id !== id);
 
-    let nextActive: string | null = activeTabId;
-    if (activeTabId === id) {
-      if (newTabs.length === 0) {
-        nextActive = null;
-      } else if (idx < newTabs.length) {
-        const nextTab = newTabs[idx];
-        if (nextTab) {
-          nextActive = nextTab.id;
-        }
-      } else {
-        const lastTab = newTabs[newTabs.length - 1];
-        if (lastTab) {
-          nextActive = lastTab.id;
-        }
-      }
+    let nextActive: string | null = activeTabIdByWorkspace[workspaceId] ?? null;
+    if (nextActive === id) {
+      const successor = idx < remaining.length ? remaining[idx] : remaining[remaining.length - 1];
+      nextActive = successor?.id ?? null;
     }
 
-    set({ tabs: newTabs, activeTabId: nextActive });
+    set({
+      tabs: tabs.filter((t) => t.id !== id),
+      activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: nextActive },
+    });
   },
 
   closeOthers: (id: string) => {
-    const { tabs } = get();
-    set({ tabs: tabs.filter((t) => t.id === id), activeTabId: id });
+    const { tabs, activeTabIdByWorkspace } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return;
+    set({
+      tabs: tabs.filter((t) => t.workspaceId !== target.workspaceId || t.id === id),
+      activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [target.workspaceId]: id },
+    });
   },
 
-  closeAll: () => set({ tabs: [], activeTabId: null }),
+  closeAll: (workspaceId?: string) =>
+    set((s) => {
+      if (workspaceId === undefined) {
+        return { tabs: [], activeTabIdByWorkspace: {} };
+      }
+      const activeTabIdByWorkspace = { ...s.activeTabIdByWorkspace };
+      delete activeTabIdByWorkspace[workspaceId];
+      return {
+        tabs: s.tabs.filter((t) => t.workspaceId !== workspaceId),
+        activeTabIdByWorkspace,
+      };
+    }),
 
   markDirty: (id: string) =>
     set((s) => {
@@ -129,25 +179,29 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
       }),
     })),
 
-  activateNextTab: () => {
-    const { tabs, activeTabId } = get();
-    if (tabs.length <= 1) return;
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    const next = (idx + 1) % tabs.length;
-    const nextTab = tabs[next];
+  activateNextTab: (workspaceId: string) => {
+    const { tabs, activeTabIdByWorkspace } = get();
+    const scoped = tabsIn(tabs, workspaceId);
+    if (scoped.length <= 1) return;
+    const idx = scoped.findIndex((t) => t.id === activeTabIdByWorkspace[workspaceId]);
+    const nextTab = scoped[(Math.max(idx, 0) + 1) % scoped.length];
     if (nextTab) {
-      set({ activeTabId: nextTab.id });
+      set({
+        activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: nextTab.id },
+      });
     }
   },
 
-  activatePrevTab: () => {
-    const { tabs, activeTabId } = get();
-    if (tabs.length <= 1) return;
-    const idx = tabs.findIndex((t) => t.id === activeTabId);
-    const prev = (idx - 1 + tabs.length) % tabs.length;
-    const prevTab = tabs[prev];
+  activatePrevTab: (workspaceId: string) => {
+    const { tabs, activeTabIdByWorkspace } = get();
+    const scoped = tabsIn(tabs, workspaceId);
+    if (scoped.length <= 1) return;
+    const idx = scoped.findIndex((t) => t.id === activeTabIdByWorkspace[workspaceId]);
+    const prevTab = scoped[(Math.max(idx, 0) - 1 + scoped.length) % scoped.length];
     if (prevTab) {
-      set({ activeTabId: prevTab.id });
+      set({
+        activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: prevTab.id },
+      });
     }
   },
 }));

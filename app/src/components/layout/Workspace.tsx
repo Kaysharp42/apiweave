@@ -15,12 +15,12 @@ import { Panel } from "../molecules/Panel";
 import { PanelTabs } from "../molecules/PanelTabs";
 import { IconButton } from "../atoms/IconButton";
 import useTabStore from "../../stores/TabStore";
+import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import useSidebarStore from "../../stores/SidebarStore";
 import useNavigationStore from "../../stores/NavigationStore";
 import useKeyboardShortcuts from "../../hooks/useKeyboardShortcuts";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import type { WorkspaceProps } from "../../types/WorkspaceProps";
-import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { TabItem } from "../../types/TabItem";
 import type { Workflow } from "../../types/Workflow";
 import { authenticatedFetch } from "../../utils/apiweaveClient";
@@ -34,15 +34,14 @@ const panelTabs: TabItem[] = [
 ];
 
 export function Workspace({ active = true }: WorkspaceProps) {
-  const {
-    tabs,
-    activeTabId,
-    openTab,
-    closeTab,
-    activateNextTab,
-    activatePrevTab,
-  } = useTabStore();
+  const { openTab, closeTab, activateNextTab, activatePrevTab } =
+    useTabStore();
   const { workspaceId, isReady: isScopeReady } = useScopeContext();
+  // This workspace's tabs only. Tabs opened before a workspace switch stay in
+  // the store so switching back restores them, and rendering one under the new
+  // workspace would pair that workspace's id with the previous workspace's
+  // workflow in every scoped call the canvas and its toolbar make.
+  const { activeTabId, activeTab } = useWorkspaceTabs();
 
   type WorkspaceState = {
     showVariablesPanel: boolean;
@@ -78,10 +77,6 @@ export function Workspace({ active = true }: WorkspaceProps) {
       showShortcutsHelp: false,
       showNewWorkflowPrompt: false,
     },
-  );
-
-  const activeTab: WorkspaceTab | undefined = tabs.find(
-    (t) => t.id === activeTabId,
   );
 
   const handleNewWorkflow = useCallback(() => {
@@ -135,8 +130,12 @@ export function Workspace({ active = true }: WorkspaceProps) {
     onCloseTab: () => {
       if (activeTabId) closeTab(activeTabId);
     },
-    onNextTab: activateNextTab,
-    onPrevTab: activatePrevTab,
+    onNextTab: () => {
+      if (workspaceId) activateNextTab(workspaceId);
+    },
+    onPrevTab: () => {
+      if (workspaceId) activatePrevTab(workspaceId);
+    },
     onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
     onShowShortcutsHelp: () =>
       dispatch({ type: "set-show-shortcuts-help", value: true }),
