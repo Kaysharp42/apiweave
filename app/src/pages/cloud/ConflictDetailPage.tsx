@@ -536,6 +536,38 @@ function MergePaneHeader({
   );
 }
 
+function MergeSourceAcceptButton({
+  source,
+  selected,
+  disabled,
+  entry,
+  onPick,
+}: {
+  readonly source: Side;
+  readonly selected: boolean;
+  readonly disabled: boolean;
+  readonly entry: ConflictDiffEntry;
+  readonly onPick: (path: string, side: Side) => void;
+}) {
+  return (
+    <Button
+      size="xs"
+      variant={selected ? "secondary" : "ghost"}
+      disabled={disabled}
+      aria-pressed={selected}
+      aria-label={`Accept ${source === "cloud" ? "Cloud" : "Local"} for ${entry.label}`}
+      icon={
+        source === "cloud"
+          ? <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          : <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+      }
+      onClick={() => onPick(entry.path, source)}
+    >
+      {selected ? "Accepted" : "Accept"}
+    </Button>
+  );
+}
+
 // A read-only source pane (Cloud or Local). When the entry is a residual the
 // user must pick, the cell hosts a chevron button that pulls its value into
 // the center result — IntelliJ's accept-this-change arrow.
@@ -577,21 +609,13 @@ function MergeSourceCell({
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">{label}</p>
         {residual ? (
-          <Button
-            size="xs"
-            variant={selected ? "secondary" : "ghost"}
+          <MergeSourceAcceptButton
+            source={source}
+            selected={selected}
             disabled={disabled}
-            aria-pressed={selected}
-            aria-label={`Accept ${source === "cloud" ? "Cloud" : "Local"} for ${entry.label}`}
-            icon={
-              source === "cloud"
-                ? <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                : <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            }
-            onClick={() => onPick(entry.path, source)}
-          >
-            {selected ? "Accepted" : "Accept"}
-          </Button>
+            entry={entry}
+            onPick={onPick}
+          />
         ) : null}
       </div>
       <ConflictValue value={value} />
