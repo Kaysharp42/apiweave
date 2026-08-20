@@ -5,6 +5,7 @@ import { Panel, useStore, useStoreApi, type Node } from "reactflow";
 import type { RunMiniMapProps } from "../types/RunMiniMapProps";
 import type { MinimapTransformView } from "../types/MinimapTransformView";
 import {
+  legibleNodeRect,
   minimapBoundingRect,
   minimapTransformView,
   sameTransformView,
@@ -218,22 +219,30 @@ export function RunMiniMap<TData>({
         aria-label="Mini map"
         ref={svg}
       >
-        {entries.map(({ node, rect }) => (
-          <rect
-            key={rect.id}
-            className={`react-flow__minimap-node${rect.selected ? " selected" : ""}`}
-            x={rect.x}
-            y={rect.y}
-            rx={NODE_RADIUS}
-            ry={NODE_RADIUS}
-            width={rect.width}
-            height={rect.height}
-            fill={nodeColorFn(node)}
-            stroke={nodeStrokeColorFn(node)}
-            strokeWidth={paint.nodeStrokeWidth ?? 2}
-            shapeRendering={shapeRendering}
-          />
-        ))}
+        {entries.map(({ node, rect }) => {
+          // Drawn at a floor of a few pixels, because a graph long enough sets
+          // a scale that would otherwise render every node sub-pixel — see
+          // `legibleNodeRect`. The stroke is in the same world units as the
+          // rect, so it needs the scale applied to be the pixel width asked
+          // for rather than a fraction of one.
+          const drawn = legibleNodeRect(rect, viewScale);
+          return (
+            <rect
+              key={rect.id}
+              className={`react-flow__minimap-node${rect.selected ? " selected" : ""}`}
+              x={drawn.x}
+              y={drawn.y}
+              rx={NODE_RADIUS}
+              ry={NODE_RADIUS}
+              width={drawn.width}
+              height={drawn.height}
+              fill={nodeColorFn(node)}
+              stroke={nodeStrokeColorFn(node)}
+              strokeWidth={(paint.nodeStrokeWidth ?? 2) * viewScale}
+              shapeRendering={shapeRendering}
+            />
+          );
+        })}
         <path
           className="react-flow__minimap-mask"
           d={`M${x - offset},${y - offset}h${viewBoxWidth + offset * 2}v${viewBoxHeight + offset * 2}h${-(viewBoxWidth + offset * 2)}z
