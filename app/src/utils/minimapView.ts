@@ -26,6 +26,48 @@ interface MinimapRect {
 }
 
 /**
+ * The smallest a node may be drawn, in the minimap's own pixels.
+ *
+ * The minimap fits the whole graph at one uniform scale, so a long graph sets
+ * that scale by its longest axis and every node shrinks by the same factor —
+ * including on the short axis, where there was no crowding to relieve. A
+ * 130-node chain spans ~29000 x 400 units into 220 x 150, which is a scale of
+ * 134 world units per pixel: a 280x120 node lands at 2.1 x 0.9 px, and
+ * `crispEdges` snaps that sub-pixel height away to nothing. The graph is then
+ * present, correctly positioned, and completely invisible.
+ *
+ * Three is the floor at which a mark survives that snapping and still reads as
+ * a mark. Nodes that are already larger are untouched, so this only ever
+ * applies where the alternative was showing nothing.
+ */
+export const MIN_NODE_PX = 3;
+
+/**
+ * A node's rectangle grown about its own centre to at least `MIN_NODE_PX`
+ * minimap pixels on each axis.
+ *
+ * Grown for drawing only — `minimapBoundingRect` still fits the true rects, so
+ * enlarging a mark cannot feed back into the scale that decided it needed
+ * enlarging.
+ */
+export function legibleNodeRect(
+  rect: { x: number; y: number; width: number; height: number },
+  viewScale: number,
+): { x: number; y: number; width: number; height: number } {
+  if (!Number.isFinite(viewScale) || viewScale <= 0) return { ...rect };
+
+  const floor = MIN_NODE_PX * viewScale;
+  const width = Math.max(rect.width, floor);
+  const height = Math.max(rect.height, floor);
+  return {
+    x: rect.x - (width - rect.width) / 2,
+    y: rect.y - (height - rect.height) / 2,
+    width,
+    height,
+  };
+}
+
+/**
  * The store slice the minimap renders from: the live transform while unfrozen,
  * the frozen snapshot while it is not. Frozen is read through the snapshot
  * itself — when it is set, the camera is mid-motion and no viewport change may
@@ -60,22 +102,51 @@ export function sameTransformView(
   );
 }
 
-/** The union of the nodes' bounds and the viewport rectangle: where the minimap
- * window must sit to show both the graph and where the camera is. */
+/**
+ * How far the viewport rectangle may pull the fit box past the nodes' own
+ * bounds, as a multiple of the nodes' span on that axis.
+ *
+ * `viewBB` is world units (screen size ÷ zoom), so zooming the main canvas out
+ * grows it without limit — left uncapped, one union with the nodes' bounds
+ * balloons the SVG `viewBox` until every node renders under a pixel wide,
+ * which reads as "the minimap has no nodes at all" (the bug this guards
+ * against). Capped per side rather than by centering, so the viewport
+ * rectangle still extends the frame in whichever direction it actually lies —
+ * it just cannot stretch it past a size where the graph itself disappears.
+ */
+const MAX_VIEWPORT_STRETCH = 1;
+
+/** The union of the nodes' bounds and the viewport rectangle, the latter
+ * capped by `MAX_VIEWPORT_STRETCH`: where the minimap window must sit to show
+ * the graph, and as much of where the camera is as that allows. */
 export function minimapBoundingRect(
   rects: readonly MinimapRect[],
   viewBB: { x: number; y: number; width: number; height: number },
 ): { x: number; y: number; width: number; height: number } {
-  let minX = viewBB.x;
-  let minY = viewBB.y;
-  let maxX = viewBB.x + viewBB.width;
-  let maxY = viewBB.y + viewBB.height;
+  let nodesMinX = Infinity;
+  let nodesMinY = Infinity;
+  let nodesMaxX = -Infinity;
+  let nodesMaxY = -Infinity;
   for (const rect of rects) {
     if (rect.width <= 0 || rect.height <= 0) continue;
-    minX = Math.min(minX, rect.x);
-    minY = Math.min(minY, rect.y);
-    maxX = Math.max(maxX, rect.x + rect.width);
-    maxY = Math.max(maxY, rect.y + rect.height);
+    nodesMinX = Math.min(nodesMinX, rect.x);
+    nodesMinY = Math.min(nodesMinY, rect.y);
+    nodesMaxX = Math.max(nodesMaxX, rect.x + rect.width);
+    nodesMaxY = Math.max(nodesMaxY, rect.y + rect.height);
   }
+
+  // Nothing measured yet: the viewport is the only thing there is to show.
+  if (nodesMinX === Infinity) return { ...viewBB };
+
+  const capX = (nodesMaxX - nodesMinX) * MAX_VIEWPORT_STRETCH;
+  const capY = (nodesMaxY - nodesMinY) * MAX_VIEWPORT_STRETCH;
+  const viewMaxX = viewBB.x + viewBB.width;
+  const viewMaxY = viewBB.y + viewBB.height;
+
+  const minX = nodesMinX - Math.min(Math.max(nodesMinX - viewBB.x, 0), capX);
+  const minY = nodesMinY - Math.min(Math.max(nodesMinY - viewBB.y, 0), capY);
+  const maxX = nodesMaxX + Math.min(Math.max(viewMaxX - nodesMaxX, 0), capX);
+  const maxY = nodesMaxY + Math.min(Math.max(viewMaxY - nodesMaxY, 0), capY);
+
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
