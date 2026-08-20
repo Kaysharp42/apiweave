@@ -29,6 +29,12 @@ export interface ResolveConflictInput {
   // Field-level picks for a MERGED resolution. Ignored for keep-local/keep-cloud
   // and for a clean (residual-free) auto-merge.
   readonly resolutions?: readonly FieldResolution[]
+  // When true the resolution writes its result to the local store and marks
+  // the conflict resolved, but does NOT trigger a sync cycle — the merged
+  // result stays local until the user explicitly syncs. The periodic sync
+  // remains the correctness guarantee, so a deferred push is eventually
+  // delivered without any further user action.
+  readonly defer_push?: boolean
 }
 
 // The server's resolution outcome, used to converge locally. winnerPayload is
@@ -107,6 +113,7 @@ export function registerConflictUiHandlers(router: IpcRouter, options: ConflictU
       winner: winnerSchema,
       device_id: z.string().min(1),
       resolutions: z.array(resolutionSchema).optional(),
+      defer_push: z.boolean().optional(),
     }),
     output: conflictSchema,
     handle: (input) => bridge.resolve(input),
@@ -154,7 +161,9 @@ export class ConflictUiBridge {
         conflict_id: conflict.serverConflictId,
       })
       this.repository.resolveConflictMerged(input.conflict_id, outcome.resultingRev, outcome.winnerPayload)
-      this.options.syncService.nudgeSync?.()
+      if (!input.defer_push) {
+        this.options.syncService.nudgeSync?.()
+      }
       return this.get(input.conflict_id)
     }
 
@@ -177,7 +186,9 @@ export class ConflictUiBridge {
     }
 
     this.repository.resolveConflict(input.conflict_id, input.winner)
-    this.options.syncService.nudgeSync?.()
+    if (!input.defer_push) {
+      this.options.syncService.nudgeSync?.()
+    }
     return this.get(input.conflict_id)
   }
 

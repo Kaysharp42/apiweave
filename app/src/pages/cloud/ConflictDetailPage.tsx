@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Cloud,
   GitCompareArrows,
   GitMerge,
@@ -17,7 +16,7 @@ import { Spinner } from "../../components/atoms/Spinner";
 import { Card } from "../../components/molecules/Card";
 import { ConfirmDialog } from "../../components/molecules/ConfirmDialog";
 import { EmptyState } from "../../components/molecules/EmptyState";
-import { computeConflictDiff, type ConflictDiffEntry } from "@shared/conflict-diff";
+import { computeConflictDiff, type ConflictDiffEntry, type ConflictDiffKind } from "@shared/conflict-diff";
 import { invoke, IpcError } from "../../utils/apiweaveClient";
 import type {
   Conflict,
@@ -27,6 +26,7 @@ import type {
 } from "../../types/cloud";
 
 type PendingChoice = ConflictWinner | null;
+type Side = "local" | "cloud";
 
 function ConflictCardIcon({ className }: { readonly className?: string }) {
   return <GitCompareArrows className={className} />;
@@ -133,15 +133,15 @@ export function ConflictDetailPage() {
     return { residualEntries: matched, unmatchedPaths: unmatched };
   }, [hasResiduals, residualPaths, diff]);
 
-  const [picks, setPicks] = useState<Record<string, "local" | "cloud">>({});
+  const [picks, setPicks] = useState<Record<string, Side>>({});
   useEffect(() => setPicks({}), [conflictId]);
   const allPicked =
     hasResiduals
     && unmatchedPaths.length === 0
     && residualEntries.every((entry) => picks[entry.path] !== undefined);
 
-  function acceptAll(side: "local" | "cloud"): void {
-    const next: Record<string, "local" | "cloud"> = {};
+  function acceptAll(side: Side): void {
+    const next: Record<string, Side> = {};
     for (const entry of residualEntries) next[entry.path] = side;
     setPicks(next);
   }
@@ -166,6 +166,7 @@ export function ConflictDetailPage() {
         conflict_id: conflict.id,
         winner: choice,
         device_id: deviceId || "desktop",
+        defer_push: true,
         ...(resolutions && resolutions.length > 0 ? { resolutions } : {}),
       });
       toast.success(choice === "merged" ? "Merged both copies" : `Kept ${choice} copy`);
@@ -222,7 +223,10 @@ export function ConflictDetailPage() {
             </p>
           </div>
         </div>
-        {error && <Badge variant="warning">{error}</Badge>}
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" size="sm">Not pushed</Badge>
+          {error && <Badge variant="warning">{error}</Badge>}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 lg:p-6">
@@ -257,32 +261,35 @@ export function ConflictDetailPage() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised lg:px-6">
-        {conflict.auto_mergeable && conflict.winner === null ? (
-          <Button
-            variant="secondary"
-            intent="success"
-            icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
-            disabled={disabled}
-            loading={resolving && pendingChoice === "merged"}
-            onClick={() => setPendingChoice("merged")}
-          >
-            Apply auto-merge
-          </Button>
-        ) : hasResiduals && conflict.winner === null ? (
-          <Button
-            variant="secondary"
-            intent="success"
-            icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
-            disabled={disabled || !allPicked}
-            loading={resolving && pendingChoice === "merged"}
-            onClick={() => setPendingChoice("merged")}
-          >
-            Apply merged result
-          </Button>
-        ) : (
-          <span />
-        )}
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+          Applies to your workspace only — use the Cloud Sync page to push when ready.
+        </p>
         <div className="flex flex-wrap gap-2">
+          {conflict.auto_mergeable && conflict.winner === null ? (
+            <Button
+              variant="secondary"
+              intent="success"
+              icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
+              disabled={disabled}
+              loading={resolving && pendingChoice === "merged"}
+              onClick={() => setPendingChoice("merged")}
+            >
+              Apply merge to workspace
+            </Button>
+          ) : hasResiduals && conflict.winner === null ? (
+            <Button
+              variant="secondary"
+              intent="success"
+              icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
+              disabled={disabled || !allPicked}
+              loading={resolving && pendingChoice === "merged"}
+              onClick={() => setPendingChoice("merged")}
+            >
+              Apply merge to workspace
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button
             variant="secondary"
             intent="warning"
@@ -293,7 +300,7 @@ export function ConflictDetailPage() {
             Keep Local copy
           </Button>
           <Button
-            variant="primary"
+            variant="secondary"
             disabled={disabled}
             loading={resolving && pendingChoice === "cloud"}
             onClick={() => setPendingChoice("cloud")}
@@ -314,15 +321,15 @@ export function ConflictDetailPage() {
             void resolve(pendingChoice);
           }
         }}
-        title={pendingChoice === "merged" ? "Merge both copies?" : "Resolve whole record?"}
+        title={pendingChoice === "merged" ? "Apply merge to workspace?" : "Resolve whole record?"}
         message={
           pendingChoice === "merged"
             ? residualEntries.length > 0
-              ? "Combine both copies into a new cloud revision, using your per-field selections for the overlapping changes and keeping every non-overlapping change from both sides."
-              : "Combine both copies into a new cloud revision, keeping every non-overlapping change from local and cloud."
-            : `Keep the ${pendingChoice ?? "selected"} copy and store the rejected copy for audit.`
+              ? "Combine both copies into your local workspace, using your per-field selections for the overlapping changes and keeping every non-overlapping change from both sides. This does not push to cloud — sync from the Cloud Sync page when ready."
+              : "Combine both copies into your local workspace, keeping every non-overlapping change from local and cloud. This does not push to cloud — sync from the Cloud Sync page when ready."
+            : `Keep the ${pendingChoice ?? "selected"} copy in your local workspace and store the rejected copy for audit. This does not push to cloud.`
         }
-        confirmLabel={pendingChoice === "merged" ? "Merge" : "Resolve conflict"}
+        confirmLabel={pendingChoice === "merged" ? "Apply to workspace" : "Resolve conflict"}
         intent={pendingChoice === "merged" ? "info" : "warning"}
       />
     </div>
@@ -350,7 +357,8 @@ function RecordPane({
   );
 }
 
-const DIFF_BADGE_VARIANT: Record<ConflictDiffEntry["kind"], "success" | "error" | "warning"> = {
+// Diff-kind → status color token, used for the row's diff accent stripe and badge.
+const DIFF_KIND_ACCENT: Record<ConflictDiffKind, "success" | "error" | "warning"> = {
   add: "success",
   remove: "error",
   change: "warning",
@@ -370,14 +378,14 @@ function MergeWorkspace({
 }: {
   readonly entries: readonly ConflictDiffEntry[];
   readonly residualPaths: readonly string[];
-  readonly picks: Record<string, "local" | "cloud">;
+  readonly picks: Record<string, Side>;
   readonly cloudRev: number;
   readonly localRev: number;
   readonly cloudWriter: string;
   readonly mergeAvailable: boolean;
   readonly disabled: boolean;
-  readonly onPick: (path: string, side: "local" | "cloud") => void;
-  readonly onAcceptAll: (side: "local" | "cloud") => void;
+  readonly onPick: (path: string, side: Side) => void;
+  readonly onAcceptAll: (side: Side) => void;
 }) {
   if (entries.length === 0) {
     return (
@@ -398,7 +406,7 @@ function MergeWorkspace({
             Merge changes
           </h2>
           <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-            Compare Cloud and Local, then build the result in the middle pane.
+            Use the arrows to pull each change into the center result. The result applies to your workspace only.
           </p>
         </div>
         {residualPaths.length > 0 ? (
@@ -415,19 +423,23 @@ function MergeWorkspace({
       </div>
 
       <div className="overflow-hidden rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised" data-testid="conflict-merge-workspace">
+        {/* IntelliJ-style three-pane header: Cloud | Result | Local */}
         <div className="hidden grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay lg:grid">
           <MergePaneHeader
             icon={<Cloud className="h-4 w-4" aria-hidden="true" />}
             title="Cloud copy"
             subtitle={`Incoming · revision ${cloudRev} · ${cloudWriter}`}
             action={residualPaths.length > 0 ? (
-              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("cloud")}>Accept all Cloud</Button>
+              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("cloud")}>
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /> Accept all
+              </Button>
             ) : null}
+            accent="info"
           />
           <MergePaneHeader
             icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
             title="Merge result"
-            subtitle={mergeAvailable ? "New Cloud revision after apply" : "Choose one complete copy"}
+            subtitle={mergeAvailable ? "Workspace copy after apply" : "Choose one complete copy"}
             result
           />
           <MergePaneHeader
@@ -435,8 +447,11 @@ function MergeWorkspace({
             title="Local copy"
             subtitle={`Current device · revision ${localRev}`}
             action={residualPaths.length > 0 ? (
-              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("local")}>Accept all Local</Button>
+              <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("local")}>
+                Accept all <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
             ) : null}
+            accent="primary"
           />
         </div>
 
@@ -447,21 +462,42 @@ function MergeWorkspace({
             return (
               <li key={entry.path} className="border-b border-border last:border-b-0 dark:border-border-dark">
                 <div className="flex min-w-0 flex-wrap items-center gap-2 bg-surface-overlay/70 px-3 py-2 dark:bg-surface-dark-overlay/70">
-                  <Badge variant={DIFF_BADGE_VARIANT[entry.kind]} size="sm">{entry.kind}</Badge>
+                  <Badge variant={DIFF_KIND_ACCENT[entry.kind]} size="sm">{entry.kind}</Badge>
                   <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">{entry.label}</span>
                   <code className="min-w-0 break-all text-[10px] text-text-muted dark:text-text-muted-dark">{entry.path}</code>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-3 lg:divide-x lg:divide-border lg:dark:divide-border-dark">
-                  <MergeValueCell label="Cloud copy" value={entry.before} />
+                  {/* Cloud (left) */}
+                  <MergeSourceCell
+                    label="Cloud copy"
+                    value={entry.before}
+                    kind={entry.kind}
+                    source="cloud"
+                    residual={residual}
+                    selected={selectedSide === "cloud"}
+                    disabled={disabled}
+                    onPick={onPick}
+                    entry={entry}
+                  />
+                  {/* Merge result (center) */}
                   <MergeResultCell
                     entry={entry}
                     residual={residual}
                     selectedSide={selectedSide}
                     mergeAvailable={mergeAvailable}
+                  />
+                  {/* Local (right) */}
+                  <MergeSourceCell
+                    label="Local copy"
+                    value={entry.after}
+                    kind={entry.kind}
+                    source="local"
+                    residual={residual}
+                    selected={selectedSide === "local"}
                     disabled={disabled}
                     onPick={onPick}
+                    entry={entry}
                   />
-                  <MergeValueCell label="Local copy" value={entry.after} />
                 </div>
               </li>
             );
@@ -478,15 +514,17 @@ function MergePaneHeader({
   subtitle,
   action,
   result = false,
+  accent,
 }: {
   readonly icon: ReactNode;
   readonly title: string;
   readonly subtitle: string;
   readonly action?: ReactNode;
   readonly result?: boolean;
+  readonly accent?: "info" | "primary";
 }) {
   return (
-    <div className={`flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 ${result ? "bg-primary/5" : ""}`}>
+    <div className={`flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 ${result ? "bg-primary/5" : ""} ${accent === "info" ? "border-l-2 border-status-info dark:border-[var(--aw-status-info)]" : accent === "primary" ? "border-l-2 border-primary dark:border-primary-light" : ""}`}>
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs font-semibold text-text-primary dark:text-text-primary-dark">
           {icon}{title}
@@ -498,10 +536,88 @@ function MergePaneHeader({
   );
 }
 
-function MergeValueCell({ label, value }: { readonly label: string; readonly value: unknown }) {
+function MergeSourceAcceptButton({
+  source,
+  selected,
+  disabled,
+  entry,
+  onPick,
+}: {
+  readonly source: Side;
+  readonly selected: boolean;
+  readonly disabled: boolean;
+  readonly entry: ConflictDiffEntry;
+  readonly onPick: (path: string, side: Side) => void;
+}) {
   return (
-    <div className="min-h-24 min-w-0 bg-surface-raised p-3 dark:bg-surface-dark-raised">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">{label}</p>
+    <Button
+      size="xs"
+      variant={selected ? "secondary" : "ghost"}
+      disabled={disabled}
+      aria-pressed={selected}
+      aria-label={`Accept ${source === "cloud" ? "Cloud" : "Local"} for ${entry.label}`}
+      icon={
+        source === "cloud"
+          ? <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          : <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+      }
+      onClick={() => onPick(entry.path, source)}
+    >
+      {selected ? "Accepted" : "Accept"}
+    </Button>
+  );
+}
+
+// A read-only source pane (Cloud or Local). When the entry is a residual the
+// user must pick, the cell hosts a chevron button that pulls its value into
+// the center result — IntelliJ's accept-this-change arrow.
+function MergeSourceCell({
+  label,
+  value,
+  kind,
+  source,
+  residual,
+  selected,
+  disabled,
+  onPick,
+  entry,
+}: {
+  readonly label: string;
+  readonly value: unknown;
+  readonly kind: ConflictDiffKind;
+  readonly source: Side;
+  readonly residual: boolean;
+  readonly selected: boolean;
+  readonly disabled: boolean;
+  readonly onPick: (path: string, side: Side) => void;
+  readonly entry: ConflictDiffEntry;
+}) {
+  // Color-tint the source cell by diff kind so the source of the change is
+  // legible at a glance, exactly as IntelliJ shades added/removed/changed lines.
+  const tint =
+    kind === "add"
+      ? "bg-status-success/5 dark:bg-[var(--aw-status-success)]/5"
+      : kind === "remove"
+        ? "bg-status-error/5 dark:bg-[var(--aw-status-error)]/5"
+        : "";
+  const isSelectedTint = selected
+    ? "ring-1 ring-inset ring-status-success/40 dark:ring-[var(--aw-status-success)]/40"
+    : "";
+
+  return (
+    <div className={`min-h-24 min-w-0 p-3 ${tint} ${isSelectedTint} bg-surface-raised dark:bg-surface-dark-raised`}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">{label}</p>
+        {residual ? (
+          <MergeSourceAcceptButton
+            source={source}
+            selected={selected}
+            disabled={disabled}
+            entry={entry}
+            onPick={onPick}
+          />
+        ) : null}
+      </div>
       <ConflictValue value={value} />
     </div>
   );
@@ -512,15 +628,11 @@ function MergeResultCell({
   residual,
   selectedSide,
   mergeAvailable,
-  disabled,
-  onPick,
 }: {
   readonly entry: ConflictDiffEntry;
   readonly residual: boolean;
-  readonly selectedSide: "local" | "cloud" | undefined;
+  readonly selectedSide: Side | undefined;
   readonly mergeAvailable: boolean;
-  readonly disabled: boolean;
-  readonly onPick: (path: string, side: "local" | "cloud") => void;
 }) {
   const selectedValue = selectedSide === "cloud" ? entry.before : selectedSide === "local" ? entry.after : undefined;
 
@@ -529,30 +641,6 @@ function MergeResultCell({
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">Merge result</p>
       {residual ? (
         <div className="grid gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              size="xs"
-              variant={selectedSide === "cloud" ? "secondary" : "ghost"}
-              disabled={disabled}
-              aria-pressed={selectedSide === "cloud"}
-              aria-label={`Accept Cloud for ${entry.label}`}
-              icon={<ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
-              onClick={() => onPick(entry.path, "cloud")}
-            >
-              Accept Cloud
-            </Button>
-            <Button
-              size="xs"
-              variant={selectedSide === "local" ? "secondary" : "ghost"}
-              disabled={disabled}
-              aria-pressed={selectedSide === "local"}
-              aria-label={`Accept Local for ${entry.label}`}
-              icon={<ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />}
-              onClick={() => onPick(entry.path, "local")}
-            >
-              Accept Local
-            </Button>
-          </div>
           {selectedSide ? (
             <div>
               <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-status-success dark:text-[var(--aw-status-success)]">
@@ -561,7 +649,9 @@ function MergeResultCell({
               <ConflictValue value={selectedValue} />
             </div>
           ) : (
-            <p className="text-xs text-status-warning dark:text-[var(--aw-status-warning)]">Choose which value enters the result.</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-status-warning dark:text-[var(--aw-status-warning)]">Pick a side using the arrows ←</span>
+            </div>
           )}
         </div>
       ) : mergeAvailable ? (

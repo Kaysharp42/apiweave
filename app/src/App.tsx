@@ -34,6 +34,8 @@ import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
+import { getLastWorkspaceSlug } from "./utils/workspacePreference";
+import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
 import type { AppContextType } from "./types/AppContextType";
@@ -103,6 +105,21 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+// Reopen the workspace the user last had selected, as long as it still
+// exists. Falls back to the personal workspace (then the first available)
+// when there is no remembered slug or it has been removed.
+function pickDefaultWorkspace(
+  workspaces: readonly Workspace[],
+  lastSlug: string | null,
+): Workspace | undefined {
+  const lastMatch = lastSlug
+    ? workspaces.find((entry) => entry.slug === lastSlug)
+    : undefined;
+  return (
+    lastMatch ?? workspaces.find((entry) => entry.isPersonal) ?? workspaces[0]
+  );
+}
+
 function DefaultWorkspaceRedirect() {
   const [targetPath, setTargetPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -115,9 +132,10 @@ function DefaultWorkspaceRedirect() {
         const workspaces = await apiweave.workspaces.list();
         if (cancelled) return;
 
-        const workspace =
-          workspaces.find((entry) => entry.isPersonal) ??
-          workspaces[0];
+        const workspace = pickDefaultWorkspace(
+          workspaces,
+          getLastWorkspaceSlug(),
+        );
         if (!workspace) {
           if (isDesktopShell()) {
             await apiweave.workspaces.create({

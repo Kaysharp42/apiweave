@@ -140,6 +140,7 @@ describe("ConflictDetailPage", () => {
         conflict_id: "conflict-1",
         winner,
         device_id: "desktop",
+        defer_push: true,
       });
       expect(toastSuccess).toHaveBeenCalledWith(`Kept ${winner} copy`);
     },
@@ -159,7 +160,7 @@ describe("ConflictDetailPage", () => {
     expect(screen.getByText("1 unresolved")).toBeInTheDocument();
 
     // The merge is blocked until every residual path has a pick.
-    const mergeButton = screen.getByRole("button", { name: "Apply merged result" });
+    const mergeButton = screen.getByRole("button", { name: "Apply merge to workspace" });
     expect(mergeButton).toBeDisabled();
 
     // Accept the Local side into the middle result pane.
@@ -168,13 +169,14 @@ describe("ConflictDetailPage", () => {
     expect(mergeButton).toBeEnabled();
 
     await user.click(mergeButton);
-    await user.click(screen.getByRole("button", { name: "Merge" }));
+    await user.click(screen.getByRole("button", { name: "Apply to workspace" }));
 
     await waitFor(() => expect(screen.getByText("conflicts index")).toBeInTheDocument());
     expect(invokeMock).toHaveBeenCalledWith("cloud", "conflict-resolve", {
       conflict_id: "conflict-1",
       winner: "merged",
       device_id: "desktop",
+      defer_push: true,
       resolutions: [{ path: "name", side: "local" }],
     });
     expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
@@ -194,7 +196,7 @@ describe("ConflictDetailPage", () => {
     expect(screen.queryByRole("button", { name: /Accept Local for/ })).not.toBeInTheDocument();
 
     // The merge is blocked; the whole-record fallbacks remain enabled.
-    expect(screen.getByRole("button", { name: "Apply merged result" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Apply merge to workspace" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Keep Local copy" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Keep Cloud copy" })).toBeEnabled();
   });
