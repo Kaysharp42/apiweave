@@ -322,6 +322,17 @@ describe("conflict-ui-bridge", () => {
     expect(resolver.nudgeSync).toHaveBeenCalledTimes(1)
   })
 
+  it("skips the sync nudge when defer_push is true", async () => {
+    insertConflict("conflict-defer")
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-defer", winner: "local", device_id: "device-1", defer_push: true },
+    })
+    expect(result.ok).toBe(true)
+    expect(resolver.nudgeSync).not.toHaveBeenCalled()
+  })
+
   it("does not nudge a sync when the resolve fails", async () => {
     insertConflict("conflict-nonudge")
     resolver.resolveConflict.mockRejectedValueOnce(new Error("boom"))
