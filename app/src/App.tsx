@@ -34,6 +34,7 @@ import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
+import { getLastWorkspaceSlug } from "./utils/workspacePreference";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
 import type { AppContextType } from "./types/AppContextType";
@@ -115,7 +116,16 @@ function DefaultWorkspaceRedirect() {
         const workspaces = await apiweave.workspaces.list();
         if (cancelled) return;
 
+        // Reopen the workspace the user last had selected, as long as it
+        // still exists. Falls back to the personal workspace (then the first
+        // available) when there is no remembered slug or it has been removed.
+        const lastSlug = getLastWorkspaceSlug();
+        const lastMatch = lastSlug
+          ? workspaces.find((entry) => entry.slug === lastSlug)
+          : undefined;
+
         const workspace =
+          lastMatch ??
           workspaces.find((entry) => entry.isPersonal) ??
           workspaces[0];
         if (!workspace) {

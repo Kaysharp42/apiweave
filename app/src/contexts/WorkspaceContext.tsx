@@ -18,6 +18,7 @@ import {
   onCloudStatusChanged,
 } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
+import { setLastWorkspaceSlug } from "../utils/workspacePreference";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
@@ -133,6 +134,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 
   const switchTo = useCallback(
     (workspaceSlug: string) => {
+      setLastWorkspaceSlug(workspaceSlug);
       navigate(`/${params.orgSlug ?? "personal"}/${workspaceSlug}/workflows`, {
         replace: false,
       });
