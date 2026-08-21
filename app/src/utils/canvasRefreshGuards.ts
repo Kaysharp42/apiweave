@@ -5,12 +5,8 @@
  * the user's work alone.
  */
 
-export interface DetachDecisionInput {
-  /** This renderer issued the delete or move that is now being reported back. */
-  readonly initiatedLocally: boolean;
-  /** A tab for this workflow is still open. */
-  readonly tabIsOpen: boolean;
-}
+import type { DetachDecisionInput } from "../types/DetachDecisionInput";
+import type { BackgroundRefreshInput } from "../types/BackgroundRefreshInput";
 
 /**
  * Whether a detach notification should close the open tab and tell the user.
@@ -28,15 +24,6 @@ export function shouldActOnDetach({
 }: DetachDecisionInput): boolean {
   if (initiatedLocally) return false;
   return tabIsOpen;
-}
-
-export interface BackgroundRefreshInput {
-  /** Hydration version captured before the fetch was issued. */
-  readonly hydrationVersionAtRequest: number;
-  /** Hydration version now the fetch has resolved. */
-  readonly hydrationVersionNow: number;
-  /** The tab has unsaved changes. */
-  readonly tabIsDirty: boolean;
 }
 
 /**
