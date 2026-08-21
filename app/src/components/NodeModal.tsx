@@ -136,7 +136,7 @@ export function NodeModal({
         (node.data.config || {}) as NodeModalHTTPRequestConfig,
       ),
     );
-  }, [node, open]);
+  }, [node.id, open]);
 
   const handleClose = () => {
     onClose();
