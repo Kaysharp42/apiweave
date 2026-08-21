@@ -24,6 +24,7 @@ import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
 import { authenticatedFetch } from "../../utils/apiweaveClient";
 import { noteLocalWorkflowRemoval } from "../../utils/localWorkflowRemovals";
+import { confirmPermanentDeletion } from "../../utils/confirmPermanentDeletion";
 import useNavigationStore from "../../stores/NavigationStore";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
@@ -351,19 +352,17 @@ export function Sidebar() {
       if (deleteWorkflowTarget?.workflowId) {
         noteLocalWorkflowRemoval(deleteWorkflowTarget.workflowId);
       }
-      const result = await requestWorkflowDeletion({
-        target: deleteWorkflowTarget,
-        apiBaseUrl: API_BASE_URL,
-        workspaceId,
-        fetchImpl: authenticatedFetch,
-      });
-
-      if (!result.deleted) return;
-
-      const workflowId = result.workflowId;
+      const workflowId = await confirmPermanentDeletion(
+        requestWorkflowDeletion({
+          target: deleteWorkflowTarget,
+          apiBaseUrl: API_BASE_URL,
+          workspaceId,
+          fetchImpl: authenticatedFetch,
+        }),
+        "Workflow",
+      );
       if (!workflowId) return;
 
-      toast.success("Workflow deleted permanently");
       setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
       closeTab(workflowId);
       await refreshAll(selectedNav);
@@ -383,19 +382,17 @@ export function Sidebar() {
     }
 
     try {
-      const result = await requestProjectDeletion({
-        target: deleteProjectTarget,
-        apiBaseUrl: API_BASE_URL,
-        workspaceId,
-        fetchImpl: authenticatedFetch,
-      });
-
-      if (!result.deleted) return;
-
-      const projectId = result.projectId;
+      const projectId = await confirmPermanentDeletion(
+        requestProjectDeletion({
+          target: deleteProjectTarget,
+          apiBaseUrl: API_BASE_URL,
+          workspaceId,
+          fetchImpl: authenticatedFetch,
+        }),
+        "Project",
+      );
       if (!projectId) return;
 
-      toast.success("Project deleted permanently");
       setExpandedProjects((prev) => {
         const next = new Set(prev);
         next.delete(projectId);
