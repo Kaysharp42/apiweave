@@ -70,6 +70,130 @@ function localContentSignature(
   }
 }
 
+/** Only two events let the apply pass re-examine a snapshot it once deferred. */
+function applyPassIsDue(
+  coalesceTimerFired: boolean,
+  deferredForCanvasChange: boolean,
+): boolean {
+  return coalesceTimerFired || deferredForCanvasChange;
+}
+
+/**
+ * What the apply pass should do with a held server snapshot, decided purely
+ * from revisions and content signatures so the decision table can be tested
+ * without standing up the hook.
+ */
+type HeldSnapshotVerdict =
+  | { readonly action: "hold" }
+  | { readonly action: "drop"; readonly warnRemoteLoss: boolean }
+  | { readonly action: "apply" };
+
+const HELD_FOR_COMPARABLE_CANVAS: HeldSnapshotVerdict = { action: "hold" };
+const HELD_BEHIND_UNSAVED_EDITS: HeldSnapshotVerdict = { action: "hold" };
+const DROPPED_AS_OWN_ECHO: HeldSnapshotVerdict = {
+  action: "drop",
+  warnRemoteLoss: false,
+};
+const APPLIED_TO_CANVAS: HeldSnapshotVerdict = { action: "apply" };
+
+interface HeldSnapshotFacts {
+  /** Revision of the held server snapshot. */
+  readonly incomingRev: number;
+  /** Revision currently on the canvas. */
+  readonly currentRev: number;
+  readonly incomingSignature: string;
+  readonly displayedSignature: string;
+  /** null while the mid-edit canvas cannot be compared reliably. */
+  readonly localSignature: string | null;
+}
+
+/**
+ * Whether dropping an overtaken snapshot would lose real remote work. No
+ * warning is due when the incoming graph is already what the canvas took from
+ * the server, or when it equals the local graph — that second case is this
+ * renderer's own save echoing back: the broadcast is emitted inside the IPC
+ * handler, before the save response returns, so it passes the revision filter
+ * and is still in the coalescing window when the response arrives. Nothing
+ * remote was lost, and keeping edits typed during that window is not an
+ * overwrite worth warning about.
+ */
+function remoteChangeWasLost(
+  incomingSignature: string,
+  displayedSignature: string,
+  localSignature: string,
+): boolean {
+  return (
+    incomingSignature !== displayedSignature &&
+    localSignature !== displayedSignature &&
+    localSignature !== incomingSignature
+  );
+}
+
+function classifyFreshSnapshot(facts: HeldSnapshotFacts): HeldSnapshotVerdict {
+  // The repository also reports writes made by this renderer. The save
+  // response already updated the local graph; applying that identical
+  // snapshot again would create fresh node objects and restart auto-save.
+  if (facts.localSignature === facts.incomingSignature)
+    return DROPPED_AS_OWN_ECHO;
+  // Retry on later canvas changes. A clean tab applies the latest snapshot;
+  // a dirty tab keeps its local graph and never loses work silently.
+  if (facts.localSignature !== facts.displayedSignature)
+    return HELD_BEHIND_UNSAVED_EDITS;
+  return APPLIED_TO_CANVAS;
+}
+
+function classifyHeldSnapshot(facts: HeldSnapshotFacts): HeldSnapshotVerdict {
+  if (facts.localSignature === null) return HELD_FOR_COMPARABLE_CANVAS;
+
+  if (facts.incomingRev <= facts.currentRev) {
+    // A local save overtook the held snapshot: the later local write won
+    // server-side, and applying the older remote graph now would clobber
+    // it. Dropping is correct — dropping silently is what would hide the
+    // loss, so a real divergence is named.
+    return {
+      action: "drop",
+      warnRemoteLoss: remoteChangeWasLost(
+        facts.incomingSignature,
+        facts.displayedSignature,
+        facts.localSignature,
+      ),
+    };
+  }
+
+  return classifyFreshSnapshot(facts);
+}
+
+/** Side effects the apply pass may perform on the hook's state. */
+interface HeldSnapshotActions {
+  /** Re-examine the held snapshot on the next canvas change. */
+  retryOnNextCanvasChange(): void;
+  /** The snapshot is resolved either way; stop holding it. */
+  forgetHeldSnapshot(): void;
+  /** Name a real divergence instead of dropping silently. */
+  warnOfLostRemoteChange(): void;
+  /** Put the held snapshot on the canvas. */
+  applyToCanvas(): void;
+}
+
+function actOnHeldSnapshot(
+  verdict: HeldSnapshotVerdict,
+  actions: HeldSnapshotActions,
+): void {
+  if (verdict.action === "hold") {
+    actions.retryOnNextCanvasChange();
+    return;
+  }
+
+  actions.forgetHeldSnapshot();
+
+  if (verdict.action === "drop") {
+    if (verdict.warnRemoteLoss) actions.warnOfLostRemoteChange();
+    return;
+  }
+
+  actions.applyToCanvas();
+}
+
 /**
  * Reconciles writes made through MCP, cloud sync, or another renderer into the
  * open canvas. A remote snapshot waits while local content is dirty, so it
@@ -179,70 +303,41 @@ export default function useWorkflowLiveUpdates({
     // moved since. Anything else — including renders driven by run progress —
     // leaves the snapshot untouched, and skips the expensive signature
     // round-trips below entirely.
-    if (!dueRef.current && !retryOnCanvasChangeRef.current) return;
+    if (!applyPassIsDue(dueRef.current, retryOnCanvasChangeRef.current)) return;
     dueRef.current = false;
 
-    const displayedSignature = normalizedContentSignature(workflow);
-    const localSignature = localContentSignature(
-      nodes,
-      edges,
-      variables,
-      workflow,
+    actOnHeldSnapshot(
+      classifyHeldSnapshot({
+        incomingRev: incoming.rev,
+        currentRev: workflow.rev,
+        incomingSignature: normalizedContentSignature(incoming),
+        displayedSignature: normalizedContentSignature(workflow),
+        localSignature: localContentSignature(
+          nodes,
+          edges,
+          variables,
+          workflow,
+        ),
+      }),
+      {
+        retryOnNextCanvasChange: () => {
+          retryOnCanvasChangeRef.current = true;
+        },
+        forgetHeldSnapshot: () => {
+          pendingWorkflowRef.current = null;
+          retryOnCanvasChangeRef.current = false;
+        },
+        warnOfLostRemoteChange: () => {
+          console.warn(
+            "[live-updates] discarded a remote change overtaken by local edits",
+            { workflowId, incomingRev: incoming.rev, localRev: workflow.rev },
+          );
+          toast.warning(
+            "Remote changes to this workflow were overwritten by your unsaved edits",
+          );
+        },
+        applyToCanvas: () => onWorkflowRef.current(incoming),
+      },
     );
-    if (localSignature === null) {
-      retryOnCanvasChangeRef.current = true;
-      return;
-    }
-
-    if (incoming.rev <= workflow.rev) {
-      // A local save overtook the held snapshot: the later local write won
-      // server-side, and applying the older remote graph now would clobber
-      // it. Dropping is correct — dropping silently is what would hide the
-      // loss, so a real divergence is named.
-      pendingWorkflowRef.current = null;
-      retryOnCanvasChangeRef.current = false;
-      const incomingSignature = normalizedContentSignature(incoming);
-      // An overtaken snapshot whose content is already what the canvas took
-      // from the server is this renderer's own save echoing back: the broadcast
-      // is emitted inside the IPC handler, before the save response returns, so
-      // it passes the revision filter and is still in the coalescing window
-      // when the response arrives. Nothing remote was lost, and keeping edits
-      // typed during that window is not an overwrite worth warning about.
-      if (
-        incomingSignature !== displayedSignature &&
-        localSignature !== displayedSignature &&
-        localSignature !== incomingSignature
-      ) {
-        console.warn("[live-updates] discarded a remote change overtaken by local edits", {
-          workflowId,
-          incomingRev: incoming.rev,
-          localRev: workflow.rev,
-        });
-        toast.warning(
-          "Remote changes to this workflow were overwritten by your unsaved edits",
-        );
-      }
-      return;
-    }
-
-    // The repository also reports writes made by this renderer. The save
-    // response already updated the local graph; applying that identical
-    // snapshot again would create fresh node objects and restart auto-save.
-    if (localSignature === normalizedContentSignature(incoming)) {
-      pendingWorkflowRef.current = null;
-      retryOnCanvasChangeRef.current = false;
-      return;
-    }
-
-    // Retry on later canvas changes. A clean tab applies the latest snapshot;
-    // a dirty tab keeps its local graph and never loses work silently.
-    if (localSignature !== displayedSignature) {
-      retryOnCanvasChangeRef.current = true;
-      return;
-    }
-
-    retryOnCanvasChangeRef.current = false;
-    pendingWorkflowRef.current = null;
-    onWorkflowRef.current(incoming);
   }, [edges, nodes, pendingVersion, variables, workflow, workflowId]);
 }
