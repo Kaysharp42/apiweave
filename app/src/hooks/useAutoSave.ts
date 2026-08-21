@@ -102,6 +102,18 @@ export default function useAutoSave({
   };
 
   useEffect(() => {
+    // The reset is for live snapshots that replace the canvas (e.g. MCP writes).
+    // On the very first mount lastSnapshot is null and will be initialized by
+    // the autosave effect once hydration completes — overwriting null with the
+    // pre-hydration empty snapshot would make the first real hydration look
+    // like a dirty edit and fire an immediate autosave.
+    if (
+      lastSnapshotRef.current.nodes === null &&
+      lastSnapshotRef.current.edges === null &&
+      lastSnapshotRef.current.vars === null
+    ) {
+      return;
+    }
     lastSnapshotRef.current = currentSnapshotRef.current;
   }, [resetSnapshotKey]);
 
