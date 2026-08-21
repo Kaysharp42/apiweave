@@ -1347,19 +1347,9 @@ export class CloudSyncRepository {
 
   private upsertWorkflow(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
-    const legacyGraph = objectProperty(payload, "graph")
-    const graphJson = JSON.stringify({
-      nodes: payload["nodes"] ?? legacyGraph["nodes"] ?? [],
-      edges: payload["edges"] ?? legacyGraph["edges"] ?? [],
-    })
+    const graphJson = this.buildWorkflowGraphJson(payload)
     const variablesJson = JSON.stringify(payload["variables"] ?? {})
-    const settingsJson = JSON.stringify({
-      description: payload["description"] ?? null,
-      tags: payload["tags"] ?? [],
-      collectionId: payload["collectionId"] ?? null,
-      selectedEnvironmentId: payload["selectedEnvironmentId"] ?? null,
-      nodeTemplates: payload["nodeTemplates"] ?? [],
-    })
+    const settingsJson = this.buildWorkflowSettingsJson(payload)
     const result = this.store.set(
       `INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,
@@ -1373,6 +1363,24 @@ export class CloudSyncRepository {
     if (result.changes > 0) {
       this.notifyWorkflowChanged(workspaceId, id, false)
     }
+  }
+
+  private buildWorkflowGraphJson(payload: Record<string, unknown>): string {
+    const legacyGraph = objectProperty(payload, "graph")
+    return JSON.stringify({
+      nodes: payload["nodes"] ?? legacyGraph["nodes"] ?? [],
+      edges: payload["edges"] ?? legacyGraph["edges"] ?? [],
+    })
+  }
+
+  private buildWorkflowSettingsJson(payload: Record<string, unknown>): string {
+    return JSON.stringify({
+      description: payload["description"] ?? null,
+      tags: payload["tags"] ?? [],
+      collectionId: payload["collectionId"] ?? null,
+      selectedEnvironmentId: payload["selectedEnvironmentId"] ?? null,
+      nodeTemplates: payload["nodeTemplates"] ?? [],
+    })
   }
 
   /**

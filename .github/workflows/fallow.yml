@@ -32,12 +32,6 @@ jobs:
           review-guidance: true
           fail-on-issues: true
 
-      - name: Dump fallow results (debug, temporary)
-        if: always()
-        working-directory: .
-        run: |
-          find "$GITHUB_WORKSPACE" -maxdepth 3 -iname "fallow-results*.json" -exec echo {} \; -exec cat {} \;
-
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
