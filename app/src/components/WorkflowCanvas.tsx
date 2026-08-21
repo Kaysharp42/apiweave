@@ -50,6 +50,7 @@ import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
 import useTabStore from "../stores/TabStore";
+import useSidebarStore from "../stores/SidebarStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 import { computeProvenance } from "../utils/variableProvenance";
 import useCanvasStore from "../stores/CanvasStore";
@@ -57,6 +58,7 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
+import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
 import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
@@ -226,6 +228,7 @@ export function WorkflowCanvas({
   const saveWorkflowRef = useRef<((silent: boolean) => Promise<void>) | null>(
     null,
   );
+  const hydrationVersionRef = useRef(0);
 
   // ── Run camera ──────────────────────────────────────────────────────
   //
@@ -437,6 +440,7 @@ export function WorkflowCanvas({
    */
   const showWorkflow = useCallback(
     (canvasState: CanvasWorkflowState, source: Workflow) => {
+      hydrationVersionRef.current += 1;
       setNodes((previousNodes) =>
         preserveCanvasRuntimeState(canvasState.nodes, previousNodes),
       );
@@ -444,7 +448,12 @@ export function WorkflowCanvas({
       updateVariables(canvasState.variables);
       if (workflowId) {
         useTabStore.getState().updateTabWorkflow(workflowId, source);
+        useSidebarStore.getState().signalWorkflowsRefresh();
       }
+      hydratedBaselineRef.current = {
+        nodeCount: canvasState.nodes.length,
+        edgeCount: canvasState.edges.length,
+      };
     },
     [workflowId, setNodes, setEdges, updateVariables],
   );
@@ -474,6 +483,19 @@ export function WorkflowCanvas({
         void reloadWorkflowFromServer();
       });
   }, [reloadWorkflowFromServer, workflowId]);
+
+  useWorkflowLiveUpdates({
+    workspaceId: scope.workspaceId,
+    workflowId,
+    workflow,
+    nodes,
+    edges,
+    variables: workflowVariables,
+    onWorkflow: (incoming) => {
+      noteSavedWorkflow(incoming);
+      showWorkflow(workflowToCanvas(incoming), incoming);
+    },
+  });
 
   // "Save as preset" reaches the canvas as a CanvasStore pending action (the
   // same channel duplicate/copy use, since a node component can't see the
@@ -917,6 +939,7 @@ export function WorkflowCanvas({
     nodes,
     edges,
     workflowVariables,
+    resetSnapshotKey: hydrationVersionRef.current,
     saveWorkflow,
   });
 

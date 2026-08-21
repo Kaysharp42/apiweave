@@ -98,6 +98,22 @@ describe("SecretRepository", () => {
 })
 
 describe("WorkflowRepository", () => {
+  it("publishes the authoritative snapshot after a write", () => {
+    const workspaceId = seedWorkspace()
+    const changes: string[] = []
+    const observed = new WorkflowRepository(db.kvStore, (workflow) => {
+      changes.push(`${workflow.workflowId}:${workflow.rev}:${workflow.name}`)
+    })
+
+    const created = observed.create({ workspaceId, name: "before" })
+    observed.update(created.workflowId, { name: "after" })
+
+    expect(changes).toEqual([
+      `${created.workflowId}:1:before`,
+      `${created.workflowId}:2:after`,
+    ])
+  })
+
   it("round-trips a workflow and bumps rev on each update (QA: rev-bump)", () => {
     const workspaceId = seedWorkspace()
     const created = workflows.create({

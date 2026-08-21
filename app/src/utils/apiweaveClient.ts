@@ -79,6 +79,7 @@ type IpcBridge = {
     callback: (event: RunProgressEvent) => void,
   ) => () => void;
   readonly onCloudStatusChanged?: (callback: () => void) => () => void;
+  readonly onWorkflowChanged?: (callback: (workflow: Workflow) => void) => () => void;
 };
 
 type DesktopBridge = {
@@ -643,6 +644,11 @@ export function onRunProgress(
  * unsubscribe) when the bridge or signal is absent, e.g. web preview. */
 export function onCloudStatusChanged(callback: () => void): () => void {
   return getIpcBridge().onCloudStatusChanged?.(callback) ?? (() => undefined);
+}
+
+/** Subscribe to authoritative workflow writes made by another process or tab. */
+export function onWorkflowChanged(callback: (workflow: Workflow) => void): () => void {
+  return getIpcBridge().onWorkflowChanged?.(callback) ?? (() => undefined);
 }
 
 function getDesktopBridge(): DesktopBridge | undefined {

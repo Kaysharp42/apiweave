@@ -60,6 +60,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   UPDATE_STATUS_CHANGED_CHANNEL,
+  WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { ipcLog, revealLogFile } from "./logging"
@@ -231,7 +232,11 @@ if (!hasSingleInstanceLock) {
 
     // Repositories — the only DB touchpoint.
     const workspaces = new WorkspaceRepository(database.kvStore)
-    const workflows = new WorkflowRepository(database.kvStore)
+    const workflows = new WorkflowRepository(database.kvStore, (workflow) => {
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(WORKFLOW_CHANGED_CHANNEL, workflow)
+      }
+    })
     const runs = new RunRepository(database.kvStore)
     const environments = new EnvironmentRepository(database.kvStore)
     const collections = new CollectionRepository(database.kvStore)

@@ -9,6 +9,7 @@ import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
+import type { Workflow } from "@shared/types/Workflow"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import {
@@ -19,6 +20,7 @@ import {
   INVOKE_CHANNEL,
   runProgressChannel,
   UPDATE_STATUS_CHANGED_CHANNEL,
+  WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 
 /**
@@ -64,6 +66,7 @@ type IpcBridge = {
   readonly invoke: (domain: string, action: string, payload: unknown) => Promise<ContractResult<unknown>>
   readonly onRunProgress: (runId: string, callback: (event: RunProgressEvent) => void) => () => void
   readonly onCloudStatusChanged: (callback: () => void) => () => void
+  readonly onWorkflowChanged: (callback: (workflow: Workflow) => void) => () => void
 }
 
 const ipcBridge: IpcBridge = {
@@ -73,6 +76,8 @@ const ipcBridge: IpcBridge = {
     subscribe<RunProgressEvent>(runProgressChannel(runId), callback),
   onCloudStatusChanged: (callback) =>
     subscribe<void>(CLOUD_STATUS_CHANGED_CHANNEL, () => callback()),
+  onWorkflowChanged: (callback) =>
+    subscribe<Workflow>(WORKFLOW_CHANGED_CHANNEL, callback),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_IPC__", ipcBridge)

@@ -62,7 +62,10 @@ interface WorkflowSettings {
 }
 
 export class WorkflowRepository {
-  public constructor(private readonly store: KVStore) {}
+  public constructor(
+    private readonly store: KVStore,
+    private readonly onChanged?: (workflow: Workflow) => void,
+  ) {}
 
   public create(input: WorkflowCreate): Workflow {
     const id = generateId()
@@ -74,13 +77,15 @@ export class WorkflowRepository {
       selectedEnvironmentId: input.selectedEnvironmentId ?? null,
       nodeTemplates: input.nodeTemplates ?? [],
     }
-    return insertAndRead(
+    const created = insertAndRead(
       this.store,
       "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [id, input.workspaceId, input.workspaceId, input.name, slugify(input.name, id), toJson(graph), toJson(input.variables ?? {}), toJson(settings)],
       () => this.getById(id),
       `workflow ${id} missing after insert`,
     )
+    this.notifyChanged(created)
+    return created
   }
 
   public transaction<T>(fn: () => T): T {
@@ -153,7 +158,9 @@ export class WorkflowRepository {
       "UPDATE workflows SET name = ?, slug = ?, graph_json = ?, variables_json = ?, settings_json = ? WHERE id = ?",
       [merged.name, slugify(merged.name, workflowId), toJson(graph), toJson(merged.variables), toJson(settings), workflowId],
     )
-    return this.getById(workflowId)
+    const updated = this.getById(workflowId)
+    if (updated !== undefined) this.notifyChanged(updated)
+    return updated
   }
 
   /**
@@ -202,7 +209,9 @@ export class WorkflowRepository {
         "UPDATE workflows SET graph_json = ? WHERE id = ? AND rev = ?",
         [toJson(graph), workflowId, expectedRevision],
       )
-      return result.changes === 1 ? this.getById(workflowId) : undefined
+      const updated = result.changes === 1 ? this.getById(workflowId) : undefined
+      if (updated !== undefined) this.notifyChanged(updated)
+      return updated
     })
   }
 
@@ -225,6 +234,15 @@ export class WorkflowRepository {
 
   public delete(workflowId: string): boolean {
     return this.store.delete("DELETE FROM workflows WHERE id = ?", [workflowId]).changes > 0
+  }
+
+  /** Notifications are best-effort and must never turn a committed write into a failure. */
+  private notifyChanged(workflow: Workflow): void {
+    try {
+      this.onChanged?.(workflow)
+    } catch {
+      // The database write has already succeeded; an observer cannot undo it.
+    }
   }
 }
 

@@ -5,6 +5,8 @@ interface UseAutoSaveParams {
   workflowId: string | undefined;
   autoSaveEnabled: boolean;
   isHydrated?: boolean;
+  /** Changes when a server snapshot replaces the live canvas. */
+  resetSnapshotKey?: number;
   nodes: unknown[];
   edges: unknown[];
   workflowVariables: Record<string, unknown>;
@@ -27,6 +29,7 @@ export default function useAutoSave({
   workflowId,
   autoSaveEnabled,
   isHydrated = true,
+  resetSnapshotKey = 0,
   nodes,
   edges,
   workflowVariables,
@@ -86,6 +89,21 @@ export default function useAutoSave({
     }
     return parts.join("|");
   }, [edges]);
+
+  const currentSnapshotRef = useRef<Snapshot>({
+    nodes: nodesSig,
+    edges: edgesSig,
+    vars: workflowVariables,
+  });
+  currentSnapshotRef.current = {
+    nodes: nodesSig,
+    edges: edgesSig,
+    vars: workflowVariables,
+  };
+
+  useEffect(() => {
+    lastSnapshotRef.current = currentSnapshotRef.current;
+  }, [resetSnapshotKey]);
 
   useEffect(() => {
     if (!autoSaveEnabled || !workflowId || !isHydrated) return;
