@@ -1,13 +1,17 @@
-import { FileText, Download, Trash2, Globe } from "lucide-react";
-import { Badge } from "../../atoms/Badge";
+import { FileText, Download, Trash2 } from "lucide-react";
 import { SidebarAction } from "./SidebarAction";
-import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
+import { WorkflowItemBadges } from "./WorkflowItemBadges";
+import { ContextMenu } from "../../molecules/ContextMenu";
+import { useContextMenu } from "../../../hooks/useContextMenu";
+import { workflowRowMenuItems } from "./rowContextMenus";
+import { workflowRowLabels } from "../../../utils/workflowRowLabels";
 import type { WorkflowItemProps } from "../../../types";
 
 /**
  * Renders a single workflow item in the sidebar list.
  * Shows workflow name, node count, collection badge, environment badge,
- * and action buttons (export, delete) visible on hover/focus.
+ * action buttons (export, delete) visible on hover/focus, and a right-click
+ * menu carrying the actions that need a name or a target picked (rename, move).
  */
 export function WorkflowItem({
   workflow,
@@ -17,28 +21,12 @@ export function WorkflowItem({
   onWorkflowClick,
   onExportWorkflow,
   onDeleteWorkflow,
+  onRenameWorkflow,
+  onMoveWorkflowToProject,
+  onMoveWorkflowToWorkspace,
 }: WorkflowItemProps) {
-  const envId = localStorage.getItem(
-    `selectedEnvironment_${workflow.workflowId}`,
-  );
-  const env = envId
-    ? environments.find((e) => e.environmentId === envId)
-    : null;
-  const envName = env ? env.name : null;
-  const workflowLabel = getSidebarItemLabel(
-    workflow.name,
-    32,
-    "Untitled workflow",
-  );
-  const collectionName = workflow.collectionId
-    ? collections.find((c) => c.collectionId === workflow.collectionId)?.name
-    : null;
-  const collectionLabel = collectionName
-    ? getSidebarItemLabel(collectionName, 18, "Collection")
-    : null;
-  const environmentLabel = envName
-    ? getSidebarItemLabel(envName, 16, "Environment")
-    : null;
+  const contextMenu = useContextMenu();
+  const labels = workflowRowLabels(workflow, collections, environments);
 
   const handleActivate = () => onWorkflowClick(workflow);
 
@@ -52,6 +40,7 @@ export function WorkflowItem({
   return (
     <li>
       <div
+        onContextMenu={contextMenu.openAt}
         className={[
           "group relative flex w-full items-start gap-2 rounded border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
           isActive
@@ -87,39 +76,15 @@ export function WorkflowItem({
                   ? "text-primary dark:text-primary-light"
                   : "text-text-primary dark:text-text-primary-dark",
               ].join(" ")}
-              title={workflowLabel.fullLabel}
+              title={labels.name.fullLabel}
             >
-              {workflowLabel.label}
+              {labels.name.label}
             </div>
 
-            <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xxs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
-              <Badge variant="ghost" size="xs">
-                {workflow.nodes?.length ?? 0} nodes
-              </Badge>
-
-              {collectionLabel && (
-                <Badge
-                  variant="info"
-                  size="xs"
-                  className="max-w-[7.5rem] min-w-0 truncate"
-                  title={collectionLabel.fullLabel}
-                >
-                  {collectionLabel.label}
-                </Badge>
-              )}
-
-              {environmentLabel && (
-                <Badge
-                  variant="secondary"
-                  size="xs"
-                  className="max-w-[7.5rem] min-w-0 truncate"
-                  title={environmentLabel.fullLabel}
-                >
-                  <Globe className="w-2.5 h-2.5 mr-0.5 flex-shrink-0" />
-                  {environmentLabel.label}
-                </Badge>
-              )}
-            </div>
+            <WorkflowItemBadges
+              nodeCount={workflow.nodes?.length ?? 0}
+              labels={labels}
+            />
           </div>
         </button>
 
@@ -153,6 +118,22 @@ export function WorkflowItem({
           />
         </div>
       </div>
+
+      {contextMenu.origin && (
+        <ContextMenu
+          x={contextMenu.origin.x}
+          y={contextMenu.origin.y}
+          label={`Workflow "${workflow.name}"`}
+          onClose={contextMenu.close}
+          items={workflowRowMenuItems(workflow, {
+            onRenameWorkflow,
+            onMoveWorkflowToProject,
+            onMoveWorkflowToWorkspace,
+            onExportWorkflow,
+            onDeleteWorkflow,
+          })}
+        />
+      )}
     </li>
   );
 }

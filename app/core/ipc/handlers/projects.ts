@@ -179,6 +179,14 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
     },
   })
 
+  router.register("projects", "moveToWorkspace", {
+    input: z
+      .object({ workspaceId: ws, collectionId: z.string().min(1), targetWorkspaceId: ws })
+      .strict(),
+    output: CollectionSchema,
+    handle: (i) => collections.moveToWorkspace(i.workspaceId, i.collectionId, i.targetWorkspaceId),
+  })
+
   router.register("projects", "addWorkflow", {
     input: membershipInput,
     output: WorkflowSchema,

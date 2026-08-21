@@ -15,6 +15,9 @@ export interface WorkflowListProps {
   onWorkflowClick: (workflow: Workflow) => void;
   onExportWorkflow: (workflow: Workflow) => void;
   onDeleteWorkflow: (workflowId: string, name: string) => void;
+  onRenameWorkflow: (workflow: Workflow) => void;
+  onMoveWorkflowToProject: (workflow: Workflow) => void;
+  onMoveWorkflowToWorkspace: (workflow: Workflow) => void;
   onCreateWorkflow: () => void;
   onLoadMore?: () => void;
 }

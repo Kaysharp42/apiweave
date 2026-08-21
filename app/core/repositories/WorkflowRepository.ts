@@ -83,6 +83,10 @@ export class WorkflowRepository {
     )
   }
 
+  public transaction<T>(fn: () => T): T {
+    return this.store.transaction(fn)
+  }
+
   public getById(workflowId: string): Workflow | undefined {
     return getMapped<WorkflowRow, Workflow>(this.store, GET_BY_ID_SQL, [workflowId], rowToWorkflow)
   }
@@ -200,6 +204,23 @@ export class WorkflowRepository {
       )
       return result.changes === 1 ? this.getById(workflowId) : undefined
     })
+  }
+
+  /**
+   * Reassign the owning workspace. Deliberately NOT a field of
+   * {@link WorkflowUpdate}: `workspace_id` is insert-only for every other
+   * caller, and each one of those is a within-workspace edit whose patch must
+   * never be able to carry the row out of the workspace the service already
+   * authorized. `scopeId` mirrors `workspace_id` on a workspace-scoped row
+   * (see `create`), so the two move together or the row's scope goes stale.
+   */
+  public setWorkspace(workflowId: string, workspaceId: string): Workflow | undefined {
+    if (this.getById(workflowId) === undefined) return undefined
+    this.store.set(
+      "UPDATE workflows SET workspace_id = ?, scopeId = ? WHERE id = ?",
+      [workspaceId, workspaceId, workflowId],
+    )
+    return this.getById(workflowId)
   }
 
   public delete(workflowId: string): boolean {

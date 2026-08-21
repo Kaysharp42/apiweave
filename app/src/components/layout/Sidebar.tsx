@@ -12,6 +12,7 @@ import WorkflowExportImport from "../WorkflowExportImport";
 import CollectionExportImport from "../CollectionExportImport";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { PromptDialog } from "../molecules/PromptDialog";
+import { SidebarRowDialogs } from "./sidebar/SidebarRowDialogs";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import useTabStore from "../../stores/TabStore";
@@ -26,6 +27,7 @@ import useNavigationStore from "../../stores/NavigationStore";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import { useNavigationSelection } from "../../hooks/useNavigationControls";
+import { useSidebarRowActions } from "../../hooks/useSidebarRowActions";
 import {
   workflowUrl,
   workflowsUrl,
@@ -401,6 +403,22 @@ export function Sidebar() {
     }
   };
 
+  const rowActions = useSidebarRowActions({
+    workspaceId,
+    isScopeReady,
+    selectedNav,
+    refreshAll,
+    allWorkflows,
+    onWorkflowLeft: (workflowId) =>
+      setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev)),
+    onProjectLeft: (projectId) =>
+      setExpandedProjects((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      }),
+  });
+
   const filteredWorkflows = useMemo(() => {
     if (!searchQuery) return workflows;
     const q = searchQuery.toLowerCase();
@@ -472,6 +490,9 @@ export function Sidebar() {
                   onDeleteWorkflow={(workflowId: string, name: string) =>
                     setDeleteWorkflowTarget({ workflowId, name })
                   }
+                  onRenameWorkflow={rowActions.open.renameWorkflow}
+                  onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
+                  onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
                   onCreateWorkflow={createNewWorkflow}
                   onLoadMore={handleLoadMore}
                 />
@@ -502,6 +523,11 @@ export function Sidebar() {
                 onDeleteProject={(projectId: string, name: string) =>
                   setDeleteProjectTarget({ projectId, name })
                 }
+                onRenameProject={rowActions.open.renameProject}
+                onMoveProjectToWorkspace={rowActions.open.moveProjectToWorkspace}
+                onRenameWorkflow={rowActions.open.renameWorkflow}
+                onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
+                onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
                 onCreateProject={() => setShowCollectionManager(true)}
                 onAddWorkflowToProject={(projectId: string) => {
                   setAddWorkflowToProjectTarget(projectId);
@@ -612,6 +638,14 @@ export function Sidebar() {
         message="Enter a name for the new workflow. It will be automatically assigned to this project."
         placeholder="My Workflow"
         submitLabel="Create & Assign"
+      />
+
+      <SidebarRowDialogs
+        actions={rowActions}
+        workspaceId={workspaceId}
+        projects={projects}
+        environments={environments}
+        allWorkflows={allWorkflows}
       />
     </>
   );

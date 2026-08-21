@@ -11,6 +11,7 @@ export {
 export { FormField } from "./FormField";
 export { Card } from "./Card";
 export { ConfirmDialog } from "./ConfirmDialog";
+export { ContextMenu } from "./ContextMenu";
 export { EmptyState } from "./EmptyState";
 export { KeyValueEditor } from "./KeyValueEditor";
 export { Modal } from "./Modal";

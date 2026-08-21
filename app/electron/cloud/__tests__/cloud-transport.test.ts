@@ -1512,6 +1512,110 @@ describe("CloudSyncProvider", () => {
       expect(nock.isDone()).toBe(true)
     })
 
+    // The server answers both "no such record" and "your expected revision is
+    // stale" with RECORD_NOT_FOUND (tombstoneRecord returns ErrRevMismatch for
+    // both), so a tombstone rejection is never terminal on its own. Leaving one
+    // dead-lettered strands the record in this workspace in the cloud, and a
+    // later pull re-materializes it — dragging a moved record back out of the
+    // workspace it was moved to.
+    const bindTombstoneWorkspace = (repository: CloudSyncRepository): void => {
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: WORKSPACE_ID,
+        cloudWorkspaceName: "Tombstone Workspace",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+    }
+
+    const rejectPushAsRecordNotFound = (): void => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas")
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 3, newRev: "0", rejectionReason: 3, conflictId: "" }],
+        })
+    }
+
+    it("retries a rejected tombstone at the confirmed revision instead of dead-lettering it", async () => {
+      const repository = new CloudSyncRepository(store)
+      bindTombstoneWorkspace(repository)
+      const tombstoneId = repository.enqueueOutbox({
+        kind: "workflow",
+        record_id: "workflow-moved-away",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 31,
+        op: "tombstone",
+        payload: null,
+      })
+      // The cloud only ever acknowledged rev 1 here, so asserting 31 is stale.
+      store.set(
+        "UPDATE cloud_record_state SET server_rev = 1 WHERE workspace_id = ? AND record_id = ?",
+        [WORKSPACE_ID, "workflow-moved-away"],
+      )
+      rejectPushAsRecordNotFound()
+
+      await provider.push()
+
+      expect(repository.countDeadLetterOutbox(WORKSPACE_ID)).toBe(0)
+      expect(store.get<{ expected_rev: number }>(
+        "SELECT expected_rev FROM cloud_outbox WHERE id = ?",
+        [tombstoneId],
+      )).toMatchObject({ expected_rev: 1 })
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBeNull()
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("settles a rejected tombstone that already asserted the confirmed revision", async () => {
+      const repository = new CloudSyncRepository(store)
+      bindTombstoneWorkspace(repository)
+      repository.enqueueOutbox({
+        kind: "workflow",
+        record_id: "workflow-already-gone",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 4,
+        op: "tombstone",
+        payload: null,
+      })
+      store.set(
+        "UPDATE cloud_record_state SET server_rev = 4 WHERE workspace_id = ? AND record_id = ?",
+        [WORKSPACE_ID, "workflow-already-gone"],
+      )
+      rejectPushAsRecordNotFound()
+
+      await provider.push()
+
+      // Nothing left to delete is the outcome the tombstone wanted.
+      expect(repository.countOutbox()).toBe(0)
+      expect(repository.countDeadLetterOutbox(WORKSPACE_ID)).toBe(0)
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError).toBeNull()
+      // The cloud holds nothing for this record now, so a later re-push of the
+      // same id must start from scratch rather than from the stale revision.
+      expect(repository.expectedRevisionForMutation(WORKSPACE_ID, "workflow", "workflow-already-gone", 77)).toBe(0)
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("still dead-letters an upsert rejected as record not found", async () => {
+      const repository = new CloudSyncRepository(store)
+      bindTombstoneWorkspace(repository)
+      repository.enqueueOutbox({
+        kind: "workflow",
+        record_id: "workflow-upsert-rejected",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 2,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Rejected" })),
+      })
+      rejectPushAsRecordNotFound()
+
+      await provider.push()
+
+      expect(repository.countDeadLetterOutbox(WORKSPACE_ID)).toBe(1)
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError)
+        .toContain("already removed in the cloud")
+      expect(nock.isDone()).toBe(true)
+    })
+
     it("throws on incompatible protocol version", async () => {
       nock(API_BASE)
         .post("/apiweave.v1.SyncService/Hello")

@@ -279,6 +279,24 @@ export const apiweave = {
         workflowId,
         environmentId,
       }),
+    /**
+     * Move a workflow to another workspace. `targetCollectionId` names a project
+     * in the TARGET workspace (or null for unassigned); the selected environment
+     * and any Call Workflow targets left behind are cleared server-side, so show
+     * the user what they lose before calling this.
+     */
+    moveToWorkspace: (
+      workspaceId: string,
+      workflowId: string,
+      targetWorkspaceId: string,
+      targetCollectionId: string | null,
+    ) =>
+      invoke<Workflow>("workflows", "moveToWorkspace", {
+        workspaceId,
+        workflowId,
+        targetWorkspaceId,
+        targetCollectionId,
+      }),
     import: (
       workspaceId: string,
       bundle: unknown,
@@ -521,6 +539,17 @@ export const apiweave = {
       }),
     delete: (workspaceId: string, collectionId: string) =>
       invoke<null>("projects", "delete", { workspaceId, collectionId }),
+    /** Move a project and every workflow in it to another workspace. */
+    moveToWorkspace: (
+      workspaceId: string,
+      collectionId: string,
+      targetWorkspaceId: string,
+    ) =>
+      invoke<Project>("projects", "moveToWorkspace", {
+        workspaceId,
+        collectionId,
+        targetWorkspaceId,
+      }),
     addWorkflow: (
       workspaceId: string,
       collectionId: string,

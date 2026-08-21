@@ -8,10 +8,16 @@ import type {
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
-import { recordCollectionTombstone, recordCollectionUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
-import { ConflictError, NotFoundError } from "../ipc/errors"
+import {
+  recordCollectionTombstone,
+  recordCollectionUpsert,
+  recordWorkflowTombstone,
+  recordWorkflowUpsert,
+} from "../sync/cloud-mutations"
+import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
+import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -69,6 +75,60 @@ export class CollectionService {
     recordCollectionTombstone(this.syncProvider, this.withCount(existing))
     this.collections.delete(collectionId)
     await this.syncProvider.push()
+  }
+
+  /**
+   * Move a project — and every workflow in it — into another workspace.
+   *
+   * The members are not optional cargo: a project whose workflows stayed behind
+   * would leave every one of them pointing at a `collectionId` in a workspace
+   * they are no longer in, which `assertCollectionInWorkspace` rejects on their
+   * next save. What does NOT come along is each workflow's selected environment,
+   * since an environment belongs to the workspace being left. Calls *between*
+   * workflows in this project survive; calls out to a workflow left behind are
+   * cleared (see {@link clearDepartingCallTargets}).
+   */
+  async moveToWorkspace(
+    workspaceId: string,
+    collectionId: string,
+    targetWorkspaceId: string,
+  ): Promise<Collection> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
+    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_COLLECTIONS)
+    const existing = this.mustGet(workspaceId, collectionId)
+    if (targetWorkspaceId === workspaceId) {
+      throw new ValidationError("project is already in this workspace")
+    }
+
+    const members = this.workflows.listByCollection(workspaceId, collectionId).items
+    const movingWorkflowIds = new Set(members.map((workflow) => workflow.workflowId))
+
+    // Keyed by workspace, so leaving reads as a deletion from the source — see
+    // the matching note in `WorkflowService.moveToWorkspace`.
+    recordCollectionTombstone(this.syncProvider, this.withCount(existing))
+    for (const member of members) recordWorkflowTombstone(this.syncProvider, member)
+
+    const moved = this.collections.transaction(() => {
+      this.collections.setWorkspace(collectionId, targetWorkspaceId)
+      for (const member of members) {
+        this.workflows.setWorkspace(member.workflowId, targetWorkspaceId)
+        this.workflows.update(member.workflowId, {
+          selectedEnvironmentId: null,
+          nodes: clearDepartingCallTargets(member.nodes, movingWorkflowIds),
+        })
+      }
+      return this.collections.getById(collectionId)
+    })
+    if (moved === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
+
+    const withCount = this.withCount(moved)
+    recordCollectionUpsert(this.syncProvider, withCount)
+    for (const member of members) {
+      const relocated = this.workflows.getById(member.workflowId)
+      if (relocated !== undefined) recordWorkflowUpsert(this.syncProvider, relocated)
+    }
+    await this.syncProvider.push()
+    return withCount
   }
 
   async addWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {

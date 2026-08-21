@@ -408,6 +408,46 @@ describe("DesktopCloudSyncControl", () => {
     expect(store.get("SELECT 1 FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeDefined()
   })
 
+  it("rebases the rows that survive a discard onto the revision the cloud confirmed", () => {
+    const repository = new CloudSyncRepository(store)
+    // The cloud is at rev 1; the queue then chained four local edits onto it
+    // without ever landing them, so the last one asserts rev 5.
+    for (let expectedRev = 1; expectedRev <= 4; expectedRev += 1) {
+      repository.enqueueOutbox({
+        kind: "workflow",
+        record_id: "workflow-chained",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: expectedRev,
+        op: "upsert",
+        payload: new Uint8Array(),
+      })
+    }
+    store.set(
+      "UPDATE cloud_record_state SET server_rev = 1 WHERE workspace_id = ? AND record_id = ?",
+      [WORKSPACE_ID, "workflow-chained"],
+    )
+    const survivorId = repository.enqueueOutbox({
+      kind: "workflow",
+      record_id: "workflow-chained",
+      workspace_id: WORKSPACE_ID,
+      expected_rev: 5,
+      op: "tombstone",
+      payload: null,
+    })
+    // Only the four upserts are dropped; the tombstone behind them is not.
+    store.set("UPDATE cloud_outbox SET retry_count = ? WHERE id <> ?", [CLOUD_OUTBOX_MAX_RETRIES, survivorId])
+
+    expect(repository.discardDeadLetterOutbox(WORKSPACE_ID)).toBe(4)
+
+    // Without a rebase the survivor still demands rev 5, which the cloud can
+    // now never reach — it would fail forever, reported as "record not found".
+    expect(store.get<{ expected_rev: number }>(
+      "SELECT expected_rev FROM cloud_outbox WHERE id = ?",
+      [survivorId],
+    )).toMatchObject({ expected_rev: 1 })
+    expect(repository.expectedRevisionForMutation(WORKSPACE_ID, "workflow", "workflow-chained", 99)).toBe(2)
+  })
+
   it("re-queues on retry and reports offline (not a hard error) when the push cannot reach the server", async () => {
     const repository = new CloudSyncRepository(store)
     const tokenStore = new DeviceTokenStore(repository, keyfilePath)
