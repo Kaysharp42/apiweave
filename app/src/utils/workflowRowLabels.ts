@@ -2,16 +2,7 @@ import { getSidebarItemLabel } from "./sidebarItemLabel";
 import type { Project } from "../types/Project";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { Workflow } from "../types/Workflow";
-
-type ItemLabel = ReturnType<typeof getSidebarItemLabel>;
-
-export interface WorkflowRowLabels {
-  readonly name: ItemLabel;
-  /** Null when the workflow is in no project, or its project is not in `collections`. */
-  readonly collection: ItemLabel | null;
-  /** Null when no environment is selected for this workflow. */
-  readonly environment: ItemLabel | null;
-}
+import type { WorkflowRowLabels } from "../types/WorkflowRowLabels";
 
 /**
  * The three truncated labels a sidebar workflow row shows.

@@ -131,6 +131,7 @@ export type { SidebarState } from "./SidebarState";
 export type { TabState } from "./TabState";
 export type { CanvasState } from "./CanvasState";
 export type { WorkflowItemProps } from "./WorkflowItemProps";
+export type { WorkflowRowLabels } from "./WorkflowRowLabels";
 export type { WorkflowListProps } from "./WorkflowListProps";
 export type { ProjectItemProps } from "./ProjectItemProps";
 export type { ProjectListProps } from "./ProjectListProps";

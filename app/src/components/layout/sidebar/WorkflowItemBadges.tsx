@@ -1,6 +1,6 @@
 import { Globe } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
-import type { WorkflowRowLabels } from "../../../utils/workflowRowLabels";
+import type { WorkflowRowLabels } from "../../../types/WorkflowRowLabels";
 
 interface WorkflowItemBadgesProps {
   readonly nodeCount: number;
