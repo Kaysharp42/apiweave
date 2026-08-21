@@ -322,3 +322,5 @@ export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceIn
 export type { CloudSyncStatus } from "./CloudSyncStatus";
 export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
 export type { AgentLaunchMenuItem } from "./AgentLaunchMenuItem";
+export type { DetachDecisionInput } from "./DetachDecisionInput";
+export type { BackgroundRefreshInput } from "./BackgroundRefreshInput";

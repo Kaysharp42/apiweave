@@ -62,7 +62,7 @@ export class CloudSyncProvider implements SyncProvider {
   public constructor(
     private readonly client: CloudClient,
     tokenStoreOrCallback: DeviceTokenStore | ((state: SyncState) => void),
-    store?: KVStore,
+    store?: KVStore | CloudSyncRepository,
     config?: CloudSyncConfig,
     onStateChange?: (state: SyncState) => void,
   ) {
@@ -73,7 +73,10 @@ export class CloudSyncProvider implements SyncProvider {
         this.onStateChange = onStateChange
       }
       if (store) {
-        const repository = new CloudSyncRepository(store)
+        // Accept a caller-built repository: the pull path applies workflow rows
+        // through it, so wrapping a bare store here would drop the observer
+        // that broadcasts those writes to an open canvas.
+        const repository = store instanceof CloudSyncRepository ? store : new CloudSyncRepository(store)
         this.repository = repository
         this.cursorStore = new CursorStore(repository)
         this.outbox = new Outbox(repository)

@@ -136,6 +136,7 @@ export async function installDesktopIpc(page: Page): Promise<void> {
         },
         onRunProgress: () => () => undefined,
         onCloudStatusChanged: () => () => undefined,
+        onWorkflowChanged: () => () => undefined,
       };
     },
     { workflow: DESKTOP_WORKFLOW, workspace: DESKTOP_WORKSPACE },

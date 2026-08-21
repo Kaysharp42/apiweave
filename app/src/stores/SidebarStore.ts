@@ -32,6 +32,14 @@ interface SidebarState {
   activeWorkspaceId: string | null;
   setSearchQuery: (q: string) => void;
   signalWorkflowsRefresh: () => void;
+  /**
+   * Merge one authoritative workflow into the cached lists in place. A live
+   * canvas update only needs the row it changed — a full refetch here would
+   * reset pagination and replace the visible list on every applied snapshot.
+   * Falls back to the refresh signal only when the change moves the row into a
+   * list it is not cached in, which no in-place edit can position.
+   */
+  applyWorkflowChange: (workflow: Workflow) => void;
   signalCollectionsRefresh: () => void;
   signalProjectsRefresh: () => void;
   setActiveWorkspaceId: (workspaceId: string | null) => void;
@@ -71,6 +79,50 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
 
   signalWorkflowsRefresh: () =>
     set((s) => ({ workflowVersion: s.workflowVersion + 1 })),
+
+  applyWorkflowChange: (workflow: Workflow) =>
+    set((s) => {
+      const id = workflow.workflowId;
+      const inWorkflows = s.workflows.some((w) => w.workflowId === id);
+      const inAllWorkflows = s.allWorkflows.some((w) => w.workflowId === id);
+      // Cached in neither list: the row sits outside the sidebar's fetched
+      // window, so nothing on screen is stale and a refetch would cost the
+      // user their pagination for no visible gain.
+      if (!inWorkflows && !inAllWorkflows) {
+        return { workflows: s.workflows, allWorkflows: s.allWorkflows };
+      }
+
+      const inWorkspace =
+        s.activeWorkspaceId === null ||
+        workflow.workspaceId === s.activeWorkspaceId;
+      // `fetchWorkflows` passes includeAttached: false, so the flat list holds
+      // unattached rows only, while `allWorkflows` holds every row in the
+      // workspace. A change can therefore carry a row out of one list, out of
+      // both, or into one — patching in place only covers the first two.
+      const belongsInWorkflows =
+        inWorkspace && (workflow.collectionId ?? null) === null;
+
+      // Detaching a row from its project makes it newly eligible for the flat
+      // list, and its position there follows server ordering across pages that
+      // were never fetched — only a refetch can place it correctly.
+      if (belongsInWorkflows && !inWorkflows) {
+        return { workflowVersion: s.workflowVersion + 1 };
+      }
+
+      const merge = (rows: Workflow[], keep: boolean): Workflow[] =>
+        keep
+          ? rows.map((w) => (w.workflowId === id ? workflow : w))
+          : rows.filter((w) => w.workflowId !== id);
+
+      return {
+        workflows: inWorkflows
+          ? merge(s.workflows, belongsInWorkflows)
+          : s.workflows,
+        allWorkflows: inAllWorkflows
+          ? merge(s.allWorkflows, inWorkspace)
+          : s.allWorkflows,
+      };
+    }),
 
   signalCollectionsRefresh: () =>
     set((s) => ({ collectionVersion: s.collectionVersion + 1 })),

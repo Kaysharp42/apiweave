@@ -14,6 +14,7 @@ export interface SidebarState {
   collectionVersion: number;
   setSearchQuery: (q: string) => void;
   signalWorkflowsRefresh: () => void;
+  applyWorkflowChange: (workflow: Workflow) => void;
   signalCollectionsRefresh: () => void;
   fetchWorkflows: (
     skip?: number,

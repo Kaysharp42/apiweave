@@ -2,6 +2,7 @@
 import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { slugify } from "./helpers"
+import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
 import { containsCredentialMaterial, isSyncSensitiveKey, isWithheldSyncValue } from "../services/secret_utils"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
@@ -268,10 +269,29 @@ export class ErrUnknownCloudKind extends Error {
 }
 
 export class CloudSyncRepository {
-  public constructor(private readonly store: KVStore) {}
+  public constructor(
+    private readonly store: KVStore,
+    private readonly onWorkflowChanged?: (workspaceId: string, workflowId: string, deleted: boolean) => void,
+    /**
+     * Key identifying the transaction-notification scope, which is NOT
+     * interchangeable with `store`: the nested instances {@link transaction}
+     * builds run their SQL on the savepoint's `tx` handle, but must queue
+     * against the outermost store the scope was opened on. Keying a send on
+     * `tx` would find no open scope and deliver mid-transaction.
+     */
+    private readonly notificationScope: object = store,
+  ) {}
 
+  /**
+   * Pulled changes hold their notifications until commit, like every other
+   * repository over this store — a pull applies one change per transaction,
+   * and the renderer must not see a snapshot the transaction can still roll
+   * back.
+   */
   public transaction<T>(fn: (repository: CloudSyncRepository) => T): T {
-    return this.store.transaction((tx) => fn(new CloudSyncRepository(tx)))
+    return holdNotificationsUntilCommit(this.notificationScope, () =>
+      this.store.transaction((tx) => fn(new CloudSyncRepository(tx, this.onWorkflowChanged, this.notificationScope))),
+    )
   }
 
   public getSetting(key: string): string | undefined {
@@ -662,8 +682,8 @@ export class CloudSyncRepository {
   }
 
   public resolveConflict(conflictId: string, winner: CloudConflictWinner): void {
-    this.store.transaction((store) => {
-      new CloudSyncRepository(store).resolveConflictInTransaction(conflictId, winner)
+    this.transaction((repository) => {
+      repository.resolveConflictInTransaction(conflictId, winner)
     })
   }
 
@@ -762,8 +782,8 @@ export class CloudSyncRepository {
     conflictId: string,
     loserPayload: Uint8Array,
   ): "local" | "cloud" | "ambiguous" | "missing" {
-    return this.store.transaction((store) =>
-      new CloudSyncRepository(store).reconcileRemoteResolvedInTransaction(conflictId, loserPayload),
+    return this.transaction((repository) =>
+      repository.reconcileRemoteResolvedInTransaction(conflictId, loserPayload),
     )
   }
 
@@ -851,8 +871,8 @@ export class CloudSyncRepository {
   // Any newer local edit queued behind the conflict is re-pushed on top of the
   // merged rev so it is not lost.
   public resolveConflictMerged(conflictId: string, resultingRev: number, mergedPayload: Uint8Array): void {
-    this.store.transaction((store) => {
-      new CloudSyncRepository(store).resolveConflictMergedInTransaction(conflictId, resultingRev, mergedPayload)
+    this.transaction((repository) => {
+      repository.resolveConflictMergedInTransaction(conflictId, resultingRev, mergedPayload)
     })
   }
 
@@ -1261,7 +1281,9 @@ export class CloudSyncRepository {
         this.store.delete(`DELETE FROM collections WHERE id = ?${revisionGuard}`, params)
         break
       case RecordKind.WORKFLOW:
-        this.store.delete(`DELETE FROM workflows WHERE id = ?${revisionGuard}`, params)
+        if (this.store.delete(`DELETE FROM workflows WHERE id = ?${revisionGuard}`, params).changes > 0) {
+          this.notifyWorkflowChanged(change.workspaceId, change.recordId, true)
+        }
         break
       case RecordKind.ENVIRONMENT:
         this.store.delete(`DELETE FROM environments WHERE id = ?${revisionGuard}`, params)
@@ -1325,20 +1347,10 @@ export class CloudSyncRepository {
 
   private upsertWorkflow(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {
     const name = String(payload["name"] ?? "")
-    const legacyGraph = objectProperty(payload, "graph")
-    const graphJson = JSON.stringify({
-      nodes: payload["nodes"] ?? legacyGraph["nodes"] ?? [],
-      edges: payload["edges"] ?? legacyGraph["edges"] ?? [],
-    })
+    const graphJson = this.buildWorkflowGraphJson(payload)
     const variablesJson = JSON.stringify(payload["variables"] ?? {})
-    const settingsJson = JSON.stringify({
-      description: payload["description"] ?? null,
-      tags: payload["tags"] ?? [],
-      collectionId: payload["collectionId"] ?? null,
-      selectedEnvironmentId: payload["selectedEnvironmentId"] ?? null,
-      nodeTemplates: payload["nodeTemplates"] ?? [],
-    })
-    this.store.set(
+    const settingsJson = this.buildWorkflowSettingsJson(payload)
+    const result = this.store.set(
       `INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,
        slug = excluded.slug, graph_json = excluded.graph_json, variables_json = excluded.variables_json,
@@ -1346,6 +1358,46 @@ export class CloudSyncRepository {
        ${force ? "" : "WHERE excluded.rev > workflows.rev"}`,
       [id, workspaceId, workspaceId, name, slugify(name, id), graphJson, variablesJson, settingsJson, Number(rev)],
     )
+    // A rev-guarded no-op (`changes === 0`) changed nothing; only a real
+    // insert or update is worth a renderer round-trip.
+    if (result.changes > 0) {
+      this.notifyWorkflowChanged(workspaceId, id, false)
+    }
+  }
+
+  private buildWorkflowGraphJson(payload: Record<string, unknown>): string {
+    const legacyGraph = objectProperty(payload, "graph")
+    return JSON.stringify({
+      nodes: payload["nodes"] ?? legacyGraph["nodes"] ?? [],
+      edges: payload["edges"] ?? legacyGraph["edges"] ?? [],
+    })
+  }
+
+  private buildWorkflowSettingsJson(payload: Record<string, unknown>): string {
+    return JSON.stringify({
+      description: payload["description"] ?? null,
+      tags: payload["tags"] ?? [],
+      collectionId: payload["collectionId"] ?? null,
+      selectedEnvironmentId: payload["selectedEnvironmentId"] ?? null,
+      nodeTemplates: payload["nodeTemplates"] ?? [],
+    })
+  }
+
+  /**
+   * Pulled workflow writes bypass `WorkflowRepository` (raw rev-guarded SQL),
+   * so without this signal an open canvas never hears about them. The callback
+   * resolves the authoritative row — or its absence, for a tombstone — and
+   * broadcasts; delivery waits for the surrounding transaction to commit.
+   */
+  private notifyWorkflowChanged(workspaceId: string, workflowId: string, deleted: boolean): void {
+    if (this.onWorkflowChanged === undefined) return
+    sendOrHoldNotification(this.notificationScope, () => {
+      try {
+        this.onWorkflowChanged?.(workspaceId, workflowId, deleted)
+      } catch (error) {
+        console.error("[cloud-sync] workflow-changed observer failed", workflowId, error)
+      }
+    })
   }
 
   private upsertEnvironment(workspaceId: string, id: string, rev: bigint, payload: Record<string, unknown>, force: boolean): void {

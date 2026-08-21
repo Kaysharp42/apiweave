@@ -5,6 +5,8 @@ interface UseAutoSaveParams {
   workflowId: string | undefined;
   autoSaveEnabled: boolean;
   isHydrated?: boolean;
+  /** Changes when a server snapshot replaces the live canvas. */
+  resetSnapshotKey?: number;
   nodes: unknown[];
   edges: unknown[];
   workflowVariables: Record<string, unknown>;
@@ -27,6 +29,7 @@ export default function useAutoSave({
   workflowId,
   autoSaveEnabled,
   isHydrated = true,
+  resetSnapshotKey = 0,
   nodes,
   edges,
   workflowVariables,
@@ -86,6 +89,33 @@ export default function useAutoSave({
     }
     return parts.join("|");
   }, [edges]);
+
+  const currentSnapshotRef = useRef<Snapshot>({
+    nodes: nodesSig,
+    edges: edgesSig,
+    vars: workflowVariables,
+  });
+  currentSnapshotRef.current = {
+    nodes: nodesSig,
+    edges: edgesSig,
+    vars: workflowVariables,
+  };
+
+  useEffect(() => {
+    // The reset is for live snapshots that replace the canvas (e.g. MCP writes).
+    // On the very first mount lastSnapshot is null and will be initialized by
+    // the autosave effect once hydration completes — overwriting null with the
+    // pre-hydration empty snapshot would make the first real hydration look
+    // like a dirty edit and fire an immediate autosave.
+    if (
+      lastSnapshotRef.current.nodes === null &&
+      lastSnapshotRef.current.edges === null &&
+      lastSnapshotRef.current.vars === null
+    ) {
+      return;
+    }
+    lastSnapshotRef.current = currentSnapshotRef.current;
+  }, [resetSnapshotKey]);
 
   useEffect(() => {
     if (!autoSaveEnabled || !workflowId || !isHydrated) return;

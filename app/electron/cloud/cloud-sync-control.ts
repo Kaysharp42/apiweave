@@ -67,6 +67,13 @@ export interface DesktopCloudSyncControlOptions {
   readonly linkClient?: typeof startDeviceLink
   readonly setSyncProviderTarget: (provider: SyncProvider) => void
   readonly onStatusChanged?: () => void
+  /**
+   * Pulled workflow writes land in SQLite through this repository's raw SQL,
+   * not through `WorkflowRepository`, so the open-canvas broadcast needs its
+   * own hook here. `deleted` reports a pulled tombstone; for an upsert the
+   * caller resolves the authoritative row itself.
+   */
+  readonly onWorkflowChanged?: (workspaceId: string, workflowId: string, deleted: boolean) => void
 }
 
 const KEY_PUBLIC_CONFIG = "cloud.public_config"
@@ -87,7 +94,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   private reconcileInFlight: Promise<void> | null = null
 
   public constructor(private readonly options: DesktopCloudSyncControlOptions) {
-    this.repository = new CloudSyncRepository(options.store)
+    this.repository = new CloudSyncRepository(options.store, options.onWorkflowChanged)
     this.tokenStore = new DeviceTokenStore(this.repository, options.keyfilePath)
     this.firstSyncService = new CloudFirstSyncService(options.store)
     this.activeConfig = this.loadPersistedConfig()
@@ -658,7 +665,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
 
     const client = this.createClient(this.activeConfig)
-    const provider = new CloudSyncProvider(client, this.tokenStore, this.options.store, {
+    const provider = new CloudSyncProvider(client, this.tokenStore, this.repository, {
       workspaceBindings,
     }, (state) => {
       setState(state)

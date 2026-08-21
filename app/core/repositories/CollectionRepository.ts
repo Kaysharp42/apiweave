@@ -3,6 +3,7 @@ import type { Collection } from "@shared/types/Collection"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
 import { generateId } from "../id"
 import { mustExist, parseJson, slugify, toJson } from "./helpers"
+import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &
   Partial<Pick<Collection, "projectId" | "description" | "color" | "workflowOrder" | "continueOnFail">>
@@ -35,8 +36,15 @@ interface CollectionSettings {
 export class CollectionRepository {
   public constructor(private readonly store: KVStore) {}
 
+  /**
+   * Same contract as `WorkflowRepository.transaction`: notifications raised by
+   * any repository over this store wait for the outermost commit. Project
+   * import runs `workflows.create` inside this transaction — without the
+   * scope here, those creates would announce workflows an import rollback
+   * disowns.
+   */
   public transaction<T>(fn: () => T): T {
-    return this.store.transaction(fn)
+    return holdNotificationsUntilCommit(this.store, () => this.store.transaction(fn))
   }
 
   public create(input: CollectionCreate): Collection {
