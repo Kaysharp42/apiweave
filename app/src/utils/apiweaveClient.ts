@@ -10,6 +10,7 @@ import type { AgentScope } from "@shared/types/AgentScope";
 import type { AgentSession } from "@shared/types/AgentSession";
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent";
 import type { AgentOutputEvent } from "@shared/types/AgentOutputEvent";
+import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent";
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent";
 import type {
   AgentEmbeddedLaunchRequest,
@@ -79,7 +80,9 @@ type IpcBridge = {
     callback: (event: RunProgressEvent) => void,
   ) => () => void;
   readonly onCloudStatusChanged?: (callback: () => void) => () => void;
-  readonly onWorkflowChanged?: (callback: (workflow: Workflow) => void) => () => void;
+  readonly onWorkflowChanged?: (
+    callback: (event: WorkflowChangedEvent) => void,
+  ) => () => void;
 };
 
 type DesktopBridge = {
@@ -647,7 +650,7 @@ export function onCloudStatusChanged(callback: () => void): () => void {
 }
 
 /** Subscribe to authoritative workflow writes made by another process or tab. */
-export function onWorkflowChanged(callback: (workflow: Workflow) => void): () => void {
+export function onWorkflowChanged(callback: (event: WorkflowChangedEvent) => void): () => void {
   return getIpcBridge().onWorkflowChanged?.(callback) ?? (() => undefined);
 }
 

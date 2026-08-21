@@ -57,6 +57,12 @@ export interface SyncConflictResolver {
 export interface ConflictUiBridgeOptions {
   readonly store: KVStore
   readonly syncService: SyncConflictResolver
+  /**
+   * Resolving a conflict can write the winning payload into the workflows
+   * table through this bridge's own repository, so the open-canvas broadcast
+   * needs the same hook the pull path uses.
+   */
+  readonly onWorkflowChanged?: (workspaceId: string, workflowId: string, deleted: boolean) => void
 }
 
 const winnerSchema = z.enum(["local", "cloud", "merged"])
@@ -129,7 +135,7 @@ export class ConflictUiBridge {
   private readonly repository: CloudSyncRepository
 
   public constructor(private readonly options: ConflictUiBridgeOptions) {
-    this.repository = new CloudSyncRepository(options.store)
+    this.repository = new CloudSyncRepository(options.store, options.onWorkflowChanged)
   }
 
   public list(input: { readonly resolved?: boolean; readonly since_days?: number } = {}): readonly z.infer<typeof conflictListItemSchema>[] {

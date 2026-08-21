@@ -52,6 +52,7 @@ describe("DesktopCloudSyncControl", () => {
   function linkedControlFixture(
     repository: CloudSyncRepository,
     accountId: string,
+    overrides: Partial<ConstructorParameters<typeof DesktopCloudSyncControl>[0]> = {},
   ): DesktopCloudSyncControl {
     new DeviceTokenStore(repository, keyfilePath).setTokens("device-1", "access-token", "refresh-token")
     repository.upsertDevice({
@@ -88,6 +89,7 @@ describe("DesktopCloudSyncControl", () => {
         deviceLabel: "Test Device",
       },
       setSyncProviderTarget: () => undefined,
+      ...overrides,
     })
   }
 
@@ -1019,5 +1021,64 @@ describe("DesktopCloudSyncControl", () => {
     await expect(mismatched.link({})).rejects.toThrow(CloudAccountMismatchError)
     expect(repository.getSetting("cloud.device_id")).toBeUndefined()
     expect(repository.getSetting("cloud.account_identity")).toBe(JSON.stringify({ accountId: "original-account" }))
+  })
+
+  it("reports workflows applied by a pull to the open-canvas observer", async () => {
+    const repository = new CloudSyncRepository(store)
+    const changed: Array<{ workspaceId: string; workflowId: string; deleted: boolean }> = []
+    let activated: SyncProvider | null = null
+
+    // The control's own repository is not the one that applies pulls: the
+    // activated provider builds that. Both have to carry the observer, or a
+    // workflow edited on another device lands in SQLite with the canvas that
+    // has it open none the wiser.
+    linkedControlFixture(repository, "account-a", {
+      onWorkflowChanged: (workspaceId, workflowId, deleted) => {
+        changed.push({ workspaceId, workflowId, deleted })
+      },
+      setSyncProviderTarget: (provider) => {
+        activated = provider
+      },
+    })
+
+    nock("https://auth.test").post("/oauth/v2/token").reply(200, { id_token: "pull-id-token" })
+    nock("https://api.test")
+      .post("/desktop/auth/session", { idToken: "pull-id-token" })
+      .reply(200, { sessionToken: "pull-session", expiresAt: "2026-07-17T00:00:00Z" })
+    nock("https://api.test")
+      .post("/apiweave.v1.SyncService/Hello")
+      .reply(200, {
+        protocolVersion: 1,
+        serverNow: "2026-07-11T12:00:00Z",
+        fullResyncRequired: false,
+      })
+    nock("https://api.test")
+      .post("/apiweave.v1.SyncService/PullChanges")
+      .reply(200, {
+        changes: [
+          {
+            cursor: "42",
+            workspaceId: { value: CLOUD_WORKSPACE_ID },
+            kind: 3,
+            recordId: "workflow-pulled-1",
+            rev: "7",
+            op: 1,
+            payload: Buffer.from(
+              JSON.stringify({ name: "Pulled Workflow", nodes: [], edges: [], variables: {} }),
+            ).toString("base64"),
+          },
+        ],
+        nextCursor: "42",
+        hasMore: false,
+      })
+
+    expect(activated).not.toBeNull()
+    await activated?.pull()
+
+    // The observer must report the LOCAL workspace id — the canvas is scoped to
+    // that, not to the cloud workspace the change arrived under.
+    expect(changed).toEqual([
+      { workspaceId: WORKSPACE_ID, workflowId: "workflow-pulled-1", deleted: false },
+    ])
   })
 })

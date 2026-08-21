@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { apiweave } from "../utils/apiweaveClient";
+import { noteLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
 import useTabStore from "../stores/TabStore";
 import type { Project } from "../types/Project";
 import type { SidebarRowActions } from "../types/SidebarRowActions";
@@ -146,6 +147,11 @@ export function useSidebarRowActions(
     }
     const { workflowId } = moveWorkflowToWorkspace;
     try {
+      // The move leaves the workspace this canvas is scoped to, so it is
+      // broadcast as a detach. Marked before the request: `relocateOpenTab`
+      // below keeps the tab open on purpose, and the detach handler would
+      // otherwise close it out from under the user.
+      noteLocalWorkflowRemoval(workflowId);
       const moved = await apiweave.workflows.moveToWorkspace(
         scope,
         workflowId,

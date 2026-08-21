@@ -101,8 +101,9 @@ describe("WorkflowRepository", () => {
   it("publishes the authoritative snapshot after a write", () => {
     const workspaceId = seedWorkspace()
     const changes: string[] = []
-    const observed = new WorkflowRepository(db.kvStore, (workflow) => {
-      changes.push(`${workflow.workflowId}:${workflow.rev}:${workflow.name}`)
+    const observed = new WorkflowRepository(db.kvStore, (event) => {
+      if (event.kind !== "upsert") return
+      changes.push(`${event.workflow.workflowId}:${event.workflow.rev}:${event.workflow.name}`)
     })
 
     const created = observed.create({ workspaceId, name: "before" })

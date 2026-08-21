@@ -1,5 +1,6 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { Workflow } from "@shared/types/Workflow"
+import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { JsonValue } from "@shared/types/JsonValue"
@@ -14,6 +15,7 @@ import {
   slugify,
   toJson,
 } from "./helpers"
+import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 
 export type WorkflowCreate = Pick<Workflow, "workspaceId" | "name"> &
   Partial<
@@ -64,7 +66,7 @@ interface WorkflowSettings {
 export class WorkflowRepository {
   public constructor(
     private readonly store: KVStore,
-    private readonly onChanged?: (workflow: Workflow) => void,
+    private readonly onChanged?: (event: WorkflowChangedEvent) => void,
   ) {}
 
   public create(input: WorkflowCreate): Workflow {
@@ -88,8 +90,13 @@ export class WorkflowRepository {
     return created
   }
 
+  /**
+   * Transactions hold write notifications until the outermost commit, so a
+   * caller composing several writes (an import, a workspace move) cannot
+   * announce snapshots that a later rollback would disown.
+   */
   public transaction<T>(fn: () => T): T {
-    return this.store.transaction(fn)
+    return holdNotificationsUntilCommit(this.store, () => this.store.transaction(fn))
   }
 
   public getById(workflowId: string): Workflow | undefined {
@@ -170,7 +177,7 @@ export class WorkflowRepository {
    * a conflict rather than silently overwritten.
    */
   public updateAtRevision(workflowId: string, expectedRevision: number, patch: WorkflowUpdate): Workflow | undefined {
-    return this.store.transaction(() => {
+    return this.transaction(() => {
       const existing = this.getById(workflowId)
       if (existing === undefined || existing.rev !== expectedRevision) return undefined
       return this.update(workflowId, patch)
@@ -185,7 +192,7 @@ export class WorkflowRepository {
     mode: "append" | "replace",
     rules: readonly AssertionItem[],
   ): Workflow | undefined {
-    return this.store.transaction(() => {
+    return this.transaction(() => {
       const existing = this.getById(workflowId)
       if (existing === undefined || existing.rev !== expectedRevision) return undefined
 
@@ -229,20 +236,46 @@ export class WorkflowRepository {
       "UPDATE workflows SET workspace_id = ?, scopeId = ? WHERE id = ?",
       [workspaceId, workspaceId, workflowId],
     )
-    return this.getById(workflowId)
+    const moved = this.getById(workflowId)
+    // A move takes the row out of the workspace the open canvas scoped itself
+    // to; the renderer needs the event to recognize that and let go of it.
+    if (moved !== undefined) this.notifyChanged(moved)
+    return moved
   }
 
   public delete(workflowId: string): boolean {
-    return this.store.delete("DELETE FROM workflows WHERE id = ?", [workflowId]).changes > 0
+    const existing = this.getById(workflowId)
+    if (existing === undefined) return false
+    const deleted = this.store.delete("DELETE FROM workflows WHERE id = ?", [workflowId]).changes > 0
+    if (deleted) {
+      this.notifyDeleted(existing.workspaceId, workflowId)
+    }
+    return deleted
   }
 
-  /** Notifications are best-effort and must never turn a committed write into a failure. */
+  /**
+   * Notifications are best-effort and must never turn a committed write into a
+   * failure. Inside a transaction they wait for the commit — announcing a write
+   * that can still roll back would hand the renderer a phantom snapshot.
+   */
   private notifyChanged(workflow: Workflow): void {
-    try {
-      this.onChanged?.(workflow)
-    } catch {
-      // The database write has already succeeded; an observer cannot undo it.
-    }
+    sendOrHoldNotification(this.store, () => {
+      try {
+        this.onChanged?.({ kind: "upsert", workflow })
+      } catch (error) {
+        console.error("[workflow-notify] observer failed for workflow", workflow.workflowId, error)
+      }
+    })
+  }
+
+  private notifyDeleted(workspaceId: string, workflowId: string): void {
+    sendOrHoldNotification(this.store, () => {
+      try {
+        this.onChanged?.({ kind: "delete", workspaceId, workflowId })
+      } catch (error) {
+        console.error("[workflow-notify] observer failed for workflow", workflowId, error)
+      }
+    })
   }
 }
 

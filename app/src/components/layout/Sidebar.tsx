@@ -23,6 +23,7 @@ import {
 import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
 import { authenticatedFetch } from "../../utils/apiweaveClient";
+import { noteLocalWorkflowRemoval } from "../../utils/localWorkflowRemovals";
 import useNavigationStore from "../../stores/NavigationStore";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
@@ -344,6 +345,12 @@ export function Sidebar() {
     }
 
     try {
+      // Marked before the request: the deletion is broadcast after commit and
+      // can reach the open canvas before this await resolves, which would toast
+      // a second time and blame an agent for what the user just did.
+      if (deleteWorkflowTarget?.workflowId) {
+        noteLocalWorkflowRemoval(deleteWorkflowTarget.workflowId);
+      }
       const result = await requestWorkflowDeletion({
         target: deleteWorkflowTarget,
         apiBaseUrl: API_BASE_URL,

@@ -66,6 +66,11 @@ import {
   preserveCanvasRuntimeState,
   useHydration,
 } from "../hooks/useHydration";
+import { isLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
+import {
+  canApplyBackgroundRefresh,
+  shouldActOnDetach,
+} from "../utils/canvasRefreshGuards";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
@@ -448,7 +453,12 @@ export function WorkflowCanvas({
       updateVariables(canvasState.variables);
       if (workflowId) {
         useTabStore.getState().updateTabWorkflow(workflowId, source);
-        useSidebarStore.getState().signalWorkflowsRefresh();
+        // The canvas now shows exactly what the server has, so any lingering
+        // unsaved-changes flag is a lie about this graph.
+        useTabStore.getState().markClean(workflowId);
+        // Patch the sidebar row in place: a full refresh per applied snapshot
+        // reset its pagination and replaced the visible list on every update.
+        useSidebarStore.getState().applyWorkflowChange(source);
       }
       hydratedBaselineRef.current = {
         nodeCount: canvasState.nodes.length,
@@ -458,21 +468,36 @@ export function WorkflowCanvas({
     [workflowId, setNodes, setEdges, updateVariables],
   );
 
-  const reloadWorkflowFromServer = useCallback(async () => {
-    if (!workflowId || !scope.workspaceId) return;
+  const reloadWorkflowFromServer = useCallback(
+    async (options?: { readonly onlyIfPristine?: boolean }) => {
+      if (!workflowId || !scope.workspaceId) return;
+      const hydrationAtRequest = hydrationVersionRef.current;
 
-    try {
-      const response = await authenticatedFetch(
-        workflowDetailUrl(scope.workspaceId, workflowId),
-      );
-      if (response.ok) {
+      try {
+        const response = await authenticatedFetch(
+          workflowDetailUrl(scope.workspaceId, workflowId),
+        );
+        if (!response.ok) return;
         const reloadedWorkflow = WorkflowSchema.parse(await response.json());
+        if (
+          options?.onlyIfPristine &&
+          !canApplyBackgroundRefresh({
+            hydrationVersionAtRequest: hydrationAtRequest,
+            hydrationVersionNow: hydrationVersionRef.current,
+            tabIsDirty:
+              useTabStore.getState().tabs.find((t) => t.id === workflowId)
+                ?.isDirty === true,
+          })
+        ) {
+          return;
+        }
         showWorkflow(workflowToCanvas(reloadedWorkflow), reloadedWorkflow);
+      } catch (err) {
+        console.error("Error reloading workflow:", err);
       }
-    } catch (err) {
-      console.error("Error reloading workflow:", err);
-    }
-  }, [workflowId, scope.workspaceId, showWorkflow]);
+    },
+    [workflowId, scope.workspaceId, showWorkflow],
+  );
 
   useEffect(() => {
     if (!workflowId) return;
@@ -483,6 +508,25 @@ export function WorkflowCanvas({
         void reloadWorkflowFromServer();
       });
   }, [reloadWorkflowFromServer, workflowId]);
+
+  const handleWorkflowDetached = useCallback(() => {
+    if (!workflowId) return;
+    if (
+      !shouldActOnDetach({
+        initiatedLocally: isLocalWorkflowRemoval(workflowId),
+        tabIsOpen: useTabStore
+          .getState()
+          .tabs.some((t) => t.id === workflowId),
+      })
+    ) {
+      return;
+    }
+    // Closing before the toast is what makes a repeated notification a no-op.
+    useTabStore.getState().closeTab(workflowId);
+    toast.info(
+      "This workflow was deleted or moved by another process or agent",
+    );
+  }, [workflowId]);
 
   useWorkflowLiveUpdates({
     workspaceId: scope.workspaceId,
@@ -495,7 +539,20 @@ export function WorkflowCanvas({
       noteSavedWorkflow(incoming);
       showWorkflow(workflowToCanvas(incoming), incoming);
     },
+    onDetached: handleWorkflowDetached,
   });
+
+  // Tabs other than the active one mount no canvas, so their snapshots sit
+  // frozen while they are in the background and live updates only reach the
+  // open one. One authoritative fetch when the canvas mounts bounds how stale
+  // a tab can be when the user comes back to it — but it must not overwrite
+  // what the user does in the meantime, hence `onlyIfPristine`.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    void reloadWorkflowFromServer({ onlyIfPristine: true });
+  }, [reloadWorkflowFromServer]);
 
   // "Save as preset" reaches the canvas as a CanvasStore pending action (the
   // same channel duplicate/copy use, since a node component can't see the

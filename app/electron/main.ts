@@ -52,6 +52,7 @@ import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
+import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
@@ -232,11 +233,31 @@ if (!hasSingleInstanceLock) {
 
     // Repositories — the only DB touchpoint.
     const workspaces = new WorkspaceRepository(database.kvStore)
-    const workflows = new WorkflowRepository(database.kvStore, (workflow) => {
+    // One broadcast for every workflow write, wherever it came from: the
+    // repository (renderer saves, MCP tools, imports) and the cloud pull
+    // (raw SQL in CloudSyncRepository) both land here. A pulled tombstone
+    // leaves no row to read, so it is announced as a delete directly.
+    const sendWorkflowChanged = (event: WorkflowChangedEvent): void => {
       if (mainWindow !== null && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(WORKFLOW_CHANGED_CHANNEL, workflow)
+        mainWindow.webContents.send(WORKFLOW_CHANGED_CHANNEL, event)
       }
-    })
+    }
+    // Raw SQL writers (cloud pull, conflict resolution) only know which row
+    // changed; resolve it here — or report its absence as a delete — so the
+    // broadcast always carries an authoritative snapshot.
+    const onRawWorkflowWrite = (
+      workspaceId: string,
+      workflowId: string,
+      deleted: boolean,
+    ): void => {
+      const workflow = deleted ? undefined : workflows.getById(workflowId)
+      if (workflow !== undefined) {
+        sendWorkflowChanged({ kind: "upsert", workflow })
+      } else {
+        sendWorkflowChanged({ kind: "delete", workspaceId, workflowId })
+      }
+    }
+    const workflows = new WorkflowRepository(database.kvStore, sendWorkflowChanged)
     const runs = new RunRepository(database.kvStore)
     const environments = new EnvironmentRepository(database.kvStore)
     const collections = new CollectionRepository(database.kvStore)
@@ -264,6 +285,7 @@ if (!hasSingleInstanceLock) {
       keyfilePath,
       defaults: cloudDefaults(app.getVersion()),
       setSyncProviderTarget: (provider) => sync.setTarget(provider),
+      onWorkflowChanged: onRawWorkflowWrite,
       onStatusChanged: () => {
         if (mainWindow !== null && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(CLOUD_STATUS_CHANGED_CHANNEL)
@@ -360,6 +382,7 @@ if (!hasSingleInstanceLock) {
     registerConflictUiHandlers(ipcRouter, {
       store: database.kvStore,
       syncService: cloud.getConflictResolver(),
+      onWorkflowChanged: onRawWorkflowWrite,
     })
 
     attachIpcRouter(ipcMain, ipcRouter)
