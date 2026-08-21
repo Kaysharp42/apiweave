@@ -15,6 +15,7 @@ import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
+import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 
 /** A subset change to a stored graph — see {@link WorkflowService.patch}. */
@@ -224,6 +225,54 @@ export class WorkflowService {
     recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
+  }
+
+  /**
+   * Move a workflow into another workspace, optionally attaching it to a project
+   * there.
+   *
+   * A workspace is the scope every other reference resolves in, so the move
+   * cannot carry those references across: the selected environment and the old
+   * project both belong to the source workspace, and `assertEnvironmentInWorkspace`
+   * / `assertCollectionInWorkspace` reject them at the destination. Both are
+   * cleared here rather than left for the next save to trip over — same reason
+   * `clearDepartingCallTargets` nulls the Call Workflow targets that stay behind.
+   * Telling the user which of those they are about to lose is the caller's job
+   * (the sidebar's move dialog does it); this method does not refuse the move
+   * over them.
+   */
+  async moveToWorkspace(
+    workspaceId: string,
+    workflowId: string,
+    targetWorkspaceId: string,
+    targetCollectionId: string | null,
+  ): Promise<Workflow> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_WORKFLOWS)
+    const existing = this.mustGet(workspaceId, workflowId)
+    if (targetWorkspaceId === workspaceId) {
+      throw new ValidationError("workflow is already in this workspace")
+    }
+    this.assertCollectionInWorkspace(targetCollectionId, targetWorkspaceId)
+
+    // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
+    // upsert under the destination would leave the source workspace still
+    // claiming the row. Leaving is a deletion from where it left.
+    recordWorkflowTombstone(this.syncProvider, existing)
+
+    const moved = this.workflows.transaction(() => {
+      this.workflows.setWorkspace(workflowId, targetWorkspaceId)
+      return this.workflows.update(workflowId, {
+        collectionId: targetCollectionId,
+        selectedEnvironmentId: null,
+        nodes: clearDepartingCallTargets(existing.nodes, new Set()),
+      })
+    })
+    if (moved === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+
+    recordWorkflowUpsert(this.syncProvider, moved)
+    await this.syncProvider.push()
+    return moved
   }
 
   /** Set/clear the workflow's selected environment. `environmentId=null` clears it. */

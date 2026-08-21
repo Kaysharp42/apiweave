@@ -22,6 +22,9 @@ export function WorkflowList({
   onWorkflowClick,
   onExportWorkflow,
   onDeleteWorkflow,
+  onRenameWorkflow,
+  onMoveWorkflowToProject,
+  onMoveWorkflowToWorkspace,
   onCreateWorkflow,
 }: WorkflowListProps) {
   if (workflows.length === 0 && isRefreshing) {
@@ -83,6 +86,9 @@ export function WorkflowList({
             onWorkflowClick={onWorkflowClick}
             onExportWorkflow={onExportWorkflow}
             onDeleteWorkflow={onDeleteWorkflow}
+            onRenameWorkflow={onRenameWorkflow}
+            onMoveWorkflowToProject={onMoveWorkflowToProject}
+            onMoveWorkflowToWorkspace={onMoveWorkflowToWorkspace}
           />
         ))}
       </ul>

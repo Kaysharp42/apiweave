@@ -70,6 +70,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),
   tool("workflows", "attachToCollection", "write", "Attach or detach a workflow to a collection.", { idempotent: true }),
   tool("workflows", "setEnvironment", "write", "Set or clear the selected environment for a workflow.", { idempotent: true }),
+  tool("workflows", "moveToWorkspace", "write", "Move a workflow into another workspace, optionally attaching it to a project there (`targetCollectionId`, or null to leave it unassigned). Its selected environment is cleared and any `workflow` node targeting a workflow left behind loses that target — a workspace is the scope those references resolve in, so they cannot follow. Confirm with the user before calling: nothing here is recoverable by moving the workflow back.", { destructive: true }),
 
   // Projects
   tool("projects", "list", "read", "List projects in a workspace."),
@@ -80,6 +81,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("projects", "addWorkflow", "write", "Add a workflow to a project."),
   tool("projects", "removeWorkflow", "write", "Remove a workflow from a project.", { destructive: true, idempotent: true }),
   tool("projects", "listWorkflows", "read", "List workflows in a project."),
+  tool("projects", "moveToWorkspace", "write", "Move a project and every workflow in it into another workspace. Each moved workflow's selected environment is cleared, and calls out to a workflow left behind lose their target; calls between workflows in this project survive. Confirm with the user before calling.", { destructive: true }),
 
   // Environments
   tool("environments", "list", "read", "List environments in a workspace."),

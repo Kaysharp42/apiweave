@@ -1,4 +1,4 @@
-import React, { Fragment, useRef, useState } from "react";
+import React, { Fragment, useEffect, useRef, useState } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { FileText } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -17,6 +17,13 @@ export function PromptDialog({
 }: PromptDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(defaultValue);
+
+  // `useState` keeps its first argument for the life of the mount, and callers
+  // leave this dialog mounted between openings. Without the reset, a rename
+  // opens on whichever name was in the box last time — the previous row's.
+  useEffect(() => {
+    if (open) setValue(defaultValue);
+  }, [open, defaultValue]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e?.preventDefault();

@@ -110,6 +110,21 @@ export class CollectionRepository {
     return this.update(collectionId, { workflowCount: Math.max(0, existing.workflowCount - 1) })
   }
 
+  /**
+   * Reassign the owning workspace. Deliberately NOT a field of
+   * {@link CollectionUpdate} — see the matching note on
+   * `WorkflowRepository.setWorkspace`. `scopeId` mirrors `workspace_id` on a
+   * workspace-scoped row (see `create`), so the two move together.
+   */
+  public setWorkspace(collectionId: string, workspaceId: string): Collection | undefined {
+    if (this.getById(collectionId) === undefined) return undefined
+    this.store.set(
+      "UPDATE collections SET workspace_id = ?, scopeId = ? WHERE id = ?",
+      [workspaceId, workspaceId, collectionId],
+    )
+    return this.getById(collectionId)
+  }
+
   public delete(collectionId: string): boolean {
     return this.store.delete("DELETE FROM collections WHERE id = ?", [collectionId]).changes > 0
   }

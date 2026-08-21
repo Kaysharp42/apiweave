@@ -195,6 +195,115 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
     })
     expect(res).toMatchObject({ ok: false, error: { code: "conflict" } })
   })
+
+  it("moves a workflow to another workspace, into a project there", async () => {
+    const source = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Source", isPersonal: false })
+    const target = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Target", isPersonal: false })
+    const arrivals = await ok<{ collectionId: string }>("projects", "create", {
+      workspaceId: target.workspaceId,
+      name: "Arrivals",
+    })
+    const workflow = await ok<{ workflowId: string }>("workflows", "create", {
+      workspaceId: source.workspaceId,
+      name: "Mover",
+    })
+
+    const moved = await ok<{ workspaceId: string; collectionId: string | null }>(
+      "workflows",
+      "moveToWorkspace",
+      {
+        workspaceId: source.workspaceId,
+        workflowId: workflow.workflowId,
+        targetWorkspaceId: target.workspaceId,
+        targetCollectionId: arrivals.collectionId,
+      },
+    )
+    expect(moved).toMatchObject({
+      workspaceId: target.workspaceId,
+      collectionId: arrivals.collectionId,
+    })
+
+    // The source workspace can no longer see it, and the pair is not_found there.
+    const res = await router.dispatch({
+      domain: "workflows",
+      action: "get",
+      payload: { workspaceId: source.workspaceId, workflowId: workflow.workflowId },
+    })
+    expect(res).toMatchObject({ ok: false, error: { code: "not_found" } })
+  })
+
+  it("requires targetCollectionId on a workflow move — omitting it is not the same as null", async () => {
+    const source = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Source", isPersonal: false })
+    const target = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Target", isPersonal: false })
+    const workflow = await ok<{ workflowId: string }>("workflows", "create", {
+      workspaceId: source.workspaceId,
+      name: "Mover",
+    })
+
+    const res = await router.dispatch({
+      domain: "workflows",
+      action: "moveToWorkspace",
+      payload: {
+        workspaceId: source.workspaceId,
+        workflowId: workflow.workflowId,
+        targetWorkspaceId: target.workspaceId,
+      },
+    })
+    expect(res).toMatchObject({ ok: false, error: { code: "validation" } })
+  })
+
+  it("moves a project and its workflows to another workspace", async () => {
+    const source = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Source", isPersonal: false })
+    const target = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Target", isPersonal: false })
+    const project = await ok<{ collectionId: string }>("projects", "create", {
+      workspaceId: source.workspaceId,
+      name: "Checkout",
+    })
+    const workflow = await ok<{ workflowId: string }>("workflows", "create", {
+      workspaceId: source.workspaceId,
+      name: "Member",
+      collectionId: project.collectionId,
+    })
+
+    const moved = await ok<{ workspaceId: string; workflowCount: number }>(
+      "projects",
+      "moveToWorkspace",
+      {
+        workspaceId: source.workspaceId,
+        collectionId: project.collectionId,
+        targetWorkspaceId: target.workspaceId,
+      },
+    )
+    expect(moved).toMatchObject({ workspaceId: target.workspaceId, workflowCount: 1 })
+
+    const arrived = await ok<{ items: { workflowId: string }[] }>("projects", "listWorkflows", {
+      workspaceId: target.workspaceId,
+      collectionId: project.collectionId,
+    })
+    expect(
+      (arrived as unknown as { workflowId: string }[]).map((w) => w.workflowId),
+    ).toEqual([workflow.workflowId])
+  })
+
+  it("rejects a same-workspace move as validation, not a silent no-op", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await ok<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "Stayer",
+    })
+
+    const res = await router.dispatch({
+      domain: "workflows",
+      action: "moveToWorkspace",
+      payload: {
+        workspaceId: workspace.workspaceId,
+        workflowId: workflow.workflowId,
+        targetWorkspaceId: workspace.workspaceId,
+        targetCollectionId: null,
+      },
+    })
+    expect(res).toMatchObject({ ok: false, error: { code: "validation" } })
+  })
 })
 
 describe("IPC handlers — nodePresets domain", () => {

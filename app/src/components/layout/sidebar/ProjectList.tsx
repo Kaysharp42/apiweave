@@ -21,6 +21,11 @@ export function ProjectList({
   onDeleteWorkflow,
   onExportProject,
   onDeleteProject,
+  onRenameProject,
+  onMoveProjectToWorkspace,
+  onRenameWorkflow,
+  onMoveWorkflowToProject,
+  onMoveWorkflowToWorkspace,
   onCreateProject,
   onAddWorkflowToProject,
   onAssignWorkflowToProject,
@@ -74,8 +79,13 @@ export function ProjectList({
           onWorkflowClick={onWorkflowClick}
           onExportProject={onExportProject}
           onDeleteProject={onDeleteProject}
+          onRenameProject={onRenameProject}
+          onMoveProjectToWorkspace={onMoveProjectToWorkspace}
           onExportWorkflow={onExportWorkflow}
           onDeleteWorkflow={onDeleteWorkflow}
+          onRenameWorkflow={onRenameWorkflow}
+          onMoveWorkflowToProject={onMoveWorkflowToProject}
+          onMoveWorkflowToWorkspace={onMoveWorkflowToWorkspace}
           onAddWorkflowToProject={onAddWorkflowToProject}
           onAssignWorkflowToProject={onAssignWorkflowToProject}
         />

@@ -400,11 +400,28 @@ export class CloudSyncRepository {
     if (applied === undefined) {
       return
     }
+    this.refreshRecordStateFromQueue(applied.workspace_id, applied.kind as CloudOutboxKind, applied.record_id, serverRev)
+  }
+
+  /**
+   * Recompute a record's sync state from whatever is still queued for it.
+   *
+   * `serverRev` is the revision the cloud has just confirmed for the record —
+   * 0 when the cloud turns out to hold no such record at all. Anything still
+   * in the outbox after that revision is a local edit the cloud has not seen,
+   * which is exactly what `dirty` means.
+   */
+  private refreshRecordStateFromQueue(
+    workspaceId: string,
+    kind: CloudOutboxKind,
+    recordId: string,
+    serverRev: number,
+  ): void {
     const remaining = this.store.get<{ local_rev: number } & SqliteRow>(
       "SELECT MAX(expected_rev + 1) AS local_rev FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
-      [applied.workspace_id, applied.kind, applied.record_id],
+      [workspaceId, kind, recordId],
     )?.local_rev
-    this.upsertRecordState(applied.workspace_id, applied.kind as CloudOutboxKind, applied.record_id, {
+    this.upsertRecordState(workspaceId, kind, recordId, {
       serverRev,
       localRev: remaining ?? serverRev,
       dirty: remaining !== null && remaining !== undefined,
@@ -420,6 +437,60 @@ export class CloudSyncRepository {
       "UPDATE cloud_outbox SET retry_count = ?, next_retry_at = ?, failure_reason = ? WHERE id = ?",
       [retryCount, nowMs + backoffMs, reason.slice(0, 1000), id],
     )
+  }
+
+  /**
+   * Reconcile a tombstone the cloud rejected as "record not found".
+   *
+   * The server answers two different situations with that one reason: the
+   * record is genuinely absent, and the expected revision does not match the
+   * one the cloud holds (`tombstoneRecord` returns `ErrRevMismatch` for both).
+   * The client has to tell them apart from what it already knows, and it does
+   * know: `cloud_record_state.server_rev` is the last revision the cloud
+   * acknowledged for this record IN THIS WORKSPACE.
+   *
+   * - The row asserted some other revision — its precondition was stale, so
+   *   rebase it onto the acknowledged one and let the push loop retry. This is
+   *   the case a cross-workspace move hits, because the source workspace's
+   *   cloud revision has nothing to do with the record's local revision.
+   * - The row already asserted that revision and the cloud still says no —
+   *   then the record really is gone, and a tombstone for an absent record has
+   *   already got what it wanted. Drop it; the cloud holds nothing, which is
+   *   what `serverRev: 0` records.
+   *
+   * Dead-lettering instead would leave the record orphaned in this workspace
+   * in the cloud (a pull re-materializes it, dragging a moved record back out
+   * of its new workspace) and would block every later change to the same
+   * record, since `listPendingOutboxRows` will not look past an earlier row.
+   */
+  public reconcileMissingTombstone(id: string, nowMs = Date.now()): "retry" | "settled" {
+    return this.transaction((repository) => repository.reconcileMissingTombstoneInTransaction(id, nowMs))
+  }
+
+  private reconcileMissingTombstoneInTransaction(id: string, nowMs: number): "retry" | "settled" {
+    const row = this.store.get<
+      { kind: string, record_id: string, workspace_id: string, expected_rev: number } & SqliteRow
+    >(
+      "SELECT kind, record_id, workspace_id, expected_rev FROM cloud_outbox WHERE id = ?",
+      [id],
+    )
+    if (row === undefined) {
+      return "settled"
+    }
+    const kind = row.kind as CloudOutboxKind
+    const acknowledged = this.getRecordState(row.workspace_id, kind, row.record_id)?.server_rev
+    if (acknowledged === undefined || acknowledged === row.expected_rev) {
+      this.store.delete("DELETE FROM cloud_outbox WHERE id = ?", [id])
+      this.refreshRecordStateFromQueue(row.workspace_id, kind, row.record_id, 0)
+      return "settled"
+    }
+    this.store.set("UPDATE cloud_outbox SET expected_rev = ? WHERE id = ?", [acknowledged, id])
+    // Back off rather than clearing the retry state: `pushWorkspacePending`
+    // re-lists pending rows until none are eligible, so a row left immediately
+    // eligible would spin. The retry counter keeps climbing across repeats, so
+    // a tombstone that can never be reconciled still dead-letters eventually.
+    this.markOutboxFailed(id, "Retrying with the revision the cloud last confirmed.", nowMs)
+    return "retry"
   }
 
   public markOutboxDeadLetter(id: string, reason: string): void {
@@ -459,12 +530,37 @@ export class CloudSyncRepository {
    * mutation, never the local record it describes — the record stays in its
    * own repository and simply stops trying to sync. Destructive to the queued
    * push, so callers must confirm first. Returns rows discarded.
+   *
+   * Surviving rows for the same record are rebased, because a row's
+   * `expected_rev` is chained onto the rows queued ahead of it (see
+   * `expectedRevisionForMutation`). Deleting one out from under the others
+   * leaves every survivor asserting a revision the cloud will never reach, so
+   * they fail forever — and the reason the server gives for a tombstone whose
+   * precondition is stale is the misleading "record not found".
    */
   public discardDeadLetterOutbox(workspaceId: string): number {
-    return this.store.delete(
+    return this.transaction((repository) => repository.discardDeadLetterOutboxInTransaction(workspaceId))
+  }
+
+  private discardDeadLetterOutboxInTransaction(workspaceId: string): number {
+    const discarded = this.store.query<{ kind: string, record_id: string } & SqliteRow>(
+      "SELECT DISTINCT kind, record_id FROM cloud_outbox WHERE workspace_id = ? AND retry_count >= ?",
+      [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
+    )
+    const changes = this.store.delete(
       "DELETE FROM cloud_outbox WHERE workspace_id = ? AND retry_count >= ?",
       [workspaceId, CLOUD_OUTBOX_MAX_RETRIES],
     ).changes
+    for (const { kind, record_id } of discarded) {
+      const outboxKind = kind as CloudOutboxKind
+      const acknowledged = this.getRecordState(workspaceId, outboxKind, record_id)?.server_rev ?? 0
+      const survivors = this.listOutboxForRecord(workspaceId, outboxKind, record_id)
+      if (survivors.length > 0) {
+        this.rebaseOutboxRows(survivors, acknowledged)
+      }
+      this.refreshRecordStateFromQueue(workspaceId, outboxKind, record_id, acknowledged)
+    }
+    return changes
   }
 
   public clearOutbox(): void {

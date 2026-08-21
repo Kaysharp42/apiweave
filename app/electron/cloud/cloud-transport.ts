@@ -28,7 +28,7 @@ import {
 import { CursorStore } from "./cloud-cursor"
 import { Outbox, type OutboxInput, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
 import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "./cloud-apply"
-import { PushOutcome_Status } from "@apiweave/proto/apiweave/v1/sync_service_pb"
+import { PushOutcome_Status, RejectionReason } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { rejectionMessage, transportErrorMessage } from "./cloud-error-messages"
 
 export { CloudClient, DeviceTokenStore }
@@ -476,6 +476,9 @@ export class CloudSyncProvider implements SyncProvider {
       return "blocked"
     } else if (outcome.status === PushOutcome_Status.REJECTED) {
       this.log("push rejected", { debug: pushOutcomeDebug(outcome) })
+      if (row.op === "tombstone" && outcome.rejectionReason === RejectionReason.RECORD_NOT_FOUND) {
+        return this.reconcileMissingTombstone(row)
+      }
       const reason = rejectionMessage(outcome.rejectionReason)
       this.outbox?.markDeadLetter(row.id, reason)
       this.repository?.setBindingError(binding.workspaceId, reason)
@@ -485,6 +488,20 @@ export class CloudSyncProvider implements SyncProvider {
       this.outbox?.markFailed(row.id, rejectionMessage(outcome.rejectionReason))
       return "blocked"
     }
+  }
+
+  /**
+   * A tombstone the cloud rejects as "record not found" is not a failure.
+   *
+   * Deleting something that is already absent is the outcome the tombstone
+   * asked for, and the same rejection also covers a merely stale expected
+   * revision, so the repository decides which it is and either retries with
+   * the revision the cloud confirmed or drops the row. Either way the record
+   * stops being orphaned in this workspace in the cloud, which dead-lettering
+   * would have made permanent.
+   */
+  private reconcileMissingTombstone(row: OutboxRow): "applied" | "blocked" {
+    return this.repository?.reconcileMissingTombstone(row.id) === "settled" ? "applied" : "blocked"
   }
 
   private stateAfterSync(): SyncState {

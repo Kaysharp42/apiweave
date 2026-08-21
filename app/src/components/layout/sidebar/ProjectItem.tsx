@@ -12,6 +12,9 @@ import { Badge } from "../../atoms/Badge";
 import { IconButton } from "../../atoms/IconButton";
 import { SidebarAction } from "./SidebarAction";
 import { WorkflowItem } from "./WorkflowItem";
+import { ContextMenu } from "../../molecules/ContextMenu";
+import { useContextMenu } from "../../../hooks/useContextMenu";
+import { projectRowMenuItems } from "./rowContextMenus";
 import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
 import type { ProjectItemProps } from "../../../types";
 import type { Project } from "../../../types/Project";
@@ -27,12 +30,18 @@ export function ProjectItem({
   onWorkflowClick,
   onExportProject,
   onDeleteProject,
+  onRenameProject,
+  onMoveProjectToWorkspace,
   onExportWorkflow,
   onDeleteWorkflow,
+  onRenameWorkflow,
+  onMoveWorkflowToProject,
+  onMoveWorkflowToWorkspace,
   onAddWorkflowToProject,
   onAssignWorkflowToProject,
 }: ProjectItemProps) {
   const [showAssignDropdown, setShowAssignDropdown] = useState(false);
+  const contextMenu = useContextMenu();
   const projectId = project.projectId ?? project.collectionId;
   const projectWorkflows = Array.isArray(workflows)
     ? workflows.filter((wf) => wf.collectionId === projectId)
@@ -50,7 +59,10 @@ export function ProjectItem({
 
   return (
     <li>
-      <div className="group flex items-center gap-2 rounded border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none">
+      <div
+        onContextMenu={contextMenu.openAt}
+        className="group flex items-center gap-2 rounded border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
+      >
         <button
           type="button"
           className={[
@@ -100,6 +112,22 @@ export function ProjectItem({
         </div>
       </div>
 
+      {contextMenu.origin && (
+        <ContextMenu
+          x={contextMenu.origin.x}
+          y={contextMenu.origin.y}
+          label={`Project "${project.name}"`}
+          onClose={contextMenu.close}
+          items={projectRowMenuItems(project, projectId, {
+            onRenameProject,
+            onMoveProjectToWorkspace,
+            onAddWorkflowToProject,
+            onExportProject,
+            onDeleteProject,
+          })}
+        />
+      )}
+
       {isExpanded && (
         <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border dark:before:bg-border-dark">
           {projectWorkflows.length === 0 && (
@@ -125,6 +153,9 @@ export function ProjectItem({
               onWorkflowClick={onWorkflowClick}
               onExportWorkflow={onExportWorkflow}
               onDeleteWorkflow={onDeleteWorkflow}
+              onRenameWorkflow={onRenameWorkflow}
+              onMoveWorkflowToProject={onMoveWorkflowToProject}
+              onMoveWorkflowToWorkspace={onMoveWorkflowToWorkspace}
             />
           ))}
 

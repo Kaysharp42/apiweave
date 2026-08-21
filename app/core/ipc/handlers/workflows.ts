@@ -195,6 +195,25 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     handle: (i) => workflows.attachToCollection(i.workspaceId, i.workflowId, i.collectionId),
   })
 
+  router.register("workflows", "moveToWorkspace", {
+    input: z
+      .object({
+        workspaceId: ws,
+        workflowId: z.string().min(1),
+        targetWorkspaceId: ws.describe("Workspace to move the workflow into. Must differ from the current one."),
+        targetCollectionId: z
+          .string()
+          .min(1)
+          .nullable()
+          .describe(
+            "Project in the TARGET workspace to attach the workflow to, or null to leave it unassigned. A project in any other workspace is rejected.",
+          ),
+      })
+      .strict(),
+    output: WorkflowSchema,
+    handle: (i) => workflows.moveToWorkspace(i.workspaceId, i.workflowId, i.targetWorkspaceId, i.targetCollectionId),
+  })
+
   router.register("workflows", "setEnvironment", {
     input: z
       .object({ workspaceId: ws, workflowId: z.string().min(1), environmentId: z.string().min(1).nullable() })
