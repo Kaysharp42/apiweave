@@ -91,8 +91,14 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
  * Fallback chain:
  * 1. selectedEnvironmentByWorkflow[workflowId] if defined (not undefined)
  * 2. workflowEnvironmentId if provided
- * 3. localStorage.getItem('defaultEnvironment') if present
+ * 3. localStorage.getItem('defaultEnvironment') if it names an environment in
+ *    the current workspace
  * 4. null
+ *
+ * The localStorage default outlives workspace switches and environment
+ * deletions, so it is only trusted when the current workspace still has that
+ * environment; otherwise a new workflow would save a dangling
+ * `selectedEnvironmentId` and be rejected as not_found.
  */
 export function getSelectedEnvironment(
   workflowId: string,
@@ -107,7 +113,10 @@ export function getSelectedEnvironment(
     return workflowEnvironmentId;
   }
   const globalDefault = localStorage.getItem("defaultEnvironment");
-  if (globalDefault) {
+  if (
+    globalDefault &&
+    state.environments.some((env) => env.environmentId === globalDefault)
+  ) {
     return globalDefault;
   }
   return null;
