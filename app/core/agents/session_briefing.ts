@@ -1,4 +1,5 @@
 import type { AgentScopeKind } from "@shared/types/AgentScope"
+import path from "node:path"
 import { scratchFileKind, writeScratchFile } from "./scratch_files"
 
 /**
@@ -127,6 +128,19 @@ you did not create.
  */
 export function writeSessionBriefing(scratchDir: string, sessionId: string, text: string): string {
   return writeScratchFile(scratchDir, BRIEFING_SCRATCH.filename(sessionId), text, 0o600)
+}
+
+/**
+ * The path this session's briefing occupies — the name without the write.
+ *
+ * A launcher config can carry the briefing by embedding its path (OpenCode's
+ * `instructions`), and by the time that file is written the briefing's own
+ * write has already happened on the argv path — same scratch directory, same
+ * session-named filename. Computing the path rather than passing it in keeps
+ * the two writers from needing an order between them.
+ */
+export function briefingPathFor(scratchDir: string, sessionId: string): string {
+  return path.join(scratchDir, BRIEFING_SCRATCH.filename(sessionId))
 }
 
 /**

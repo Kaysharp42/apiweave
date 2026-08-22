@@ -128,18 +128,91 @@ describe("built-in agent definitions", () => {
   })
 
   /**
-   * Claude Code is the only entry with a confirmed flag today, and *append* is
-   * the load-bearing word: `--system-prompt` replaces Claude Code's own, which
-   * would leave the agent briefed about APIWeave and ignorant of its own tools.
-   * Anything else in this list is a claim someone has to have checked.
+   * Claude Code, aider and pi are the entries with a confirmed flag, and the
+   * exact flag matters in each: Claude's is *append* — `--system-prompt`
+   * replaces Claude Code's own prompt and would leave the agent briefed about
+   * APIWeave and ignorant of its own tools; aider's `--read` is its one
+   * documented carrier for persistent read-only context (it has no system
+   * prompt at all); pi's `--append-system-prompt` takes a path whose contents
+   * are read in. Anything else in this list is a claim someone has to have
+   * checked.
    */
   it("ships a briefing flag only where one was confirmed", () => {
     const briefed = BUILTIN_AGENTS.filter((agent) => (agent.briefingArgs ?? []).length > 0).map(
       (agent) => agent.agentKey,
     )
 
-    expect(briefed).toEqual(["claude"])
+    expect(briefed).toEqual(["claude", "aider", "pi"])
     expect(findBuiltinAgent("claude")?.briefingArgs).toEqual(["--append-system-prompt-file", "{path}"])
+    expect(findBuiltinAgent("aider")?.briefingArgs).toEqual(["--read", "{path}"])
+    expect(findBuiltinAgent("pi")?.briefingArgs).toEqual(["--append-system-prompt", "{path}"])
+  })
+
+  /**
+   * A template with neither placeholder would hand the agent a flag whose
+   * value names nothing — a dangling option or a variable pointing at a file
+   * that does not exist, and a launch that silently behaves as if unwired.
+   */
+  it("gives every mcp template a place for the path or the url", () => {
+    for (const agent of BUILTIN_AGENTS) {
+      if ((agent.mcpConfigArgs ?? []).length === 0) {
+        continue
+      }
+      expect(agent.mcpConfigArgs?.join(" "), agent.agentKey).toMatch(/\{(path|url)\}/)
+      for (const value of Object.values(agent.mcpConfigEnv ?? {})) {
+        expect(value, `${agent.agentKey}: ${value}`).toMatch(/\{(path|token)\}/)
+      }
+    }
+  })
+
+  /**
+   * Each of these is a claim about another CLI's surface, pinned so a refactor
+   * of the roster cannot silently change what a launch hands over: Codex's
+   * argv carries the URL and a token-variable *name*; Gemini's file travels by
+   * variable because it has no flag; Copilot's `@` prefix is the file form of
+   * a per-session flag; Qwen's flag takes its own file shape, never the
+   * Claude one.
+   */
+  it("ships the confirmed mcp carriers exactly", () => {
+    expect(findBuiltinAgent("codex")?.mcpConfigArgs).toEqual([
+      "-c",
+      "mcp_servers.apiweave.url={url}",
+      "-c",
+      "mcp_servers.apiweave.bearer_token_env_var=APIWEAVE_MCP_TOKEN",
+    ])
+    expect(findBuiltinAgent("codex")?.mcpConfigEnv).toEqual({ APIWEAVE_MCP_TOKEN: "{token}" })
+    expect(findBuiltinAgent("gemini")?.mcpConfigEnv).toEqual({ GEMINI_CLI_SYSTEM_SETTINGS_PATH: "{path}" })
+    expect(findBuiltinAgent("copilot")?.mcpConfigArgs).toEqual(["--additional-mcp-config", "@{path}"])
+    expect(findBuiltinAgent("qwen")?.mcpConfigArgs).toEqual(["--mcp-config", "{path}"])
+    expect(findBuiltinAgent("qwen")?.mcpConfigFormat).toBe("qwen")
+  })
+
+  /**
+   * The carrier is an environment variable whose value must name the generated
+   * config file, so a template without `{path}` would set a variable pointing
+   * at nothing — an agent that silently launches as if unwired.
+   */
+  it("gives every config-carrier template a place for the path", () => {
+    for (const agent of BUILTIN_AGENTS) {
+      for (const value of Object.values(agent.configEnv ?? {})) {
+        expect(value, `${agent.agentKey}: ${value}`).toContain("{path}")
+      }
+    }
+  })
+
+  /**
+   * The carrier names another CLI's environment variable, and the generated
+   * file is in that CLI's config format — as unguessable as a flag. OpenCode
+   * is the only entry confirmed against an installed CLI, verified with
+   * `opencode debug config` on 1.18.21.
+   */
+  it("ships a config carrier only where one was confirmed", () => {
+    const carriers = BUILTIN_AGENTS.filter(
+      (agent) => Object.keys(agent.configEnv ?? {}).length > 0,
+    ).map((agent) => agent.agentKey)
+
+    expect(carriers).toEqual(["opencode"])
+    expect(findBuiltinAgent("opencode")?.configEnv).toEqual({ OPENCODE_CONFIG: "{path}" })
   })
 })
 

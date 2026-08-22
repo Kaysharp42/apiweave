@@ -68,6 +68,29 @@ export const AgentDefinitionSchema = z
      */
     mcpConfigArgs: z.array(z.string()).default([]),
     /**
+     * The environment variables set alongside the MCP wiring, with `{path}`
+     * standing in for the generated config file's location and `{token}` for
+     * the bridge's bearer token. Empty means no variables are set.
+     *
+     * The env twin of `mcpConfigArgs`, for CLIs with no flag to point at a
+     * config (Gemini reads MCP servers from a settings.json named by
+     * `GEMINI_CLI_SYSTEM_SETTINGS_PATH`), and for CLIs whose flags take the
+     * pieces separately — Codex's `-c mcp_servers.x.bearer_token_env_var=`
+     * wants a variable *name* in argv, so the token itself travels here and
+     * stays out of a process listing. A variable rather than argv for the
+     * token always: argv is re-parsed by `cmd.exe` on Windows, env is not.
+     */
+    mcpConfigEnv: z.record(z.string(), z.string()).default({}),
+    /**
+     * Which JSON shape the MCP config file is written in. `claude` — the
+     * `mcpServers` convention Claude Code defined (`type: "http"` + `url`),
+     * which Gemini, Copilot and Claude all read as-is. `qwen` — Qwen Code's
+     * own field-based shape (`httpUrl`), because its `--mcp-config` does not
+     * normalize the Claude shape and would connect to a streamable-HTTP
+     * server with the SSE transport.
+     */
+    mcpConfigFormat: z.enum(["claude", "qwen"]).default("claude"),
+    /**
      * The argv that hands the agent APIWeave's session briefing — what the
      * session is attached to, and how to work on it — with `{path}` standing in
      * for the generated file. Empty means the agent is launched without one.
@@ -84,6 +107,21 @@ export const AgentDefinitionSchema = z
      * would be parsed as command syntax.
      */
     briefingArgs: z.array(z.string()).default([]),
+    /**
+     * Environment variables that point the agent at APIWeave's per-session
+     * launcher config file, with `{path}` standing in for the file's location.
+     * Empty means no such file is written and no variable is set.
+     *
+     * The sibling of `mcpConfigArgs` and `briefingArgs` for a CLI that takes
+     * its configuration from a file named by an environment variable rather
+     * than from flags — OpenCode, whose TUI has no flag for MCP config or
+     * standing instructions at all. The generated file is in that CLI's own
+     * config format and carries both halves at once: the MCP bridge server,
+     * and the briefing as an `instructions` path. A variable rather than an
+     * argv entry because the value is never re-parsed by a shell — argv is,
+     * and the scratch path may contain spaces.
+     */
+    configEnv: z.record(z.string(), z.string()).default({}),
     /** How the agent's own session id becomes known; see {@link AgentSessionIdModeSchema}. */
     sessionIdMode: AgentSessionIdModeSchema.default("none"),
     /**

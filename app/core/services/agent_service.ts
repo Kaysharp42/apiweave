@@ -21,13 +21,15 @@ import {
   launchInExternalTerminal,
   NoTerminalFoundError,
 } from "../agents/external_terminal"
-import { MCP_CONFIG_SCRATCH, renderMcpConfigArgs, writeAgentMcpConfig } from "../agents/mcp_config"
+import { MCP_CONFIG_SCRATCH, renderMcpConfigArgs, renderMcpConfigEnv, writeAgentMcpConfig } from "../agents/mcp_config"
 import {
   BRIEFING_SCRATCH,
+  briefingPathFor,
   buildSessionBriefing,
   renderBriefingArgs,
   writeSessionBriefing,
 } from "../agents/session_briefing"
+import { OPENCODE_CONFIG_SCRATCH, renderConfigEnv, writeOpenCodeSessionConfig } from "../agents/opencode_config"
 import type { PtyLauncher } from "../agents/pty_launcher"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { Action } from "../auth/permissions"
@@ -272,7 +274,7 @@ export class AgentService {
         executablePath: prepared.executablePath,
         args: this.argsFor(prepared, session.sessionId, identity.args),
         cwd: prepared.cwd,
-        env: prepared.env,
+        env: this.envFor(prepared, session.sessionId),
         scratchDir: this.environment.agentFilesDir,
         sessionId: session.sessionId,
       })
@@ -334,7 +336,7 @@ export class AgentService {
         file: command.file,
         args: command.args,
         cwd: prepared.cwd,
-        env: prepared.env,
+        env: this.envFor(prepared, session.sessionId),
         cols: clampDimension(request.cols, MIN_TERMINAL_COLS),
         rows: clampDimension(request.rows, MIN_TERMINAL_ROWS),
         // Only for an agent that mints its own id and has somewhere to put it.
@@ -423,7 +425,7 @@ export class AgentService {
         file: command.file,
         args: command.args,
         cwd: prepared.cwd,
-        env: prepared.env,
+        env: this.envFor(prepared, sessionId),
         cols: clampDimension(cols, MIN_TERMINAL_COLS),
         rows: clampDimension(rows, MIN_TERMINAL_ROWS),
         // Nothing to look for — the id is the one being handed back.
@@ -623,7 +625,8 @@ export class AgentService {
     return (
       MCP_CONFIG_SCRATCH.sweep(directory) +
       LAUNCHER_SCRATCH.sweep(directory) +
-      BRIEFING_SCRATCH.sweep(directory)
+      BRIEFING_SCRATCH.sweep(directory) +
+      OPENCODE_CONFIG_SCRATCH.sweep(directory)
     )
   }
 
@@ -709,7 +712,11 @@ export class AgentService {
    * workflow the caller was not authorized for.
    */
   private briefingFor(request: AgentLaunchRequest, definition: AgentDefinition, cwd: string): string | null {
-    if (definition.briefingArgs.length === 0) {
+    // Two carriers, not one: argv flags, or a launcher config the launch env
+    // points the agent at (OpenCode has flags for neither). An agent with no
+    // carrier at all learns what it can from the MCP server's own
+    // `instructions`, if it has the server — so null here, not an empty file.
+    if (definition.briefingArgs.length === 0 && Object.keys(definition.configEnv).length === 0) {
       return null
     }
     return buildSessionBriefing({
@@ -718,11 +725,16 @@ export class AgentService {
       scopeId: request.scope.id,
       scopeName: this.scopeNameFor(request.workspaceId, request.scope),
       cwd,
-      // Both halves have to hold: an agent that takes no MCP flags never gets a
-      // config, and neither does any agent while the bridge is off. Telling an
-      // agent to reach for tools it has not been given is worse than telling it
-      // there are none — it spends the session looking for them.
-      mcpWired: definition.mcpConfigArgs.length > 0 && this.environment.getMcpConfig() !== null,
+      // All three halves have to hold: an agent that takes no MCP carrier —
+      // argv flags, config variables, or a launcher config — never gets the
+      // server, and neither does any agent while the bridge is off. Telling an
+      // agent to reach for tools it has not been given is worse than telling
+      // it there are none — it spends the session looking for them.
+      mcpWired:
+        (definition.mcpConfigArgs.length > 0 ||
+          Object.keys(definition.mcpConfigEnv).length > 0 ||
+          Object.keys(definition.configEnv).length > 0) &&
+        this.environment.getMcpConfig() !== null,
     })
   }
 
@@ -762,7 +774,10 @@ export class AgentService {
   }
 
   /**
-   * Write this session's briefing and point the agent at it.
+   * Write this session's briefing and return the argv that points the agent at
+   * it — empty for an agent whose briefing rides inside a launcher config
+   * instead, which still needs the file written, because the config names it
+   * by path.
    *
    * Named for the session like the MCP config beside it, and for the same
    * reason: the file has exactly one owner, so something can delete it. Two
@@ -776,6 +791,49 @@ export class AgentService {
     }
     const briefingPath = writeSessionBriefing(this.environment.agentFilesDir, sessionId, prepared.briefing)
     return renderBriefingArgs(prepared.definition.briefingArgs, briefingPath)
+  }
+
+  /**
+   * The environment this launch hands the child: everything `prepareLaunch`
+   * resolved, plus the per-session carriers when the definition names them —
+   * the MCP wiring's variables, and the launcher config for an agent that
+   * takes its configuration from a file named by one (OpenCode).
+   *
+   * The briefing path embedded in that config names the file `argsFor` has
+   * already written by the time any launch path gets here — every one of them
+   * builds argv before the environment, and both writers name the file from
+   * the same session id, so there is no order to get wrong between them.
+   *
+   * The rendered carrier variables go in *under* `prepared.env`, not over it.
+   * That env already places the APIWEAVE_* identity keys after the
+   * definition's own variables so app-owned names cannot be spoofed, and a
+   * `configEnv` or `mcpConfigEnv` template is exactly as user-editable as
+   * `env` is — it must not reopen the hole that ordering closes.
+   */
+  private envFor(prepared: PreparedLaunch, sessionId: string): Readonly<Record<string, string>> {
+    const launchers = {
+      ...this.mcpEnvFor(prepared.definition, sessionId),
+      ...this.agentConfigEnvFor(prepared, sessionId),
+    }
+    return { ...launchers, ...prepared.env }
+  }
+
+  /**
+   * The launcher-config carrier half of the environment — see
+   * `opencode_config.ts` for the file it names.
+   */
+  private agentConfigEnvFor(prepared: PreparedLaunch, sessionId: string): Record<string, string> {
+    const configEnv = prepared.definition.configEnv
+    if (Object.keys(configEnv).length === 0) {
+      return {}
+    }
+    const configPath = writeOpenCodeSessionConfig(
+      this.environment.agentFilesDir,
+      sessionId,
+      prepared.briefing === null ? null : briefingPathFor(this.environment.agentFilesDir, sessionId),
+      this.environment.getMcpConfig(),
+    )
+    return renderConfigEnv(configEnv, configPath)
   }
 
   /**
@@ -831,6 +889,7 @@ export class AgentService {
     MCP_CONFIG_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
     LAUNCHER_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
     BRIEFING_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
+    OPENCODE_CONFIG_SCRATCH.deleteOne(this.environment.agentFilesDir, sessionId)
   }
 
   /**
@@ -1078,6 +1137,13 @@ export class AgentService {
    *
    * Silently skipped when the bridge is off or the agent does not take the
    * flags — a launch that works without MCP beats an error that blocks it.
+   *
+   * The file is written by whichever half's own templates name it: the argv
+   * half here for a `--mcp-config {path}`, the env half in
+   * {@link mcpEnvFor} for a settings-file variable. An agent whose templates
+   * name neither (Codex takes the URL and a token-variable *name* in argv)
+   * gets no file at all — scratch with no reader is still scratch to keep
+   * honest.
    */
   private mcpArgsFor(definition: AgentDefinition, sessionId: string): readonly string[] {
     if (definition.mcpConfigArgs.length === 0) {
@@ -1091,8 +1157,33 @@ export class AgentService {
     // simultaneous launches raced on one path — the second overwrote the token
     // the first had already been handed — and left a live bearer token on disk
     // with no owner to delete it.
-    const configPath = writeAgentMcpConfig(this.environment.agentFilesDir, config, sessionId)
-    return renderMcpConfigArgs(definition.mcpConfigArgs, configPath)
+    const configPath = definition.mcpConfigArgs.some((argument) => argument.includes("{path}"))
+      ? writeAgentMcpConfig(this.environment.agentFilesDir, config, sessionId, definition.mcpConfigFormat)
+      : ""
+    return renderMcpConfigArgs(definition.mcpConfigArgs, configPath, config)
+  }
+
+  /**
+   * The environment half of the MCP wiring — the token for agents whose argv
+   * names a token *variable*, and the config file's path for agents that take
+   * their MCP servers from a settings file named by a variable (Gemini) rather
+   * than a flag.
+   *
+   * Merged under `prepared.env` by {@link envFor}, for the same anti-spoof
+   * reason the launcher-config carrier is: these templates are user-editable.
+   */
+  private mcpEnvFor(definition: AgentDefinition, sessionId: string): Record<string, string> {
+    if (Object.keys(definition.mcpConfigEnv).length === 0) {
+      return {}
+    }
+    const config = this.environment.getMcpConfig()
+    if (config === null) {
+      return {}
+    }
+    const configPath = Object.values(definition.mcpConfigEnv).some((value) => value.includes("{path}"))
+      ? writeAgentMcpConfig(this.environment.agentFilesDir, config, sessionId, definition.mcpConfigFormat)
+      : ""
+    return renderMcpConfigEnv(definition.mcpConfigEnv, configPath, config)
   }
 
   /**
@@ -1170,7 +1261,10 @@ function toDefinition(stored: AgentDefinition): AgentDefinition {
     promptMode: stored.promptMode,
     promptFlag: stored.promptFlag ?? null,
     mcpConfigArgs: stored.mcpConfigArgs,
+    mcpConfigEnv: stored.mcpConfigEnv,
+    mcpConfigFormat: stored.mcpConfigFormat,
     briefingArgs: stored.briefingArgs,
+    configEnv: stored.configEnv,
     unsupportedPlatforms: stored.unsupportedPlatforms,
     installUrl: stored.installUrl ?? null,
     // This function is an explicit field list rather than a spread, which is

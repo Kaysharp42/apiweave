@@ -17,13 +17,13 @@ For contributors who want to build the desktop app from source: Node.js 20+ and 
 
 Grab the latest installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). Each release also includes `SHA256SUMS.txt` for download verification.
 
-- **Windows**: `APIWeave-<version>-win-x64.exe` (NSIS per-user installer).
+- **Windows**: `APIWeave-<version>-win-x64.zip` — extract it and run the `APIWeave-<version>-win-x64.exe` inside (NSIS per-user installer). A bare `.exe` is attached to each release too; that one is the in-app updater's download, not the one to grab by hand.
 - **macOS**: `APIWeave-<version>-mac-x64.dmg` for Intel or `APIWeave-<version>-mac-arm64.dmg` for Apple Silicon.
 - **Linux**: AppImage, `.deb`, `.rpm`, and `.pacman` x64 builds. Pick the one that matches your distro.
 
 ## Windows
 
-1. Double-click the installer. The installer is per-user and does not require administrator rights.
+1. Extract the downloaded `.zip` and double-click the installer inside. The installer is per-user and does not require administrator rights.
 2. Choose an install location if the default does not fit.
 3. Wait for the install to complete. A Start menu entry is added under **APIWeave**.
 4. Launch APIWeave from the Start menu.

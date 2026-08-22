@@ -174,7 +174,11 @@ describe("MCP wiring", () => {
     expect(parsed.mcpServers.apiweave.url).toBe("http://127.0.0.1:47271/mcp")
     expect(parsed.mcpServers.apiweave.headers["Authorization"]).toBe("Bearer secret-token")
 
-    const args = renderMcpConfigArgs(["--mcp-config", "{path}", "--strict-mcp-config"], written)
+    const args = renderMcpConfigArgs(
+      ["--mcp-config", "{path}", "--strict-mcp-config"],
+      written,
+      { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 },
+    )
     expect(args).toEqual(["--mcp-config", written, "--strict-mcp-config"])
     expect(args.join(" ")).not.toContain("secret-token")
   })
@@ -184,10 +188,11 @@ describe("MCP wiring", () => {
    * its own argument, and one spliced into an existing argument.
    */
   it("fills {path} whether it stands alone or inside an argument", () => {
-    expect(renderMcpConfigArgs(["--mcp-config={path}"], "/tmp/apiweave.json")).toEqual([
+    const config = { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 }
+    expect(renderMcpConfigArgs(["--mcp-config={path}"], "/tmp/apiweave.json", config)).toEqual([
       "--mcp-config=/tmp/apiweave.json",
     ])
-    expect(renderMcpConfigArgs(["--config", "{path}"], "/tmp/apiweave.json")).toEqual([
+    expect(renderMcpConfigArgs(["--config", "{path}"], "/tmp/apiweave.json", config)).toEqual([
       "--config",
       "/tmp/apiweave.json",
     ])

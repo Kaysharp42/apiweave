@@ -681,7 +681,10 @@ function submissionEnv(
 const CARRIED_DEFAULTS: Pick<
   AgentDefinition,
   | "expectedProcess"
+  | "mcpConfigEnv"
+  | "mcpConfigFormat"
   | "briefingArgs"
+  | "configEnv"
   | "unsupportedPlatforms"
   | "installUrl"
   | "sessionIdMode"
@@ -690,7 +693,10 @@ const CARRIED_DEFAULTS: Pick<
   | "sessionIdPattern"
 > = {
   expectedProcess: null,
+  mcpConfigEnv: {},
+  mcpConfigFormat: "claude",
   briefingArgs: [],
+  configEnv: {},
   unsupportedPlatforms: [],
   installUrl: null,
   sessionIdMode: "none",
@@ -716,15 +722,15 @@ const CARRIED_DEFAULTS: Pick<
  * is the Install link: restating any of them as empty would silently delete
  * them from an agent the user was only renaming.
  *
- * The same carry-over matters more for the briefing and resume fields, which
- * are also not on the form. `briefingArgs` blanked would leave the agent
- * launching without the context that tells it which workflow it is working
- * on; the session-identity four are how a session is reopened later, so
- * resetting them would quietly make every future session of a renamed agent
- * unresumable. A new custom agent starts without them — resume flags differ
- * per CLI, and guessing one produces an agent that fails at the moment
- * someone tries to recover a conversation.
- */
+   * The same carry-over matters more for the briefing and resume fields, which
+   * are also not on the form. `briefingArgs` or `configEnv` blanked would leave
+   * the agent launching without the context that tells it which workflow it is
+   * working on; the session-identity four are how a session is reopened later,
+   * so resetting them would quietly make every future session of a renamed
+   * agent unresumable. A new custom agent starts without them — resume flags
+   * differ per CLI, and guessing one produces an agent that fails at the moment
+   * someone tries to recover a conversation.
+   */
 function savePayload(
   draft: AgentDraft,
   agentKey: string,
@@ -745,7 +751,10 @@ function savePayload(
     promptFlag:
       draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
     mcpConfigArgs: splitArgs(draft.mcpArgs),
+    mcpConfigEnv: carried.mcpConfigEnv,
+    mcpConfigFormat: carried.mcpConfigFormat,
     briefingArgs: carried.briefingArgs,
+    configEnv: carried.configEnv,
     unsupportedPlatforms: carried.unsupportedPlatforms,
     installUrl: carried.installUrl,
     sessionIdMode: carried.sessionIdMode,

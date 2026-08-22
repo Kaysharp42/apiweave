@@ -1544,3 +1544,352 @@ describe("AgentService — session briefings", () => {
     expect(remaining.some((name) => name.startsWith("briefing-") && name.includes(session.sessionId))).toBe(true)
   })
 })
+
+/**
+ * The launcher-config carrier: how an agent with no flags for MCP config or
+ * standing instructions — OpenCode — is handed both anyway, through a config
+ * file named by an environment variable. Everything asserted here is the
+ * contract `opencode_config.ts` documents, exercised through a real launch.
+ */
+describe("AgentService — launcher config carrier", () => {
+  const OPENCODE_AGENT: AgentDefinition = {
+    ...realExecutableAgent(),
+    agentKey: "opencode-runner",
+    mcpConfigArgs: [],
+    briefingArgs: [],
+    configEnv: { OPENCODE_CONFIG: "{path}" },
+    sessionIdMode: "scan",
+    resumeArgs: ["--session", "{id}"],
+    sessionIdPattern: "ses_[A-Za-z0-9]{16,}",
+  }
+
+  function carrierService(mcpOn: boolean): AgentService {
+    return new AgentService(
+      agentRepository,
+      workflows,
+      collections,
+      new LocalOwnerProvider(),
+      new ScopeResolver({
+        workspaceExists: (id) => workspaces.getById(id) !== undefined,
+        environmentExists: () => false,
+      }),
+      {
+        pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
+        getMcpConfig: () =>
+          mcpOn ? { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 } : null,
+        agentFilesDir,
+        pty,
+      },
+    )
+  }
+
+  async function seedCarrier(definition: AgentDefinition = OPENCODE_AGENT, mcpOn = true) {
+    const seeded = seed()
+    const service = carrierService(mcpOn)
+    await service.saveCustomAgent(seeded.workspaceId, definition)
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    return { seeded, service }
+  }
+
+  async function launch(service: AgentService, workspaceId: string, workflowId: string) {
+    return service.launchEmbedded({
+      workspaceId,
+      agentKey: "opencode-runner",
+      scope: { kind: "workflow", id: workflowId },
+      cols: 100,
+      rows: 30,
+    })
+  }
+
+  /** The config the environment variable named, parsed — or null if none was. */
+  function handedConfig(spawn = 0): Record<string, unknown> | null {
+    const named = pty.spawned[spawn]?.env["OPENCODE_CONFIG"]
+    if (named === undefined) return null
+    return JSON.parse(fs.readFileSync(named, "utf8")) as Record<string, unknown>
+  }
+
+  function configFiles(): readonly string[] {
+    return fs.existsSync(agentFilesDir)
+      ? fs.readdirSync(agentFilesDir).filter((name) => name.startsWith("opencode-config-"))
+      : []
+  }
+
+  /**
+   * The point of the carrier: the launch hands the agent one file carrying the
+   * bridge server and the briefing by path — and the path names a file that is
+   * really there and really the briefing, which is the pairing between the
+   * argv half of the launch and the environment half.
+   */
+  it("hands the agent a config naming the bridge and a briefing that exists", async () => {
+    const { seeded, service } = await seedCarrier()
+
+    await launch(service, seeded.workspaceId, seeded.workflowId)
+
+    const config = handedConfig()
+    expect(config).not.toBeNull()
+    expect(config?.["mcp"]).toEqual({
+      apiweave: {
+        enabled: true,
+        type: "remote",
+        url: "http://127.0.0.1:47271/mcp",
+        headers: { Authorization: "Bearer secret-token" },
+      },
+    })
+    const briefingPath = (config?.["instructions"] as readonly string[] | undefined)?.[0]
+    expect(briefingPath).toBeDefined()
+    expect(fs.existsSync(briefingPath as string)).toBe(true)
+    expect(fs.readFileSync(briefingPath as string, "utf8")).toContain(seeded.workflowId)
+    // No flags for any of it: the carrier is the environment, and argv stays
+    // exactly what the definition named.
+    expect(pty.spawned[0]?.args).toEqual(["--version"])
+  })
+
+  /**
+   * The briefing claims the bridge only when this launch really wires it; the
+   * config drops the server rather than pointing at a dead URL, and the
+   * briefing says the tools are absent instead.
+   */
+  it("writes no server into the config when the bridge is off", async () => {
+    const { seeded, service } = await seedCarrier(OPENCODE_AGENT, false)
+
+    await launch(service, seeded.workspaceId, seeded.workflowId)
+
+    const config = handedConfig()
+    expect(config).not.toBeNull()
+    expect("mcp" in (config as object)).toBe(false)
+    const briefingPath = (config?.["instructions"] as readonly string[] | undefined)?.[0]
+    expect(fs.readFileSync(briefingPath as string, "utf8")).toContain("without APIWeave's MCP server")
+  })
+
+  /**
+   * `configEnv` values are user-editable templates, and `launchEnvFor` puts
+   * the APIWEAVE_* identity keys after the definition's own variables so
+   * app-owned names cannot be spoofed. The rendered carrier must not reopen
+   * that hole, which is why it is merged *under* the prepared environment.
+   */
+  it("does not let a template override the APIWEAVE identity variables", async () => {
+    const { seeded, service } = await seedCarrier({
+      ...OPENCODE_AGENT,
+      configEnv: { OPENCODE_CONFIG: "{path}", APIWEAVE_WORKSPACE_ID: "{path}" },
+    })
+
+    await launch(service, seeded.workspaceId, seeded.workflowId)
+
+    expect(pty.spawned[0]?.env["APIWEAVE_WORKSPACE_ID"]).toBe(seeded.workspaceId)
+    expect(pty.spawned[0]?.env["OPENCODE_CONFIG"]).toBeDefined()
+  })
+
+  /** Scratch is scratch: the config holds a bearer token, so it goes too. */
+  it("deletes the config when the session reaches a terminal state", async () => {
+    const { seeded, service } = await seedCarrier()
+    const session = await launch(service, seeded.workspaceId, seeded.workflowId)
+    expect(configFiles()).toHaveLength(1)
+
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+
+    expect(configFiles()).toHaveLength(0)
+  })
+
+  /**
+   * A resumed conversation is a fresh process with a fresh config — the
+   * exited session's copy was deleted with its token when it ended, and the
+   * new run's bridge token is minted for it.
+   */
+  it("re-writes the config for a resumed session", async () => {
+    const { seeded, service } = await seedCarrier()
+    const session = await launch(service, seeded.workspaceId, seeded.workflowId)
+    service.recordProcessEvent({
+      kind: "agent.sessionRef",
+      sessionId: session.sessionId,
+      ref: "ses_abcdefghabcdefgh",
+    })
+    service.recordProcessEvent({ kind: "agent.exited", sessionId: session.sessionId, exitCode: 0 })
+    expect(configFiles()).toHaveLength(0)
+
+    await service.resumeSession(session.sessionId, 100, 30)
+
+    expect(configFiles()).toHaveLength(1)
+    expect(handedConfig(1)).not.toBeNull()
+  })
+
+  /** A crash leaves one per session with nothing tracking it. */
+  it("sweeps configs left by a previous run", async () => {
+    const { seeded, service } = await seedCarrier()
+    fs.mkdirSync(agentFilesDir, { recursive: true })
+    fs.writeFileSync(path.join(agentFilesDir, "opencode-config-crashed.json"), "{}\n")
+
+    const session = await launch(service, seeded.workspaceId, seeded.workflowId)
+
+    const remaining = fs.readdirSync(agentFilesDir)
+    expect(remaining).not.toContain("opencode-config-crashed.json")
+    expect(remaining.some((name) => name.startsWith("opencode-config-") && name.includes(session.sessionId))).toBe(
+      true,
+    )
+  })
+})
+
+/**
+ * The MCP wiring's other two flavours. Claude's file-by-flag and OpenCode's
+ * config-by-variable are covered above; these exercise an agent that takes the
+ * URL in argv and the token by variable name (Codex), one that takes the whole
+ * config from a settings file named by a variable (Gemini), and one whose file
+ * must be written in its own shape (Qwen).
+ */
+describe("AgentService — MCP wiring carriers", () => {
+  function carrierService(mcpOn: boolean): AgentService {
+    return new AgentService(
+      agentRepository,
+      workflows,
+      collections,
+      new LocalOwnerProvider(),
+      new ScopeResolver({
+        workspaceExists: (id) => workspaces.getById(id) !== undefined,
+        environmentExists: () => false,
+      }),
+      {
+        pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
+        getMcpConfig: () =>
+          mcpOn ? { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 } : null,
+        agentFilesDir,
+        pty,
+      },
+    )
+  }
+
+  async function seedAndLaunch(definition: AgentDefinition, mcpOn = true) {
+    const seeded = seed()
+    const service = carrierService(mcpOn)
+    await service.saveCustomAgent(seeded.workspaceId, definition)
+    pickDirectory.mockResolvedValue(tempDir)
+    await service.chooseLocalPath(seeded.workspaceId, { kind: "project", id: seeded.projectId })
+    await service.launchEmbedded({
+      workspaceId: seeded.workspaceId,
+      agentKey: definition.agentKey,
+      scope: { kind: "project", id: seeded.projectId },
+      cols: 100,
+      rows: 30,
+    })
+    return { spawned: pty.spawned[0] }
+  }
+
+  function mcpConfigFiles(): readonly string[] {
+    return fs.existsSync(agentFilesDir)
+      ? fs.readdirSync(agentFilesDir).filter((name) => name.startsWith("apiweave-mcp-"))
+      : []
+  }
+
+  /**
+   * Codex's shape: the URL rides in argv unquoted — the one form that survives
+   * cmd.exe — the token never appears there, and no config file is written at
+   * all because nothing in either half names one.
+   */
+  it("carries the url in argv and the token in the environment, with no file", async () => {
+    const { spawned } = await seedAndLaunch({
+      ...realExecutableAgent(),
+      agentKey: "codex-runner",
+      mcpConfigArgs: [
+        "-c",
+        "mcp_servers.apiweave.url={url}",
+        "-c",
+        "mcp_servers.apiweave.bearer_token_env_var=APIWEAVE_MCP_TOKEN",
+      ],
+      mcpConfigEnv: { APIWEAVE_MCP_TOKEN: "{token}" },
+    })
+
+    expect(spawned?.args).toEqual([
+      "--version",
+      "-c",
+      "mcp_servers.apiweave.url=http://127.0.0.1:47271/mcp",
+      "-c",
+      "mcp_servers.apiweave.bearer_token_env_var=APIWEAVE_MCP_TOKEN",
+    ])
+    expect(spawned?.args.join(" ")).not.toContain("secret-token")
+    expect(spawned?.env["APIWEAVE_MCP_TOKEN"]).toBe("secret-token")
+    expect(mcpConfigFiles()).toHaveLength(0)
+  })
+
+  /**
+   * Gemini's shape: no flag exists, so the standard config file travels by
+   * variable — the same file Claude gets, because gemini's settings schema
+   * reads the mcpServers shape as-is.
+   */
+  it("carries the config file by environment variable for an agent with no flag", async () => {
+    const { spawned } = await seedAndLaunch({
+      ...realExecutableAgent(),
+      agentKey: "gemini-runner",
+      mcpConfigArgs: [],
+      mcpConfigEnv: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: "{path}" },
+    })
+
+    const named = spawned?.env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"]
+    expect(named).toBeDefined()
+    expect(JSON.parse(fs.readFileSync(named as string, "utf8"))).toEqual({
+      mcpServers: {
+        apiweave: {
+          type: "http",
+          url: "http://127.0.0.1:47271/mcp",
+          headers: { Authorization: "Bearer secret-token" },
+        },
+      },
+    })
+    expect(spawned?.args).toEqual(["--version"])
+  })
+
+  /** Qwen's shape: its own file grammar, selected by the definition. */
+  it("writes the qwen file shape when the definition names it", async () => {
+    const { spawned } = await seedAndLaunch({
+      ...realExecutableAgent(),
+      agentKey: "qwen-runner",
+      mcpConfigArgs: ["--mcp-config", "{path}"],
+      mcpConfigFormat: "qwen",
+    })
+
+    const flagIndex = spawned?.args.indexOf("--mcp-config") ?? -1
+    expect(flagIndex).toBeGreaterThan(-1)
+    const named = String(spawned?.args[flagIndex + 1])
+    expect(JSON.parse(fs.readFileSync(named, "utf8"))).toEqual({
+      mcpServers: {
+        apiweave: {
+          httpUrl: "http://127.0.0.1:47271/mcp",
+          headers: { Authorization: "Bearer secret-token" },
+        },
+      },
+    })
+  })
+
+  /**
+   * The briefing's promise follows the wiring, not the flavour: an agent wired
+   * by variable alone is as wired as one wired by flag.
+   */
+  it("tells an env-wired agent the bridge is connected", async () => {
+    await seedAndLaunch({
+      ...realExecutableAgent(),
+      agentKey: "gemini-runner",
+      mcpConfigArgs: [],
+      mcpConfigEnv: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: "{path}" },
+      briefingArgs: ["--brief-file", "{path}"],
+    })
+
+    const briefIndex = pty.spawned[0]?.args.indexOf("--brief-file") ?? -1
+    const briefing = fs.readFileSync(String(pty.spawned[0]?.args[briefIndex + 1]), "utf8")
+    expect(briefing).not.toContain("without APIWeave's MCP server")
+  })
+
+  /** No bridge, no token on the environment — nothing half-wired survives. */
+  it("sets no token variable when the bridge is off", async () => {
+    const { spawned } = await seedAndLaunch(
+      {
+        ...realExecutableAgent(),
+        agentKey: "codex-runner",
+        mcpConfigArgs: ["-c", "mcp_servers.apiweave.url={url}"],
+        mcpConfigEnv: { APIWEAVE_MCP_TOKEN: "{token}" },
+      },
+      false,
+    )
+
+    expect(spawned?.env["APIWEAVE_MCP_TOKEN"]).toBeUndefined()
+    expect(spawned?.args).toEqual(["--version"])
+    expect(mcpConfigFiles()).toHaveLength(0)
+  })
+})

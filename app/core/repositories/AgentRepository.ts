@@ -25,7 +25,10 @@ type AgentDefinitionOptions = Pick<
   | "promptMode"
   | "promptFlag"
   | "mcpConfigArgs"
+  | "mcpConfigEnv"
+  | "mcpConfigFormat"
   | "briefingArgs"
+  | "configEnv"
   | "unsupportedPlatforms"
   | "installUrl"
   | "sessionIdMode"
@@ -129,7 +132,10 @@ export class AgentRepository {
           promptMode: input.promptMode,
           promptFlag: input.promptFlag ?? null,
           mcpConfigArgs: input.mcpConfigArgs,
+          mcpConfigEnv: input.mcpConfigEnv,
+          mcpConfigFormat: input.mcpConfigFormat,
           briefingArgs: input.briefingArgs,
+          configEnv: input.configEnv,
           unsupportedPlatforms: input.unsupportedPlatforms,
           installUrl: input.installUrl ?? null,
           sessionIdMode: input.sessionIdMode,
@@ -441,7 +447,10 @@ function optionsToDefinition(options: Partial<AgentDefinitionOptions>): AgentDef
     promptMode = "none",
     promptFlag = null,
     mcpConfigArgs = [],
+    mcpConfigEnv = {},
+    mcpConfigFormat = "claude",
     briefingArgs = [],
+    configEnv = {},
     unsupportedPlatforms = [],
     installUrl = null,
     sessionIdMode = "none",
@@ -453,7 +462,10 @@ function optionsToDefinition(options: Partial<AgentDefinitionOptions>): AgentDef
     promptMode,
     promptFlag,
     mcpConfigArgs,
+    mcpConfigEnv,
+    mcpConfigFormat,
     briefingArgs,
+    configEnv,
     unsupportedPlatforms,
     installUrl,
     sessionIdMode,
