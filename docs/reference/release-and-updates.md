@@ -30,7 +30,7 @@ Nothing reads `api.github.com` (60 requests/hour per IP, unauthenticated — a c
 Push a SemVer tag. `.github/workflows/desktop-release.yml` does the rest:
 
 1. **validate** — checks the tag shape, that `app/package.json` and `app/package-lock.json` agree with it, and that the tag is on `main`. Creates the draft release, so the four build jobs can only ever *find* it rather than race to create it.
-2. **build** (×4) — each job packages and publishes its own installers straight to the draft. Publishing is what makes electron-builder write `latest.yml` / `latest-linux.yml` and the differential blockmaps; `--publish never` produces none of them.
+2. **build** (×4) — each job packages and publishes its own installers straight to the draft. Publishing is what makes electron-builder write `latest.yml` / `latest-linux.yml` and the differential blockmaps; `--publish never` produces none of them. The Windows job additionally uploads a `.zip` wrapping its installer — the download a person takes — while the bare `.exe` stays in the release because `latest.yml` names it and electron-updater cannot consume an archive.
 3. **publish** — verifies the full asset set landed, verifies the manifests are internally true (below), writes `version.json`, checksums everything, then flips the release live.
 
 ### What CI actually guarantees

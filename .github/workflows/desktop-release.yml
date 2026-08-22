@@ -161,12 +161,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: ${{ matrix.command }}
 
+      # What a person downloads on Windows is a zip wrapping the installer
+      # electron-builder just published — a bare unsigned .exe is what browsers
+      # and mail scanners flag most readily. The exe itself still has to stay
+      # in the release: latest.yml names it, and electron-updater's NsisUpdater
+      # downloads exactly that filename from this release's assets and cannot
+      # consume an archive, so dropping the exe in favour of the zip would
+      # break the update download for every installed client. The zip is for
+      # humans; the exe beside it is for the updater.
+      - name: Publish Windows installer zip
+        if: matrix.id == 'windows-x64'
+        working-directory: app
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = Get-ChildItem release -Filter '*-win-x64.exe' | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "No *-win-x64.exe in app/release — nothing to zip."
+          }
+          $zip = Join-Path $exe.DirectoryName "$($exe.BaseName).zip"
+          Compress-Archive -LiteralPath $exe.FullName -DestinationPath $zip -Force
+          gh release upload "$env:GITHUB_REF_NAME" $zip --repo "$env:GITHUB_REPOSITORY" --clobber
+
       - name: Upload build output (audit trail; the release itself already has these)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: apiweave-${{ matrix.id }}
           path: |
             app/release/*.exe
+            app/release/*-win-x64.zip
             app/release/*.dmg
             app/release/*.AppImage
             app/release/*.deb
@@ -220,6 +244,7 @@ jobs:
 
           expected=(
             'assets/*-win-x64.exe'
+            'assets/*-win-x64.zip'
             'assets/*-mac-x64.dmg'
             'assets/*-mac-arm64.dmg'
             'assets/*.AppImage'
@@ -348,7 +373,7 @@ jobs:
 
           ## Downloads
 
-          - **Windows:** x64 NSIS installer (`.exe`) — can install updates in place.
+          - **Windows:** x64 NSIS installer shipped as a `.zip` — extract it and run the `.exe` inside; installed copies update in place. The bare `.exe` asset beside it is the in-app updater's download; the `.zip` is the one to grab by hand.
           - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`)
           - **Linux:** portable AppImage (can install updates in place), Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), and Arch/Manjaro (`.pacman`)
 

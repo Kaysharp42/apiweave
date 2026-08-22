@@ -394,4 +394,130 @@ describe("AgentRepository — definition options", () => {
 
     expect(agents.getDefinition(workspaceId, "legacy")?.briefingArgs).toEqual([])
   })
+
+  /** The launcher-config carrier round-trips like the briefing flag does. */
+  it("round-trips the config carrier through the options blob", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "carrier",
+      name: "Carrier",
+      detectCmd: "carrier",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      briefingArgs: [],
+      configEnv: { OPENCODE_CONFIG: "{path}" },
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+
+    expect(agents.getDefinition(workspaceId, "carrier")?.configEnv).toEqual({ OPENCODE_CONFIG: "{path}" })
+  })
+
+  /**
+   * A row written before the carrier existed launches as it did when it was
+   * written: with no config file and no variable naming one.
+   */
+  it("launches a definition stored before the carrier existed", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "legacy-carrier",
+      name: "Legacy Carrier",
+      detectCmd: "legacy-carrier",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      briefingArgs: [],
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+    // The blob as an older build would have written it: no `configEnv` key.
+    db.kvStore.set("UPDATE agent_definitions SET options_json = ? WHERE workspace_id = ? AND agent_key = ?", [
+      JSON.stringify({ promptMode: "none", mcpConfigArgs: [] }),
+      workspaceId,
+      "legacy-carrier",
+    ])
+
+    expect(agents.getDefinition(workspaceId, "legacy-carrier")?.configEnv).toEqual({})
+  })
+
+  /** The MCP env carrier and file format round-trip like the others. */
+  it("round-trips the mcp env carrier and file format", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "env-carrier",
+      name: "Env Carrier",
+      detectCmd: "env-carrier",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      mcpConfigEnv: { GEMINI_CLI_SYSTEM_SETTINGS_PATH: "{path}", APIWEAVE_MCP_TOKEN: "{token}" },
+      mcpConfigFormat: "qwen",
+      briefingArgs: [],
+      configEnv: {},
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+
+    const stored = agents.getDefinition(workspaceId, "env-carrier")
+    expect(stored?.mcpConfigEnv).toEqual({ GEMINI_CLI_SYSTEM_SETTINGS_PATH: "{path}", APIWEAVE_MCP_TOKEN: "{token}" })
+    expect(stored?.mcpConfigFormat).toBe("qwen")
+  })
+
+  /**
+   * A row written before either field existed launches as it did when written:
+   * with no MCP variables, in the one file shape that existed then.
+   */
+  it("launches a definition stored before the mcp env fields existed", () => {
+    const workspaceId = seedWorkspace()
+    agents.upsertDefinition(workspaceId, {
+      agentKey: "legacy-mcp-env",
+      name: "Legacy Mcp Env",
+      detectCmd: "legacy-mcp-env",
+      argv: [],
+      expectedProcess: null,
+      env: {},
+      promptMode: "none",
+      promptFlag: null,
+      mcpConfigArgs: [],
+      briefingArgs: [],
+      sessionIdMode: "none",
+      newSessionArgs: [],
+      resumeArgs: [],
+      sessionIdPattern: null,
+      unsupportedPlatforms: [],
+      installUrl: null,
+    })
+    // The blob as an older build would have written it: neither key present.
+    db.kvStore.set("UPDATE agent_definitions SET options_json = ? WHERE workspace_id = ? AND agent_key = ?", [
+      JSON.stringify({ promptMode: "none", mcpConfigArgs: [] }),
+      workspaceId,
+      "legacy-mcp-env",
+    ])
+
+    const stored = agents.getDefinition(workspaceId, "legacy-mcp-env")
+    expect(stored?.mcpConfigEnv).toEqual({})
+    expect(stored?.mcpConfigFormat).toBe("claude")
+  })
 })
