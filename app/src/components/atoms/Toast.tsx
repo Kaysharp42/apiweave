@@ -4,6 +4,9 @@ export function Toast() {
   return (
     <Toaster
       position="top-right"
+      closeButton
+      expand
+      theme="system"
       toastOptions={{
         duration: 4000,
         className:
@@ -12,8 +15,11 @@ export function Toast() {
           fontFamily: "inherit",
         },
       }}
-      theme="system"
-      closeButton
+      // Electron's frameless window marks the header as a drag region
+      // (WebkitAppRegion: drag). The toaster at top-right overlaps that 48px
+      // strip; without no-drag the close button's clicks are consumed as
+      // window drags and the toast appears not to close.
+      style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
     />
   );
 }

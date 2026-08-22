@@ -321,5 +321,33 @@
   }
 }
 
+/* ──────────────────────────────────────────────
+   Sonner toasts — Electron frameless drag fix
+   ──────────────────────────────────────────────
+   The desktop header is a -webkit-app-region: drag strip (48px tall at the
+   top). The toaster at top-right overlaps it; without no-drag the close
+   button's clicks are consumed as window drags and the toast appears not to
+   close. Pointer-events must also stay auto on the toast and its close
+   button even when the toaster is collapsed.
+   ────────────────────────────────────────────── */
+[data-sonner-toaster],
+[data-sonner-toast],
+[data-sonner-toast] [data-close-button] {
+  -webkit-app-region: no-drag;
+}
+
+[data-sonner-toaster] {
+  pointer-events: auto;
+}
+
+[data-sonner-toast] {
+  pointer-events: auto;
+}
+
+[data-sonner-toast] [data-close-button] {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
 /* Node layer reduced-motion rules live in styles/node-motion.css, next to
    the keyframes they neutralise. */
