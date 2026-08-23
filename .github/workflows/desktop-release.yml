@@ -135,6 +135,19 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # `npm ci` above ran better-sqlite3's install script, which fetches the
+      # prebuilt for the *runner's Node* (ABI 137 on Node 24) — and
+      # `build.npmRebuild` is false, so electron-builder ships whatever binary
+      # it finds. Without this step the packaged app dies on launch with
+      # "compiled against a different Node.js version ... NODE_MODULE_VERSION
+      # 137 ... requires 130" (v0.8.0 shipped exactly that). `npm run build`
+      # chains this itself; the per-platform `electron-builder` invocations
+      # below bypass that script, so it has to be explicit here. It also
+      # verifies the installed ABI and fails the build on a mismatch.
+      - name: Rebuild native modules for Electron
+        working-directory: app
+        run: npm run rebuild:electron
+
       - name: Build application
         working-directory: app
         run: npm run build:app
