@@ -1,5 +1,6 @@
 /* eslint-disable no-console -- the fallback sink *is* the console by definition; these two logging files are the only places allowed to touch it */
-import type { LogLevel, Logger } from "@shared/types/Logger"
+import type { Logger } from "@shared/types/Logger"
+import type { LogLevel } from "@shared/types/LogLevel"
 
 /**
  * Where log records end up. The main process binds this once at startup to

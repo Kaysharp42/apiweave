@@ -2,7 +2,8 @@ import { app, shell } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import log from "electron-log/main"
-import type { LogLevel, Logger } from "@shared/types/Logger"
+import type { Logger } from "@shared/types/Logger"
+import type { LogLevel } from "@shared/types/LogLevel"
 import { bindLogBackend } from "../core/logging/logger"
 import { isExpiredLogFile, logFileName } from "../core/logging/daily_files"
 
@@ -27,7 +28,7 @@ import { isExpiredLogFile, logFileName } from "../core/logging/daily_files"
 //   Linux    ~/.config/APIWeave/logs/apiweave-main-2026-08-23.log
 //
 // A file that grows past maxSize within its day is rotated into a timestamped
-// sibling (`apiweave-main-2026-08-23.143005.log`) rather than clobbering an
+// sibling (`apiweave-main-2026-08-23.143005123.log`) rather than clobbering an
 // `.old` copy, and files older than RETENTION_DAYS are deleted on launch and
 // hourly afterwards, so months of uptime cannot fill the disk.
 //
@@ -45,9 +46,36 @@ const SWEEP_INTERVAL_MS = 60 * 60 * 1000
 
 const LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"]
 
+/**
+ * `crop` exists on electron-log's runtime file instance — its own archiver
+ * calls it when a rename fails — but is missing from its `.d.ts`.
+ */
+interface CroppableLogFile {
+  crop(bytesAfter: number): void
+}
+
 function envLevel(): LogLevel {
   const raw = process.env["APIWEAVE_LOG_LEVEL"]
   return LEVELS.find((level) => level === raw) ?? "info"
+}
+
+/**
+ * Collision-proof sibling for a rotated chunk. Milliseconds keep two
+ * rotations in the same wall-clock second apart; skipping taken names means
+ * rename never hits its no-clobber EPERM on Windows.
+ */
+function nextChunkPath(info: path.ParsedPath, now: Date): string {
+  const stamp =
+    [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join("") + String(now.getMilliseconds()).padStart(3, "0")
+  let candidate = path.join(info.dir, `${info.name}.${stamp}${info.ext}`)
+  let attempt = 0
+  while (fs.existsSync(candidate)) {
+    attempt += 1
+    candidate = path.join(info.dir, `${info.name}.${stamp}-${attempt}${info.ext}`)
+  }
+  return candidate
 }
 
 function configureTransports(): void {
@@ -65,21 +93,32 @@ function configureTransports(): void {
   log.transports.file.archiveLogFn = (file) => {
     const current = file.toString()
     const info = path.parse(current)
-    const now = new Date()
-    const stamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
-      .map((n) => String(n).padStart(2, "0"))
-      .join("")
     try {
-      fs.renameSync(current, path.join(info.dir, `${info.name}.${stamp}${info.ext}`))
+      fs.renameSync(current, nextChunkPath(info, new Date()))
+      return
     } catch (error) {
-      log.warn("Could not rotate log", error)
+      // Never report this through `log.*`: the record would re-enter the file
+      // transport, which still sees size > maxSize and calls this archiver
+      // again — recursion on every later record. Go through the console
+      // transport alone, then restore the size cap like stock electron-log's
+      // failed-rename path, so rotation stops re-triggering per record.
+      log.transports.console({
+        data: ["electron-log.transports.file: Could not rotate log", error],
+        date: new Date(),
+        level: "warn",
+      })
+      const croppable = file as unknown as CroppableLogFile
+      croppable.crop(Math.min(MAX_FILE_BYTES / 4, 256 * 1024))
     }
   }
 
-  // Log4j2-style line: timestamp [LEVEL] [logger] message
-  const lineFormat = "[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] [{scope}] {text}"
+  // Log-style line: timestamp [LEVEL] (logger) message. electron-log renders
+  // `{scope}` as ` (name)`, so the brackets live on level and timestamp only;
+  // padding is off so columns stay stable as new logger names appear.
+  log.scope.labelPadding = false
+  const lineFormat = "[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}]{scope} {text}"
   log.transports.file.format = lineFormat
-  log.transports.console.format = "[{h}:{i}:{s}.{ms}] [{level}] [{scope}] {text}"
+  log.transports.console.format = "[{h}:{i}:{s}.{ms}] [{level}]{scope} {text}"
 }
 
 function sweepExpiredLogs(): void {

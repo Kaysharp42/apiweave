@@ -1,6 +1,7 @@
 /* eslint-disable no-console -- the fallback sink *is* the console by definition; these two logging files are the only places allowed to touch it */
 import type {} from "electron-log/renderer"
-import type { LogLevel, Logger } from "@shared/types/Logger"
+import type { Logger } from "@shared/types/Logger"
+import type { LogLevel } from "@shared/types/LogLevel"
 
 /**
  * Renderer-side logger in the same SLF4J style as the main process:

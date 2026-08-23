@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { LogLevel } from "@shared/types/Logger"
+import type { LogLevel } from "@shared/types/LogLevel"
 import { bindLogBackend, getLogger } from "../logger"
 import type { LogBackend } from "../logger"
 
