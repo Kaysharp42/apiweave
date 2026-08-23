@@ -22,6 +22,9 @@ import {
 } from "./cloud-transport"
 import type { CloudClientConfig } from "./cloud-client"
 import { setState, getState, subscribe } from "./cloud-state"
+import { getLogger } from "../../core/logging/logger"
+
+const cloudSyncLog = getLogger("cloud-sync")
 
 // ─── IPC Channels ────────────────────────────────────────────────────────────
 
@@ -69,7 +72,7 @@ export function activateCloudSync(config: CloudSyncConfig): CloudSyncProvider {
   const provider = new CloudSyncProvider(client, (state) => {
     setState(state)
     // ponytail: log redacted state only, never tokens or payloads.
-    console.info(`[cloud-sync] state=${state}`)
+    cloudSyncLog.info(`state=${state}`)
   })
   setSyncProvider(provider)
   activeProvider = provider
@@ -126,14 +129,14 @@ export async function handleWorkspaceOpened(workspace: WorkspaceRef): Promise<vo
     return
   }
   if (activeProvider === null) {
-    console.warn("[cloud-sync] workspace:opened but provider not activated")
+    cloudSyncLog.warn("workspace:opened but provider not activated")
     return
   }
   try {
     await activeProvider.pull()
   } catch (err) {
     // State is already set to 'error' by the provider; log redacted.
-    console.error(`[cloud-sync] pull failed: ${(err as Error).message}`)
+    cloudSyncLog.error(`pull failed: ${(err as Error).message}`)
   }
 }
 
@@ -146,7 +149,7 @@ export function handleEditCommitted(workspace: WorkspaceRef): void {
     return
   }
   if (activeProvider === null) {
-    console.warn("[cloud-sync] workspace:edit-committed but provider not activated")
+    cloudSyncLog.warn("workspace:edit-committed but provider not activated")
     return
   }
   if (pushTimer !== null) {
@@ -155,7 +158,7 @@ export function handleEditCommitted(workspace: WorkspaceRef): void {
   pushTimer = setTimeout(() => {
     pushTimer = null
     void activeProvider?.push().catch((err) => {
-      console.error(`[cloud-sync] push failed: ${(err as Error).message}`)
+      cloudSyncLog.error(`push failed: ${(err as Error).message}`)
     })
   }, PUSH_DEBOUNCE_MS)
 }

@@ -1,6 +1,9 @@
 import { MessageChannelMain, utilityProcess, type MessagePortMain, type UtilityProcess } from "electron"
 import type { AgentEvent } from "@shared/types/AgentSessionEvent"
 import type { PtyHostReply, PtyHostRequest, PtySpawnRequest } from "../core/agents/pty_protocol"
+import { getLogger } from "../core/logging/logger"
+
+const ptyHostLog = getLogger("pty-host")
 
 /**
  * How long a spawn may take before it is called a failure.
@@ -334,7 +337,7 @@ export class AgentProcessManager {
     // the exit code cannot carry.
     host.on("error", (type: string, location: string) => {
       this.hostFatalError = `The terminal backend crashed (${type}${location === "" ? "" : ` at ${location}`})`
-      console.error(`[pty-host] ${type} ${location}`)
+      ptyHostLog.error(`${type} ${location}`)
     })
     host.once("exit", (code) => {
       this.onHostExit(code)

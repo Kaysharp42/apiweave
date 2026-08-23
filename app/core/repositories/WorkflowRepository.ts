@@ -6,6 +6,7 @@ import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { AssertionItem } from "@shared/types/AssertionItem"
 import { generateId } from "../id"
+import { getLogger } from "../logging/logger"
 import {
   canonicalizeWorkflowGraph,
   getMapped,
@@ -263,7 +264,7 @@ export class WorkflowRepository {
       try {
         this.onChanged?.({ kind: "upsert", workflow })
       } catch (error) {
-        console.error("[workflow-notify] observer failed for workflow", workflow.workflowId, error)
+        getLogger("workflow-notify").error("observer failed for workflow", workflow.workflowId, error)
       }
     })
   }
@@ -273,7 +274,7 @@ export class WorkflowRepository {
       try {
         this.onChanged?.({ kind: "delete", workspaceId, workflowId })
       } catch (error) {
-        console.error("[workflow-notify] observer failed for workflow", workflowId, error)
+        getLogger("workflow-notify").error("observer failed for workflow", workflowId, error)
       }
     })
   }

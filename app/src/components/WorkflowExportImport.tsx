@@ -14,6 +14,7 @@ import { TextArea } from "./atoms/TextArea";
 import { Modal } from "./molecules/Modal";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave, authenticatedFetch } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
 import {
   workflowExportUrl,
   workflowImportUrl,
@@ -23,6 +24,8 @@ import type { WorkflowExportImportTab } from "../types/WorkflowExportImportTab";
 import type { WorkflowExportImportProps } from "../types/WorkflowExportImportProps";
 import type { DryRunResult } from "../types/DryRunResult";
 import type { ImportResult } from "../types/ImportResult";
+
+const exportImportLog = getLogger("WorkflowExportImport");
 
 // ponytail: surfaces zod `details` from the IPC validation error so the user
 // sees WHICH field failed, not just "request validation failed".
@@ -134,7 +137,7 @@ export function WorkflowExportImport({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      console.error("Export error:", err);
+      exportImportLog.error("Export error:", err);
       setError(
         err instanceof Error ? err.message : "An unknown error occurred",
       );
@@ -198,7 +201,7 @@ export function WorkflowExportImport({
       const result = await response.json();
       setDryRunResult(result);
     } catch (err: unknown) {
-      console.error("Dry run error:", err);
+      exportImportLog.error("Dry run error:", err);
       setError(
         err instanceof Error ? err.message : "An unknown error occurred",
       );
@@ -249,7 +252,7 @@ export function WorkflowExportImport({
         }, 1500);
       }
     } catch (err: unknown) {
-      console.error("Import error:", err);
+      exportImportLog.error("Import error:", err);
       setError(
         err instanceof Error ? err.message : "An unknown error occurred",
       );

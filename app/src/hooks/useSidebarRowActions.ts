@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { apiweave } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
 import { noteLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
 import useTabStore from "../stores/TabStore";
 import type { Project } from "../types/Project";
@@ -27,7 +28,7 @@ function relocateOpenTab(workflow: Workflow, targetWorkspaceId: string): void {
 }
 
 function reportFailure(context: string, error: unknown, fallback: string): void {
-  console.error(context, error);
+  getLogger("SidebarRowActions").error(context, error);
   toast.error((error as Error).message || fallback);
 }
 

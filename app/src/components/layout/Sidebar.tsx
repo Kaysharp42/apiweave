@@ -36,6 +36,9 @@ import {
   workflowsCreateInProjectUrl,
   projectWorkflowAssignUrl,
 } from "../../utils/apiweaveClient";
+import { getLogger } from "../../utils/logger";
+
+const sidebarLog = getLogger("Sidebar");
 
 export function Sidebar() {
   const { navigationSelectedValue: selectedNav, setNavState } =
@@ -206,7 +209,7 @@ export function Sidebar() {
         useTabStore.getState().openTab(workflow);
       }
     } catch (error) {
-      console.error("Error creating workflow:", error);
+      sidebarLog.error("Error creating workflow:", error);
     }
   };
 
@@ -250,7 +253,7 @@ export function Sidebar() {
         toast.error(errBody.detail ?? "Failed to create workflow in project");
       }
     } catch (error) {
-      console.error("Error creating workflow in project:", error);
+      sidebarLog.error("Error creating workflow in project:", error);
       toast.error("Failed to create workflow in project");
     } finally {
       setAddWorkflowToProjectTarget(null);
@@ -282,7 +285,7 @@ export function Sidebar() {
         toast.error(errBody.detail ?? "Failed to assign workflow to project");
       }
     } catch (error) {
-      console.error("Error assigning workflow to project:", error);
+      sidebarLog.error("Error assigning workflow to project:", error);
       toast.error("Failed to assign workflow to project");
     }
   };
@@ -311,12 +314,10 @@ export function Sidebar() {
       toast.error(
         `Unable to open workflow (${response.status}). Please retry.`,
       );
-      console.error(
-        `Failed to fetch full workflow payload (${response.status})`,
-      );
+      sidebarLog.error(`Failed to fetch full workflow payload (${response.status})`);
     } catch (error) {
       toast.error("Unable to open workflow. Check your connection and retry.");
-      console.error("Error fetching full workflow payload:", error);
+      sidebarLog.error("Error fetching full workflow payload:", error);
     }
   };
 
@@ -367,7 +368,7 @@ export function Sidebar() {
       closeTab(workflowId);
       await refreshAll(selectedNav);
     } catch (error) {
-      console.error("Error deleting workflow:", error);
+      sidebarLog.error("Error deleting workflow:", error);
       toast.error((error as Error).message || "Error deleting workflow");
     } finally {
       setDeleteWorkflowTarget(null);
@@ -400,7 +401,7 @@ export function Sidebar() {
       });
       await refreshAll(selectedNav);
     } catch (error) {
-      console.error("Error deleting project:", error);
+      sidebarLog.error("Error deleting project:", error);
       toast.error((error as Error).message || "Error deleting project");
     } finally {
       setDeleteProjectTarget(null);

@@ -28,10 +28,13 @@ import {
 import { CursorStore } from "./cloud-cursor"
 import { Outbox, type OutboxInput, type OutboxRow, type OutboxKind, type OutboxOp } from "./cloud-outbox"
 import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "./cloud-apply"
+import { getLogger } from "../../core/logging/logger"
 import { PushOutcome_Status, RejectionReason } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { rejectionMessage, transportErrorMessage } from "./cloud-error-messages"
 
 export { CloudClient, DeviceTokenStore }
+
+const cloudSyncLog = getLogger("cloud-sync")
 
 export type SyncState = "idle" | "initializing" | "syncing" | "conflict" | "error" | "offline"
 
@@ -527,7 +530,7 @@ export class CloudSyncProvider implements SyncProvider {
 
   private log(message: string, data?: Record<string, unknown>): void {
     const redacted = data ? redactSensitive(data) : undefined
-    console.log(`[cloud-sync] ${message}`, redacted ? JSON.stringify(redacted) : "")
+    cloudSyncLog.info(message, redacted ? JSON.stringify(redacted) : "")
   }
 }
 

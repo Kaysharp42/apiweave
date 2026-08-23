@@ -5,9 +5,12 @@ import type { JsonValue } from "@shared/types/JsonValue";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import { onWorkflowChanged } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
 import { toast } from "sonner";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+
+const liveUpdatesLog = getLogger("live-updates");
 
 interface UseWorkflowLiveUpdatesParams {
   workspaceId: string | null;
@@ -258,10 +261,7 @@ export default function useWorkflowLiveUpdates({
       try {
         incoming = WorkflowSchema.parse(event.workflow);
       } catch (error) {
-        console.error(
-          "[live-updates] ignoring malformed workflow snapshot",
-          error,
-        );
+        liveUpdatesLog.error("ignoring malformed workflow snapshot", error);
         return;
       }
 
@@ -328,10 +328,11 @@ export default function useWorkflowLiveUpdates({
           retryOnCanvasChangeRef.current = false;
         },
         warnOfLostRemoteChange: () => {
-          console.warn(
-            "[live-updates] discarded a remote change overtaken by local edits",
-            { workflowId, incomingRev: incoming.rev, localRev: workflow.rev },
-          );
+          liveUpdatesLog.warn("discarded a remote change overtaken by local edits", {
+            workflowId,
+            incomingRev: incoming.rev,
+            localRev: workflow.rev,
+          });
           toast.warning(
             "Remote changes to this workflow were overwritten by your unsaved edits",
           );

@@ -11,6 +11,14 @@ import {
   type PtyHostRequest,
   type PtySpawnRequest,
 } from "../core/agents/pty_protocol"
+import { getLogger } from "../core/logging/logger"
+
+// The host is a utilityProcess: it shares no module instance with main, so the
+// electron-log file backend bound there never exists here and the facade falls
+// back to stderr. The records that matter — fatal V8 errors, exits — are
+// mirrored into the daily files by AgentProcessManager's `error`/`exit`
+// handlers on its side of the fork.
+const log = getLogger("pty-host")
 
 /**
  * The PTY host: an Electron `utilityProcess` that owns every embedded agent's
@@ -105,10 +113,10 @@ let exitCounter = 0
  * below, and fail only their own session.
  */
 process.on("uncaughtException", (error: unknown) => {
-  console.error("[pty-host] uncaught exception", error)
+  log.error("uncaught exception", error)
 })
 process.on("unhandledRejection", (reason: unknown) => {
-  console.error("[pty-host] unhandled rejection", reason)
+  log.error("unhandled rejection", reason)
 })
 
 parentPort.on("message", (event) => {
@@ -336,7 +344,7 @@ function compilePattern(source: string | null): RegExp | null {
   try {
     return new RegExp(source)
   } catch (error) {
-    console.error("[pty-host] ignoring an invalid sessionIdPattern", error)
+    log.error("ignoring an invalid sessionIdPattern", error)
     return null
   }
 }

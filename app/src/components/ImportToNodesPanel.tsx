@@ -23,6 +23,9 @@ import {
   workflowTemplatesUrl,
   workflowImportFormatUrl,
 } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
+
+const importPanelLog = getLogger("ImportToNodesPanel");
 
 interface MessageState {
   type: "success" | "error";
@@ -290,7 +293,7 @@ export function ImportToNodesPanel({
 
       await response.json();
     } catch (error) {
-      console.error("Error saving templates to workflow:", error);
+      importPanelLog.error("Error saving templates to workflow:", error);
       throw error;
     }
   };
