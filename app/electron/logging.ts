@@ -1,50 +1,203 @@
-import { shell } from "electron"
+import { app, shell } from "electron"
+import fs from "node:fs"
+import path from "node:path"
 import log from "electron-log/main"
+import type { Logger } from "@shared/types/Logger"
+import type { LogLevel } from "@shared/types/LogLevel"
+import { bindLogBackend } from "../core/logging/logger"
+import { isExpiredLogFile, logFileName } from "../core/logging/daily_files"
 
 // ---------------------------------------------------------------------------
 // Main-process logging
 //
-// A packaged app has no terminal. `console.log` in the main process goes to a
-// stdout nobody is attached to, which makes the one class of bug that matters
-// most here — "the update didn't install and I don't know why" — impossible to
-// diagnose from a user's report.
+// A packaged app has no terminal. Printing to stdout in the main process goes
+// to nothing, which makes the class of bug that matters most here — "the
+// update didn't install / the save failed and I don't know why" — impossible
+// to diagnose from a user's report.
 //
-// electron-log's default file transport writes to `app.getPath("logs")`:
+// Everything funnels through one system, shaped like the classic Java loggers:
 //
-//   Windows  %APPDATA%\APIWeave\logs\main.log
-//   macOS    ~/Library/Logs/APIWeave/main.log
-//   Linux    ~/.config/APIWeave/logs/main.log
+//   getLogger("cloud-sync").warn(...)     ← core/electron code (SLF4J-style,
+//                                            no electron import needed)
+//   log.scope("updater")                  ← electron-log named logger
 //
-// and rotates at 1 MiB into `main.old.log`, so it cannot grow without bound on
-// a machine that stays up for months. One generation of history is enough: the
-// update events worth reading are always from the current or previous session.
+// The file transport writes one file per day to `app.getPath("logs")`:
+//
+//   Windows  %APPDATA%\APIWeave\logs\apiweave-main-2026-08-23.log
+//   macOS    ~/Library/Logs/APIWeave/apiweave-main-2026-08-23.log
+//   Linux    ~/.config/APIWeave/logs/apiweave-main-2026-08-23.log
+//
+// A file that grows past maxSize within its day is rotated into a timestamped
+// sibling (`apiweave-main-2026-08-23.143005123.log`) rather than clobbering an
+// `.old` copy, and files older than RETENTION_DAYS are deleted on launch and
+// hourly afterwards, so months of uptime cannot fill the disk.
+//
+// Renderer output lands in the same daily files two ways:
+//   - log.initialize() injects a session preload exposing `window.__electronLog`,
+//     which src/utils/logger.ts forwards explicit records over;
+//   - spyRendererConsole mirrors anything still printed to the renderer console
+//     (uncaught errors, third-party libs) into the main logger.
 // ---------------------------------------------------------------------------
 
-log.transports.file.level = "info"
+const RETENTION_DAYS = 14
+/** Per-day size cap; past this the day splits into timestamped chunks. */
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+const SWEEP_INTERVAL_MS = 60 * 60 * 1000
+
+const LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"]
+
+/**
+ * `crop` exists on electron-log's runtime file instance — its own archiver
+ * calls it when a rename fails — but is missing from its `.d.ts`.
+ */
+interface CroppableLogFile {
+  crop(bytesAfter: number): void
+}
+
+function envLevel(): LogLevel {
+  const raw = process.env["APIWEAVE_LOG_LEVEL"]
+  return LEVELS.find((level) => level === raw) ?? "info"
+}
+
+/**
+ * Collision-proof sibling for a rotated chunk. Milliseconds keep two
+ * rotations in the same wall-clock second apart; skipping taken names means
+ * rename never hits its no-clobber EPERM on Windows.
+ */
+function nextChunkPath(info: path.ParsedPath, now: Date): string {
+  const stamp =
+    [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join("") + String(now.getMilliseconds()).padStart(3, "0")
+  let candidate = path.join(info.dir, `${info.name}.${stamp}${info.ext}`)
+  let attempt = 0
+  while (fs.existsSync(candidate)) {
+    attempt += 1
+    candidate = path.join(info.dir, `${info.name}.${stamp}-${attempt}${info.ext}`)
+  }
+  return candidate
+}
+
+function configureTransports(): void {
+  const level = envLevel()
+  log.transports.file.level = level
+  log.transports.file.maxSize = MAX_FILE_BYTES
+  log.transports.console.level = level
+
+  // One file per day, resolved per record so midnight rolls over cleanly.
+  log.transports.file.resolvePathFn = ({ libraryDefaultDir }, message) =>
+    path.join(libraryDefaultDir, logFileName(message?.date ?? new Date()))
+
+  // The stock archiver renames to `<name>.old.log`, which a same-day second
+  // rotation would overwrite mid-write on Windows. Chunk instead.
+  log.transports.file.archiveLogFn = (file) => {
+    const current = file.toString()
+    const info = path.parse(current)
+    try {
+      fs.renameSync(current, nextChunkPath(info, new Date()))
+      return
+    } catch (error) {
+      // Never report this through `log.*`: the record would re-enter the file
+      // transport, which still sees size > maxSize and calls this archiver
+      // again — recursion on every later record. Go through the console
+      // transport alone, then restore the size cap like stock electron-log's
+      // failed-rename path, so rotation stops re-triggering per record.
+      log.transports.console({
+        data: ["electron-log.transports.file: Could not rotate log", error],
+        date: new Date(),
+        level: "warn",
+      })
+      const croppable = file as unknown as CroppableLogFile
+      croppable.crop(Math.min(MAX_FILE_BYTES / 4, 256 * 1024))
+    }
+  }
+
+  // Log-style line: timestamp [LEVEL] (logger) message. electron-log renders
+  // `{scope}` as ` (name)`, so the brackets live on level and timestamp only;
+  // padding is off so columns stay stable as new logger names appear.
+  log.scope.labelPadding = false
+  const lineFormat = "[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}]{scope} {text}"
+  log.transports.file.format = lineFormat
+  log.transports.console.format = "[{h}:{i}:{s}.{ms}] [{level}]{scope} {text}"
+}
+
+function sweepExpiredLogs(): void {
+  let logsDir: string
+  try {
+    logsDir = app.getPath("logs")
+  } catch {
+    return
+  }
+
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(logsDir)
+  } catch {
+    return
+  }
+
+  const now = new Date()
+  for (const entry of entries) {
+    if (!isExpiredLogFile(entry, now, RETENTION_DAYS)) {
+      continue
+    }
+    try {
+      fs.unlinkSync(path.join(logsDir, entry))
+    } catch {
+      // In use or already gone — the next sweep retries harmlessly.
+    }
+  }
+}
+
+let initialized = false
+
+/**
+ * Binds the whole system together. Idempotent; called once at the very top of
+ * the composition root so every later record lands in the daily file.
+ */
+export function initLogging(): void {
+  if (initialized) {
+    return
+  }
+  initialized = true
+
+  configureTransports()
+
+  // Session preload exposing `window.__electronLog` + renderer-console mirroring.
+  log.initialize({ includeFutureSessions: true, spyRendererConsole: true })
+
+  bindLogBackend({
+    write: (level, name, message, data): void => {
+      log.scope(name)[level](message, ...data)
+    },
+  })
+
+  void app.whenReady().then(() => {
+    sweepExpiredLogs()
+    const timer = setInterval(sweepExpiredLogs, SWEEP_INTERVAL_MS)
+    timer.unref?.()
+  })
+}
 
 /**
  * Logger handed to electron-updater as `autoUpdater.logger`, which is chatty at
  * debug level — every provider request, resolved file and byte range. The file
- * transport is pinned to `info` above so that detail stays out of the log
- * unless someone raises the level deliberately, while the events that explain a
- * failed update (checking, found, downloading, error) still land.
- *
- * The scope prefixes each line with `[updater]`, so update lines stay findable
- * once anything else in the main process starts logging here too.
+ * transport is pinned to `info` by default so that detail stays out of the log
+ * unless someone raises APIWEAVE_LOG_LEVEL deliberately.
  */
-export const updaterLog = log.scope("updater")
+export const updaterLog: Logger = log.scope("updater") as Logger
 
 /**
  * Logger for rejected IPC dispatches. The router is electron-free, so the
  * composition root passes this in as `reportError`; every refused call — a
  * workflow save rejected by validation, a denied action, an internal handler
- * failure — lands in `main.log` as `[ipc] <domain>.<action> rejected (...)`.
+ * failure — lands in the daily file as `[ipc] <domain>.<action> rejected (...)`.
  * This is the line a support report should quote, since toasts are transient
  * and the renderer console dies with the window.
  */
-export const ipcLog = log.scope("ipc")
+export const ipcLog: Logger = log.scope("ipc") as Logger
 
-/** Absolute path to the current log file. Resolved on demand rather than at
+/** Absolute path to today's log file. Resolved on demand rather than at
  * import: the path depends on `app.getPath`, which is only meaningful once
  * Electron has decided where userData lives. */
 export function logFilePath(): string {
@@ -54,7 +207,7 @@ export function logFilePath(): string {
 /**
  * Opens the OS file manager with the log file selected. Reveals rather than
  * opens it, because the useful next step is almost always attaching the file to
- * a bug report, and `main.log` has no default handler on Windows.
+ * a bug report, and a `.log` file has no default handler on Windows.
  */
 export function revealLogFile(): void {
   shell.showItemInFolder(logFilePath())

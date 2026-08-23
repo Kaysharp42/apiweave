@@ -1,6 +1,7 @@
 // fallow-ignore-file code-duplication -- persistence models and SQLite rows intentionally mirror each other
 import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
+import { getLogger } from "../logging/logger"
 import { slugify } from "./helpers"
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
@@ -1395,7 +1396,7 @@ export class CloudSyncRepository {
       try {
         this.onWorkflowChanged?.(workspaceId, workflowId, deleted)
       } catch (error) {
-        console.error("[cloud-sync] workflow-changed observer failed", workflowId, error)
+        getLogger("cloud-sync").error("workflow-changed observer failed", workflowId, error)
       }
     })
   }

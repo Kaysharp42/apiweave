@@ -25,7 +25,10 @@ import type { TabItem } from "../../types/TabItem";
 import type { Workflow } from "../../types/Workflow";
 import { authenticatedFetch } from "../../utils/apiweaveClient";
 import { workflowsUrl } from "../../utils/apiweaveClient";
+import { getLogger } from "../../utils/logger";
 import { toast } from "sonner";
+
+const workspaceLog = getLogger("Workspace");
 
 const panelTabs: TabItem[] = [
   { key: "variables", icon: Package, label: "Variables" },
@@ -118,7 +121,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
           useSidebarStore.getState().signalWorkflowsRefresh();
         }
       } catch (error) {
-        console.error("Error creating workflow:", error);
+        workspaceLog.error("Error creating workflow:", error);
       }
     },
     [isScopeReady, openTab, workspaceId],

@@ -21,10 +21,11 @@ if (!fs.existsSync(mainBundle)) {
 }
 
 const TIMEOUT_MS = 30_000
-// The main process logs this once loadURL("app://local/") resolves.
-const OK = "[renderer] loaded app://local/"
+// The main process logs this once loadURL("app://local/") resolves, through the
+// structured logger whose terminal format is "[time] [level] (scope) text".
+const OK = "loaded app://local/"
 // Any of these mean the shell came up broken.
-const FAIL = ["did-fail-load", "render-process-gone", "[renderer] load failed"]
+const FAIL = ["did-fail-load", "render-process-gone", "load failed"]
 
 const child = spawn(electronBinary, [appDir, "--no-sandbox"], {
   cwd: appDir,

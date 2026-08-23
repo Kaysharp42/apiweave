@@ -15,6 +15,9 @@ import { IconButton } from "./atoms/IconButton";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { workflowsUrl, workflowImportCurlUrl } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
+
+const curlImportLog = getLogger("CurlImport");
 
 interface Workflow {
   workflowId: string;
@@ -69,7 +72,7 @@ export function CurlImport({
           setWorkflows(data.workflows || []);
         }
       } catch (err) {
-        console.error("Error fetching workflows:", err);
+        curlImportLog.error("Error fetching workflows:", err);
       } finally {
         setLoadingWorkflows(false);
       }
@@ -164,7 +167,7 @@ export function CurlImport({
       const result = await response.json();
       setDryRunResult(result);
     } catch (err) {
-      console.error("Preview error:", err);
+      curlImportLog.error("Preview error:", err);
       if (err instanceof Error) {
         setError(err.message);
       }
@@ -213,7 +216,7 @@ export function CurlImport({
       }
       onClose();
     } catch (err) {
-      console.error("Import error:", err);
+      curlImportLog.error("Import error:", err);
       if (err instanceof Error) {
         setError(err.message);
       }

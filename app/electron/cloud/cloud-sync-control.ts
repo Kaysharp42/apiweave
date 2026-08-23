@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync } from "node:crypto"
 import { hostname } from "node:os"
 import type { KVStore } from "../../core/db"
 import { generateId } from "../../core/id"
+import { getLogger } from "../../core/logging/logger"
 import type { Workspace } from "@shared/types/Workspace"
 import { CloudSyncRepository, WorkspaceRepository } from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
@@ -52,6 +53,9 @@ import {
 import { CloudSyncProvider } from "./cloud-transport"
 import { getState, setState } from "./cloud-state"
 import type { SyncConflictResolver } from "./conflict-ui-bridge"
+
+const cloudSyncControlLog = getLogger("cloud-sync")
+const cloudReconcileLog = getLogger("cloud-reconcile")
 
 interface DesktopCloudSyncDefaults {
   readonly cloudEntryUrl: string
@@ -284,7 +288,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       this.tokenStore.clearTokens()
       if (purgeAccountId !== undefined) {
         const removed = repository.purgeAccountWorkspaces(purgeAccountId)
-        console.info(`[cloud-sync] purged ${removed} workspace(s) on disconnect`)
+        cloudSyncControlLog.info(`purged ${removed} workspace(s) on disconnect`)
       }
       repository.clearCloudDeviceState()
       repository.deleteSetting(KEY_WORKSPACE_CATALOG)
@@ -589,7 +593,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     // whichever account links next. Bail instead.
     const account = this.loadAccountIdentity()
     if (account === undefined) {
-      console.warn("[cloud-reconcile] skipped: cloud account identity is unavailable")
+      cloudReconcileLog.warn("skipped: cloud account identity is unavailable")
       return
     }
     const client = this.createClient(this.activeConfig)
@@ -642,7 +646,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       },
       reactivate: () => this.activateIfReady(false, true),
       initializeWorkspace: (workspaceId) => this.requireActiveProvider().initializeWorkspace(workspaceId),
-      log: (message, data) => console.log(`[cloud-reconcile] ${message}`, data ? JSON.stringify(data) : ""),
+      log: (message, data) => cloudReconcileLog.info(message, data ? JSON.stringify(data) : ""),
     })
     this.notifyStatusChanged()
   }

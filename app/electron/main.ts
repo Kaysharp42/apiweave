@@ -64,9 +64,20 @@ import {
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
-import { ipcLog, revealLogFile } from "./logging"
+import { getLogger } from "../core/logging/logger"
+import { initLogging, ipcLog, revealLogFile } from "./logging"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
+
+const bootstrapLog = getLogger("bootstrap")
+const rendererLog = getLogger("renderer")
+const mcpLog = getLogger("mcp")
+const agentsLog = getLogger("agents")
+
+// Bind the logging system before anything else in this file runs: the
+// single-instance and canonicalisation lines below are the first records of a
+// session, and the ones a crash report most needs to see.
+initLogging()
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
@@ -160,10 +171,10 @@ async function createWindow(): Promise<void> {
   })
 
   win.webContents.on("did-fail-load", (_event, code, description, url) => {
-    console.error(`[renderer] did-fail-load ${code} ${description} ${url}`)
+    rendererLog.error(`did-fail-load ${code} ${description} ${url}`)
   })
   win.webContents.on("render-process-gone", (_event, details) => {
-    console.error("[renderer] render-process-gone", details)
+    rendererLog.error("render-process-gone", details)
   })
 
   // Never let the privileged app:// document navigate to attacker-controlled
@@ -186,10 +197,10 @@ async function createWindow(): Promise<void> {
   try {
     const rendererUrl = "app://local/"
     await win.loadURL(rendererUrl)
-    console.info(`[renderer] loaded ${rendererUrl}`)
+    rendererLog.info(`loaded ${rendererUrl}`)
   } catch (error) {
     if (error instanceof Error) {
-      console.error(`[renderer] load failed: ${error.message}`)
+      rendererLog.error(`load failed: ${error.message}`)
       return
     }
 
@@ -198,14 +209,14 @@ async function createWindow(): Promise<void> {
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
-console.info(`[bootstrap] single-instance-lock=${hasSingleInstanceLock}`)
+bootstrapLog.info(`single-instance-lock=${hasSingleInstanceLock}`)
 
 if (!hasSingleInstanceLock) {
-  console.info("[bootstrap] second instance rejected; quitting")
+  bootstrapLog.info("second instance rejected; quitting")
   app.quit()
 } else {
   app.on("second-instance", () => {
-    console.info("[bootstrap] second-instance event; focusing existing window")
+    bootstrapLog.info("second-instance event; focusing existing window")
 
     if (mainWindow === null) {
       return
@@ -228,7 +239,7 @@ if (!hasSingleInstanceLock) {
     // hundreds of) workflow rows.
     const canonicalised = canonicalizeExistingWorkflows(database.kvStore)
     if (canonicalised > 0) {
-      console.info(`[bootstrap] canonicalised ${canonicalised} workflow graph(s) to KeyValuePair[] form`)
+      bootstrapLog.info(`canonicalised ${canonicalised} workflow graph(s) to KeyValuePair[] form`)
     }
 
     // Repositories — the only DB touchpoint.
@@ -331,7 +342,7 @@ if (!hasSingleInstanceLock) {
 
     const interrupted = scheduler.reconcileOnStartup()
     if (interrupted > 0) {
-      console.info(`[bootstrap] reconciled ${interrupted} stuck run(s) to interrupted`)
+      bootstrapLog.info(`reconciled ${interrupted} stuck run(s) to interrupted`)
     }
 
     // Services over the scoped repos; RunService drives the scheduler so
@@ -522,9 +533,9 @@ if (!hasSingleInstanceLock) {
       })
       void mcpHost
         .start()
-        .then(() => console.info("[mcp] auto-started local MCP server from persisted setting"))
+        .then(() => mcpLog.info("auto-started local MCP server from persisted setting"))
         .catch((error: unknown) => {
-          console.error(`[mcp] auto-start failed: ${error instanceof Error ? error.message : String(error)}`)
+          mcpLog.error(`auto-start failed: ${error instanceof Error ? error.message : String(error)}`)
           mcpHost = null
         })
     }
@@ -641,7 +652,7 @@ if (!hasSingleInstanceLock) {
     // named did not outlive the app that owned it.
     const orphaned = agents.markOrphanedSessionsFailed()
     if (orphaned > 0) {
-      console.info(`[agents] marked ${orphaned} orphaned agent session(s) failed`)
+      agentsLog.info(`marked ${orphaned} orphaned agent session(s) failed`)
     }
     // The same crash leaves scratch files behind, and those are not inert: an
     // agent's MCP config carries a live bearer token for this app. The launch
@@ -649,7 +660,7 @@ if (!hasSingleInstanceLock) {
     // another agent would keep the last run's token on disk indefinitely.
     const swept = agentService.sweepScratchFiles()
     if (swept > 0) {
-      console.info(`[agents] reclaimed ${swept} stale agent scratch file(s)`)
+      agentsLog.info(`reclaimed ${swept} stale agent scratch file(s)`)
     }
     /**
      * Register one agents channel behind the trusted-sender guard, exactly like

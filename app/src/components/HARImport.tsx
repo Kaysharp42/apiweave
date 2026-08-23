@@ -14,6 +14,9 @@ import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { workflowImportHarUrl } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
+
+const harImportLog = getLogger("HARImport");
 
 interface HARPreviewEntry {
   method: string;
@@ -139,7 +142,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
       const result = (await response.json()) as HARImportDryRunResult;
       setDryRunResult(result);
     } catch (err) {
-      console.error("Preview error:", err);
+      harImportLog.error("Preview error:", err);
       setError((err as Error).message);
     }
   };

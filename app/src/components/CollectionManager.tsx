@@ -40,6 +40,9 @@ import {
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
 import { authenticatedFetch } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
+
+const collectionLog = getLogger("CollectionManager");
 
 interface ExtendedProject extends Project {
   color?: string;
@@ -153,7 +156,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         return workflowArray;
       }
     } catch (err: unknown) {
-      console.error("Error fetching workflows:", err);
+      collectionLog.error("Error fetching workflows:", err);
     }
     return [];
   }, [isReady, workspaceId]);
@@ -169,7 +172,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         return data.projects;
       }
     } catch (err: unknown) {
-      console.error("Error fetching projects:", err);
+      collectionLog.error("Error fetching projects:", err);
     }
     return [];
   }, [isReady, workspaceId]);
@@ -278,7 +281,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         }));
       }
     } catch (err: unknown) {
-      console.error("Error saving project:", err);
+      collectionLog.error("Error saving project:", err);
       setState((prev) => ({ ...prev, error: "Error saving project" }));
     }
   };
@@ -313,7 +316,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         toast.error(errorData.detail || "Failed to delete project");
       }
     } catch (err: unknown) {
-      console.error("Error deleting project:", err);
+      collectionLog.error("Error deleting project:", err);
       toast.error("Error deleting project");
     } finally {
       setState((prev) => ({ ...prev, deleteTarget: null }));
@@ -411,7 +414,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         toast.error(errorData.detail || "Failed to save workflow order");
       }
     } catch (err: unknown) {
-      console.error("Error saving workflow order:", err);
+      collectionLog.error("Error saving workflow order:", err);
       toast.error("Error saving workflow order");
     }
   };

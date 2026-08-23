@@ -93,9 +93,12 @@ import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
 import { authenticatedFetch } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
+
+const canvasLog = getLogger("WorkflowCanvas");
 
 const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
@@ -493,7 +496,7 @@ export function WorkflowCanvas({
         }
         showWorkflow(workflowToCanvas(reloadedWorkflow), reloadedWorkflow);
       } catch (err) {
-        console.error("Error reloading workflow:", err);
+        canvasLog.error("Error reloading workflow:", err);
       }
     },
     [workflowId, scope.workspaceId, showWorkflow],
@@ -793,7 +796,7 @@ export function WorkflowCanvas({
             hydratedBaselineRef.current,
           )
         ) {
-          console.warn("[workflow-save-blocked]", {
+          canvasLog.warn("workflow-save-blocked", {
             workflowId,
             reason: "destructive-autosave-protection",
             baseline: hydratedBaselineRef.current,
@@ -835,7 +838,7 @@ export function WorkflowCanvas({
             detail ??
             issues[0] ??
             (code ? `the request was rejected (${code})` : undefined);
-          console.error("[workflow-save-failed]", {
+          canvasLog.error("workflow-save-failed", {
             workflowId,
             status: response.status,
             code: code ?? null,
@@ -854,7 +857,7 @@ export function WorkflowCanvas({
         // validation, or the fetch itself threw. Log the full error for the
         // debugging session and put its most specific sentence in the toast.
         const cause = describeThrownSaveError(error);
-        console.error("[workflow-save-failed]", {
+        canvasLog.error("workflow-save-failed", {
           workflowId,
           cause: cause ?? null,
           error,
@@ -973,7 +976,7 @@ export function WorkflowCanvas({
           }
         }
       } catch (err) {
-        console.error("JSON editor save error:", err);
+        canvasLog.error("JSON editor save error:", err);
         toast.error("Network error -- see console");
       }
     },

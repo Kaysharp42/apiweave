@@ -3,7 +3,10 @@ import type { Workflow } from "../types/Workflow";
 import type { Project } from "../types/Project";
 import type { PaginationState } from "../types/PaginationState";
 import { authenticatedFetch } from "../utils/apiweaveClient";
+import { getLogger } from "../utils/logger";
 import { projectsUrl, workflowsUrl } from "../utils/apiweaveClient";
+
+const sidebarLog = getLogger("SidebarStore");
 
 interface PaginatedWorkflowResponse {
   workflows: Workflow[];
@@ -181,14 +184,11 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
           isRefreshing: false,
         });
       } else {
-        console.error(
-          "SidebarStore: workflows fetch returned non-OK status",
-          response.status,
-        );
+        sidebarLog.error("workflows fetch returned non-OK status", response.status);
         set({ isLoadingMore: false, isRefreshing: false });
       }
     } catch (err) {
-      console.error("SidebarStore: error fetching workflows", err);
+      sidebarLog.error("error fetching workflows", err);
       set({ isLoadingMore: false, isRefreshing: false });
     }
   },
@@ -209,7 +209,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
         set({ collections: data.projects, isRefreshing: false });
       }
     } catch (err) {
-      console.error("SidebarStore: error fetching collections", err);
+      sidebarLog.error("error fetching collections", err);
       set({ isRefreshing: false });
     }
   },
@@ -224,7 +224,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
         set({ projects: data.projects, isRefreshing: false });
       }
     } catch (err) {
-      console.error("SidebarStore: error fetching projects", err);
+      sidebarLog.error("error fetching projects", err);
       set({ isRefreshing: false });
     }
   },
@@ -263,7 +263,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
         set({ isRefreshing: false });
       }
     } catch (err) {
-      console.error("SidebarStore: error fetching workflows", err);
+      sidebarLog.error("error fetching workflows", err);
       set({ isRefreshing: false });
     }
   },
