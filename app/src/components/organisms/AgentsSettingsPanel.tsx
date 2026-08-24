@@ -19,17 +19,11 @@ import { TextArea } from "../atoms/TextArea";
 import { EmptyState } from "../molecules/EmptyState";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { FormField } from "../molecules/FormField";
-import { Modal } from "../molecules/Modal";
 import { StatusBadge } from "../molecules/StatusBadge";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import useAgentRosterStore from "../../stores/AgentRosterStore";
 import { agents } from "../../utils/apiweaveClient";
 import type { StatusBadgeProps } from "../../types";
-
-interface AgentsSettingsModalProps {
-  readonly isOpen: boolean;
-  readonly onClose: () => void;
-}
 
 /**
  * Availability is encoded three ways at once — badge colour, the badge's own
@@ -74,11 +68,8 @@ const EMPTY_DRAFT: AgentDraft = {
   env: "",
 };
 
-// fallow-ignore-next-line complexity -- the modal coordinates roster loading, availability refresh, add/edit form state and delete confirmation; each concern is already a named helper or a sibling component (AgentRow, AgentDraftForm-shaped fields), and splitting the coordinator further would scatter one workflow across files
-export function AgentsSettingsModal({
-  isOpen,
-  onClose,
-}: AgentsSettingsModalProps) {
+// fallow-ignore-next-line complexity -- the panel coordinates roster loading, availability refresh, add/edit form state and delete confirmation; each concern is already a named helper or a sibling component (AgentRow, AgentDraftForm-shaped fields), and splitting the coordinator further would scatter one workflow across files
+export function AgentsSettingsPanel() {
   const { currentWorkspace } = useWorkspace();
   const workspaceId = currentWorkspace?.workspaceId ?? null;
 
@@ -89,22 +80,21 @@ export function AgentsSettingsModal({
   const [adding, setAdding] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AgentRosterEntry | null>(null);
-  // Mounted *and* open, which are not the same thing here: `SettingsContent`
-  // renders this once and only toggles `isOpen`, so a plain mounted check is
-  // true for the life of the app and guards nothing. A probe of a missing CLI
-  // takes seconds, and one settling after the user closed the panel wrote its
-  // result anyway — an error arriving after the close-reset below survived to
-  // the next open, blaming a refresh the user had already walked away from.
-  const liveRef = useRef(false);
+  const [deleteTarget, setDeleteTarget] = useState<AgentRosterEntry | null>(
+    null,
+  );
+  // A probe of a missing CLI takes seconds, and one settling after the user
+  // navigated away from this page still wrote its result — a setState on an
+  // unmounted panel, and an error blaming a refresh already walked away from.
+  const liveRef = useRef(true);
   const rosterChanged = useAgentRosterStore((state) => state.rosterChanged);
 
   useEffect(() => {
-    liveRef.current = isOpen;
+    liveRef.current = true;
     return () => {
       liveRef.current = false;
     };
-  }, [isOpen]);
+  }, []);
 
   const load = useCallback(
     (refresh: boolean) => {
@@ -129,24 +119,11 @@ export function AgentsSettingsModal({
     [workspaceId],
   );
 
+  // Leaving the page unmounts this, so a half-typed draft, an error, and an open
+  // delete confirmation are dropped for free — no explicit reset to keep in sync.
   useEffect(() => {
-    if (!isOpen) {
-      // Closing is the only reset this form gets. Nothing unmounts it, so an
-      // abandoned half-typed draft, the error that made the user give up, and an
-      // open delete confirmation all survive until the next open — where they
-      // reappear as a form the user did not ask for, over a roster that has since
-      // been re-read. The roster itself is kept: it is a cache of main's list,
-      // and dropping it would flash an empty panel on every reopen.
-      setAdding(false);
-      setEditingKey(null);
-      setDraft(EMPTY_DRAFT);
-      setError(null);
-      setFormError(null);
-      setDeleteTarget(null);
-      return;
-    }
     load(false);
-  }, [isOpen, load]);
+  }, [load]);
 
   const available = agents.isAvailable();
   const formOpen = adding || editingKey !== null;
@@ -154,7 +131,7 @@ export function AgentsSettingsModal({
   /**
    * What every committed roster change does afterwards.
    *
-   * `rosterChanged` is the half that is not about this modal: the launch controls
+   * `rosterChanged` is the half that is not about this panel: the launch controls
    * in the canvas toolbar hold their own copy of the roster and nothing pushes
    * one to them, so a new default set here was invisible to the button that
    * launches it until the toolbar next remounted.
@@ -230,11 +207,13 @@ export function AgentsSettingsModal({
     const edited =
       editingKey === null
         ? null
-        : (roster.find(
-            (entry) => entry.definition.agentKey === editingKey,
-          )?.definition ?? null);
+        : (roster.find((entry) => entry.definition.agentKey === editingKey)
+            ?.definition ?? null);
     void agents
-      .saveCustomAgent(workspaceId, savePayload(draft, agentKey, parsed.env, edited))
+      .saveCustomAgent(
+        workspaceId,
+        savePayload(draft, agentKey, parsed.env, edited),
+      )
       .then(() => {
         if (liveRef.current) closeForm();
         afterRosterChange();
@@ -257,39 +236,38 @@ export function AgentsSettingsModal({
   const resetsToDefault = deleteTarget !== null && !deleteTarget.isCustom;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Agents" size="lg">
-      <div className="space-y-5 px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            Launch a coding agent in a project&apos;s folder. APIWeave runs the
-            CLI you already have installed, under your own account — it never
-            proxies or logs you in. Set a project&apos;s folder from Projects, or
-            a workflow&apos;s from the canvas toolbar.
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => load(true)}
-            disabled={busy || !available}
-            icon={<RefreshCw className="h-3.5 w-3.5" />}
-          >
-            Refresh
-          </Button>
-        </div>
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+          Launch a coding agent in a project&apos;s folder. APIWeave runs the
+          CLI you already have installed, under your own account — it never
+          proxies or logs you in. Set a project&apos;s folder from Projects, or
+          a workflow&apos;s from the canvas toolbar.
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => load(true)}
+          disabled={busy || !available}
+          icon={<RefreshCw className="h-3.5 w-3.5" />}
+        >
+          Refresh
+        </Button>
+      </div>
 
-        {!available && (
-          <p className="text-xs text-status-warning">
-            Agents are only available in the desktop app.
-          </p>
-        )}
+      {!available && (
+        <p className="text-xs text-status-warning">
+          Agents are only available in the desktop app.
+        </p>
+      )}
 
-        {error !== null && (
-          <p className="text-xs text-status-error" role="alert">
-            {error}
-          </p>
-        )}
+      {error !== null && (
+        <p className="text-xs text-status-error" role="alert">
+          {error}
+        </p>
+      )}
 
-        {/*
+      {/*
           Three states, not two. The first open has no roster and a probe in
           flight — every built-in agent is being looked for on PATH, which is
           slow enough to see — and the earlier version rendered an empty `<ul>`
@@ -298,181 +276,181 @@ export function AgentsSettingsModal({
           an existing list keeps the list on screen, because replacing rows the
           user is reading with a spinner is the worse trade.
         */}
-        {available && busy && roster.length === 0 ? (
-          <div className="flex justify-center py-8">
-            <Spinner />
-          </div>
-        ) : available && roster.length === 0 && !busy ? (
-          <EmptyState
-            title="No agents configured"
-            description="Install a supported CLI, or add your own command below."
-          />
-        ) : (
-          <ul className="space-y-1">
-            {roster.map((entry) => (
-              <AgentRow
-                key={entry.definition.agentKey}
-                entry={entry}
-                busy={busy}
-                onSetDefault={onSetDefault}
-                onEdit={openEdit}
-                onDelete={setDeleteTarget}
-              />
-            ))}
-          </ul>
-        )}
+      {available && busy && roster.length === 0 ? (
+        <div className="flex justify-center py-8">
+          <Spinner />
+        </div>
+      ) : available && roster.length === 0 && !busy ? (
+        <EmptyState
+          title="No agents configured"
+          description="Install a supported CLI, or add your own command below."
+        />
+      ) : (
+        <ul className="space-y-1">
+          {roster.map((entry) => (
+            <AgentRow
+              key={entry.definition.agentKey}
+              entry={entry}
+              busy={busy}
+              onSetDefault={onSetDefault}
+              onEdit={openEdit}
+              onDelete={setDeleteTarget}
+            />
+          ))}
+        </ul>
+      )}
 
-        <div className="border-t border-border pt-4 dark:border-border-dark">
-          {formOpen ? (
-            <div className="space-y-3">
-              {formError !== null && (
-                <p className="text-xs text-status-error" role="alert">
-                  {formError}
-                </p>
-              )}
-              <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  label="Key"
-                  hint="Stable identifier, e.g. my-agent"
-                  required
-                >
-                  <Input
-                    value={draft.agentKey}
-                    onChange={(event) =>
-                      setDraft({ ...draft, agentKey: event.target.value })
-                    }
-                    disabled={editingKey !== null}
-                    size="sm"
-                  />
-                </FormField>
-                <FormField label="Display name" required>
-                  <Input
-                    value={draft.name}
-                    onChange={(event) =>
-                      setDraft({ ...draft, name: event.target.value })
-                    }
-                    size="sm"
-                  />
-                </FormField>
-              </div>
+      <div className="border-t border-border pt-4 dark:border-border-dark">
+        {formOpen ? (
+          <div className="space-y-3">
+            {formError !== null && (
+              <p className="text-xs text-status-error" role="alert">
+                {formError}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
               <FormField
-                label="Command"
-                hint="The binary to look for on PATH"
+                label="Key"
+                hint="Stable identifier, e.g. my-agent"
                 required
               >
                 <Input
-                  value={draft.detectCmd}
+                  value={draft.agentKey}
                   onChange={(event) =>
-                    setDraft({ ...draft, detectCmd: event.target.value })
+                    setDraft({ ...draft, agentKey: event.target.value })
                   }
+                  disabled={editingKey !== null}
                   size="sm"
                 />
               </FormField>
-              <FormField
-                label="Arguments"
-                hint="Space-separated. Passed through as-is — no shell is involved."
-              >
+              <FormField label="Display name" required>
                 <Input
-                  value={draft.argv}
+                  value={draft.name}
                   onChange={(event) =>
-                    setDraft({ ...draft, argv: event.target.value })
+                    setDraft({ ...draft, name: event.target.value })
                   }
                   size="sm"
                 />
               </FormField>
-              <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  label="Opening prompt"
-                  hint="How a prompt is handed to the agent when a launch carries one."
-                >
-                  <select
-                    value={draft.promptMode}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        promptMode: event.target.value as AgentDraft["promptMode"],
-                      })
-                    }
-                    aria-label="Prompt mode"
-                    className="w-full rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
-                  >
-                    <option value="none">Not supported</option>
-                    <option value="argv">As positional argument</option>
-                    <option value="flag">As flag value</option>
-                  </select>
-                </FormField>
-                <FormField
-                  label="Prompt flag"
-                  hint="Required when the prompt is a flag value"
-                  {...(draft.promptMode === "flag" &&
-                  draft.promptFlag.trim().length === 0
-                    ? { error: "Needed in flag mode" }
-                    : {})}
-                >
-                  <Input
-                    value={draft.promptFlag}
-                    onChange={(event) =>
-                      setDraft({ ...draft, promptFlag: event.target.value })
-                    }
-                    disabled={draft.promptMode !== "flag"}
-                    placeholder="--message"
-                    size="sm"
-                  />
-                </FormField>
-              </div>
-              <FormField
-                label="MCP config arguments"
-                hint="Space-separated flags that point your CLI at a config file, using {path} where the file goes — e.g. --mcp-config {path}. Empty means the agent launches without MCP wiring."
-              >
-                <Input
-                  value={draft.mcpArgs}
-                  onChange={(event) =>
-                    setDraft({ ...draft, mcpArgs: event.target.value })
-                  }
-                  placeholder="--mcp-config {path}"
-                  size="sm"
-                />
-              </FormField>
-              <FormField
-                label="Environment"
-                hint="One KEY=VALUE per line, added to the agent's launch environment."
-              >
-                <TextArea
-                  value={draft.env}
-                  onChange={(event) =>
-                    setDraft({ ...draft, env: event.target.value })
-                  }
-                  placeholder={"FOO=bar"}
-                  size="sm"
-                  rows={3}
-                />
-              </FormField>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={closeForm}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={submit}
-                  disabled={!canSubmit || busy}
-                >
-                  {editingKey === null ? "Add agent" : "Save agent"}
-                </Button>
-              </div>
             </div>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={openAdd}
-              disabled={!available}
-              icon={<Plus className="h-3.5 w-3.5" />}
+            <FormField
+              label="Command"
+              hint="The binary to look for on PATH"
+              required
             >
-              Add custom agent
-            </Button>
-          )}
-        </div>
+              <Input
+                value={draft.detectCmd}
+                onChange={(event) =>
+                  setDraft({ ...draft, detectCmd: event.target.value })
+                }
+                size="sm"
+              />
+            </FormField>
+            <FormField
+              label="Arguments"
+              hint="Space-separated. Passed through as-is — no shell is involved."
+            >
+              <Input
+                value={draft.argv}
+                onChange={(event) =>
+                  setDraft({ ...draft, argv: event.target.value })
+                }
+                size="sm"
+              />
+            </FormField>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                label="Opening prompt"
+                hint="How a prompt is handed to the agent when a launch carries one."
+              >
+                <select
+                  value={draft.promptMode}
+                  onChange={(event) =>
+                    setDraft({
+                      ...draft,
+                      promptMode: event.target
+                        .value as AgentDraft["promptMode"],
+                    })
+                  }
+                  aria-label="Prompt mode"
+                  className="w-full rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+                >
+                  <option value="none">Not supported</option>
+                  <option value="argv">As positional argument</option>
+                  <option value="flag">As flag value</option>
+                </select>
+              </FormField>
+              <FormField
+                label="Prompt flag"
+                hint="Required when the prompt is a flag value"
+                {...(draft.promptMode === "flag" &&
+                draft.promptFlag.trim().length === 0
+                  ? { error: "Needed in flag mode" }
+                  : {})}
+              >
+                <Input
+                  value={draft.promptFlag}
+                  onChange={(event) =>
+                    setDraft({ ...draft, promptFlag: event.target.value })
+                  }
+                  disabled={draft.promptMode !== "flag"}
+                  placeholder="--message"
+                  size="sm"
+                />
+              </FormField>
+            </div>
+            <FormField
+              label="MCP config arguments"
+              hint="Space-separated flags that point your CLI at a config file, using {path} where the file goes — e.g. --mcp-config {path}. Empty means the agent launches without MCP wiring."
+            >
+              <Input
+                value={draft.mcpArgs}
+                onChange={(event) =>
+                  setDraft({ ...draft, mcpArgs: event.target.value })
+                }
+                placeholder="--mcp-config {path}"
+                size="sm"
+              />
+            </FormField>
+            <FormField
+              label="Environment"
+              hint="One KEY=VALUE per line, added to the agent's launch environment."
+            >
+              <TextArea
+                value={draft.env}
+                onChange={(event) =>
+                  setDraft({ ...draft, env: event.target.value })
+                }
+                placeholder={"FOO=bar"}
+                size="sm"
+                rows={3}
+              />
+            </FormField>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={closeForm}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={submit}
+                disabled={!canSubmit || busy}
+              >
+                {editingKey === null ? "Add agent" : "Save agent"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openAdd}
+            disabled={!available}
+            icon={<Plus className="h-3.5 w-3.5" />}
+          >
+            Add custom agent
+          </Button>
+        )}
       </div>
 
       {/*
@@ -495,7 +473,7 @@ export function AgentsSettingsModal({
         confirmLabel={resetsToDefault ? "Reset" : "Remove"}
         intent={resetsToDefault ? "warning" : "error"}
       />
-    </Modal>
+    </div>
   );
 }
 
@@ -508,7 +486,13 @@ interface AgentRowProps {
 }
 
 // fallow-ignore-next-line complexity -- one presentational branch per action an availability state earns (install, make default, edit, delete); the CRAP score is the estimated-coverage artifact, not real branch depth
-function AgentRow({ entry, busy, onSetDefault, onEdit, onDelete }: AgentRowProps) {
+function AgentRow({
+  entry,
+  busy,
+  onSetDefault,
+  onEdit,
+  onDelete,
+}: AgentRowProps) {
   const badge = AVAILABILITY_BADGE[entry.availability.state];
   const installUrl = entry.definition.installUrl;
   const detail = entry.availability.detail ?? entry.definition.detectCmd;
@@ -658,11 +642,14 @@ function splitArgs(text: string): string[] {
  */
 function submissionEnv(
   draft: AgentDraft,
-): { readonly ok: true; readonly env: Record<string, string> } | { readonly ok: false; readonly error: string } {
+):
+  | { readonly ok: true; readonly env: Record<string, string> }
+  | { readonly ok: false; readonly error: string } {
   if (draft.promptMode === "flag" && draft.promptFlag.trim().length === 0) {
     return {
       ok: false,
-      error: "A prompt flag is required when the prompt is passed as a flag value.",
+      error:
+        "A prompt flag is required when the prompt is passed as a flag value.",
     };
   }
   try {
@@ -722,15 +709,15 @@ const CARRIED_DEFAULTS: Pick<
  * is the Install link: restating any of them as empty would silently delete
  * them from an agent the user was only renaming.
  *
-   * The same carry-over matters more for the briefing and resume fields, which
-   * are also not on the form. `briefingArgs` or `configEnv` blanked would leave
-   * the agent launching without the context that tells it which workflow it is
-   * working on; the session-identity four are how a session is reopened later,
-   * so resetting them would quietly make every future session of a renamed
-   * agent unresumable. A new custom agent starts without them — resume flags
-   * differ per CLI, and guessing one produces an agent that fails at the moment
-   * someone tries to recover a conversation.
-   */
+ * The same carry-over matters more for the briefing and resume fields, which
+ * are also not on the form. `briefingArgs` or `configEnv` blanked would leave
+ * the agent launching without the context that tells it which workflow it is
+ * working on; the session-identity four are how a session is reopened later,
+ * so resetting them would quietly make every future session of a renamed
+ * agent unresumable. A new custom agent starts without them — resume flags
+ * differ per CLI, and guessing one produces an agent that fails at the moment
+ * someone tries to recover a conversation.
+ */
 function savePayload(
   draft: AgentDraft,
   agentKey: string,
@@ -748,8 +735,7 @@ function savePayload(
     expectedProcess: carried.expectedProcess,
     env,
     promptMode: draft.promptMode,
-    promptFlag:
-      draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
+    promptFlag: draft.promptMode === "flag" ? draft.promptFlag.trim() : null,
     mcpConfigArgs: splitArgs(draft.mcpArgs),
     mcpConfigEnv: carried.mcpConfigEnv,
     mcpConfigFormat: carried.mcpConfigFormat,

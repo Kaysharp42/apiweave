@@ -20,6 +20,7 @@ import SetupPage from "./pages/SetupPage";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
+import { AppSettingsPage } from "./pages/AppSettingsPage";
 import { ConflictDetailPage } from "./pages/cloud/ConflictDetailPage";
 import { ConflictsPage } from "./pages/cloud/ConflictsPage";
 import { CloudSyncPage } from "./pages/cloud/CloudSyncPage";
@@ -466,6 +467,16 @@ function App() {
                     element={
                       <WorkspacePageRoute>
                         <WorkspaceSecretsPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  {/* The app-scoped settings — one page each, matched after the
+                      two static workspace-scoped paths above. */}
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/settings/:section"
+                    element={
+                      <WorkspacePageRoute>
+                        <AppSettingsPage />
                       </WorkspacePageRoute>
                     }
                   />

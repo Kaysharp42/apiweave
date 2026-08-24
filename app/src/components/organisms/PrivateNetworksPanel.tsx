@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
-import { Modal } from "../molecules/Modal";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { HttpSafetySettings } from "../../types";
-
-interface PrivateNetworksModalProps {
-  readonly isOpen: boolean;
-  readonly onClose: () => void;
-}
 
 /**
  * Opt-in for RFC1918/unique-local outbound targets. The SSRF guard blocks
@@ -15,16 +9,15 @@ interface PrivateNetworksModalProps {
  * way); flipping this toggle persists the choice and takes effect on the
  * shared SafeHttp instance immediately — no restart.
  */
-export function PrivateNetworksModal({ isOpen, onClose }: PrivateNetworksModalProps) {
+export function PrivateNetworksPanel() {
   const [settings, setSettings] = useState<HttpSafetySettings>({
     allowPrivateNetworks: false,
   });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) return;
     void apiweave.settings.get().then(setSettings);
-  }, [isOpen]);
+  }, []);
 
   const onToggle = (): void => {
     setBusy(true);
@@ -35,21 +28,17 @@ export function PrivateNetworksModal({ isOpen, onClose }: PrivateNetworksModalPr
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Private networks" size="md">
-      <div className="space-y-5 px-5 py-4">
-        <ToggleSetting
-          title="Allow private network targets"
-          description={
-            "Lets HTTP request nodes and URL imports reach RFC1918 and " +
-            "unique-local addresses (e.g. 192.168.x.x). Off by default; your " +
-            "choice is remembered across restarts. Link-local (169.254.x.x) " +
-            "and multicast targets stay blocked."
-          }
-          checked={settings.allowPrivateNetworks}
-          onToggle={onToggle}
-          disabled={busy}
-        />
-      </div>
-    </Modal>
+    <ToggleSetting
+      title="Allow private network targets"
+      description={
+        "Lets HTTP request nodes and URL imports reach RFC1918 and " +
+        "unique-local addresses (e.g. 192.168.x.x). Off by default; your " +
+        "choice is remembered across restarts. Link-local (169.254.x.x) " +
+        "and multicast targets stay blocked."
+      }
+      checked={settings.allowPrivateNetworks}
+      onToggle={onToggle}
+      disabled={busy}
+    />
   );
 }

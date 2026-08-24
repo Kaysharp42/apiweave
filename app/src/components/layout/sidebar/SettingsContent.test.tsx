@@ -17,10 +17,6 @@ vi.mock("../../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
-vi.mock("../../organisms/McpSetupModal", () => ({
-  McpSetupModal: () => null,
-}));
-
 describe("SettingsContent workspace routes", () => {
   it("uses the route workspace slug when context is still loading", async () => {
     const user = userEvent.setup();
@@ -62,5 +58,40 @@ describe("SettingsContent workspace routes", () => {
     expect(onNavigate).toHaveBeenCalledWith(
       "/personal/personal/settings/secrets",
     );
+  });
+
+  // Every app-scoped row used to open a dialog over whatever page was already
+  // showing. They are pages now, so the sidebar only ever navigates.
+  // Anchored: "MCP Server / Let agents drive your workflows" also contains
+  // "agents", so an unanchored /Agents/i matches two rows.
+  it.each([
+    [/^Agents/, "/personal/personal/settings/agents"],
+    [/^Private networks/, "/personal/personal/settings/private-networks"],
+    [/^MCP Server/, "/personal/personal/settings/mcp-server"],
+    [/^Updates/, "/personal/personal/settings/updates"],
+  ])("navigates to %s", async (name, path) => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+
+    render(
+      <UpdateStatusProvider>
+        <MemoryRouter initialEntries={["/personal/personal/settings/agents"]}>
+          <Routes>
+            <Route
+              path="/:orgSlug/:workspaceSlug/settings/:section"
+              element={
+                <SettingsContent
+                  onNavigate={onNavigate}
+                  onSwitchNav={vi.fn()}
+                />
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </UpdateStatusProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name }));
+    expect(onNavigate).toHaveBeenCalledWith(path);
   });
 });
