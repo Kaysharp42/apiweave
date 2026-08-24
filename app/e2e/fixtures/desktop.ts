@@ -102,6 +102,10 @@ export async function installDesktopIpc(page: Page): Promise<void> {
             data = null;
             handled = true;
           }
+          if (domain === "settings" && action === "get") {
+            data = { allowPrivateNetworks: false };
+            handled = true;
+          }
           if (domain === "secrets" && action === "list") {
             data = [];
             handled = true;
@@ -143,10 +147,7 @@ export async function installDesktopIpc(page: Page): Promise<void> {
   );
 }
 
-export async function navigateDesktop(
-  page: Page,
-  path: string,
-): Promise<void> {
+export async function navigateDesktop(page: Page, path: string): Promise<void> {
   await page.goto(`/#${path}`);
   await page.waitForLoadState("domcontentloaded");
 }

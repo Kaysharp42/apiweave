@@ -1,17 +1,8 @@
 // fallow-ignore-file code-duplication -- the policy radio list matches EnvironmentForm's workspace list only in the shape every form list has: an input beside a two-line label. That one is a multi-select checkbox on daisyUI classes; this is a single-select radio group. Sharing a component between them would put update policy and environment scoping behind one abstraction because their markup rhymes.
 import { Download, ExternalLink, RefreshCw } from "lucide-react";
-import { Modal } from "../molecules/Modal";
 import { Button } from "../atoms/Button";
 import { useUpdateStatus } from "../../contexts/UpdateStatusContext";
-import type {
-  UpdatePolicy,
-  UpdateState,
-} from "@shared/types/UpdateStatus";
-
-interface UpdateSettingsModalProps {
-  readonly isOpen: boolean;
-  readonly onClose: () => void;
-}
+import type { UpdatePolicy, UpdateState } from "@shared/types/UpdateStatus";
 
 function statusLine(
   state: UpdateState,
@@ -45,7 +36,8 @@ function lastCheckedLabel(at: number | null): string | null {
   if (minutes < 60)
     return `Last checked ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `Last checked ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  if (hours < 24)
+    return `Last checked ${hours} hour${hours === 1 ? "" : "s"} ago`;
   const days = Math.round(hours / 24);
   return `Last checked ${days} day${days === 1 ? "" : "s"} ago`;
 }
@@ -166,8 +158,8 @@ function PolicyFieldset({
         // skips its publisher check and trusts a SHA512 that arrives over
         // the same channel as the download it vouches for.
         <p className="mt-2 px-2 text-xs text-text-muted dark:text-text-muted-dark">
-          This build isn&apos;t code-signed yet, so &ldquo;Notify me&rdquo; is the
-          default — approving each version is the only check there is.
+          This build isn&apos;t code-signed yet, so &ldquo;Notify me&rdquo; is
+          the default — approving each version is the only check there is.
         </p>
       )}
     </fieldset>
@@ -281,10 +273,7 @@ function MetaRow({ lastChecked, canShowLog, onShowLog }: MetaRowProps) {
   );
 }
 
-export function UpdateSettingsModal({
-  isOpen,
-  onClose,
-}: UpdateSettingsModalProps) {
+export function UpdateSettingsPanel() {
   const {
     status,
     checking,
@@ -311,57 +300,55 @@ export function UpdateSettingsModal({
   );
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Updates" size="md">
-      <div className="space-y-5 px-5 py-4">
-        <StatusSummary
-          state={state}
-          currentVersion={currentVersion}
-          latestVersion={latestVersion}
-          supportsAutoInstall={supportsAutoInstall}
-          error={status?.error ?? null}
-        />
+    <div className="space-y-5">
+      <StatusSummary
+        state={state}
+        currentVersion={currentVersion}
+        latestVersion={latestVersion}
+        supportsAutoInstall={supportsAutoInstall}
+        error={status?.error ?? null}
+      />
 
-        {state === "downloading" && (
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay dark:bg-surface-dark-overlay">
-            <div
-              className="h-full rounded-full bg-[var(--aw-primary)] transition-[width]"
-              style={{ width: `${status?.downloadProgressPercent ?? 0}%` }}
-            />
-          </div>
-        )}
+      {state === "downloading" && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay dark:bg-surface-dark-overlay">
+          <div
+            className="h-full rounded-full bg-[var(--aw-primary)] transition-[width]"
+            style={{ width: `${status?.downloadProgressPercent ?? 0}%` }}
+          />
+        </div>
+      )}
 
-        <ActionRow
-          state={state}
-          latestVersion={latestVersion}
-          supportsAutoInstall={supportsAutoInstall}
-          checking={checking}
-          isAvailable={isAvailable}
-          onRestart={restartAndInstall}
-          onDownload={() => void download()}
-          onCheck={() => void checkNow()}
-          onOpenRelease={() => void openReleasePage()}
-        />
+      <ActionRow
+        state={state}
+        latestVersion={latestVersion}
+        supportsAutoInstall={supportsAutoInstall}
+        checking={checking}
+        isAvailable={isAvailable}
+        onRestart={restartAndInstall}
+        onDownload={() => void download()}
+        onCheck={() => void checkNow()}
+        onOpenRelease={() => void openReleasePage()}
+      />
 
-        <MetaRow
-          lastChecked={lastChecked}
-          canShowLog={isAvailable}
-          onShowLog={() => void openLogFile()}
-        />
+      <MetaRow
+        lastChecked={lastChecked}
+        canShowLog={isAvailable}
+        onShowLog={() => void openLogFile()}
+      />
 
-        <PolicyFieldset
-          options={policyOptions}
-          policy={policy}
-          disabled={!isAvailable}
-          showUnsignedNote={supportsAutoInstall}
-          onSelect={(next) => void setPolicy(next)}
-        />
+      <PolicyFieldset
+        options={policyOptions}
+        policy={policy}
+        disabled={!isAvailable}
+        showUnsignedNote={supportsAutoInstall}
+        onSelect={(next) => void setPolicy(next)}
+      />
 
-        {!isAvailable && (
-          <p className="text-xs text-status-warning">
-            Update checks are only available in the desktop app.
-          </p>
-        )}
-      </div>
-    </Modal>
+      {!isAvailable && (
+        <p className="text-xs text-status-warning">
+          Update checks are only available in the desktop app.
+        </p>
+      )}
+    </div>
   );
 }

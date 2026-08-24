@@ -1,23 +1,11 @@
-import { useState, type ReactNode } from "react";
-import {
-  Bot,
-  FolderKanban,
-  Key,
-  Globe,
-  Plug,
-  RefreshCw,
-  Shield,
-  type LucideIcon,
-} from "lucide-react";
+import type { ReactNode } from "react";
+import { FolderKanban, Key, Globe, type LucideIcon } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
-import { AgentsSettingsModal } from "../../organisms/AgentsSettingsModal";
-import { McpSetupModal } from "../../organisms/McpSetupModal";
-import { UpdateSettingsModal } from "../../organisms/UpdateSettingsModal";
-import { PrivateNetworksModal } from "../../organisms/PrivateNetworksModal";
 import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
+import { APP_SETTINGS_SECTIONS } from "../../../pages/AppSettingsPage";
 
 const settingItemClass = [
   "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
@@ -85,14 +73,11 @@ export function SettingsContent({
 }: SettingsContentProps) {
   const { currentOrg, currentWorkspace } = useWorkspace();
   const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
-  const [mcpOpen, setMcpOpen] = useState(false);
-  const [agentsOpen, setAgentsOpen] = useState(false);
-  const [updatesOpen, setUpdatesOpen] = useState(false);
-  const [privateNetworksOpen, setPrivateNetworksOpen] = useState(false);
   const { pending: updatePending, status: updateStatus } = useUpdateStatus();
 
   const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
-  const workspaceSlug = currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
+  const workspaceSlug =
+    currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
   const wsBase = `/${orgSlug}/${workspaceSlug}`;
 
   return (
@@ -133,47 +118,24 @@ export function SettingsContent({
           App
         </span>
       </div>
+      {/* Straight off the page table, so a row's label and the page header it
+          opens can't drift — only Updates says anything the table doesn't. */}
       <ul className="w-full px-2 space-y-1">
-        <SettingItem
-          icon={Bot}
-          title="Agents"
-          description="Launch a coding agent in your project folder"
-          onClick={() => setAgentsOpen(true)}
-        />
-        <SettingItem
-          icon={Shield}
-          title="Private networks"
-          description="Allow requests to LAN devices (e.g. 192.168.x.x)"
-          onClick={() => setPrivateNetworksOpen(true)}
-        />
-        <SettingItem
-          icon={Plug}
-          title="MCP Server"
-          description="Let agents drive your workflows"
-          onClick={() => setMcpOpen(true)}
-        />
-        <SettingItem
-          icon={RefreshCw}
-          title="Updates"
-          description={updateDescription(updatePending, updateStatus)}
-          onClick={() => setUpdatesOpen(true)}
-          marker={updatePending}
-        />
+        {Object.entries(APP_SETTINGS_SECTIONS).map(([slug, section]) => (
+          <SettingItem
+            key={slug}
+            icon={section.icon}
+            title={section.title}
+            description={
+              slug === "updates"
+                ? updateDescription(updatePending, updateStatus)
+                : section.subtitle
+            }
+            onClick={() => onNavigate(`${wsBase}/settings/${slug}`)}
+            marker={slug === "updates" && updatePending}
+          />
+        ))}
       </ul>
-
-      <McpSetupModal isOpen={mcpOpen} onClose={() => setMcpOpen(false)} />
-      <AgentsSettingsModal
-        isOpen={agentsOpen}
-        onClose={() => setAgentsOpen(false)}
-      />
-      <UpdateSettingsModal
-        isOpen={updatesOpen}
-        onClose={() => setUpdatesOpen(false)}
-      />
-      <PrivateNetworksModal
-        isOpen={privateNetworksOpen}
-        onClose={() => setPrivateNetworksOpen(false)}
-      />
     </div>
   );
 }
