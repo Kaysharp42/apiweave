@@ -13,8 +13,11 @@
  * the graph is what tells it where one branch ends:
  *
  *   - a node with no shown predecessor opens a front (an entry point);
- *   - the first child of a node continues its parent's front;
- *   - any later child of the same node opens a front — that is a fan-out, and from
+ *   - one child of a node continues its parent's front — its *heir*, the branch
+ *     that costs the camera the least travel to watch, decided from the layout
+ *     rather than from which child happened to report first; absent a layout,
+ *     the first branch the edges list;
+ *   - any other child of the same node opens a front — that is a fan-out, and from
  *     there on they are two things happening at once;
  *   - a node several fronts arrive at absorbs them into one — that is a join, and
  *     it is the story continuing rather than a reason to look elsewhere, so it
@@ -84,12 +87,53 @@ const CAUSE_WALK_LIMIT = 512;
  * stops being true. */
 const MERGE_CHAIN_LIMIT = 64;
 
+/**
+ * How many nodes of a branch are measured when deciding which branch of a fan-out
+ * the camera takes first.
+ *
+ * The question is which branch is the cheaper thing to watch, and the answer is
+ * settled by the part of it the camera will see soon; a branch fifty nodes long is
+ * a tour whichever end you start from. Deep enough to see past a first hop that
+ * lies about the branch, shallow enough that the walk is a fixed cost per fan-out.
+ */
+const BRANCH_PROBE_NODES = 12;
+
+/**
+ * How much nearer one branch has to be than another before distance decides a
+ * handoff rather than freshness.
+ *
+ * Roughly a node's width: two trips that differ by less than that cost the camera
+ * the same glance, and letting a few pixels outvote "this is where the news is"
+ * would be precision the layout does not have.
+ */
+const NEARER_BY_PX = 320;
+
+/** The canvas node this needs: an id and where it sits. Structural so the tracker
+ * stays free of ReactFlow. Both position fields, and in that order, because that
+ * is what the aim reads in `attentionPointFor` — the branch the chooser calls near
+ * and the point the camera aims at have to be the same place. */
+interface FrontsNode {
+  readonly id: string;
+  readonly position?: { readonly x: number; readonly y: number };
+  readonly positionAbsolute?: { readonly x: number; readonly y: number };
+}
+
 export function createFronts(
   edges: readonly { source: string; target: string }[],
+  nodes: readonly FrontsNode[] = [],
 ): RunFrontsState {
   return {
     successors: groupEdgesBy(edges, "source"),
     predecessors: groupEdgesBy(edges, "target"),
+    // Copied rather than referenced: the camera reads these for the length of a
+    // run and a live ReactFlow position object is not ours to trust.
+    positions: new Map(
+      nodes.flatMap((node) => {
+        const at = node.positionAbsolute ?? node.position;
+        return at ? [[node.id, { x: at.x, y: at.y }] as const] : [];
+      }),
+    ),
+    heirs: new Map(),
     nodes: new Map(),
     fronts: new Map(),
     extended: new Set(),
@@ -98,6 +142,16 @@ export function createFronts(
     subject: null,
     subjectSince: 0,
   };
+}
+
+/** Canvas distance between two nodes, or zero when either has no position —
+ * which makes every comparison a tie and every rule fall through to its
+ * pre-geometry answer. */
+function distance(state: RunFrontsState, from: string, to: string): number {
+  const a = state.positions.get(from);
+  const b = state.positions.get(to);
+  if (!a || !b) return 0;
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 /** The front an id has become, following any joins it has been through. */
@@ -163,6 +217,150 @@ function absorb(
   into.lastEventAt = Math.max(into.lastEventAt, from.lastEventAt, now);
 }
 
+/**
+ * What each branch out of a fan-out would cost the camera to watch: the trip out
+ * to it, plus the travel along it.
+ *
+ * The branches are walked at once, round-robin, and a node belongs to whichever
+ * walk claims it first. That is what makes this a measure of *a branch* rather
+ * than of the graph downstream of it: at a join the tail beyond is charged to one
+ * side only, and in a diamond the two sides come out as the two sides.
+ *
+ * A first hop is not enough on its own — it is exactly the number a layout can
+ * lie about, a short step onto a branch that then runs off the screen — so the
+ * probe walks a fixed depth in and adds up what it finds.
+ */
+/** Per-child walk state for {@link branchCosts}, seeded so every child stakes
+ * its own claim before any walking — a child that also sits downstream of a
+ * sibling still counts as a branch in its own right. */
+interface BranchWalk {
+  readonly costs: Map<string, number>;
+  readonly owner: Map<string, string>;
+  readonly frontier: Map<string, string[]>;
+  readonly claimed: Map<string, number>;
+}
+
+function seedBranchWalk(
+  state: RunFrontsState,
+  parentId: string,
+  children: readonly string[],
+): BranchWalk {
+  const walk: BranchWalk = {
+    costs: new Map(),
+    owner: new Map(),
+    frontier: new Map(),
+    claimed: new Map(),
+  };
+
+  for (const child of children) {
+    if (walk.owner.has(child)) continue;
+    walk.owner.set(child, child);
+    walk.costs.set(child, distance(state, parentId, child));
+    walk.frontier.set(child, [child]);
+    walk.claimed.set(child, 1);
+  }
+
+  return walk;
+}
+
+/** One child's frontier advanced by a single hop: successors not already
+ * claimed by another child are charged to this one and become its next
+ * frontier. */
+function advanceBranch(
+  state: RunFrontsState,
+  child: string,
+  edge: readonly string[],
+  walk: BranchWalk,
+): string[] {
+  const next: string[] = [];
+
+  for (const nodeId of edge) {
+    for (const successor of state.successors.get(nodeId) ?? []) {
+      if (walk.owner.has(successor)) continue;
+      walk.owner.set(successor, child);
+      walk.costs.set(
+        child,
+        (walk.costs.get(child) ?? 0) + distance(state, nodeId, successor),
+      );
+      walk.claimed.set(child, (walk.claimed.get(child) ?? 0) + 1);
+      next.push(successor);
+    }
+  }
+
+  return next;
+}
+
+/** One depth-step of the walk across every child at once. Returns whether any
+ * child's frontier actually advanced, which is what tells the caller the walk
+ * has run its course. */
+function stepBranchWalk(state: RunFrontsState, walk: BranchWalk): boolean {
+  let moved = false;
+
+  for (const child of walk.costs.keys()) {
+    const edge = walk.frontier.get(child) ?? [];
+    const atLimit = (walk.claimed.get(child) ?? 0) >= BRANCH_PROBE_NODES;
+    if (edge.length === 0 || atLimit) continue;
+
+    const next = advanceBranch(state, child, edge, walk);
+    walk.frontier.set(child, next);
+    if (next.length > 0) moved = true;
+  }
+
+  return moved;
+}
+
+function branchCosts(
+  state: RunFrontsState,
+  parentId: string,
+  children: readonly string[],
+): Map<string, number> {
+  const walk = seedBranchWalk(state, parentId, children);
+
+  for (let depth = 0; depth < BRANCH_PROBE_NODES; depth += 1) {
+    if (!stepBranchWalk(state, walk)) break;
+  }
+
+  return walk.costs;
+}
+
+/**
+ * The child that inherits a node's front.
+ *
+ * With one child it is that child and this is a continuation. With several it is a
+ * fan-out, and the heir is the branch the camera can watch for the least travel —
+ * so the run splitting into a nearby branch and a trip across the graph is not a
+ * decision the camera makes by whichever one happened to report first.
+ *
+ * Deciding it up front, rather than when a child arrives, is what lets a non-heir
+ * arriving first open its own front and leave the parent's front where it is: the
+ * camera holds for the beat it takes the near branch to light up instead of
+ * setting off across the canvas.
+ *
+ * The price of deciding up front: if the heir's branch never runs — a router
+ * picks the other side — the unshown heir still reads as a ready step and holds
+ * the parent's front until `ADVANCE_GRACE_MS` expires. Bounded, and cheaper than
+ * setting off across the canvas on whichever side happened to report first.
+ */
+function heirOf(state: RunFrontsState, parentId: string): string | null {
+  const cached = state.heirs.get(parentId);
+  if (cached !== undefined) return cached;
+
+  const children = state.successors.get(parentId) ?? [];
+  let heir: string | null = children[0] ?? null;
+
+  if (children.length > 1) {
+    let best = Infinity;
+    for (const [child, cost] of branchCosts(state, parentId, children)) {
+      if (cost >= best) continue;
+      best = cost;
+      heir = child;
+    }
+  }
+
+  state.heirs.set(parentId, heir);
+  return heir;
+}
+
 /** Which front a node first shown now belongs to — the whole branch grammar, in
  * one function. */
 function adoptFront(
@@ -178,9 +376,12 @@ function adoptFront(
   // camera never saw. Either way it is a new place.
   if (parents.length === 0) return openFront(state, now);
 
-  // A parent that has already handed its front on is a fan-out point, and this is
-  // its second child: a branch, not a continuation.
-  const free = parents.filter((parentId) => !state.extended.has(parentId));
+  // A parent's front passes to one child only — its heir — and only if it has not
+  // passed already. Anything else arriving here is a branch, not a continuation.
+  const free = parents.filter(
+    (parentId) =>
+      !state.extended.has(parentId) && heirOf(state, parentId) === nodeId,
+  );
   if (free.length === 0) return openFront(state, now);
 
   const arriving = [
@@ -336,37 +537,87 @@ function frontRank(
   return outlook.advancing ? 1 : 0;
 }
 
-/** Higher rank wins; between equals the freshest news does. */
-function outranks(
-  rank: number,
-  front: RunFront,
-  bestRank: number,
-  best: RunFront,
-): boolean {
-  if (rank !== bestRank) return rank > bestRank;
-  return front.lastEventAt > best.lastEventAt;
+/** The node a front's news is at: the last one of its own it reported. */
+function newestNode(state: RunFrontsState, front: RunFront): string | null {
+  let newest: string | null = null;
+  let bestSeq = -1;
+
+  for (const nodeId of front.nodeIds) {
+    const record = state.nodes.get(nodeId);
+    if (!record || record.seq <= bestSeq) continue;
+    bestSeq = record.seq;
+    newest = nodeId;
+  }
+
+  return newest;
 }
 
-/** Of these fronts, the one most worth watching: something working beats something
- * about to move, and between equals the freshest news wins. */
+/** Where the camera is, as the graph sees it: the newest node of the branch it is
+ * following. Null before it has a subject, which is the opening move — there is no
+ * trip to weigh when the camera has not been anywhere yet. */
+function cameraAnchor(state: RunFrontsState): string | null {
+  const front = liveFront(state, state.subject);
+  return front === null ? null : newestNode(state, front);
+}
+
+/** How far the camera would travel to take this front up. */
+function frontDistance(
+  state: RunFrontsState,
+  front: RunFront,
+  anchor: string | null,
+): number {
+  if (anchor === null) return 0;
+  const target = newestNode(state, front);
+  return target === null ? 0 : distance(state, anchor, target);
+}
+
+interface FrontCandidate {
+  readonly front: RunFront;
+  readonly rank: number;
+  readonly distance: number;
+}
+
+/** Something working beats something about to move; between those the one the
+ * camera can reach without a trip, because a handoff nobody has to sit through is
+ * a better handoff; and between two trips of much the same length, the freshest
+ * news.
+ *
+ * A preference between two candidates, not a total order: inside the hysteresis
+ * band (`NEARER_BY_PX`) freshness decides, so three fronts can compare
+ * pairwise without chaining transitively. Callers scan candidates linearly in
+ * insertion order, which keeps the pick deterministic and within the band. */
+function outranks(candidate: FrontCandidate, best: FrontCandidate): boolean {
+  if (candidate.rank !== best.rank) return candidate.rank > best.rank;
+  if (Math.abs(candidate.distance - best.distance) > NEARER_BY_PX) {
+    return candidate.distance < best.distance;
+  }
+  return candidate.front.lastEventAt > best.front.lastEventAt;
+}
+
+/** Of these fronts, the one most worth watching. */
 function pickBest(
   state: RunFrontsState,
   fronts: readonly RunFront[],
   now: number,
 ): number | null {
-  let best: RunFront | null = null;
-  let bestRank = 0;
+  const anchor = cameraAnchor(state);
+  let best: FrontCandidate | null = null;
 
   for (const front of fronts) {
     const rank = frontRank(state, front, now);
     if (rank === 0) continue;
-    if (best !== null && !outranks(rank, front, bestRank, best)) continue;
 
-    best = front;
-    bestRank = rank;
+    const candidate = {
+      front,
+      rank,
+      distance: frontDistance(state, front, anchor),
+    };
+    if (best !== null && !outranks(candidate, best)) continue;
+
+    best = candidate;
   }
 
-  return best === null ? null : best.id;
+  return best === null ? null : best.front.id;
 }
 
 /**

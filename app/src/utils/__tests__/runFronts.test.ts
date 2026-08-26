@@ -24,6 +24,15 @@ function edge(source: string, target: string) {
   return { source, target };
 }
 
+/** Canvas positions for a fixture, as `{ id: [x, y] }`. Tests that say nothing
+ * about layout pass none, which makes every distance zero. */
+function laidOut(spots: Record<string, readonly [number, number]>) {
+  return Object.entries(spots).map(([id, [x, y]]) => ({
+    id,
+    position: { x, y },
+  }));
+}
+
 /**
  * The shape of the workflow that broke the previous camera: one start, three long
  * rows that run concurrently, one join at the end.
@@ -136,6 +145,58 @@ describe("branch identity", () => {
     noteNode(state, "j", true, 100);
 
     expect(frontOf(state, "j")).toBe(frontOf(state, "a"));
+  });
+});
+
+describe("which branch of a fan-out the camera takes", () => {
+  it("keeps the parent's front for the near branch, however late it reports", () => {
+    // The reported defect: the far branch is listed first and lights up first, and
+    // the camera used to set off across the graph for it while a branch a screen
+    // away was about to run.
+    const state = createFronts(
+      [edge("start", "far"), edge("start", "near")],
+      laidOut({ start: [0, 0], far: [4000, 0], near: [300, 100] }),
+    );
+    ran(state, "start", 0);
+
+    noteNode(state, "far", true, 10);
+    expect(frontOf(state, "far")).not.toBe(frontOf(state, "start"));
+
+    noteNode(state, "near", true, 20);
+    expect(frontOf(state, "near")).toBe(frontOf(state, "start"));
+  });
+
+  it("measures the whole branch, not just the first hop", () => {
+    // `a` starts closer but immediately runs off across the canvas; `b` starts
+    // further out and stays put. A first-hop rule takes `a` and then tours.
+    const state = createFronts(
+      [edge("s", "a0"), edge("a0", "a1"), edge("s", "b0"), edge("b0", "b1")],
+      laidOut({
+        s: [0, 0],
+        a0: [200, 0],
+        a1: [5000, 0],
+        b0: [600, 0],
+        b1: [700, 0],
+      }),
+    );
+    ran(state, "s", 0);
+    noteNode(state, "a0", true, 10);
+    noteNode(state, "b0", true, 20);
+
+    expect(frontOf(state, "b0")).toBe(frontOf(state, "s"));
+    expect(frontOf(state, "a0")).not.toBe(frontOf(state, "s"));
+  });
+
+  it("falls back to the first-listed branch when the layout is unknown", () => {
+    const state = createFronts([edge("start", "far"), edge("start", "near")]);
+    ran(state, "start", 0);
+    noteNode(state, "far", true, 10);
+
+    expect(frontOf(state, "far")).toBe(frontOf(state, "start"));
+
+    // A branch listed later opens its own front, whichever reported first.
+    noteNode(state, "near", true, 20);
+    expect(frontOf(state, "near")).not.toBe(frontOf(state, "start"));
   });
 });
 
@@ -444,6 +505,31 @@ describe("chooseSubject", () => {
     const subject = chooseSubject(state, 200);
     expect(chooseSubject(state, 200 + SUBJECT_MIN_MS * 4)).toBe(subject);
   });
+
+  it("hands off to the nearer of two working branches, not the louder one", () => {
+    // Both are running, so both are equally worth watching — and then the only
+    // thing left to decide it is what the handoff costs the viewer to sit through.
+    const state = createFronts(
+      [edge("start", "h"), edge("start", "near"), edge("start", "far")],
+      laidOut({
+        start: [0, 0],
+        h: [100, 0],
+        near: [1000, 0],
+        far: [9000, 0],
+      }),
+    );
+    ran(state, "start", 0);
+    chooseSubject(state, 0);
+
+    // The heir runs out: nothing downstream, so the camera is handed back.
+    ran(state, "h", 10);
+    noteNode(state, "near", true, 30);
+    noteNode(state, "far", true, 40);
+
+    expect(chooseSubject(state, SUBJECT_MIN_MS + 100)).toBe(
+      frontOf(state, "near"),
+    );
+  });
 });
 
 describe("nextHandoffAt", () => {
@@ -461,6 +547,11 @@ describe("nextHandoffAt", () => {
     noteNode(state, "b0", true, 10);
     ran(state, "a0", 20);
     ran(state, "a1", 30);
+    // The third row runs too, and parks at the join like the first. A row the
+    // fixture never starts is a step the fan-out is forever about to take, which
+    // is life the camera would owe a deadline to.
+    ran(state, "c0", 32);
+    ran(state, "c1", 34);
     chooseSubject(state, 40);
     expect(nextHandoffAt(state, NOW)).toBeNull();
   });
