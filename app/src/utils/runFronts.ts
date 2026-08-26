@@ -229,56 +229,97 @@ function absorb(
  * lie about, a short step onto a branch that then runs off the screen — so the
  * probe walks a fixed depth in and adds up what it finds.
  */
+/** Per-child walk state for {@link branchCosts}, seeded so every child stakes
+ * its own claim before any walking — a child that also sits downstream of a
+ * sibling still counts as a branch in its own right. */
+interface BranchWalk {
+  readonly costs: Map<string, number>;
+  readonly owner: Map<string, string>;
+  readonly frontier: Map<string, string[]>;
+  readonly claimed: Map<string, number>;
+}
+
+function seedBranchWalk(
+  state: RunFrontsState,
+  parentId: string,
+  children: readonly string[],
+): BranchWalk {
+  const walk: BranchWalk = {
+    costs: new Map(),
+    owner: new Map(),
+    frontier: new Map(),
+    claimed: new Map(),
+  };
+
+  for (const child of children) {
+    if (walk.owner.has(child)) continue;
+    walk.owner.set(child, child);
+    walk.costs.set(child, distance(state, parentId, child));
+    walk.frontier.set(child, [child]);
+    walk.claimed.set(child, 1);
+  }
+
+  return walk;
+}
+
+/** One child's frontier advanced by a single hop: successors not already
+ * claimed by another child are charged to this one and become its next
+ * frontier. */
+function advanceBranch(
+  state: RunFrontsState,
+  child: string,
+  edge: readonly string[],
+  walk: BranchWalk,
+): string[] {
+  const next: string[] = [];
+
+  for (const nodeId of edge) {
+    for (const successor of state.successors.get(nodeId) ?? []) {
+      if (walk.owner.has(successor)) continue;
+      walk.owner.set(successor, child);
+      walk.costs.set(
+        child,
+        (walk.costs.get(child) ?? 0) + distance(state, nodeId, successor),
+      );
+      walk.claimed.set(child, (walk.claimed.get(child) ?? 0) + 1);
+      next.push(successor);
+    }
+  }
+
+  return next;
+}
+
+/** One depth-step of the walk across every child at once. Returns whether any
+ * child's frontier actually advanced, which is what tells the caller the walk
+ * has run its course. */
+function stepBranchWalk(state: RunFrontsState, walk: BranchWalk): boolean {
+  let moved = false;
+
+  for (const child of walk.costs.keys()) {
+    const edge = walk.frontier.get(child) ?? [];
+    const atLimit = (walk.claimed.get(child) ?? 0) >= BRANCH_PROBE_NODES;
+    if (edge.length === 0 || atLimit) continue;
+
+    const next = advanceBranch(state, child, edge, walk);
+    walk.frontier.set(child, next);
+    if (next.length > 0) moved = true;
+  }
+
+  return moved;
+}
+
 function branchCosts(
   state: RunFrontsState,
   parentId: string,
   children: readonly string[],
 ): Map<string, number> {
-  const costs = new Map<string, number>();
-  const owner = new Map<string, string>();
-  const frontier = new Map<string, string[]>();
-  const claimed = new Map<string, number>();
-
-  // Every child stakes its own claim before any walking, so a child that also
-  // sits downstream of a sibling still counts as a branch in its own right.
-  for (const child of children) {
-    if (owner.has(child)) continue;
-    owner.set(child, child);
-    costs.set(child, distance(state, parentId, child));
-    frontier.set(child, [child]);
-    claimed.set(child, 1);
-  }
+  const walk = seedBranchWalk(state, parentId, children);
 
   for (let depth = 0; depth < BRANCH_PROBE_NODES; depth += 1) {
-    let moved = false;
-
-    for (const child of costs.keys()) {
-      const edge = frontier.get(child) ?? [];
-      if (edge.length === 0) continue;
-      if ((claimed.get(child) ?? 0) >= BRANCH_PROBE_NODES) continue;
-
-      const next: string[] = [];
-      for (const nodeId of edge) {
-        for (const successor of state.successors.get(nodeId) ?? []) {
-          if (owner.has(successor)) continue;
-          owner.set(successor, child);
-          costs.set(
-            child,
-            (costs.get(child) ?? 0) + distance(state, nodeId, successor),
-          );
-          claimed.set(child, (claimed.get(child) ?? 0) + 1);
-          next.push(successor);
-        }
-      }
-
-      frontier.set(child, next);
-      if (next.length > 0) moved = true;
-    }
-
-    if (!moved) break;
+    if (!stepBranchWalk(state, walk)) break;
   }
 
-  return costs;
+  return walk.costs;
 }
 
 /**
