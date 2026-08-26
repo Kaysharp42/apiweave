@@ -17,11 +17,24 @@ export interface RunFrontsState {
   readonly nodes: Map<string, SeenRunNode>;
   readonly fronts: Map<number, RunFront>;
   /**
+   * Where each node sits on the canvas, snapshotted per run.
+   *
+   * The camera's job is to watch without touring, so the branch grammar needs to
+   * know which branch is near and which is a trip across the graph. Empty when
+   * positions are unavailable, which makes every distance zero and degrades the
+   * choice back to arrival order.
+   */
+  readonly positions: Map<string, { x: number; y: number }>;
+  /** parent → the child that inherits its front, memoised because it is a walk
+   * over the subgraph and the graph cannot change under a run. */
+  readonly heirs: Map<string, string | null>;
+  /**
    * Nodes that have already handed their front on to a child.
    *
-   * This is what turns a fan-out into a branch: the first child of a node
-   * continues its front, and any later child has to open one, because from there
-   * on they are genuinely two things happening at once.
+   * This is what turns a fan-out into a branch: one child of a node continues its
+   * front — the one the camera can watch for the least travel, see `heirs` — and
+   * any other has to open one, because from there on they are genuinely two
+   * things happening at once.
    */
   readonly extended: Set<string>;
   nextFrontId: number;

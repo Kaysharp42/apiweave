@@ -593,10 +593,11 @@ export default function useRunCamera({
   const camera = useMemo<RunCameraHandle>(() => {
     return {
       onRunStart: (entryNodeIds) => {
-        // Topology is snapshotted per run, like the choreography's: the graph
-        // cannot change under a run, and reading it per frame would cost the same
-        // answer sixty times a second.
-        const fronts = createFronts(edgesRef.current);
+        // Topology and layout are snapshotted per run, like the choreography's:
+        // the graph cannot change under a run, and reading it per frame would cost
+        // the same answer sixty times a second. Positions come along because the
+        // branch grammar prefers the branch the camera can watch without a trip.
+        const fronts = createFronts(edgesRef.current, nodesRef.current);
         frontsRef.current = fronts;
         subjectRef.current = null;
 
