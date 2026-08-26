@@ -89,7 +89,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("environments", "create", "write", "Create an environment. Set `baseEnvironmentId` to inherit plain variables from another environment in the same workspace."),
   tool("environments", "update", "write", "Update an environment, including its `baseEnvironmentId` (null clears inheritance).", { idempotent: true }),
   tool("environments", "delete", "write", "Delete an environment.", { destructive: true, idempotent: true }),
-  tool("environments", "setVariable", "write", "Set a variable on an environment.", { idempotent: true }),
+  tool("environments", "setVariable", "write", "Set a variable on an environment, read back as `{{env.NAME}}` — NOT `{{secrets.NAME}}`. Secrets are a separate keystore MCP cannot write to (see `secrets_list`/`secrets_resolve`); a token set here is a plain environment variable, whatever its name suggests.", { idempotent: true }),
   tool("environments", "deleteVariable", "write", "Delete a variable from an environment.", { destructive: true, idempotent: true }),
 
   // Node presets — the workspace's reusable node configurations. Reads come back
