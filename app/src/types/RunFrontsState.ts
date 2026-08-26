@@ -22,7 +22,7 @@ export interface RunFrontsState {
    * The camera's job is to watch without touring, so the branch grammar needs to
    * know which branch is near and which is a trip across the graph. Empty when
    * positions are unavailable, which makes every distance zero and degrades the
-   * choice back to arrival order.
+   * choice to the first branch the edges list.
    */
   readonly positions: Map<string, { x: number; y: number }>;
   /** parent → the child that inherits its front, memoised because it is a walk

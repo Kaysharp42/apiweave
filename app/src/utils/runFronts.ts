@@ -15,7 +15,8 @@
  *   - a node with no shown predecessor opens a front (an entry point);
  *   - one child of a node continues its parent's front — its *heir*, the branch
  *     that costs the camera the least travel to watch, decided from the layout
- *     rather than from which child happened to report first;
+ *     rather than from which child happened to report first; absent a layout,
+ *     the first branch the edges list;
  *   - any other child of the same node opens a front — that is a fan-out, and from
  *     there on they are two things happening at once;
  *   - a node several fronts arrive at absorbs them into one — that is a join, and
@@ -334,6 +335,11 @@ function branchCosts(
  * arriving first open its own front and leave the parent's front where it is: the
  * camera holds for the beat it takes the near branch to light up instead of
  * setting off across the canvas.
+ *
+ * The price of deciding up front: if the heir's branch never runs — a router
+ * picks the other side — the unshown heir still reads as a ready step and holds
+ * the parent's front until `ADVANCE_GRACE_MS` expires. Bounded, and cheaper than
+ * setting off across the canvas on whichever side happened to report first.
  */
 function heirOf(state: RunFrontsState, parentId: string): string | null {
   const cached = state.heirs.get(parentId);
@@ -574,7 +580,12 @@ interface FrontCandidate {
 /** Something working beats something about to move; between those the one the
  * camera can reach without a trip, because a handoff nobody has to sit through is
  * a better handoff; and between two trips of much the same length, the freshest
- * news. */
+ * news.
+ *
+ * A preference between two candidates, not a total order: inside the hysteresis
+ * band (`NEARER_BY_PX`) freshness decides, so three fronts can compare
+ * pairwise without chaining transitively. Callers scan candidates linearly in
+ * insertion order, which keeps the pick deterministic and within the band. */
 function outranks(candidate: FrontCandidate, best: FrontCandidate): boolean {
   if (candidate.rank !== best.rank) return candidate.rank > best.rank;
   if (Math.abs(candidate.distance - best.distance) > NEARER_BY_PX) {

@@ -187,12 +187,16 @@ describe("which branch of a fan-out the camera takes", () => {
     expect(frontOf(state, "a0")).not.toBe(frontOf(state, "s"));
   });
 
-  it("falls back to arrival order when the layout is unknown", () => {
+  it("falls back to the first-listed branch when the layout is unknown", () => {
     const state = createFronts([edge("start", "far"), edge("start", "near")]);
     ran(state, "start", 0);
     noteNode(state, "far", true, 10);
 
     expect(frontOf(state, "far")).toBe(frontOf(state, "start"));
+
+    // A branch listed later opens its own front, whichever reported first.
+    noteNode(state, "near", true, 20);
+    expect(frontOf(state, "near")).not.toBe(frontOf(state, "start"));
   });
 });
 
