@@ -463,13 +463,15 @@ function sanitizeKeyValueEntry(
  *
  * `redactAllValues` (cookies) withholds unconditionally — session material hides
  * under names that look harmless. Otherwise only a secret-named key withholds,
- * and even then a `{{...}}` indirection reference in any namespace (env,
- * variables, prev, secrets) survives: it is a reference, not the secret, and
- * seeing it is how an agent knows which slot a credential binds to.
+ * and even then a credential-free `{{...}}` indirection reference in any
+ * namespace (env, variables, prev, secrets) survives: it is a reference, not
+ * the secret, and seeing it is how an agent knows which slot a credential
+ * binds to. A reference string that also carries credential material outside
+ * its `{{...}}` span (e.g. a stray JWT appended to it) is still withheld.
  */
 function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
   if (redactAllValues) return true
-  if (containsIndirectionRef(value)) return false
+  if (isCredentialFreeReference(value)) return false
   return secretKey
 }
 
