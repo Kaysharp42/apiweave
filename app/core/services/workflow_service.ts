@@ -29,11 +29,30 @@ export interface WorkflowGraphPatch {
   readonly removeEdgeIds?: readonly string[]
   readonly setVariables?: Readonly<Record<string, JsonValue>>
   readonly unsetVariables?: readonly string[]
+  /**
+   * Move existing nodes without resending them: applied after upserts/removals,
+   * to whichever named ids still exist. Position-only — unlike `upsertNodes`,
+   * this does not make a node count as "touched" (see `mcp/bridge.ts`
+   * `applyAutoLayout`, the one caller that needs to move a whole graph without
+   * that showing up as every node being a content change).
+   */
+  readonly repositionNodes?: Readonly<Record<string, { readonly x: number; readonly y: number }>>
 }
 
-/** Fold a {@link WorkflowGraphPatch} into the stored graph, producing the full update to persist. */
-function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): WorkflowUpdate & { nodes: Workflow["nodes"] } {
-  const nodes = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
+/**
+ * Fold a {@link WorkflowGraphPatch} into the stored graph, producing the full
+ * update to persist. Exported so the MCP bridge can compute the same merged
+ * graph a `workflows_patch` call is about to write — needed to lay out the
+ * *whole* graph in the same write, not just the touched nodes.
+ */
+export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): WorkflowUpdate & { nodes: Workflow["nodes"] } {
+  const upserted = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
+  const nodes = patch.repositionNodes === undefined
+    ? upserted
+    : upserted.map((node) => {
+        const position = patch.repositionNodes![node.nodeId]
+        return position === undefined ? node : { ...node, position }
+      })
   const edges = mergeById(existing.edges, patch.upsertEdges, patch.removeEdgeIds, (edge) => edge.edgeId)
   const variables = { ...existing.variables, ...patch.setVariables }
   for (const name of patch.unsetVariables ?? []) delete variables[name]

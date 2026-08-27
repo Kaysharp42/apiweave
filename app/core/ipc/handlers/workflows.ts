@@ -7,8 +7,10 @@ import {
   WorkflowDiagnosisSchema,
   RevisionSchema,
   WorkflowWriteResultSchema,
+  PositionSchema,
 } from "@shared/zod-schemas"
 import { canonicalizeNodeConfig } from "../../repositories/helpers"
+import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowDiagnosis } from "@shared/types/WorkflowDiagnosis"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
@@ -92,11 +94,28 @@ const patchInput = z
       .optional()
       .describe("Workflow variables to add or overwrite. Merges into the stored map; unnamed variables are untouched."),
     unsetVariables: z.array(z.string().min(1)).optional().describe("Workflow variable names to delete."),
+    repositionNodes: z
+      .record(z.string().min(1), PositionSchema)
+      .optional()
+      .describe(
+        "Move existing nodes without resending them: a nodeId-to-position map applied after upserts/removals, to whichever named ids still exist. Position-only — unlike upsertNodes, a node moved only here is NOT counted in touchedNodeIds.",
+      ),
   })
   .strict()
 
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 const diagnoseInput = idInput.extend({ runId: z.string().min(1).optional() }).strict()
+
+const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
+
+// MCP-only meta field (stripped before it reaches the service): the bridge
+// reads it straight off the raw args to decide whether to re-lay-out the
+// graph before dispatching, then discards it here too so it never reaches
+// WorkflowService. See `mcp/bridge.ts` `applyAutoLayout`.
+const layoutFlag = z
+  .boolean()
+  .optional()
+  .describe("Re-lay-out the whole graph with workflows_layout's algorithm after this write (default true, MCP callers only). Set false to keep the positions you sent as-is.")
 
 // Echo shape toggle for graph-writing tools. The full graph echo blows MCP
 // token budgets on large workflows (a single-rule patch returned all 130 nodes
@@ -114,9 +133,9 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   const { workflows, workflowAnalysis } = deps
 
   router.register("workflows", "create", {
-    input: createInput.extend({ return: returnShape }).strict(),
+    input: createInput.extend({ return: returnShape, layout: layoutFlag }).strict(),
     output: WorkflowWriteResultSchema,
-    handle: ({ workspaceId, return: shape, ...input }) =>
+    handle: ({ workspaceId, return: shape, layout: _layout, ...input }) =>
       projectWriteResult(
         shape ?? "full",
         () => workflows.create(workspaceId, input),
@@ -146,9 +165,9 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   })
 
   router.register("workflows", "update", {
-    input: updateInput.extend({ return: returnShape }).strict(),
+    input: updateInput.extend({ return: returnShape, layout: layoutFlag }).strict(),
     output: WorkflowWriteResultSchema,
-    handle: ({ workspaceId, workflowId, return: shape, ...patch }) =>
+    handle: ({ workspaceId, workflowId, return: shape, layout: _layout, ...patch }) =>
       projectWriteResult(
         shape ?? "full",
         () => workflows.update(workspaceId, workflowId, patch),
@@ -160,9 +179,9 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   })
 
   router.register("workflows", "patch", {
-    input: patchInput.extend({ return: returnShape }).strict(),
+    input: patchInput.extend({ return: returnShape, layout: layoutFlag }).strict(),
     output: WorkflowWriteResultSchema,
-    handle: ({ workspaceId, workflowId, return: shape, ...patch }) => {
+    handle: ({ workspaceId, workflowId, return: shape, layout: _layout, ...patch }) => {
       const upsertNodeIds = ((patch.upsertNodes as readonly WorkflowNode[] | undefined) ?? []).map((n) => n.nodeId)
       const upsertEdgeIds = ((patch.upsertEdges as readonly WorkflowEdge[] | undefined) ?? []).map((e) => e.edgeId)
       return projectWriteResult(
@@ -172,6 +191,22 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
           touchedNodeIds: [...upsertNodeIds, ...(patch.removeNodeIds ?? [])],
           touchedEdgeIds: [...upsertEdgeIds, ...(patch.removeEdgeIds ?? [])],
         }),
+        workflowAnalysis,
+        workspaceId,
+      )
+    },
+  })
+
+  router.register("workflows", "layout", {
+    input: idInput.extend({ direction: layoutDirection, return: returnShape }).strict(),
+    output: WorkflowWriteResultSchema,
+    handle: async ({ workspaceId, workflowId, direction, return: shape }) => {
+      const existing = await workflows.get(workspaceId, workflowId)
+      const nodes = layoutWorkflowNodes(existing.nodes, existing.edges, direction ?? "LR")
+      return projectWriteResult(
+        shape ?? "summary",
+        () => workflows.update(workspaceId, workflowId, { nodes }),
+        () => ({ touchedNodeIds: nodes.map((n) => n.nodeId).sort(), touchedEdgeIds: [] as string[] }),
         workflowAnalysis,
         workspaceId,
       )

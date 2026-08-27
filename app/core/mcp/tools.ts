@@ -35,6 +35,14 @@ export interface McpToolSpec {
    * to discover the mistake is to fire real HTTP requests at someone's API.
    */
   readonly diagnoseAfterWrite?: boolean
+  /**
+   * Re-lay-out the whole graph with dagre before this write persists, so an
+   * agent that never reasons about `position` doesn't leave every node
+   * stacked at (0,0). Set on every tool that can add/replace nodes. Skipped
+   * per-call by passing `layout: false` in the tool's arguments. See
+   * `mcp/bridge.ts` `applyAutoLayout`.
+   */
+  readonly autoLayout?: boolean
   /** One-line description surfaced to the LLM via `tools/list` — the one thing the IPC registry lacks. */
   readonly description: string
 }
@@ -64,9 +72,10 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("assertions", "suggest", "read", "Propose verified assertion rules from one stored HTTP result — the reliable way to get paths right, since the rules are derived from a response that actually happened. Requires a completed run of that node; before one exists, author rules from the schema and check them with assertion_validate.", { name: "assertion_suggest" }),
   tool("assertions", "validate", "read", "Check assertion rules and return a human-readable preview plus per-rule issues, without changing the workflow. Canonicalizes what it accepts (a `prev` path gains its `response.` prefix), so the returned `rules` are what assertion_apply should receive.", { name: "assertion_validate" }),
   tool("assertions", "apply", "write", "Apply validated rules to one assertion node when the workflow revision still matches. Pass `expectedRevision` from the workflow's current `rev`.", { name: "assertion_apply" }),
-  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables, and return it with a `diagnosis` report — check that report before running anything. A `workflow` node runs another workflow in the same workspace as one step. Read `apiweave://guide/workflow-authoring` first if you have not built a graph here before.", { diagnoseAfterWrite: true }),
-  tool("workflows", "update", "write", "Replace a workflow's graph, variables or metadata, and return it with a `diagnosis` report. `nodes` and `edges` are REPLACED wholesale, so send the complete lists; use workflows_patch to change a subset.", { idempotent: true, diagnoseAfterWrite: true }),
-  tool("workflows", "patch", "write", "Change part of a workflow without resending the whole graph: upsert or remove nodes and edges by id, and merge workflow variables. Returns the updated workflow with a `diagnosis` report. Pass `expectedRevision` to make it a compare-and-swap against the revision you last read.", { idempotent: true, diagnoseAfterWrite: true }),
+  tool("workflows", "create", "write", "Create a workflow from nodes, edges and variables, and return it with a `diagnosis` report — check that report before running anything. A `workflow` node runs another workflow in the same workspace as one step. Read `apiweave://guide/workflow-authoring` first if you have not built a graph here before. `position` on each node is re-laid-out with dagre before saving, so it need not be reasoned about; pass `layout: false` to keep the positions sent.", { diagnoseAfterWrite: true, autoLayout: true }),
+  tool("workflows", "update", "write", "Replace a workflow's graph, variables or metadata, and return it with a `diagnosis` report. `nodes` and `edges` are REPLACED wholesale, so send the complete lists; use workflows_patch to change a subset. `position` on each node is re-laid-out with dagre before saving; pass `layout: false` to keep the positions sent.", { idempotent: true, diagnoseAfterWrite: true, autoLayout: true }),
+  tool("workflows", "patch", "write", "Change part of a workflow without resending the whole graph: upsert or remove nodes and edges by id, and merge workflow variables. Returns the updated workflow with a `diagnosis` report. Pass `expectedRevision` to make it a compare-and-swap against the revision you last read. The WHOLE graph (not just the touched nodes) is re-laid-out with dagre before saving; pass `layout: false` to keep positions exactly as stored/sent.", { idempotent: true, diagnoseAfterWrite: true, autoLayout: true }),
+  tool("workflows", "layout", "write", "Re-lay-out a workflow's node positions with dagre (a layered left-to-right or top-to-bottom flow) without changing anything else. Use this on a workflow whose nodes ended up stacked or overlapping — an import, or a graph built before this tool existed.", { idempotent: true, diagnoseAfterWrite: true }),
   tool("workflows", "delete", "write", "Delete a workflow.", { destructive: true, idempotent: true }),
   tool("workflows", "attachToCollection", "write", "Attach or detach a workflow to a collection.", { idempotent: true }),
   tool("workflows", "setEnvironment", "write", "Set or clear the selected environment for a workflow.", { idempotent: true }),

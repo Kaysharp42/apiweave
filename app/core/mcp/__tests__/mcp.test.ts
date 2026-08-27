@@ -1000,6 +1000,132 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
   })
 })
 
+describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", () => {
+  const stackedNodes = [
+    { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+    { nodeId: "a", type: "http-request", position: { x: 0, y: 0 }, config: {} },
+    { nodeId: "b", type: "http-request", position: { x: 0, y: 0 }, config: {} },
+    { nodeId: "end", type: "end", position: { x: 0, y: 0 } },
+  ]
+  const stackedEdges = [
+    { edgeId: "e1", source: "start", target: "a" },
+    { edgeId: "e2", source: "a", target: "b" },
+    { edgeId: "e3", source: "b", target: "end" },
+  ]
+
+  it("workflows_create spreads nodes an agent left stacked at the same position", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const { result } = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_create",
+          arguments: { workspaceId: workspace.workspaceId, name: "stacked", nodes: stackedNodes, edges: stackedEdges },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { nodes: Array<{ nodeId: string; position: { x: number; y: number } }> } }
+
+    const xs = result.nodes.map((n) => n.position.x)
+    expect(new Set(xs).size).toBe(4) // no longer all stacked at x:0
+    await client.close()
+  })
+
+  it("layout: false keeps the positions exactly as sent", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const { result } = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_create",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            name: "stacked-on-purpose",
+            nodes: stackedNodes,
+            edges: stackedEdges,
+            layout: false,
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { nodes: Array<{ position: { x: number; y: number } }> } }
+
+    expect(result.nodes.every((n) => n.position.x === 0 && n.position.y === 0)).toBe(true)
+    await client.close()
+  })
+
+  it("workflows_patch re-lays-out the WHOLE graph in the same write, without inflating touchedNodeIds", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const created = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_create",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            name: "patched",
+            nodes: stackedNodes,
+            edges: stackedEdges,
+            layout: false, // start genuinely stacked, so a real move is observable below
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { workflowId: string; rev: number } }
+
+    const patched = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.result.workflowId,
+            // Only "a"'s config changes; "b" is untouched content-wise.
+            upsertNodes: [{ nodeId: "a", type: "http-request", position: { x: 0, y: 0 }, config: { method: "GET" } }],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { kind: string; rev: number; touchedNodeIds: string[] } }
+
+    // One write, not a write-then-relayout second write.
+    expect(patched.result.rev).toBe(created.result.rev + 1)
+    // Repositioning the rest of the graph is not a "touch" — only "a" was named.
+    expect(patched.result.touchedNodeIds).toEqual(["a"])
+
+    const after = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: created.result.workflowId },
+    )
+    // "b" was never named in the patch, yet it moved: the whole graph was
+    // re-laid-out, not just the node the caller upserted.
+    const b = after.nodes.find((n) => n.nodeId === "b")!
+    expect(b.position.x === 0 && b.position.y === 0).toBe(false)
+    await client.close()
+  })
+
+  it("workflows_layout re-lays-out an existing workflow on demand", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "needs-tidy",
+      nodes: stackedNodes,
+      edges: stackedEdges,
+    })
+
+    const client = await connectClient()
+    const laidOut = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_layout",
+          arguments: { workspaceId: workspace.workspaceId, workflowId: created.workflowId, return: "full" },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { nodes: Array<{ position: { x: number; y: number } }> } }
+
+    const xs = laidOut.result.nodes.map((n) => n.position.x)
+    expect(new Set(xs).size).toBe(4)
+    await client.close()
+  })
+})
+
 describe("MCP reads — redacted values, intact structure", () => {
   const httpNode = {
     nodeId: "request",

@@ -3,6 +3,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { ZodRawShape } from "zod"
 import { WorkflowDiagnosisSchema } from "@shared/zod-schemas"
+import type { Workflow } from "@shared/types/Workflow"
+import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
+import { mergeGraphPatch, type WorkflowGraphPatch } from "../services"
 import type { IpcRouter } from "../ipc/router"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
@@ -52,10 +55,13 @@ async function dispatchAsTool(
   spec: McpToolSpec,
   args: Record<string, unknown>,
 ): Promise<CallToolResult> {
+  const payload = args ?? {}
+  await applyAutoLayout(router, spec, payload)
+
   let result
   try {
     result = await router.dispatch(
-      { domain: spec.domain, action: spec.action, payload: args ?? {} },
+      { domain: spec.domain, action: spec.action, payload },
       { redactSecrets: true },
     )
   } catch {
@@ -147,4 +153,68 @@ async function diagnoseWritten(router: IpcRouter, written: unknown): Promise<unk
   } catch {
     return undefined
   }
+}
+
+/**
+ * Re-lay-out node positions in place on a `workflows.create`/`update`/`patch`
+ * call's raw args, BEFORE `router.dispatch` validates and persists them — one
+ * write, not a write-then-relayout-then-write-again round trip (each write
+ * pushes to cloud sync; doubling that on every MCP graph edit is real latency
+ * on a large workflow, not just an extra local disk write).
+ *
+ * Best-effort like {@link diagnoseWritten}: on anything unexpected this
+ * no-ops and lets the original, unmodified args go to `router.dispatch` —
+ * `dispatch` still validates and persists correctly, it just keeps whatever
+ * positions the caller sent. A layout bug must never block a write.
+ */
+async function applyAutoLayout(
+  router: IpcRouter,
+  spec: McpToolSpec,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (spec.autoLayout !== true || args["layout"] === false) return
+  try {
+    if (spec.action === "create" || spec.action === "update") {
+      const nodes = args["nodes"]
+      if (!Array.isArray(nodes)) return // metadata-only update, or a create with no nodes yet
+      const edges = Array.isArray(args["edges"])
+        ? args["edges"]
+        : spec.action === "update"
+          ? (await currentWorkflow(router, args))?.edges
+          : []
+      if (!Array.isArray(edges)) return
+      args["nodes"] = layoutWorkflowNodes(nodes as Workflow["nodes"], edges as Workflow["edges"])
+      return
+    }
+    if (spec.action === "patch") {
+      const existing = await currentWorkflow(router, args)
+      if (existing === undefined) return
+      const merged = mergeGraphPatch(existing, args as WorkflowGraphPatch)
+      const laidOut = layoutWorkflowNodes(merged.nodes, merged.edges ?? [])
+      // `repositionNodes`, not `upsertNodes`: the whole graph moves, but only
+      // the nodes the caller actually named should count as "touched" in the
+      // summary projection — see `WorkflowGraphPatch.repositionNodes`.
+      args["repositionNodes"] = Object.fromEntries(laidOut.map((n) => [n.nodeId, n.position]))
+    }
+  } catch {
+    // fall through with args unchanged
+  }
+}
+
+/**
+ * Internal-only read of the workflow as it is actually stored — unredacted,
+ * since the merged result is fed straight back into a write on the same
+ * workflow, never shown to the MCP client. Using the normal `redactSecrets:
+ * true` read here would bake the literal string `<SECRET>` into every
+ * untouched node's config, which the write validators exist specifically to
+ * reject (see `guide.ts` "Never write `<SECRET>` back").
+ */
+async function currentWorkflow(router: IpcRouter, args: Record<string, unknown>): Promise<Workflow | undefined> {
+  const { workspaceId, workflowId } = args
+  if (typeof workspaceId !== "string" || typeof workflowId !== "string") return undefined
+  const result = await router.dispatch(
+    { domain: "workflows", action: "get", payload: { workspaceId, workflowId } },
+    { redactSecrets: false },
+  )
+  return result.ok ? (result.data as Workflow) : undefined
 }
