@@ -88,7 +88,10 @@ describe("cloud mutation payloads", () => {
     const payload = decodePayload(mutation.payload)
     expect(payload["workflowId"]).toBe("workflow-1")
     expect(payload["workspaceId"]).toBe("workspace-1")
-    expect(payload["variables"]).toEqual({ safeName: "visible", innocuousName: "" })
+    // apiKey/session keep their key (sensitive names) but lose the literal
+    // value; dropping the key outright would orphan any `{{variables.apiKey}}`
+    // reference elsewhere in the workflow the next time this record is pulled.
+    expect(payload["variables"]).toEqual({ apiKey: "", session: "", safeName: "visible", innocuousName: "" })
     expect(JSON.stringify(payload)).not.toContain("secret-value")
     expect(JSON.stringify(payload)).not.toContain("Bearer secret")
     const nodes = payload["nodes"]
@@ -115,6 +118,37 @@ describe("cloud mutation payloads", () => {
         headers: [{ key: "Authorization", value: "" }],
       },
     }])
+  })
+
+  it("keeps a sensitive-named variable's key so its {{variables.*}} references don't go dangling", () => {
+    const provider = new CapturingSyncProvider()
+    const workflow: Workflow = {
+      workflowId: "workflow-2",
+      workspaceId: "workspace-1",
+      name: "Token variable",
+      description: null,
+      nodes: [],
+      edges: [],
+      variables: {
+        token: "raw-jwt-value-should-be-withheld",
+        apiKeyRef: "{{secrets.API_KEY}}",
+      },
+      tags: [],
+      collectionId: null,
+      selectedEnvironmentId: null,
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    recordWorkflowUpsert(provider, workflow)
+
+    const payload = decodePayload(provider.mutations[0].payload)
+    // The literal value is withheld, but the `token` key itself survives —
+    // dropping it would orphan every `{{variables.token}}` reference in this
+    // workflow (and any other) the next time the record is pulled.
+    expect(payload["variables"]).toEqual({ token: "", apiKeyRef: "{{secrets.API_KEY}}" })
   })
 
   it("preserves project workflow-order metadata for cloud round trips", () => {

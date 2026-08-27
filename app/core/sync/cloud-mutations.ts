@@ -309,12 +309,18 @@ function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   return sanitized
 }
 
+// A variable named `token`/`password`/etc. keeps its key even when sensitive:
+// dropping the entry outright (as this used to) orphans every
+// `{{variables.token}}` reference elsewhere in the workflow the next time this
+// device (or another one) pulls the record — the variable just isn't there
+// any more. A scalar under that name is blanked unless it's a credential-free
+// reference (contract bullet 1); a container is walked instead of judged
+// (bullet 2), matching how headers/queryParams already treat a sensitive key.
 function sanitizeVariables(variables: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(variables)) {
-    if (!isSyncSensitiveKey(key)) {
-      sanitized[key] = sanitizeValue(value, true)
-    }
+    const sensitiveScalar = isSyncSensitiveKey(key) && !isRecord(value) && !Array.isArray(value)
+    sanitized[key] = sensitiveScalar ? blankUnlessReference(value) : sanitizeValue(value, true)
   }
   return sanitized
 }
