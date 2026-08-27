@@ -382,16 +382,16 @@ const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
  * Redact an HTTP auth config's secret leaf (`bearer.token`, `basic.password`,
  * `apiKey.value`) by field path rather than by key-name heuristic — those leaves
  * are named generically (`value`, `token`) and would otherwise pass key-based
- * redaction unnoticed. In `agent-read` mode a leaf that is an `{{env.*}}` /
- * `{{variables.*}}` / `{{prev...}}` / `{{secrets.*}}` reference survives: an
- * agent's read-modify-write has to be able to tell "this slot is wired to a
- * reference" from "this slot holds a literal I must not clobber", or every
- * round trip overwrites the credential indirection with `<SECRET>`.
+ * redaction unnoticed. A leaf that is a credential-free `{{env.*}}` /
+ * `{{variables.*}}` / `{{prev...}}` / `{{secrets.*}}` reference survives in
+ * every mode, the same as it already does for headers/cookies/body: it names a
+ * slot, not the secret, so another user re-importing the bundle keeps their own
+ * `{{variables.token}}` wiring instead of finding `<SECRET>` in its place.
  */
-function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>, mode: SanitizeMode): Record<string, JsonValue> {
+function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = { ...auth }
   const { bearer, basic, apiKey } = sanitized
-  const leaf = (value: string): JsonValue => (keepAsReference(value, mode) ? value : SECRET_PLACEHOLDER)
+  const leaf = (value: string): JsonValue => (isCredentialFreeReference(value) ? value : SECRET_PLACEHOLDER)
   if (isRecord(bearer) && typeof bearer["token"] === "string") {
     sanitized["bearer"] = { ...bearer, token: leaf(bearer["token"]) }
   }
@@ -463,13 +463,15 @@ function sanitizeKeyValueEntry(
  *
  * `redactAllValues` (cookies) withholds unconditionally — session material hides
  * under names that look harmless. Otherwise only a secret-named key withholds,
- * and even then a `{{...}}` indirection reference in any namespace (env,
- * variables, prev, secrets) survives: it is a reference, not the secret, and
- * seeing it is how an agent knows which slot a credential binds to.
+ * and even then a credential-free `{{...}}` indirection reference in any
+ * namespace (env, variables, prev, secrets) survives: it is a reference, not
+ * the secret, and seeing it is how an agent knows which slot a credential
+ * binds to. A reference string that also carries credential material outside
+ * its `{{...}}` span (e.g. a stray JWT appended to it) is still withheld.
  */
 function withholdsPairValue(value: string, secretKey: boolean, redactAllValues: boolean): boolean {
   if (redactAllValues) return true
-  if (containsIndirectionRef(value)) return false
+  if (isCredentialFreeReference(value)) return false
   return secretKey
 }
 
@@ -570,7 +572,7 @@ export function sanitizeAgentReadValue(data: JsonValue): JsonValue {
  * field is one entry instead of another branch.
  */
 const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: SanitizeMode) => JsonValue | undefined>> = {
-  auth: (value, mode) => (isRecord(value) ? sanitizeAuthConfigForExport(value, mode) : undefined),
+  auth: (value) => (isRecord(value) ? sanitizeAuthConfigForExport(value) : undefined),
   fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploadsForExport(value) : undefined),
   cookies: (value, mode) => (Array.isArray(value) ? sanitizeKeyValueArray(value, true, mode) : undefined),
   // Extractor values are response paths ("response.body.data.access_token") by
@@ -599,17 +601,9 @@ function sanitizeField(key: string, value: JsonValue, mode: SanitizeMode): JsonV
     return sanitizeKeyValueArray(value, false, mode)
   }
   if (typeof value === "string" && isSecretKey(key)) {
-    return keepAsReference(value, mode) ? value : SECRET_PLACEHOLDER
+    return isCredentialFreeReference(value) ? value : SECRET_PLACEHOLDER
   }
   return undefined
-}
-
-/**
- * An agent read keeps a `{{...}}` indirection reference — in any namespace
- * (env, variables, prev, secrets) — verbatim: it is a reference, not the secret.
- */
-function keepAsReference(value: string, mode: SanitizeMode): boolean {
-  return mode === "agent-read" && containsIndirectionRef(value)
 }
 
 function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {

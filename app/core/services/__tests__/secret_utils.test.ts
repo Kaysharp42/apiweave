@@ -28,6 +28,22 @@ describe("sanitizeExportValue", () => {
     expect((auth["basic"] as Record<string, unknown>)["username"]).toBe("alice")
   })
 
+  it("preserves a {{variables.*}}/{{secrets.*}} reference in an auth leaf instead of flattening it to <SECRET>", () => {
+    const config = {
+      auth: {
+        type: "apiKey",
+        apiKey: { key: "X-API-Key", value: "{{secrets.API_KEY}}", addTo: "header" },
+        bearer: { token: "{{variables.token}}" },
+        basic: { username: "alice", password: "{{env.PASSWORD}}" },
+      },
+    }
+    const sanitized = sanitizeExportValue(config) as Record<string, unknown>
+    const auth = sanitized["auth"] as Record<string, unknown>
+    expect((auth["apiKey"] as Record<string, unknown>)["value"]).toBe("{{secrets.API_KEY}}")
+    expect((auth["bearer"] as Record<string, unknown>)["token"]).toBe("{{variables.token}}")
+    expect((auth["basic"] as Record<string, unknown>)["password"]).toBe("{{env.PASSWORD}}")
+  })
+
   it("redacts KeyValuePair arrays (headers/cookies/queryParams) by value, keeping key names", () => {
     const config = {
       headers: [{ key: "Authorization", value: "Bearer secret" }, { key: "Accept", value: "application/json" }],
