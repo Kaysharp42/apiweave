@@ -650,7 +650,10 @@ export function HTTPRequestConfigPanel({
               }
             />
           </FormField>
-          <FormField label="Continue on failure">
+          <FormField
+            label="Continue on failure"
+            hint="Overrides the workflow's Continue on Fail setting for this node only — on, it keeps the run going past this request even if the workflow-level setting is off."
+          >
             <Toggle
               checked={draftConfig.continueOnFail ?? false}
               onChange={(event) =>

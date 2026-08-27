@@ -399,6 +399,11 @@ export function WorkflowSettingsPanel() {
               <li>
                 Useful for testing error scenarios or conditional workflows
               </li>
+              <li>
+                A node's own <strong>Continue on failure</strong> toggle (in
+                that node's Settings tab) overrides this setting for that
+                node only
+              </li>
             </ul>
           </div>
         )}
