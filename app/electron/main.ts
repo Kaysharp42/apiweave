@@ -43,6 +43,7 @@ import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
 import { MCP_PROMPTS } from "../core/mcp/prompts"
 import { MCP_RESOURCES } from "../core/mcp/resources"
 import { AgentEventBroker } from "../core/agents/agent_event_broker"
+import { hydratePathFromLoginShell } from "../core/agents/login_path"
 import { AgentProcessManager } from "./agent_process_manager"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import type { AgentScope } from "@shared/types/AgentScope"
@@ -78,6 +79,13 @@ const agentsLog = getLogger("agents")
 // single-instance and canonicalisation lines below are the first records of a
 // session, and the ones a crash report most needs to see.
 initLogging()
+
+// Before anything resolves an executable: a GUI-launched app inherits the
+// desktop session's PATH, not the user's. See hydratePathFromLoginShell.
+const hydratedPath = hydratePathFromLoginShell()
+if (hydratedPath !== null) {
+  bootstrapLog.info(`PATH hydrated from ${process.env["SHELL"]}`)
+}
 
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host

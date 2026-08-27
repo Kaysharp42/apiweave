@@ -9,6 +9,21 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.3] — 2026-08-27
+
+### Fixed
+
+- **Agent roster missing/stale on Linux and macOS.** A GUI-launched app does
+  not inherit the user's shell PATH, so the Agents roster's `--version` probes
+  ran against whatever a `.desktop` entry or Finder launch happened to hand
+  the process — reporting an installed CLI (e.g. Claude Code in `~/.local/bin`)
+  as not-found, and resolving another (e.g. `opencode`) to a stale copy earlier
+  system directories instead of the newer one on the user's real PATH. The app
+  now runs the user's login shell once at startup (`$SHELL -ilc 'env'`, with a
+  `passwd`-entry fallback when `SHELL` is unset, as on a Finder launch) and
+  merges its PATH into the process's before any agent detection, embedded PTY
+  launch, or external-terminal launch resolves an executable.
+
 ## [0.7.8] — 2026-08-14
 
 ### Added
