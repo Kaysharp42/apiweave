@@ -287,7 +287,6 @@ export function HTTPRequestConfigPanel({
     if (success && result !== draftConfig.body) updateConfig({ body: result });
     // Deliberately not reacting to body edits — reformatting mid-typing would
     // fight the user.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftConfig.bodyType]);
 
   const jsonError = useMemo(
