@@ -41,6 +41,7 @@ import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { previewValue } from "../../utils/previewValue";
+import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import type {
   AuthConfig,
@@ -54,10 +55,20 @@ import type {
   UrlEncodedEntry,
 } from "../../types";
 
-const MonacoEditor = lazy(async () => {
-  await import("@/config/monaco");
-  return import("@monaco-editor/react");
-});
+// Both chunks are independent (the config module only sets MonacoEnvironment /
+// loader.config, which the editor reads at mount, not at import), so fetch them
+// in parallel. Module imports are cached, so calling this again is free — the
+// panel warms it on mount so the ~MB editor chunk is ready before the user
+// reaches the Body tab instead of stalling on "Loading editor…".
+const loadMonaco = async () => {
+  const [, editorModule] = await Promise.all([
+    import("@/config/monaco"),
+    import("@monaco-editor/react"),
+  ]);
+  return editorModule;
+};
+
+const MonacoEditor = lazy(loadMonaco);
 
 const AUTH_OPTIONS: SelectOption[] = [
   { label: "None", value: "none" },
@@ -260,6 +271,23 @@ export function HTTPRequestConfigPanel({
     setDraftConfig(normalized);
     setExpectedStatusText(formatExpectedStatus(normalized.expectedStatus));
   }, [config, initialConfig]);
+
+  useEffect(() => {
+    void loadMonaco();
+  }, []);
+
+  // Present the JSON body formatted however it got here — hand-typed, imported
+  // from cURL/HAR/Postman, or written by an agent over MCP — so it stops
+  // showing up as one unreadable line. Runs on modal open and on switching the
+  // body type to JSON; invalid JSON (e.g. a bare `{{template}}`) is left alone,
+  // and nothing is persisted unless the user saves.
+  useEffect(() => {
+    if (draftConfig.bodyType !== "json") return;
+    const { success, result } = tryFormatJson(draftConfig.body ?? "");
+    if (success && result !== draftConfig.body) updateConfig({ body: result });
+    // Deliberately not reacting to body edits — reformatting mid-typing would
+    // fight the user.
+  }, [draftConfig.bodyType]);
 
   const jsonError = useMemo(
     () =>

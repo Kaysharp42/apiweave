@@ -1,7 +1,7 @@
 import { Braces } from "lucide-react";
 import { toast } from "sonner";
 import { IconButton } from "../atoms/IconButton";
-import { formatOrMinifyJson } from "../../utils/jsonFormat";
+import { tryFormatJson } from "../../utils/jsonFormat";
 import type { BeautifyButtonProps } from "../../types";
 
 export function BeautifyButton({
@@ -10,7 +10,9 @@ export function BeautifyButton({
   className = "",
 }: BeautifyButtonProps) {
   const handleBeautifyJson = () => {
-    const { success, result } = formatOrMinifyJson(value);
+    // Format-only, never minify: the button says "Format JSON", so a second
+    // click must be a no-op rather than collapsing the body back to one line.
+    const { success, result } = tryFormatJson(value);
     if (success) {
       onChange(result);
     } else {
