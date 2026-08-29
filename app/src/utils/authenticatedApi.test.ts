@@ -246,10 +246,28 @@ describe("secrets scope routes", () => {
   test("GET secrets list with empty IPC array returns { secrets: [], total: 0 }", async () => {
     mockIpc([]);
     const response = await authenticatedFetch(
-      "ipc://apiweave/api/scopes/environment/env-5/secrets",
+      "ipc://apiweave/api/scopes/environment/env-5/secrets?workspaceId=ws-1",
     );
     expect(response.ok).toBe(true);
     await expect(response.json()).resolves.toEqual({ secrets: [], total: 0 });
+  });
+
+  /**
+   * A workspace scope IS its workspace, so scopeId answers it. An environment
+   * scope does not, and the workspace id is what every secret call is authorized
+   * against — guessing one would authorize against a workspace nobody named.
+   */
+  test("environment secret routes fail closed without a workspaceId", async () => {
+    const invoke = mockIpc([]);
+    const list = await authenticatedFetch(
+      "ipc://apiweave/api/scopes/environment/env-5/secrets",
+    );
+    expect(list.ok).toBe(false);
+    const key = await authenticatedFetch(
+      "ipc://apiweave/api/secrets/public-key?scope=environment&id=env-5",
+    );
+    expect(key.ok).toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   test("GET /api/secrets/public-key maps to secrets.publicKey", async () => {

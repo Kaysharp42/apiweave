@@ -73,6 +73,29 @@ export function registerEnvironmentHandlers(router: IpcRouter, deps: HandlerDeps
     },
   })
 
+  router.register("environments", "duplicate", {
+    input: z
+      .object({
+        workspaceId: ws,
+        environmentId: z.string().min(1),
+        targetWorkspaceId: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+      })
+      .strict(),
+    output: EnvironmentSchema,
+    handle: async (i) =>
+      stripSecrets(await environments.duplicate(i.workspaceId, i.environmentId, i.targetWorkspaceId, i.name)),
+  })
+
+  router.register("environments", "moveToWorkspace", {
+    input: z
+      .object({ workspaceId: ws, environmentId: z.string().min(1), targetWorkspaceId: ws })
+      .strict(),
+    output: EnvironmentSchema,
+    handle: async (i) =>
+      stripSecrets(await environments.moveToWorkspace(i.workspaceId, i.environmentId, i.targetWorkspaceId)),
+  })
+
   router.register("environments", "setVariable", {
     input: z
       .object({ workspaceId: ws, environmentId: z.string().min(1), name: z.string().min(1), value: JsonValueSchema })

@@ -1,30 +1,86 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { KeyRound, Layers, Plus } from "lucide-react";
 import { Button } from "../components/atoms/Button";
-import { Card } from "../components/molecules/Card";
+import { DetailsPanel } from "../components/molecules/DetailsPanel";
 import { EmptyState } from "../components/molecules/EmptyState";
+import { ErrorBanner } from "../components/molecules/ErrorBanner";
 import { Modal } from "../components/molecules/Modal";
 import { SecretForm } from "../components/SecretForm";
-import { ScopedSecretList } from "../components/ScopedSecretList";
+import { SecretDetailsCard } from "../components/organisms/SecretDetailsCard";
+import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
+import { WorkspaceSecretGroups } from "../components/organisms/WorkspaceSecretGroups";
+import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog";
+import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
 import { useParams } from "react-router-dom";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import { Spinner } from "../components/atoms/Spinner";
-import type { Secret } from "../types";
+import { apiweave } from "../utils/apiweaveClient";
+import type { SecretTarget, WorkspaceOption } from "../types";
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+/** The workspace scope of `workspaceId` — the destination every action here targets. */
+const workspaceScope = (workspaceId: string, name?: string) => ({
+  workspaceId,
+  scopeType: "workspace" as const,
+  scopeId: workspaceId,
+  ...(name ? { name } : {}),
+});
+
+/**
+ * The move warnings for a workspace-scoped secret, phrased for the user: the
+ * value leaves the workspace, and requests there go out with the placeholder
+ * unresolved. The mirror of `environmentMoveWarnings` on the environments page.
+ */
+const secretMoveWarnings = (secretName: string): readonly string[] => [
+  "The encrypted value moves with it — it stops resolving in the workspace it leaves.",
+  "Any request there referencing {{secrets." +
+    secretName +
+    "}} will go out with the placeholder unresolved.",
+];
+
+/**
+ * The workspace list that drives the groups, active workspace first — it is the
+ * one the user can act on in full.
+ *
+ * Each group fetches its own secrets, so there is no list-every-secret read to
+ * add and every list call stays authorized against the workspace that owns the
+ * scope it names; this hook only supplies the group headings.
+ */
+function useWorkspaceOptions(activeWorkspaceId: string): WorkspaceOption[] {
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void apiweave.workspaces
+      .list()
+      .then((all) => {
+        if (cancelled) return;
+        setWorkspaces(
+          all
+            .map((w) => ({
+              workspaceId: w.workspaceId,
+              name: w.name,
+              slug: w.slug,
+            }))
+            .sort((a, b) =>
+              a.workspaceId === activeWorkspaceId
+                ? -1
+                : b.workspaceId === activeWorkspaceId
+                  ? 1
+                  : a.name.localeCompare(b.name),
+            ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setWorkspaces([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId]);
+  return workspaces;
 }
 
+// fallow-ignore-next-line complexity -- the page is the coordinator: it wires the workspace groups, the add-secret modal, the duplicate and move dialogs and the details panel to one refresh and one error strip, and every remaining branch is one of those dialog/action states. The lists themselves live in WorkspaceSecretGroups and ScopedSecretList, the row in SecretRow, the details card in SecretDetailsCard
 export function WorkspaceSecretsPage() {
   const { orgSlug, workspaceSlug } = useParams<{
     orgSlug: string;
@@ -32,22 +88,86 @@ export function WorkspaceSecretsPage() {
   }>();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedSecret, setSelectedSecret] = useState<Secret | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedSecret, setSelectedSecret] = useState<SecretTarget | null>(
+    null,
+  );
 
   const scopeType = "workspace" as const;
   const scopeId = currentWorkspace?.workspaceId ?? "";
+  const workspaces = useWorkspaceOptions(scopeId);
 
-  const handleSecretCreated = useCallback(() => {
+  const [duplicating, setDuplicating] = useState<SecretTarget | null>(null);
+  const [moving, setMoving] = useState<SecretTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey((k) => k + 1);
+
+  const handleSecretCreated = () => {
     setShowAddForm(false);
     setSelectedSecret(null);
-    setRefreshKey((k) => k + 1);
-  }, []);
+    refresh();
+  };
 
-  const handleChanged = useCallback(() => {
+  const handleChanged = () => {
     setSelectedSecret(null);
-    setRefreshKey((k) => k + 1);
-  }, []);
+    refresh();
+  };
+
+  async function handleDuplicate(name: string, targetWorkspaceId: string) {
+    if (!duplicating) return;
+    try {
+      await apiweave.secrets.duplicate(
+        duplicating.workspaceId,
+        "workspace",
+        duplicating.workspaceId,
+        duplicating.secret.name,
+        workspaceScope(targetWorkspaceId, name),
+      );
+      setDuplicating(null);
+      refresh();
+      toast.success(`Duplicated as "${name}"`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to duplicate secret",
+      );
+    }
+  }
+
+  async function handleMove(targetWorkspaceId: string) {
+    if (!moving) return;
+    try {
+      await apiweave.secrets.moveToScope(
+        moving.workspaceId,
+        "workspace",
+        moving.workspaceId,
+        moving.secret.name,
+        workspaceScope(targetWorkspaceId),
+      );
+      if (selectedSecret?.secret.secretId === moving.secret.secretId) {
+        setSelectedSecret(null);
+      }
+      setMoving(null);
+      refresh();
+      toast.success(`Moved "${moving.secret.name}"`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to move secret");
+    }
+  }
+
+  const header = (
+    <WorkspacePageHeader
+      icon={
+        <KeyRound
+          className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark"
+          aria-hidden="true"
+        />
+      }
+      title="Secrets"
+      orgSlug={orgSlug}
+      workspaceSlug={workspaceSlug}
+      fallbackSubtitle="Each secret belongs to one workspace"
+    />
+  );
 
   if (isWorkspaceLoading) {
     return (
@@ -60,22 +180,7 @@ export function WorkspaceSecretsPage() {
   if (!scopeId) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          <KeyRound
-            className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark"
-            aria-hidden="true"
-          />
-          <div>
-            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-              Secrets
-            </h1>
-            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-              {orgSlug && workspaceSlug
-                ? `${orgSlug} / ${workspaceSlug}`
-                : "Manage workspace secrets"}
-            </p>
-          </div>
-        </div>
+        {header}
         <div className="flex-1 overflow-y-auto p-6">
           <EmptyState
             icon={
@@ -89,24 +194,13 @@ export function WorkspaceSecretsPage() {
     );
   }
 
+  const secret = selectedSecret?.secret ?? null;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-        <KeyRound
-          className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark"
-          aria-hidden="true"
-        />
-        <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-            Secrets
-          </h1>
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            {orgSlug && workspaceSlug
-              ? `${orgSlug} / ${workspaceSlug}`
-              : "Manage workspace secrets and user bindings"}
-          </p>
-        </div>
-      </div>
+      {header}
+
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <Modal
         isOpen={showAddForm}
@@ -138,75 +232,24 @@ export function WorkspaceSecretsPage() {
               </Button>
             </div>
 
-            <Card title="Workspace secrets" collapsible defaultExpanded>
-              <ScopedSecretList
-                key={refreshKey}
-                scopeType={scopeType}
-                scopeId={scopeId}
-                onChanged={handleChanged}
-                onSelect={setSelectedSecret}
-                {...(selectedSecret
-                  ? { selectedId: selectedSecret.secretId }
-                  : {})}
-              />
-            </Card>
+            <WorkspaceSecretGroups
+              workspaces={workspaces}
+              activeWorkspaceId={scopeId}
+              refreshKey={refreshKey}
+              selectedId={secret?.secretId}
+              onSelect={(picked, workspaceId) =>
+                setSelectedSecret({ secret: picked, workspaceId })
+              }
+              onChanged={handleChanged}
+              onDuplicate={setDuplicating}
+              onMove={setMoving}
+            />
           </div>
 
-          <div className="space-y-4">
-            {selectedSecret ? (
-              <Card title={selectedSecret.name}>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Key name
-                    </span>
-                    <p className="text-sm font-mono text-text-primary dark:text-text-primary-dark">
-                      {selectedSecret.name}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Scope
-                    </span>
-                    <p className="text-sm capitalize text-text-primary dark:text-text-primary-dark">
-                      {selectedSecret.scopeType}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Status
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Set · encrypted and write-only
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Created
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      {formatDate(selectedSecret.createdAt)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Updated
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      {formatDate(selectedSecret.updatedAt)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Key ID
-                    </span>
-                    <p className="break-all text-sm font-mono text-text-primary dark:text-text-primary-dark">
-                      {selectedSecret.keyId}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            ) : (
+          <DetailsPanel
+            title={secret?.name ?? ""}
+            hasItem={selectedSecret !== null}
+            empty={
               <EmptyState
                 icon={
                   <KeyRound
@@ -217,10 +260,40 @@ export function WorkspaceSecretsPage() {
                 title="Select a secret"
                 description="Choose a secret from the list to view details."
               />
+            }
+          >
+            {selectedSecret && (
+              <SecretDetailsCard
+                secret={selectedSecret.secret}
+                workspaceName={
+                  workspaces.find(
+                    (w) => w.workspaceId === selectedSecret.workspaceId,
+                  )?.name ?? "Unknown workspace"
+                }
+              />
             )}
-          </div>
+          </DetailsPanel>
         </div>
       </div>
+
+      <DuplicateItemDialog
+        open={duplicating !== null}
+        kind="secret"
+        sourceName={duplicating?.secret.name ?? ""}
+        sourceWorkspaceId={duplicating?.workspaceId ?? ""}
+        onClose={() => setDuplicating(null)}
+        onConfirm={handleDuplicate}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moving !== null}
+        itemKind="secret"
+        itemName={moving?.secret.name ?? ""}
+        currentWorkspaceId={moving?.workspaceId ?? ""}
+        warnings={secretMoveWarnings(moving?.secret.name ?? "NAME")}
+        onClose={() => setMoving(null)}
+        onConfirm={handleMove}
+      />
     </div>
   );
 }

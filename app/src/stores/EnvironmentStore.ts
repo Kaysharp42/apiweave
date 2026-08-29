@@ -5,6 +5,14 @@ import * as scopedApi from "../utils/apiweaveClient";
 
 interface EnvironmentState {
   environments: ScopedEnvironment[];
+  /**
+   * The workspace `environments` holds. An environment belongs to exactly one
+   * workspace, so this is what makes the list interpretable: without it nothing
+   * can tell a loaded-and-empty workspace from one still in flight, and a slow
+   * response for a workspace the user has since left cannot be recognised and
+   * dropped.
+   */
+  loadedWorkspaceId: string | null;
   selectedEnvironmentByWorkflow: Record<string, string | null>;
   isLoading: boolean;
 
@@ -14,7 +22,9 @@ interface EnvironmentState {
   setDefaultEnv: (envId: string) => void;
 }
 
-function normalizeScopedEnvironment(raw: Partial<ScopedEnvironment>): ScopedEnvironment {
+function normalizeScopedEnvironment(
+  raw: Partial<ScopedEnvironment>,
+): ScopedEnvironment {
   const env: ScopedEnvironment = {
     environmentId: raw.environmentId ?? "",
     name: raw.name ?? "",
@@ -29,39 +39,65 @@ function normalizeScopedEnvironment(raw: Partial<ScopedEnvironment>): ScopedEnvi
   };
   if (raw.description !== undefined) env.description = raw.description;
   if (raw.swaggerDocUrl !== undefined) env.swaggerDocUrl = raw.swaggerDocUrl;
-  if (raw.baseEnvironmentId !== undefined) env.baseEnvironmentId = raw.baseEnvironmentId;
+  if (raw.baseEnvironmentId !== undefined)
+    env.baseEnvironmentId = raw.baseEnvironmentId;
   if (raw.ownerType !== undefined) env.ownerType = raw.ownerType;
   return env;
 }
 
+/** Accept both the bare-array and the enveloped `{ environments, total }` payload. */
+function parseEnvironmentList(
+  payload: ScopedEnvironment[] | { environments?: ScopedEnvironment[] },
+): ScopedEnvironment[] {
+  const rawList = Array.isArray(payload) ? payload : (payload.environments ?? []);
+  return rawList.map(normalizeScopedEnvironment);
+}
+
 const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
   environments: [],
+  loadedWorkspaceId: null,
   selectedEnvironmentByWorkflow: {},
   isLoading: false,
 
+  /**
+   * Load the environments of exactly ONE workspace, replacing whatever was here.
+   *
+   * The clear happens BEFORE the await, and a failed request leaves the list
+   * empty rather than restoring what was there. Environments are not a
+   * stale-but-harmless cache: one belongs to a single workspace, so anything left
+   * over after a switch shows up in the run-time environment picker, and picking
+   * it saves a `selectedEnvironmentId` the server rejects as `not_found` — the
+   * workspace the user is now in has no such environment. An empty picker is the
+   * honest state.
+   */
   fetchEnvironments: async (workspaceId: string) => {
-    if (!workspaceId) {
-      set({ environments: [], isLoading: false });
-      return;
-    }
+    set({
+      environments: [],
+      loadedWorkspaceId: workspaceId || null,
+      isLoading: Boolean(workspaceId),
+    });
+    if (!workspaceId) return;
 
-    set({ isLoading: true });
     try {
       const response = await authenticatedFetch(
-        scopedApi.environmentsUrl(workspaceId, "all-accessible"),
+        scopedApi.environmentsUrl(workspaceId),
       );
-      if (response.ok) {
-        const data = (await response.json()) as
+      // Sidebar, MainLayout and the environments page all drive this, so two
+      // loads can be in flight at once. A response for a workspace we have since
+      // switched away from must not install itself over the current one —
+      // checked before the body is read and again after it is parsed.
+      if (_get().loadedWorkspaceId !== workspaceId || !response.ok) return;
+      const environments = parseEnvironmentList(
+        (await response.json()) as
           | ScopedEnvironment[]
-          | { environments: ScopedEnvironment[]; total: number };
-        const rawList = Array.isArray(data) ? data : (data.environments ?? []);
-        const environments = rawList.map(normalizeScopedEnvironment);
-        set({ environments });
-      }
+          | { environments?: ScopedEnvironment[] },
+      );
+      if (_get().loadedWorkspaceId !== workspaceId) return;
+      set({ environments });
     } catch {
-      /* silent */
+      /* silent — the list stays empty, which is the safe reading */
     } finally {
-      set({ isLoading: false });
+      if (_get().loadedWorkspaceId === workspaceId) set({ isLoading: false });
     }
   },
 

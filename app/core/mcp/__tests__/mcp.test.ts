@@ -204,12 +204,32 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     for (const excluded of [
       "secrets.set",
       "secrets.delete",
+      // Duplicate/move carry sealed BYTES between scopes. Exposing them would
+      // let an agent re-home a credential it is not allowed to read, which is
+      // the whole posture the metadata-only surface exists to hold.
+      "secrets.duplicate",
+      "secrets.moveToScope",
       "runs.getArtifacts",
       "runs.openArtifact",
       "runs.saveArtifactAs",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }
+  })
+
+  /**
+   * An environment move clears references in the workspace it leaves, so it is
+   * annotated destructive; a duplicate only adds a row and is not. Both are
+   * writes, and neither is idempotent — calling duplicate twice makes two copies.
+   */
+  it("annotates the environment duplicate/move pair for what each actually does", () => {
+    const duplicate = MCP_TOOLS.find((spec) => toolName(spec) === "environments_duplicate")
+    expect(duplicate).toMatchObject({ intent: "write" })
+    expect(duplicate?.destructive ?? false).toBe(false)
+    expect(MCP_TOOLS.find((spec) => toolName(spec) === "environments_moveToWorkspace")).toMatchObject({
+      intent: "write",
+      destructive: true,
+    })
   })
 
   /**

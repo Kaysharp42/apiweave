@@ -38,7 +38,8 @@ function environmentName(
 ): string | null {
   if (!environmentId) return null;
   return (
-    environments.find((env) => env.environmentId === environmentId)?.name ?? null
+    environments.find((env) => env.environmentId === environmentId)?.name ??
+    null
   );
 }
 
@@ -89,6 +90,57 @@ export function workflowMoveWarnings(
   return warnings;
 }
 
+/**
+ * Warnings for moving one environment out of its workspace.
+ *
+ * Restates what `EnvironmentService.moveToWorkspace` clears, computed against
+ * the workspace the environment is LEAVING — that is where the references it
+ * breaks live. Secrets are deliberately absent: they travel with the
+ * environment, re-homed onto the destination workspace, so there is nothing to
+ * warn about.
+ */
+export function environmentMoveWarnings(
+  environment: ScopedEnvironment,
+  workflows: readonly Workflow[],
+  siblings: readonly ScopedEnvironment[],
+): string[] {
+  const warnings: string[] = [];
+
+  const selectedBy = workflows.filter(
+    (workflow) => workflow.selectedEnvironmentId === environment.environmentId,
+  );
+  if (selectedBy.length > 0) {
+    warnings.push(
+      `${plural(selectedBy.length, "workflow")} in this workspace selected it — their environment is cleared.`,
+    );
+  }
+
+  const extendedBy = siblings.filter(
+    (sibling) =>
+      sibling.environmentId !== environment.environmentId &&
+      sibling.baseEnvironmentId === environment.environmentId,
+  );
+  if (extendedBy.length > 0) {
+    warnings.push(
+      `${plural(extendedBy.length, "environment")} extends it (${extendedBy.map((sibling) => sibling.name).join(", ")}) — that link is cleared.`,
+    );
+  }
+
+  if (environment.baseEnvironmentId) {
+    warnings.push(
+      "It leaves its own base environment behind — a base must live in the same workspace.",
+    );
+  }
+
+  if (environment.isDefault) {
+    warnings.push(
+      "It stops being the default environment; it does not become the destination's default.",
+    );
+  }
+
+  return warnings;
+}
+
 /** Warnings for moving a project, and the workflows in it, out of its workspace. */
 export function projectMoveWarnings(
   members: readonly Workflow[],
@@ -124,7 +176,8 @@ export function projectMoveWarnings(
     members.map((workflow) => workflow.workflowId),
   );
   const callTargets = members.reduce(
-    (total, workflow) => total + departingCallTargets(workflow, movingWorkflowIds),
+    (total, workflow) =>
+      total + departingCallTargets(workflow, movingWorkflowIds),
     0,
   );
   if (callTargets === 1) {

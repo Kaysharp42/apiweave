@@ -1,7 +1,9 @@
+import type { MovableItemKind } from "./MovableItemKind";
+
 export interface MoveToWorkspaceDialogProps {
   readonly open: boolean;
   /** A project move also carries its workflows, which changes the wording. */
-  readonly itemKind: "project" | "workflow";
+  readonly itemKind: MovableItemKind;
   readonly itemName: string;
   /** The item's own workspace — excluded from the destination choices. */
   readonly currentWorkspaceId: string;

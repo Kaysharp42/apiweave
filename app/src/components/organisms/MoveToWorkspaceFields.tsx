@@ -1,10 +1,11 @@
 import { FormField } from "../molecules/FormField";
 import { Spinner } from "../atoms/Spinner";
+import { WorkspaceSelect } from "./WorkspaceSelect";
 import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
-import type { Project, Workspace } from "../../types";
+import type { MovableItemKind, Project, Workspace } from "../../types";
 
 interface MoveToWorkspaceFieldsProps {
-  readonly itemKind: "project" | "workflow";
+  readonly itemKind: MovableItemKind;
   readonly candidates: readonly Workspace[];
   readonly isLoadingWorkspaces: boolean;
   readonly targetWorkspaceId: string;
@@ -60,19 +61,12 @@ export function MoveToWorkspaceFields({
   return (
     <>
       <FormField label="Destination workspace">
-        <select
-          aria-label="Destination workspace"
-          className={MOVE_DIALOG_SELECT_CLASS}
+        <WorkspaceSelect
+          workspaces={candidates}
           value={targetWorkspaceId}
-          onChange={(event) => onSelectWorkspace(event.target.value)}
+          onChange={onSelectWorkspace}
           disabled={disabled}
-        >
-          {candidates.map((workspace) => (
-            <option key={workspace.workspaceId} value={workspace.workspaceId}>
-              {workspace.name}
-            </option>
-          ))}
-        </select>
+        />
       </FormField>
 
       {itemKind === "workflow" && (

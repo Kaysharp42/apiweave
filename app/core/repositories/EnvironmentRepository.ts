@@ -114,6 +114,30 @@ export class EnvironmentRepository {
     return this.update(environmentId, { variables })
   }
 
+  /**
+   * Re-home the environment onto another workspace. Deliberately absent from
+   * {@link EnvironmentUpdate}: `workspace_id` is insert-only for every other
+   * caller, and each of those is a within-workspace edit whose patch must never
+   * carry the row out of the workspace the service already authorized. `scopeId`
+   * mirrors `workspace_id` on a workspace-scoped row (see `create`), so the two
+   * move together or the row's scope goes stale.
+   */
+  public setWorkspace(environmentId: string, workspaceId: string): Environment | undefined {
+    if (this.getById(environmentId) === undefined) {
+      return undefined
+    }
+    this.store.set("UPDATE environments SET workspace_id = ?, scopeId = ? WHERE id = ?", [
+      workspaceId,
+      workspaceId,
+      environmentId,
+    ])
+    return this.getById(environmentId)
+  }
+
+  public transaction<T>(fn: () => T): T {
+    return this.store.transaction(fn)
+  }
+
   public delete(environmentId: string): boolean {
     return this.store.delete("DELETE FROM environments WHERE id = ?", [environmentId]).changes > 0
   }

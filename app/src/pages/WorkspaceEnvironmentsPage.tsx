@@ -1,38 +1,50 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { Settings, Plus, Layers } from "lucide-react";
 import { Button } from "../components/atoms/Button";
 import { Spinner } from "../components/atoms/Spinner";
-import { Card } from "../components/molecules/Card";
+import { DetailField } from "../components/molecules/DetailField";
+import { DetailsPanel } from "../components/molecules/DetailsPanel";
 import { EmptyState } from "../components/molecules/EmptyState";
-import { ScopedEnvironmentList } from "../components/organisms/ScopedEnvironmentList";
+import { ErrorBanner } from "../components/molecules/ErrorBanner";
+import { WorkspaceEnvironmentGroups } from "../components/organisms/WorkspaceEnvironmentGroups";
+import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog";
+import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
+import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
 import { EnvironmentForm } from "../components/organisms/EnvironmentForm";
-import { authenticatedJson } from "../utils/apiweaveClient";
+import { apiweave, authenticatedJson } from "../utils/apiweaveClient";
+import { environmentMoveWarnings } from "../utils/workspaceMoveWarnings";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import useEnvironmentStore from "../stores/EnvironmentStore";
 import type {
   ScopedEnvironment,
   EnvironmentFormData,
+  WorkspaceEnvironmentGroup,
   WorkspaceOption,
+  Workflow,
 } from "../types";
 
 type ViewMode = "list" | "create" | "edit";
+
+/** An environment plus the workspace it belongs to — the pair every action needs. */
+interface EnvironmentTarget {
+  readonly environment: ScopedEnvironment;
+  readonly workspaceId: string;
+}
 
 export default function WorkspaceEnvironmentsPage() {
   const { orgSlug, workspaceSlug } = useParams<{
     orgSlug: string;
     workspaceSlug: string;
   }>();
-  const {
-    currentOrg,
-    currentWorkspace,
-    isLoading: isWorkspaceLoading,
-  } = useWorkspace();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
 
   const environments = useEnvironmentStore((s) => s.environments);
   const storeIsLoading = useEnvironmentStore((s) => s.isLoading);
 
   const [orgWorkspaces, setOrgWorkspaces] = useState<WorkspaceOption[]>([]);
+  const [groups, setGroups] = useState<WorkspaceEnvironmentGroup[]>([]);
 
   const [selectedEnv, setSelectedEnv] = useState<ScopedEnvironment | null>(
     null,
@@ -41,10 +53,24 @@ export default function WorkspaceEnvironmentsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicating, setDuplicating] = useState<EnvironmentTarget | null>(
+    null,
+  );
+  const [moving, setMoving] = useState<EnvironmentTarget | null>(null);
+  const [moveWarnings, setMoveWarnings] = useState<string[]>([]);
 
-  const orgId = currentOrg?.orgId ?? "";
   const workspaceId = currentWorkspace?.workspaceId ?? "";
 
+  /**
+   * One group per workspace, fetched a workspace at a time.
+   *
+   * There is no list-every-environment read on purpose. `environments.list` is
+   * workspace-scoped and authorized per workspace, which is exactly the boundary
+   * this page is here to make visible; fanning out over the workspace list keeps
+   * that boundary in the read path instead of adding an endpoint that steps
+   * around it. Every call is local SQLite over IPC and a desktop install has a
+   * handful of workspaces.
+   */
   const refreshEnvironments = useCallback(async () => {
     if (!workspaceId) {
       if (!isWorkspaceLoading) setLoading(false);
@@ -53,21 +79,42 @@ export default function WorkspaceEnvironmentsPage() {
     setLoading(true);
     setError(null);
     try {
+      // The store holds the ACTIVE workspace only — it is what the run-time
+      // environment picker reads, and it must never see another workspace's
+      // environments. The grouped view below is a separate, read-only fan-out.
       await useEnvironmentStore.getState().fetchEnvironments(workspaceId);
 
-      // Fetch org workspaces for allowed-workspace selector
-      if (orgId) {
-        const wsList = await authenticatedJson<
-          Array<{ workspaceId: string; name: string; slug: string }>
-        >(`/api/orgs/${orgId}/workspaces`).catch(() => []);
-        setOrgWorkspaces(
-          wsList.map((w) => ({
-            workspaceId: w.workspaceId,
-            name: w.name,
-            slug: w.slug,
-          })),
-        );
-      }
+      const workspaces = await apiweave.workspaces.list();
+      setOrgWorkspaces(
+        workspaces.map((w) => ({
+          workspaceId: w.workspaceId,
+          name: w.name,
+          slug: w.slug,
+        })),
+      );
+
+      const loaded = await Promise.all(
+        workspaces.map(async (workspace) => {
+          const result = await apiweave.environments
+            .list(workspace.workspaceId)
+            .catch(() => ({ items: [] as ScopedEnvironment[] }));
+          return {
+            workspaceId: workspace.workspaceId,
+            name: workspace.name,
+            environments: [...result.items] as ScopedEnvironment[],
+          };
+        }),
+      );
+      // Active workspace first — it is the one the user can act on in full.
+      setGroups(
+        loaded.sort((a, b) =>
+          a.workspaceId === workspaceId
+            ? -1
+            : b.workspaceId === workspaceId
+              ? 1
+              : a.name.localeCompare(b.name),
+        ),
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to load environments",
@@ -75,7 +122,7 @@ export default function WorkspaceEnvironmentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, orgId, isWorkspaceLoading]);
+  }, [workspaceId, isWorkspaceLoading]);
 
   useEffect(() => {
     void refreshEnvironments();
@@ -165,6 +212,67 @@ export default function WorkspaceEnvironmentsPage() {
     }
   }
 
+  async function handleDuplicateEnv(name: string, targetWorkspaceId: string) {
+    if (!duplicating) return;
+    try {
+      const copy = await apiweave.environments.duplicate(
+        duplicating.workspaceId,
+        duplicating.environment.environmentId,
+        targetWorkspaceId,
+        name,
+      );
+      setDuplicating(null);
+      await refreshEnvironments();
+      toast.success(`Duplicated as "${copy.name}"`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to duplicate environment",
+      );
+    }
+  }
+
+  /**
+   * Warnings are computed against the environment's OWN workspace, not the
+   * active one — this page can move an environment that lives elsewhere, and
+   * the references that get cleared are the ones in the workspace it leaves.
+   */
+  async function openMoveDialog(
+    env: ScopedEnvironment,
+    envWorkspaceId: string,
+  ) {
+    setMoving({ environment: env, workspaceId: envWorkspaceId });
+    setMoveWarnings([]);
+    const workflows = await apiweave.workflows
+      .list(envWorkspaceId, true)
+      .then((result) => result.items as Workflow[])
+      .catch(() => [] as Workflow[]);
+    const siblings =
+      groups.find((group) => group.workspaceId === envWorkspaceId)
+        ?.environments ?? [];
+    setMoveWarnings(environmentMoveWarnings(env, workflows, siblings));
+  }
+
+  async function handleMoveEnv(targetWorkspaceId: string) {
+    if (!moving) return;
+    try {
+      await apiweave.environments.moveToWorkspace(
+        moving.workspaceId,
+        moving.environment.environmentId,
+        targetWorkspaceId,
+      );
+      if (selectedEnv?.environmentId === moving.environment.environmentId) {
+        setSelectedEnv(null);
+      }
+      setMoving(null);
+      await refreshEnvironments();
+      toast.success(`Moved "${moving.environment.name}"`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to move environment",
+      );
+    }
+  }
+
   function handleSelectEnv(env: ScopedEnvironment) {
     setSelectedEnv(env);
     setViewMode("list");
@@ -180,22 +288,22 @@ export default function WorkspaceEnvironmentsPage() {
     );
   }
 
+  const header = (
+    <WorkspacePageHeader
+      icon={
+        <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+      }
+      title="Environments"
+      orgSlug={orgSlug}
+      workspaceSlug={workspaceSlug}
+      fallbackSubtitle="Each environment belongs to one workspace"
+    />
+  );
+
   if (!workspaceId) {
     return (
       <div className="flex flex-col h-full">
-        <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
-          <div>
-            <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-              Environments
-            </h1>
-            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-              {orgSlug && workspaceSlug
-                ? `${orgSlug} / ${workspaceSlug}`
-                : "Manage scoped environments and protection policies"}
-            </p>
-          </div>
-        </div>
+        {header}
         <div className="flex-1 overflow-y-auto p-6">
           <EmptyState
             icon={
@@ -211,33 +319,11 @@ export default function WorkspaceEnvironmentsPage() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-        <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
-        <div>
-          <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-            Environments
-          </h1>
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            {orgSlug && workspaceSlug
-              ? `${orgSlug} / ${workspaceSlug}`
-              : "Manage scoped environments and protection policies"}
-          </p>
-        </div>
-      </div>
+      {header}
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 p-3 rounded bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
-          {error}
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="ml-2 underline cursor-pointer text-xs"
-          >
-            Dismiss
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Content */}
@@ -270,9 +356,8 @@ export default function WorkspaceEnvironmentsPage() {
         {/* List mode */}
         {viewMode === "list" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Environment list */}
+            {/* Left: environments grouped by the workspace that owns them */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Create button */}
               <div className="flex justify-end">
                 <Button
                   variant="primary"
@@ -285,10 +370,10 @@ export default function WorkspaceEnvironmentsPage() {
                 </Button>
               </div>
 
-              <ScopedEnvironmentList
-                environments={environments}
-                scopeType="workspace"
-                title="Workspace Environments"
+              <WorkspaceEnvironmentGroups
+                groups={groups}
+                activeWorkspaceId={workspaceId}
+                selectedId={selectedEnv?.environmentId}
                 onSelect={handleSelectEnv}
                 onCreate={() => setViewMode("create")}
                 onEdit={(env) => {
@@ -296,50 +381,23 @@ export default function WorkspaceEnvironmentsPage() {
                   setViewMode("edit");
                 }}
                 onDelete={handleDeleteEnv}
-                selectedId={selectedEnv?.environmentId}
+                onDuplicate={(env, envWorkspaceId) =>
+                  setDuplicating({
+                    environment: env,
+                    workspaceId: envWorkspaceId,
+                  })
+                }
+                onMove={(env, envWorkspaceId) =>
+                  void openMoveDialog(env, envWorkspaceId)
+                }
               />
             </div>
 
             {/* Right: Selected env details */}
-            <div className="space-y-4">
-              {selectedEnv ? (
-                <Card title={selectedEnv.name}>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Description
-                      </span>
-                      <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                        {selectedEnv.description || "No description"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Variables
-                      </span>
-                      <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                        {Object.keys(selectedEnv.variables).length} variable
-                        {Object.keys(selectedEnv.variables).length !== 1
-                          ? "s"
-                          : ""}
-                      </p>
-                    </div>
-                    {selectedEnv.allowedWorkspaceIds.length > 0 && (
-                      <div>
-                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                          Allowed Workspaces
-                        </span>
-                        <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                          {selectedEnv.allowedWorkspaceIds.length} workspace
-                          {selectedEnv.allowedWorkspaceIds.length !== 1
-                            ? "s"
-                            : ""}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </Card>
-              ) : (
+            <DetailsPanel
+              title={selectedEnv?.name ?? ""}
+              hasItem={selectedEnv !== null}
+              empty={
                 <EmptyState
                   icon={
                     <Layers
@@ -350,11 +408,52 @@ export default function WorkspaceEnvironmentsPage() {
                   title="Select an environment"
                   description="Choose an environment from the list to view details."
                 />
+              }
+            >
+              {selectedEnv && (
+                <>
+                  <DetailField label="Workspace">
+                    {orgWorkspaces.find(
+                      (w) => w.workspaceId === selectedEnv.scopeId,
+                    )?.name ?? "Unknown workspace"}
+                  </DetailField>
+                  <DetailField label="Description">
+                    {selectedEnv.description || "No description"}
+                  </DetailField>
+                  <DetailField label="Variables">
+                    {Object.keys(selectedEnv.variables).length} variable
+                    {Object.keys(selectedEnv.variables).length !== 1
+                      ? "s"
+                      : ""}
+                  </DetailField>
+                </>
               )}
-            </div>
+            </DetailsPanel>
           </div>
         )}
       </div>
+
+      {/* The duplicate and move dialog pair is wired the same way on both
+          workspace settings pages by design: the dialogs themselves are shared
+          components, and what differs is the handler behind each onConfirm. */}
+      <DuplicateItemDialog
+        open={duplicating !== null}
+        kind="environment"
+        sourceName={duplicating?.environment.name ?? ""}
+        sourceWorkspaceId={duplicating?.workspaceId ?? ""}
+        onClose={() => setDuplicating(null)}
+        onConfirm={handleDuplicateEnv}
+      />
+
+      <MoveToWorkspaceDialog
+        open={moving !== null}
+        itemKind="environment"
+        itemName={moving?.environment.name ?? ""}
+        currentWorkspaceId={moving?.workspaceId ?? ""}
+        warnings={moveWarnings}
+        onClose={() => setMoving(null)}
+        onConfirm={handleMoveEnv}
+      />
     </div>
   );
 }

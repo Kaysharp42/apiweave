@@ -7,6 +7,7 @@ import { useAsyncOptions } from "../../hooks/useAsyncOptions";
 import { apiweave } from "../../utils/apiweaveClient";
 import type {
   MoveToWorkspaceDialogProps,
+  MovableItemKind,
   Project,
   Workspace,
 } from "../../types";
@@ -17,7 +18,7 @@ const UNASSIGNED = "";
 /** Only a workflow picks a project, and only once a destination is chosen. */
 function projectsFetchKey(
   open: boolean,
-  itemKind: "project" | "workflow",
+  itemKind: MovableItemKind,
   targetWorkspaceId: string,
 ): string | null {
   if (!open || itemKind !== "workflow") return null;
@@ -26,7 +27,7 @@ function projectsFetchKey(
 
 /** The project id to send: null for a project move, or for "No project". */
 function chosenProjectId(
-  itemKind: "project" | "workflow",
+  itemKind: MovableItemKind,
   targetProjectId: string,
 ): string | null {
   if (itemKind !== "workflow" || targetProjectId === UNASSIGNED) return null;

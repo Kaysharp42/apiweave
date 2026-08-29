@@ -19,7 +19,15 @@ export interface ScopedEnvironmentListProps {
   /** Called when the user wants to delete an environment. */
   onDelete: (env: ScopedEnvironment) => void;
   /** Called when the user wants to duplicate an environment. */
-  onDuplicate?: (envId: string) => void;
+  onDuplicate?: (env: ScopedEnvironment) => void;
+  /** Called when the user wants to move an environment to another workspace. */
+  onMove?: (env: ScopedEnvironment) => void;
+  /**
+   * Hides Edit and Delete. Set for a workspace other than the active one: those
+   * environments are listed so the user can see where they live and copy or move
+   * them, not so they can be edited from outside the workspace that owns them.
+   */
+  readOnly?: boolean;
   /** The currently selected environment ID. */
   selectedId?: string | undefined;
   className?: string;

@@ -63,6 +63,22 @@ export class SecretRepository implements SecretWriteStore {
     )
   }
 
+  /**
+   * Re-home every secret in a scope onto another workspace. Used when an
+   * environment moves workspaces: `workspace_id` is the FK that ON DELETE
+   * CASCADE follows, so a secret left pointing at the source workspace is
+   * destroyed the day that workspace is. The sealed bytes are untouched — the
+   * sealed-box seed is machine-wide (see {@link SecretService}), derived from the
+   * keyfile master KEK and not from the workspace, so they still open afterwards.
+   */
+  public reassignWorkspace(scopeType: SecretScopeType, scopeId: string, workspaceId: string): number {
+    return this.store.set("UPDATE secrets_metadata SET workspace_id = ? WHERE scopeType = ? AND scopeId = ?", [
+      workspaceId,
+      scopeType,
+      scopeId,
+    ]).changes
+  }
+
   public listByScope(scopeType: SecretScopeType, scopeId: string): SecretMetadata[] {
     return this.store
       .query<SecretRow>(

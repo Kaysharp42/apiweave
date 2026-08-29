@@ -33,6 +33,10 @@ const SecretPublicKeySchema = z
 
 const scopeInput = z.object({ workspaceId: ws, scopeType, scopeId: z.string().min(1) }).strict()
 
+const targetScope = z
+  .object({ workspaceId: ws, scopeType, scopeId: z.string().min(1), name: z.string().min(1).optional() })
+  .strict()
+
 export function registerSecretHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { secrets } = deps
 
@@ -71,6 +75,21 @@ export function registerSecretHandlers(router: IpcRouter, deps: HandlerDeps): vo
       await secrets.delete(i.workspaceId, i.scopeType, i.scopeId, i.name)
       return null
     },
+  })
+
+  // Copy/move carry the sealed bytes between scopes. Metadata-only out, like
+  // every other secret response — the ciphertext never crosses this boundary,
+  // it is re-filed inside the service.
+  router.register("secrets", "duplicate", {
+    input: scopeInput.extend({ name: z.string().min(1), target: targetScope }).strict(),
+    output: SecretMetadataSchema,
+    handle: (i) => secrets.duplicate(i.workspaceId, i.scopeType, i.scopeId, i.name, i.target),
+  })
+
+  router.register("secrets", "moveToScope", {
+    input: scopeInput.extend({ name: z.string().min(1), target: targetScope }).strict(),
+    output: SecretMetadataSchema,
+    handle: (i) => secrets.moveToScope(i.workspaceId, i.scopeType, i.scopeId, i.name, i.target),
   })
 
   router.register("secrets", "resolve", {

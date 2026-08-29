@@ -9,8 +9,10 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  * reads return refs + metadata only, never plaintext).
  *
  * Deliberately EXCLUDED (documented so the whitelist test can assert their absence):
- *  - `secrets.set`, `secrets.delete` — keystore mutations; MCP secret surface is
- *    read-only metadata (`list`, `resolve`), matching the Python "metadata-only" posture.
+ *  - `secrets.set`, `secrets.delete`, `secrets.duplicate`, `secrets.moveToScope` — keystore
+ *    mutations; MCP secret surface is read-only metadata (`list`, `resolve`), matching the
+ *    Python "metadata-only" posture. Duplicate/move carry sealed BYTES between scopes, so
+ *    exposing them would let an agent re-home a credential it is not allowed to read.
  *  - `runs.getArtifacts`, `runs.openArtifact`, `runs.saveArtifactAs` — Electron
  *    shell/dialog operations, not agent tools.
  * Webhook and import tools are excluded structurally: they were never ported to the
@@ -100,6 +102,8 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("environments", "delete", "write", "Delete an environment.", { destructive: true, idempotent: true }),
   tool("environments", "setVariable", "write", "Set a variable on an environment, read back as `{{env.NAME}}` — NOT `{{secrets.NAME}}`. Secrets are a separate keystore MCP cannot write to (see `secrets_list`/`secrets_resolve`); a token set here is a plain environment variable, whatever its name suggests.", { idempotent: true }),
   tool("environments", "deleteVariable", "write", "Delete a variable from an environment.", { destructive: true, idempotent: true }),
+  tool("environments", "duplicate", "write", "Copy an environment — into its own workspace, or into another one with `targetWorkspaceId`. Variables and description are copied; SECRETS ARE NOT, so a copy whose requests authenticate through `{{secrets.NAME}}` has nothing to resolve until those are set again on the copy. The copy is never the workspace default, and a cross-workspace copy leaves `baseEnvironmentId` behind — a base environment must live in the same workspace as the one extending it."),
+  tool("environments", "moveToWorkspace", "write", "Move an environment into another workspace. Workflows that had it selected lose that selection, environments that extend it lose the link, and it gives up its own base environment and its default flag — a workspace is the scope all three resolve in, so none can follow. Its environment-scoped secrets do travel with it. Confirm with the user before calling: moving it back does not restore the cleared references.", { destructive: true }),
 
   // Node presets — the workspace's reusable node configurations. Reads come back
   // through the same blanket redaction every other MCP read gets, so a preset
