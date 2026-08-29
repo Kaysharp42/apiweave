@@ -363,7 +363,7 @@ if (!hasSingleInstanceLock) {
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
       assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-      environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+      environments: new EnvironmentService(environments, sync, permissions, scopeResolver, workflows, secretStore),
       nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
       runs: runService,
       secrets: secretService,

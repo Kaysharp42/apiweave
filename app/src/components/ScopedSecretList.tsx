@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { Trash2, KeyRound } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { ArrowLeftRight, Copy, Trash2, KeyRound } from "lucide-react";
 import { IconButton } from "./atoms/IconButton";
 import { EmptyState } from "./molecules/EmptyState";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
@@ -39,6 +39,9 @@ export function ScopedSecretList({
   scopeId,
   onChanged,
   onSelect,
+  onDuplicate,
+  onMove,
+  readOnly = false,
   selectedId,
   className = "",
 }: ScopedSecretListProps) {
@@ -48,20 +51,36 @@ export function ScopedSecretList({
   const [deleteTarget, setDeleteTarget] = useState<Secret | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  /**
+   * The scope the in-flight request belongs to.
+   *
+   * A secret name belongs to exactly one scope, and this list is rendered once
+   * per workspace on the secrets page — so several fetches are in flight at
+   * once and they do not finish in order. Without this, a slow response for one
+   * workspace installs its secret names under another workspace's heading, and
+   * every action offered on that row then names the wrong scope.
+   */
+  const inFlight = useRef("");
+
   const fetchSecrets = useCallback(async () => {
+    const scopeKey = `${scopeType}:${scopeId}`;
+    inFlight.current = scopeKey;
+    setSecrets([]);
     setLoading(true);
     setError(null);
     try {
       const data = await authenticatedJson<SecretListResponse>(
         `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets`,
       );
+      if (inFlight.current !== scopeKey) return;
       setSecrets(data.secrets);
     } catch (err) {
+      if (inFlight.current !== scopeKey) return;
       const message =
         err instanceof Error ? err.message : "Failed to load secrets";
       setError(message);
     } finally {
-      setLoading(false);
+      if (inFlight.current === scopeKey) setLoading(false);
     }
   }, [scopeType, scopeId]);
 
@@ -118,7 +137,11 @@ export function ScopedSecretList({
           />
         }
         title="No secrets yet"
-        description="Add a secret using the form above. Values are encrypted client-side."
+        description={
+          readOnly
+            ? "This workspace has no secrets of its own."
+            : "Add a secret using the form above. Values are encrypted client-side."
+        }
         className={className}
       />
     );
@@ -186,17 +209,48 @@ export function ScopedSecretList({
                   {formatDate(secret.updatedAt)}
                 </td>
                 <td className="py-2.5 px-3 text-right">
-                  <IconButton
-                    tooltip="Delete secret"
-                    size="xs"
-                    variant="error"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteTarget(secret);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4" aria-hidden="true" />
-                  </IconButton>
+                  <div className="flex items-center justify-end gap-1">
+                    {onDuplicate && (
+                      <IconButton
+                        tooltip="Duplicate to another scope"
+                        size="xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDuplicate(secret);
+                        }}
+                      >
+                        <Copy className="w-4 h-4" aria-hidden="true" />
+                      </IconButton>
+                    )}
+                    {onMove && (
+                      <IconButton
+                        tooltip="Move to another workspace"
+                        size="xs"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMove(secret);
+                        }}
+                      >
+                        <ArrowLeftRight
+                          className="w-4 h-4"
+                          aria-hidden="true"
+                        />
+                      </IconButton>
+                    )}
+                    {!readOnly && (
+                      <IconButton
+                        tooltip="Delete secret"
+                        size="xs"
+                        variant="error"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(secret);
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden="true" />
+                      </IconButton>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

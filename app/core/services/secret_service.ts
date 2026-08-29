@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
-import { NotFoundError } from "../ipc/errors"
+import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_SECRETS } from "../auth/permissions"
 import {
   ScopedSecretResolver,
@@ -27,6 +27,30 @@ export interface SecretPublicKey {
   readonly keyId: string
   readonly publicKey: string
   readonly algorithm: typeof ALGORITHM
+}
+
+/**
+ * Where a secret is being copied or moved to. `workspaceId` is the owning
+ * workspace of the destination scope and is authorized separately from the
+ * source's — for a `workspace` scope it equals `scopeId`, for an `environment`
+ * scope it is the workspace that environment lives in.
+ */
+export interface SecretScopeTarget {
+  readonly workspaceId: string
+  readonly scopeType: SecretScopeType
+  readonly scopeId: string
+  /** Rename on the way over. Defaults to the source name. */
+  readonly name?: string
+}
+
+/**
+ * The `keyId` stamped on a secret stored under a scope. A LABEL, not a key: the
+ * sealed box opens with the machine-wide seed (see the constructor), so this
+ * records which scope the value was filed under and nothing more. Copies and
+ * moves re-stamp it, or metadata would keep naming the scope the secret left.
+ */
+function scopeKeyId(scopeType: SecretScopeType, scopeId: string): string {
+  return `sealed-box:${scopeType}:${scopeId}`
 }
 
 /** Narrow seam for checking that an environment scope belongs to a workspace. */
@@ -77,7 +101,7 @@ export class SecretService {
     scopeId: string,
   ): Promise<SecretPublicKey> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_SECRETS)
-    const keyId = `sealed-box:${scopeType}:${scopeId}`
+    const keyId = scopeKeyId(scopeType, scopeId)
     const publicKey = await publicKeyFromSeed(this.sealedBoxSeed)
     return { keyId, publicKey: Buffer.from(publicKey).toString("base64"), algorithm: ALGORITHM }
   }
@@ -114,6 +138,94 @@ export class SecretService {
     const removed = await this.store.remove(scopeType, scopeId, name)
     if (!removed) throw new NotFoundError(`secret ${name} not found`)
     await this.syncProvider.push()
+  }
+
+  /**
+   * Copy a secret into another scope — another workspace, or an environment.
+   *
+   * The sealed bytes are carried over VERBATIM, which is the only way this can
+   * work: re-sealing needs the plaintext, and nothing outside the executor is
+   * allowed to hold it. That is safe because the sealed-box seed is machine-wide
+   * (derived from the keyfile master KEK in the constructor, not from the scope),
+   * so a box sealed under one scope opens under any other on this machine.
+   *
+   * Contrast `EnvironmentService.duplicate`, which deliberately leaves secrets
+   * behind: there the copy is incidental, here moving the value IS the request.
+   * Both ends are authorized, so this cannot reach a workspace the caller has no
+   * create right on.
+   */
+  async duplicate(
+    workspaceId: string,
+    scopeType: SecretScopeType,
+    scopeId: string,
+    name: string,
+    target: SecretScopeTarget,
+  ): Promise<SecretMetadata> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_SECRETS)
+    const created = await this.copyInto(workspaceId, scopeType, scopeId, name, target)
+    await this.syncProvider.push()
+    return created
+  }
+
+  /**
+   * Move a secret into another scope: the copy above, then the source row.
+   *
+   * Copy-then-remove, never remove-then-copy. A failure between the two leaves
+   * the secret in both scopes, which the user can see and clean up; the other
+   * order loses a value that by construction nobody can retype from memory.
+   */
+  async moveToScope(
+    workspaceId: string,
+    scopeType: SecretScopeType,
+    scopeId: string,
+    name: string,
+    target: SecretScopeTarget,
+  ): Promise<SecretMetadata> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_SECRETS)
+    const created = await this.copyInto(workspaceId, scopeType, scopeId, name, target)
+    await this.store.remove(scopeType, scopeId, name)
+    await this.syncProvider.push()
+    return created
+  }
+
+  private async copyInto(
+    workspaceId: string,
+    scopeType: SecretScopeType,
+    scopeId: string,
+    name: string,
+    target: SecretScopeTarget,
+  ): Promise<SecretMetadata> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, target.workspaceId, "create", RESOURCE_SECRETS)
+    this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
+    this.assertScopeInWorkspace(target.scopeType, target.scopeId, target.workspaceId)
+
+    const source = await this.store.getByScopeAndName(scopeType, scopeId, name)
+    if (!source) throw new NotFoundError(`secret ${name} not found`)
+
+    const targetName = target.name?.trim() || name
+    const sameScope = target.scopeType === scopeType && target.scopeId === scopeId
+    if (sameScope && targetName === name) {
+      throw new ValidationError("secret is already in this scope under that name")
+    }
+    // `put` upserts by (scope, key). Letting it through here would overwrite a
+    // value nothing can read back, print, or undo — fail and let the user pick
+    // another name instead.
+    if (await this.store.getByScopeAndName(target.scopeType, target.scopeId, targetName)) {
+      throw new ValidationError(`a secret named ${targetName} already exists in the destination scope`)
+    }
+
+    const sealed = await this.store.getCiphertext(scopeType, scopeId, name)
+    if (sealed === null) throw new NotFoundError(`secret ${name} has no stored value`)
+
+    return this.store.put({
+      workspaceId: target.workspaceId,
+      scopeType: target.scopeType,
+      scopeId: target.scopeId,
+      name: targetName,
+      keyId: scopeKeyId(target.scopeType, target.scopeId),
+      sealed,
+      ...(source.label ? { label: source.label } : {}),
+    })
   }
 
   /** Resolve which scope owns `name` down the environment > workspace chain. Metadata only. */

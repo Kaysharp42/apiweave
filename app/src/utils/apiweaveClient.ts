@@ -170,6 +170,12 @@ type ResolvedSecret = {
   readonly metadata: SecretMetadata;
   readonly resolvedScope: SecretScopeType;
 };
+type SecretScopeTarget = {
+  readonly workspaceId: string;
+  readonly scopeType: SecretScopeType;
+  readonly scopeId: string;
+  readonly name?: string;
+};
 type SecretPublicKey = {
   readonly keyId: string;
   readonly publicKey: string;
@@ -384,6 +390,28 @@ export const apiweave = {
       }),
     delete: (workspaceId: string, environmentId: string) =>
       invoke<null>("environments", "delete", { workspaceId, environmentId }),
+    duplicate: (
+      workspaceId: string,
+      environmentId: string,
+      targetWorkspaceId?: string,
+      name?: string,
+    ) =>
+      invoke<Environment>("environments", "duplicate", {
+        workspaceId,
+        environmentId,
+        ...(targetWorkspaceId ? { targetWorkspaceId } : {}),
+        ...(name ? { name } : {}),
+      }),
+    moveToWorkspace: (
+      workspaceId: string,
+      environmentId: string,
+      targetWorkspaceId: string,
+    ) =>
+      invoke<Environment>("environments", "moveToWorkspace", {
+        workspaceId,
+        environmentId,
+        targetWorkspaceId,
+      }),
     setVariable: (
       workspaceId: string,
       environmentId: string,
@@ -510,6 +538,34 @@ export const apiweave = {
         scopeType,
         scopeId,
         name,
+      }),
+    duplicate: (
+      workspaceId: string,
+      scopeType: SecretScopeType,
+      scopeId: string,
+      name: string,
+      target: SecretScopeTarget,
+    ) =>
+      invoke<SecretMetadata>("secrets", "duplicate", {
+        workspaceId,
+        scopeType,
+        scopeId,
+        name,
+        target,
+      }),
+    moveToScope: (
+      workspaceId: string,
+      scopeType: SecretScopeType,
+      scopeId: string,
+      name: string,
+      target: SecretScopeTarget,
+    ) =>
+      invoke<SecretMetadata>("secrets", "moveToScope", {
+        workspaceId,
+        scopeType,
+        scopeId,
+        name,
+        target,
       }),
     resolve: (
       workspaceId: string,
@@ -956,6 +1012,22 @@ const readPath = (
 const segment = (parts: readonly string[], index: number): string =>
   decodeURIComponent(parts[index] ?? "");
 
+/**
+ * The workspace a secret scope belongs to, or null when the caller did not say.
+ *
+ * A `workspace` scope IS its workspace. An `environment` scope is not — the
+ * workspace has to come from the query string, and there is no safe way to guess
+ * it: the workspace id is what every secret call is authorized against, so a
+ * placeholder would be an authorization check against a workspace nobody named.
+ * Fail closed and make the caller pass it.
+ */
+const scopeWorkspaceId = (
+  scopeType: SecretScopeType,
+  scopeId: string,
+  params: URLSearchParams,
+): string | null =>
+  scopeType === "workspace" ? scopeId : (params.get("workspaceId") || null);
+
 type WorkspaceCreateInput = Pick<Workspace, "name"> &
   Partial<Pick<Workspace, "slug" | "description" | "isPersonal">>;
 
@@ -1364,17 +1436,20 @@ export async function authenticatedFetch(
       if ((scopeType !== "workspace" && scopeType !== "environment") || !scopeId) {
         return fail(new IpcError("validation", "missing secret scope"));
       }
-      const workspaceId = scopeType === "workspace" ? scopeId : (params.get("workspaceId") ?? "default");
+      const workspaceId = scopeWorkspaceId(scopeType, scopeId, params);
+      if (workspaceId === null) {
+        return fail(new IpcError("validation", "missing workspaceId for an environment scope"));
+      }
       return ok(await apiweave.secrets.publicKey(workspaceId, scopeType, scopeId));
     }
 
     if (parts[0] === "api" && parts[1] === "scopes" && parts[4] === "secrets") {
       const scopeType = segment(parts, 2) as SecretScopeType;
       const scopeId = segment(parts, 3);
-      const workspaceId =
-        scopeType === "workspace"
-          ? scopeId
-          : (params.get("workspaceId") ?? "default");
+      const workspaceId = scopeWorkspaceId(scopeType, scopeId, params);
+      if (workspaceId === null) {
+        return fail(new IpcError("validation", "missing workspaceId for an environment scope"));
+      }
       if (method === "GET" && parts.length === 5) {
         const secrets = await apiweave.secrets.list(
           workspaceId,

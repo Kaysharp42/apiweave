@@ -1,10 +1,10 @@
 import { FormField } from "../molecules/FormField";
 import { Spinner } from "../atoms/Spinner";
 import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
-import type { Project, Workspace } from "../../types";
+import type { MovableItemKind, Project, Workspace } from "../../types";
 
 interface MoveToWorkspaceFieldsProps {
-  readonly itemKind: "project" | "workflow";
+  readonly itemKind: MovableItemKind;
   readonly candidates: readonly Workspace[];
   readonly isLoadingWorkspaces: boolean;
   readonly targetWorkspaceId: string;

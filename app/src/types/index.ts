@@ -122,7 +122,10 @@ export type { ContextMenuProps } from "./ContextMenuProps";
 export type { ContextMenuOrigin } from "./ContextMenuOrigin";
 export type { ContextMenuController } from "./ContextMenuController";
 export type { MoveToProjectDialogProps } from "./MoveToProjectDialogProps";
-export type { MoveToWorkspaceDialogProps } from "./MoveToWorkspaceDialogProps";
+export type {
+  MovableItemKind,
+  MoveToWorkspaceDialogProps,
+} from "./MoveToWorkspaceDialogProps";
 export type { SidebarRowActions } from "./SidebarRowActions";
 export type { SidebarRowActionsParams } from "./SidebarRowActionsParams";
 export type { SidebarRowDialogsProps } from "./SidebarRowDialogsProps";

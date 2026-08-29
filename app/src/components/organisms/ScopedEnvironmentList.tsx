@@ -1,4 +1,10 @@
-import { Pencil, Trash2, Copy, ChevronRight } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  Copy,
+  ArrowLeftRight,
+  ChevronRight,
+} from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
 import { EmptyState } from "../molecules/EmptyState";
 import { EnvironmentScopeBadge } from "../atoms/EnvironmentScopeBadge";
@@ -13,6 +19,8 @@ export function ScopedEnvironmentList({
   onEdit,
   onDelete,
   onDuplicate,
+  onMove,
+  readOnly = false,
   selectedId,
   className = "",
 }: ScopedEnvironmentListProps) {
@@ -108,16 +116,18 @@ export function ScopedEnvironmentList({
               </div>
 
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                <IconButton
-                  tooltip="Edit"
-                  size="xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEdit(env);
-                  }}
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </IconButton>
+                {!readOnly && (
+                  <IconButton
+                    tooltip="Edit"
+                    size="xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(env);
+                    }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </IconButton>
+                )}
                 {onDuplicate && (
                   <IconButton
                     tooltip="Duplicate"
@@ -125,23 +135,38 @@ export function ScopedEnvironmentList({
                     variant="ghost"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDuplicate(env.environmentId);
+                      onDuplicate(env);
                     }}
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </IconButton>
                 )}
-                <IconButton
-                  tooltip="Delete"
-                  size="xs"
-                  variant="ghost"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(env);
-                  }}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </IconButton>
+                {onMove && (
+                  <IconButton
+                    tooltip="Move to another workspace"
+                    size="xs"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMove(env);
+                    }}
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5" />
+                  </IconButton>
+                )}
+                {!readOnly && (
+                  <IconButton
+                    tooltip="Delete"
+                    size="xs"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(env);
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </IconButton>
+                )}
               </div>
 
               <ChevronRight
