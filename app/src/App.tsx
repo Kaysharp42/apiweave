@@ -33,6 +33,8 @@ import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
+import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
+import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { apiweave } from "./utils/apiweaveClient";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
@@ -224,6 +226,15 @@ function AuthedRoutes() {
  * wrapper each route renders for itself.
  */
 function AppShellRoutes() {
+  // Mounted here, above the outlet, for the same reason the providers are: a run
+  // an agent starts on a workflow that is not open has to be announced whatever
+  // route the user is on, and a per-route listener would miss the ones that land
+  // while they are in Settings.
+  useAgentRunNotice();
+  // Same reasoning, for everything an agent writes that is not a run: the
+  // sidebar, environments and presets have to refetch wherever the user is.
+  useAgentDataUpdates();
+
   return (
     <div className="relative flex h-screen flex-col bg-surface font-sans text-text-primary dark:bg-surface-dark dark:text-text-primary-dark">
       <MainLayout>

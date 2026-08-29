@@ -17,6 +17,7 @@ import { apiweave, authenticatedJson } from "../utils/apiweaveClient";
 import { environmentMoveWarnings } from "../utils/workspaceMoveWarnings";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import useEnvironmentStore from "../stores/EnvironmentStore";
+import useAgentWriteRefresh from "../hooks/useAgentWriteRefresh";
 import type {
   ScopedEnvironment,
   EnvironmentFormData,
@@ -127,6 +128,11 @@ export default function WorkspaceEnvironmentsPage() {
   useEffect(() => {
     void refreshEnvironments();
   }, [refreshEnvironments]);
+
+  // The grouped view below is local state, so refreshing the environment store
+  // does not reach it — this page has to re-run its own fan-out when an agent
+  // writes an environment over MCP.
+  useAgentWriteRefresh(["environments"], refreshEnvironments);
 
   // ---- CRUD Handlers ----
 

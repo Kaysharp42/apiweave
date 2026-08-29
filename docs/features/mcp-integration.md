@@ -2,7 +2,9 @@
 
 APIWeave includes an optional local Model Context Protocol (MCP) server. It lets
 an AI agent on the same machine manage APIWeave structures and start local runs
-without driving the renderer.
+without driving the renderer. Writes and runs it makes are reflected live in the
+desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
+[Writes in the Desktop UI](#writes-in-the-desktop-ui).
 
 ## Security Boundary
 
@@ -322,6 +324,51 @@ run resource for `notifications/resources/updated` change signals (see
 Resources); otherwise, after calling `runs_create`, re-read `runs_get` until
 `status` is one of `completed`, `failed`, `cancelled`, or `interrupted`. Keep
 polling moderate; the bridge is local but does not apply a transport rate limit.
+
+## Runs in the Desktop UI
+
+A run an agent starts with `runs_create` is shown in the desktop app the same
+way one started from the Run button: nodes light up as they execute, edge
+traversals are paced, and the run camera follows the executing front. The agent
+does nothing to arrange this and cannot opt out of it.
+
+Every run is announced to the renderer on an unkeyed `apiweave:run-started`
+channel carrying the run's workspace and workflow ids. The canvas showing that
+workflow adopts the run and streams its progress; a canvas that opens a workflow
+whose run is already in flight picks it up on mount, so nodes that finished
+before it opened are painted at the end of the run rather than live.
+
+If the workflow is not the one on screen, the app raises a notice naming it with
+a way to open it — it never switches the user's canvas on its own. A run of a
+workflow in a workspace other than the current one is not announced.
+
+## Writes in the Desktop UI
+
+Every successful write tool is announced to the renderer on an unkeyed
+`apiweave:agent-write` channel carrying `{domain, action}` and the `workspaceId`
+the call named, if it named one. The renderer answers by refetching — the same
+fetches it runs when the window regains focus — so the surfaces that show the
+written data catch up without the user touching anything:
+
+| Domain | What refreshes |
+| --- | --- |
+| `workspaces` | The workspace list and switcher. Deleting the workspace the user is *in* also sends the app to `/app`, which re-picks one that still exists. |
+| `workflows`, `assertions` | The sidebar's workflow list (the open canvas is already covered by `apiweave:workflow-changed`) and an open project page. |
+| `projects` | The sidebar's projects and collections lists, and an open project page. |
+| `environments` | The environment store the run-time picker reads, and the workspace environments page. |
+| `nodePresets` | The preset store the Add Nodes palette reads. |
+
+The event is deliberately coarse: it names a domain, not a row. These stores hold
+whole lists loaded by `useEffect` rather than a query cache, so a row would be
+data the renderer throws away, and an occasional refetch it did not strictly
+need is cheaper than the bookkeeping to prove it. A burst of writes is coalesced
+into one refetch per surface.
+
+Only MCP writes are published. The renderer's own writes already update its
+stores, and announcing those would fight its optimistic updates.
+
+`secrets` is absent because MCP has no secret write tools, and run history is
+covered by the run channel above.
 
 ## Resources
 

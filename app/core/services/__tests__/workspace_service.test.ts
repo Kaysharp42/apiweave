@@ -1,22 +1,28 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
-import { WorkspaceRepository } from "../../repositories"
+import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import { WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { WorkspaceService } from "../workspace_service"
 
 let db: InitializedDatabase
 let svc: WorkspaceService
+let workflows: WorkflowRepository
+/** Everything the workflow repository announced — see the delete-cascade suite. */
+let changes: WorkflowChangedEvent[]
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
   const workspaces = new WorkspaceRepository(db.kvStore)
+  changes = []
+  workflows = new WorkflowRepository(db.kvStore, (event) => changes.push(event))
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: () => false,
   }
-  svc = new WorkspaceService(workspaces, new LocalOnlySyncProvider(), new ScopeResolver(existence))
+  svc = new WorkspaceService(workspaces, workflows, new LocalOnlySyncProvider(), new ScopeResolver(existence))
 })
 
 afterEach(() => db.close())
@@ -91,6 +97,7 @@ describe("WorkspaceService — provision hook", () => {
     onCreated = vi.fn()
     hookedSvc = new WorkspaceService(
       workspaces,
+      new WorkflowRepository(hookDb.kvStore),
       new LocalOnlySyncProvider(),
       new ScopeResolver(existence),
       onCreated,
@@ -109,5 +116,45 @@ describe("WorkspaceService — provision hook", () => {
     onCreated.mockClear()
     await hookedSvc.create({ name: "Personal", slug: "personal", isPersonal: true })
     expect(onCreated).not.toHaveBeenCalled()
+  })
+})
+
+describe("WorkspaceService — deleting a workspace announces the workflows it takes", () => {
+  it("emits a delete event per workflow, attached ones included", async () => {
+    const ws = await svc.create({ name: "Team", slug: "team", isPersonal: false })
+    const loose = workflows.create({ workspaceId: ws.workspaceId, name: "Loose" })
+    const attached = workflows.create({
+      workspaceId: ws.workspaceId,
+      name: "In a project",
+      collectionId: "col-1",
+    })
+    changes.length = 0
+
+    await svc.delete(ws.workspaceId)
+
+    // Without this the FK cascade removes both rows silently and an open canvas
+    // keeps autosaving into a workspace that is gone.
+    // Order is the repository's listing order, which no consumer depends on.
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        { kind: "delete", workspaceId: ws.workspaceId, workflowId: loose.workflowId },
+        { kind: "delete", workspaceId: ws.workspaceId, workflowId: attached.workflowId },
+      ]),
+    )
+    expect(changes).toHaveLength(2)
+    expect(workflows.listByWorkspace(ws.workspaceId, true).items).toEqual([])
+  })
+
+  it("leaves another workspace's workflows alone", async () => {
+    const doomed = await svc.create({ name: "Doomed", slug: "doomed", isPersonal: false })
+    const keeper = await svc.create({ name: "Keeper", slug: "keeper", isPersonal: false })
+    workflows.create({ workspaceId: doomed.workspaceId, name: "Goes" })
+    const survivor = workflows.create({ workspaceId: keeper.workspaceId, name: "Stays" })
+    changes.length = 0
+
+    await svc.delete(doomed.workspaceId)
+
+    expect(changes.map((event) => event.workspaceId)).toEqual([doomed.workspaceId])
+    expect(workflows.getById(survivor.workflowId)).toBeDefined()
   })
 })

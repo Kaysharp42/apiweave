@@ -8,7 +8,12 @@ import {
 } from "react";
 import { toast } from "sonner";
 import type { Node } from "reactflow";
-import { apiweave, onRunProgress, IpcError } from "../utils/apiweaveClient";
+import {
+  apiweave,
+  onRunProgress,
+  onRunStarted,
+  IpcError,
+} from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer";
 import type { WorkflowGraphInput } from "@shared/types/WorkflowGraphInput";
@@ -467,6 +472,79 @@ export default function useWorkflowPolling({
     [choreography, stopStream, hydrateRunResults, refreshLatestFailedRun],
   );
 
+  /**
+   * Put the canvas into "a run is about to be shown" state: drop the previous
+   * run's unfinished narration, clear every node's result, and recompute the
+   * entry points the playback releases locally.
+   *
+   * Extracted because a run this canvas did not start needs exactly this too —
+   * see `adoptRun`. Nothing here depends on *who* started the run.
+   */
+  const clearCanvasForRun = useCallback(() => {
+    stopStream();
+    // Anything the previous run's playback had not finished telling is not
+    // context for this one.
+    choreography.reset();
+    runFinishedRef.current = false;
+    // Recomputed per run, and before the subscription exists, so the filter
+    // in `handleEvent` is already in place for the first event that lands.
+    entryNodeIdsRef.current = new Set(
+      nodes.filter((node) => node.type === "start").map((node) => node.id),
+    );
+    setNodes((nds) =>
+      nds.map((node) => ({
+        ...node,
+        data: {
+          ...(node.data as Record<string, unknown>),
+          executionStatus: undefined,
+          executionResult: undefined,
+          executionTimestamp: undefined,
+        },
+      })),
+    );
+  }, [stopStream, choreography, nodes, setNodes]);
+
+  /**
+   * Start showing `runId`: subscribe to its progress, engage the camera, and
+   * release the entry points.
+   *
+   * Both the Run button and an adopted agent-triggered run come through here,
+   * so a run started over MCP is narrated, paced and followed by exactly the
+   * same machinery — there is no second, dimmer rendering of a run.
+   */
+  const attachToRun = useCallback(
+    (runId: string) => {
+      setCurrentRunId(runId);
+      currentRunIdRef.current = runId;
+      setIsRunning(true);
+      unsubscribeRef.current = onRunProgress(runId, handleEvent);
+
+      // The entry point's result is the one event this subscription can never
+      // receive. The progress channel is keyed by runId, so it cannot be
+      // opened until the runId is known — and the runner, which starts the run
+      // inside `runs.create`, has already stamped the start node as passed by
+      // the time that reply (or, for an adopted run, the run-started
+      // broadcast) crosses back. Its status therefore only arrived with the
+      // end-of-run hydration, which left every edge out of Start grey for the
+      // whole run while the rest of the canvas lit up.
+      //
+      // Nothing has to be told to the canvas here: a run beginning *is* the
+      // entry point passing, and this side knows the moment it began. The
+      // node goes through the same playback as any other, so the traversal
+      // out of Start is drawn rather than snapped.
+      //
+      // The camera is engaged just before that, not after: enqueuing pumps the
+      // playback synchronously, so the entry point's release — the camera's
+      // only cue for where the run begins — happens inside the loop below.
+      cameraRef.current?.onRunStart([...entryNodeIdsRef.current]);
+
+      for (const nodeId of entryNodeIdsRef.current) {
+        choreography.enqueue({ nodeId, status: "success" });
+      }
+    },
+    [handleEvent, choreography],
+  );
+
   const executeWorkflow = useCallback(
     async (_runOptions: RunOptions = {}) => {
       if (!workspaceId || !workflowId) return;
@@ -569,27 +647,7 @@ export default function useWorkflowPolling({
       isStartingRef.current = true;
 
       try {
-        stopStream();
-        // Anything the previous run's playback had not finished telling is not
-        // context for this one.
-        choreography.reset();
-        runFinishedRef.current = false;
-        // Recomputed per run, and before the subscription exists, so the filter
-        // in `handleEvent` is already in place for the first event that lands.
-        entryNodeIdsRef.current = new Set(
-          nodes.filter((node) => node.type === "start").map((node) => node.id),
-        );
-        setNodes((nds) =>
-          nds.map((node) => ({
-            ...node,
-            data: {
-              ...(node.data as Record<string, unknown>),
-              executionStatus: undefined,
-              executionResult: undefined,
-              executionTimestamp: undefined,
-            },
-          })),
-        );
+        clearCanvasForRun();
 
         const runEnvId =
           selectedEnvironment && selectedEnvironment.trim()
@@ -612,32 +670,7 @@ export default function useWorkflowPolling({
           ...(runEnvId ? { selectedEnvironmentId: runEnvId } : {}),
         });
 
-        setCurrentRunId(run.runId);
-        currentRunIdRef.current = run.runId;
-        setIsRunning(true);
-        unsubscribeRef.current = onRunProgress(run.runId, handleEvent);
-
-        // The entry point's result is the one event this subscription can never
-        // receive. The progress channel is keyed by runId, so it cannot be
-        // opened until `runs.create` has replied — and the runner, which starts
-        // the run inside that same call, has already stamped the start node as
-        // passed by the time the reply crosses back. Its status therefore only
-        // arrived with the end-of-run hydration, which left every edge out of
-        // Start grey for the whole run while the rest of the canvas lit up.
-        //
-        // Nothing has to be told to the canvas here: a run beginning *is* the
-        // entry point passing, and this side knows the moment it began. The
-        // node goes through the same playback as any other, so the traversal
-        // out of Start is drawn rather than snapped.
-        //
-        // The camera is engaged just before that, not after: enqueuing pumps the
-        // playback synchronously, so the entry point's release — the camera's
-        // only cue for where the run begins — happens inside the loop below.
-        cameraRef.current?.onRunStart([...entryNodeIdsRef.current]);
-
-        for (const nodeId of entryNodeIdsRef.current) {
-          choreography.enqueue({ nodeId, status: "success" });
-        }
+        attachToRun(run.runId);
       } catch (error) {
         const detail =
           error instanceof IpcError
@@ -656,11 +689,96 @@ export default function useWorkflowPolling({
       nodes,
       edges,
       reactFlowInstanceRef,
-      stopStream,
-      handleEvent,
-      choreography,
+      clearCanvasForRun,
+      attachToRun,
     ],
   );
+
+  /**
+   * Take over the canvas for a run it did not start.
+   *
+   * Held in a ref, and reassigned every render, for the same reason `cameraRef`
+   * is: `clearCanvasForRun` closes over `nodes`, so depending on it directly
+   * would tear down and re-open the IPC subscription below on every node
+   * repaint — that is, dozens of times inside the run it is trying to watch.
+   * Reassignment keeps the closure over the *current* graph without making the
+   * subscription's identity depend on it.
+   */
+  const adoptRunRef = useRef<(runId: string) => void>(() => undefined);
+  adoptRunRef.current = (runId: string) => {
+    clearCanvasForRun();
+    attachToRun(runId);
+  };
+
+  /** Whether this canvas is free to start showing `runId`. */
+  const canAdoptRun = useCallback((runId: string): boolean => {
+    // The scheduler publishes `run.started` synchronously inside `runs.create`,
+    // so this canvas hears about its OWN run before that call has returned it a
+    // runId — there is nothing to compare against yet, only the knowledge that
+    // a create of ours is in flight. An agent run starting inside that same
+    // window is dropped rather than adopted, which costs one missed narration
+    // and never a canvas showing two runs at once.
+    if (isStartingRef.current) return false;
+    if (currentRunIdRef.current === runId) return false;
+    // An open stream is the one honest "a live run is on screen" test.
+    // `currentRunIdRef` is also set by `loadHistoricalRun`, which is a record
+    // being read rather than a run in progress and must not block adoption;
+    // `isRunning` outlasts the runner, because the playback trails it. The
+    // stream is opened by `attachToRun` and closed the moment the run reaches
+    // a terminal event, so a still-draining playback is adoptable — the same
+    // state clicking Run again would replace.
+    return unsubscribeRef.current === null;
+  }, []);
+
+  /**
+   * Show a run this canvas did not start — in practice, one an agent triggered
+   * through the MCP `runs_create` tool.
+   *
+   * The run-started broadcast is unkeyed and fires for every run, so the filter
+   * is here rather than at the channel: only a run of the workflow on this
+   * canvas has anywhere to be drawn, since `WorkflowCanvas` is mounted per tab.
+   */
+  useEffect(() => {
+    if (!workspaceId || !workflowId) return;
+    return onRunStarted((event) => {
+      if (event.workspaceId !== workspaceId) return;
+      if (event.workflowId !== workflowId) return;
+      if (!canAdoptRun(event.runId)) return;
+      adoptRunRef.current(event.runId);
+    });
+  }, [workspaceId, workflowId, canAdoptRun]);
+
+  /**
+   * Adopt a run that was already in flight when this canvas mounted.
+   *
+   * The broadcast above is a live signal, not a backlog: a run an agent started
+   * while this workflow's tab was closed — or while the user was looking at
+   * another tab, since `WorkflowCanvas` is mounted per tab and unmounts with it
+   * — has already announced itself to nobody. Without this, opening the
+   * workflow an agent is currently running shows a still canvas.
+   *
+   * Only future events are streamed, so nodes that finished before this attach
+   * stay grey until the end-of-run hydration paints them. Partial narration of
+   * a run in progress beats none.
+   */
+  useEffect(() => {
+    if (!workspaceId || !workflowId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const run = await apiweave.runs.getLatest(workspaceId, workflowId);
+        if (cancelled || !run) return;
+        if (run.status !== "running" && run.status !== "pending") return;
+        if (!canAdoptRun(run.runId)) return;
+        adoptRunRef.current(run.runId);
+      } catch {
+        // No readable run history is not a reason to fail opening a workflow.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, workflowId, canAdoptRun]);
 
   const runWorkflow = useCallback(async () => {
     if (!workspaceId || !workflowId) return;

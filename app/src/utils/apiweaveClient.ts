@@ -5,6 +5,8 @@ import type {
   ContractResult,
 } from "@shared/contract/errors";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
 import type { AgentScope } from "@shared/types/AgentScope";
 import type { AgentSession } from "@shared/types/AgentSession";
@@ -78,6 +80,12 @@ type IpcBridge = {
   readonly onRunProgress: (
     runId: string,
     callback: (event: RunProgressEvent) => void,
+  ) => () => void;
+  readonly onRunStarted?: (
+    callback: (event: RunStartedEvent) => void,
+  ) => () => void;
+  readonly onAgentWrite?: (
+    callback: (event: AgentWriteEvent) => void,
   ) => () => void;
   readonly onCloudStatusChanged?: (callback: () => void) => () => void;
   readonly onWorkflowChanged?: (
@@ -696,6 +704,28 @@ export function onRunProgress(
   callback: (event: RunProgressEvent) => void,
 ): () => void {
   return getIpcBridge().onRunProgress(runId, callback);
+}
+
+/**
+ * Subscribe to every run that starts, whoever started it — including a run an
+ * agent triggered over MCP, which no renderer call returned a runId for. Unkeyed
+ * by design; see `RUN_STARTED_CHANNEL`.
+ */
+export function onRunStarted(
+  callback: (event: RunStartedEvent) => void,
+): () => void {
+  return getIpcBridge().onRunStarted?.(callback) ?? (() => undefined);
+}
+
+/**
+ * Subscribe to every write an agent makes over MCP. Coarse — the domain and
+ * action only; see `AGENT_WRITE_CHANNEL` for why the renderer needs it and why
+ * it refetches rather than patches.
+ */
+export function onAgentWrite(
+  callback: (event: AgentWriteEvent) => void,
+): () => void {
+  return getIpcBridge().onAgentWrite?.(callback) ?? (() => undefined);
 }
 
 /** Subscribe to the token-free main→renderer cloud-status-changed signal. The

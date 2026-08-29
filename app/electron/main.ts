@@ -54,13 +54,16 @@ import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
+  AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
+  RUN_STARTED_CHANNEL,
   UPDATE_STATUS_CHANGED_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
@@ -95,6 +98,13 @@ if (hydratedPath !== null) {
 const ipcRouter = new IpcRouter({
   reportError: ({ domain, action, code, message, details }) => {
     ipcLog.error(`${domain}.${action} rejected (${code}): ${message}`, details ?? "")
+  },
+  // Every MCP write, forwarded to the renderer so it can refetch what the agent
+  // changed. Only workflow writes announce themselves from the repository layer;
+  // this is what covers workspaces, projects, environments and node presets.
+  onAgentWrite: (event) => {
+    if (mainWindow === null || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send(AGENT_WRITE_CHANNEL, event)
   },
 })
 
@@ -331,9 +341,22 @@ if (!hasSingleInstanceLock) {
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
     const runEvents = new RunEventBroker({ now: () => clock.isoNow() })
     runEvents.subscribe((event) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        emitRunProgress(mainWindow.webContents, event)
-      }
+      if (mainWindow === null || mainWindow.isDestroyed()) return
+      emitRunProgress(mainWindow.webContents, event)
+      // Every run's opening event, on an unkeyed channel: the per-run topic
+      // above can only be subscribed to by whoever already knows the runId,
+      // which is only ever the caller of `runs.create`. A run an agent started
+      // over MCP has no such caller in the renderer, so this is the only way a
+      // canvas learns it should be showing one. The workflow identity is
+      // resolved here because `run.started` does not carry it.
+      if (event.kind !== "run.started") return
+      const run = runs.getById(event.runId)
+      if (run === undefined) return
+      mainWindow.webContents.send(RUN_STARTED_CHANNEL, {
+        runId: run.runId,
+        workspaceId: run.workspaceId,
+        workflowId: run.workflowId,
+      } satisfies RunStartedEvent)
     })
     scheduler = new RunScheduler({
       runs,
@@ -358,7 +381,7 @@ if (!hasSingleInstanceLock) {
     const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
     const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler)
     const deps: HandlerDeps = {
-      workspaces: new WorkspaceService(workspaces, sync, scopeResolver, () => cloud.syncNewWorkspace()),
+      workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver, () => cloud.syncNewWorkspace()),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
