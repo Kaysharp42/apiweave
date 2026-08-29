@@ -1,34 +1,22 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { KeyRound, Layers, Plus } from "lucide-react";
 import { Button } from "../components/atoms/Button";
-import { Card } from "../components/molecules/Card";
+import { DetailsPanel } from "../components/molecules/DetailsPanel";
 import { EmptyState } from "../components/molecules/EmptyState";
+import { ErrorBanner } from "../components/molecules/ErrorBanner";
 import { Modal } from "../components/molecules/Modal";
 import { SecretForm } from "../components/SecretForm";
+import { SecretDetailsCard } from "../components/organisms/SecretDetailsCard";
+import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
 import { WorkspaceSecretGroups } from "../components/organisms/WorkspaceSecretGroups";
-import { DuplicateSecretDialog } from "../components/organisms/DuplicateSecretDialog";
+import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog";
 import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
 import { useParams } from "react-router-dom";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import { Spinner } from "../components/atoms/Spinner";
 import { apiweave } from "../utils/apiweaveClient";
-import type { SecretTarget } from "../components/organisms/WorkspaceSecretGroups";
-import type { WorkspaceOption } from "../types";
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
+import type { SecretTarget, WorkspaceOption } from "../types";
 
 /** The workspace scope of `workspaceId` — the destination every action here targets. */
 const workspaceScope = (workspaceId: string, name?: string) => ({
@@ -38,30 +26,28 @@ const workspaceScope = (workspaceId: string, name?: string) => ({
   ...(name ? { name } : {}),
 });
 
-export function WorkspaceSecretsPage() {
-  const { orgSlug, workspaceSlug } = useParams<{
-    orgSlug: string;
-    workspaceSlug: string;
-  }>();
-  const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [selectedSecret, setSelectedSecret] = useState<SecretTarget | null>(
-    null,
-  );
+/**
+ * The move warnings for a workspace-scoped secret, phrased for the user: the
+ * value leaves the workspace, and requests there go out with the placeholder
+ * unresolved. The mirror of `environmentMoveWarnings` on the environments page.
+ */
+const secretMoveWarnings = (secretName: string): readonly string[] => [
+  "The encrypted value moves with it — it stops resolving in the workspace it leaves.",
+  "Any request there referencing {{secrets." +
+    secretName +
+    "}} will go out with the placeholder unresolved.",
+];
+
+/**
+ * The workspace list that drives the groups, active workspace first — it is the
+ * one the user can act on in full.
+ *
+ * Each group fetches its own secrets, so there is no list-every-secret read to
+ * add and every list call stays authorized against the workspace that owns the
+ * scope it names; this hook only supplies the group headings.
+ */
+function useWorkspaceOptions(activeWorkspaceId: string): WorkspaceOption[] {
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [duplicating, setDuplicating] = useState<SecretTarget | null>(null);
-  const [moving, setMoving] = useState<SecretTarget | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  const scopeType = "workspace" as const;
-  const scopeId = currentWorkspace?.workspaceId ?? "";
-
-  /**
-   * The workspace list drives the groups; each group fetches its own secrets, so
-   * there is no list-every-secret read to add and every list call stays
-   * authorized against the workspace that owns the scope it names.
-   */
   useEffect(() => {
     let cancelled = false;
     void apiweave.workspaces
@@ -75,11 +61,10 @@ export function WorkspaceSecretsPage() {
               name: w.name,
               slug: w.slug,
             }))
-            // Active workspace first — it is the one the user can act on in full.
             .sort((a, b) =>
-              a.workspaceId === scopeId
+              a.workspaceId === activeWorkspaceId
                 ? -1
-                : b.workspaceId === scopeId
+                : b.workspaceId === activeWorkspaceId
                   ? 1
                   : a.name.localeCompare(b.name),
             ),
@@ -91,20 +76,42 @@ export function WorkspaceSecretsPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopeId]);
+  }, [activeWorkspaceId]);
+  return workspaces;
+}
 
-  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+// fallow-ignore-next-line complexity -- the page is the coordinator: it wires the workspace groups, the add-secret modal, the duplicate and move dialogs and the details panel to one refresh and one error strip, and every remaining branch is one of those dialog/action states. The lists themselves live in WorkspaceSecretGroups and ScopedSecretList, the row in SecretRow, the details card in SecretDetailsCard
+export function WorkspaceSecretsPage() {
+  const { orgSlug, workspaceSlug } = useParams<{
+    orgSlug: string;
+    workspaceSlug: string;
+  }>();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedSecret, setSelectedSecret] = useState<SecretTarget | null>(
+    null,
+  );
 
-  const handleSecretCreated = useCallback(() => {
+  const scopeType = "workspace" as const;
+  const scopeId = currentWorkspace?.workspaceId ?? "";
+  const workspaces = useWorkspaceOptions(scopeId);
+
+  const [duplicating, setDuplicating] = useState<SecretTarget | null>(null);
+  const [moving, setMoving] = useState<SecretTarget | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey((k) => k + 1);
+
+  const handleSecretCreated = () => {
     setShowAddForm(false);
     setSelectedSecret(null);
     refresh();
-  }, [refresh]);
+  };
 
-  const handleChanged = useCallback(() => {
+  const handleChanged = () => {
     setSelectedSecret(null);
     refresh();
-  }, [refresh]);
+  };
 
   async function handleDuplicate(name: string, targetWorkspaceId: string) {
     if (!duplicating) return;
@@ -148,22 +155,18 @@ export function WorkspaceSecretsPage() {
   }
 
   const header = (
-    <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-      <KeyRound
-        className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark"
-        aria-hidden="true"
-      />
-      <div>
-        <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-          Secrets
-        </h1>
-        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-          {orgSlug && workspaceSlug
-            ? `${orgSlug} / ${workspaceSlug}`
-            : "Each secret belongs to one workspace"}
-        </p>
-      </div>
-    </div>
+    <WorkspacePageHeader
+      icon={
+        <KeyRound
+          className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark"
+          aria-hidden="true"
+        />
+      }
+      title="Secrets"
+      orgSlug={orgSlug}
+      workspaceSlug={workspaceSlug}
+      fallbackSubtitle="Each secret belongs to one workspace"
+    />
   );
 
   if (isWorkspaceLoading) {
@@ -197,18 +200,7 @@ export function WorkspaceSecretsPage() {
     <div className="flex flex-col h-full">
       {header}
 
-      {error && (
-        <div className="mx-6 mt-4 p-3 rounded bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
-          {error}
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="ml-2 underline cursor-pointer text-xs"
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
 
       <Modal
         isOpen={showAddForm}
@@ -254,71 +246,10 @@ export function WorkspaceSecretsPage() {
             />
           </div>
 
-          <div className="space-y-4">
-            {secret && selectedSecret ? (
-              <Card title={secret.name}>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Workspace
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      {workspaces.find(
-                        (w) => w.workspaceId === selectedSecret.workspaceId,
-                      )?.name ?? "Unknown workspace"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Key name
-                    </span>
-                    <p className="text-sm font-mono text-text-primary dark:text-text-primary-dark">
-                      {secret.name}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Scope
-                    </span>
-                    <p className="text-sm capitalize text-text-primary dark:text-text-primary-dark">
-                      {secret.scopeType}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Status
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Set · encrypted and write-only
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Created
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      {formatDate(secret.createdAt)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Updated
-                    </span>
-                    <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                      {formatDate(secret.updatedAt)}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                      Key ID
-                    </span>
-                    <p className="break-all text-sm font-mono text-text-primary dark:text-text-primary-dark">
-                      {secret.keyId}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            ) : (
+          <DetailsPanel
+            title={secret?.name ?? ""}
+            hasItem={selectedSecret !== null}
+            empty={
               <EmptyState
                 icon={
                   <KeyRound
@@ -329,14 +260,26 @@ export function WorkspaceSecretsPage() {
                 title="Select a secret"
                 description="Choose a secret from the list to view details."
               />
+            }
+          >
+            {selectedSecret && (
+              <SecretDetailsCard
+                secret={selectedSecret.secret}
+                workspaceName={
+                  workspaces.find(
+                    (w) => w.workspaceId === selectedSecret.workspaceId,
+                  )?.name ?? "Unknown workspace"
+                }
+              />
             )}
-          </div>
+          </DetailsPanel>
         </div>
       </div>
 
-      <DuplicateSecretDialog
+      <DuplicateItemDialog
         open={duplicating !== null}
-        secret={duplicating?.secret ?? null}
+        kind="secret"
+        sourceName={duplicating?.secret.name ?? ""}
         sourceWorkspaceId={duplicating?.workspaceId ?? ""}
         onClose={() => setDuplicating(null)}
         onConfirm={handleDuplicate}
@@ -347,14 +290,9 @@ export function WorkspaceSecretsPage() {
         itemKind="secret"
         itemName={moving?.secret.name ?? ""}
         currentWorkspaceId={moving?.workspaceId ?? ""}
-        warnings={[
-          "The encrypted value moves with it — it stops resolving in the workspace it leaves.",
-          "Any request there referencing {{secrets." +
-            (moving?.secret.name ?? "NAME") +
-            "}} will go out with the placeholder unresolved.",
-        ]}
+        warnings={secretMoveWarnings(moving?.secret.name ?? "NAME")}
         onClose={() => setMoving(null)}
-        onConfirm={(targetWorkspaceId) => handleMove(targetWorkspaceId)}
+        onConfirm={handleMove}
       />
     </div>
   );

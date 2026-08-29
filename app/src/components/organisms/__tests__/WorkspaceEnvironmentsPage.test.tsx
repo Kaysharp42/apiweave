@@ -17,7 +17,8 @@ describe("WorkspaceEnvironmentsPage", () => {
   });
 
   it("shows breadcrumb with org/workspace slugs", () => {
-    expect(source).toContain("`${orgSlug} / ${workspaceSlug}`");
+    expect(source).toContain("orgSlug={orgSlug}");
+    expect(source).toContain("workspaceSlug={workspaceSlug}");
   });
 
   it('renders "New Environment" button', () => {
@@ -30,7 +31,8 @@ describe("WorkspaceEnvironmentsPage", () => {
   });
 
   it("offers duplicate and move-to-workspace for an environment", () => {
-    expect(source).toContain("<DuplicateEnvironmentDialog");
+    expect(source).toContain("<DuplicateItemDialog");
+    expect(source).toContain('kind="environment"');
     expect(source).toContain("<MoveToWorkspaceDialog");
     expect(source).toContain('itemKind="environment"');
     expect(source).toContain(".list(workspace.workspaceId)");

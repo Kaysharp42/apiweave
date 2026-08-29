@@ -4,20 +4,23 @@ import { toast } from "sonner";
 import { Settings, Plus, Layers } from "lucide-react";
 import { Button } from "../components/atoms/Button";
 import { Spinner } from "../components/atoms/Spinner";
-import { Card } from "../components/molecules/Card";
+import { DetailField } from "../components/molecules/DetailField";
+import { DetailsPanel } from "../components/molecules/DetailsPanel";
 import { EmptyState } from "../components/molecules/EmptyState";
+import { ErrorBanner } from "../components/molecules/ErrorBanner";
 import { WorkspaceEnvironmentGroups } from "../components/organisms/WorkspaceEnvironmentGroups";
-import { DuplicateEnvironmentDialog } from "../components/organisms/DuplicateEnvironmentDialog";
+import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog";
 import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
+import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
 import { EnvironmentForm } from "../components/organisms/EnvironmentForm";
 import { apiweave, authenticatedJson } from "../utils/apiweaveClient";
 import { environmentMoveWarnings } from "../utils/workspaceMoveWarnings";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import useEnvironmentStore from "../stores/EnvironmentStore";
-import type { WorkspaceEnvironmentGroup } from "../components/organisms/WorkspaceEnvironmentGroups";
 import type {
   ScopedEnvironment,
   EnvironmentFormData,
+  WorkspaceEnvironmentGroup,
   WorkspaceOption,
   Workflow,
 } from "../types";
@@ -286,19 +289,15 @@ export default function WorkspaceEnvironmentsPage() {
   }
 
   const header = (
-    <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-      <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
-      <div>
-        <h1 className="text-3xl font-bold font-display tracking-tight text-text-primary dark:text-text-primary-dark">
-          Environments
-        </h1>
-        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-          {orgSlug && workspaceSlug
-            ? `${orgSlug} / ${workspaceSlug}`
-            : "Each environment belongs to one workspace"}
-        </p>
-      </div>
-    </div>
+    <WorkspacePageHeader
+      icon={
+        <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
+      }
+      title="Environments"
+      orgSlug={orgSlug}
+      workspaceSlug={workspaceSlug}
+      fallbackSubtitle="Each environment belongs to one workspace"
+    />
   );
 
   if (!workspaceId) {
@@ -324,16 +323,7 @@ export default function WorkspaceEnvironmentsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 p-3 rounded bg-status-error/10 dark:bg-status-error/20 border border-status-error/30 text-sm text-status-error">
-          {error}
-          <button
-            type="button"
-            onClick={() => setError(null)}
-            className="ml-2 underline cursor-pointer text-xs"
-          >
-            Dismiss
-          </button>
-        </div>
+        <ErrorBanner message={error} onDismiss={() => setError(null)} />
       )}
 
       {/* Content */}
@@ -404,42 +394,10 @@ export default function WorkspaceEnvironmentsPage() {
             </div>
 
             {/* Right: Selected env details */}
-            <div className="space-y-4">
-              {selectedEnv ? (
-                <Card title={selectedEnv.name}>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Workspace
-                      </span>
-                      <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                        {orgWorkspaces.find(
-                          (w) => w.workspaceId === selectedEnv.scopeId,
-                        )?.name ?? "Unknown workspace"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Description
-                      </span>
-                      <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                        {selectedEnv.description || "No description"}
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                        Variables
-                      </span>
-                      <p className="text-sm text-text-primary dark:text-text-primary-dark">
-                        {Object.keys(selectedEnv.variables).length} variable
-                        {Object.keys(selectedEnv.variables).length !== 1
-                          ? "s"
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              ) : (
+            <DetailsPanel
+              title={selectedEnv?.name ?? ""}
+              hasItem={selectedEnv !== null}
+              empty={
                 <EmptyState
                   icon={
                     <Layers
@@ -450,15 +408,38 @@ export default function WorkspaceEnvironmentsPage() {
                   title="Select an environment"
                   description="Choose an environment from the list to view details."
                 />
+              }
+            >
+              {selectedEnv && (
+                <>
+                  <DetailField label="Workspace">
+                    {orgWorkspaces.find(
+                      (w) => w.workspaceId === selectedEnv.scopeId,
+                    )?.name ?? "Unknown workspace"}
+                  </DetailField>
+                  <DetailField label="Description">
+                    {selectedEnv.description || "No description"}
+                  </DetailField>
+                  <DetailField label="Variables">
+                    {Object.keys(selectedEnv.variables).length} variable
+                    {Object.keys(selectedEnv.variables).length !== 1
+                      ? "s"
+                      : ""}
+                  </DetailField>
+                </>
               )}
-            </div>
+            </DetailsPanel>
           </div>
         )}
       </div>
 
-      <DuplicateEnvironmentDialog
+      {/* The duplicate and move dialog pair is wired the same way on both
+          workspace settings pages by design: the dialogs themselves are shared
+          components, and what differs is the handler behind each onConfirm. */}
+      <DuplicateItemDialog
         open={duplicating !== null}
-        environment={duplicating?.environment ?? null}
+        kind="environment"
+        sourceName={duplicating?.environment.name ?? ""}
         sourceWorkspaceId={duplicating?.workspaceId ?? ""}
         onClose={() => setDuplicating(null)}
         onConfirm={handleDuplicateEnv}
@@ -471,7 +452,7 @@ export default function WorkspaceEnvironmentsPage() {
         currentWorkspaceId={moving?.workspaceId ?? ""}
         warnings={moveWarnings}
         onClose={() => setMoving(null)}
-        onConfirm={(targetWorkspaceId) => handleMoveEnv(targetWorkspaceId)}
+        onConfirm={handleMoveEnv}
       />
     </div>
   );

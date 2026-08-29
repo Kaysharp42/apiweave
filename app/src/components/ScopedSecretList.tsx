@@ -7,6 +7,7 @@ import { ScopeBadge } from "./ScopeBadge";
 import { SecretOverrideIndicator } from "./SecretOverrideIndicator";
 import { authenticatedJson } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
+import { formatTimestamp } from "../utils/formatTimestamp";
 import type { Secret } from "../types";
 import type { ScopedSecretListProps } from "../types/ScopedSecretListProps";
 
@@ -15,36 +16,120 @@ interface SecretListResponse {
   total: number;
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
+interface SecretRowProps {
+  readonly secret: Secret;
+  readonly selectedId?: string | undefined;
+  readonly onSelect?: ((secret: Secret) => void) | undefined;
+  readonly onDuplicate?: ((secret: Secret) => void) | undefined;
+  readonly onMove?: ((secret: Secret) => void) | undefined;
+  readonly readOnly: boolean;
+  /** Delete is a two-step: the row only nominates the target, the list confirms. */
+  readonly onRequestDelete: (secret: Secret) => void;
 }
 
-/**
- * ScopedSecretList — displays secrets for a scope as a metadata-only table.
- *
- * NEVER shows secret values or ciphertext.
- */
-export function ScopedSecretList({
-  scopeType,
-  scopeId,
-  onChanged,
+/** One secret's metadata row. Never shows a value or ciphertext. */
+function SecretRow({
+  secret,
+  selectedId,
   onSelect,
   onDuplicate,
   onMove,
-  readOnly = false,
-  selectedId,
-  className = "",
-}: ScopedSecretListProps) {
+  readOnly,
+  onRequestDelete,
+}: SecretRowProps) {
+  const isSelected = secret.secretId === selectedId;
+
+  return (
+    <tr
+      className={[
+        "border-b border-border/50 dark:border-border-dark/50 transition-colors",
+        onSelect ? "cursor-pointer" : "",
+        isSelected
+          ? "bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10"
+          : "hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50",
+      ].join(" ")}
+      onClick={() => onSelect?.(secret)}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (!onSelect) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect(secret);
+        }
+      }}
+      aria-selected={onSelect ? isSelected : undefined}
+    >
+      <td className="py-2.5 px-3">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-text-primary dark:text-text-primary-dark">
+            {secret.name}
+          </span>
+        </div>
+      </td>
+      <td className="py-2.5 px-3">
+        <div className="flex items-center gap-2">
+          <ScopeBadge scopeType={secret.scopeType} />
+          <SecretOverrideIndicator isOverride={false} />
+        </div>
+      </td>
+      <td className="py-2.5 px-3 text-text-secondary dark:text-text-secondary-dark text-xs">
+        {formatTimestamp(secret.updatedAt)}
+      </td>
+      <td className="py-2.5 px-3 text-right">
+        <div className="flex items-center justify-end gap-1">
+          {onDuplicate && (
+            <IconButton
+              tooltip="Duplicate to another scope"
+              size="xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate(secret);
+              }}
+            >
+              <Copy className="w-4 h-4" aria-hidden="true" />
+            </IconButton>
+          )}
+          {onMove && (
+            <IconButton
+              tooltip="Move to another workspace"
+              size="xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(secret);
+              }}
+            >
+              <ArrowLeftRight className="w-4 h-4" aria-hidden="true" />
+            </IconButton>
+          )}
+          {!readOnly && (
+            <IconButton
+              tooltip="Delete secret"
+              size="xs"
+              variant="error"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRequestDelete(secret);
+              }}
+            >
+              <Trash2 className="w-4 h-4" aria-hidden="true" />
+            </IconButton>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * The data side of the list: fetch the scope's secret metadata, keep delete
+ * confirmation state, and re-fetch after a confirmed delete.
+ */
+function useScopedSecrets(
+  scopeType: ScopedSecretListProps["scopeType"],
+  scopeId: string,
+  onChanged: () => void,
+) {
   const [secrets, setSecrets] = useState<Secret[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +193,28 @@ export function ScopedSecretList({
     }
   }, [deleteTarget, scopeType, scopeId, onChanged, fetchSecrets]);
 
+  return { secrets, loading, error, deleteTarget, setDeleteTarget, deleting, handleDelete };
+}
+
+/**
+ * ScopedSecretList — displays secrets for a scope as a metadata-only table.
+ *
+ * NEVER shows secret values or ciphertext.
+ */
+export function ScopedSecretList({
+  scopeType,
+  scopeId,
+  onChanged,
+  onSelect,
+  onDuplicate,
+  onMove,
+  readOnly = false,
+  selectedId,
+  className = "",
+}: ScopedSecretListProps) {
+  const { secrets, loading, error, deleteTarget, setDeleteTarget, deleting, handleDelete } =
+    useScopedSecrets(scopeType, scopeId, onChanged);
+
   if (loading) {
     return (
       <div
@@ -167,94 +274,18 @@ export function ScopedSecretList({
           </tr>
         </thead>
         <tbody>
-          {secrets.map((secret) => {
-            const isSelected = secret.secretId === selectedId;
-
-            return (
-              <tr
-                key={secret.secretId}
-                className={[
-                  "border-b border-border/50 dark:border-border-dark/50 transition-colors",
-                  onSelect ? "cursor-pointer" : "",
-                  isSelected
-                    ? "bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10"
-                    : "hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50",
-                ].join(" ")}
-                onClick={() => onSelect?.(secret)}
-                role={onSelect ? "button" : undefined}
-                tabIndex={onSelect ? 0 : undefined}
-                onKeyDown={(e) => {
-                  if (!onSelect) return;
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onSelect(secret);
-                  }
-                }}
-                aria-selected={onSelect ? isSelected : undefined}
-              >
-                <td className="py-2.5 px-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-text-primary dark:text-text-primary-dark">
-                      {secret.name}
-                    </span>
-                  </div>
-                </td>
-                <td className="py-2.5 px-3">
-                  <div className="flex items-center gap-2">
-                    <ScopeBadge scopeType={secret.scopeType} />
-                    <SecretOverrideIndicator isOverride={false} />
-                  </div>
-                </td>
-                <td className="py-2.5 px-3 text-text-secondary dark:text-text-secondary-dark text-xs">
-                  {formatDate(secret.updatedAt)}
-                </td>
-                <td className="py-2.5 px-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    {onDuplicate && (
-                      <IconButton
-                        tooltip="Duplicate to another scope"
-                        size="xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDuplicate(secret);
-                        }}
-                      >
-                        <Copy className="w-4 h-4" aria-hidden="true" />
-                      </IconButton>
-                    )}
-                    {onMove && (
-                      <IconButton
-                        tooltip="Move to another workspace"
-                        size="xs"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onMove(secret);
-                        }}
-                      >
-                        <ArrowLeftRight
-                          className="w-4 h-4"
-                          aria-hidden="true"
-                        />
-                      </IconButton>
-                    )}
-                    {!readOnly && (
-                      <IconButton
-                        tooltip="Delete secret"
-                        size="xs"
-                        variant="error"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(secret);
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" aria-hidden="true" />
-                      </IconButton>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {secrets.map((secret) => (
+            <SecretRow
+              key={secret.secretId}
+              secret={secret}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              onDuplicate={onDuplicate}
+              onMove={onMove}
+              readOnly={readOnly}
+              onRequestDelete={setDeleteTarget}
+            />
+          ))}
         </tbody>
       </table>
 

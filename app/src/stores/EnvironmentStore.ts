@@ -45,6 +45,14 @@ function normalizeScopedEnvironment(
   return env;
 }
 
+/** Accept both the bare-array and the enveloped `{ environments, total }` payload. */
+function parseEnvironmentList(
+  payload: ScopedEnvironment[] | { environments?: ScopedEnvironment[] },
+): ScopedEnvironment[] {
+  const rawList = Array.isArray(payload) ? payload : (payload.environments ?? []);
+  return rawList.map(normalizeScopedEnvironment);
+}
+
 const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
   environments: [],
   loadedWorkspaceId: null,
@@ -76,17 +84,16 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
       );
       // Sidebar, MainLayout and the environments page all drive this, so two
       // loads can be in flight at once. A response for a workspace we have since
-      // switched away from must not install itself over the current one.
-      if (_get().loadedWorkspaceId !== workspaceId) return;
-      if (response.ok) {
-        const data = (await response.json()) as
+      // switched away from must not install itself over the current one —
+      // checked before the body is read and again after it is parsed.
+      if (_get().loadedWorkspaceId !== workspaceId || !response.ok) return;
+      const environments = parseEnvironmentList(
+        (await response.json()) as
           | ScopedEnvironment[]
-          | { environments: ScopedEnvironment[]; total: number };
-        const rawList = Array.isArray(data) ? data : (data.environments ?? []);
-        const environments = rawList.map(normalizeScopedEnvironment);
-        if (_get().loadedWorkspaceId !== workspaceId) return;
-        set({ environments });
-      }
+          | { environments?: ScopedEnvironment[] },
+      );
+      if (_get().loadedWorkspaceId !== workspaceId) return;
+      set({ environments });
     } catch {
       /* silent — the list stays empty, which is the safe reading */
     } finally {

@@ -23,6 +23,7 @@ const MAX_BASE_ENVIRONMENT_CHAIN_DEPTH = 8
 
 /** Workspace-scoped environment CRUD + variable ops. Collapses Python `environment_service` + `scoped_environment_service`. */
 export class EnvironmentService {
+  // fallow-ignore-next-line code-duplication -- constructor DI boilerplate that mirrors the sibling services (collection, workflow, run) by construction; the dependencies are different repositories and there is no behaviour here to extract
   constructor(
     private readonly environments: EnvironmentRepository,
     private readonly syncProvider: SyncProvider,
@@ -37,41 +38,34 @@ export class EnvironmentService {
   ) {}
 
   async create(workspaceId: string, input: Omit<EnvironmentCreate, "workspaceId">): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "create")
     if (input.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, undefined, input.baseEnvironmentId)
     }
-    const created = this.environments.create({ ...input, workspaceId })
-    recordEnvironmentUpsert(this.syncProvider, created)
-    await this.syncProvider.push()
-    return created
+    return this.pushUpsert(this.environments.create({ ...input, workspaceId }))
   }
 
   async get(workspaceId: string, environmentId: string): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "read")
     return this.mustGet(workspaceId, environmentId)
   }
 
   async list(workspaceId: string): Promise<{ items: readonly Environment[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "read")
     return this.environments.listByWorkspace(workspaceId)
   }
 
   async update(workspaceId: string, environmentId: string, patch: EnvironmentUpdate): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "update")
     this.mustGet(workspaceId, environmentId)
     if (patch.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, environmentId, patch.baseEnvironmentId)
     }
-    const updated = this.environments.update(environmentId, patch)
-    if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
-    recordEnvironmentUpsert(this.syncProvider, updated)
-    await this.syncProvider.push()
-    return updated
+    return this.pushUpsert(this.requireUpdated(this.environments.update(environmentId, patch), environmentId))
   }
 
   async delete(workspaceId: string, environmentId: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "delete")
     const existing = this.mustGet(workspaceId, environmentId)
     recordEnvironmentTombstone(this.syncProvider, existing)
     const detached = this.environments.transaction(() => {
@@ -107,9 +101,9 @@ export class EnvironmentService {
     targetWorkspaceId?: string,
     name?: string,
   ): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "read")
     const destination = targetWorkspaceId ?? workspaceId
-    await authorizeWorkspace(this.scopeResolver, this.permissions, destination, "create", RESOURCE_ENVIRONMENTS)
+    await this.authorize(destination, "create")
     const source = this.mustGet(workspaceId, environmentId)
 
     const sameWorkspace = destination === workspaceId
@@ -123,9 +117,7 @@ export class EnvironmentService {
       secrets: {},
       isDefault: false,
     })
-    recordEnvironmentUpsert(this.syncProvider, created)
-    await this.syncProvider.push()
-    return created
+    return this.pushUpsert(created)
   }
 
   /**
@@ -149,8 +141,8 @@ export class EnvironmentService {
     environmentId: string,
     targetWorkspaceId: string,
   ): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_ENVIRONMENTS)
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_ENVIRONMENTS)
+    await this.authorize(workspaceId, "update")
+    await this.authorize(targetWorkspaceId, "create")
     const existing = this.mustGet(workspaceId, environmentId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("environment is already in this workspace")
@@ -168,14 +160,10 @@ export class EnvironmentService {
       this.secrets?.reassignWorkspace("environment", environmentId, targetWorkspaceId)
       return { moved: this.environments.getById(environmentId), detached: cleared }
     })
-    if (moved === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
 
     this.recordDetached(detached)
-    recordEnvironmentUpsert(this.syncProvider, moved)
-    await this.syncProvider.push()
-    return moved
+    return this.pushUpsert(this.requireUpdated(moved, environmentId))
   }
-
 
   async setVariable(
     workspaceId: string,
@@ -183,22 +171,50 @@ export class EnvironmentService {
     name: string,
     value: JsonValue,
   ): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_ENVIRONMENTS)
-    this.mustGet(workspaceId, environmentId)
-    const updated = this.environments.setVariable(environmentId, name, value)
-    if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
-    recordEnvironmentUpsert(this.syncProvider, updated)
-    await this.syncProvider.push()
-    return updated
+    return this.applyVariable(workspaceId, environmentId, name, (id, variableName) =>
+      this.environments.setVariable(id, variableName, value),
+    )
   }
 
   async deleteVariable(workspaceId: string, environmentId: string, name: string): Promise<Environment> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_ENVIRONMENTS)
+    return this.applyVariable(workspaceId, environmentId, name, (id, variableName) =>
+      this.environments.deleteVariable(id, variableName),
+    )
+  }
+
+  /**
+   * The shared shape of the two variable writes: authorize, require the
+   * environment, apply the write, then queue the upsert and push.
+   */
+  private async applyVariable(
+    workspaceId: string,
+    environmentId: string,
+    name: string,
+    write: (environmentId: string, name: string) => Environment | undefined,
+  ): Promise<Environment> {
+    await this.authorize(workspaceId, "update")
     this.mustGet(workspaceId, environmentId)
-    const updated = this.environments.deleteVariable(environmentId, name)
-    if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
-    recordEnvironmentUpsert(this.syncProvider, updated)
+    return this.pushUpsert(this.requireUpdated(write(environmentId, name), environmentId))
+  }
+
+  /**
+   * The two-step gate every entry point here runs first, narrowed to this
+   * service's resource so call sites name only the action.
+   */
+  private async authorize(workspaceId: string, action: "read" | "create" | "update" | "delete"): Promise<void> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_ENVIRONMENTS)
+  }
+
+  /** Queue the sync upsert for a written row, push the outbox, hand the row back. */
+  private async pushUpsert(environment: Environment): Promise<Environment> {
+    recordEnvironmentUpsert(this.syncProvider, environment)
     await this.syncProvider.push()
+    return environment
+  }
+
+  /** A repository write that answers `Environment | undefined` becomes the row, or a 404. */
+  private requireUpdated(updated: Environment | undefined, environmentId: string): Environment {
+    if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
     return updated
   }
 
@@ -257,7 +273,7 @@ export class EnvironmentService {
 
   private mustGet(workspaceId: string, environmentId: string): Environment {
     const environment = this.environments.getById(environmentId)
-    if (environment === undefined || environment.workspaceId !== workspaceId) {
+    if (environment?.workspaceId !== workspaceId) {
       throw new NotFoundError(`environment ${environmentId} not found`)
     }
     return environment
@@ -279,7 +295,7 @@ export class EnvironmentService {
       throw new ValidationError("an environment cannot extend itself")
     }
     const base = this.environments.getById(baseEnvironmentId)
-    if (base === undefined || base.workspaceId !== workspaceId) {
+    if (base?.workspaceId !== workspaceId) {
       throw new ValidationError(`base environment ${baseEnvironmentId} not found in workspace`)
     }
     if (environmentId === undefined) {
