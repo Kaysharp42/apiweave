@@ -32,6 +32,7 @@ import { SecretService, type SecretWriteStore, type SecretUpsert } from "../../s
 import { ProjectExportService } from "../../services/project_export_service"
 import type { SecretMetadata, SecretScopeType } from "../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../ipc/router"
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { MCP_TOOLS, toolName } from "../tools"
 import { MCP_PROMPTS, AUTHOR_ASSERTIONS_PROMPT } from "../prompts"
@@ -73,6 +74,9 @@ class FakeSecretStore implements SecretWriteStore {
 let db: InitializedDatabase
 let router: IpcRouter
 let runRepository: RunRepository
+/** Every `onAgentWrite` the router fanned out this test — the renderer's only
+ *  notice that an agent changed a workspace, project, environment or preset. */
+let agentWrites: AgentWriteEvent[] = []
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -94,7 +98,7 @@ beforeEach(() => {
   const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
   const runService = new RunService(runs, sync, permissions, scopeResolver)
   const deps: HandlerDeps = {
-    workspaces: new WorkspaceService(workspaces, sync, scopeResolver),
+    workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver),
     collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
@@ -118,7 +122,8 @@ beforeEach(() => {
       setAllowPrivateNetworks: () => undefined,
     },
   }
-  router = new IpcRouter()
+  agentWrites = []
+  router = new IpcRouter({ onAgentWrite: (event) => agentWrites.push(event) })
   registerAllHandlers(router, deps)
 })
 
@@ -2205,5 +2210,54 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     await connectHttp(port, token)
     expect(host.getSessionCount()).toBe(1)
     await expect(connectHttp(port, token)).rejects.toThrow()
+  })
+})
+describe("MCP writes announce themselves — the renderer's only notice", () => {
+  it("publishes one event per write, with the workspace the call named", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    agentWrites = []
+
+    await client.callTool({
+      name: "environments_create",
+      arguments: { workspaceId: workspace.workspaceId, name: "staging" },
+    })
+    await client.callTool({
+      name: "nodePresets_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "auth header",
+        nodeType: "http-request",
+        config: {},
+      },
+    })
+
+    expect(agentWrites).toEqual([
+      { domain: "environments", action: "create", workspaceId: workspace.workspaceId },
+      { domain: "nodePresets", action: "create", workspaceId: workspace.workspaceId },
+    ])
+    await client.close()
+  })
+
+  it("says nothing for reads, or for a write that failed", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    agentWrites = []
+
+    await client.callTool({ name: "workflows_list", arguments: { workspaceId: workspace.workspaceId } })
+    await client.callTool({ name: "environments_delete", arguments: { workspaceId: workspace.workspaceId, environmentId: "nope" } })
+
+    expect(agentWrites).toEqual([])
+    await client.close()
+  })
+
+  it("omits workspaceId when the tool does not take one — the renderer refetches anyway", async () => {
+    const client = await connectClient()
+    agentWrites = []
+
+    await client.callTool({ name: "workspaces_create", arguments: { name: "Fresh" } })
+
+    expect(agentWrites).toEqual([{ domain: "workspaces", action: "create" }])
+    await client.close()
   })
 })

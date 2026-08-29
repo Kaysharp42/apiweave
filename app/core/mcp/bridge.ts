@@ -71,6 +71,21 @@ async function dispatchAsTool(
   }
 
   if (result.ok) {
+    // The write landed, so tell the renderer something in this domain moved.
+    // Only `WorkflowRepository` broadcasts its own changes, and only the tool
+    // whitelist knows an action is a write — so this is the one place that can
+    // announce an agent's write to any other repository. See
+    // `AGENT_WRITE_CHANNEL`. Emitted before the response is shaped: a
+    // projection or diagnosis failure must not swallow a change that is
+    // already durable.
+    if (spec.intent === "write") {
+      const workspaceId = payload["workspaceId"]
+      router.notifyAgentWrite({
+        domain: spec.domain,
+        action: spec.action,
+        ...(typeof workspaceId === "string" ? { workspaceId } : {}),
+      })
+    }
     const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
     const { result: envelopeResult, diagnosis } = await splitDiagnosis(router, spec, data)
     if (diagnosis === undefined) {

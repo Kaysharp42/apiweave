@@ -10,15 +10,19 @@ import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
+  AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
   runProgressChannel,
+  RUN_STARTED_CHANNEL,
   UPDATE_STATUS_CHANGED_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
@@ -65,6 +69,8 @@ function invokeBridge<Args extends readonly unknown[], Result>(channel: string):
 type IpcBridge = {
   readonly invoke: (domain: string, action: string, payload: unknown) => Promise<ContractResult<unknown>>
   readonly onRunProgress: (runId: string, callback: (event: RunProgressEvent) => void) => () => void
+  readonly onRunStarted: (callback: (event: RunStartedEvent) => void) => () => void
+  readonly onAgentWrite: (callback: (event: AgentWriteEvent) => void) => () => void
   readonly onCloudStatusChanged: (callback: () => void) => () => void
   readonly onWorkflowChanged: (callback: (event: WorkflowChangedEvent) => void) => () => void
 }
@@ -74,6 +80,8 @@ const ipcBridge: IpcBridge = {
     ipcRenderer.invoke(INVOKE_CHANNEL, { domain, action, payload }) as Promise<ContractResult<unknown>>,
   onRunProgress: (runId, callback) =>
     subscribe<RunProgressEvent>(runProgressChannel(runId), callback),
+  onRunStarted: (callback) => subscribe<RunStartedEvent>(RUN_STARTED_CHANNEL, callback),
+  onAgentWrite: (callback) => subscribe<AgentWriteEvent>(AGENT_WRITE_CHANNEL, callback),
   onCloudStatusChanged: (callback) =>
     subscribe<void>(CLOUD_STATUS_CHANGED_CHANNEL, () => callback()),
   onWorkflowChanged: (callback) =>

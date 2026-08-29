@@ -1275,9 +1275,22 @@ export class CloudSyncRepository {
       ? [change.recordId]
       : [change.recordId, Number(change.rev)]
     switch (change.kind) {
-      case RecordKind.WORKSPACE:
-        this.store.delete(`DELETE FROM workspaces WHERE id = ?${revisionGuard}`, params)
+      case RecordKind.WORKSPACE: {
+        // The workspace's workflows go with it by FK cascade, and a cascade
+        // fires no change events — so an open canvas never hears that its
+        // workflow is gone and keeps autosaving into a workspace that is no
+        // longer there. Collect them before the delete, announce them after.
+        // The local delete has the same problem; see `WorkspaceService.delete`.
+        const workflowIds = this.store
+          .query<{ id: string } & SqliteRow>("SELECT id FROM workflows WHERE workspace_id = ?", [change.recordId])
+          .map((row) => row.id)
+        if (this.store.delete(`DELETE FROM workspaces WHERE id = ?${revisionGuard}`, params).changes > 0) {
+          for (const workflowId of workflowIds) {
+            this.notifyWorkflowChanged(change.recordId, workflowId, true)
+          }
+        }
         break
+      }
       case RecordKind.PROJECT:
         this.store.delete(`DELETE FROM collections WHERE id = ?${revisionGuard}`, params)
         break
@@ -1451,6 +1464,13 @@ export class CloudSyncRepository {
       readonly preserveLocalRev?: boolean
     },
   ): void {
+    // Applying a workspace tombstone drops the workspace row, and every
+    // per-workspace table cascades with it — this one included. The callers
+    // below all write record state after applying, so without this a pulled
+    // workspace deletion dies on `FOREIGN KEY constraint failed` re-inserting
+    // state for a workspace that no longer exists. Nothing to track: the row
+    // it described is gone too.
+    if (this.store.get("SELECT 1 FROM workspaces WHERE id = ?", [workspaceId]) === undefined) return
     this.store.set(
       `INSERT INTO cloud_record_state (workspace_id, kind, record_id, server_rev, local_rev, dirty, conflict_id)
        VALUES (?, ?, ?, ?, ?, ?, ?)

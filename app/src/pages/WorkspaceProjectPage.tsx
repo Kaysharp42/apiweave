@@ -18,6 +18,7 @@ import {
   projectWorkflowAssignUrl,
 } from "../utils/apiweaveClient";
 import API_BASE_URL from "../utils/apiweaveClient";
+import useAgentWriteRefresh from "../hooks/useAgentWriteRefresh";
 import { toast } from "sonner";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
@@ -86,6 +87,10 @@ export function WorkspaceProjectPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // The project and its workflow lists are local state; an agent moving a
+  // workflow in or out over MCP has to re-run this load.
+  useAgentWriteRefresh(["projects", "workflows"], loadData);
 
   // 404 / unauthorized: workspace not found or not accessible
   if (!isWorkspaceLoading && !currentWorkspace) {

@@ -196,3 +196,57 @@ function insertWorkflowConflict(conflictId: string): void {
     ],
   )
 }
+
+describe("CloudSyncRepository — a pulled workspace tombstone", () => {
+  /** Two rows the FK cascade would take away silently. */
+  function seedWorkflows(): readonly string[] {
+    const ids = [WORKFLOW_ID, "workflow-notify-2"]
+    for (const id of ids) {
+      db.kvStore.set(
+        "INSERT INTO workflows (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)",
+        [id, WORKSPACE_ID, WORKSPACE_ID, id, id],
+      )
+    }
+    return ids
+  }
+
+  function workspaceTombstone(rev: bigint) {
+    return {
+      cursor: rev,
+      workspaceId: WORKSPACE_ID,
+      kind: RecordKind.WORKSPACE,
+      recordId: WORKSPACE_ID,
+      rev,
+      op: ChangeOp.TOMBSTONE,
+      payload: new Uint8Array(),
+      deletedAt: new Date().toISOString(),
+    }
+  }
+
+  it("announces every workflow it takes with it", () => {
+    const repository = new CloudSyncRepository(db.kvStore, observer)
+    const ids = seedWorkflows()
+
+    // Also the regression for the FK: the record-state write that follows an
+    // apply used to throw `FOREIGN KEY constraint failed` here, because the
+    // workspace row it references had just been deleted.
+    expect(repository.applyChange(workspaceTombstone(5n))).toBe("applied")
+
+    expect(observed).toEqual(
+      ids.map((workflowId) => ({ workspaceId: WORKSPACE_ID, workflowId, deleted: true })),
+    )
+    expect(db.kvStore.get("SELECT id FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeUndefined()
+    expect(db.kvStore.query("SELECT id FROM workflows WHERE workspace_id = ?", [WORKSPACE_ID])).toEqual([])
+  })
+
+  it("announces nothing when the revision guard blocks the delete", () => {
+    const repository = new CloudSyncRepository(db.kvStore, observer)
+    seedWorkflows()
+    db.kvStore.set("UPDATE workspaces SET rev = 9 WHERE id = ?", [WORKSPACE_ID])
+
+    repository.applyChange(workspaceTombstone(5n))
+
+    expect(observed).toEqual([])
+    expect(db.kvStore.get("SELECT id FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeDefined()
+  })
+})

@@ -1,5 +1,5 @@
 import type { Workspace } from "@shared/types/Workspace"
-import type { WorkspaceRepository, WorkspaceUpdate } from "../repositories"
+import type { WorkflowRepository, WorkspaceRepository, WorkspaceUpdate } from "../repositories"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkspaceTombstone, recordWorkspaceUpsert } from "../sync/cloud-mutations"
 import { ConflictError, NotFoundError } from "../ipc/errors"
@@ -23,6 +23,9 @@ export interface WorkspaceCreateInput {
 export class WorkspaceService {
   constructor(
     private readonly workspaces: WorkspaceRepository,
+    // Only needed by `delete`, to announce the workflows the workspace takes
+    // with it — see the comment there.
+    private readonly workflows: WorkflowRepository,
     private readonly syncProvider: SyncProvider,
     private readonly scopeResolver: ScopeResolver,
     // Called after a workspace is created so cloud sync can provision + bind it
@@ -81,6 +84,19 @@ export class WorkspaceService {
     const existing = this.workspaces.getById(workspaceId)
     if (existing === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
     recordWorkspaceTombstone(this.syncProvider, existing)
+    // Delete the workflows explicitly, before the workspace row. They would go
+    // anyway by FK cascade, but a cascade fires no change events — so an open
+    // canvas never hears that its workflow is gone and keeps autosaving into a
+    // workspace that no longer exists. Going through the repository emits the
+    // `delete` events the canvas already handles (`onDetached` closes the tab
+    // with a notice) and leaves the cascade nothing to do.
+    //
+    // `includeAttached` so project-owned workflows are covered too. No
+    // per-workflow cloud tombstone: the workspace tombstone recorded above is
+    // what the server cascades on, exactly as when the FK did this.
+    for (const workflow of this.workflows.listByWorkspace(workspaceId, true).items) {
+      this.workflows.delete(workflow.workflowId)
+    }
     this.workspaces.delete(workspaceId)
     await this.syncProvider.push()
   }

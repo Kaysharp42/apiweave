@@ -1,6 +1,7 @@
 import { ZodError, type z } from "zod"
 import type { ContractErrorCode, ContractResult } from "@shared/contract/errors"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { AppError } from "./errors"
 import { findRedactedPlaceholders, sanitizeAgentReadValue, SECRET_PLACEHOLDER } from "../services/secret_utils"
 
@@ -63,6 +64,20 @@ export interface IpcRouterOptions {
    * rather than dying silently in a toast. Never invoked for `ok` results.
    */
   readonly reportError?: (report: IpcErrorReport) => void
+
+  /**
+   * Observes every successful MCP write, so the renderer can refetch what an
+   * agent changed. Wired by the composition root to the `apiweave:agent-write`
+   * broadcast; see that channel for why the renderer cannot otherwise hear
+   * about a write to any repository but `WorkflowRepository`.
+   *
+   * Fanned out from here rather than handed to the MCP bridge because the
+   * router is already the seam both transports share, and `reportError` above
+   * already establishes the shape. `dispatch` never calls it — the bridge does,
+   * via {@link IpcRouter.notifyAgentWrite}, because only the MCP tool whitelist
+   * knows which actions are writes.
+   */
+  readonly onAgentWrite?: (event: AgentWriteEvent) => void
 }
 
 type StoredHandler = RegisteredHandler
@@ -99,9 +114,17 @@ function toErrorEnvelope(error: unknown): ContractResult<never> {
 export class IpcRouter {
   private readonly handlers = new Map<string, StoredHandler>()
   private readonly reportError: ((report: IpcErrorReport) => void) | undefined
+  private readonly onAgentWrite: ((event: AgentWriteEvent) => void) | undefined
 
   constructor(options: IpcRouterOptions = {}) {
     this.reportError = options.reportError
+    this.onAgentWrite = options.onAgentWrite
+  }
+
+  /** Announce a successful MCP write. Called by `mcp/bridge.ts`; see
+   * {@link IpcRouterOptions.onAgentWrite}. */
+  notifyAgentWrite(event: AgentWriteEvent): void {
+    this.onAgentWrite?.(event)
   }
 
   register<I extends z.ZodType, O extends z.ZodType>(
