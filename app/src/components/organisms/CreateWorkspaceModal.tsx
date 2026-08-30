@@ -33,6 +33,49 @@ function isValidWorkspaceSlug(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value);
 }
 
+// Which endpoint creates the workspace: desktop personal, desktop team
+// (existing or new, optionally encrypted), or the web API. Split out of
+// handleSubmit so that branch lives on its own, away from the submit
+// lifecycle (busy state, error toast, close-on-success).
+async function submitCreateWorkspace(params: {
+  readonly name: string;
+  readonly slug: string;
+  readonly description: string;
+  readonly owner: "personal" | "existing" | "new";
+  readonly teamId: string;
+  readonly newTeamName: string;
+  readonly encryptionPassphrase: string | null;
+}): Promise<Workspace> {
+  if (!isDesktopShell()) {
+    return authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: params.name,
+        slug: params.slug,
+        ownerType: "user",
+        orgId: null,
+        description: params.description || null,
+      }),
+    });
+  }
+  if (params.owner === "personal") {
+    return apiweave.workspaces.create({
+      name: params.name,
+      slug: params.slug,
+      description: params.description || null,
+      isPersonal: false,
+    });
+  }
+  return apiweave.cloud.createTeamWorkspace({
+    name: params.name,
+    slug: params.slug,
+    description: params.description || null,
+    ...(params.owner === "existing" ? { teamId: params.teamId } : { newTeamName: params.newTeamName }),
+    ...(params.encryptionPassphrase !== null ? { passphrase: params.encryptionPassphrase } : {}),
+  });
+}
+
 export function CreateWorkspaceModal({
   isOpen,
   onClose,
@@ -123,32 +166,15 @@ export function CreateWorkspaceModal({
     setServerError(null);
 
     try {
-      const workspace = isDesktopShell()
-        ? owner === "personal"
-          ? await apiweave.workspaces.create({
-              name: trimmedName,
-              slug: trimmedSlug,
-              description: description.trim() || null,
-              isPersonal: false,
-            })
-          : await apiweave.cloud.createTeamWorkspace({
-              name: trimmedName,
-              slug: trimmedSlug,
-              description: description.trim() || null,
-              ...(owner === "existing" ? { teamId } : { newTeamName: newTeamName.trim() }),
-              ...(encrypting ? { passphrase: draft.passphrase } : {}),
-            })
-        : await authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: trimmedName,
-              slug: trimmedSlug,
-              ownerType: "user",
-              orgId: null,
-              description: description.trim() || null,
-            }),
-          });
+      const workspace = await submitCreateWorkspace({
+        name: trimmedName,
+        slug: trimmedSlug,
+        description: description.trim(),
+        owner,
+        teamId,
+        newTeamName: newTeamName.trim(),
+        encryptionPassphrase: encrypting ? draft.passphrase : null,
+      });
       await onCreated(workspace);
       toast.success(`Workspace "${workspace.name}" created`);
       onClose();

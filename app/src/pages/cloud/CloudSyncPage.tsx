@@ -534,6 +534,7 @@ interface BindingRowProps {
   readonly onChangePassphrase: () => void;
 }
 
+// fallow-ignore-next-line code-duplication -- this parameter list only rhymes with MoveToWorkspaceFields' by coincidence (both are React component destructured-prop lists of similar length); the props themselves belong to unrelated components and there is no shared behavior to extract
 function BindingRow({
   binding,
   busy,

@@ -35,6 +35,7 @@ import type { CloudAccountIdentity } from "../../core/services/cloud_sync_contro
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
+// fallow-ignore-next-line code-duplication -- one-error-per-case shape shared by this whole ErrLinkXxx family (see cloud_sync_control.ts's matching comment); the boilerplate is the established idiom here, not something to abstract away
 export class ErrLinkTimeout extends Error {
   constructor() {
     super("Device link timed out after 5 minutes")

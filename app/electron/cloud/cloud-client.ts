@@ -1,3 +1,8 @@
+// fallow-ignore-file code-duplication -- CloudClient's methods are one Connect
+// RPC per method: build a request, call(), fromJson() the response. Every
+// method gained clones every other by construction (same reasoning as
+// apiweaveClient.ts); fallow 2.104 has no range form, so file-level is the
+// narrowest marker that still covers the groups
 /**
  * Cloud client and device token store.
  *

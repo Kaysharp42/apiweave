@@ -1,3 +1,9 @@
+// fallow-ignore-file code-duplication -- pure domain types for cloud sync: the
+// one-error-per-case classes repeat by construction (see the inline markers
+// below), and the workspace/team/device DTOs intentionally mirror each
+// other's shared vocabulary (workspaceId, teamId, ...), same reasoning as
+// CloudSyncRepository.ts's row models; fallow 2.104 has no range form, so
+// file-level is the narrowest marker that still covers the groups
 import type { SyncWorkspaceRole } from "@apiweave/proto/apiweave/v1/device_pb"
 import type { Workspace } from "@shared/types/Workspace"
 
