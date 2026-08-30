@@ -100,6 +100,14 @@ export function useCloudSync(): UseCloudSync {
     // fallow-ignore-next-line code-duplication
     unlink: (options) => run(() => apiweave.cloud.unlink(options)),
     bindWorkspace: (input) => run(() => apiweave.cloud.bindWorkspace(input)),
+    setWorkspaceEncryption: (workspaceId, passphrase) =>
+      run(() => apiweave.cloud.setWorkspaceEncryption(workspaceId, passphrase)),
+    declineWorkspaceEncryption: (workspaceId) =>
+      run(() => apiweave.cloud.declineWorkspaceEncryption(workspaceId)),
+    unlockWorkspace: (workspaceId, passphrase) =>
+      run(() => apiweave.cloud.unlockWorkspace(workspaceId, passphrase)),
+    lockWorkspace: (workspaceId) =>
+      run(() => apiweave.cloud.lockWorkspace(workspaceId)),
     unbindWorkspace: (workspaceId) =>
       run(() => apiweave.cloud.unbindWorkspace(workspaceId)),
     initializeWorkspace: (workspaceId) =>

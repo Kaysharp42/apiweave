@@ -627,7 +627,8 @@ async function listSyncWorkspaces(
     throw new ErrLinkExchangeFailed(`Workspace catalog failed: HTTP ${response.status}`)
   }
   try {
-    return fromJson(SyncWorkspaceListSchema, await response.json(), { ignoreUnknownFields: true }).workspaces
+    const raw = await response.json()
+    return fromJson(SyncWorkspaceListSchema, raw, { ignoreUnknownFields: true }).workspaces
   } catch {
     throw new ErrLinkExchangeFailed("Invalid workspace catalog response")
   }

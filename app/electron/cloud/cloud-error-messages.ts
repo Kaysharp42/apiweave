@@ -9,7 +9,9 @@
  */
 
 import { RejectionReason } from "@apiweave/proto/apiweave/v1/sync_service_pb"
+import { EnvelopeAuthFailed, WorkspaceKeyMismatch } from "../../core/secrets/workspace_key"
 import { ErrCloudOffline } from "./cloud-client"
+import { WorkspaceLocked } from "./workspace-keys"
 
 const REJECTION_MESSAGES: Record<number, string> = {
   [RejectionReason.FORBIDDEN_PAYLOAD]:
@@ -33,10 +35,28 @@ export function rejectionMessage(rejectionReason: number): string {
   return REJECTION_MESSAGES[rejectionReason] ?? INTERNAL_MESSAGE
 }
 
+// The three end-to-end-encryption outcomes stay distinguishable in the UI: the
+// first two are recoverable with a passphrase, the third never is.
+const LOCKED_MESSAGE =
+  "This workspace is encrypted and locked. Unlock it with its passphrase to sync."
+const KEY_MISMATCH_MESSAGE =
+  "Some records were encrypted with a different workspace passphrase. They stay in the cloud until that passphrase is entered — nothing was lost."
+const ENVELOPE_AUTH_MESSAGE =
+  "An encrypted record failed its integrity check and was not applied. It was altered in transit or does not belong to this workspace."
+
 /** Maps a thrown transport error to a user-facing sentence. */
 export function transportErrorMessage(error: unknown): string {
   if (error instanceof ErrCloudOffline) {
     return OFFLINE_MESSAGE
+  }
+  if (error instanceof WorkspaceLocked) {
+    return LOCKED_MESSAGE
+  }
+  if (error instanceof WorkspaceKeyMismatch) {
+    return KEY_MISMATCH_MESSAGE
+  }
+  if (error instanceof EnvelopeAuthFailed) {
+    return ENVELOPE_AUTH_MESSAGE
   }
   return GENERIC_TRANSPORT_MESSAGE
 }

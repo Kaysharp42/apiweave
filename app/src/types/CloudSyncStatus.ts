@@ -5,6 +5,7 @@ import type { CloudSyncState } from "./CloudSyncState";
 import type { CloudWorkspaceBinding } from "./CloudWorkspaceBinding";
 import type { CloudWorkspaceCatalogEntry } from "./CloudWorkspaceCatalogEntry";
 import type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
+import type { CloudPendingEncryptionDecision } from "./CloudPendingEncryptionDecision";
 
 export interface CloudSyncStatus {
   readonly linked: boolean;
@@ -24,4 +25,6 @@ export interface CloudSyncStatus {
   readonly bindings: readonly CloudWorkspaceBinding[];
   readonly workspaceCatalog: readonly CloudWorkspaceCatalogEntry[];
   readonly teamCatalog: readonly CloudTeamCatalogEntry[];
+  /** Local workspaces held back from the cloud awaiting an encryption choice. */
+  readonly encryptionDecisionPending: readonly CloudPendingEncryptionDecision[];
 }

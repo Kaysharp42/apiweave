@@ -124,6 +124,7 @@ export async function installDesktopIpc(page: Page): Promise<void> {
               bindings: [],
               workspaceCatalog: [],
               teamCatalog: [],
+              encryptionDecisionPending: [],
             };
             handled = true;
           }

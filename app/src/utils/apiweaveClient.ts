@@ -676,6 +676,24 @@ export const apiweave = {
       invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
     createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) =>
       invoke<Workspace>("cloud", "createTeamWorkspace", input),
+    // Encryption. Passphrases are write-only: they go straight to main, which
+    // stretches them into a KEK and drops them. Nothing here retains one.
+    setWorkspaceEncryption: (workspaceId: string, passphrase: string) =>
+      invoke<CloudSyncStatus>("cloud", "setWorkspaceEncryption", {
+        workspaceId,
+        passphrase,
+      }),
+    declineWorkspaceEncryption: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "declineWorkspaceEncryption", {
+        workspaceId,
+      }),
+    unlockWorkspace: (workspaceId: string, passphrase: string) =>
+      invoke<CloudSyncStatus>("cloud", "unlockWorkspace", {
+        workspaceId,
+        passphrase,
+      }),
+    lockWorkspace: (workspaceId: string) =>
+      invoke<CloudSyncStatus>("cloud", "lockWorkspace", { workspaceId }),
     unbindWorkspace: (workspaceId: string) =>
       invoke<CloudSyncStatus>("cloud", "unbindWorkspace", { workspaceId }),
     initializeWorkspace: (workspaceId: string) =>

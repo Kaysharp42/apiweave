@@ -12,6 +12,13 @@
  * All changes are applied inside per-record SQLite transactions. On any
  * error, the transaction rolls back and the outbox row stays pending.
  *
+ * On an end-to-end-encrypted workspace this module is also the crypto boundary:
+ * payloads are sealed on the way to the wire (last, after the workspace-id
+ * rewrite and after the redaction sanitizer that ran at enqueue time) and opened
+ * on the way in (first, before anything local sees them). Everything on either
+ * side of this file — repositories, the conflict UI, the pull-side floor — only
+ * ever handles plaintext. See `workspace-keys.ts` for where the key comes from.
+ *
  * Log lines redact raw tokens, codes, secrets, and ciphertext.
  */
 
@@ -31,6 +38,8 @@ import { applyToRepositories, RecordKind, ChangeOp, type ChangeEnvelope } from "
 import { getLogger } from "../../core/logging/logger"
 import { PushOutcome_Status, RejectionReason } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { rejectionMessage, transportErrorMessage } from "./cloud-error-messages"
+import { envelopeAad, openEnvelope, sealEnvelope } from "../../core/secrets/workspace_key"
+import { workspaceWdek } from "./workspace-keys"
 
 export { CloudClient, DeviceTokenStore }
 
@@ -47,6 +56,8 @@ export function createCloudClient(tokenStore: DeviceTokenStore, config?: CloudCl
 
 const PAGE_SIZE = 100
 const REDACTED = "***REDACTED***"
+const textEncoder = new TextEncoder()
+const textDecoder = new TextDecoder()
 
 export interface CloudSyncConfig {
   readonly workspaceBindings: readonly CloudWorkspaceBindingRef[]
@@ -249,10 +260,16 @@ export class CloudSyncProvider implements SyncProvider {
       if (conflict.serverConflictId === null) continue
       let loserPayload: Uint8Array
       try {
-        loserPayload = (await this.client.fetchLoser(conflict.serverConflictId)).loserPayload
+        loserPayload = this.openLoserPayload(
+          conflict,
+          (await this.client.fetchLoser(conflict.serverConflictId)).loserPayload,
+        )
       } catch {
-        // Unresolved (400), gone (404), expired (412), or transient: leave the
-        // conflict pending and try again on a later sync.
+        // Unresolved (400), gone (404), expired (412), transient — or, on an
+        // encrypted workspace, an envelope this device cannot open (locked,
+        // wrong key, tampered). Every one of those means: leave the conflict
+        // pending and try again on a later sync. Nothing is lost, and a key
+        // problem surfaces loudly on the pull below rather than here.
         continue
       }
       const outcome = this.repository.reconcileRemoteResolvedConflict(conflict.conflictId, loserPayload)
@@ -262,6 +279,23 @@ export class CloudSyncProvider implements SyncProvider {
         this.log("conflict resolved remotely but loser payload was ambiguous; left pending")
       }
     }
+  }
+
+  // The plaintext of a FetchLoser payload. It is server-supplied and therefore
+  // sealed on an e2ee workspace, while the sides the repository matches it
+  // against are stored plaintext — an unopened envelope would always read as
+  // "ambiguous". Throws when the key cannot open it; the caller treats that
+  // like any other FetchLoser failure. A workspace with no binding passes
+  // through: without its cloud id there is no AAD, and it cannot be e2ee.
+  private openLoserPayload(
+    conflict: { readonly workspaceId: string; readonly kind: OutboxKind; readonly recordId: string },
+    loserPayload: Uint8Array,
+  ): Uint8Array {
+    const binding = this.bindingForLocalWorkspace(conflict.workspaceId)
+    const wdek = binding === undefined ? null : workspaceWdek(binding.workspaceId)
+    if (binding === undefined || wdek === null) return loserPayload
+    const recordId = conflict.kind === "workspace" ? binding.cloudWorkspaceId : conflict.recordId
+    return openPayload(loserPayload, wdek, envelopeAad(binding.cloudWorkspaceId, conflict.kind, recordId))
   }
 
   private async pullWorkspace(binding: CloudWorkspaceBindingRef): Promise<void> {
@@ -296,6 +330,32 @@ export class CloudSyncProvider implements SyncProvider {
   private applyChangeInTransaction(binding: CloudWorkspaceBindingRef, change: ClientChangeEnvelope): void {
     if (!this.repository) return
 
+    // Opened FIRST: the ChangeEnvelope, applyToRepositories, and the
+    // repository's forbidden-field floor must all keep seeing plaintext.
+    //
+    // CURSOR: a record we cannot open throws out of here, so the transaction
+    // below never runs and `setCursor` is never reached — the workspace's
+    // cursor stays on the last record we DID apply and this change is
+    // re-delivered on the next pull. That is deliberate. The server only sends
+    // a change once per cursor position, so advancing past an un-openable
+    // record would lose it permanently; blocking instead keeps it retrievable
+    // the moment the right passphrase is supplied. pull() turns the throw into
+    // a durable per-binding error, so it is surfaced, not silent.
+    //
+    // ponytail: head-of-line blocking — one genuinely tampered record
+    // (EnvelopeAuthFailed, which no passphrase fixes) stalls that workspace's
+    // pull. Phase 4 can add a per-record quarantine that skips it explicitly
+    // once there is UI to show what was quarantined; silently skipping it here
+    // would be the data-loss bug this comment exists to prevent.
+    const wdek = workspaceWdek(binding.workspaceId)
+    const payload = wdek === null
+      ? change.payload
+      : openPayload(
+        change.payload,
+        wdek,
+        envelopeAad(binding.cloudWorkspaceId, recordKindToOutboxKind(change.kind), change.recordId),
+      )
+
     const deletedAt = timestampToIso(change.deletedAt)
     const envelope: ChangeEnvelope = {
       cursor: change.cursor,
@@ -304,7 +364,7 @@ export class CloudSyncProvider implements SyncProvider {
       recordId: change.kind === RecordKind.WORKSPACE ? binding.workspaceId : change.recordId,
       rev: change.rev,
       op: change.op,
-      payload: change.payload,
+      payload,
       ...(deletedAt !== undefined && { deletedAt }),
     }
 
@@ -436,14 +496,30 @@ export class CloudSyncProvider implements SyncProvider {
   // fallow-ignore-next-line complexity -- push outcomes map distinct server states to durable local transitions
   private async pushRow(binding: CloudWorkspaceBindingRef, row: OutboxRow): Promise<"applied" | "blocked"> {
     if (this.stopped) return "blocked"
+    // Resolved BEFORE the row is touched: on a locked e2ee workspace this
+    // throws, and a locked workspace is not a failed push — marking the row
+    // failed would burn its retry budget toward the dead-letter ceiling for
+    // something only a passphrase fixes. The throw reaches push(), which
+    // records it on the binding; the row stays pending and retries after
+    // unlock. What must never happen here is falling back to plaintext.
+    const wdek = workspaceWdek(binding.workspaceId)
+    // The cloud-side record id, which is also the id bound into the AAD.
+    const recordId = row.kind === "workspace" ? binding.cloudWorkspaceId : row.record_id
+    const aad = envelopeAad(binding.cloudWorkspaceId, row.kind, recordId)
     let response
     try {
+      // Sealed LAST, in this order for two reasons: mapPayloadWorkspaceId must
+      // rewrite the workspace ids on plaintext because the server still reads
+      // them, and cloud-mutations' redaction sanitizer already ran on this
+      // payload when the row was enqueued. Encryption slots between them and
+      // the wire; it replaces neither.
+      const mapped = mapPayloadWorkspaceId(row.payload, binding.cloudWorkspaceId)
       const delta = {
         workspaceId: binding.cloudWorkspaceId,
         kind: kindToRecordKind(row.kind),
-        recordId: row.kind === "workspace" ? binding.cloudWorkspaceId : row.record_id,
+        recordId,
         expectedRev: BigInt(row.expected_rev),
-        payload: mapPayloadWorkspaceId(row.payload, binding.cloudWorkspaceId),
+        payload: wdek === null ? mapped : sealPayload(mapped, wdek, aad),
         op: opToChangeOp(row.op),
       }
       response = await this.client.pushDeltas(row.id, [delta])
@@ -463,10 +539,17 @@ export class CloudSyncProvider implements SyncProvider {
       this.outbox?.markApplied(row.id, Number(outcome.newRev))
       return "applied"
     } else if (outcome.status === PushOutcome_Status.CONFLICT && outcome.conflictId.length > 0) {
+      // winnerPayload is the server's copy: sealed on an e2ee workspace, and it
+      // lands in cloud_conflicts, which the conflict UI renders as a record. It
+      // is opened here under the same AAD the push used. If that fails the
+      // throw leaves the row pending and no conflict recorded — the next push
+      // re-conflicts (same idempotency key, same server snapshot) — rather than
+      // writing ciphertext into the local store and showing it as a workflow.
+      const winnerPayload = outcome.winnerPayload ?? new Uint8Array()
       this.repository?.recordPushConflict({
         conflictId: outcome.conflictId,
         outboxRow: row,
-        cloudPayload: outcome.winnerPayload ?? new Uint8Array(),
+        cloudPayload: wdek === null ? winnerPayload : openPayload(winnerPayload, wdek, aad),
         cloudRev: Number(outcome.newRev),
         cloudWriter: outcome.cloudWriter
           ? {
@@ -602,6 +685,34 @@ function timestampToIso(value: ClientChangeEnvelope["deletedAt"]): string | unde
     return value
   }
   return new Date(Number(value.seconds) * 1000 + Math.floor(value.nanos / 1_000_000)).toISOString()
+}
+
+/**
+ * Seal a wire payload under `wdek`. An empty payload (a tombstone carries none)
+ * stays empty — there is nothing to hide and the server reads absence, not JSON.
+ *
+ * The AAD is always built with {@link envelopeAad} from three values that push
+ * and pull have to agree on exactly, or the record is unopenable forever:
+ *  - the CLOUD workspace id, the same one `mapPayloadWorkspaceId` writes into
+ *    the payload and the delta carries;
+ *  - `kind` as the OutboxKind string — "workspace" | "project" | "workflow" |
+ *    "environment" — NOT the numeric RecordKind. Push takes it from
+ *    `row.kind`; pull converts the wire's RecordKind back with
+ *    `recordKindToOutboxKind`, which is the same mapping `recordMutation` used
+ *    to write `row.kind` in the first place;
+ *  - the CLOUD record id: the cloud workspace id for a workspace record (what
+ *    the delta sends and what a pulled change carries), the record's own id
+ *    otherwise.
+ */
+function sealPayload(payload: Uint8Array, wdek: Uint8Array, aad: string): Uint8Array {
+  if (payload.length === 0) return payload
+  return textEncoder.encode(sealEnvelope(textDecoder.decode(payload), wdek, aad))
+}
+
+/** Inverse of {@link sealPayload}. Throws WorkspaceKeyMismatch / EnvelopeAuthFailed. */
+function openPayload(payload: Uint8Array, wdek: Uint8Array, aad: string): Uint8Array {
+  if (payload.length === 0) return payload
+  return textEncoder.encode(openEnvelope(textDecoder.decode(payload), wdek, aad))
 }
 
 function mapPayloadWorkspaceId(payload: Uint8Array | null, cloudWorkspaceId: string): Uint8Array {

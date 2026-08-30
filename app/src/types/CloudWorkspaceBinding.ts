@@ -1,3 +1,5 @@
+import type { CloudWorkspaceEncryptionState } from "./CloudWorkspaceEncryptionState";
+
 export interface CloudWorkspaceBinding {
   readonly workspaceId: string;
   readonly workspaceName: string;
@@ -14,4 +16,5 @@ export interface CloudWorkspaceBinding {
   readonly lastSyncedAt?: string;
   readonly initializedAt?: string;
   readonly lastError?: string;
+  readonly encryption: CloudWorkspaceEncryptionState;
 }

@@ -1,14 +1,23 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Cloud, LayoutGrid, Plus, UserRound, Users } from "lucide-react";
+import { Cloud, LayoutGrid, Lock, Plus, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
+import {
+  EMPTY_PASSPHRASE_DRAFT,
+  PassphraseFields,
+  passphraseFieldsReady,
+} from "../molecules/PassphraseFields";
 import { apiweave, authenticatedJson } from "../../utils/apiweaveClient";
 import API_BASE_URL from "../../utils/apiweaveClient";
 import { isDesktopShell } from "../../utils/isDesktopShell";
-import type { CreateWorkspaceModalProps, Workspace } from "../../types";
+import type {
+  CreateWorkspaceModalProps,
+  PassphraseDraft,
+  Workspace,
+} from "../../types";
 
 // Workspace slugs use lowercase letters, numbers, and hyphens.
 function toWorkspaceSlug(value: string): string {
@@ -38,6 +47,10 @@ export function CreateWorkspaceModal({
   const [owner, setOwner] = useState<"personal" | "existing" | "new">("personal");
   const [teamId, setTeamId] = useState("");
   const [newTeamName, setNewTeamName] = useState("");
+  // A Cloud workspace's encryption mode is fixed the moment the cloud row is
+  // created, and this form creates it — so this is the only chance to choose.
+  const [encrypt, setEncrypt] = useState(false);
+  const [draft, setDraft] = useState(EMPTY_PASSPHRASE_DRAFT);
 
   useEffect(() => {
     if (!isOpen) {
@@ -50,6 +63,8 @@ export function CreateWorkspaceModal({
       setOwner("personal");
       setTeamId("");
       setNewTeamName("");
+      setEncrypt(false);
+      setDraft(EMPTY_PASSPHRASE_DRAFT);
       return;
     }
     let cancelled = false;
@@ -86,7 +101,14 @@ export function CreateWorkspaceModal({
   const hasOwner = owner === "personal"
     || (owner === "existing" && canUseTeams && Boolean(teamId))
     || (owner === "new" && canUseTeams && Boolean(newTeamName.trim()));
-  const canSubmit = Boolean(trimmedName && trimmedSlug && !slugError && hasOwner);
+  // Encryption is offered only on the cloud path — a personal workspace is
+  // created locally and makes its own choice on the Cloud Sync page later.
+  const canEncrypt = owner !== "personal" && canUseTeams;
+  const encrypting = canEncrypt && encrypt;
+  const encryptionReady = !encrypting || passphraseFieldsReady(draft, trimmedName);
+  const canSubmit = Boolean(
+    trimmedName && trimmedSlug && !slugError && hasOwner && encryptionReady,
+  );
 
   const handleNameChange = (value: string): void => {
     setName(value);
@@ -114,6 +136,7 @@ export function CreateWorkspaceModal({
               slug: trimmedSlug,
               description: description.trim() || null,
               ...(owner === "existing" ? { teamId } : { newTeamName: newTeamName.trim() }),
+              ...(encrypting ? { passphrase: draft.passphrase } : {}),
             })
         : await authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
             method: "POST",
@@ -291,6 +314,20 @@ export function CreateWorkspaceModal({
             disabled={isSubmitting}
           />
         </FormField>
+
+        {/* A Cloud workspace's encryption mode is written once, when the cloud
+            row is created — which happens on submit. So the warning has to be
+            here, before the choice, not after it. */}
+        {canEncrypt ? (
+          <EncryptionChoice
+            workspaceName={trimmedName}
+            encrypt={encrypt}
+            onEncryptChange={setEncrypt}
+            value={draft}
+            onChange={setDraft}
+            disabled={isSubmitting}
+          />
+        ) : null}
       </form>
     </Modal>
   );
@@ -331,5 +368,64 @@ function OwnershipOption({
         <span className="mt-0.5 block text-xs text-text-secondary dark:text-text-secondary-dark">{description}</span>
       </span>
     </label>
+  );
+}
+
+
+/**
+ * The encryption choice for a Cloud Workspace. It lives in the create form
+ * because the mode is written once, when the cloud row is created — which
+ * happens on submit — so the warning has to come before the choice.
+ */
+function EncryptionChoice({
+  workspaceName,
+  encrypt,
+  onEncryptChange,
+  value,
+  onChange,
+  disabled,
+}: {
+  readonly workspaceName: string;
+  readonly encrypt: boolean;
+  readonly onEncryptChange: (next: boolean) => void;
+  readonly value: PassphraseDraft;
+  readonly onChange: (next: PassphraseDraft) => void;
+  readonly disabled: boolean;
+}) {
+  return (
+    <fieldset className="space-y-3 rounded-sm border border-border p-3 dark:border-border-dark">
+      <legend className="flex items-center gap-1.5 px-1 text-sm font-medium text-text-primary dark:text-text-primary-dark">
+        <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+        Encryption
+      </legend>
+      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+        Decide now: this is fixed when the Workspace is created and can never be
+        changed, in either direction.
+      </p>
+      <label className="flex cursor-pointer items-start gap-2">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
+          checked={encrypt}
+          disabled={disabled}
+          onChange={(event) => onEncryptChange(event.target.checked)}
+        />
+        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+          End-to-end encrypt this Workspace
+          <span className="block text-text-muted dark:text-text-muted-dark">
+            The cloud stores ciphertext it cannot read. Leave this off and the
+            Workspace syncs in a form the server can read.
+          </span>
+        </span>
+      </label>
+      {encrypt ? (
+        <PassphraseFields
+          workspaceName={workspaceName}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      ) : null}
+    </fieldset>
   );
 }

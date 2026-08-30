@@ -13,6 +13,8 @@ export type { CloudWorkspaceBinding } from "./CloudWorkspaceBinding";
 export type { CloudFailedRecord } from "./CloudFailedRecord";
 export type { CloudWorkspaceCatalogEntry } from "./CloudWorkspaceCatalogEntry";
 export type { CloudTeamCatalogEntry } from "./CloudTeamCatalogEntry";
+export type { CloudWorkspaceEncryptionState } from "./CloudWorkspaceEncryptionState";
+export type { CloudPendingEncryptionDecision } from "./CloudPendingEncryptionDecision";
 export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceInput";
 export type { CloudSyncStatus } from "./CloudSyncStatus";
 export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";

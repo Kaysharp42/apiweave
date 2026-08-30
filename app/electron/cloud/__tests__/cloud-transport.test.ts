@@ -3,13 +3,25 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import nock from "nock"
+import type { Workflow } from "@shared/types/Workflow"
 import { initDatabase, type KVStore, type Database } from "../../../core/db"
 import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, type CloudOutboxRow } from "../../../core/repositories"
 import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
 import { createKeyfile, readKeyfile } from "../../../core/secrets/keyfile"
+import {
+  EnvelopeAuthFailed,
+  WorkspaceKeyMismatch,
+  envelopeAad,
+  fingerprint,
+  openEnvelope,
+  sealEnvelope,
+} from "../../../core/secrets/workspace_key"
+import { recordWorkflowUpsert } from "../../../core/sync/cloud-mutations"
 import { CloudSyncProvider } from "../cloud-transport"
 import { CloudClient, DeviceTokenStore } from "../cloud-client"
+import { transportErrorMessage } from "../cloud-error-messages"
 import { RecordKind, ChangeOp } from "../cloud-apply"
+import { WorkspaceLocked, clearWorkspaceEncryption, setWorkspaceEncryption } from "../workspace-keys"
 
 const API_BASE = "https://api.test.apiweave.cloud"
 const ZITADEL_ISSUER = "https://auth.test.apiweave.cloud"
@@ -73,6 +85,9 @@ describe("CloudSyncProvider", () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    // The unlocked-key holder is a module singleton: leaking a key into the
+    // next test would silently turn a plaintext expectation into a sealed one.
+    clearWorkspaceEncryption()
     nock.cleanAll()
     nock.enableNetConnect()
     db.close()
@@ -248,7 +263,7 @@ describe("CloudSyncProvider", () => {
       await client.resolveConflict("conflict-123", "local")
       const loser = await client.fetchLoser("conflict-123")
 
-      expect(catalog.workspaces[0]).toMatchObject({
+      expect(catalog[0]).toMatchObject({
         workspaceId: CLOUD_WORKSPACE_ID,
         effectiveRole: 5,
       })
@@ -282,7 +297,7 @@ describe("CloudSyncProvider", () => {
       const catalog = await client.listSyncWorkspaces()
 
       expect(hello.protocolVersion).toBe(1)
-      expect(catalog.workspaces[0]?.effectiveRole).toBe(0)
+      expect(catalog[0]?.effectiveRole).toBe(0)
       expect(nock.isDone()).toBe(true)
     })
 
@@ -2171,6 +2186,343 @@ describe("CloudSyncProvider", () => {
       expect(conflict?.status).toBe("resolved")
       expect(conflict?.winner).toBe("local")
       expect(nock.isDone()).toBe(true)
+    })
+  })
+
+  // ─── End-to-end encryption (transport) ─────────────────────────────────────
+  // The wire is the only place ciphertext may exist: the outbox, the local
+  // tables and the conflict store all stay plaintext on both sides of it.
+  describe("end-to-end encryption", () => {
+    const WDEK = new Uint8Array(32).fill(7)
+    const OTHER_WDEK = new Uint8Array(32).fill(9)
+    const CANARY = "canary-plaintext-must-not-reach-the-wire"
+
+    const sealFor = (value: unknown, wdek: Uint8Array, kind: string, recordId: string): string =>
+      Buffer.from(
+        sealEnvelope(JSON.stringify(value), wdek, envelopeAad(CLOUD_WORKSPACE_ID, kind, recordId)),
+        "utf8",
+      ).toString("base64")
+
+    const wirePayload = (body: unknown): Record<string, unknown> => {
+      const delta = (body as { deltas?: { payload?: string }[] }).deltas?.[0]
+      return JSON.parse(Buffer.from(delta?.payload ?? "", "base64").toString("utf8")) as Record<string, unknown>
+    }
+
+    const boundProvider = (): CloudSyncProvider =>
+      new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID }],
+      })
+
+    const bindWorkspace = (): CloudSyncRepository => {
+      const repository = new CloudSyncRepository(store)
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Cloud Workspace",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+      return repository
+    }
+
+    it("puts an envelope on the wire and never the plaintext", async () => {
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+      const record = { name: CANARY, nodes: [], edges: [], variables: {}, workspaceId: CLOUD_WORKSPACE_ID }
+      bound.enqueue({
+        kind: "workflow",
+        record_id: "workflow-sealed",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: CANARY, nodes: [], edges: [], variables: {} })),
+      })
+      let rawBody = ""
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          rawBody = JSON.stringify(body)
+          return true
+        })
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+        })
+
+      await bound.push()
+
+      const envelope = wirePayload(JSON.parse(rawBody))
+      expect(envelope["e2ee"]).toBe(1)
+      expect(envelope["kid"]).toBe(fingerprint(WDEK))
+      expect(envelope["name"]).toBeUndefined()
+      // The plaintext must not survive anywhere in the request, base64 included.
+      expect(rawBody).not.toContain(CANARY)
+      expect(Buffer.from(rawBody, "utf8").toString("base64")).not.toContain(CANARY)
+      // …and it is bound to this record's cloud identity, not just encrypted.
+      expect(JSON.parse(openEnvelope(
+        JSON.stringify(envelope),
+        WDEK,
+        envelopeAad(CLOUD_WORKSPACE_ID, "workflow", "workflow-sealed"),
+      ))).toEqual(record)
+      expect(() => openEnvelope(
+        JSON.stringify(envelope),
+        WDEK,
+        envelopeAad(CLOUD_WORKSPACE_ID, "workflow", "another-record"),
+      )).toThrow(EnvelopeAuthFailed)
+      expect(store.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(0)
+    })
+
+    it("pushes an unencrypted workspace exactly as it does today", async () => {
+      const bound = boundProvider()
+      bound.enqueue({
+        kind: "workflow",
+        record_id: "workflow-plain",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Plain", nodes: [] })),
+      })
+      let sent: Record<string, unknown> = {}
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          sent = wirePayload(body)
+          return true
+        })
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+        })
+
+      await bound.push()
+
+      expect(sent).toEqual({ name: "Plain", nodes: [], workspaceId: CLOUD_WORKSPACE_ID })
+    })
+
+    it("fails the push and keeps the row pending when the workspace is locked", async () => {
+      setWorkspaceEncryption(WORKSPACE_ID, null)
+      const bound = boundProvider()
+      const outboxId = bound.enqueue({
+        kind: "workflow",
+        record_id: "workflow-locked",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: CANARY })),
+      })
+
+      // No PushDeltas interceptor is registered: reaching the wire at all fails.
+      await expect(bound.push()).rejects.toThrow(WorkspaceLocked)
+
+      // Still pending, and the retry budget was not spent on a lock.
+      expect(store.get<{ retry_count: number; failure_reason: string | null }>(
+        "SELECT retry_count, failure_reason FROM cloud_outbox WHERE id = ?",
+        [outboxId],
+      )).toEqual({ retry_count: 0, failure_reason: null })
+    })
+
+    it("keeps the redaction sanitizer running on plaintext before sealing", async () => {
+      const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+      recordWorkflowUpsert(bound, {
+        workflowId: "workflow-sanitized",
+        workspaceId: WORKSPACE_ID,
+        name: "Sanitized",
+        description: null,
+        nodes: [{
+          nodeId: "http-1",
+          type: "http-request",
+          label: null,
+          position: { x: 0, y: 0 },
+          config: { headers: [{ key: "Authorization", value: `Bearer ${JWT}` }] },
+        }],
+        edges: [],
+        variables: {},
+        tags: [],
+        collectionId: null,
+        selectedEnvironmentId: null,
+        nodeTemplates: [],
+        rev: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      } as unknown as Workflow)
+      let rawBody = ""
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          rawBody = JSON.stringify(body)
+          return true
+        })
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "2", rejectionReason: 0, conflictId: "" }],
+        })
+
+      await bound.push()
+
+      expect(rawBody).not.toContain(JWT)
+      const opened = JSON.parse(openEnvelope(
+        JSON.stringify(wirePayload(JSON.parse(rawBody))),
+        WDEK,
+        envelopeAad(CLOUD_WORKSPACE_ID, "workflow", "workflow-sanitized"),
+      )) as { nodes: { config: { headers: { key: string; value: string }[] } }[] }
+      // Sealed, but sealed over the SANITIZED plaintext: the credential is gone.
+      expect(opened.nodes[0]?.config.headers).toEqual([{ key: "Authorization", value: "" }])
+    })
+
+    it("opens a pulled envelope and applies the plaintext", async () => {
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, {
+          changes: [{
+            cursor: "42",
+            workspaceId: { value: CLOUD_WORKSPACE_ID },
+            kind: RecordKind.WORKFLOW,
+            recordId: "workflow-from-cloud",
+            rev: "3",
+            op: ChangeOp.UPSERT,
+            payload: sealFor({
+              name: "Sealed From Cloud",
+              nodes: [{ nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} }],
+              edges: [],
+              variables: {},
+            }, WDEK, "workflow", "workflow-from-cloud"),
+          }],
+          nextCursor: "42",
+          hasMore: false,
+        })
+
+      await bound.pull()
+
+      const workflow = store.get<{ name: string; graph_json: string }>(
+        "SELECT name, graph_json FROM workflows WHERE id = ?",
+        ["workflow-from-cloud"],
+      )
+      expect(workflow?.name).toBe("Sealed From Cloud")
+      expect(workflow?.graph_json).toContain('"nodeId":"start"')
+      expect(workflow?.graph_json).not.toContain("e2ee")
+    })
+
+    it("leaves a record sealed with another key un-applied, surfaced, and re-fetchable", async () => {
+      const repository = bindWorkspace()
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, {
+          changes: [{
+            cursor: "77",
+            workspaceId: { value: CLOUD_WORKSPACE_ID },
+            kind: RecordKind.WORKFLOW,
+            recordId: "workflow-other-key",
+            rev: "9",
+            op: ChangeOp.UPSERT,
+            payload: sealFor({ name: "Other Key", nodes: [], edges: [], variables: {} },
+              OTHER_WDEK, "workflow", "workflow-other-key"),
+          }],
+          nextCursor: "77",
+          hasMore: false,
+        })
+
+      await expect(bound.pull()).rejects.toThrow(WorkspaceKeyMismatch)
+
+      // Un-applied — and above all no ciphertext written into the local store.
+      expect(store.get("SELECT id FROM workflows WHERE id = ?", ["workflow-other-key"])).toBeUndefined()
+      expect(store.query("SELECT record_id FROM cloud_record_state WHERE record_id = ?",
+        ["workflow-other-key"])).toEqual([])
+      // Not lost: the cursor never advanced past it, so the next pull re-fetches it.
+      expect(repository.getCursor(CLOUD_WORKSPACE_ID)).toBeUndefined()
+      // Surfaced, and distinguishable from a tampered envelope.
+      expect(repository.getWorkspaceBinding(WORKSPACE_ID)?.lastError)
+        .toBe(transportErrorMessage(new WorkspaceKeyMismatch("a", "b")))
+      expect(transportErrorMessage(new EnvelopeAuthFailed("tag")))
+        .not.toBe(transportErrorMessage(new WorkspaceKeyMismatch("a", "b")))
+    })
+
+    it("opens the server's winner payload before it reaches the conflict store", async () => {
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+      bound.enqueue({
+        kind: "workflow",
+        record_id: "workflow-conflicted",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 1,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: "Local", nodes: [], edges: [], variables: {} })),
+      })
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas")
+        .reply(200, {
+          outcomes: [{
+            deltaIndex: 0,
+            status: 2,
+            newRev: "4",
+            rejectionReason: 0,
+            conflictId: "conflict-sealed",
+            winnerPayload: sealFor({ name: "Cloud Winner", nodes: [], edges: [], variables: {} },
+              WDEK, "workflow", "workflow-conflicted"),
+          }],
+        })
+
+      await bound.push()
+
+      const conflict = new CloudSyncRepository(store).getConflict("conflict-sealed")
+      const cloudSide = JSON.parse(
+        Buffer.from(conflict?.cloudPayload ?? new Uint8Array()).toString("utf8"),
+      ) as { name?: string; e2ee?: number }
+      expect(cloudSide.name).toBe("Cloud Winner")
+      expect(cloudSide.e2ee).toBeUndefined()
+    })
+
+    it("opens a sealed FetchLoser payload so a remote resolution still reconciles", async () => {
+      const repository = bindWorkspace()
+      const encodePayload = (value: unknown): Uint8Array => new TextEncoder().encode(JSON.stringify(value))
+      const local = encodePayload({ name: "Local", nodes: [], edges: [], variables: {} })
+      const cloud = encodePayload({ name: "Cloud", nodes: [], edges: [], variables: {} })
+      repository.enqueueOutbox({
+        kind: "workflow", record_id: "workflow-remote-sealed", workspace_id: WORKSPACE_ID,
+        expected_rev: 1, op: "upsert", payload: local,
+      })
+      repository.recordPushConflict({
+        conflictId: "conflict-remote-sealed",
+        outboxRow: {
+          id: "outbox-remote-sealed", kind: "workflow", record_id: "workflow-remote-sealed",
+          workspace_id: WORKSPACE_ID, expected_rev: 1, op: "upsert", payload: local,
+          retry_count: 0, next_retry_at: 0, failure_reason: null, created_at: Date.now(), is_baseline: false,
+        },
+        cloudPayload: cloud,
+        cloudRev: 2,
+      })
+      // Encrypted only now: the stored conflict sides are plaintext, the wire is not.
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/Hello")
+        .reply(200, { protocolVersion: 1, fullResyncRequired: false })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/FetchLoser", { conflictId: "conflict-remote-sealed" })
+        .reply(200, {
+          loserPayload: sealFor({ name: "Cloud", nodes: [], edges: [], variables: {} },
+            WDEK, "workflow", "workflow-remote-sealed"),
+        })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PullChanges")
+        .reply(200, { changes: [], nextCursor: "0", hasMore: false })
+
+      await boundProvider().pull()
+
+      // The cloud copy lost, so local won — only reachable if the envelope opened.
+      expect(repository.getConflict("conflict-remote-sealed")?.winner).toBe("local")
     })
   })
 })

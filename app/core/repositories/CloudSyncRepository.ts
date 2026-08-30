@@ -2,7 +2,7 @@
 import type { KVStore, SqliteRow } from "../db"
 import { generateId } from "../id"
 import { getLogger } from "../logging/logger"
-import { slugify } from "./helpers"
+import { deleteSetting, getSetting, setSetting, slugify } from "./helpers"
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
 import { containsCredentialMaterial, isSyncSensitiveKey, isWithheldSyncValue } from "../services/secret_utils"
@@ -160,10 +160,6 @@ export interface CloudPushConflictInput {
   readonly mergeResidualPaths?: readonly string[]
 }
 
-interface SettingRow extends SqliteRow {
-  readonly value: string
-}
-
 interface OutboxDbRow extends SqliteRow {
   readonly id: string
   readonly kind: string
@@ -296,15 +292,15 @@ export class CloudSyncRepository {
   }
 
   public getSetting(key: string): string | undefined {
-    return this.store.get<SettingRow>("SELECT value FROM app_settings WHERE key = ?", [key])?.value
+    return getSetting(this.store, key)
   }
 
   public setSetting(key: string, value: string): void {
-    this.store.set("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [key, value])
+    setSetting(this.store, key, value)
   }
 
   public deleteSetting(key: string): void {
-    this.store.delete("DELETE FROM app_settings WHERE key = ?", [key])
+    deleteSetting(this.store, key)
   }
 
   public getCursor(workspaceId: string): CloudCursorState | undefined {
@@ -1251,6 +1247,15 @@ export class CloudSyncRepository {
       return
     }
     const payload = parsePayload(change.payload)
+    // Ciphertext must never be written into the local tables as if it were a
+    // record. The transport opens every envelope before it gets here (see
+    // electron/cloud/cloud-transport.ts), so an envelope at this point means a
+    // payload took a path that skipped it — `resolveConflictMerged`, which
+    // applies the server's merged winner, is the one that still can on an
+    // encrypted workspace. Fail loudly instead of storing an unreadable record.
+    if (payload["e2ee"] === 1) {
+      throw new ErrForbiddenCloudPayload("e2ee")
+    }
     switch (change.kind) {
       case RecordKind.WORKSPACE:
         this.upsertWorkspace(change.recordId, change.rev, payload, force)

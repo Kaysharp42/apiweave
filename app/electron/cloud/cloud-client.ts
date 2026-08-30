@@ -20,14 +20,22 @@ import {
   CreateSyncWorkspaceRequestSchema,
   DeviceService,
   EnsureSyncWorkspaceRequestSchema,
+  GetWorkspaceEncryptionRequestSchema,
   RevokeDeviceRequestSchema,
+  SetWorkspacePassphraseRequestSchema,
   SyncTeamListSchema,
   SyncWorkspaceListSchema,
   SyncWorkspaceSchema,
+  WorkspaceEncryptionSchema,
   type SyncTeamList,
   type SyncWorkspace,
-  type SyncWorkspaceList,
 } from "@apiweave/proto/apiweave/v1/device_pb"
+import {
+  toEncryptionMessage,
+  toEncryptionRecord,
+  type WorkspaceEncryptionBundle,
+  type WorkspaceEncryptionRecord,
+} from "./workspace-encryption"
 import {
   CreateTeamRequestSchema,
   TeamSchema,
@@ -334,6 +342,8 @@ const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
 const METHOD_LIST_SYNC_TEAMS = "ListSyncTeams"
 const METHOD_ENSURE_SYNC_WORKSPACE = "EnsureSyncWorkspace"
 const METHOD_CREATE_SYNC_WORKSPACE = "CreateSyncWorkspace"
+const METHOD_GET_WORKSPACE_ENCRYPTION = "GetWorkspaceEncryption"
+const METHOD_SET_WORKSPACE_PASSPHRASE = "SetWorkspacePassphrase"
 const METHOD_CREATE_TEAM = "CreateTeam"
 const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
@@ -421,13 +431,13 @@ export class CloudClient {
     return fromJson(PushDeltasResponseSchema, json, { ignoreUnknownFields: true })
   }
 
-  public async listSyncWorkspaces(): Promise<SyncWorkspaceList> {
+  public async listSyncWorkspaces(): Promise<readonly SyncWorkspace[]> {
     const json = await this.call(
       DeviceService.typeName,
       METHOD_LIST_SYNC_WORKSPACES,
       toJson(EmptySchema, create(EmptySchema)),
     )
-    return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true })
+    return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true }).workspaces
   }
 
   public async listSyncTeams(): Promise<SyncTeamList> {
@@ -439,17 +449,25 @@ export class CloudClient {
     return fromJson(SyncTeamListSchema, json, { ignoreUnknownFields: true })
   }
 
+  /**
+   * `encryption` is applied ONLY to a workspace this call creates. On a
+   * workspace that already exists the server silently ignores it and reports
+   * the stored mode, which is why the caller must read `encryptionMode` off the
+   * returned entry and never assume the bundle took.
+   */
   public async ensureSyncWorkspace(params: {
     workspaceId: string
     name: string
     slug: string
     isPersonal: boolean
+    encryption?: WorkspaceEncryptionBundle
   }): Promise<SyncWorkspace> {
     const request = create(EnsureSyncWorkspaceRequestSchema, {
       workspaceId: params.workspaceId,
       name: params.name,
       slug: params.slug,
       isPersonal: params.isPersonal,
+      ...(params.encryption !== undefined ? { encryption: toEncryptionMessage(params.encryption) } : {}),
     })
     const json = await this.call(
       DeviceService.typeName,
@@ -459,19 +477,62 @@ export class CloudClient {
     return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
   }
 
+  /**
+   * Every retry of a `requestId` must carry the byte-identical `encryption`
+   * bundle or the server fails it `ALREADY_EXISTS`. The request body is built
+   * once here and reused by {@link call}'s post-refresh retry, so the caller
+   * only has to avoid re-deriving a bundle for a repeat of the same requestId.
+   */
   public async createSyncWorkspace(params: {
     requestId: string
     teamId: string
     name: string
     slug: string
+    encryption?: WorkspaceEncryptionBundle
   }): Promise<SyncWorkspace> {
-    const request = create(CreateSyncWorkspaceRequestSchema, params)
+    const { encryption, ...fields } = params
+    const request = create(CreateSyncWorkspaceRequestSchema, {
+      ...fields,
+      ...(encryption !== undefined ? { encryption: toEncryptionMessage(encryption) } : {}),
+    })
     const json = await this.call(
       DeviceService.typeName,
       METHOD_CREATE_SYNC_WORKSPACE,
       toJson(CreateSyncWorkspaceRequestSchema, request),
     )
     return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
+  }
+
+  /** Any member may read a workspace's encryption record. Plaintext → `mode: "none"`. */
+  public async getWorkspaceEncryption(cloudWorkspaceId: string): Promise<WorkspaceEncryptionRecord> {
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_GET_WORKSPACE_ENCRYPTION,
+      toJson(GetWorkspaceEncryptionRequestSchema, create(GetWorkspaceEncryptionRequestSchema, {
+        workspaceId: cloudWorkspaceId,
+      })),
+    )
+    return toEncryptionRecord(fromJson(WorkspaceEncryptionSchema, json, { ignoreUnknownFields: true }))
+  }
+
+  /** Admin only, and the bundle's fingerprint must match the stored one (same WDEK, new passphrase). */
+  public async setWorkspacePassphrase(
+    cloudWorkspaceId: string,
+    bundle: WorkspaceEncryptionBundle,
+  ): Promise<WorkspaceEncryptionRecord> {
+    const encryption = toEncryptionMessage(bundle)
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_SET_WORKSPACE_PASSPHRASE,
+      toJson(SetWorkspacePassphraseRequestSchema, create(SetWorkspacePassphraseRequestSchema, {
+        workspaceId: cloudWorkspaceId,
+        wrappedWdek: encryption.wrappedWdek,
+        kdfSalt: encryption.kdfSalt,
+        kdfParams: encryption.kdfParams,
+        wdekFingerprint: encryption.wdekFingerprint,
+      })),
+    )
+    return toEncryptionRecord(fromJson(WorkspaceEncryptionSchema, json, { ignoreUnknownFields: true }))
   }
 
   public async createTeam(name: string, slug: string): Promise<Team> {
