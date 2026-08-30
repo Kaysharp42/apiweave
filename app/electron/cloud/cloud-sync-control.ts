@@ -4,7 +4,12 @@ import type { KVStore } from "../../core/db"
 import { generateId } from "../../core/id"
 import { getLogger } from "../../core/logging/logger"
 import type { Workspace } from "@shared/types/Workspace"
-import { AppSettingsRepository, CloudSyncRepository, WorkspaceRepository } from "../../core/repositories"
+import {
+  AppSettingsRepository,
+  CloudSyncRepository,
+  WorkspaceRepository,
+  type CloudWorkspaceBinding,
+} from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import {
   reconcileWorkspaces,
@@ -451,30 +456,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public async bindWorkspace(input: CloudBindWorkspaceInput): Promise<CloudSyncStatus> {
-    const deviceId = this.tokenStore.getDeviceId()
-    if (deviceId === undefined || !this.tokenStore.hasTokens()) {
-      throw new Error("Cloud account must be linked before binding a workspace")
-    }
-    const target = this.workspaceCatalog.find((workspace) => workspace.workspaceId === input.cloudWorkspaceId)
-    if (target === undefined) {
-      throw new Error("Cloud workspace is not authorized for this account")
-    }
-    if (!target.canPull || !target.canPush) {
-      throw new Error("Cloud workspace does not allow the required sync capabilities")
-    }
-    if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
-      throw new Error("Cloud workspace team metadata does not match the authorized catalog")
-    }
-    const account = this.loadAccountIdentity()
-    if (account === undefined) {
-      throw new CloudAccountIdentityRequiredError()
-    }
-    // Same ownership rule the reconciler enforces, applied to the manual path:
-    // a workspace holding another account's data is never pushed to this one.
-    const owner = this.repository.getWorkspaceAccountId(input.workspaceId)
-    if (owner !== undefined && owner !== account.accountId) {
-      throw new CloudWorkspaceOwnedByAnotherAccountError()
-    }
+    const deviceId = this.requireLinkedDeviceId()
+    const target = this.resolveBindTarget(input)
+    const account = this.resolveBindAccount(input.workspaceId)
     const binding = this.firstSyncService.bindAndSnapshot({
       workspaceId: input.workspaceId,
       cloudWorkspaceId: input.cloudWorkspaceId,
@@ -493,6 +477,42 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       .finally(() => this.notifyStatusChanged())
     this.notifyStatusChanged()
     return this.status()
+  }
+
+  private requireLinkedDeviceId(): string {
+    const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId === undefined || !this.tokenStore.hasTokens()) {
+      throw new Error("Cloud account must be linked before binding a workspace")
+    }
+    return deviceId
+  }
+
+  private resolveBindTarget(input: CloudBindWorkspaceInput): CloudWorkspaceCatalogEntry {
+    const target = this.workspaceCatalog.find((workspace) => workspace.workspaceId === input.cloudWorkspaceId)
+    if (target === undefined) {
+      throw new Error("Cloud workspace is not authorized for this account")
+    }
+    if (!target.canPull || !target.canPush) {
+      throw new Error("Cloud workspace does not allow the required sync capabilities")
+    }
+    if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
+      throw new Error("Cloud workspace team metadata does not match the authorized catalog")
+    }
+    return target
+  }
+
+  private resolveBindAccount(workspaceId: string): CloudAccountIdentity {
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
+    }
+    // Same ownership rule the reconciler enforces, applied to the manual path:
+    // a workspace holding another account's data is never pushed to this one.
+    const owner = this.repository.getWorkspaceAccountId(workspaceId)
+    if (owner !== undefined && owner !== account.accountId) {
+      throw new CloudWorkspaceOwnedByAnotherAccountError()
+    }
+    return account
   }
 
   public async createTeamWorkspace(input: CloudCreateTeamWorkspaceInput): Promise<Workspace> {
@@ -821,15 +841,12 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   private activateIfReady(resumePending = false, replace = false): void {
-    if (this.activeProvider !== null && !replace) {
+    if (this.deactivateForReplaceOrSkip(replace)) {
       return
     }
-    if (replace && this.activeProvider !== null) {
-      this.activeProvider.deactivate()
-      this.activeProvider = null
-    }
     const workspaceBindings = this.repository.listWorkspaceBindings()
-    if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+    const config = this.resolveActivationConfig(workspaceBindings)
+    if (config === undefined) {
       if (replace) {
         this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
         setState("idle")
@@ -840,7 +857,38 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     // BEFORE the provider exists: the transport reads the key registry on its
     // very first push, and an unregistered e2ee workspace pushes plaintext.
     this.registerWorkspaceKeys(workspaceBindings)
-    const client = this.createClient(this.activeConfig)
+    const provider = this.createActiveProvider(config, workspaceBindings)
+    if (resumePending && workspaceBindings.some((binding) => binding.initializationState !== "initialized")) {
+      void provider.resumePendingInitializations().catch(() => undefined)
+    }
+  }
+
+  /** True when activation should stop here: already active and not replacing. */
+  private deactivateForReplaceOrSkip(replace: boolean): boolean {
+    if (this.activeProvider !== null && !replace) {
+      return true
+    }
+    if (replace && this.activeProvider !== null) {
+      this.activeProvider.deactivate()
+      this.activeProvider = null
+    }
+    return false
+  }
+
+  private resolveActivationConfig(
+    workspaceBindings: readonly CloudWorkspaceBinding[],
+  ): DesktopCloudConfig | undefined {
+    if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+      return undefined
+    }
+    return this.activeConfig
+  }
+
+  private createActiveProvider(
+    config: DesktopCloudConfig,
+    workspaceBindings: readonly CloudWorkspaceBinding[],
+  ): CloudSyncProvider {
+    const client = this.createClient(config)
     const provider = new CloudSyncProvider(client, this.tokenStore, this.repository, {
       workspaceBindings,
     }, (state) => {
@@ -850,9 +898,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.activeProvider = provider
     this.options.setSyncProviderTarget(provider)
     setState(this.repository.countDeadLetterOutbox() > 0 ? "error" : "idle")
-    if (resumePending && workspaceBindings.some((binding) => binding.initializationState !== "initialized")) {
-      void provider.resumePendingInitializations().catch(() => undefined)
-    }
+    return provider
   }
 
   /**
@@ -1263,21 +1309,32 @@ function toTeamCatalogEntry(team: import("@apiweave/proto/apiweave/v1/device_pb"
   }
 }
 
-function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
-  if (typeof value !== "object" || value === null) {
-    return false
-  }
-  const entry = value as Record<string, unknown>
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string"
+}
+
+function hasRequiredCatalogFields(entry: Record<string, unknown>): boolean {
   return typeof entry["workspaceId"] === "string"
     && typeof entry["workspaceName"] === "string"
-    && (entry["teamId"] === undefined || typeof entry["teamId"] === "string")
-    && (entry["teamName"] === undefined || typeof entry["teamName"] === "string")
     && typeof entry["isPersonal"] === "boolean"
     && typeof entry["effectiveRole"] === "number"
     && typeof entry["canPull"] === "boolean"
     && typeof entry["canPush"] === "boolean"
     && typeof entry["canResolveConflicts"] === "boolean"
-    && (entry["encryptionMode"] === undefined || typeof entry["encryptionMode"] === "string")
+}
+
+function hasOptionalCatalogFields(entry: Record<string, unknown>): boolean {
+  return isOptionalString(entry["teamId"])
+    && isOptionalString(entry["teamName"])
+    && isOptionalString(entry["encryptionMode"])
+}
+
+function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
+  if (typeof value !== "object" || value === null) {
+    return false
+  }
+  const entry = value as Record<string, unknown>
+  return hasRequiredCatalogFields(entry) && hasOptionalCatalogFields(entry)
 }
 
 function isTeamCatalogEntry(value: unknown): value is CloudTeamCatalogEntry {
