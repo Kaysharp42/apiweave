@@ -22,6 +22,7 @@ import {
   isAtRest,
   lookingAt,
   planCrossing,
+  snapTransform,
   stepCamera,
   transformOf,
   ATTENTION_POINTS_MAX,
@@ -292,26 +293,37 @@ function noteMoving(
   setMoving(moving);
 }
 
-/** Write the transform, unless it is invisibly close to the last one: sub-pixel
- * changes are invisible and a `setViewport` is not free, so the tail of every
- * ease-out costs nothing. Returns the transforms now known to be the camera's. */
+/**
+ * Write the transform, snapped to the device-pixel grid and skipped when it
+ * lands where the last one did.
+ *
+ * The snap is what keeps the canvas sharp while the camera moves — see
+ * `snapTransform`. It also subsumes the sub-pixel guard this used to carry: a
+ * snapped translation either moves a whole device pixel or does not move, so the
+ * tail of every ease-out stops writing on its own rather than against a
+ * threshold picked by hand. Returns the transforms now known to be the camera's.
+ */
 function writeViewport(
   instance: RunCameraInstance,
   next: Viewport,
   written: readonly Viewport[],
 ): Viewport[] {
+  const snapped = snapTransform(
+    next,
+    typeof window === "undefined" ? 1 : window.devicePixelRatio,
+  );
   const [last] = written;
   if (
     last &&
-    Math.abs(next.x - last.x) <= 0.25 &&
-    Math.abs(next.y - last.y) <= 0.25 &&
-    Math.abs(next.zoom - last.zoom) <= 0.0002
+    snapped.x === last.x &&
+    snapped.y === last.y &&
+    Math.abs(snapped.zoom - last.zoom) <= 0.0002
   ) {
     return [...written];
   }
 
-  instance.setViewport(next);
-  return [next, ...written].slice(0, 4);
+  instance.setViewport(snapped);
+  return [snapped, ...written].slice(0, 4);
 }
 
 /** Nothing left to integrate: the motion has stopped, and — unless the run is
