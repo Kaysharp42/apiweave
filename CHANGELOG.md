@@ -9,6 +9,68 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.6] — 2026-08-31
+
+### Added
+
+- **Duplicate and move for environments and secrets.** Environments can be
+  duplicated (copy without secrets or default flag, dangling cross-workspace
+  base links dropped) or moved to another workspace (re-homes the row, clears
+  dangling workflow `selectedEnvironmentId` / sibling `baseEnvironmentId`
+  references and the default flag, and reassigns scoped secrets so they are not
+  orphaned by cascade delete). Secrets can be duplicated or moved across scopes
+  with sealed ciphertext carried without ever exposing plaintext; deliberately
+  excluded from the MCP surface alongside `set`/`delete`. The workspace pages
+  now group environments and secrets by owning workspace with duplicate/move
+  dialogs and warnings about what gets cleared. Also fixes an
+  `EnvironmentStore` / `ScopedSecretList` race where a slow response for an
+  abandoned workspace could clobber the current list.
+
+- **Agent-driven runs and writes visible in the renderer.** A run started over
+  MCP was invisible: now a `apiweave:run-started` broadcast (with workflow
+  identity) lets any open canvas adopt a matching run and stream it exactly like
+  one of its own, including camera follow; on mount it also picks up a run
+  already in flight. A companion `apiweave:agent-write` fact (`{domain, action,
+  workspaceId?}`) emitted from the MCP bridge triggers a refresh of workspace,
+  project, environment and node-preset lists instead of waiting for window
+  focus. Deleting a workspace over MCP or via cloud tombstone now correctly
+  removes its workflows from any open canvas and no longer throws
+  `FOREIGN KEY constraint failed` on `cloud_record_state` writes.
+
+### Fixed
+
+- **Beautify button no longer minifies.** `BeautifyButton` toggled between
+  format/minify on a flaky indentation heuristic, collapsing the body back to
+  one line on the second click; now it is format-only (`tryFormatJson`), the
+  unused `tryMinifyJson`/`formatOrMinifyJson`/`isBeautified` helpers are
+  removed, the JSON body auto-formats when opening the panel or switching body
+  type to JSON so bodies imported via cURL/HAR/Postman/MCP display readably,
+  and the Monaco editor chunk is warmed on mount in parallel with its config.
+
+## [0.8.5] — 2026-08-27
+
+### Fixed
+
+- **Sync variable redaction kept the key.** `sanitizeVariables()` dropped a
+  workflow/environment variable entirely when its name looked sensitive
+  (`token`, `apiKey`, `password`, …) instead of keeping the key and blanking
+  just the value like every other sensitive field. A variable named `token`
+  holding a credential vanished from the cloud payload, breaking
+  `{{variables.token}}` references on the next pull (including the same device
+  after logout/login). Now the key survives with the value blanked — or
+  preserved verbatim if it is a credential-free `{{...}}` reference — matching
+  the header/cookie contract.
+
+## [0.8.4] — 2026-08-27
+
+### Fixed
+
+- **Secret withholding on export preserves variable refs.** Auth leaves that
+  carried a `{{variables.*}}` reference alongside a secret-shaped key were
+  incorrectly blanked on `.awecollection` export and sync. The shared redaction
+  walk now preserves `{{...}}` references in auth leaves. Also tightens leaf
+  detection so credentials smuggled alongside a reference are still caught.
+
 ## [0.8.3] — 2026-08-27
 
 ### Fixed
