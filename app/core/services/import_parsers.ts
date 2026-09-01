@@ -731,6 +731,13 @@ function newExampleWalk(): ExampleWalk {
   return { activeRefs: new Set(), depth: 0, budget: { left: MAX_EXAMPLE_VALUES } }
 }
 
+const PRIMITIVE_EXAMPLES: Record<string, unknown> = {
+  string: "string",
+  integer: 0,
+  number: 0,
+  boolean: false,
+}
+
 function generateExampleFromSchema(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
@@ -742,13 +749,9 @@ function generateExampleFromSchema(
   const ref = schema["$ref"] as string | undefined
   if (ref) return exampleFromRef(ref, rootSpec, walk)
   const type = schema["type"] as string | undefined
-  if (walk.depth >= MAX_EXAMPLE_DEPTH && (type === "object" || type === "array")) return null
   if (type === "object") return exampleForObject(schema, rootSpec, walk)
   if (type === "array") return exampleForArray(schema, rootSpec, walk)
-  if (type === "string") return "string"
-  if (type === "integer" || type === "number") return 0
-  if (type === "boolean") return false
-  return null
+  return type && type in PRIMITIVE_EXAMPLES ? PRIMITIVE_EXAMPLES[type] : null
 }
 
 function exampleFromRef(
@@ -771,7 +774,8 @@ function exampleForObject(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
   walk: ExampleWalk,
-): Record<string, unknown> {
+): Record<string, unknown> | null {
+  if (walk.depth >= MAX_EXAMPLE_DEPTH) return null
   const props = (schema["properties"] as Record<string, Record<string, unknown>>) ?? {}
   const result: Record<string, unknown> = {}
   const inner: ExampleWalk = { ...walk, depth: walk.depth + 1 }
@@ -786,7 +790,8 @@ function exampleForArray(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
   walk: ExampleWalk,
-): unknown[] {
+): unknown[] | null {
+  if (walk.depth >= MAX_EXAMPLE_DEPTH) return null
   const items = schema["items"] as Record<string, unknown> | undefined
   if (!items) return []
   const example = generateExampleFromSchema(items, rootSpec, { ...walk, depth: walk.depth + 1 })

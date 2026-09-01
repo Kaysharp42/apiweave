@@ -116,6 +116,17 @@ export function EnvironmentForm({
     setEditingKey(null);
   }
 
+  /** Enter saves, Escape cancels — shared by the edit-key and edit-value inputs. */
+  function handleEditVariableKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveEditVariable();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEditVariable();
+    }
+  }
+
   function saveEditVariable() {
     const trimmedKey = editKey.trim();
     if (!trimmedKey || !editValue || editingKey === null) return;
@@ -278,15 +289,7 @@ export function EnvironmentForm({
                         size="sm"
                         className="flex-1 font-mono"
                         placeholder="Edit variable name"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            saveEditVariable();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelEditVariable();
-                          }
-                        }}
+                        onKeyDown={handleEditVariableKeyDown}
                       />
                       <span className="text-text-muted dark:text-text-muted-dark">
                         =
@@ -297,15 +300,7 @@ export function EnvironmentForm({
                         size="sm"
                         className="flex-1 font-mono"
                         placeholder="Edit value"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            saveEditVariable();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelEditVariable();
-                          }
-                        }}
+                        onKeyDown={handleEditVariableKeyDown}
                       />
                       <IconButton
                         onClick={saveEditVariable}
