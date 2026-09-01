@@ -94,14 +94,17 @@ import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
+import { snapTransform } from "../utils/runCamera";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
+// Kept for validation step 1 toggle — re-enable the commented div below to restore.
 const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
+void NOISE_DATA_URI;
 
 const nodeTypes: NodeTypes = {
   "http-request": HTTPRequestNode as NodeTypes[string],
@@ -260,6 +263,36 @@ export function WorkflowCanvas({
     edgesRef,
     containerRef: canvasRef,
   });
+
+  // Manual-pan flag for minimap freeze (validation step 3). Camera already
+  // freezes via `isCameraMoving`; user drag was still recomputing O(n) minimap
+  // every d3 tick. Track between onMoveStart(null guard)/onMoveEnd.
+  const [isUserPanning, setIsUserPanning] = useState(false);
+  const handleMoveStart = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      if (event) setIsUserPanning(true);
+      onViewportInteraction(event);
+    },
+    [onViewportInteraction],
+  );
+  // A hand-driven move leaves the transform on a fractional pixel, and
+  // ReactFlow keeps it there — so one wheel-zoom makes every later drag blur,
+  // for the reason documented on `snapTransform`. Snap once on release. Guarded
+  // on `event` for the same reason `onMoveStart` is: a null event is the
+  // camera's own write, which is already snapped, and a `setViewport` the camera
+  // did not make reads to it as the user taking over.
+  const handleMoveEnd = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      setIsUserPanning(false);
+      if (!event) return;
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) return;
+      instance.setViewport(
+        snapTransform(instance.getViewport(), window.devicePixelRatio),
+      );
+    },
+    [reactFlowInstanceRef],
+  );
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -1078,14 +1111,11 @@ export function WorkflowCanvas({
         className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none"
         aria-hidden="true"
       />
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen"
-        style={{
-          backgroundImage: NOISE_DATA_URI,
-          backgroundSize: "240px 240px",
-        }}
-      />
+      {/* Noise overlay with mix-blend removed for 60fps pan: mix-blend-multiply
+          forces a full-viewport blend on every transform frame, preventing the
+          viewport from staying on a single composited layer. Re-introduce only
+          as a non-blending opacity layer if needed. */}
+      {/* <div aria-hidden="true" className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen" style={{ backgroundImage: NOISE_DATA_URI, backgroundSize: "240px 240px" }} /> */}
       <ReactFlow
         className="relative z-10 bg-transparent"
         style={reactFlowStyle}
@@ -1102,7 +1132,8 @@ export function WorkflowCanvas({
         // ReactFlow passes the d3 source event through, and its own transitions
         // have none — so this fires with an event only when a hand is actually
         // on the canvas, including one that grabs it mid-glide.
-        onMoveStart={onViewportInteraction}
+        onMoveStart={handleMoveStart}
+        onMoveEnd={handleMoveEnd}
         onInit={handleInit}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -1124,10 +1155,13 @@ export function WorkflowCanvas({
         // so the minimap and the camera keep their positions without them.
         onlyRenderVisibleElements
       >
-        {/* The grid should be felt, not read. */}
+        {/* The grid should be felt, not read.
+            Validation step 2: Background dots repaint every pan frame (SVG pattern).
+            Keep enabled for now — next toggle to test is commenting this out.
+            Gap 24 (~30% fewer dots than 20) is the sweet spot if kept. */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={20}
+          gap={24}
           size={1}
           color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
@@ -1165,7 +1199,7 @@ export function WorkflowCanvas({
             no repaints. */}
         <RunMiniMap
           nodes={nodes}
-          frozen={isCameraMoving}
+          frozen={isCameraMoving || isUserPanning}
           position="bottom-right"
           paint={{
             nodeColor: getNodeColor,

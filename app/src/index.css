@@ -184,6 +184,26 @@
 }
 
 /* ──────────────────────────────────────────────
+   Canvas viewport — what NOT to put here
+
+   d3-zoom writes `translate(x,y) scale(k)` on .react-flow__viewport, and every
+   node, edge and glyph is rasterised relative to it. Two hints look like free
+   performance here and both cost more than they give:
+
+   `will-change: transform` disqualifies the layer from Chromium's transformed
+   rasterisation — the mechanism that renders text sharp at a fractional
+   translation. Without it the layer keeps the raster translation it was first
+   given and the compositor resamples the drift, so the whole canvas softens
+   while the camera moves. It buys no frames either: the camera already runs at
+   the display's refresh rate. The camera snaps its own writes to whole device
+   pixels instead (`snapTransform` in utils/runCamera.ts), which is the real fix.
+
+   `contain: paint`/`content`, here or on .react-flow__nodes: both are 100%x100%
+   boxes that get translated, so containment clips the graph to that translated
+   rectangle and the canvas looks chopped as soon as you pan.
+   ────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────
    Handles — a socket at rest, an affordance on approach.
 
    The Handle element is a 20px transparent hit area; the visible dot is
