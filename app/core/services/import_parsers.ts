@@ -708,19 +708,43 @@ function normalizeOpenApiPath(path: string): string {
   return normalized
 }
 
+// A schema graph is a DAG, not a tree. `activeRefs` stops a $ref that loops
+// back to an ancestor, but a shared component referenced from many places is
+// still re-expanded at each one, so a diamond-shaped model grows
+// combinatorially. Measured on a real 13-service gateway: one 528 KB
+// definition produced 258 MB of example bodies (43 MB on a single endpoint),
+// which pinned the Electron main process for ~1.4 s building it and then had
+// to cross IPC into the renderer — the whole app froze on every load.
+// `depth` bounds nesting, the shared `budget` bounds total fan-out. A
+// truncated example is still a usable starting body; a 43 MB one is not.
+const MAX_EXAMPLE_DEPTH = 8
+const MAX_EXAMPLE_VALUES = 2000
+
+interface ExampleWalk {
+  activeRefs: ReadonlySet<string>
+  depth: number
+  /** Shared by reference across the whole walk, so siblings draw on one pool. */
+  budget: { left: number }
+}
+
+function newExampleWalk(): ExampleWalk {
+  return { activeRefs: new Set(), depth: 0, budget: { left: MAX_EXAMPLE_VALUES } }
+}
+
 function generateExampleFromSchema(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
-  // Self-referential schemas ($ref back to an ancestor) are legal and common;
-  // without this the walk recurses until the stack blows.
-  activeRefs: ReadonlySet<string> = new Set(),
+  walk: ExampleWalk = newExampleWalk(),
 ): unknown {
+  if (walk.budget.left <= 0) return null
+  walk.budget.left -= 1
   if (schema["example"] !== undefined) return schema["example"]
   const ref = schema["$ref"] as string | undefined
-  if (ref) return exampleFromRef(ref, rootSpec, activeRefs)
+  if (ref) return exampleFromRef(ref, rootSpec, walk)
   const type = schema["type"] as string | undefined
-  if (type === "object") return exampleForObject(schema, rootSpec, activeRefs)
-  if (type === "array") return exampleForArray(schema, rootSpec, activeRefs)
+  if (walk.depth >= MAX_EXAMPLE_DEPTH && (type === "object" || type === "array")) return null
+  if (type === "object") return exampleForObject(schema, rootSpec, walk)
+  if (type === "array") return exampleForArray(schema, rootSpec, walk)
   if (type === "string") return "string"
   if (type === "integer" || type === "number") return 0
   if (type === "boolean") return false
@@ -730,23 +754,29 @@ function generateExampleFromSchema(
 function exampleFromRef(
   ref: string,
   rootSpec: Record<string, unknown>,
-  activeRefs: ReadonlySet<string>,
+  walk: ExampleWalk,
 ): unknown {
-  if (activeRefs.has(ref)) return null
+  if (walk.activeRefs.has(ref)) return null
   const resolved = resolveRef(ref, rootSpec)
-  if (resolved) return generateExampleFromSchema(resolved, rootSpec, new Set([...activeRefs, ref]))
+  if (resolved) {
+    return generateExampleFromSchema(resolved, rootSpec, {
+      ...walk,
+      activeRefs: new Set([...walk.activeRefs, ref]),
+    })
+  }
   return null
 }
 
 function exampleForObject(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
-  activeRefs: ReadonlySet<string>,
+  walk: ExampleWalk,
 ): Record<string, unknown> {
   const props = (schema["properties"] as Record<string, Record<string, unknown>>) ?? {}
   const result: Record<string, unknown> = {}
+  const inner: ExampleWalk = { ...walk, depth: walk.depth + 1 }
   for (const [k, v] of Object.entries(props)) {
-    const example = generateExampleFromSchema(v, rootSpec, activeRefs)
+    const example = generateExampleFromSchema(v, rootSpec, inner)
     if (example !== null) result[k] = example
   }
   return result
@@ -755,11 +785,11 @@ function exampleForObject(
 function exampleForArray(
   schema: Record<string, unknown>,
   rootSpec: Record<string, unknown>,
-  activeRefs: ReadonlySet<string>,
+  walk: ExampleWalk,
 ): unknown[] {
   const items = schema["items"] as Record<string, unknown> | undefined
   if (!items) return []
-  const example = generateExampleFromSchema(items, rootSpec, activeRefs)
+  const example = generateExampleFromSchema(items, rootSpec, { ...walk, depth: walk.depth + 1 })
   return example !== null ? [example] : []
 }
 

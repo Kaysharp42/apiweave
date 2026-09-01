@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock, X } from "lucide-react";
+import { Check, Lock, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
@@ -36,6 +36,9 @@ export function EnvironmentForm({
   const [form, setForm] = useState<EnvironmentFormData>(EMPTY_FORM);
   const [newVarKey, setNewVarKey] = useState<string>("");
   const [newVarValue, setNewVarValue] = useState<string>("");
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editKey, setEditKey] = useState<string>("");
+  const [editValue, setEditValue] = useState<string>("");
   const [showSecretsPanel, setShowSecretsPanel] = useState<boolean>(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
@@ -100,6 +103,38 @@ export function EnvironmentForm({
       delete updatedVariables[key];
       return { ...prev, variables: updatedVariables };
     });
+    if (editingKey === key) setEditingKey(null);
+  }
+
+  function startEditVariable(key: string, value: string) {
+    setEditingKey(key);
+    setEditKey(key);
+    setEditValue(value);
+  }
+
+  function cancelEditVariable() {
+    setEditingKey(null);
+  }
+
+  function saveEditVariable() {
+    const trimmedKey = editKey.trim();
+    if (!trimmedKey || !editValue || editingKey === null) return;
+
+    if (
+      trimmedKey !== editingKey &&
+      Object.prototype.hasOwnProperty.call(form.variables, trimmedKey)
+    ) {
+      toast.error("Variable already exists");
+      return;
+    }
+
+    setForm((prev) => {
+      const updatedVariables = { ...prev.variables };
+      delete updatedVariables[editingKey];
+      updatedVariables[trimmedKey] = editValue;
+      return { ...prev, variables: updatedVariables };
+    });
+    setEditingKey(null);
   }
 
   const baseOptions = getValidBaseEnvironmentOptions(
@@ -230,30 +265,101 @@ export function EnvironmentForm({
               </div>
 
               <div className="space-y-2 mb-3">
-                {Object.entries(form.variables).map(([key, value]) => (
-                  <div
-                    key={key}
-                    className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
-                  >
-                    <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
-                      {key}
-                    </span>
-                    <span className="text-text-muted dark:text-text-muted-dark">
-                      =
-                    </span>
-                    <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
-                      {value}
-                    </span>
-                    <IconButton
-                      onClick={() => handleRemoveVariable(key)}
-                      variant="error"
-                      size="xs"
-                      tooltip="Remove variable"
+                {Object.entries(form.variables).map(([key, value]) =>
+                  editingKey === key ? (
+                    <div
+                      key={key}
+                      className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded ring-1 ring-primary"
                     >
-                      <X className="w-4 h-4" />
-                    </IconButton>
-                  </div>
-                ))}
+                      <Input
+                        autoFocus
+                        value={editKey}
+                        onChange={(e) => setEditKey(e.target.value)}
+                        size="sm"
+                        className="flex-1 font-mono"
+                        placeholder="Edit variable name"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveEditVariable();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelEditVariable();
+                          }
+                        }}
+                      />
+                      <span className="text-text-muted dark:text-text-muted-dark">
+                        =
+                      </span>
+                      <Input
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        size="sm"
+                        className="flex-1 font-mono"
+                        placeholder="Edit value"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveEditVariable();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelEditVariable();
+                          }
+                        }}
+                      />
+                      <IconButton
+                        onClick={saveEditVariable}
+                        variant="success"
+                        size="xs"
+                        tooltip="Save"
+                      >
+                        <Check className="w-4 h-4" />
+                      </IconButton>
+                      <IconButton
+                        onClick={cancelEditVariable}
+                        variant="ghost"
+                        size="xs"
+                        tooltip="Cancel"
+                      >
+                        <X className="w-4 h-4" />
+                      </IconButton>
+                    </div>
+                  ) : (
+                    <div
+                      key={key}
+                      onDoubleClick={() => startEditVariable(key, value)}
+                      className="group flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded cursor-text"
+                      title="Double-click to edit"
+                    >
+                      <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                        {key}
+                      </span>
+                      <span className="text-text-muted dark:text-text-muted-dark">
+                        =
+                      </span>
+                      <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
+                        {value}
+                      </span>
+                      <IconButton
+                        onClick={() => startEditVariable(key, value)}
+                        variant="ghost"
+                        size="xs"
+                        tooltip="Edit variable"
+                        className="opacity-0 group-hover:opacity-100"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </IconButton>
+                      <IconButton
+                        onClick={() => handleRemoveVariable(key)}
+                        variant="error"
+                        size="xs"
+                        tooltip="Remove variable"
+                      >
+                        <X className="w-4 h-4" />
+                      </IconButton>
+                    </div>
+                  ),
+                )}
               </div>
 
               <div className="flex gap-2">
