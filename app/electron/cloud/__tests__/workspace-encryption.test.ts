@@ -102,6 +102,9 @@ describe("workspace encryption bundles", () => {
       .toThrow(/power of two/)
     expect(() => parseKdfParams(JSON.stringify({ N: 16384, r: 0, p: 1 })))
       .toThrow(/positive integers/)
+    // Exactly on the limit for `128 * N * r`, over it for what scrypt enforces.
+    expect(() => parseKdfParams(JSON.stringify({ N: 262144, r: 8, p: 1 })))
+      .toThrow(CloudWorkspaceEncryptionInvalidError)
   })
 })
 

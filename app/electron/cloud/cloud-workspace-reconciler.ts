@@ -121,6 +121,17 @@ export interface ReconcilerDeps {
 }
 
 /**
+ * A workspace is claimable when it has never synced, or last synced with the
+ * account linking now. Anything else belongs to a different account: leave it
+ * local, never bind it, never push it. Exported because anything that gates on
+ * "will this workspace sync under the current account?" — the manual bind path,
+ * the encryption-decision prompt — has to answer it exactly as this pass does.
+ */
+export function isWorkspaceClaimable(ownerAccountId: string | undefined, accountId: string): boolean {
+  return ownerAccountId === undefined || ownerAccountId === accountId
+}
+
+/**
  * Reconcile local ↔ cloud workspaces. Provisioning and binding are awaited so
  * the caller's status reflects the new bindings; per-workspace initial sync
  * (pull/push) is kicked off in the background and reports its own errors.
@@ -138,11 +149,8 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
   const catalog = deps.catalog()
   const toInitialize: string[] = []
 
-  // A workspace is claimable when it has never synced, or last synced with the
-  // account linking now. Anything else belongs to a different account: leave it
-  // local, never bind it, never push it.
   const isClaimable = (workspace: ReconcilerLocalWorkspace): boolean => {
-    if (workspace.ownerAccountId === undefined || workspace.ownerAccountId === deps.accountId) {
+    if (isWorkspaceClaimable(workspace.ownerAccountId, deps.accountId)) {
       return true
     }
     deps.log("reconcile skipped workspace owned by another account", {

@@ -12,6 +12,7 @@ import {
 } from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import {
+  isWorkspaceClaimable,
   reconcileWorkspaces,
   type ReconcilerBindInput,
   type ReconcilerCatalogEntry,
@@ -76,6 +77,7 @@ import {
   clearWorkspaceEncryption as unregisterWorkspaceKey,
   hasWorkspaceKey,
   setWorkspaceEncryption as registerWorkspaceKey,
+  workspaceWdek,
 } from "./workspace-keys"
 import {
   createEncryptionBundle,
@@ -232,7 +234,14 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       // never be upgraded, so refuse here rather than fail on the wire.
       throw new CloudWorkspaceEncryptionSettledError()
     }
-    if (mode === "e2ee" && this.repository.getWorkspaceBinding(input.workspaceId) !== undefined) {
+    if (this.repository.getWorkspaceBinding(input.workspaceId) !== undefined) {
+      // Already provisioned: `EnsureSyncWorkspace` never applies a bundle to an
+      // existing row, so minting one here would seal every record under a key
+      // the server does not hold. With no recorded mode there is nothing to
+      // rewrap either — unlocking is what asks the server for the truth.
+      if (mode === undefined) {
+        throw new CloudWorkspaceLockedError()
+      }
       return this.changeWorkspacePassphrase(input)
     }
     const { bundle, wdek } = createEncryptionBundle(input.passphrase)
@@ -243,7 +252,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.settings.set(KEY_ENCRYPTION_PENDING_PREFIX + input.workspaceId, JSON.stringify(bundle))
     this.acceptWorkspaceKey(input.workspaceId, wdek)
     try {
-      await this.reconcile()
+      await this.reconcileAfterDecision()
       return this.status()
     } finally {
       this.notifyStatusChanged()
@@ -261,7 +270,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
     this.recordEncryptionMode(input.workspaceId, "none")
     try {
-      await this.reconcile()
+      await this.reconcileAfterDecision()
       return this.status()
     } finally {
       this.notifyStatusChanged()
@@ -509,7 +518,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     // Same ownership rule the reconciler enforces, applied to the manual path:
     // a workspace holding another account's data is never pushed to this one.
     const owner = this.repository.getWorkspaceAccountId(workspaceId)
-    if (owner !== undefined && owner !== account.accountId) {
+    if (!isWorkspaceClaimable(owner, account.accountId)) {
       throw new CloudWorkspaceOwnedByAnotherAccountError()
     }
     return account
@@ -753,6 +762,19 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         this.reconcileInFlight = null
       }
     }
+  }
+
+  /**
+   * Reconcile in a pass that STARTED after the encryption decision was written.
+   * The coalescing above is wrong here: a pass already in flight — `syncNewWorkspace`
+   * fires one on every local creation — read this workspace's plan while it was
+   * still `pending`, so awaiting it would report success for a workspace it
+   * never provisioned. Settle that pass first (its outcome is not ours to
+   * report), then reconcile; concurrent deciders still share the one follow-up.
+   */
+  private async reconcileAfterDecision(): Promise<void> {
+    await this.reconcileInFlight?.catch(() => undefined)
+    await this.reconcile()
   }
 
   private async runReconcile(): Promise<void> {
@@ -1162,6 +1184,12 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         unregisterWorkspaceKey(binding.workspaceId)
         continue
       }
+      // A key unlocked this session is authoritative over the cache: `cacheWdek`
+      // refuses to store on a keyring-less box, so re-reading here would re-lock
+      // a workspace whose passphrase was just typed. This runs on every reconcile.
+      if (mode === "e2ee" && hasWorkspaceKey(binding.workspaceId)) {
+        continue
+      }
       // Unknown mode registers as LOCKED, never as plaintext: the workspace may
       // be e2ee and we simply have not been told, and guessing plaintext there
       // is unrecoverable. It resolves on the next catalog refresh or unlock.
@@ -1183,16 +1211,27 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
    * Local workspaces the reconciler is holding back for want of an encryption
    * decision — the renderer's cue to prompt. A workspace leaves this list by
    * `setWorkspaceEncryption` or `declineWorkspaceEncryption`.
+   *
+   * Only workspaces the reconciler would actually claim: the recorded mode is
+   * write-once, so prompting about another account's workspace would let this
+   * user commit it to plaintext forever, for a sync that can never happen here.
    */
   private pendingEncryptionDecisions(
     bindings: readonly CloudWorkspaceBindingStatus[],
   ): readonly CloudPendingEncryptionDecision[] {
+    // `runReconcile` bails outright without an identity, so nothing is pending.
+    const accountId = this.loadAccountIdentity()?.accountId
+    if (accountId === undefined) {
+      return []
+    }
     const bound = new Set(bindings.map((binding) => binding.workspaceId))
+    const owners = this.repository.listWorkspaceAccounts()
     return new WorkspaceRepository(this.options.store)
       .listAll()
       .filter((workspace) =>
         workspace.deletedAt === null
         && !bound.has(workspace.workspaceId)
+        && isWorkspaceClaimable(owners.get(workspace.workspaceId), accountId)
         && this.storedEncryptionMode(workspace.workspaceId) === undefined)
       .map((workspace) => ({ workspaceId: workspace.workspaceId, workspaceName: workspace.name }))
   }
@@ -1219,7 +1258,13 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   /** Re-wrap the workspace's existing key under a new passphrase. Admin only, server-side. */
   private async changeWorkspacePassphrase(input: CloudWorkspacePassphraseInput): Promise<CloudSyncStatus> {
     const binding = this.repository.getWorkspaceBinding(input.workspaceId)
-    const wdek = readCachedWdek(this.settings, input.workspaceId)
+    // The held key first, the cache only as a fallback: `encryptionStateOf`
+    // reports "unlocked" off `hasWorkspaceKey`, and that is what renders this
+    // button — but `cacheWdek` refuses to store on a keyring-less box, so
+    // reading the cache would reject a workspace the same screen calls unlocked.
+    const wdek = hasWorkspaceKey(input.workspaceId)
+      ? workspaceWdek(input.workspaceId) ?? undefined
+      : readCachedWdek(this.settings, input.workspaceId)
     if (binding === undefined || this.activeConfig === null || wdek === undefined) {
       // Rewrapping needs the current key. Without it there is nothing to
       // re-wrap — unlock first, which is a strictly better error than wiping

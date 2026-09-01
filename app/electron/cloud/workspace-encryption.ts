@@ -195,7 +195,10 @@ export function parseKdfParams(json: string): KdfParams {
   if ((N & (N - 1)) !== 0) {
     throw new CloudWorkspaceEncryptionInvalidError("KDF parameter N must be a power of two")
   }
-  if (128 * N * r > MAX_SCRYPT_MEMORY || p > 16) {
+  // scrypt's own bound is 128 * r * (N + p + 2) — checking `128 * N * r` lets a
+  // record sitting exactly on the limit through and then throws a raw Error out
+  // of scryptSync instead of an invalid-params one.
+  if (128 * r * (N + p + 2) > MAX_SCRYPT_MEMORY || p > 16) {
     throw new CloudWorkspaceEncryptionInvalidError("KDF parameters exceed the supported work factor")
   }
   return { N, r, p }

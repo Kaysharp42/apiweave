@@ -6,10 +6,12 @@ import nock from "nock"
 
 // safeStorage is main-process-only and absent under vitest, so the keychain is
 // a reversible in-memory stand-in. `wdek-cache.ts` refuses to cache on an
-// untrustworthy backend, which is why the backend is named here too.
+// untrustworthy backend, which is why the backend is named here too, and why
+// `keychain.available` is a knob: a Linux box with no keyring is a real state.
+const keychain = vi.hoisted(() => ({ available: true }))
 vi.mock("electron", () => ({
   safeStorage: {
-    isEncryptionAvailable: () => true,
+    isEncryptionAvailable: () => keychain.available,
     getSelectedStorageBackend: () => "kwallet5",
     encryptString: (value: string) => Buffer.from(`sealed:${value}`, "utf-8"),
     decryptString: (buffer: Buffer) => buffer.toString("utf-8").replace(/^sealed:/, ""),
@@ -58,6 +60,7 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
   let keyfilePath: string
 
   beforeEach(() => {
+    keychain.available = true
     tempDir = mkdtempSync(join(tmpdir(), "cloud-e2ee-test-"))
     keyfilePath = join(tempDir, "keyfile.json")
     createKeyfile(keyfilePath)
@@ -273,6 +276,33 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     expect(subject.status().bindings[0]?.encryption).toBe("locked")
   })
 
+  it("keeps a workspace unlocked across a reconcile when the keychain refuses to cache", async () => {
+    // Linux with no GNOME Keyring or KWallet: `cacheWdek` refuses, so the only
+    // copy of the key is the in-memory one. Every reconcile re-records the mode,
+    // and that must not read the (empty) cache back over the unlocked key.
+    keychain.available = false
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    nockGetEncryption()
+    nock("https://auth.test").post("/oauth/v2/token")
+      .reply(200, { id_token: "id-token", refresh_token: "refresh-token-4" })
+    nock("https://api.test").post("/desktop/auth/session", { idToken: "id-token" })
+      .reply(200, { sessionToken: "session-3", expiresAt: "2099-01-01T00:00:00.000Z" })
+    nockEmptyCatalog()
+    const subject = control()
+
+    await subject.unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE })
+    expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
+
+    // "Check for new workspaces" — reconciles, and used to re-lock mid-session.
+    const status = await subject.refreshWorkspaceCatalog()
+
+    expect(Buffer.from(workspaceWdek(WORKSPACE_ID) ?? new Uint8Array()))
+      .toEqual(Buffer.from(provisioned.wdek))
+    expect(status.bindings[0]?.encryption).toBe("unlocked")
+  })
+
   it("locks a workspace back to locked, not back to plaintext", () => {
     linked()
     bindWorkspace()
@@ -311,6 +341,18 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     ])
   })
 
+  it("does not prompt for a workspace owned by another account", async () => {
+    // The reconciler never claims it, but the recorded mode is write-once — so
+    // answering the prompt here would lock the owning account out of e2ee.
+    repository.stampWorkspaceAccount(WORKSPACE_ID, "account-2")
+    linked()
+    nockEmptyCatalog()
+
+    const status = await control().refreshWorkspaceCatalog()
+
+    expect(status.encryptionDecisionPending).toEqual([])
+  })
+
   it("provisions with a valid bundle once encryption is chosen", async () => {
     linked()
     nockEmptyCatalog()
@@ -346,6 +388,80 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     expect(status.bindings[0]?.encryption).toBe("unlocked")
     expect(status.encryptionDecisionPending).toEqual([])
     expect(workspaceWdek(WORKSPACE_ID)).not.toBeNull()
+  })
+
+  it("provisions on a pass started after the decision, not on the stale one", async () => {
+    // `syncNewWorkspace` fires a background reconcile on every local creation,
+    // and that pass reads each workspace's encryption plan as it reaches it. One
+    // still in flight has already read this workspace's as `pending`, so
+    // awaiting it reported "encrypted" for a workspace nothing had provisioned —
+    // which then vanished from both lists until an unrelated trigger reconciled.
+    const PERSONAL_WORKSPACE_ID = "01PERSONALWORKSPACE0000000"
+    linked()
+    // Personal, so the reconciler handles it FIRST and is already past it by the
+    // time the pass parks on the workspace below.
+    new WorkspaceRepository(store).createWithId({
+      id: PERSONAL_WORKSPACE_ID,
+      name: "Personal Workspace",
+      slug: "personal-workspace",
+      isPersonal: true,
+      origin: "local",
+      syncMode: "none",
+    })
+    // Already decided, so the background pass provisions it — and parks there,
+    // holding the pass open across the click.
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "none")
+    nock("https://auth.test").post("/oauth/v2/token").times(2)
+      .reply(200, { id_token: "id-token", refresh_token: "refresh-token-6" })
+    nock("https://api.test").post("/desktop/auth/session", { idToken: "id-token" }).times(2)
+      .reply(200, { sessionToken: "session-5", expiresAt: "2099-01-01T00:00:00.000Z" })
+    let parked = false
+    let release = (): void => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/EnsureSyncWorkspace`, (body: Record<string, unknown>) => body["workspaceId"] === WORKSPACE_ID)
+      .reply(200, async () => {
+        parked = true
+        await held
+        return {
+          workspaceId: WORKSPACE_ID,
+          workspaceName: "Local Workspace",
+          isPersonal: false,
+          effectiveRole: 5,
+          capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+          encryptionMode: "WORKSPACE_ENCRYPTION_MODE_NONE",
+        }
+      })
+    nock("https://api.test")
+      .post(
+        `${DEVICE_SERVICE}/EnsureSyncWorkspace`,
+        (body: Record<string, unknown>) => body["workspaceId"] === PERSONAL_WORKSPACE_ID,
+      )
+      .reply(200, {
+        workspaceId: PERSONAL_WORKSPACE_ID,
+        workspaceName: "Personal Workspace",
+        isPersonal: true,
+        effectiveRole: 5,
+        capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+        encryptionMode: "WORKSPACE_ENCRYPTION_MODE_E2EE",
+      })
+    const subject = control()
+
+    subject.syncNewWorkspace()
+    await vi.waitFor(() => expect(parked).toBe(true))
+    // The click lands mid-pass: the decision is recorded synchronously, then the
+    // stale pass is released and finishes without ever having seen it.
+    const encrypting = subject.setWorkspaceEncryption({
+      workspaceId: PERSONAL_WORKSPACE_ID,
+      passphrase: PASSPHRASE,
+    })
+    release()
+    const status = await encrypting
+
+    expect(repository.getWorkspaceBinding(PERSONAL_WORKSPACE_ID)).toBeDefined()
+    expect(status.encryptionDecisionPending).toEqual([])
+    expect(status.bindings.find((binding) => binding.workspaceId === PERSONAL_WORKSPACE_ID)?.encryption)
+      .toBe("unlocked")
   })
 
   it("believes the server's answer, not its own request", async () => {
@@ -416,6 +532,22 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
       .rejects.toThrow(CloudWorkspaceEncryptionSettledError)
   })
 
+  it("refuses to mint a key for a bound workspace whose mode was never recorded", async () => {
+    // Reachable over IPC, not from today's UI: a pre-E2EE binding, or a catalog
+    // refresh that never landed. The workspace may well be e2ee server-side, and
+    // EnsureSyncWorkspace ignores a bundle on an existing row — so a fresh key
+    // here would seal every record under one no other device can open.
+    linked()
+    bindWorkspace()
+
+    await expect(control().setWorkspaceEncryption({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE }))
+      .rejects.toThrow(CloudWorkspaceLockedError)
+
+    expect(() => workspaceWdek(WORKSPACE_ID)).toThrow(WorkspaceLocked)
+    expect(settings.get(`cloud.e2ee.mode.${WORKSPACE_ID}`)).toBeUndefined()
+    expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
+  })
+
   it("sends one bundle when creating an encrypted Team workspace", async () => {
     const TEAM_WORKSPACE_ID = "01TEAMWORKSPACE000000000000"
     linked()
@@ -482,6 +614,34 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
 
     await expect(control().setWorkspaceEncryption({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE }))
       .rejects.toThrow(CloudWorkspaceLockedError)
+  })
+
+  it("rewraps a workspace unlocked this session when the keychain refuses to cache", async () => {
+    // Linux with no keyring: `cacheWdek` refuses, so the cache stays empty
+    // while the screen (and `encryptionStateOf`) correctly say "unlocked" and
+    // render the Change passphrase button. Sourcing the key from the cache
+    // here rejected that very button with "this workspace is locked".
+    keychain.available = false
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    nockGetEncryption()
+    nock("https://auth.test").post("/oauth/v2/token")
+      .reply(200, { id_token: "id-token", refresh_token: "refresh-token-5" })
+    nock("https://api.test").post("/desktop/auth/session", { idToken: "id-token" })
+      .reply(200, { sessionToken: "session-4", expiresAt: "2099-01-01T00:00:00.000Z" })
+    nockSetPassphrase(200, {})
+    const subject = control()
+
+    await subject.unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE })
+    expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
+
+    const status = await subject.setWorkspaceEncryption({
+      workspaceId: WORKSPACE_ID,
+      passphrase: "a much longer one",
+    })
+
+    expect(status.bindings[0]?.encryption).toBe("unlocked")
   })
 
   it("names the admin rule when the server refuses the rewrap", async () => {
