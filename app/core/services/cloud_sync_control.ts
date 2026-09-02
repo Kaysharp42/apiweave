@@ -130,11 +130,22 @@ export class CloudWorkspaceOwnedByAnotherAccountError extends Error {
  * "the wrapped key failed to authenticate" and "it unwrapped to a key the
  * server does not name": the user-visible fact is identical and the split leaks
  * which half failed.
+ *
+ * The rotation hint is there because an admin rewrapping the workspace under a
+ * new passphrase is silent to everyone else — every other member's saved
+ * passphrase simply stops working, with nothing to distinguish that from a
+ * typo. Naming the cause is not the same as detecting it: a rewrap keeps the
+ * same WDEK, so the fingerprint is unchanged and only the kdf_salt moves.
+ * Recording the last-seen salt per workspace would make this exact rather than
+ * a hint, and is the upgrade path if the hint proves not to be enough.
  */
 // fallow-ignore-next-line code-duplication
 export class CloudWorkspacePassphraseIncorrectError extends Error {
   public constructor() {
-    super("That passphrase does not unlock this workspace.")
+    super(
+      "That passphrase does not unlock this workspace. "
+        + "If an admin changed the workspace passphrase, ask them for the new one.",
+    )
     this.name = "CloudWorkspacePassphraseIncorrectError"
   }
 }

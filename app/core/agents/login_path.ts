@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process"
 import os from "node:os"
-import path from "node:path"
 
 /**
  * A GUI-launched app does not inherit the user's shell PATH.
@@ -23,10 +22,18 @@ const MARKER = "__APIWEAVE_PATH__"
 /** One shell startup, with the user's rc files. Slow rc files must not wedge boot. */
 const SHELL_TIMEOUT_MS = 5_000
 
-/** Prepend the shell's entries, keeping the process's own as a fallback tail. */
+/**
+ * Prepend the shell's entries, keeping the process's own as a fallback tail.
+ *
+ * ":" and not `path.delimiter`: both inputs are a POSIX login shell's PATH, and
+ * `hydratePathFromLoginShell` returns before it ever runs one on win32. Reading
+ * the host's delimiter there made this split on ";" under a Windows Node, which
+ * collapses each PATH to a single entry — no dedupe, and a ";"-joined result
+ * that is not a PATH on either platform.
+ */
 export function mergePath(shellPath: string, currentPath: string): string {
-  const entries = [...shellPath.split(path.delimiter), ...currentPath.split(path.delimiter)]
-  return [...new Set(entries.filter((entry) => entry.length > 0))].join(path.delimiter)
+  const entries = [...shellPath.split(":"), ...currentPath.split(":")]
+  return [...new Set(entries.filter((entry) => entry.length > 0))].join(":")
 }
 
 /** The `PATH=` line of an `env` dump, or `undefined` if the dump has none. */
