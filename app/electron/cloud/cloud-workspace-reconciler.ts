@@ -68,10 +68,19 @@ export type ReconcilerCatalogEntry = Pick<
  * provisioned. `pending` means nobody has been asked yet: the workspace is NOT
  * provisioned, because the server's `encryption_mode` is write-once and a
  * plaintext row can never be upgraded afterwards.
+ *
+ * `adopt` means provision with no bundle and take whatever mode the row already
+ * has. It exists for the case where this device minted a key for a workspace
+ * the cloud already holds under a different one: the server rejects that bundle
+ * (it would seal records under a key it has no wrapping for), and the only way
+ * forward is to stop offering ours and unlock theirs. Distinct from `none`,
+ * which asks for a *plaintext* row and would be the wrong request here — and
+ * distinct from `pending`, because the decision has been made, not deferred.
  */
 export type ReconcilerEncryptionPlan =
   | { readonly mode: "e2ee"; readonly bundle: WorkspaceEncryptionBundle }
   | { readonly mode: "none" }
+  | { readonly mode: "adopt" }
   | { readonly mode: "pending" }
 
 export interface ReconcilerBindInput {

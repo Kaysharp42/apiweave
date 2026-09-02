@@ -18,7 +18,7 @@ import {
 } from "../../../core/secrets/workspace_key"
 import { recordWorkflowUpsert } from "../../../core/sync/cloud-mutations"
 import { CloudSyncProvider } from "../cloud-transport"
-import { CloudClient, DeviceTokenStore } from "../cloud-client"
+import { CloudClient, DeviceTokenStore, ErrCloudConflictStale, ErrCloudRequestFailed } from "../cloud-client"
 import { transportErrorMessage } from "../cloud-error-messages"
 import { RecordKind, ChangeOp } from "../cloud-apply"
 import { WorkspaceLocked, clearWorkspaceEncryption, setWorkspaceEncryption } from "../workspace-keys"
@@ -1068,6 +1068,57 @@ describe("CloudSyncProvider", () => {
   })
 
   describe("negative scenarios", () => {
+    // Connect maps `aborted` and `already_exists` onto the same HTTP 409, so the
+    // client reads the error envelope's code rather than inferring from status.
+    it("maps an aborted ResolveConflict to a stale conflict off the Connect code", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/ResolveConflict")
+        .reply(409, { code: "aborted", message: "revision conflict" })
+
+      await expect(client.resolveConflict("conflict-1", "local")).rejects.toThrow(ErrCloudConflictStale)
+    })
+
+    it("still reads a 409 as stale when its Connect envelope is unreadable", async () => {
+      // A proxy's HTML error page, not the server's envelope. Losing the stale
+      // mapping here would turn a recoverable conflict into a raw transport
+      // error, and on this RPC a 409 has no other meaning to confuse it with.
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/ResolveConflict")
+        .reply(409, "<html>gateway conflict</html>")
+
+      await expect(client.resolveConflict("conflict-1", "local")).rejects.toThrow(ErrCloudConflictStale)
+    })
+
+    it("carries the Connect code on a failed call so callers can branch on it", async () => {
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/EnsureSyncWorkspace")
+        .reply(409, { code: "already_exists", message: "different encryption key material" })
+
+      await expect(client.ensureSyncWorkspace({
+        workspaceId: WORKSPACE_ID,
+        name: "Workspace",
+        slug: "workspace",
+        isPersonal: false,
+      })).rejects.toMatchObject({ name: "ErrCloudRequestFailed", status: 409, code: "already_exists" })
+    })
+
+    it("leaves the Connect code undefined when the error body is not an envelope", async () => {
+      // `code === undefined` must read as "not the code I am looking for", never
+      // as a default — which is why the adopt path requires an explicit match.
+      nock(API_BASE)
+        .post("/apiweave.v1.DeviceService/EnsureSyncWorkspace")
+        .reply(409, "not json at all")
+
+      const failure = await client.ensureSyncWorkspace({
+        workspaceId: WORKSPACE_ID,
+        name: "Workspace",
+        slug: "workspace",
+        isPersonal: false,
+      }).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(ErrCloudRequestFailed)
+      expect((failure as ErrCloudRequestFailed).code).toBeUndefined()
+    })
+
     it("dead-letters outbox rows outside the configured bindings and still drains healthy workspaces", async () => {
       store.set(
         "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",

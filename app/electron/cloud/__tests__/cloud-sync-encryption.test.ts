@@ -492,6 +492,102 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
   })
 
+  it("adopts the stored key when the server refuses the one this device minted", async () => {
+    // The cloud row already exists under someone else's WDEK, so the server
+    // rejects our bundle instead of dropping it. Sealing records under a key it
+    // holds no wrapping for would make the whole workspace unreadable, so the
+    // only way forward is to stop offering ours and unlock theirs.
+    linked()
+    nockEmptyCatalog()
+    const sentBundles: (unknown)[] = []
+    const captureBundle = (body: Record<string, unknown>): boolean => {
+      sentBundles.push(body["encryption"])
+      return true
+    }
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/EnsureSyncWorkspace`, captureBundle)
+      .reply(409, {
+        code: "already_exists",
+        message: "workspace already exists with different encryption key material",
+      })
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/EnsureSyncWorkspace`, captureBundle)
+      .reply(200, {
+        workspaceId: WORKSPACE_ID,
+        workspaceName: "Local Workspace",
+        isPersonal: false,
+        effectiveRole: 5,
+        capabilities: { canPull: true, canPush: true, canResolveConflicts: true },
+        encryptionMode: "WORKSPACE_ENCRYPTION_MODE_E2EE",
+      })
+
+    const status = await control().setWorkspaceEncryption({
+      workspaceId: WORKSPACE_ID,
+      passphrase: PASSPHRASE,
+    })
+
+    // Offered once, then withdrawn — the retry provisions bundle-less.
+    expect(sentBundles).toHaveLength(2)
+    expect(sentBundles[0]).toBeDefined()
+    expect(sentBundles[1]).toBeUndefined()
+
+    // Bound, and recorded e2ee off the server's answer.
+    expect(repository.getWorkspaceBinding(WORKSPACE_ID)).toBeDefined()
+    expect(status.bindings[0]?.encryption).toBe("locked")
+
+    // LOCKED, not plaintext. `workspaceWdek` returns null for a plaintext
+    // workspace and throws only for an e2ee one whose key is not held, so this
+    // is the assertion that the transport cannot push these records in the
+    // clear on the next cycle.
+    expect(() => workspaceWdek(WORKSPACE_ID)).toThrow(WorkspaceLocked)
+
+    // The refused key is gone from the cache, and neither the bundle nor the
+    // adopt flag outlives the answer that resolved them.
+    expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
+    expect(settings.get(`cloud.e2ee.pending.${WORKSPACE_ID}`)).toBeUndefined()
+    expect(settings.get(`cloud.e2ee.adopt.${WORKSPACE_ID}`)).toBeUndefined()
+  })
+
+  it("does not adopt when a 409 carries no Connect code", async () => {
+    // An unreadable envelope must not be read as the mismatch: adopting on a
+    // guess would discard a perfectly good key over a proxy error page.
+    linked()
+    nockEmptyCatalog()
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/EnsureSyncWorkspace`)
+      .reply(409, "<html>gateway conflict</html>")
+
+    // The pass isolates per-workspace failures, so this surfaces as "not
+    // provisioned" rather than a rejection.
+    const status = await control().setWorkspaceEncryption({
+      workspaceId: WORKSPACE_ID,
+      passphrase: PASSPHRASE,
+    })
+
+    expect(repository.getWorkspaceBinding(WORKSPACE_ID)).toBeUndefined()
+    expect(settings.get(`cloud.e2ee.adopt.${WORKSPACE_ID}`)).toBeUndefined()
+    // The bundle survives for the byte-identical retry the server's rules want.
+    expect(settings.get(`cloud.e2ee.pending.${WORKSPACE_ID}`)).toBeDefined()
+    expect(status.bindings).toEqual([])
+  })
+
+  it("refuses to mint another key while an adoption is pending", async () => {
+    // Re-asking would mint a third key and register it as this workspace's, and
+    // the transport would seal with it the moment the binding appeared — the
+    // exact corruption the server's refusal exists to prevent.
+    linked()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    settings.set(`cloud.e2ee.adopt.${WORKSPACE_ID}`, "1")
+
+    await expect(control().setWorkspaceEncryption({
+      workspaceId: WORKSPACE_ID,
+      passphrase: "a different passphrase entirely",
+    })).rejects.toThrow(CloudWorkspaceLockedError)
+
+    expect(settings.get(`cloud.e2ee.pending.${WORKSPACE_ID}`)).toBeUndefined()
+    expect(workspaceWdek(WORKSPACE_ID)).toBeNull()
+  })
+
   it("provisions in the clear once encryption is explicitly declined", async () => {
     linked()
     nockEmptyCatalog()

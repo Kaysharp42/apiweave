@@ -134,6 +134,18 @@ const KEY_AUTHENTICATION_REQUIRED = "cloud.authentication_required"
  */
 const KEY_ENCRYPTION_MODE_PREFIX = "cloud.e2ee.mode."
 const KEY_ENCRYPTION_PENDING_PREFIX = "cloud.e2ee.pending."
+/**
+ * Set when the server has told us the cloud row already exists under a key that
+ * is not ours, so the pending bundle must never be offered again — see
+ * {@link DesktopCloudSyncControl.adoptExistingEncryption}. Provisioning then
+ * proceeds with no bundle and takes the row's own mode.
+ *
+ * Persisted rather than kept in memory for the same reason `pending` is: the
+ * bundle is deleted the moment this is set, so a crash before the bundle-less
+ * retry lands would otherwise leave a workspace recorded `e2ee` with no bundle,
+ * which reads as `pending` and blocks provisioning forever.
+ */
+const KEY_ENCRYPTION_ADOPT_PREFIX = "cloud.e2ee.adopt."
 
 export class DesktopCloudSyncControl implements CloudSyncControl {
   private readonly repository: CloudSyncRepository
@@ -243,6 +255,16 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         throw new CloudWorkspaceLockedError()
       }
       return this.changeWorkspacePassphrase(input)
+    }
+    // Mid-adoption: the server has already refused a key for this row, so
+    // minting another cannot provision it either — `encryptionPlan` returns
+    // `adopt` and the bundle would never reach the wire. Refusing matters more
+    // than the wasted call, though: accepting the key here would register it as
+    // this workspace's, and the transport would seal records with a key the
+    // server holds no wrapping for the moment the binding appears. The way in
+    // is the passphrase that already opens the row.
+    if (this.settings.get(KEY_ENCRYPTION_ADOPT_PREFIX + input.workspaceId) !== undefined) {
+      throw new CloudWorkspaceLockedError()
     }
     const { bundle, wdek } = createEncryptionBundle(input.passphrase)
     // Decision and bundle land together, before any network call: a crash
@@ -828,7 +850,35 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         })),
       catalog: () => this.workspaceCatalog as readonly ReconcilerCatalogEntry[],
       encryptionPlan: (workspaceId) => this.encryptionPlan(workspaceId),
-      ensureSyncWorkspace: async (input) => toCatalogEntry(await client.ensureSyncWorkspace(input)),
+      // Retried once without the bundle when the server refuses it, so one user
+      // action reaches the right end state instead of waiting for a later pass:
+      // the workspace binds, its real mode is recorded, and it lands locked so
+      // the UI asks for the passphrase that actually opens it. The adopt flag
+      // adoptExistingEncryption sets is the crash net, not the mechanism — it is
+      // what makes the *next* pass skip the bundle if this retry never lands.
+      //
+      // AlreadyExists is unambiguous here: on the EnsureSyncWorkspace path it is
+      // raised only for a key-material mismatch (a slug collision is
+      // disambiguated server-side, and no access denial maps to it), and the
+      // retry is attempted only when we actually sent a bundle.
+      ensureSyncWorkspace: async (input) => {
+        try {
+          return toCatalogEntry(await client.ensureSyncWorkspace(input))
+        } catch (error) {
+          const mismatch = input.encryption !== undefined
+            && error instanceof ErrCloudRequestFailed
+            && error.code === "already_exists"
+          if (!mismatch) {
+            throw error
+          }
+          this.adoptExistingEncryption(input.workspaceId)
+          // Stripped from a copy rather than rebuilt field by field, so a field
+          // added to the request later rides the retry instead of being dropped.
+          const withoutBundle = { ...input }
+          delete withoutBundle.encryption
+          return toCatalogEntry(await client.ensureSyncWorkspace(withoutBundle))
+        }
+      },
       createLocalFromCloud: (input) => {
         new WorkspaceRepository(this.options.store).createWithId({
           id: input.id,
@@ -1128,6 +1178,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
     this.settings.set(KEY_ENCRYPTION_MODE_PREFIX + workspaceId, mode)
     this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    // The adopt intent has served its purpose once the server's own answer is
+    // recorded: the row exists and its mode is known, so the next plan for this
+    // workspace comes from that mode rather than from the refusal that led here.
+    this.settings.delete(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId)
     if (mode === "none") {
       // The server provisioned this workspace in the clear — including the case
       // where we asked for E2EE and `EnsureSyncWorkspace` ignored the bundle
@@ -1238,6 +1292,11 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
 
   /** The decision recorded for a workspace that has not been provisioned yet. */
   private encryptionPlan(workspaceId: string): ReconcilerEncryptionPlan {
+    // Checked before the recorded mode, and before the bundle: the server has
+    // already refused our key for this row, so nothing local can outrank that.
+    if (this.settings.get(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId) !== undefined) {
+      return { mode: "adopt" }
+    }
     const mode = this.storedEncryptionMode(workspaceId)
     if (mode === "none") {
       return { mode: "none" }
@@ -1284,15 +1343,44 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   /**
+   * Give up on the key this device minted for a workspace the cloud already
+   * holds under a different one, and switch to adopting the stored one.
+   *
+   * The server rejects a bundle whose fingerprint is not the row's, because
+   * believing it was stored is how a device ends up sealing every record under
+   * a WDEK the server has no wrapping for — unreadable for the whole workspace,
+   * not just this device. So the minted key is dropped here rather than kept
+   * around: it can never decrypt anything in this workspace.
+   *
+   * The recorded mode deliberately stays `e2ee`. It is the truth — the row is
+   * encrypted, just not with our key — and it is what makes
+   * `registerWorkspaceKeys` treat the workspace as locked rather than plaintext
+   * on the way through. The key is re-registered as null for that same reason:
+   * an *unregistered* workspace reads as plaintext to the transport, which
+   * would push its records in the clear on the very next cycle.
+   */
+  private adoptExistingEncryption(workspaceId: string): void {
+    this.settings.set(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId, "1")
+    this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    clearCachedWdek(this.settings, workspaceId)
+    registerWorkspaceKey(workspaceId, null)
+    cloudSyncControlLog.warn(
+      `workspace ${workspaceId} already exists in the cloud under a different key; adopting it — the existing passphrase is needed`,
+    )
+  }
+
+  /**
    * Drop every trace of a workspace's encryption: the cached key, the recorded
-   * mode and the pending bundle. Called on unbind and disconnect — the key is
-   * account-scoped material and must not outlive the link. Rebinding re-reads
-   * the mode from the server and re-prompts for the passphrase.
+   * mode, the pending bundle and any adopt intent. Called on unbind and
+   * disconnect — the key is account-scoped material and must not outlive the
+   * link. Rebinding re-reads the mode from the server and re-prompts for the
+   * passphrase.
    */
   private forgetWorkspaceEncryption(workspaceId: string): void {
     clearCachedWdek(this.settings, workspaceId)
     this.settings.delete(KEY_ENCRYPTION_MODE_PREFIX + workspaceId)
     this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    this.settings.delete(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId)
     unregisterWorkspaceKey(workspaceId)
   }
 

@@ -280,12 +280,43 @@ export class ErrProtocolMismatch extends Error {
   }
 }
 
-/** A non-2xx Connect response (other than 401). Carries the HTTP status so
- * callers can react to a specific code — e.g. 409 (Aborted). */
+/** A non-2xx Connect response (other than 401).
+ *
+ * Carries the Connect error `code` as well as the HTTP status, because the
+ * status alone cannot tell two very different failures apart: Connect maps both
+ * `aborted` and `already_exists` onto HTTP 409. `code` is `undefined` when the
+ * server sent no parsable Connect error envelope — a bare proxy error page, an
+ * empty body — so a caller that must distinguish codes has to treat the absent
+ * case as "not the one I am looking for" rather than assuming a default. */
 export class ErrCloudRequestFailed extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string,
+  ) {
     super(message)
     this.name = "ErrCloudRequestFailed"
+  }
+}
+
+/**
+ * The `code` out of a Connect error envelope (`{"code":"...","message":"..."}`).
+ *
+ * Returns undefined for anything that is not one — an empty body, HTML from a
+ * proxy, a JSON array. Reading the body is best-effort by construction: it is
+ * already an error path, and failing to parse it must not replace the real
+ * failure with a parse error.
+ */
+async function connectErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const parsed = await response.json() as unknown
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined
+    }
+    const code = (parsed as { code?: unknown }).code
+    return typeof code === "string" ? code : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -581,11 +612,24 @@ export class CloudClient {
       )
       return fromJson(ResolveConflictResponseSchema, json, { ignoreUnknownFields: true })
     } catch (error) {
-      // Aborted (HTTP 409) here means "keep local" hit the server's rev guard:
-      // the record moved past the snapshot's cloud_rev. Surface it as a stale
-      // conflict so the caller can recover instead of showing a raw transport
-      // error.
-      if (error instanceof ErrCloudRequestFailed && error.status === 409) {
+      // Aborted here means "keep local" hit the server's rev guard: the record
+      // moved past the snapshot's cloud_rev. Surface it as a stale conflict so
+      // the caller can recover instead of showing a raw transport error.
+      //
+      // Matched on the Connect code, not on HTTP 409, which `already_exists`
+      // also maps to. ResolveConflict routes every domain error through the
+      // server's mapSyncError, whose only 409 is Aborted, so the status was an
+      // accurate proxy — but it stopped being a safe one the moment another 409
+      // became reachable elsewhere on this client.
+      //
+      // The status still stands in when no code came back at all (a proxy's
+      // error page, an empty body). Dropping that would turn a stale conflict
+      // into an unrecoverable raw transport error whenever the envelope is
+      // unreadable, and on this RPC a 409 has no other meaning to confuse it
+      // with.
+      const stale = error instanceof ErrCloudRequestFailed
+        && (error.code === "aborted" || (error.code === undefined && error.status === 409))
+      if (stale) {
         throw new ErrCloudConflictStale()
       }
       throw error
@@ -722,9 +766,11 @@ export class CloudClient {
     }
 
     if (!response.ok) {
+      const code = await connectErrorCode(response)
       throw new ErrCloudRequestFailed(
         response.status,
-        `Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}`,
+        `Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}${code === undefined ? "" : ` (${code})`}`,
+        code,
       )
     }
 
