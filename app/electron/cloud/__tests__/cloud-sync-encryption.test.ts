@@ -579,10 +579,14 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
     settings.set(`cloud.e2ee.adopt.${WORKSPACE_ID}`, "1")
 
-    await expect(control().setWorkspaceEncryption({
+    const rejection = control().setWorkspaceEncryption({
       workspaceId: WORKSPACE_ID,
       passphrase: "a different passphrase entirely",
-    })).rejects.toThrow(CloudWorkspaceLockedError)
+    })
+    await expect(rejection).rejects.toThrow(CloudWorkspaceLockedError)
+    // The generic rewrap wording would tell a user who never set a passphrase to
+    // enter their "current" one before "changing" it.
+    await expect(rejection).rejects.toThrow(/already encrypted in the cloud with a different passphrase/)
 
     expect(settings.get(`cloud.e2ee.pending.${WORKSPACE_ID}`)).toBeUndefined()
     expect(workspaceWdek(WORKSPACE_ID)).toBeNull()

@@ -264,7 +264,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     // server holds no wrapping for the moment the binding appears. The way in
     // is the passphrase that already opens the row.
     if (this.settings.get(KEY_ENCRYPTION_ADOPT_PREFIX + input.workspaceId) !== undefined) {
-      throw new CloudWorkspaceLockedError()
+      throw new CloudWorkspaceLockedError(
+        "This workspace is already encrypted in the cloud with a different passphrase. "
+          + "Enter that passphrase to unlock it — a new one can't replace it.",
+      )
     }
     const { bundle, wdek } = createEncryptionBundle(input.passphrase)
     // Decision and bundle land together, before any network call: a crash
@@ -1184,9 +1187,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.settings.delete(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId)
     if (mode === "none") {
       // The server provisioned this workspace in the clear — including the case
-      // where we asked for E2EE and `EnsureSyncWorkspace` ignored the bundle
-      // because the row already existed. Drop the key we minted; keeping it
-      // would seal records under a key the server does not know about.
+      // where we asked for E2EE, `EnsureSyncWorkspace` refused the bundle because
+      // the row already existed as plaintext, and the bundle-less retry adopted
+      // it. Drop the key we minted; keeping it would seal records under a key the
+      // server does not know about.
       clearCachedWdek(this.settings, workspaceId)
     }
     this.registerWorkspaceKeys([{ workspaceId }])

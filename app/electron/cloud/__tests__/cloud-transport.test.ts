@@ -2323,6 +2323,58 @@ describe("CloudSyncProvider", () => {
       expect(store.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(0)
     })
 
+    // The intersection the rest of this file misses: idempotency and encryption
+    // were each covered alone, and the bug lived only where they meet. Sealing
+    // happens per attempt inside pushRow, with a fresh nonce every time, so a
+    // retried row goes out under the SAME idempotency key carrying DIFFERENT
+    // bytes. A server that stores the payload bytes to recognise a replay can
+    // therefore never match a sealed retry — it wedges the row forever, because
+    // no further attempt will ever produce the bytes it recorded.
+    it("re-seals a retried row under the same idempotency key", async () => {
+      setWorkspaceEncryption(WORKSPACE_ID, WDEK)
+      const bound = boundProvider()
+      const outboxId = bound.enqueue({
+        kind: "workflow",
+        record_id: "workflow-retried",
+        workspace_id: WORKSPACE_ID,
+        expected_rev: 0,
+        op: "upsert",
+        payload: new TextEncoder().encode(JSON.stringify({ name: CANARY, nodes: [], edges: [], variables: {} })),
+      })
+
+      const keys: string[] = []
+      const ciphertexts: string[] = []
+      const capture = (body: unknown): boolean => {
+        keys.push((body as { idempotencyKey?: string }).idempotencyKey ?? "")
+        ciphertexts.push(String(wirePayload(body)["ct"]))
+        return true
+      }
+
+      // Attempt one dies in transport, so this device never learns the outcome.
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", capture)
+        .reply(503, { code: "UNAVAILABLE" })
+      await expect(bound.push()).rejects.toThrow()
+
+      // Skip the backoff the failure just set, exactly as the scheduler would.
+      store.set("UPDATE cloud_outbox SET next_retry_at = 0 WHERE id = ?", [outboxId])
+
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", capture)
+        .reply(200, {
+          outcomes: [{ deltaIndex: 0, status: 1, newRev: "1", rejectionReason: 0, conflictId: "" }],
+        })
+      await bound.push()
+
+      // Same durable row id both times: this is what the server matches on.
+      expect(keys).toEqual([outboxId, outboxId])
+      // …and the bytes underneath it are not stable, which is the whole point.
+      expect(ciphertexts).toHaveLength(2)
+      expect(ciphertexts[0]).not.toBe(ciphertexts[1])
+      expect(store.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(0)
+      expect(nock.isDone()).toBe(true)
+    })
+
     it("pushes an unencrypted workspace exactly as it does today", async () => {
       const bound = boundProvider()
       bound.enqueue({

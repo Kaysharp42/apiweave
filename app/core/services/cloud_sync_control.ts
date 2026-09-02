@@ -143,11 +143,18 @@ export class CloudWorkspacePassphraseIncorrectError extends Error {
  * The workspace's key is not held on this device, so there is nothing to
  * re-wrap. Unlocking first is strictly better than minting a new key, which
  * would strand every record already sealed under the old one.
+ *
+ * The message is overridable because one caller is not a rewrap at all: a
+ * workspace whose key the server has already refused is locked before this
+ * device ever set a passphrase, and telling that user to enter "its current
+ * passphrase before changing it" describes a change they never asked for.
  */
 // fallow-ignore-next-line code-duplication
 export class CloudWorkspaceLockedError extends Error {
-  public constructor() {
-    super("This workspace is locked. Unlock it with its current passphrase before changing it.")
+  public constructor(
+    message = "This workspace is locked. Unlock it with its current passphrase before changing it.",
+  ) {
+    super(message)
     this.name = "CloudWorkspaceLockedError"
   }
 }
