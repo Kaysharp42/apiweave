@@ -13,6 +13,9 @@ const tint =
       ? `rgb(var(--aw-tint-rgb) / ${alpha})`
       : `rgb(var(--aw-tint-rgb) / calc(${alpha} * ${opacityValue}))`;
 
+/** The tint at the alpha a role is drawn at — both are theme-owned values. */
+const role = (name) => tint(`var(${name})`);
+
 /** A surface channel triple, still modifier-aware (`bg-surface/90`). */
 const surface = (name) => `rgb(var(${name}) / <alpha-value>)`;
 
@@ -56,15 +59,16 @@ export default {
           DEFAULT: surface("--aw-surface-rgb"),
           raised: surface("--aw-surface-raised-rgb"),
           overlay: surface("--aw-surface-overlay-rgb"),
+          sunken: surface("--aw-surface-sunken-rgb"),
           dark: surface("--aw-surface-rgb"),
           "dark-raised": surface("--aw-surface-raised-rgb"),
           "dark-overlay": surface("--aw-surface-overlay-rgb"),
         },
         border: {
-          DEFAULT: tint(0.1),
-          dark: tint(0.1),
-          default: tint(0.1),
-          "default-dark": tint(0.1),
+          DEFAULT: role("--aw-a-border"),
+          dark: role("--aw-a-border"),
+          default: role("--aw-a-border"),
+          "default-dark": role("--aw-a-border"),
           focus: "var(--aw-border-focus)",
           "focus-dark": "var(--aw-border-focus)",
         },
@@ -73,12 +77,12 @@ export default {
           dark: "var(--aw-text-primary)",
         },
         "text-secondary": {
-          DEFAULT: tint(0.65),
-          dark: tint(0.65),
+          DEFAULT: role("--aw-a-secondary"),
+          dark: role("--aw-a-secondary"),
         },
         "text-muted": {
-          DEFAULT: tint(0.45),
-          dark: tint(0.45),
+          DEFAULT: role("--aw-a-muted"),
+          dark: role("--aw-a-muted"),
         },
         status: {
           success: "#15803d", // green-700
@@ -188,10 +192,11 @@ export default {
           "accent-content": "#ffffff",
           neutral: "#18181b",
           "neutral-content": "#fafafa",
-          "base-100": "#fafafa",
-          "base-200": "#f4f4f5",
-          "base-300": "#e4e4e7",
-          "base-content": "#09090b",
+          // Mirrors the light surfaces and warm ink in base.css.
+          "base-100": "#fbf8f3",
+          "base-200": "#f3efe7",
+          "base-300": "#eae7e2",
+          "base-content": "#3a3026",
           info: "#1d4ed8",
           "info-content": "#ffffff",
           success: "#15803d",

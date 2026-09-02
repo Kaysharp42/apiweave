@@ -89,14 +89,33 @@ export function tokenColor(name: string, theme: Theme, depth = 0): Rgba {
   const alias = value.match(/^var\(--([\w-]+)\)$/);
   if (alias?.[1] !== undefined) return tokenColor(alias[1], theme, depth + 1);
 
-  // `rgb(var(--other))` and `rgb(var(--other) / 0.45)`
-  const composed = value.match(/^rgb\(var\(--([\w-]+)\)(?:\s*\/\s*([\d.]+))?\)$/);
+  // `rgb(var(--other))`, `rgb(var(--other) / 0.45)`, and the alpha-token form
+  // `rgb(var(--other) / var(--aw-a-muted))` — how a role's alpha becomes a
+  // theme-owned value in its own right.
+  const composed = value.match(
+    /^rgb\(var\(--([\w-]+)\)(?:\s*\/\s*(var\(--[\w-]+\)|[\d.]+))?\)$/,
+  );
   if (composed?.[1] !== undefined) {
     const base = tokenColor(composed[1], theme, depth + 1);
-    return { ...base, a: composed[2] === undefined ? base.a : Number(composed[2]) };
+    const alpha = composed[2];
+    if (alpha === undefined) return base;
+    return { ...base, a: tokenAlpha(alpha, theme, depth + 1) };
   }
 
   throw new Error(`--${name} in ${theme} is not a resolvable colour: ${value}`);
+}
+
+/** An alpha slot: either a literal or a `var(--aw-a-*)` scalar token. */
+function tokenAlpha(value: string, theme: Theme, depth: number): number {
+  const alias = value.match(/^var\(--([\w-]+)\)$/);
+  if (alias?.[1] === undefined) return Number(value);
+  if (depth > 4) throw new Error(`alpha alias chain too deep: ${value}`);
+
+  const declared = inheritedDeclaration(alias[1], theme);
+  if (declared === undefined) {
+    throw new Error(`--${alias[1]} is not declared in ${theme}`);
+  }
+  return tokenAlpha(declared, theme, depth + 1);
 }
 
 /** Composite a translucent foreground over an opaque background. */

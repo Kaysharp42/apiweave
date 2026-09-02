@@ -6,19 +6,20 @@ colors:
   primary-light: "#0f766e"
   primary-hover: "#0b4a59"
   primary-dark: "#0b3d49"
-  surface: "#fafafa"
-  surface-raised: "#ffffff"
-  surface-overlay: "#f4f4f5"
+  surface: "#fbf8f3"
+  surface-raised: "#fdfbf7"
+  surface-overlay: "#f3efe7"
+  surface-sunken: "#f5f1ea"
   surface-dark: "#09090b"
   surface-dark-raised: "#18181b"
   surface-dark-overlay: "#27272a"
-  text-primary: "#09090b"
-  text-secondary: "#5f5f60"
-  text-muted: "#909091"
+  text-primary: "#3a3026"
+  text-secondary: "#655d54"
+  text-muted: "#88817a"
   text-primary-dark: "#fafafa"
   text-secondary-dark: "#ababac"
   text-muted-dark: "#7e7e7f"
-  border: "#e6e6e7"
+  border: "#eae7e2"
   border-dark: "#2f2f31"
   border-focus: "#0d5c6e"
   border-focus-dark: "#2dd4bf"
@@ -124,21 +125,21 @@ components:
 
 APIWeave is a developer tool for building visual API test workflows. Its design philosophy descends from the workshop, not the gallery: every surface exists to make the tool disappear into the task. The interface is a workbench — organized, well-lit, with every instrument within reach and nothing decorative on the table.
 
-The system rests on a foundation of **earned familiarity.** Users should sit down and trust this interface within seconds because it behaves like the best tools they already use: consistent affordances, predictable navigation, density without clutter. The palette is restrained — zinc-neutral surfaces with a single ink-teal accent used sparingly to signal primary actions, active states, and focus. Shadows are minimal (separation comes from hairline borders, not elevation). Typography runs on one family (Inter) across the entire surface; JetBrains Mono is reserved for code, JSON, and URLs.
+The system rests on a foundation of **earned familiarity.** Users should sit down and trust this interface within seconds because it behaves like the best tools they already use: consistent affordances, predictable navigation, density without clutter. The palette is restrained — warm paper surfaces in light, zinc-neutral in dark, with a single ink-teal accent used sparingly to signal primary actions, active states, and focus. Shadows are minimal (separation comes from hairline borders, not elevation). Typography runs on one family (Inter) across the entire surface; JetBrains Mono is reserved for code, JSON, and URLs.
 
 The Swiss-minimalist tradition is the root, but this is not a design exercise — it's a production tool for API engineers who spend hours in it. Every pixel is justified by the task.
 
 **Key Characteristics:**
-- **Restrained palette** — zinc neutrals + one ink-teal accent, used at ≤10% of any given screen
+- **Restrained palette** — warm paper (light) / zinc neutrals (dark) + one ink-teal accent, used at ≤10% of any given screen
 - **One-family typography** — Inter carries body, headlines, labels, and UI. JetBrains Mono reserved for code
-- **Hairline borders over shadows** — separation via 1px zinc-200/800 lines, not drop shadows
+- **Hairline borders over shadows** — separation via 1px tint-at-10% lines, not drop shadows
 - **Compact density** — developer tool pacing: information-dense but never cramped
 - **Balanced light/dark mode** — both are first-class; light mode is not an afterthought
 - **State-rich semantics** — every interactive element defines default, hover, focus, active, disabled, loading, and error
 
 ## 2. Colors
 
-The palette is intentionally restrained. One ink-teal accent on a zinc-neutral base. Color saturation is reserved for semantic meaning — status, method, state — never decoration.
+The palette is intentionally restrained. One ink-teal accent on a neutral base — warm paper in light, zinc in dark. Color saturation is reserved for semantic meaning — status, method, state — never decoration.
 
 ### Primary
 
@@ -154,11 +155,12 @@ Anything that needs a *hex* per theme (strong ink, the accent, status, methods)
 says so explicitly. `src/styles/base.css` is the only file where a neutral
 value is written down; `tailwind.config.js` resolves through it.
 
-- **Ink tint** (`9 9 11` light / `250 250 250` dark): zinc-950 and zinc-50 as
-  channels. The one value a theme flip changes.
-- **Zinc-50** (#fafafa): Page background in light mode. Near-white, cool-neutral, minimal chroma.
-- **White** (#ffffff): Raised surfaces — cards, panels, modals — in light mode.
-- **Zinc-100** (#f4f4f5): Overlay/hover backgrounds in light mode. Dropdowns, popovers.
+- **Ink tint** (`58 48 38` light / `250 250 250` dark): a warm near-black, and
+  zinc-50. The one value a theme flip changes.
+- **Paper** (#fbf8f3): Page background in light mode.
+- **Card** (#fdfbf7): Raised surfaces — cards, panels, modals — in light mode.
+- **Panel** (#f3efe7): Overlay/hover backgrounds in light mode. Dropdowns, popovers.
+- **Sunken** (#f5f1ea): The canvas backdrop. Darker than a node on purpose (see below).
 - **Zinc-950** (#09090b): Dark mode page background. Near-black, cool-neutral.
 - **Zinc-900** (#18181b): Dark mode raised surfaces.
 - **Zinc-800** (#27272a): Dark mode overlay/hover background.
@@ -170,9 +172,10 @@ value is written down; `tailwind.config.js` resolves through it.
 
 ### Text
 
-- **Ink** (#09090b / #fafafa dark): Primary text, headings. The one text role that stays a hex. Full contrast against respective surfaces; body text passes 4.5:1 minimum.
-- **Mist** (tint at 65%): Secondary text — labels, descriptions, metadata. 6.4:1 on white, 7.7:1 on zinc-900. Carries content, so it holds the 4.5:1 body floor.
-- **Dust** (tint at 45%): Placeholder text, hints, disabled content. **3.2:1 on white** — it clears the 3:1 non-text floor but not 4.5:1. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead.
+- **Ink** (tint at 100% — #3a3026 / #fafafa dark): Primary text, headings. Strong ink is simply the tint undiluted, so it needs no per-theme value of its own. 12.5:1 on a card.
+- **Mist** (tint at 78% light / 65% dark): Secondary text — labels, descriptions, metadata. 6.3:1 on a card, 7.7:1 on zinc-900. Carries content, so it holds the 4.5:1 body floor.
+- **Dust** (tint at 60% light / 45% dark): Placeholder text, hints, disabled content. **3.7:1 on a card** — it clears the 3:1 non-text floor but not 4.5:1. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (tint at 72%, 5.2:1) instead.
+- **The alphas are per theme, the tint is not.** A warm ink is lighter than zinc-950, so the same alpha over a warm ground reads weaker; light pays for its warmth by drawing the quiet roles harder (`--aw-a-secondary`, `--aw-a-muted`). Only those two scalars differ between themes — no colour role does.
 - **Enforcement:** `src/styles/__tests__/theme-contrast.test.ts` computes every text/surface pair in both themes from `base.css` itself, and `src/components/__tests__/node-layer-contrast.test.ts` applies the tighter node-layer floors. Retuning an alpha is safe because those two tests recompute; changing one without running them is not.
 
 ### Semantic Status
@@ -192,6 +195,16 @@ All status colors are paired with distinct icons and text labels — never encod
 ### Named Rules
 
 **The One Voice Rule.** The ink-teal accent is used on ≤10% of any given screen. Its rarity is the point — when the user sees it, they know it means "act here" or "this is current."
+
+**The No-255 Rule.** No light surface reaches 255 on any channel. The page is
+#fbf8f3, a card #fdfbf7. This is an app someone sits in front of all day; it
+should not be the brightest thing the screen can do. The warmth is also not
+decoration — it is what lets four surfaces be told apart without four borders.
+
+**The Sunken Canvas Rule.** The canvas backdrop (#f5f1ea) is darker than the
+nodes on it (#fdfbf7). Reverse that and a node loses its edge against its own
+stage, which no amount of border fixes. Dark mode gets this for free: the page
+is already the darkest thing in the app.
 
 **The Status-Only Saturation Rule.** Fully saturated colors (green, red, amber, blue, yellow) are reserved exclusively for semantic status and HTTP methods. They never appear as decorative accents, backgrounds, or branding flourishes.
 

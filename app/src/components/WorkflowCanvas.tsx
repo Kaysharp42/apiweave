@@ -1116,7 +1116,7 @@ export function WorkflowCanvas({
   return (
     <main
       ref={canvasRef}
-      className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
+      className="w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300"
       aria-label="Workflow canvas"
     >
       <div
