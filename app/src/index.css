@@ -242,24 +242,44 @@
   transition:
     background-color var(--aw-dur-fast) var(--aw-ease-standard),
     box-shadow var(--aw-dur-fast) var(--aw-ease-standard),
+    opacity var(--aw-dur-fast) var(--aw-ease-standard),
     width var(--aw-dur-fast) var(--aw-ease-standard),
     height var(--aw-dur-fast) var(--aw-ease-standard);
 }
 
-/* On approach the accent appears: "you can touch this". */
+/* A socket with an edge on it has said everything it has to say: the edge is
+   the affordance now, and the dot underneath is only clutter. It comes back on
+   approach, below. A socket with *no* edge stays visible — it is the only
+   thing on the canvas that says a node can be connected at all. */
+.aw-node-handle[data-connected="true"] .aw-node-handle__dot {
+  opacity: 0;
+}
+
+/* On approach the accent appears: "you can touch this". Bigger than the
+   resting socket and carrying a soft accent halo, which is what makes it
+   findable the moment it is shown. */
 .react-flow__node:hover .aw-node-handle .aw-node-handle__dot,
 .react-flow__handle-connecting .aw-node-handle__dot,
 .react-flow__handle.connectionindicator:hover .aw-node-handle__dot {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
+  opacity: 1;
   background-color: var(--aw-handle-color, var(--aw-primary));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 35%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--aw-primary) 35%, transparent),
+    0 0 8px color-mix(in srgb, var(--aw-primary) 55%, transparent);
 }
 
 .react-flow__handle.aw-node-handle:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: 1px;
   border-radius: var(--aw-radius-node-rail);
+}
+
+/* Keyboard focus reveals the socket too, or tabbing onto a connected handle
+   would ring an empty box. */
+.react-flow__handle.aw-node-handle:focus-visible .aw-node-handle__dot {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

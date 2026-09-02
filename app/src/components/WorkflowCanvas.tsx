@@ -1119,10 +1119,10 @@ export function WorkflowCanvas({
       className="w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300"
       aria-label="Workflow canvas"
     >
-      <div
-        className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none"
-        aria-hidden="true"
-      />
+      {/* Removed: a second, static 32px line grid drawn over this one. It was
+          pinned to the viewport rather than the canvas, so it did not move
+          when the canvas did — the exact opposite of what a backdrop is for.
+          The dot grid below is the surface; it pans and zooms with the graph. */}
       {/* Noise overlay with mix-blend removed for 60fps pan: mix-blend-multiply
           forces a full-viewport blend on every transform frame, preventing the
           viewport from staying on a single composited layer. Re-introduce only
@@ -1174,7 +1174,13 @@ export function WorkflowCanvas({
         <Background
           variant={BackgroundVariant.Dots}
           gap={24}
-          size={1}
+          // Bigger, and quieter than it looks: 22% of `--aw-text-muted` used
+          // to be 22% of a solid grey, and that token is now itself an alpha
+          // of the tint — so the same number lands at about 0.13 rather than
+          // 0.22. A 1px dot at that strength disappears the moment anyone
+          // zooms out, and the canvas stops reading as a surface at all;
+          // 2.5px survives the zoom without getting louder up close.
+          size={2.5}
           color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
 
