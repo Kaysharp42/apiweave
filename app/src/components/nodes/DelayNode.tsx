@@ -1,22 +1,12 @@
-import { memo, useCallback, useMemo } from "react";
-import { useReactFlow } from "@xyflow/react";
-import type { CanvasNode } from "../../types/CanvasNode";
+import { memo, useMemo } from "react";
+import { useNodeConfigPatch } from "../../hooks/useNodeConfigPatch";
 import { Clock } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import type { DelayNodeProps } from "../../types/DelayNodeProps";
 
 const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
-  const { updateNodeData: patchNodeData } = useReactFlow<CanvasNode>();
-
-  const updateNodeData = useCallback(
-    (value: number) => {
-      patchNodeData(id, (node) => ({
-        config: { ...node.data.config, duration: value },
-      }));
-    },
-    [id, patchNodeData],
-  );
+  const patchConfig = useNodeConfigPatch(id);
 
   const duration = data.config?.duration ?? 1000;
   const humanLabel =
@@ -65,7 +55,9 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
                 aria-label="Delay duration in milliseconds"
                 className="nodrag flex-1 px-1.5 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
                 value={duration}
-                onChange={(e) => updateNodeData(parseInt(e.target.value) || 0)}
+                onChange={(e) =>
+                  patchConfig("duration", parseInt(e.target.value) || 0)
+                }
                 min="0"
               />
               <span className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark">
