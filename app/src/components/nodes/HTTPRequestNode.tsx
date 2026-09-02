@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useReactFlow } from "reactflow";
+import { useReactFlow } from "@xyflow/react";
+import type { CanvasNode } from "../../types/CanvasNode";
 import { useWorkflow } from "../../contexts/WorkflowContext";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import FileUploadSection from "../FileUploadSection";
@@ -390,26 +391,16 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
 };
 
 const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
-  const { setNodes } = useReactFlow();
+  const { updateNodeData: patchNodeData } = useReactFlow<CanvasNode>();
   const { variables } = useWorkflow();
 
   const updateNodeData = useCallback(
     (field: string, value: unknown) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: { ...node.data.config, [field]: value },
-                },
-              }
-            : node,
-        ),
-      );
+      patchNodeData(id, (node) => ({
+        config: { ...node.data.config, [field]: value },
+      }));
     },
-    [id, setNodes],
+    [id, patchNodeData],
   );
 
   const method = (data.config?.method ?? "GET") as HttpMethod;

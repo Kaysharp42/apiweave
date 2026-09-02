@@ -22,7 +22,7 @@ import {
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { renderHook, act } from "@testing-library/react";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 

@@ -109,13 +109,12 @@ const BRANCH_PROBE_NODES = 12;
 const NEARER_BY_PX = 320;
 
 /** The canvas node this needs: an id and where it sits. Structural so the tracker
- * stays free of ReactFlow. Both position fields, and in that order, because that
- * is what the aim reads in `attentionPointFor` — the branch the chooser calls near
- * and the point the camera aims at have to be the same place. */
+ * stays free of ReactFlow. The same field `attentionPointFor` reads — the branch
+ * the chooser calls near and the point the camera aims at have to be the same
+ * place. */
 interface FrontsNode {
   readonly id: string;
   readonly position?: { readonly x: number; readonly y: number };
-  readonly positionAbsolute?: { readonly x: number; readonly y: number };
 }
 
 export function createFronts(
@@ -129,7 +128,7 @@ export function createFronts(
     // run and a live ReactFlow position object is not ours to trust.
     positions: new Map(
       nodes.flatMap((node) => {
-        const at = node.positionAbsolute ?? node.position;
+        const at = node.position;
         return at ? [[node.id, { x: at.x, y: at.y }] as const] : [];
       }),
     ),

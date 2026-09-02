@@ -1,4 +1,4 @@
-import type { Node, Edge } from "reactflow";
+import type { Node, Edge } from "@xyflow/react";
 import { dagreLayoutPositions, NODE_FALLBACK_WIDTH, NODE_FALLBACK_HEIGHT } from "@shared/layout/dagreLayout";
 
 export { NODE_FALLBACK_WIDTH, NODE_FALLBACK_HEIGHT };

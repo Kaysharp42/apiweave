@@ -2,7 +2,7 @@ import type { Workflow } from "@shared/types/Workflow";
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema";
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
-import type { Edge, Node } from "reactflow";
+import type { Edge, Node } from "@xyflow/react";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";

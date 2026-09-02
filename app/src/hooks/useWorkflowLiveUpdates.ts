@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Edge, Node } from "reactflow";
+import type { Edge, Node } from "@xyflow/react";
 import type { Workflow } from "@shared/types/Workflow";
 import type { JsonValue } from "@shared/types/JsonValue";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";

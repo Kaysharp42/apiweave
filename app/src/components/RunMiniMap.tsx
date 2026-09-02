@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { zoom, zoomIdentity, type D3ZoomEvent } from "d3-zoom";
+import { zoom, type D3ZoomEvent } from "d3-zoom";
 import { select } from "d3-selection";
-import { Panel, useStore, useStoreApi, type Node } from "reactflow";
+import { Panel, useStore, useStoreApi, type Node } from "@xyflow/react";
 import type { RunMiniMapProps } from "../types/RunMiniMapProps";
 import type { MinimapTransformView } from "../types/MinimapTransformView";
 import {
@@ -48,7 +48,7 @@ function wheelDeltaPx(event: WheelEvent): number {
 
 /** A colour knob is either one colour or one per node; the renderer only wants
  * the second form. */
-function colorFn<TData>(
+function colorFn<TData extends Record<string, unknown>>(
   colour: string | ((node: Node<TData>) => string) | undefined,
   fallback: string,
 ): (node: Node<TData>) => string {
@@ -64,7 +64,7 @@ function shapeRenderingFor(): "crispEdges" | "geometricPrecision" {
   return chromium ? "crispEdges" : "geometricPrecision";
 }
 
-export function RunMiniMap<TData>({
+export function RunMiniMap<TData extends Record<string, unknown>>({
   nodes,
   frozen,
   paint = {},
@@ -101,15 +101,14 @@ export function RunMiniMap<TData>({
   // One rect per node, index-aligned with `nodes`, so the colour functions get
   // their node back without a lookup.
   const entries = nodes.map((node) => {
-    const position = node.positionAbsolute ?? node.position;
     return {
       node,
       rect: {
         id: node.id,
-        x: position.x,
-        y: position.y,
-        width: node.width ?? 0,
-        height: node.height ?? 0,
+        x: node.position.x,
+        y: node.position.y,
+        width: node.measured?.width ?? node.width ?? 0,
+        height: node.measured?.height ?? node.height ?? 0,
         selected: node.selected ?? false,
       },
     };
@@ -149,45 +148,33 @@ export function RunMiniMap<TData>({
       event: D3ZoomEvent<SVGSVGElement, unknown>,
     ): void => {
       const state = store.getState();
-      if (
-        (event.sourceEvent as WheelEvent).type !== "wheel" ||
-        !state.d3Selection ||
-        !state.d3Zoom
-      ) {
+      if ((event.sourceEvent as WheelEvent).type !== "wheel" || !state.panZoom) {
         return;
       }
       const pinchDelta = -wheelDeltaPx(event.sourceEvent as WheelEvent) * ZOOM_STEP;
       const nextZoom = state.transform[2] * Math.pow(2, pinchDelta);
-      state.d3Zoom.scaleTo(state.d3Selection, nextZoom);
+      void state.panZoom.scaleTo(nextZoom);
     };
     const panHandler = (event: D3ZoomEvent<SVGSVGElement, unknown>): void => {
       const state = store.getState();
-      if (
-        (event.sourceEvent as MouseEvent).type !== "mousemove" ||
-        !state.d3Selection ||
-        !state.d3Zoom
-      ) {
+      if ((event.sourceEvent as MouseEvent).type !== "mousemove" || !state.panZoom) {
         return;
       }
       const sourceEvent = event.sourceEvent as MouseEvent;
       const moveScale = viewScaleRef.current * Math.max(1, state.transform[2]);
-      const position = {
-        x: state.transform[0] - sourceEvent.movementX * moveScale,
-        y: state.transform[1] - sourceEvent.movementY * moveScale,
-      };
       const extent: [[number, number], [number, number]] = [
         [0, 0],
         [state.width, state.height],
       ];
-      const nextTransform = zoomIdentity
-        .translate(position.x, position.y)
-        .scale(state.transform[2]);
-      const constrainedTransform = state.d3Zoom.constrain()(
-        nextTransform,
+      void state.panZoom.setViewportConstrained(
+        {
+          x: state.transform[0] - sourceEvent.movementX * moveScale,
+          y: state.transform[1] - sourceEvent.movementY * moveScale,
+          zoom: state.transform[2],
+        },
         extent,
         state.translateExtent,
       );
-      state.d3Zoom.transform(state.d3Selection, constrainedTransform);
     };
 
     const zoomAndPan = zoom<SVGSVGElement, unknown>();

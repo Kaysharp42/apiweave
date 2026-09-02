@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useMemo } from "react";
-import { useReactFlow } from "reactflow";
+import { useReactFlow } from "@xyflow/react";
+import type { CanvasNode } from "../../types/CanvasNode";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { NodeHandle } from "../atoms/flow/NodeHandle";
 import AssertionEditor from "../AssertionEditor";
@@ -245,7 +246,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
 };
 
 const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
-  const { setNodes } = useReactFlow();
+  const { updateNodeData: patchNodeData } = useReactFlow<CanvasNode>();
   const [editingIndex, setEditingIndex] = useState(-1);
   const [editDraft, setEditDraft] = useState<AssertionItem | null>(null);
 
@@ -299,21 +300,11 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
 
   const updateNodeData = useCallback(
     (key: string, value: unknown) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: { ...node.data.config, [key]: value },
-                },
-              }
-            : node,
-        ),
-      );
+      patchNodeData(id, (node) => ({
+        config: { ...node.data.config, [key]: value },
+      }));
     },
-    [id, setNodes],
+    [id, patchNodeData],
   );
 
   const handleAddAssertion = (assertion: AssertionItem) => {

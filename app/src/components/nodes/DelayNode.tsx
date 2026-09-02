@@ -1,30 +1,21 @@
 import { memo, useCallback, useMemo } from "react";
-import { useReactFlow } from "reactflow";
+import { useReactFlow } from "@xyflow/react";
+import type { CanvasNode } from "../../types/CanvasNode";
 import { Clock } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import type { DelayNodeProps } from "../../types/DelayNodeProps";
 
 const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
-  const { setNodes } = useReactFlow();
+  const { updateNodeData: patchNodeData } = useReactFlow<CanvasNode>();
 
   const updateNodeData = useCallback(
     (value: number) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: { ...node.data.config, duration: value },
-                },
-              }
-            : node,
-        ),
-      );
+      patchNodeData(id, (node) => ({
+        config: { ...node.data.config, duration: value },
+      }));
     },
-    [id, setNodes],
+    [id, patchNodeData],
   );
 
   const duration = data.config?.duration ?? 1000;

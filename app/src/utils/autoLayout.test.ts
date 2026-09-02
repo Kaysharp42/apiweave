@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { Position, getBezierPath } from "reactflow";
-import type { Edge, Node } from "reactflow";
+import { Position, getBezierPath } from "@xyflow/react";
+import type { Edge, Node } from "@xyflow/react";
 import { autoLayout } from "./autoLayout";
 
 /**

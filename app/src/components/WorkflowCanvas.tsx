@@ -7,7 +7,8 @@ import {
   useMemo,
   type MutableRefObject,
 } from "react";
-import ReactFlow, {
+import {
+  ReactFlow,
   Controls,
   ControlButton,
   Background,
@@ -25,8 +26,8 @@ import ReactFlow, {
   type NodeTypes,
   type EdgeTypes,
   type ReactFlowInstance,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import AssertionNode from "./nodes/AssertionNode";
@@ -89,6 +90,8 @@ import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+import type { CanvasNode } from "../types/CanvasNode";
+import type { CanvasEdge } from "../types/CanvasEdge";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
@@ -197,10 +200,8 @@ export function WorkflowCanvas({
   } = useWorkflow();
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
-  const [nodes, setNodes, onNodesChange] =
-    useNodesState<WorkflowCanvasNodeData>(initialNodes);
-  const [edges, setEdges, onEdgesChange] =
-    useEdgesState<WorkflowCanvasEdgeData>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
 
   const nodesRef = useRef(nodes);
   useEffect(() => {
@@ -228,11 +229,11 @@ export function WorkflowCanvas({
   }, [workflowVariables]);
 
   const reactFlowInstanceRef = useRef<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>(null) as MutableRefObject<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>;
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
@@ -1061,17 +1062,18 @@ export function WorkflowCanvas({
     return "var(--aw-border)";
   }, []);
 
-  const rfInstanceRef = useRef<
-    Parameters<NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>>[0] | null
-  >(null);
+  const rfInstanceRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
+    null,
+  );
 
-  const handleInit = useCallback<
-    NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>
-  >((instance) => {
-    rfInstanceRef.current = instance;
-    (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
-      instance;
-  }, []);
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
+      rfInstanceRef.current = instance;
+      (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
+        instance;
+    },
+    [],
+  );
 
   // Position changes flow through onNodesChange, so the 700ms autosave persists them.
   const handleAutoLayout = useCallback(() => {

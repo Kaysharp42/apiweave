@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { Node, XYPosition } from "reactflow";
+import type { Node, XYPosition } from "@xyflow/react";
 
 interface NodeConfig {
   method?: string;

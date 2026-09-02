@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
 } from "react";
 import { toast } from "sonner";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import {
   apiweave,
   onRunProgress,

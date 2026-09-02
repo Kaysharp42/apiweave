@@ -8,7 +8,7 @@ import { createElement, type ReactElement } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ReactFlowProvider } from "reactflow";
+import { ReactFlowProvider } from "@xyflow/react";
 import { Save } from "lucide-react";
 import { Button } from "./Button";
 import { IconButton } from "./IconButton";

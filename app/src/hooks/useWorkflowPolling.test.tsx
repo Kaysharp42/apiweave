@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import useWorkflowPolling from "./useWorkflowPolling";
 

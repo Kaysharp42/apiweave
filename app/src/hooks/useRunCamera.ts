@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import type { Edge, Node, Viewport } from "reactflow";
+import type { Edge, Node, Viewport } from "@xyflow/react";
 import {
   CanvasCornerGutter,
   CanvasToolbarBand,
@@ -141,7 +141,7 @@ function attentionPointFor(
   node: Node | undefined,
   record: SeenRunNode,
 ): AttentionPoint | null {
-  const position = node?.positionAbsolute ?? node?.position;
+  const position = node?.position;
   if (!node || !position) return null;
 
   return {
@@ -149,8 +149,8 @@ function attentionPointFor(
     y: position.y,
     // ReactFlow fills these in once it has measured; a node still waiting for its
     // first `dimensions` change gets the layout's own guess.
-    width: node.width ?? NODE_FALLBACK_WIDTH,
-    height: node.height ?? NODE_FALLBACK_HEIGHT,
+    width: node.measured?.width ?? node.width ?? NODE_FALLBACK_WIDTH,
+    height: node.measured?.height ?? node.height ?? NODE_FALLBACK_HEIGHT,
     running: record.running,
     since: record.since,
   };
