@@ -1,3 +1,21 @@
+/**
+ * The quiet neutral roles (border, secondary text, muted text) are alphas of
+ * one tint — `--aw-tint-rgb` in `src/styles/base.css`, which is the single
+ * value a theme flips. The function form is what keeps opacity modifiers
+ * working: `border-border/50` is half a hairline. A plain
+ * `"rgb(var(--aw-tint-rgb) / 0.1)"` string would make Tailwind drop the
+ * modified utility altogether, silently.
+ */
+const tint =
+  (alpha) =>
+  ({ opacityValue }) =>
+    opacityValue === undefined
+      ? `rgb(var(--aw-tint-rgb) / ${alpha})`
+      : `rgb(var(--aw-tint-rgb) / calc(${alpha} * ${opacityValue}))`;
+
+/** A surface channel triple, still modifier-aware (`bg-surface/90`). */
+const surface = (name) => `rgb(var(${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: "class",
@@ -27,33 +45,40 @@ export default {
           dark: "#0b3d49", // deep ink-teal (pressed)
           hover: "#0b4a59", // accent hover (light)
         },
+        // Every role below resolves through a custom property, so base.css is
+        // the only place a neutral value is written down.
+        //
+        // The `*-dark` keys are deprecated twins kept alive on purpose: every
+        // one of them is used behind a `dark:` variant, so pointing them at
+        // the same theme-aware value is a no-op. They go away with the
+        // `dark:` classes themselves.
         surface: {
-          DEFAULT: "#fafafa", // zinc-50 page bg (light)
-          raised: "#ffffff", // cards (light)
-          overlay: "#f4f4f5", // zinc-100 overlay/hover (light)
-          dark: "#09090b", // zinc-950 page bg (dark)
-          "dark-raised": "#18181b", // zinc-900 cards (dark)
-          "dark-overlay": "#27272a", // zinc-800 overlay/hover (dark)
+          DEFAULT: surface("--aw-surface-rgb"),
+          raised: surface("--aw-surface-raised-rgb"),
+          overlay: surface("--aw-surface-overlay-rgb"),
+          dark: surface("--aw-surface-rgb"),
+          "dark-raised": surface("--aw-surface-raised-rgb"),
+          "dark-overlay": surface("--aw-surface-overlay-rgb"),
         },
         border: {
-          DEFAULT: "#e4e4e7", // zinc-200 hairline (light)
-          dark: "#27272a", // zinc-800 hairline (dark)
-          default: "#e4e4e7",
-          "default-dark": "#27272a",
-          focus: "#0d5c6e", // focus ring (light) = accent
-          "focus-dark": "#2dd4bf", // focus ring (dark) = accent
+          DEFAULT: tint(0.1),
+          dark: tint(0.1),
+          default: tint(0.1),
+          "default-dark": tint(0.1),
+          focus: "var(--aw-border-focus)",
+          "focus-dark": "var(--aw-border-focus)",
         },
         "text-primary": {
-          DEFAULT: "#09090b", // zinc-950 ink (light)
-          dark: "#fafafa", // zinc-50 (dark)
+          DEFAULT: "var(--aw-text-primary)",
+          dark: "var(--aw-text-primary)",
         },
         "text-secondary": {
-          DEFAULT: "#52525b", // zinc-600 (light)
-          dark: "#a1a1aa", // zinc-400 (dark)
+          DEFAULT: tint(0.65),
+          dark: tint(0.65),
         },
         "text-muted": {
-          DEFAULT: "#a1a1aa", // zinc-400 (light)
-          dark: "#71717a", // zinc-500 (dark)
+          DEFAULT: tint(0.45),
+          dark: tint(0.45),
         },
         status: {
           success: "#15803d", // green-700
@@ -145,6 +170,12 @@ export default {
     },
   },
   plugins: [require("daisyui")],
+  // A hand-maintained mirror of the palette, and knowingly so: daisyUI's theme
+  // block takes hexes, so it cannot read `--aw-tint-rgb` or the surface
+  // channels. Change a value here only alongside `src/styles/base.css`. The
+  // honest fix is to drop daisyUI theming entirely and let the `--aw-*` tokens
+  // be the only source, which needs an audit of what still uses daisyUI
+  // component classes first.
   daisyui: {
     themes: [
       {

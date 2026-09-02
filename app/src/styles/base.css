@@ -14,18 +14,33 @@
    ────────────────────────────────────────────── */
 :root,
 [data-theme="apiweave"] {
-  /* Surface colors — true zinc neutrals */
-  --aw-surface: #fafafa;
-  --aw-surface-raised: #ffffff;
-  --aw-surface-overlay: #f4f4f5;
+  /* The tint triple — one ink value per theme, with the quiet neutral roles
+     (border, secondary text, muted text) expressed as alphas of it. A theme
+     flip is this line plus the surfaces; nothing else has a twin to drift.
+     Channels are space-separated because every consumer is `rgb(… / a)`:
+     the legacy comma form `rgba(var(--x), .1)` cannot take a channel var. */
+  --aw-tint-rgb: 9 9 11; /* zinc-950 — the ink side */
 
-  /* Text colors */
+  /* Surfaces — the one palette a theme still owns outright. Channels rather
+     than hexes so Tailwind can still take an opacity modifier (bg-surface/90). */
+  --aw-surface-rgb: 250 250 250; /* zinc-50  — page   */
+  --aw-surface-raised-rgb: 255 255 255; /* white    — cards  */
+  --aw-surface-overlay-rgb: 244 244 245; /* zinc-100 — hover  */
+
+  /* Composed, for the stylesheets that want a colour and not channels. */
+  --aw-surface: rgb(var(--aw-surface-rgb));
+  --aw-surface-raised: rgb(var(--aw-surface-raised-rgb));
+  --aw-surface-overlay: rgb(var(--aw-surface-overlay-rgb));
+
+  /* Text — strong ink is a hex, the quiet roles are tint alphas */
   --aw-text-primary: #09090b;
-  --aw-text-secondary: #52525b;
-  --aw-text-muted: #a1a1aa;
+  --aw-text-secondary: rgb(var(--aw-tint-rgb) / 0.65);
+  --aw-text-muted: rgb(var(--aw-tint-rgb) / 0.45);
 
-  /* Border colors — hairline */
-  --aw-border: #e4e4e7;
+  /* Border — a hairline alpha, deliberately not the same value as
+     --aw-surface-overlay. Those two roles collided at #27272a in dark under
+     the paired palettes, which is why a hover fill grew a visible edge. */
+  --aw-border: rgb(var(--aw-tint-rgb) / 0.1);
   --aw-border-focus: #0d5c6e;
 
   /* Brand / Primary — single ink-teal accent */
@@ -164,15 +179,16 @@
    ────────────────────────────────────────────── */
 .dark,
 [data-theme="apiweave-dark"] {
-  --aw-surface: #09090b;
-  --aw-surface-raised: #18181b;
-  --aw-surface-overlay: #27272a;
+  --aw-tint-rgb: 250 250 250; /* the whole flip, one line */
 
+  --aw-surface-rgb: 9 9 11;
+  --aw-surface-raised-rgb: 24 24 27;
+  --aw-surface-overlay-rgb: 39 39 42;
+
+  /* --aw-text-secondary, --aw-text-muted and --aw-border are alphas of the
+     tint and inherit from :root. Only strong ink needs its own hex. */
   --aw-text-primary: #fafafa;
-  --aw-text-secondary: #a1a1aa;
-  --aw-text-muted: #71717a;
 
-  --aw-border: #27272a;
   --aw-border-focus: #2dd4bf;
 
   --aw-primary: #2dd4bf;

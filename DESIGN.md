@@ -13,13 +13,13 @@ colors:
   surface-dark-raised: "#18181b"
   surface-dark-overlay: "#27272a"
   text-primary: "#09090b"
-  text-secondary: "#52525b"
-  text-muted: "#a1a1aa"
+  text-secondary: "#5f5f60"
+  text-muted: "#909091"
   text-primary-dark: "#fafafa"
-  text-secondary-dark: "#a1a1aa"
-  text-muted-dark: "#71717a"
-  border: "#e4e4e7"
-  border-dark: "#27272a"
+  text-secondary-dark: "#ababac"
+  text-muted-dark: "#7e7e7f"
+  border: "#e6e6e7"
+  border-dark: "#2f2f31"
   border-focus: "#0d5c6e"
   border-focus-dark: "#2dd4bf"
   status-success: "#15803d"
@@ -146,19 +146,34 @@ The palette is intentionally restrained. One ink-teal accent on a zinc-neutral b
 
 ### Neutral
 
+**One tint, three alphas.** A theme owns exactly two things: one ink tint
+(`--aw-tint-rgb`) and three surface channel triples. Every quiet neutral role
+— hairline borders, secondary text, muted text — is an alpha of that tint, so
+flipping the theme is one value and not a parallel palette that can drift.
+Anything that needs a *hex* per theme (strong ink, the accent, status, methods)
+says so explicitly. `src/styles/base.css` is the only file where a neutral
+value is written down; `tailwind.config.js` resolves through it.
+
+- **Ink tint** (`9 9 11` light / `250 250 250` dark): zinc-950 and zinc-50 as
+  channels. The one value a theme flip changes.
 - **Zinc-50** (#fafafa): Page background in light mode. Near-white, cool-neutral, minimal chroma.
 - **White** (#ffffff): Raised surfaces — cards, panels, modals — in light mode.
 - **Zinc-100** (#f4f4f5): Overlay/hover backgrounds in light mode. Dropdowns, popovers.
-- **Zinc-200** (#e4e4e7): Hairline border color in light mode.
 - **Zinc-950** (#09090b): Dark mode page background. Near-black, cool-neutral.
 - **Zinc-900** (#18181b): Dark mode raised surfaces.
-- **Zinc-800** (#27272a): Dark mode overlay and hairline borders.
+- **Zinc-800** (#27272a): Dark mode overlay/hover background.
+- **Hairline** (tint at 10%): Border colour in both themes. An alpha rather
+  than a hex because a border sits over whatever surface is behind it. It is
+  deliberately not the same value as the overlay fill — the two roles collided
+  at #27272a in dark under the old paired palettes, which made a hover fill
+  grow a visible edge.
 
 ### Text
 
-- **Ink** (#09090b / #fafafa dark): Primary text, headings. Full contrast against respective surfaces. Body text passes 4.5:1 minimum.
-- **Mist** (#52525b / #a1a1aa dark): Secondary text — labels, descriptions, metadata. Passes 3:1 minimum against raised surfaces.
-- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. **2.56:1 on white** — it does not pass 4.5:1, and does not clear the 3:1 non-text floor either. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead. `src/components/__tests__/node-layer-contrast.test.ts` enforces this.
+- **Ink** (#09090b / #fafafa dark): Primary text, headings. The one text role that stays a hex. Full contrast against respective surfaces; body text passes 4.5:1 minimum.
+- **Mist** (tint at 65%): Secondary text — labels, descriptions, metadata. 6.4:1 on white, 7.7:1 on zinc-900. Carries content, so it holds the 4.5:1 body floor.
+- **Dust** (tint at 45%): Placeholder text, hints, disabled content. **3.2:1 on white** — it clears the 3:1 non-text floor but not 4.5:1. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead.
+- **Enforcement:** `src/styles/__tests__/theme-contrast.test.ts` computes every text/surface pair in both themes from `base.css` itself, and `src/components/__tests__/node-layer-contrast.test.ts` applies the tighter node-layer floors. Retuning an alpha is safe because those two tests recompute; changing one without running them is not.
 
 ### Semantic Status
 
