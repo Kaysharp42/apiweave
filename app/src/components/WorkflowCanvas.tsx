@@ -37,6 +37,7 @@ import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
+import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -109,14 +110,23 @@ const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 void NOISE_DATA_URI;
 
+// Every kind goes through `withNodeBoundary`: a throw while one node renders
+// must cost that one tile, not the canvas — see NodeBoundary. Registering a new
+// kind here is what covers it.
 const nodeTypes: NodeTypes = {
-  "http-request": HTTPRequestNode as NodeTypes[string],
-  assertion: AssertionNode as NodeTypes[string],
-  delay: DelayNode as NodeTypes[string],
-  start: StartNode as NodeTypes[string],
-  end: EndNode as NodeTypes[string],
-  merge: MergeNode as NodeTypes[string],
-  workflow: CallWorkflowNode as NodeTypes[string],
+  "http-request": withNodeBoundary(
+    HTTPRequestNode,
+    "http-request",
+  ) as NodeTypes[string],
+  assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
+  delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
+  start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
+  end: withNodeBoundary(EndNode, "end") as NodeTypes[string],
+  merge: withNodeBoundary(MergeNode, "merge") as NodeTypes[string],
+  workflow: withNodeBoundary(
+    CallWorkflowNode,
+    "workflow",
+  ) as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
