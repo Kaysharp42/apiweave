@@ -193,4 +193,20 @@ describe("autoLayout with bezier edges", () => {
     const last = laidOut.find((n) => n.id === "n7");
     expect(first?.position.x).toBeLessThan(last?.position.x ?? 0);
   });
+
+  // Since React Flow v12 a measured node carries its size on `node.measured`,
+  // and `node.width` is undefined for every node this app creates. Reading only
+  // `width` lays the whole graph out at the fallback size and overlaps real
+  // nodes, so the two spellings have to produce the same layout.
+  it("spaces measured nodes the same as explicitly sized ones", () => {
+    const { nodes, edges } = buildGraph(6);
+    const measured = nodes.map(({ width, height, ...rest }) => ({
+      ...rest,
+      measured: { width, height },
+    })) as Node[];
+
+    expect(autoLayout(measured, edges).map((n) => n.position)).toEqual(
+      autoLayout(nodes, edges).map((n) => n.position),
+    );
+  });
 });
