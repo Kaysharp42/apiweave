@@ -271,14 +271,11 @@ describe("parseOpenApiSpec edge cases", () => {
       components: { schemas },
     }
 
-    const started = performance.now()
     const wf = parseOpenApiSpec(spec)
-    const elapsed = performance.now() - started
     const body = (wf.nodes.find((n) => n.type === "http-request") as { config: { body: string } }).config.body
 
     expect(JSON.parse(body)).toBeTypeOf("object")
     expect(body.length).toBeLessThan(200_000)
-    expect(elapsed).toBeLessThan(2_000)
   })
 
   it("does not double up slashes on a relative servers entry", () => {

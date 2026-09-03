@@ -19,11 +19,12 @@ interface SwaggerImportPayload {
 // Every open workflow gets its own useSwaggerRefresh instance, but a Swagger
 // doc URL is scoped to a workspace, not a workflow — opening several
 // workflows that share an environment (common with a 10+-service doc) has no
-// reason to re-fetch and re-parse the same spec for each one. This module
-// -level cache (keyed by workspace+URL) and in-flight map are shared across
-// every instance so only the first open per TTL window pays for the network
-// round trip and server-side parse; the rest reuse the result.
-const SWAGGER_CACHE_TTL_MS = 5 * 60 * 1000;
+// reason to re-fetch and re-parse the same spec for each one. This
+// module-level cache (keyed by workspace+URL) and in-flight map are shared
+// across every instance so only the first open per TTL window pays for the
+// network round trip and server-side parse; the rest reuse the result.
+export const SWAGGER_CACHE_TTL_MS = 5 * 60 * 1000;
+export const MAX_SWAGGER_CACHE_ENTRIES = 50;
 const swaggerResultCache = new Map<
   string,
   { result: SwaggerImportPayload; fetchedAt: number }
@@ -42,7 +43,43 @@ export function swaggerCacheKey(workspaceId: string, swaggerDocUrl: string) {
 // re-running the full apply (addImportedGroup + a pass over every canvas
 // node) even though nothing had changed. Module scope survives the remount,
 // so an unchanged signature is skipped for real.
+const MAX_SWAGGER_SIGNATURE_ENTRIES = 100;
 const swaggerAppliedSignatureByWorkflow = new Map<string, string>();
+
+function rememberSwaggerSignature(workflowKey: string, signature: string) {
+  // Refresh LRU order for existing keys so the eviction below drops the
+  // least-recently-used workflow first.
+  if (swaggerAppliedSignatureByWorkflow.has(workflowKey)) {
+    swaggerAppliedSignatureByWorkflow.delete(workflowKey);
+  } else if (
+    swaggerAppliedSignatureByWorkflow.size >= MAX_SWAGGER_SIGNATURE_ENTRIES
+  ) {
+    const oldest = swaggerAppliedSignatureByWorkflow.keys().next();
+    if (!oldest.done) {
+      swaggerAppliedSignatureByWorkflow.delete(oldest.value);
+    }
+  }
+  swaggerAppliedSignatureByWorkflow.set(workflowKey, signature);
+}
+
+function storeSwaggerResult(cacheKey: string, result: SwaggerImportPayload) {
+  const now = Date.now();
+  for (const [key, entry] of swaggerResultCache) {
+    if (now - entry.fetchedAt >= SWAGGER_CACHE_TTL_MS) {
+      swaggerResultCache.delete(key);
+    }
+  }
+  if (
+    !swaggerResultCache.has(cacheKey) &&
+    swaggerResultCache.size >= MAX_SWAGGER_CACHE_ENTRIES
+  ) {
+    const oldest = swaggerResultCache.keys().next();
+    if (!oldest.done) {
+      swaggerResultCache.delete(oldest.value);
+    }
+  }
+  swaggerResultCache.set(cacheKey, { result, fetchedAt: now });
+}
 
 /** Test-only: clears the shared cache/in-flight state between test cases. */
 export function __clearSwaggerCacheForTests() {
@@ -58,8 +95,11 @@ export async function fetchSwaggerNodes(
 ): Promise<SwaggerImportPayload> {
   if (!force) {
     const cached = swaggerResultCache.get(cacheKey);
-    if (cached && Date.now() - cached.fetchedAt < SWAGGER_CACHE_TTL_MS) {
-      return cached.result;
+    if (cached) {
+      if (Date.now() - cached.fetchedAt < SWAGGER_CACHE_TTL_MS) {
+        return cached.result;
+      }
+      swaggerResultCache.delete(cacheKey);
     }
     const pending = swaggerInFlight.get(cacheKey);
     if (pending) return pending;
@@ -78,7 +118,7 @@ export async function fetchSwaggerNodes(
       throw new Error(detail);
     }
     const parsed = (await response.json()) as SwaggerImportPayload;
-    swaggerResultCache.set(cacheKey, { result: parsed, fetchedAt: Date.now() });
+    storeSwaggerResult(cacheKey, parsed);
     return parsed;
   })();
 
@@ -185,15 +225,19 @@ export function useSwaggerRefresh({
         : null;
       const swaggerDocUrl = selectedEnvObject?.swaggerDocUrl?.trim() || "";
 
-      const workflowKey = workflowId || "";
       const signature = `${workflowId}::${selectedEnvId || ""}::${swaggerDocUrl}`;
-      if (
-        !force &&
-        swaggerAppliedSignatureByWorkflow.get(workflowKey) === signature
-      ) {
-        return { skipped: true, reason: "unchanged-signature" };
+      // Without a workflowId there is no safe shared key: every instance would
+      // collide on one entry and skip refreshes for unrelated canvases, so
+      // bypass the signature cache entirely in that case.
+      if (workflowId) {
+        if (
+          !force &&
+          swaggerAppliedSignatureByWorkflow.get(workflowId) === signature
+        ) {
+          return { skipped: true, reason: "unchanged-signature" };
+        }
+        rememberSwaggerSignature(workflowId, signature);
       }
-      swaggerAppliedSignatureByWorkflow.set(workflowKey, signature);
 
       if (!selectedEnvId) {
         removeImportedGroup(envSwaggerGroupId);
