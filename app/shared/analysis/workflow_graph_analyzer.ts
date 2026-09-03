@@ -9,7 +9,7 @@ import type { WorkflowGraphInput } from "../types/WorkflowGraphInput"
 import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
-import { withoutFrameNodes } from "../graph/frames"
+import { withoutCanvasOnlyNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 
@@ -873,7 +873,7 @@ export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): Work
   // Group frames carry no edges and never execute, so every rule below would
   // report them: unreachable from start, missing an output, not a valid step.
   // They are dropped once, here, rather than guarded in each rule.
-  const workflow: WorkflowGraphInput = { ...input, nodes: withoutFrameNodes(input.nodes) }
+  const workflow: WorkflowGraphInput = { ...input, nodes: withoutCanvasOnlyNodes(input.nodes) }
   const diagnostics: WorkflowDiagnostic[] = []
   addTopologyDiagnostics(workflow, diagnostics)
   addAssertionAndBranchDiagnostics(workflow, diagnostics)

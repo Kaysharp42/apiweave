@@ -37,6 +37,8 @@ function getDefaultConfig(type: string): NodeConfig {
       return { duration: 1000 };
     case "merge":
       return { mergeStrategy: "all", conditions: [] };
+    case "note":
+      return { content: "" };
     default:
       return {};
   }

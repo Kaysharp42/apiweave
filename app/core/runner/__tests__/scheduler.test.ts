@@ -85,10 +85,10 @@ describe("RunScheduler", () => {
       expect(scheduler.getActiveCount()).toBe(0)
     })
 
-    // A group frame is canvas furniture. Left in the graph the executor answers
-    // it with `{ status: "skipped" }`, which is a node row in the run timeline
-    // and the JUnit report for something that was never a step.
-    it("never schedules a group frame", async () => {
+    // Canvas-only nodes are furniture. Left in the graph the executor answers
+    // them with `{ status: "skipped" }`, a row in the timeline and JUnit report
+    // for something that was never a step.
+    it("never schedules canvas-only nodes", async () => {
       const ws = seedWorkspace()
       const wf = workflows.create({
         workspaceId: ws,
@@ -97,6 +97,7 @@ describe("RunScheduler", () => {
           { nodeId: "start", type: "start", position: { x: 0, y: 0 }, parentId: "frame" },
           { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
           { nodeId: "frame", type: "group", position: { x: -20, y: -20 }, config: { width: 300, height: 200 } },
+          { nodeId: "note", type: "note", position: { x: 0, y: 220 }, config: { content: "Context" } },
         ] as WorkflowNode[],
         edges: [{ edgeId: "e1", source: "start", target: "end" }] as WorkflowEdge[],
       }).workflowId
@@ -108,7 +109,7 @@ describe("RunScheduler", () => {
 
       expect(runs.getById(runId)?.status).toBe("completed")
       expect(Object.keys(runs.getById(runId)?.nodeStatuses ?? {})).toEqual(["start", "end"])
-      expect(events.filter((e) => e.kind === "node.status" && e.nodeId === "frame")).toEqual([])
+       expect(events.filter((e) => e.kind === "node.status" && (e.nodeId === "frame" || e.nodeId === "note"))).toEqual([])
     })
 
     // Regression: `runs_create` echoed `selectedEnvironmentId: null` even when

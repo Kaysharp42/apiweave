@@ -5,7 +5,7 @@ import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 type FocusableNode = Node<WorkflowCanvasNodeData>;
 
 function isFocusableNode(node: FocusableNode): boolean {
-  return node.type !== "group" && node.type !== "start" && node.type !== "end";
+  return node.type !== "group" && node.type !== "note" && node.type !== "start" && node.type !== "end";
 }
 
 function topologicalNodeOrder(

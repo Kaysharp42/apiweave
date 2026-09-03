@@ -12,6 +12,7 @@ import {
   Package,
   Pencil,
   Trash2,
+  StickyNote,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -53,6 +54,7 @@ const sectionIcons: Record<string, LucideIcon> = {
   "HTTP Requests": Globe,
   "Control Flow": GitBranch,
   Validation: CheckCircle,
+  Annotations: StickyNote,
 };
 
 interface PaletteItem {
@@ -151,6 +153,16 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
         type: "assertion",
         label: "Assertion",
         description: "Assert on conditional expressions",
+      },
+    ],
+  },
+  {
+    category: "Annotations",
+    nodes: [
+      {
+        type: "note",
+        label: "Note",
+        description: "Document a branch without running it",
       },
     ],
   },

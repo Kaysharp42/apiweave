@@ -31,12 +31,13 @@ export function autoLayout<N extends Node, E extends Edge>(
 }
 
 /**
- * Auto-layout, minus the frames.
+ * Auto-layout, minus canvas-only nodes.
  *
  * dagre lays out a flat graph; a frame is fixed geometry whose children live in
  * its coordinate space. Handing both to dagre scatters a user's groups and
  * gives framed nodes absolute coordinates inside a relative space — so frames
- * and their members keep their positions, and only root nodes are re-laid.
+ * and their members keep their positions. Notes are also intentional placement,
+ * so only executable root nodes are re-laid.
  *
  * ponytail: the richer alternative is a layout pass per frame followed by a
  * placement pass for the frames themselves. Worth it if anyone reaches for
@@ -49,7 +50,7 @@ export function autoLayoutRootNodes<N extends Node, E extends Edge>(
   direction: "LR" | "TB" = "LR",
 ): N[] {
   const movable = nodes.filter(
-    (node) => node.parentId === undefined && node.type !== "group",
+    (node) => node.parentId === undefined && node.type !== "group" && node.type !== "note",
   );
   if (movable.length === nodes.length) return autoLayout(nodes, edges, direction);
 
