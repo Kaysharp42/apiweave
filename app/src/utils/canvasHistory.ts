@@ -32,6 +32,16 @@ export function captureCanvasHistory(
     id: node.id,
     ...(node.type === undefined ? {} : { type: node.type }),
     position: node.position,
+    // `parentId`/`extent` and an explicit `width`/`height` are the group-frame
+    // half of the persisted shape: which frame a node sits in, and the size a
+    // user dragged a frame to. `measured` is deliberately absent — that is
+    // ReactFlow's measurement of a node, not anything the user did.
+    ...(node.parentId === undefined
+      ? {}
+      : { parentId: node.parentId, extent: "parent" as const }),
+    ...(node.width === undefined ? {} : { width: node.width }),
+    ...(node.height === undefined ? {} : { height: node.height }),
+    ...(node.dragHandle === undefined ? {} : { dragHandle: node.dragHandle }),
     data: {
       ...(node.data.label === undefined ? {} : { label: node.data.label }),
       config: node.data.config ?? {},

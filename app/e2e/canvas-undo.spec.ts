@@ -1,5 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
-import { DESKTOP_WORKFLOW, DESKTOP_WORKSPACE } from "./fixtures/desktop";
+import {
+  DESKTOP_WORKFLOW,
+  DESKTOP_WORKSPACE,
+  installDesktopIpc,
+} from "./fixtures/desktop";
 
 /**
  * Undo/redo on the real canvas (#13).
@@ -43,33 +47,13 @@ const WORKFLOW = {
 } as const;
 
 async function openCanvas(page: Page): Promise<void> {
-  await page.addInitScript(
-    ({ workflow, workspace }) => {
-      localStorage.setItem("apiweave:v1:autoSaveEnabled", "false");
-      localStorage.setItem("autoSaveEnabled", "false");
-      window.__APIWEAVE_IPC__ = {
-        invoke: async (domain: string, action: string) => {
-          if (domain === "workspaces" && action === "list")
-            return { ok: true as const, data: [workspace] };
-          if (domain === "workflows" && action === "list")
-            return { ok: true as const, data: { items: [workflow], total: 1 } };
-          if (domain === "workflows")
-            return { ok: true as const, data: workflow };
-          if (domain === "settings" && action === "get")
-            return { ok: true as const, data: { allowPrivateNetworks: false } };
-          if (domain === "secrets" && action === "list")
-            return { ok: true as const, data: [] };
-          if (domain === "runs" && action.startsWith("getLatest"))
-            return { ok: true as const, data: null };
-          return { ok: true as const, data: { items: [], total: 0 } };
-        },
-        onRunProgress: () => () => undefined,
-        onCloudStatusChanged: () => () => undefined,
-        onWorkflowChanged: () => () => undefined,
-      };
-    },
-    { workflow: WORKFLOW, workspace: DESKTOP_WORKSPACE },
-  );
+  await installDesktopIpc(page, {
+    workflow: WORKFLOW,
+    // Autosave off: the IPC mock echoes a static workflow back from
+    // `workflows.update`, so a save would re-hydrate the canvas from the
+    // fixture and undo the edit this test just made.
+    storage: { "apiweave:v1:autoSaveEnabled": "false" },
+  });
 
   await page.goto(`/#/${DESKTOP_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`, {
     waitUntil: "domcontentloaded",

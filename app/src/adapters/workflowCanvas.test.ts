@@ -211,6 +211,70 @@ describe("workflow canvas adapters", () => {
     expect(result.rev).toBe(7);
   });
 
+
+  // #4: a frame is a persisted node whose geometry lives in `config`, and
+  // `parentId` is the only reason a node's `position` is not a canvas
+  // coordinate. Both have to survive the boundary in both directions.
+  it("round-trips a group frame and its members", () => {
+    const framed: Workflow = {
+      ...workflow,
+      nodes: [
+        ...workflow.nodes.map((node) =>
+          node.nodeId === "request-1"
+            ? { ...node, parentId: "group-1", position: { x: 28, y: 28 } }
+            : node,
+        ),
+        {
+          nodeId: "group-1",
+          type: "group",
+          label: "Checkout",
+          position: { x: 180, y: 0 },
+          config: { width: 420, height: 260, color: "blue" },
+        },
+      ],
+    };
+
+    const canvas = workflowToCanvas(framed);
+    const frame = canvas.nodes[0];
+    const member = canvas.nodes.find((node) => node.id === "request-1");
+
+    // The frame is hoisted to the front: ReactFlow needs a parent before its
+    // children, and array order is what puts the frame behind them.
+    expect(frame?.id).toBe("group-1");
+    expect(frame?.width).toBe(420);
+    expect(frame?.height).toBe(260);
+    expect(member).toMatchObject({ parentId: "group-1", extent: "parent" });
+
+    const result = canvasToWorkflow(canvas, framed);
+    const persistedFrame = result.nodes.find((node) => node.nodeId === "group-1");
+
+    expect(persistedFrame).toEqual({
+      nodeId: "group-1",
+      type: "group",
+      label: "Checkout",
+      position: { x: 180, y: 0 },
+      config: { width: 420, height: 260, color: "blue" },
+    });
+    expect(
+      result.nodes.find((node) => node.nodeId === "request-1"),
+    ).toMatchObject({ parentId: "group-1", position: { x: 28, y: 28 } });
+  });
+
+  it("drops a parentId the cloud merge left dangling", () => {
+    const orphaned: Workflow = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) =>
+        node.nodeId === "request-1" ? { ...node, parentId: "group-gone" } : node,
+      ),
+    };
+
+    const canvas = workflowToCanvas(orphaned);
+
+    expect(canvas.nodes.find((node) => node.id === "request-1")).not.toHaveProperty(
+      "parentId",
+    );
+  });
+
   it("rejects legacy renderer discriminators at the persistence boundary", () => {
     const canvas = workflowToCanvas(workflow);
     const request = canvas.nodes[1];

@@ -9,6 +9,7 @@ import type { WorkflowGraphInput } from "../types/WorkflowGraphInput"
 import type { WorkflowDiagnosis } from "../types/WorkflowDiagnosis"
 import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
+import { withoutFrameNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 
@@ -868,7 +869,11 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
  * disagree (a real run was blocked for `expectedValue: false` while `assertion_validate`
  * accepted it, because the gate ran a truthiness check rather than a presence check).
  */
-export function analyzeWorkflowGraph(workflow: WorkflowGraphInput, run?: Run): WorkflowDiagnosis {
+export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): WorkflowDiagnosis {
+  // Group frames carry no edges and never execute, so every rule below would
+  // report them: unreachable from start, missing an output, not a valid step.
+  // They are dropped once, here, rather than guarded in each rule.
+  const workflow: WorkflowGraphInput = { ...input, nodes: withoutFrameNodes(input.nodes) }
   const diagnostics: WorkflowDiagnostic[] = []
   addTopologyDiagnostics(workflow, diagnostics)
   addAssertionAndBranchDiagnostics(workflow, diagnostics)

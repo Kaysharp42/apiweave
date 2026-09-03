@@ -12,6 +12,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     onFocusDirection: vi.fn(),
     onUndo: vi.fn(),
     onRedo: vi.fn(),
+    onGroup: vi.fn(),
+    onUngroup: vi.fn(),
     ...overrides,
   };
   renderHook(() => useCanvasKeyboardShortcuts(handlers));
@@ -49,6 +51,16 @@ describe("useCanvasKeyboardShortcuts", () => {
 
   // Ctrl+Shift+Z shares the branch that owns directional focus; taking one
   // must not eat the other.
+  it("maps the frame chords", () => {
+    const h = setup();
+
+    press("g", { ctrlKey: true });
+    press("G", { ctrlKey: true, shiftKey: true });
+
+    expect(h.onGroup).toHaveBeenCalledTimes(1);
+    expect(h.onUngroup).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps directional focus on Ctrl+Shift+arrow", () => {
     const h = setup();
 

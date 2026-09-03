@@ -12,77 +12,60 @@ interface UseCanvasKeyboardShortcutsParams {
   onFocusDirection: (direction: FocusDirection) => void;
   onUndo: () => void;
   onRedo: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 }
 
 type CanvasShortcutHandlers = UseCanvasKeyboardShortcutsParams;
 
 /**
- * Ctrl+Shift, not Ctrl: plain Ctrl+arrow is word navigation on Windows and
- * Linux, which is where this app runs.
+ * What each chord does, as a table.
+ *
+ * Returning the handler rather than calling it is what makes `runChord` able to
+ * own `preventDefault` — one place decides "this keystroke was ours", so a
+ * chord added later cannot forget to claim it. `null` means the chord exists
+ * but is unavailable right now, and the keystroke goes back to the browser.
+ *
+ * Ctrl+Shift+arrow rather than Ctrl+arrow for focus: plain Ctrl+arrow is word
+ * navigation on Windows and Linux, which is where this app runs.
  */
-const FOCUS_DIRECTIONS: Record<string, FocusDirection> = {
-  arrowup: "up",
-  arrowdown: "down",
-  arrowleft: "left",
-  arrowright: "right",
-};
+type ChordTable = Record<
+  string,
+  (handlers: CanvasShortcutHandlers) => (() => void) | null
+>;
 
-/** The Ctrl/⌘ chords the canvas owns. */
-function runModifierChord(
-  e: KeyboardEvent,
-  key: string | undefined,
-  current: CanvasShortcutHandlers,
-): void {
-  if (key === "s") {
-    e.preventDefault();
-    current.onSave();
-    return;
-  }
-  if (key === "r") {
-    if (current.isRunning) return;
-    e.preventDefault();
-    current.onRun();
-    return;
-  }
-  if (key === "j") {
-    e.preventDefault();
-    current.onToggleJsonEditor();
-    return;
-  }
-  if (key === "z") {
-    e.preventDefault();
-    current.onUndo();
-    return;
-  }
+const MODIFIER_CHORDS: ChordTable = {
+  s: (h) => h.onSave,
+  // Ctrl+R while running keeps its browser meaning rather than doing nothing:
+  // no handler, no preventDefault.
+  r: (h) => (h.isRunning ? null : h.onRun),
+  j: (h) => h.onToggleJsonEditor,
+  z: (h) => h.onUndo,
   // Ctrl+Y as well as Ctrl+Shift+Z: this app runs on Windows, where Ctrl+Y is
   // what people's hands already do.
-  if (key === "y") {
-    e.preventDefault();
-    current.onRedo();
-  }
-}
+  y: (h) => h.onRedo,
+  g: (h) => h.onGroup,
+};
 
-/**
- * The Ctrl+Shift chords: redo, and moving the selection between nodes. Its own
- * function because `runCanvasShortcut` sits one branch under the complexity
- * gate, and inlining this put it over.
- */
-function runShiftChord(
+const SHIFT_CHORDS: ChordTable = {
+  z: (h) => h.onRedo,
+  g: (h) => h.onUngroup,
+  arrowup: (h) => () => h.onFocusDirection("up"),
+  arrowdown: (h) => () => h.onFocusDirection("down"),
+  arrowleft: (h) => () => h.onFocusDirection("left"),
+  arrowright: (h) => () => h.onFocusDirection("right"),
+};
+
+function runChord(
   e: KeyboardEvent,
+  table: ChordTable,
   key: string | undefined,
   current: CanvasShortcutHandlers,
 ): void {
-  if (key === "z") {
-    e.preventDefault();
-    current.onRedo();
-    return;
-  }
-  const direction = key === undefined ? undefined : FOCUS_DIRECTIONS[key];
-  if (direction) {
-    e.preventDefault();
-    current.onFocusDirection(direction);
-  }
-  // Ctrl+Shift+anything-else is not ours; the chords below are unshifted.
+  const action = key === undefined ? undefined : table[key]?.(current);
+  if (!action) return;
+  e.preventDefault();
+  action();
 }
 
 /** The shortcut itself, once the guards have decided this keystroke is ours. */
@@ -100,12 +83,7 @@ function runCanvasShortcut(
 
   if (!(e.ctrlKey || e.metaKey)) return;
 
-  if (e.shiftKey) {
-    runShiftChord(e, key, current);
-    return;
-  }
-
-  runModifierChord(e, key, current);
+  runChord(e, e.shiftKey ? SHIFT_CHORDS : MODIFIER_CHORDS, key, current);
 }
 
 /**
