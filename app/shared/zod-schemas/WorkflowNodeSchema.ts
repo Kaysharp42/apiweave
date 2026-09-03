@@ -5,6 +5,7 @@ import { EndNodeDataSchema } from "./EndNodeDataSchema"
 import { GroupNodeDataSchema } from "./GroupNodeDataSchema"
 import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
+import { NoteNodeDataSchema } from "./NoteNodeDataSchema"
 import { PositionSchema } from "./PositionSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
@@ -103,4 +104,11 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .describe("A frame drawn behind its members. Purely visual: it has no handles, takes no edges and never executes — the runner and the graph validator drop it before they see the graph. Nodes join it by setting `parentId` to its id, which makes their `position` relative to the frame."),
+  baseNode
+    .extend({
+      type: z.literal("note"),
+      config: NoteNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe("A sticky note for documenting a workflow branch. Purely visual: it has no handles, takes no edges, and never executes."),
 ])

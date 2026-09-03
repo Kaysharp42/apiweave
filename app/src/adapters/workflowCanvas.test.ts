@@ -75,6 +75,13 @@ const workflow: Workflow = {
       position: { x: 1060, y: 40 },
       config: {},
     },
+    {
+      nodeId: "note-1",
+      type: "note",
+      label: "Retry context",
+      position: { x: 660, y: 160 },
+      config: { content: "Retries start after the first failure." },
+    },
   ],
   edges: [
     {
@@ -147,6 +154,7 @@ describe("workflow canvas adapters", () => {
       ["delay-1", "delay"],
       ["merge-1", "merge"],
       ["end-1", "end"],
+      ["note-1", "note"],
     ]);
     expect(canvas.nodes[1]?.data).toEqual({
       label: "Create order",

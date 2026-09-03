@@ -38,6 +38,7 @@ import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import GroupNode from "./nodes/GroupNode";
+import NoteNode from "./nodes/NoteNode";
 import CustomEdge from "./CustomEdge";
 import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
 import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
@@ -151,6 +152,7 @@ const nodeTypes: NodeTypes = {
     "workflow",
   ) as NodeTypes[string],
   group: withNodeBoundary(GroupNode, "group") as NodeTypes[string],
+  note: withNodeBoundary(NoteNode, "note") as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -884,7 +886,7 @@ export function WorkflowCanvas({
   const openFocusMode = useCallback(() => {
     const node =
       selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
-    if (!node || node.type === "group" || node.type === "start" || node.type === "end") {
+    if (!node || node.type === "group" || node.type === "note" || node.type === "start" || node.type === "end") {
       toast.info("Select an editable node to enter focus mode");
       return;
     }
@@ -1340,6 +1342,7 @@ export function WorkflowCanvas({
     if (n.type === "assertion") return "var(--aw-status-success)";
     if (n.type === "delay") return "var(--aw-status-warning)";
     if (n.type === "merge") return "var(--aw-branch-edge)";
+    if (n.type === "note") return "var(--aw-status-warning)";
 
     return "var(--aw-text-muted)";
   }, []);
