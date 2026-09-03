@@ -16,6 +16,8 @@
  * human-facing copy; this is the agent-facing copy, deliberately shorter.
  */
 
+import { DYNAMIC_FUNCTIONS } from "@shared/constants/dynamicFunctions"
+
 export interface McpGuide {
   readonly slug: string
   readonly title: string
@@ -288,7 +290,7 @@ always \`{{namespace.name}}\`.
 | \`variables.*\` | \`{{variables.token}}\` | workflow variable: seeded manually or written by an extractor |
 | \`prev.*\` | \`{{prev.response.body.id}}\` | the previous node's result |
 | \`secrets.*\` | \`{{secrets.API_KEY}}\` | the local secret scope chain (environment, then workspace) |
-| functions | \`{{uuid()}}\` | dynamic helpers: \`uuid()\`, \`timestamp()\`, \`randomString(n)\`, … |
+ | functions | \`{{uuid()}}\` | dynamic helpers listed below |
 
 ## variables (note the plural)
 
@@ -305,6 +307,16 @@ then downstream: \`{ "key": "Authorization", "value": "Bearer {{variables.token}
 \`workflow_diagnose\` reports a \`{{variables.x}}\` with no producer as
 \`variable_source_missing\`, and a producer that is not actually upstream of its
 consumer as \`variable_producer_not_upstream\`.
+
+## Dynamic functions
+
+Every available function is listed here. Function names are case-sensitive; an
+unknown function is left as literal text at run time and is reported before then
+by \`workflow_diagnose\` as \`unknown_function\`.
+
+| function | result |
+| --- | --- |
+${DYNAMIC_FUNCTIONS.map(({ signature, description }) => `| \`${signature}\` | ${description} |`).join("\n")}
 
 ## prev
 

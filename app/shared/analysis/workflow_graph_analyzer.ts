@@ -12,9 +12,11 @@ import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutFrameNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
+import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const FUNCTION_CALL_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
 const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> = {
   error: 0,
   warning: 1,
@@ -642,6 +644,29 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
 }
 
+/** Flag `{{someFunction(...)}}` placeholders that don't name a real dynamic function — they'd go out as literal text. */
+function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
+  for (const node of workflow.nodes) {
+    forEachConfigString(node.config as Readonly<Record<string, unknown>> | undefined, (_rootKey, value) => {
+      FUNCTION_CALL_RE.lastIndex = 0
+      let match: RegExpExecArray | null
+      while ((match = FUNCTION_CALL_RE.exec(value)) !== null) {
+        const functionName = match[1]!
+        if (DYNAMIC_FUNCTION_NAMES.has(functionName)) continue
+        diagnostics.push(diagnostic(
+          "unknown_function",
+          "warning",
+          "dataflow",
+          [node.nodeId],
+          "A placeholder calls an unknown dynamic function and will be sent as literal text.",
+          { functionName },
+          { kind: "replace_unknown_function", nodeId: node.nodeId },
+        ))
+      }
+    })
+  }
+}
+
 function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: WorkflowDiagnostic[]): void {
   const { nodesById, predecessors, successors } = buildGraph(workflow.nodes, workflow.edges)
   const resultsByNode = new Map(run.results.map((result) => [result.nodeId, result]))
@@ -879,6 +904,7 @@ export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): Work
   addAssertionAndBranchDiagnostics(workflow, diagnostics)
   addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
+  addUnknownFunctionDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 
   diagnostics.sort((left, right) =>

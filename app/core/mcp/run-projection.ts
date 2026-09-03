@@ -53,7 +53,7 @@ function projectRun(run: Run): Record<string, JsonValue> {
       scopeType: secret.scopeType,
       resolved: secret.resolved,
     })),
-    rev: run.rev,
+    runRev: run.rev,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
   }

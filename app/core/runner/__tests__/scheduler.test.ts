@@ -202,6 +202,42 @@ describe("RunScheduler", () => {
       expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
 
+    it("persists a completed node result before a downstream delay finishes", async () => {
+      const ws = seedWorkspace()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "live node result",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "blocked-request",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: "http://169.254.169.254", continueOnFail: true },
+          },
+          { nodeId: "wait", type: "delay", position: { x: 2, y: 0 }, config: { duration: 1_000 } as never },
+          { nodeId: "end", type: "end", position: { x: 3, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "blocked-request" },
+          { edgeId: "e2", source: "blocked-request", target: "wait" },
+          { edgeId: "e3", source: "wait", target: "end" },
+        ],
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      const liveRun = runs.getById(runId)
+      expect(liveRun?.status).toBe("running")
+      expect(liveRun?.results).toContainEqual(expect.objectContaining({
+        nodeId: "blocked-request",
+        status: "failed",
+        error: "SSRF blocked",
+      }))
+    })
+
     it("resolves inherited variables from a base environment, with the child overriding on conflict", async () => {
       const ws = seedWorkspace()
       const base = environments.create({
