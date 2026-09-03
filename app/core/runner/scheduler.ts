@@ -7,7 +7,7 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorProgressEvent, type ResolvedSubWorkflow } from "./executor"
+import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
@@ -321,12 +321,7 @@ export class RunScheduler {
 
   private handleProgress(runId: string, event: ExecutorProgressEvent): void {
     if (event.kind === "node.result") {
-      // Persist the completed node immediately so runs_getNodeResult is useful
-      // while independent branches are still running. This event deliberately
-      // never reaches the progress broker because it can carry request/response
-      // bodies; MCP and renderer subscribers only receive the safe status event.
-      const result = sanitizeRunResults([event.result])[0]
-      if (result !== undefined) this.deps.runs.upsertNodeResult(runId, result)
+      this.handleNodeResult(runId, event)
       return
     }
     // The executor only ever hands us node events; started/terminal events are
@@ -350,6 +345,15 @@ export class RunScheduler {
       ...(event.message ? { message: event.message } : {}),
       ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),
     })
+  }
+
+  // Persist the completed node immediately so runs_getNodeResult is useful
+  // while independent branches are still running. This event deliberately
+  // never reaches the progress broker because it can carry request/response
+  // bodies; MCP and renderer subscribers only receive the safe status event.
+  private handleNodeResult(runId: string, event: NodeResultEvent): void {
+    const result = sanitizeRunResults([event.result])[0]
+    if (result !== undefined) this.deps.runs.upsertNodeResult(runId, result)
   }
 }
 

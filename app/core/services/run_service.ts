@@ -116,6 +116,7 @@ export class RunService {
   }
 
   /** Persist one completed node's evidence so it can be inspected before run completion. */
+  // fallow-ignore-next-line code-duplication -- thin repository delegate, matches existing sibling methods
   upsertNodeResult(runId: string, result: RunResult): void {
     this.runs.upsertNodeResult(runId, result)
   }

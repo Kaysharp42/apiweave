@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- array shape coincidentally matches AssertionNode's operator list; unrelated domains
 /** Dynamic placeholder helpers accepted by the workflow executor. */
 export const DYNAMIC_FUNCTIONS = [
   { signature: "randomString(length)", description: "Random alphanumeric string; default length 10." },
