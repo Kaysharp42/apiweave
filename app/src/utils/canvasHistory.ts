@@ -1,17 +1,10 @@
 import type { JsonValue } from "@shared/types/JsonValue";
 import type { CanvasEdge } from "../types/CanvasEdge";
+import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import type { CanvasNode } from "../types/CanvasNode";
 
 /** Fifty edits back is further than anyone reaches, and it is 50 pointers. */
 export const CANVAS_HISTORY_DEPTH = 50;
-
-export interface CanvasHistoryEntry {
-  readonly nodes: CanvasNode[];
-  readonly edges: CanvasEdge[];
-  readonly variables: Record<string, JsonValue>;
-  /** The persisted shape, serialised. Equal signatures are the same edit. */
-  readonly sig: string;
-}
 
 /**
  * Snapshot the *persisted* graph — exactly the fields `canvasToWorkflow`

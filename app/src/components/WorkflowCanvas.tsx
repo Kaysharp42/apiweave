@@ -63,7 +63,7 @@ import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
-import type { CanvasHistoryEntry } from "../utils/canvasHistory";
+import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";

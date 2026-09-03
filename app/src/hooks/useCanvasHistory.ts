@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JsonValue } from "@shared/types/JsonValue";
 import type { CanvasEdge } from "../types/CanvasEdge";
+import type { CanvasHistoryControls } from "../types/CanvasHistoryControls";
+import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import type { CanvasNode } from "../types/CanvasNode";
 import {
   captureCanvasHistory,
   recordCanvasHistory,
-  type CanvasHistoryEntry,
 } from "../utils/canvasHistory";
 
 /**
@@ -30,13 +31,6 @@ interface UseCanvasHistoryParams {
   /** Off until hydration, so the seed canvas is never an undo target. */
   enabled: boolean;
   apply: (entry: CanvasHistoryEntry) => void;
-}
-
-export interface CanvasHistoryControls {
-  undo: () => void;
-  redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
 }
 
 /**

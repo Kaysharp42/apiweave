@@ -4,6 +4,7 @@ import {
   NODE_FALLBACK_WIDTH,
 } from "@shared/layout/dagreLayout";
 import type { CanvasNode } from "../types/CanvasNode";
+import type { GroupOutcome } from "../types/GroupOutcome";
 
 export { FRAME_NODE_TYPE, isFrameNode };
 
@@ -13,10 +14,6 @@ export const GROUP_PAD = 28;
 /** A frame with no size yet — a paste, or a hand-written workflow JSON. */
 export const FRAME_FALLBACK_WIDTH = 320;
 export const FRAME_FALLBACK_HEIGHT = 220;
-
-export type GroupOutcome =
-  | { readonly ok: true; readonly nodes: CanvasNode[]; readonly frameId: string }
-  | { readonly ok: false; readonly reason: string };
 
 function nodeSize(node: CanvasNode): { width: number; height: number } {
   return {

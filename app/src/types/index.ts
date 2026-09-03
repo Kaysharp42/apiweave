@@ -332,3 +332,7 @@ export type { CanvasDragMode } from "./CanvasDragMode";
 export type { CanvasPrefs } from "./CanvasPrefs";
 export type { CanvasInteractionProps } from "./CanvasInteractionProps";
 export type { FocusDirection } from "./FocusDirection";
+export type { GroupTint } from "./GroupTint";
+export type { GroupOutcome } from "./GroupOutcome";
+export type { CanvasHistoryEntry } from "./CanvasHistoryEntry";
+export type { CanvasHistoryControls } from "./CanvasHistoryControls";

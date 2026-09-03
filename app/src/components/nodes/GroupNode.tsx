@@ -5,7 +5,8 @@ import { Frame, Ungroup } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
 import { ungroupFrames } from "../../utils/canvasGroups";
 import type { CanvasNode } from "../../types/CanvasNode";
-import { GROUP_TINTS, type GroupTint } from "../../constants/GroupTints";
+import { GROUP_TINTS } from "../../constants/GroupTints";
+import type { GroupTint } from "../../types/GroupTint";
 
 /**
  * A frame drawn behind its members.
