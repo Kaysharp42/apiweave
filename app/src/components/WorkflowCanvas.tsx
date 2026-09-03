@@ -61,6 +61,8 @@ import useCanvasStore from "../stores/CanvasStore";
 import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
+import useCanvasHistory from "../hooks/useCanvasHistory";
+import type { CanvasHistoryEntry } from "../utils/canvasHistory";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
@@ -1018,6 +1020,31 @@ export function WorkflowCanvas({
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
 
+  // ── Undo / redo ──────────────────────────────────────
+
+  // Same merge `showWorkflow` uses: a snapshot carries the persisted graph
+  // only, so the run the user is looking at has to be carried across the swap
+  // rather than restored from a state that never held it.
+  const applyHistoryEntry = useCallback(
+    (entry: CanvasHistoryEntry) => {
+      setNodes((previousNodes) =>
+        preserveCanvasRuntimeState(entry.nodes, previousNodes),
+      );
+      setEdges(entry.edges.slice());
+      updateVariables(entry.variables);
+    },
+    [setNodes, setEdges, updateVariables],
+  );
+
+  const { undo, redo, canUndo, canRedo } = useCanvasHistory({
+    nodes,
+    edges,
+    variables: workflowVariables,
+    resetKey: hydrationVersionRef.current,
+    enabled: isHydrated,
+    apply: applyHistoryEntry,
+  });
+
   useCanvasKeyboardShortcuts({
     isEditorOverlayOpen,
     isRunning,
@@ -1031,6 +1058,8 @@ export function WorkflowCanvas({
       setShowJsonEditor(true);
     },
     onFocusDirection: focusDirection,
+    onUndo: undo,
+    onRedo: redo,
   });
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -1345,6 +1374,10 @@ export function WorkflowCanvas({
 
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {
