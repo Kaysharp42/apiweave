@@ -643,6 +643,11 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
     }
   }
 
+  addUnknownFunctionDiagnostics(workflow, diagnostics)
+}
+
+/** Flag `{{someFunction(...)}}` placeholders that don't name a real dynamic function — they'd go out as literal text. */
+function addUnknownFunctionDiagnostics(workflow: WorkflowGraphInput, diagnostics: WorkflowDiagnostic[]): void {
   for (const node of workflow.nodes) {
     forEachConfigString(node.config as Readonly<Record<string, unknown>> | undefined, (_rootKey, value) => {
       FUNCTION_CALL_RE.lastIndex = 0
