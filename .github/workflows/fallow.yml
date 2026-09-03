@@ -32,6 +32,21 @@ jobs:
           review-guidance: true
           fail-on-issues: true
 
+      - name: TEMP debug - raw fallow json
+        if: always()
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || 'HEAD~1' }}"
+          echo "base=$BASE"
+          npx fallow audit --changed-since "$BASE" --gate new-only --format json --no-cache > fallow-debug.json || true
+
+      - name: TEMP debug - upload fallow raw results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fallow-debug-results-2
+          path: app/fallow-debug.json
+          if-no-files-found: warn
+
       - name: Upload SARIF to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
