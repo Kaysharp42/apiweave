@@ -328,3 +328,7 @@ export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
 export type { AgentLaunchMenuItem } from "./AgentLaunchMenuItem";
 export type { DetachDecisionInput } from "./DetachDecisionInput";
 export type { BackgroundRefreshInput } from "./BackgroundRefreshInput";
+export type { CanvasDragMode } from "./CanvasDragMode";
+export type { CanvasPrefs } from "./CanvasPrefs";
+export type { CanvasInteractionProps } from "./CanvasInteractionProps";
+export type { FocusDirection } from "./FocusDirection";

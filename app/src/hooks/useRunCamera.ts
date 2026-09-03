@@ -63,6 +63,15 @@ interface UseRunCameraParams {
   edgesRef: MutableRefObject<Edge[]>;
   /** The element the flow is drawn in — measured for its on-screen size. */
   containerRef: RefObject<HTMLElement | null>;
+  /**
+   * The canvas camera lock, as a ref. The camera writes `setViewport` directly
+   * and so bypasses `panOnDrag` entirely — a locked canvas would still be
+   * dragged around by a run unless the lock is honoured here. A run started
+   * under the lock therefore begins already suspended: the follow pill appears
+   * and following is one click away, rather than the lock being silently
+   * overruled by the next run.
+   */
+  lockedRef?: MutableRefObject<boolean>;
 }
 
 interface UseRunCameraResult {
@@ -400,6 +409,7 @@ export default function useRunCamera({
   nodesRef,
   edgesRef,
   containerRef,
+  lockedRef,
 }: UseRunCameraParams): UseRunCameraResult {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
@@ -631,16 +641,20 @@ export default function useRunCamera({
           noteNode(fronts, nodeId, false, Date.now());
         }
 
+        const locked = lockedRef?.current === true;
+
         followingRef.current = true;
-        suspendedRef.current = false;
+        suspendedRef.current = locked;
         endingRef.current = false;
         motionRef.current = null;
         writtenRef.current = [];
         engageRef.current = true;
         setIsFollowing(true);
-        setIsSuspended(false);
+        setIsSuspended(locked);
 
-        schedule();
+        // `schedule` returns early while suspended anyway; not calling it says
+        // the lock is the reason rather than leaving that to be inferred.
+        if (!locked) schedule();
       },
 
       onNodeShown: (nodeId, status) => {
@@ -670,7 +684,7 @@ export default function useRunCamera({
         schedule();
       },
     };
-  }, [edgesRef, release, schedule]);
+  }, [edgesRef, lockedRef, release, schedule]);
 
   useEffect(() => cancelFrame, [cancelFrame]);
 
