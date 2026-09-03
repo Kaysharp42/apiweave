@@ -5,3 +5,4 @@ export { default as MergeNode } from "./MergeNode";
 export { default as StartNode } from "./StartNode";
 export { default as EndNode } from "./EndNode";
 export { default as CallWorkflowNode } from "./CallWorkflowNode";
+export { default as GroupNode } from "./GroupNode"

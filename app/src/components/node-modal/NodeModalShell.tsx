@@ -2,7 +2,14 @@ import { useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import Tippy from "@tippyjs/react";
-import { Eye, PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  PanelRightClose,
+  PanelRightOpen,
+  X,
+} from "lucide-react";
 import { Dialog } from "@headlessui/react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
@@ -83,6 +90,8 @@ export function NodeModalShell({
   onClose,
   onCancel,
   onSave,
+  onPrevious,
+  onNext,
   initialFocus,
   requestBar,
   children,
@@ -126,6 +135,28 @@ export function NodeModalShell({
           <Badge variant="secondary" size="sm" className="capitalize">
             {typeLabel}
           </Badge>
+          {(onPrevious || onNext) && (
+            <div className="flex items-center gap-1">
+              <IconButton
+                tooltip="Previous node (Left arrow)"
+                size="sm"
+                variant="ghost"
+                onClick={onPrevious}
+                disabled={!onPrevious}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </IconButton>
+              <IconButton
+                tooltip="Next node (Right arrow)"
+                size="sm"
+                variant="ghost"
+                onClick={onNext}
+                disabled={!onNext}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </IconButton>
+            </div>
+          )}
           <IconButton
             tooltip="Close"
             size="sm"

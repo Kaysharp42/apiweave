@@ -6,9 +6,14 @@ function renderToolbar() {
   render(
     <CanvasToolbar
       onSave={vi.fn()}
+      onUndo={vi.fn()}
+      onRedo={vi.fn()}
+      canUndo={false}
+      canRedo={false}
       onHistory={vi.fn()}
       onJsonEditor={vi.fn()}
       onImport={vi.fn()}
+      onCommandPalette={vi.fn()}
       onRun={vi.fn()}
       environments={[]}
       onEnvironmentChange={vi.fn()}

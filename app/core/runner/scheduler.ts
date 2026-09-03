@@ -2,6 +2,7 @@ import type { Run } from "@shared/types/Run"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
+import { withoutFrameNodes } from "@shared/graph/frames"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
@@ -186,7 +187,10 @@ export class RunScheduler {
 
       const mergedVariables = { ...workflow.variables, ...(run.variables ?? {}) }
       const graph: WorkflowGraph = {
-        nodes: workflow.nodes as unknown as WorkflowGraph["nodes"],
+        // Group frames are canvas furniture with no edges. Left in, the executor
+        // answers them with `{ status: "skipped" }` — a row in the run timeline
+        // and the JUnit report for something that was never a step.
+        nodes: withoutFrameNodes(workflow.nodes) as unknown as WorkflowGraph["nodes"],
         edges: workflow.edges as unknown as WorkflowGraph["edges"],
         ...(Object.keys(mergedVariables).length > 0 ? { variables: mergedVariables as Record<string, unknown> } : {}),
       }
@@ -222,7 +226,7 @@ export class RunScheduler {
           if (!target) return undefined
           return {
             name: target.name,
-            nodes: target.nodes as unknown as WorkflowGraph["nodes"],
+            nodes: withoutFrameNodes(target.nodes) as unknown as WorkflowGraph["nodes"],
             edges: target.edges as unknown as WorkflowGraph["edges"],
             variables: target.variables as Record<string, unknown>,
           }

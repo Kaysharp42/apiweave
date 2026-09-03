@@ -13,6 +13,8 @@ export interface NodeModalShellProps {
   onClose: () => void;
   onCancel: () => void;
   onSave: () => void;
+  onPrevious?: () => void;
+  onNext?: () => void;
   initialFocus?: MutableRefObject<HTMLElement | null>;
   requestBar: ReactNode;
   children: ReactNode;

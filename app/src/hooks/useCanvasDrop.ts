@@ -1,7 +1,9 @@
 import { useCallback } from "react";
 import type { Node, XYPosition } from "@xyflow/react";
+import type { CanvasNode, CanvasNodeTemplate } from "../types";
 
 interface NodeConfig {
+  [key: string]: unknown;
   method?: string;
   url?: string;
   queryParams?: unknown[];
@@ -38,6 +40,22 @@ function getDefaultConfig(type: string): NodeConfig {
     default:
       return {};
   }
+}
+
+export function createCanvasNode(
+  template: CanvasNodeTemplate,
+  position: XYPosition,
+): CanvasNode {
+  const config = { ...getDefaultConfig(template.type), ...template.config };
+  return {
+    id: `${template.type}-${Date.now()}`,
+    type: template.type,
+    position,
+    data: {
+      label: template.label,
+      config,
+    },
+  };
 }
 
 interface UseCanvasDropParams {
@@ -106,17 +124,16 @@ export default function useCanvasDrop({
         config.method = method;
       }
 
-      const newNode: Node = {
-        id: `${type}-${Date.now()}`,
-        type,
-        position,
-        data: {
+      const newNode = createCanvasNode(
+        {
+          type,
           label:
             labelFromTemplate ??
             type.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
           config,
         },
-      };
+        position,
+      );
 
       setNodes((nds) => [...nds, newNode]);
     },

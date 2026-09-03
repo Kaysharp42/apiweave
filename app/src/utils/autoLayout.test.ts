@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Position, getBezierPath } from "@xyflow/react";
 import type { Edge, Node } from "@xyflow/react";
-import { autoLayout } from "./autoLayout";
+import { autoLayout, autoLayoutRootNodes } from "./autoLayout";
 
 /**
  * Bezier edges through a dagre layout.
@@ -207,6 +207,37 @@ describe("autoLayout with bezier edges", () => {
 
     expect(autoLayout(measured, edges).map((n) => n.position)).toEqual(
       autoLayout(nodes, edges).map((n) => n.position),
+    );
+  });
+  // #4: dagre lays out a flat graph, and a framed node's position is relative
+  // to its frame. Laying them out together scatters the user's groups and puts
+  // absolute coordinates into a relative space.
+  it("leaves frames and their members where they are", () => {
+    const { nodes, edges } = buildGraph(6);
+    const framed = [
+      {
+        id: "frame-1",
+        type: "group",
+        position: { x: -50, y: -50 },
+        width: 400,
+        height: 300,
+        data: {},
+      },
+      ...nodes.map((node) =>
+        node.id === "n2" ? { ...node, parentId: "frame-1" } : node,
+      ),
+    ] as Node[];
+
+    const laidOut = autoLayoutRootNodes(framed, edges);
+    const byId = new Map(laidOut.map((node) => [node.id, node.position]));
+
+    expect(byId.get("frame-1")).toEqual({ x: -50, y: -50 });
+    expect(byId.get("n2")).toEqual(
+      framed.find((node) => node.id === "n2")?.position,
+    );
+    // Everything else still moved.
+    expect(byId.get("n1")).not.toEqual(
+      nodes.find((node) => node.id === "n1")?.position,
     );
   });
 });

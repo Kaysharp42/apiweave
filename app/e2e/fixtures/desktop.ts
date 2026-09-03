@@ -66,9 +66,26 @@ export const DESKTOP_WORKFLOW = {
   updatedAt: "2026-07-20T00:00:00.000Z",
 } as const;
 
-export async function installDesktopIpc(page: Page): Promise<void> {
+interface DesktopIpcOptions {
+  /** The single workflow the mock serves. Defaults to {@link DESKTOP_WORKFLOW}. */
+  readonly workflow?: unknown;
+  /** Seeded before the app boots — e.g. `autoSaveEnabled: "false"`. */
+  readonly storage?: Readonly<Record<string, string>>;
+}
+
+export async function installDesktopIpc(
+  page: Page,
+  options: DesktopIpcOptions = {},
+): Promise<void> {
   await page.addInitScript(
-    ({ workflow, workspace }) => {
+    ({ workflow, workspace, storage }) => {
+      // App settings are read from localStorage on first render, so a test that
+      // needs autosave off has to write it before the bundle runs.
+      for (const [key, value] of Object.entries(storage)) {
+        localStorage.setItem(key, value);
+        // The pre-namespace key, still read as a fallback.
+        localStorage.setItem(key.replace(/^apiweave:v1:/, ""), value);
+      }
       window.__APIWEAVE_IPC__ = {
         invoke: async (domain, action) => {
           let data: unknown = null;
@@ -143,7 +160,11 @@ export async function installDesktopIpc(page: Page): Promise<void> {
         onWorkflowChanged: () => () => undefined,
       };
     },
-    { workflow: DESKTOP_WORKFLOW, workspace: DESKTOP_WORKSPACE },
+    {
+      workflow: options.workflow ?? DESKTOP_WORKFLOW,
+      workspace: DESKTOP_WORKSPACE,
+      storage: options.storage ?? {},
+    },
   );
 }
 

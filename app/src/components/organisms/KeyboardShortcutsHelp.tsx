@@ -10,6 +10,7 @@ const shortcutGroups: ShortcutGroup[] = [
       { keys: ["Ctrl", "N"], description: "New workflow" },
       { keys: ["Ctrl", "S"], description: "Save workflow" },
       { keys: ["Ctrl", "R"], description: "Run workflow" },
+      { keys: ["Ctrl", "K"], description: "Open command palette" },
       { keys: ["F5"], description: "Run workflow (alt)" },
       { keys: ["?"], description: "Show keyboard shortcuts" },
     ],
