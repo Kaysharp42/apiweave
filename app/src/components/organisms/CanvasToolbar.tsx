@@ -12,6 +12,8 @@ import {
   ChevronDown,
   Lock,
   LockOpen,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -39,6 +41,10 @@ const RESUME_ENABLED = false;
 
 export function CanvasToolbar({
   onSave,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onHistory,
   onJsonEditor,
   onImport,
@@ -117,6 +123,30 @@ export function CanvasToolbar({
             tooltip="Save workflow (Ctrl+S)"
             showLabel={showLabels}
           />
+          {/* Icon-only at every density, like the camera lock: undo is a
+              reflex, and a reflex two clicks deep in an overflow menu is not
+              one. The disabled state is the only affordance telling you
+              whether there is anything left to undo. */}
+          <IconButton
+            onClick={onUndo}
+            disabled={!canUndo}
+            tooltip="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            variant="ghost"
+            size="sm"
+          >
+            <Undo2 className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onRedo}
+            disabled={!canRedo}
+            tooltip="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            variant="ghost"
+            size="sm"
+          >
+            <Redo2 className="w-4 h-4" />
+          </IconButton>
           {!useOverflow && (
             <ToolbarButton
               icon={History}

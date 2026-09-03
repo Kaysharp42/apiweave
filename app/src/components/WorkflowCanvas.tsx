@@ -37,6 +37,7 @@ import StartNode from "./nodes/StartNode";
 import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
+import GroupNode from "./nodes/GroupNode";
 import CustomEdge from "./CustomEdge";
 import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
 import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
@@ -61,6 +62,8 @@ import useCanvasStore from "../stores/CanvasStore";
 import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
+import useCanvasHistory from "../hooks/useCanvasHistory";
+import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
@@ -78,6 +81,14 @@ import {
   shouldActOnDetach,
 } from "../utils/canvasRefreshGuards";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
+import {
+  groupSelection,
+  isFrameNode,
+  selectedFrameIds,
+  selectedIds,
+  ungroupFrames,
+  withAbsolutePositions,
+} from "../utils/canvasGroups";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
@@ -88,7 +99,7 @@ import {
   readSaveFailureEnvelope,
 } from "../utils/workflowSaveFailure";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
-import { autoLayout } from "../utils/autoLayout";
+import { autoLayoutRootNodes } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
@@ -134,6 +145,7 @@ const nodeTypes: NodeTypes = {
     CallWorkflowNode,
     "workflow",
   ) as NodeTypes[string],
+  group: withNodeBoundary(GroupNode, "group") as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -229,8 +241,14 @@ export function WorkflowCanvas({
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
 
   const nodesRef = useRef(nodes);
+  // The same graph as `nodesRef`, with frames dropped and every position made
+  // absolute. Anything that measures canvas distance reads this one: a framed
+  // node's `position` is relative to its frame, and neither the run camera nor
+  // the directional focus has any business knowing that.
+  const flatNodesRef = useRef(nodes);
   useEffect(() => {
     nodesRef.current = nodes;
+    flatNodesRef.current = withAbsolutePositions(nodes);
   }, [nodes]);
 
   const edgesRef = useRef(edges);
@@ -301,7 +319,7 @@ export function WorkflowCanvas({
     onViewportInteraction,
   } = useRunCamera({
     instanceRef: reactFlowInstanceRef,
-    nodesRef,
+    nodesRef: flatNodesRef,
     edgesRef,
     containerRef: canvasRef,
     lockedRef,
@@ -690,6 +708,21 @@ export function WorkflowCanvas({
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
+      // Deleting a frame must free its members, not take them with it. Rebasing
+      // them to absolute space here — before ReactFlow applies the removal —
+      // is what keeps every node exactly where it looked.
+      const removedFrames = new Set(
+        changes
+          .filter((change) => change.type === "remove")
+          .map((change) => nodesRef.current.find((n) => n.id === change.id))
+          .filter((node): node is CanvasNode => node !== undefined)
+          .filter(isFrameNode)
+          .map((node) => node.id),
+      );
+      if (removedFrames.size > 0) {
+        setNodes((nds) => ungroupFrames(nds, removedFrames));
+      }
+
       const filteredChanges = changes.filter((change) => {
         if (
           change.type === "select" &&
@@ -701,7 +734,7 @@ export function WorkflowCanvas({
       });
       onNodesChangeRef.current(filteredChanges);
     },
-    [],
+    [setNodes],
   );
 
   const handleEdgesChange = useCallback(
@@ -779,7 +812,7 @@ export function WorkflowCanvas({
   const focusDirection = useCallback(
     (direction: FocusDirection) => {
       const targetId = nearestInDirection(
-        nodesRef.current,
+        flatNodesRef.current,
         selectedNodeRef.current?.id ?? null,
         direction,
       );
@@ -804,6 +837,81 @@ export function WorkflowCanvas({
     },
     [setNodes, suspendFollow],
   );
+
+  /**
+   * Frame the current selection.
+   *
+   * Explicit, never hit-tested: the frame is the selection's bounding box plus
+   * padding, so nothing here has to guess what the user dropped onto what.
+   * Refusals come back as text because every one of them is a fact the user
+   * needs ("those nodes are already in a frame"), not a silent no-op.
+   */
+  const groupSelected = useCallback(() => {
+    const current = nodesRef.current;
+    const outcome = groupSelection(current, selectedIds(current), {
+      frameId: `group-${Date.now()}`,
+      gridSize: useCanvasPrefsStore.getState().gridSize,
+    });
+    if (!outcome.ok) {
+      toast.info(outcome.reason);
+      return;
+    }
+    setNodes(outcome.nodes);
+  }, [setNodes]);
+
+  const ungroupSelected = useCallback(() => {
+    const current = nodesRef.current;
+    const frames = selectedFrameIds(current, selectedIds(current));
+    if (frames.size === 0) {
+      toast.info("Select a frame, or a node inside one, to ungroup");
+      return;
+    }
+    setNodes(ungroupFrames(current, frames));
+  }, [setNodes]);
+
+  /**
+   * ReactFlow's own delete pass adds every child of a deleted parent
+   * (`getElementsToRemove`). For a frame that is the wrong reading of the
+   * gesture — deleting the frame around some nodes should leave the nodes.
+   */
+  const handleBeforeDelete = useCallback(
+    async ({ nodes: doomed, edges: doomedEdges }: {
+      nodes: CanvasNode[];
+      edges: CanvasEdge[];
+    }) => {
+      const frames = new Set(doomed.filter(isFrameNode).map((node) => node.id));
+      if (frames.size === 0) return true;
+      const explicit = new Set(doomed.map((node) => node.id));
+      return {
+        nodes: doomed.filter(
+          (node) =>
+            node.parentId === undefined ||
+            !frames.has(node.parentId) ||
+            // A member the user selected alongside the frame really was asked
+            // for; only the ones ReactFlow added on its own are spared.
+            (explicit.has(node.id) && node.selected === true),
+        ),
+        edges: doomedEdges,
+      };
+    },
+    [],
+  );
+
+  /**
+   * Keep frame labels readable when the graph is zoomed out to fit.
+   *
+   * One CSS variable on the canvas root, written per move frame — the pills
+   * counter-scale in CSS. A React subscription to the zoom would re-render
+   * every frame node instead, which is the mistake `index.css` already
+   * documents this canvas paying for once.
+   */
+  const handleMove = useCallback(() => {
+    const element = canvasRef.current;
+    const zoom = reactFlowInstanceRef.current?.getViewport().zoom;
+    if (!element || zoom === undefined || zoom <= 0) return;
+    const boost = zoom < 1 ? Math.min(1 / zoom, 4) : 1;
+    element.style.setProperty("--aw-group-label-boost", boost.toFixed(2));
+  }, [reactFlowInstanceRef]);
 
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
@@ -1018,6 +1126,31 @@ export function WorkflowCanvas({
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
 
+  // ── Undo / redo ──────────────────────────────────────
+
+  // Same merge `showWorkflow` uses: a snapshot carries the persisted graph
+  // only, so the run the user is looking at has to be carried across the swap
+  // rather than restored from a state that never held it.
+  const applyHistoryEntry = useCallback(
+    (entry: CanvasHistoryEntry) => {
+      setNodes((previousNodes) =>
+        preserveCanvasRuntimeState(entry.nodes, previousNodes),
+      );
+      setEdges(entry.edges.slice());
+      updateVariables(entry.variables);
+    },
+    [setNodes, setEdges, updateVariables],
+  );
+
+  const { undo, redo, canUndo, canRedo } = useCanvasHistory({
+    nodes,
+    edges,
+    variables: workflowVariables,
+    resetKey: hydrationVersionRef.current,
+    enabled: isHydrated,
+    apply: applyHistoryEntry,
+  });
+
   useCanvasKeyboardShortcuts({
     isEditorOverlayOpen,
     isRunning,
@@ -1031,6 +1164,10 @@ export function WorkflowCanvas({
       setShowJsonEditor(true);
     },
     onFocusDirection: focusDirection,
+    onUndo: undo,
+    onRedo: redo,
+    onGroup: groupSelected,
+    onUngroup: ungroupSelected,
   });
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -1042,6 +1179,9 @@ export function WorkflowCanvas({
         type: node.type ?? "",
         ...(node.data.label ? { label: node.data.label } : {}),
         position: node.position,
+        // Without this, opening the JSON editor and applying it unframed every
+        // grouped node on the canvas.
+        ...(node.parentId === undefined ? {} : { parentId: node.parentId }),
         config: node.data.config || {},
       })),
       edges: edges.map((edge) => ({
@@ -1149,6 +1289,10 @@ export function WorkflowCanvas({
       return "var(--aw-status-success)";
     if (n.data?.executionStatus === "error") return "var(--aw-status-error)";
 
+    // A frame is the biggest node on the canvas and the least important thing
+    // in an overview — painted in the node colour it dominates the minimap.
+    if (n.type === "group")
+      return "color-mix(in srgb, var(--aw-text-muted) 22%, transparent)";
     if (n.type === "start") return "var(--aw-primary-light)";
     if (n.type === "end") return "var(--aw-status-error)";
     if (n.type === "httpRequest" || n.type === "http-request")
@@ -1191,7 +1335,7 @@ export function WorkflowCanvas({
     // Re-laying out the graph and then fitting it is a camera act of its own; a
     // run camera still following would take the view straight back off it.
     suspendFollow();
-    setNodes((nds) => autoLayout(nds, edgesRef.current));
+    setNodes((nds) => autoLayoutRootNodes(nds, edgesRef.current));
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes, suspendFollow]);
 
@@ -1253,7 +1397,9 @@ export function WorkflowCanvas({
         // have none — so this fires with an event only when a hand is actually
         // on the canvas, including one that grabs it mid-glide.
         onMoveStart={handleMoveStart}
+        onMove={handleMove}
         onMoveEnd={handleMoveEnd}
+        onBeforeDelete={handleBeforeDelete}
         onInit={handleInit}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -1345,6 +1491,10 @@ export function WorkflowCanvas({
 
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {

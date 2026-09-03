@@ -6,6 +6,10 @@ function renderToolbar() {
   render(
     <CanvasToolbar
       onSave={vi.fn()}
+      onUndo={vi.fn()}
+      onRedo={vi.fn()}
+      canUndo={false}
+      canRedo={false}
       onHistory={vi.fn()}
       onJsonEditor={vi.fn()}
       onImport={vi.fn()}

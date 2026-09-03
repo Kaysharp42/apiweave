@@ -10,42 +10,62 @@ interface UseCanvasKeyboardShortcutsParams {
   onToggleJsonEditor: () => void;
   /** Move the selection to the nearest node in that direction. */
   onFocusDirection: (direction: FocusDirection) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 }
 
 type CanvasShortcutHandlers = UseCanvasKeyboardShortcutsParams;
 
 /**
- * Ctrl+Shift, not Ctrl: plain Ctrl+arrow is word navigation on Windows and
- * Linux, which is where this app runs.
+ * What each chord does, as a table.
+ *
+ * Returning the handler rather than calling it is what makes `runChord` able to
+ * own `preventDefault` — one place decides "this keystroke was ours", so a
+ * chord added later cannot forget to claim it. `null` means the chord exists
+ * but is unavailable right now, and the keystroke goes back to the browser.
+ *
+ * Ctrl+Shift+arrow rather than Ctrl+arrow for focus: plain Ctrl+arrow is word
+ * navigation on Windows and Linux, which is where this app runs.
  */
-const FOCUS_DIRECTIONS: Record<string, FocusDirection> = {
-  arrowup: "up",
-  arrowdown: "down",
-  arrowleft: "left",
-  arrowright: "right",
+type ChordTable = Record<
+  string,
+  (handlers: CanvasShortcutHandlers) => (() => void) | null
+>;
+
+const MODIFIER_CHORDS: ChordTable = {
+  s: (h) => h.onSave,
+  // Ctrl+R while running keeps its browser meaning rather than doing nothing:
+  // no handler, no preventDefault.
+  r: (h) => (h.isRunning ? null : h.onRun),
+  j: (h) => h.onToggleJsonEditor,
+  z: (h) => h.onUndo,
+  // Ctrl+Y as well as Ctrl+Shift+Z: this app runs on Windows, where Ctrl+Y is
+  // what people's hands already do.
+  y: (h) => h.onRedo,
+  g: (h) => h.onGroup,
 };
 
-/** The Ctrl/⌘ chords the canvas owns. */
-function runModifierChord(
+const SHIFT_CHORDS: ChordTable = {
+  z: (h) => h.onRedo,
+  g: (h) => h.onUngroup,
+  arrowup: (h) => () => h.onFocusDirection("up"),
+  arrowdown: (h) => () => h.onFocusDirection("down"),
+  arrowleft: (h) => () => h.onFocusDirection("left"),
+  arrowright: (h) => () => h.onFocusDirection("right"),
+};
+
+function runChord(
   e: KeyboardEvent,
+  table: ChordTable,
   key: string | undefined,
   current: CanvasShortcutHandlers,
 ): void {
-  if (key === "s") {
-    e.preventDefault();
-    current.onSave();
-    return;
-  }
-  if (key === "r") {
-    if (current.isRunning) return;
-    e.preventDefault();
-    current.onRun();
-    return;
-  }
-  if (key === "j") {
-    e.preventDefault();
-    current.onToggleJsonEditor();
-  }
+  const action = key === undefined ? undefined : table[key]?.(current);
+  if (!action) return;
+  e.preventDefault();
+  action();
 }
 
 /** The shortcut itself, once the guards have decided this keystroke is ours. */
@@ -63,25 +83,15 @@ function runCanvasShortcut(
 
   if (!(e.ctrlKey || e.metaKey)) return;
 
-  if (e.shiftKey) {
-    const direction = key === undefined ? undefined : FOCUS_DIRECTIONS[key];
-    if (direction) {
-      e.preventDefault();
-      current.onFocusDirection(direction);
-    }
-    // Ctrl+Shift+anything-else is not ours; the chords below are unshifted.
-    return;
-  }
-
-  runModifierChord(e, key, current);
+  runChord(e, e.shiftKey ? SHIFT_CHORDS : MODIFIER_CHORDS, key, current);
 }
 
 /**
  * Canvas-scoped keyboard shortcuts (save/run/JSON editor, and Ctrl+Shift+arrow
  * to move the selection between nodes). These live here rather than in the
  * workspace-level `useKeyboardShortcuts` because their handlers —
- * `saveWorkflow`, `runWorkflow`, the JSON editor toggle, the node focus — only
- * exist inside `WorkflowCanvas`.
+ * `saveWorkflow`, `runWorkflow`, the JSON editor toggle, the node focus, the
+ * undo ring — only exist inside `WorkflowCanvas`.
  *
  * The editor-overlay guard keeps these from firing while a node modal, the JSON
  * editor, or the history/import panels own the keyboard; the editable-target

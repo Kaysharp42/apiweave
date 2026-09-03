@@ -29,3 +29,42 @@ export function autoLayout<N extends Node, E extends Edge>(
   );
   return nodes.map((n) => ({ ...n, position: positions.get(n.id)! }));
 }
+
+/**
+ * Auto-layout, minus the frames.
+ *
+ * dagre lays out a flat graph; a frame is fixed geometry whose children live in
+ * its coordinate space. Handing both to dagre scatters a user's groups and
+ * gives framed nodes absolute coordinates inside a relative space — so frames
+ * and their members keep their positions, and only root nodes are re-laid.
+ *
+ * ponytail: the richer alternative is a layout pass per frame followed by a
+ * placement pass for the frames themselves. Worth it if anyone reaches for
+ * Auto-layout on a framed graph often enough to complain that the frames
+ * stayed put.
+ */
+export function autoLayoutRootNodes<N extends Node, E extends Edge>(
+  nodes: N[],
+  edges: E[],
+  direction: "LR" | "TB" = "LR",
+): N[] {
+  const movable = nodes.filter(
+    (node) => node.parentId === undefined && node.type !== "group",
+  );
+  if (movable.length === nodes.length) return autoLayout(nodes, edges, direction);
+
+  const movableIds = new Set(movable.map((node) => node.id));
+  const laidOut = autoLayout(
+    movable,
+    // An edge into a frame's member would make dagre invent the node it cannot
+    // see, and lay the graph out around a phantom.
+    edges.filter((e) => movableIds.has(e.source) && movableIds.has(e.target)),
+    direction,
+  );
+  const positions = new Map<string, N["position"]>();
+  for (const node of laidOut) positions.set(node.id, node.position);
+  return nodes.map((node) => {
+    const position = positions.get(node.id);
+    return position === undefined ? node : { ...node, position };
+  });
+}

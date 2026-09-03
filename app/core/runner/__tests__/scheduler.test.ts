@@ -85,6 +85,32 @@ describe("RunScheduler", () => {
       expect(scheduler.getActiveCount()).toBe(0)
     })
 
+    // A group frame is canvas furniture. Left in the graph the executor answers
+    // it with `{ status: "skipped" }`, which is a node row in the run timeline
+    // and the JUnit report for something that was never a step.
+    it("never schedules a group frame", async () => {
+      const ws = seedWorkspace()
+      const wf = workflows.create({
+        workspaceId: ws,
+        name: "framed-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 }, parentId: "frame" },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+          { nodeId: "frame", type: "group", position: { x: -20, y: -20 }, config: { width: 300, height: 200 } },
+        ] as WorkflowNode[],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }] as WorkflowEdge[],
+      }).workflowId
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({ emitProgress: (_runId, event) => events.push(event) })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(runs.getById(runId)?.status).toBe("completed")
+      expect(Object.keys(runs.getById(runId)?.nodeStatuses ?? {})).toEqual(["start", "end"])
+      expect(events.filter((e) => e.kind === "node.status" && e.nodeId === "frame")).toEqual([])
+    })
+
     // Regression: `runs_create` echoed `selectedEnvironmentId: null` even when
     // the workflow had one set, so an MCP agent triggering a run without an
     // explicit env left `{{env.*}}` placeholders as literal text and got a
