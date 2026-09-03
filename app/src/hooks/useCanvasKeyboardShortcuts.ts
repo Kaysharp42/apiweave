@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
-import type { FocusDirection } from "../utils/directionalFocus";
+import type { FocusDirection } from "../types/FocusDirection";
 
 interface UseCanvasKeyboardShortcutsParams {
   isEditorOverlayOpen: boolean;

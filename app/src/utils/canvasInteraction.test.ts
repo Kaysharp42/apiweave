@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { canvasInteractionProps } from "./canvasInteraction";
-import type { CanvasPrefs } from "../stores/CanvasPrefsStore";
+import type { CanvasPrefs } from "../types/CanvasPrefs";
 
 const base: CanvasPrefs = {
   dragMode: "pan",

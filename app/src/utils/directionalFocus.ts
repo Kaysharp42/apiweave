@@ -1,7 +1,6 @@
 import type { Node } from "@xyflow/react";
 import { NODE_FALLBACK_WIDTH, NODE_FALLBACK_HEIGHT } from "./autoLayout";
-
-export type FocusDirection = "up" | "down" | "left" | "right";
+import type { FocusDirection } from "../types/FocusDirection";
 
 /**
  * Off-axis distance costs double. Without the weight, → jumps to a node that is

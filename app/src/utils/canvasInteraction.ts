@@ -1,19 +1,10 @@
-import type { CanvasPrefs } from "../stores/CanvasPrefsStore";
+import type { CanvasPrefs } from "../types/CanvasPrefs";
+import type { CanvasInteractionProps } from "../types/CanvasInteractionProps";
 
 /** Left and middle mouse pan when panning is the drag. */
 const PAN_BUTTONS = [0, 1];
 /** Middle mouse still pans when a left-drag is box-select. */
 const MIDDLE_BUTTON_ONLY = [1];
-
-export interface CanvasInteractionProps {
-  selectionOnDrag: boolean;
-  panOnDrag: boolean | number[];
-  panOnScroll: boolean;
-  zoomOnScroll: boolean;
-  zoomOnPinch: boolean;
-  snapToGrid: boolean;
-  snapGrid: [number, number];
-}
 
 /**
  * The ReactFlow pan/zoom/selection props for a set of canvas preferences.

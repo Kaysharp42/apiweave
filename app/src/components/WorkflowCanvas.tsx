@@ -91,7 +91,7 @@ import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
-import type { FocusDirection } from "../utils/directionalFocus";
+import type { FocusDirection } from "../types/FocusDirection";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";

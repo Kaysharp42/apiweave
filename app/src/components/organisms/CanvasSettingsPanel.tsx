@@ -2,7 +2,7 @@ import { ToggleSetting } from "../molecules/ToggleSetting";
 import { Input } from "../atoms/Input";
 import ButtonSelect from "../ButtonSelect";
 import useCanvasPrefsStore from "../../stores/CanvasPrefsStore";
-import type { CanvasDragMode } from "../../stores/CanvasPrefsStore";
+import type { CanvasDragMode } from "../../types/CanvasDragMode";
 import type { SelectOption } from "../../types";
 
 const DRAG_MODE_OPTIONS: SelectOption[] = [
