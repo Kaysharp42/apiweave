@@ -642,8 +642,6 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
       }
     }
   }
-
-  addUnknownFunctionDiagnostics(workflow, diagnostics)
 }
 
 /** Flag `{{someFunction(...)}}` placeholders that don't name a real dynamic function — they'd go out as literal text. */
@@ -906,6 +904,7 @@ export function analyzeWorkflowGraph(input: WorkflowGraphInput, run?: Run): Work
   addAssertionAndBranchDiagnostics(workflow, diagnostics)
   addExpectedStatusMigrationDiagnostics(workflow, diagnostics)
   addDataflowDiagnostics(workflow, diagnostics)
+  addUnknownFunctionDiagnostics(workflow, diagnostics)
   if (run !== undefined) addRunDiagnostics(workflow, run, diagnostics)
 
   diagnostics.sort((left, right) =>
