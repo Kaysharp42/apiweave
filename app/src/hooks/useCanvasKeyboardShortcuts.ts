@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
+import type { FocusDirection } from "../utils/directionalFocus";
 
 interface UseCanvasKeyboardShortcutsParams {
   isEditorOverlayOpen: boolean;
@@ -7,15 +8,22 @@ interface UseCanvasKeyboardShortcutsParams {
   onSave: () => void;
   onRun: () => void;
   onToggleJsonEditor: () => void;
+  /** Move the selection to the nearest node in that direction. */
+  onFocusDirection: (direction: FocusDirection) => void;
 }
 
-interface CanvasShortcutHandlers {
-  isEditorOverlayOpen: boolean;
-  isRunning: boolean;
-  onSave: () => void;
-  onRun: () => void;
-  onToggleJsonEditor: () => void;
-}
+type CanvasShortcutHandlers = UseCanvasKeyboardShortcutsParams;
+
+/**
+ * Ctrl+Shift, not Ctrl: plain Ctrl+arrow is word navigation on Windows and
+ * Linux, which is where this app runs.
+ */
+const FOCUS_DIRECTIONS: Record<string, FocusDirection> = {
+  arrowup: "up",
+  arrowdown: "down",
+  arrowleft: "left",
+  arrowright: "right",
+};
 
 /** The Ctrl/⌘ chords the canvas owns. */
 function runModifierChord(
@@ -53,42 +61,39 @@ function runCanvasShortcut(
     return;
   }
 
-  if (e.ctrlKey || e.metaKey) runModifierChord(e, key, current);
+  if (!(e.ctrlKey || e.metaKey)) return;
+
+  if (e.shiftKey) {
+    const direction = key === undefined ? undefined : FOCUS_DIRECTIONS[key];
+    if (direction) {
+      e.preventDefault();
+      current.onFocusDirection(direction);
+    }
+    // Ctrl+Shift+anything-else is not ours; the chords below are unshifted.
+    return;
+  }
+
+  runModifierChord(e, key, current);
 }
 
 /**
- * Canvas-scoped keyboard shortcuts (save/run/JSON editor). These live here
- * rather than in the workspace-level `useKeyboardShortcuts` because their
- * handlers — `saveWorkflow`, `runWorkflow`, the JSON editor toggle — only exist
- * inside `WorkflowCanvas`.
+ * Canvas-scoped keyboard shortcuts (save/run/JSON editor, and Ctrl+Shift+arrow
+ * to move the selection between nodes). These live here rather than in the
+ * workspace-level `useKeyboardShortcuts` because their handlers —
+ * `saveWorkflow`, `runWorkflow`, the JSON editor toggle, the node focus — only
+ * exist inside `WorkflowCanvas`.
  *
  * The editor-overlay guard keeps these from firing while a node modal, the JSON
  * editor, or the history/import panels own the keyboard; the editable-target
  * guard lets normal typing (and the JSON editor's own Ctrl+S) win.
  */
-export function useCanvasKeyboardShortcuts({
-  isEditorOverlayOpen,
-  isRunning,
-  onSave,
-  onRun,
-  onToggleJsonEditor,
-}: UseCanvasKeyboardShortcutsParams) {
-  const handlers = useRef<CanvasShortcutHandlers>({
-    isEditorOverlayOpen,
-    isRunning,
-    onSave,
-    onRun,
-    onToggleJsonEditor,
-  });
+export function useCanvasKeyboardShortcuts(
+  params: UseCanvasKeyboardShortcutsParams,
+) {
+  const handlers = useRef<CanvasShortcutHandlers>(params);
 
   useEffect(() => {
-    handlers.current = {
-      isEditorOverlayOpen,
-      isRunning,
-      onSave,
-      onRun,
-      onToggleJsonEditor,
-    };
+    handlers.current = params;
   });
 
   useEffect(() => {

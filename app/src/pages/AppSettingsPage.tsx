@@ -1,7 +1,15 @@
 import type { ComponentType } from "react";
-import { Bot, Plug, RefreshCw, Shield, type LucideIcon } from "lucide-react";
+import {
+  Bot,
+  MousePointer2,
+  Plug,
+  RefreshCw,
+  Shield,
+  type LucideIcon,
+} from "lucide-react";
 import { Navigate, useParams } from "react-router-dom";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
+import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
 import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
 import { PrivateNetworksPanel } from "../components/organisms/PrivateNetworksPanel";
 import { UpdateSettingsPanel } from "../components/organisms/UpdateSettingsPanel";
@@ -27,6 +35,13 @@ export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
     subtitle: "Launch a coding agent in your project folder",
     width: "max-w-4xl",
     Panel: AgentsSettingsPanel,
+  },
+  canvas: {
+    icon: MousePointer2,
+    title: "Canvas",
+    subtitle: "Drag, zoom and snap behaviour",
+    width: "max-w-2xl",
+    Panel: CanvasSettingsPanel,
   },
   "private-networks": {
     icon: Shield,

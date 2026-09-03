@@ -14,6 +14,7 @@ import {
   Background,
   BackgroundVariant,
   ConnectionLineType,
+  SelectionMode,
   // Aliased: `molecules` exports a Panel of its own, and one of the two names
   // has to say which layer it belongs to.
   Panel as FlowPanel,
@@ -38,6 +39,7 @@ import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
 import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
+import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -56,6 +58,7 @@ import useSidebarStore from "../stores/SidebarStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 import { computeProvenance } from "../utils/variableProvenance";
 import useCanvasStore from "../stores/CanvasStore";
+import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasDrop from "../hooks/useCanvasDrop";
@@ -64,6 +67,7 @@ import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
 import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
+import { useSpacePan } from "../hooks/useSpacePan";
 import {
   preserveCanvasRuntimeState,
   useHydration,
@@ -85,6 +89,9 @@ import {
 } from "../utils/workflowSaveFailure";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
 import { autoLayout } from "../utils/autoLayout";
+import { canvasInteractionProps } from "../utils/canvasInteraction";
+import { nearestInDirection } from "../utils/directionalFocus";
+import type { FocusDirection } from "../utils/directionalFocus";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -166,6 +173,14 @@ const miniMapStyle = {
 };
 
 const controlsStyle = { margin: CanvasCornerGutter };
+
+// Every modifier anyone might reach for, rather than Control alone: which key
+// adds to a selection is muscle memory from another app, and there is no cost
+// to honouring all three.
+const multiSelectionKeyCode = ["Shift", "Meta", "Control"];
+
+// Framing one node through the full-graph options would zoom to 2.5x on it.
+const focusViewOptions = { ...fitViewOptions, maxZoom: 1 };
 
 // WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
 const extractorConfigIdMap = new WeakMap<object, number>();
@@ -252,6 +267,22 @@ export function WorkflowCanvas({
   );
   const hydrationVersionRef = useRef(0);
 
+  // ── Canvas preferences ───────────────────────────────────────────────
+
+  const canvasPrefs = useCanvasPrefsStore();
+  const spacePan = useSpacePan();
+  // Memoised on the store object, which only changes when a preference does:
+  // `snapGrid` is an array, and a fresh one every render re-triggers ReactFlow
+  // layout work during pan and drag for the reason `reactFlowStyle` is hoisted.
+  const interaction = useMemo(
+    () => canvasInteractionProps(canvasPrefs, spacePan),
+    [canvasPrefs, spacePan],
+  );
+  // The camera lock, for the things that read it outside render: the run camera
+  // and the double-click handler.
+  const lockedRef = useRef(canvasPrefs.locked);
+  lockedRef.current = canvasPrefs.locked;
+
   // ── Run camera ──────────────────────────────────────────────────────
   //
   // Declared up here, ahead of the run hook, because the run hook is what tells
@@ -273,7 +304,15 @@ export function WorkflowCanvas({
     nodesRef,
     edgesRef,
     containerRef: canvasRef,
+    lockedRef,
   });
+
+  // `lockedRef` only covers runs that *start* locked. A lock thrown mid-run has
+  // to hand the camera back too, or the one thing that moves the viewport
+  // without asking carries on doing it — `setViewport` never sees `panOnDrag`.
+  useEffect(() => {
+    if (canvasPrefs.locked) suspendFollow();
+  }, [canvasPrefs.locked, isFollowingRun, suspendFollow]);
 
   // Manual-pan flag for minimap freeze (validation step 3). Camera already
   // freezes via `isCameraMoving`; user drag was still recomputing O(n) minimap
@@ -713,6 +752,59 @@ export function WorkflowCanvas({
     [],
   );
 
+  /**
+   * Double-click the empty pane to frame the whole graph. The gesture is free
+   * because `zoomOnDoubleClick` is off — and on a *node* it already opens the
+   * editor, which is a better use of it than framing that one node.
+   *
+   * Through `suspendFollow` like the zoom controls: a mid-run double-click
+   * would otherwise fight the camera and snap straight back.
+   */
+  const onPaneDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.classList?.contains("react-flow__pane")) return;
+      if (lockedRef.current) return;
+      suspendFollow();
+      reactFlowInstanceRef.current?.fitView(fitViewOptions);
+    },
+    [suspendFollow],
+  );
+
+  /**
+   * Ctrl+Shift+arrow moves the selection to the nearest node that way — the
+   * canvas's only keyboard access, so it also has to be able to get *into* the
+   * graph from nothing selected. See `nearestInDirection` for the scoring.
+   */
+  const focusDirection = useCallback(
+    (direction: FocusDirection) => {
+      const targetId = nearestInDirection(
+        nodesRef.current,
+        selectedNodeRef.current?.id ?? null,
+        direction,
+      );
+      if (targetId === null) return;
+
+      selectedNodeRef.current =
+        nodesRef.current.find((n) => n.id === targetId) ?? null;
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.selected === (n.id === targetId)
+            ? n
+            : { ...n, selected: n.id === targetId },
+        ),
+      );
+      // The camera has to come along: `onlyRenderVisibleElements` means the
+      // node focus just moved to is very likely not even mounted.
+      suspendFollow();
+      reactFlowInstanceRef.current?.fitView({
+        ...focusViewOptions,
+        nodes: [{ id: targetId }],
+      });
+    },
+    [setNodes, suspendFollow],
+  );
+
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
       setNodes((nds) =>
@@ -938,6 +1030,7 @@ export function WorkflowCanvas({
       }
       setShowJsonEditor(true);
     },
+    onFocusDirection: focusDirection,
   });
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -1072,6 +1165,14 @@ export function WorkflowCanvas({
     return "var(--aw-border)";
   }, []);
 
+  // Every new workflow is seeded with `start` and `end`, so "empty" is "nothing
+  // but the two endpoints" — key it off the node count alone and the hint never
+  // appears once.
+  const isCanvasEmpty = useMemo(
+    () => nodes.every((n) => n.type === "start" || n.type === "end"),
+    [nodes],
+  );
+
   const rfInstanceRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
     null,
   );
@@ -1141,6 +1242,13 @@ export function WorkflowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
+        {...interaction}
+        // The pane double-click is ours now — see `onPaneDoubleClick`.
+        zoomOnDoubleClick={false}
+        onDoubleClick={onPaneDoubleClick}
+        // Partial: a box only has to touch a node to take it, which is what
+        // makes a drag-select over a dense graph usable.
+        selectionMode={SelectionMode.Partial}
         // ReactFlow passes the d3 source event through, and its own transitions
         // have none — so this fires with an event only when a hand is actually
         // on the canvas, including one that grabs it mid-glide.
@@ -1159,7 +1267,7 @@ export function WorkflowCanvas({
         minZoom={0.02}
         maxZoom={2.5}
         deleteKeyCode="Delete"
-        multiSelectionKeyCode="Control"
+        multiSelectionKeyCode={multiSelectionKeyCode}
         // While the run camera moves, only the slice of the graph it frames is
         // mounted — a 130-node workflow keeps about a dozen nodes in the DOM
         // instead of all of them, and that is the per-frame cost `setViewport`
@@ -1232,6 +1340,8 @@ export function WorkflowCanvas({
           pannable
         />
       </ReactFlow>
+
+      {isCanvasEmpty && <EmptyCanvasHint />}
 
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}

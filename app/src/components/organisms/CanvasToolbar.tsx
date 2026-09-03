@@ -10,6 +10,8 @@ import {
   MoreHorizontal,
   RefreshCw,
   ChevronDown,
+  Lock,
+  LockOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -19,6 +21,7 @@ import { AgentLaunchButton } from "./AgentLaunchButton";
 import { useOpenAgentSession } from "../../hooks/useAgentDockControls";
 import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
 import { useElementWidth } from "../../hooks/useElementWidth";
+import useCanvasPrefsStore from "../../stores/CanvasPrefsStore";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
 import { buildEnvironmentOptions, resolveToolbarDensity } from "./canvasToolbarUtils";
@@ -59,6 +62,11 @@ export function CanvasToolbar({
   const runMenuRef = useRef<HTMLDivElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
   const openAgentSession = useOpenAgentSession();
+  // Straight from the store rather than down a prop chain: the lock is one
+  // boolean the canvas reads from the same place, and threading it through
+  // `CanvasToolbarProps` would only give it a second name.
+  const canvasLocked = useCanvasPrefsStore((s) => s.locked);
+  const setCanvasPrefs = useCanvasPrefsStore((s) => s.setCanvasPrefs);
   const safeResumeOptions = resumeOptions ?? EMPTY_RESUME_OPTIONS;
 
   const hasResumeOptions = safeResumeOptions.length > 0;
@@ -134,6 +142,23 @@ export function CanvasToolbar({
               showLabel={showLabels}
             />
           )}
+          {/* Icon-only at every density, and never in the overflow menu: this
+              is reached mid-drag, when the map has just slid out from under
+              someone, and a lock two clicks deep does not get used. */}
+          <IconButton
+            onClick={() => setCanvasPrefs({ locked: !canvasLocked })}
+            tooltip={canvasLocked ? "Unlock camera" : "Lock camera"}
+            aria-pressed={canvasLocked}
+            aria-label={canvasLocked ? "Unlock camera" : "Lock camera"}
+            variant={canvasLocked ? "primary" : "ghost"}
+            size="sm"
+          >
+            {canvasLocked ? (
+              <Lock className="w-4 h-4" />
+            ) : (
+              <LockOpen className="w-4 h-4" />
+            )}
+          </IconButton>
         </div>
 
         {useOverflow && (
