@@ -11,9 +11,11 @@ import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
+import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
 
 const VARIABLE_REF_RE = /\{\{\s*variables\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const FUNCTION_CALL_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(/g
 const SEVERITY_ORDER: Readonly<Record<WorkflowDiagnostic["severity"], number>> = {
   error: 0,
   warning: 1,
@@ -638,6 +640,26 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
         ))
       }
     }
+  }
+
+  for (const node of workflow.nodes) {
+    forEachConfigString(node.config as Readonly<Record<string, unknown>> | undefined, (_rootKey, value) => {
+      FUNCTION_CALL_RE.lastIndex = 0
+      let match: RegExpExecArray | null
+      while ((match = FUNCTION_CALL_RE.exec(value)) !== null) {
+        const functionName = match[1]!
+        if (DYNAMIC_FUNCTION_NAMES.has(functionName)) continue
+        diagnostics.push(diagnostic(
+          "unknown_function",
+          "warning",
+          "dataflow",
+          [node.nodeId],
+          "A placeholder calls an unknown dynamic function and will be sent as literal text.",
+          { functionName },
+          { kind: "replace_unknown_function", nodeId: node.nodeId },
+        ))
+      }
+    })
   }
 }
 

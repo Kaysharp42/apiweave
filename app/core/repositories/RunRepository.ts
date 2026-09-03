@@ -235,6 +235,21 @@ export class RunRepository {
     return this.update(runId, { results: [...results] })
   }
 
+  /** Store one completed node result without waiting for the rest of the run. */
+  public upsertNodeResult(runId: string, result: RunResult): Run | undefined {
+    const existing = this.getById(runId)
+    if (existing === undefined) return undefined
+    const results = [...existing.results]
+    const index = results.findIndex((candidate) => candidate.nodeId === result.nodeId)
+    if (index === -1) results.push(result)
+    else results[index] = result
+    this.store.set(
+      "UPDATE runs SET response_metadata_json = json_set(response_metadata_json, '$.results', json(?)) WHERE id = ?",
+      [toJson(results), runId],
+    )
+    return this.getById(runId)
+  }
+
   /** Persist the executor's final evidence without rewriting per-node progress. */
   public updateExecutionEvidence(
     runId: string,
