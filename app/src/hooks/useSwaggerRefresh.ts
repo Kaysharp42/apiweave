@@ -11,6 +11,132 @@ import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { ImportedItem } from "../types/ImportedItem";
 import type { SwaggerRefreshResult } from "../types/SwaggerRefreshResult";
 
+interface SwaggerImportPayload {
+  nodes?: Array<{ label?: string; config?: Record<string, unknown> }>;
+  stats?: Record<string, unknown>;
+}
+
+// Every open workflow gets its own useSwaggerRefresh instance, but a Swagger
+// doc URL is scoped to a workspace, not a workflow — opening several
+// workflows that share an environment (common with a 10+-service doc) has no
+// reason to re-fetch and re-parse the same spec for each one. This
+// module-level cache (keyed by workspace+URL) and in-flight map are shared
+// across every instance so only the first open per TTL window pays for the
+// network round trip and server-side parse; the rest reuse the result.
+export const SWAGGER_CACHE_TTL_MS = 5 * 60 * 1000;
+export const MAX_SWAGGER_CACHE_ENTRIES = 50;
+const swaggerResultCache = new Map<
+  string,
+  { result: SwaggerImportPayload; fetchedAt: number }
+>();
+const swaggerInFlight = new Map<string, Promise<SwaggerImportPayload>>();
+
+export function swaggerCacheKey(workspaceId: string, swaggerDocUrl: string) {
+  return `${workspaceId}::${swaggerDocUrl}`;
+}
+
+// Which signature (workflow+env+url) was last applied to a given workflow's
+// canvas/palette. Keyed by workflowId, not held in a ref: a ref resets on
+// every mount, so switching to another workflow and back — or an unrelated
+// re-render (e.g. the sidebar's window-focus/visibilitychange handler
+// reloading `environments`) — was treating the return as "first refresh" and
+// re-running the full apply (addImportedGroup + a pass over every canvas
+// node) even though nothing had changed. Module scope survives the remount,
+// so an unchanged signature is skipped for real.
+const MAX_SWAGGER_SIGNATURE_ENTRIES = 100;
+const swaggerAppliedSignatureByWorkflow = new Map<string, string>();
+
+function rememberSwaggerSignature(workflowKey: string, signature: string) {
+  // Refresh LRU order for existing keys so the eviction below drops the
+  // least-recently-used workflow first.
+  if (swaggerAppliedSignatureByWorkflow.has(workflowKey)) {
+    swaggerAppliedSignatureByWorkflow.delete(workflowKey);
+  } else if (
+    swaggerAppliedSignatureByWorkflow.size >= MAX_SWAGGER_SIGNATURE_ENTRIES
+  ) {
+    const oldest = swaggerAppliedSignatureByWorkflow.keys().next();
+    if (!oldest.done) {
+      swaggerAppliedSignatureByWorkflow.delete(oldest.value);
+    }
+  }
+  swaggerAppliedSignatureByWorkflow.set(workflowKey, signature);
+}
+
+function storeSwaggerResult(cacheKey: string, result: SwaggerImportPayload) {
+  const now = Date.now();
+  for (const [key, entry] of swaggerResultCache) {
+    if (now - entry.fetchedAt >= SWAGGER_CACHE_TTL_MS) {
+      swaggerResultCache.delete(key);
+    }
+  }
+  if (
+    !swaggerResultCache.has(cacheKey) &&
+    swaggerResultCache.size >= MAX_SWAGGER_CACHE_ENTRIES
+  ) {
+    const oldest = swaggerResultCache.keys().next();
+    if (!oldest.done) {
+      swaggerResultCache.delete(oldest.value);
+    }
+  }
+  swaggerResultCache.set(cacheKey, { result, fetchedAt: now });
+}
+
+/** Test-only: clears the shared cache/in-flight state between test cases. */
+export function __clearSwaggerCacheForTests() {
+  swaggerResultCache.clear();
+  swaggerInFlight.clear();
+  swaggerAppliedSignatureByWorkflow.clear();
+}
+
+export async function fetchSwaggerNodes(
+  requestUrl: string,
+  cacheKey: string,
+  force: boolean,
+): Promise<SwaggerImportPayload> {
+  if (!force) {
+    const cached = swaggerResultCache.get(cacheKey);
+    if (cached) {
+      if (Date.now() - cached.fetchedAt < SWAGGER_CACHE_TTL_MS) {
+        return cached.result;
+      }
+      swaggerResultCache.delete(cacheKey);
+    }
+    const pending = swaggerInFlight.get(cacheKey);
+    if (pending) return pending;
+  }
+
+  const promise = (async () => {
+    const response = await authenticatedFetch(requestUrl);
+    if (!response.ok) {
+      let detail = "Failed to load Swagger/OpenAPI URL";
+      try {
+        const errorBody = (await response.json()) as { detail?: string };
+        detail = errorBody.detail || detail;
+      } catch {
+        // Keep default error detail if response body is not JSON
+      }
+      throw new Error(detail);
+    }
+    const parsed = (await response.json()) as SwaggerImportPayload;
+    storeSwaggerResult(cacheKey, parsed);
+    return parsed;
+  })();
+
+  swaggerInFlight.set(cacheKey, promise);
+  promise
+    .finally(() => {
+      if (swaggerInFlight.get(cacheKey) === promise) {
+        swaggerInFlight.delete(cacheKey);
+      }
+    })
+    .catch(() => {
+      // Already surfaced to the real awaiter below; this chain only exists to
+      // clear the in-flight entry and must not become an unhandled rejection.
+    });
+
+  return promise;
+}
+
 // Loopback/private/link-local targets are only fetched on an explicit,
 // user-initiated refresh (force=true) — never from the automatic mount
 // effect. swaggerDocUrl is environment data that can arrive via import/sync,
@@ -55,7 +181,6 @@ export function useSwaggerRefresh({
   const { addImportedGroup, removeImportedGroup } = usePalette();
   const { workspaceId, isReady } = useScopeContext();
   const [isSwaggerRefreshing, setIsSwaggerRefreshing] = useState(false);
-  const swaggerRefreshSignatureRef = useRef("");
   const swaggerRefreshRequestIdRef = useRef(0);
   const envSwaggerGroupId = `env-openapi-${workflowId}`;
 
@@ -101,10 +226,18 @@ export function useSwaggerRefresh({
       const swaggerDocUrl = selectedEnvObject?.swaggerDocUrl?.trim() || "";
 
       const signature = `${workflowId}::${selectedEnvId || ""}::${swaggerDocUrl}`;
-      if (!force && swaggerRefreshSignatureRef.current === signature) {
-        return { skipped: true, reason: "unchanged-signature" };
+      // Without a workflowId there is no safe shared key: every instance would
+      // collide on one entry and skip refreshes for unrelated canvases, so
+      // bypass the signature cache entirely in that case.
+      if (workflowId) {
+        if (
+          !force &&
+          swaggerAppliedSignatureByWorkflow.get(workflowId) === signature
+        ) {
+          return { skipped: true, reason: "unchanged-signature" };
+        }
+        rememberSwaggerSignature(workflowId, signature);
       }
-      swaggerRefreshSignatureRef.current = signature;
 
       if (!selectedEnvId) {
         removeImportedGroup(envSwaggerGroupId);
@@ -135,29 +268,15 @@ export function useSwaggerRefresh({
       setIsSwaggerRefreshing(true);
 
       try {
-        const response = await authenticatedFetch(
+        const result = await fetchSwaggerNodes(
           workflowImportOpenapiRemoteUrl(workspaceId, swaggerDocUrl, true),
+          swaggerCacheKey(workspaceId, swaggerDocUrl),
+          force,
         );
-
-        if (!response.ok) {
-          let detail = "Failed to load Swagger/OpenAPI URL";
-          try {
-            const errorBody = (await response.json()) as { detail?: string };
-            detail = errorBody.detail || detail;
-          } catch {
-            // Keep default error detail if response body is not JSON
-          }
-          throw new Error(detail);
-        }
 
         if (requestId !== swaggerRefreshRequestIdRef.current) {
           return { skipped: true, reason: "superseded" };
         }
-
-        const result = (await response.json()) as {
-          nodes?: Array<{ label?: string; config?: Record<string, unknown> }>;
-          stats?: Record<string, unknown>;
-        };
 
         const apiNodes = result.nodes || [];
         const items: ImportedItem[] = apiNodes.map((node) => {

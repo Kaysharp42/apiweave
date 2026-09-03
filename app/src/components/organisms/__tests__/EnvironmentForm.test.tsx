@@ -160,3 +160,56 @@ describe("EnvironmentForm — base environment picker", () => {
     expect(screen.queryByText("Inherited Variables")).not.toBeInTheDocument();
   });
 });
+
+describe("EnvironmentForm — editing a variable", () => {
+  it("double-clicking a variable row opens it for editing and Save applies the change", async () => {
+    const { onSubmit } = renderForm({
+      environment: env({ ...dev, variables: { EMAIL: "old@kyra.local" } }),
+      availableEnvironments: [dev],
+    });
+
+    await userEvent.dblClick(screen.getByText("EMAIL"));
+    const valueInput = screen.getByPlaceholderText("Edit value");
+    await userEvent.clear(valueInput);
+    await userEvent.type(valueInput, "new@kyra.local");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("new@kyra.local")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Save Changes"));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ variables: { EMAIL: "new@kyra.local" } }),
+    );
+  });
+
+  it("the pencil button also opens edit mode, and renaming the key replaces it", async () => {
+    renderForm({
+      environment: env({ ...dev, variables: { EMAIL: "a@kyra.local" } }),
+      availableEnvironments: [dev],
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit variable" }));
+    const keyInput = screen.getByPlaceholderText("Edit variable name");
+    await userEvent.clear(keyInput);
+    await userEvent.type(keyInput, "EMAIL_ADDRESS");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("EMAIL_ADDRESS")).toBeInTheDocument();
+    expect(screen.queryByText("EMAIL")).not.toBeInTheDocument();
+  });
+
+  it("Escape cancels the edit without changing the variable", async () => {
+    renderForm({
+      environment: env({ ...dev, variables: { EMAIL: "a@kyra.local" } }),
+      availableEnvironments: [dev],
+    });
+
+    await userEvent.dblClick(screen.getByText("EMAIL"));
+    const valueInput = screen.getByPlaceholderText("Edit value");
+    await userEvent.type(valueInput, "garbage");
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.getByText("a@kyra.local")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Edit value")).not.toBeInTheDocument();
+  });
+});
