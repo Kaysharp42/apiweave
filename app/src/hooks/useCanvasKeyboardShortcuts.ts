@@ -14,6 +14,7 @@ interface UseCanvasKeyboardShortcutsParams {
   onRedo: () => void;
   onGroup: () => void;
   onUngroup: () => void;
+  onOpenCommandPalette: () => void;
 }
 
 type CanvasShortcutHandlers = UseCanvasKeyboardShortcutsParams;
@@ -40,6 +41,7 @@ const MODIFIER_CHORDS: ChordTable = {
   // no handler, no preventDefault.
   r: (h) => (h.isRunning ? null : h.onRun),
   j: (h) => h.onToggleJsonEditor,
+  k: (h) => h.onOpenCommandPalette,
   z: (h) => h.onUndo,
   // Ctrl+Y as well as Ctrl+Shift+Z: this app runs on Windows, where Ctrl+Y is
   // what people's hands already do.

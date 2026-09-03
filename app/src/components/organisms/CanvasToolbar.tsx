@@ -14,6 +14,7 @@ import {
   LockOpen,
   Undo2,
   Redo2,
+  Command,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -48,6 +49,7 @@ export function CanvasToolbar({
   onHistory,
   onJsonEditor,
   onImport,
+  onCommandPalette,
   onRun,
   onCancel,
   onRunFromLastFailed,
@@ -123,6 +125,15 @@ export function CanvasToolbar({
             tooltip="Save workflow (Ctrl+S)"
             showLabel={showLabels}
           />
+          <IconButton
+            onClick={onCommandPalette}
+            tooltip="Command palette (Ctrl+K)"
+            aria-label="Open command palette"
+            variant="ghost"
+            size="sm"
+          >
+            <Command className="w-4 h-4" />
+          </IconButton>
           {/* Icon-only at every density, like the camera lock: undo is a
               reflex, and a reflex two clicks deep in an overflow menu is not
               one. The disabled state is the only affordance telling you

@@ -13,6 +13,7 @@ function renderToolbar() {
       onHistory={vi.fn()}
       onJsonEditor={vi.fn()}
       onImport={vi.fn()}
+      onCommandPalette={vi.fn()}
       onRun={vi.fn()}
       environments={[]}
       onEnvironmentChange={vi.fn()}

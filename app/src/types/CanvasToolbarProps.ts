@@ -7,6 +7,7 @@ export interface CanvasToolbarProps {
   onHistory: () => void;
   onJsonEditor: () => void;
   onImport: () => void;
+  onCommandPalette: () => void;
   onRun: () => void;
   onCancel?: () => void;
   onRunFromLastFailed?: () => void;

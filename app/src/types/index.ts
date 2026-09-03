@@ -336,3 +336,8 @@ export type { GroupTint } from "./GroupTint";
 export type { GroupOutcome } from "./GroupOutcome";
 export type { CanvasHistoryEntry } from "./CanvasHistoryEntry";
 export type { CanvasHistoryControls } from "./CanvasHistoryControls";
+export type { FocusModeDirection } from "./FocusModeDirection";
+export type { CanvasCommand } from "./CanvasCommand";
+export type { CanvasCommandActions } from "./CanvasCommandActions";
+export type { CanvasNodeTemplate } from "./CanvasNodeTemplate";
+export type { CommandPaletteProps } from "./CommandPaletteProps";

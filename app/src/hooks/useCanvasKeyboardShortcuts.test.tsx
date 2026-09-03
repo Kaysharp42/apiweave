@@ -14,6 +14,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     onRedo: vi.fn(),
     onGroup: vi.fn(),
     onUngroup: vi.fn(),
+    onOpenCommandPalette: vi.fn(),
     ...overrides,
   };
   renderHook(() => useCanvasKeyboardShortcuts(handlers));
@@ -80,6 +81,13 @@ describe("useCanvasKeyboardShortcuts", () => {
     expect(h.onSave).toHaveBeenCalledTimes(1);
     expect(h.onToggleJsonEditor).toHaveBeenCalledTimes(1);
     expect(h.onRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the command palette with Ctrl+K", () => {
+    const h = setup();
+
+    expect(press("k", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(h.onOpenCommandPalette).toHaveBeenCalledTimes(1);
   });
 
   it("does not run while a run is in flight or an overlay owns the keyboard", () => {

@@ -54,6 +54,7 @@ import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
+import { CommandPalette } from "./organisms/CommandPalette";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
@@ -64,7 +65,7 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
-import useCanvasDrop from "../hooks/useCanvasDrop";
+import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useRunCamera from "../hooks/useRunCamera";
@@ -103,6 +104,8 @@ import { autoLayoutRootNodes } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
+import type { FocusModeDirection } from "../types/FocusModeDirection";
+import { adjacentFocusModeNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -120,6 +123,8 @@ import { snapTransform } from "../utils/runCamera";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
+import { createCanvasCommandRegistry } from "../commands/registry";
+import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
@@ -366,6 +371,8 @@ export function WorkflowCanvas({
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
   // CanvasStore) because only the canvas can resolve a nodeId to its live
@@ -388,7 +395,11 @@ export function WorkflowCanvas({
   // ── Hooks ──────────────────────────────────────────────────────────
 
   const isEditorOverlayOpen =
-    !!modalNode || showJsonEditor || showImportToNodes || showHistory;
+    !!modalNode ||
+    showJsonEditor ||
+    showImportToNodes ||
+    showHistory ||
+    isCommandPaletteOpen;
 
   const { selectedNodeRef, newDuplicateNodeRef } = useClipboardActions({
     nodes,
@@ -779,6 +790,7 @@ export function WorkflowCanvas({
         return;
       }
       if (node.type !== "start" && node.type !== "end") {
+        setIsFocusMode(false);
         setModalNode(node);
       }
     },
@@ -868,6 +880,33 @@ export function WorkflowCanvas({
     }
     setNodes(ungroupFrames(current, frames));
   }, [setNodes]);
+
+  const openFocusMode = useCallback(() => {
+    const node =
+      selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
+    if (!node || node.type === "group" || node.type === "start" || node.type === "end") {
+      toast.info("Select an editable node to enter focus mode");
+      return;
+    }
+    setIsFocusMode(true);
+    setModalNode(node);
+  }, []);
+
+  const stepFocusMode = useCallback(
+    (direction: FocusModeDirection) => {
+      if (!modalNode) return;
+      const targetId = adjacentFocusModeNode(
+        nodesRef.current,
+        edgesRef.current,
+        modalNode.id,
+        direction,
+      );
+      if (!targetId) return;
+      const target = nodesRef.current.find((node) => node.id === targetId);
+      if (target) setModalNode(target);
+    },
+    [modalNode],
+  );
 
   /**
    * ReactFlow's own delete pass adds every child of a deleted parent
@@ -1168,6 +1207,7 @@ export function WorkflowCanvas({
     onRedo: redo,
     onGroup: groupSelected,
     onUngroup: ungroupSelected,
+    onOpenCommandPalette: () => setIsCommandPaletteOpen(true),
   });
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -1339,6 +1379,89 @@ export function WorkflowCanvas({
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes, suspendFollow]);
 
+  const addCommandNode = useCallback(
+    (template: CanvasNodeTemplate) => {
+      const canvasBounds = canvasRef.current?.getBoundingClientRect();
+      const instance = reactFlowInstanceRef.current;
+      if (!canvasBounds || !instance) return;
+
+      const position = instance.screenToFlowPosition({
+        x: canvasBounds.left + canvasBounds.width / 2,
+        y: canvasBounds.top + canvasBounds.height / 2,
+      });
+      setNodes((currentNodes) => [
+        ...currentNodes,
+        createCanvasNode(template, position),
+      ]);
+    },
+    [setNodes],
+  );
+
+  const commands = useMemo(
+    () =>
+      createCanvasCommandRegistry({
+        isHydrated,
+        isRunning,
+        canUndo,
+        canRedo,
+        isLocked: canvasPrefs.locked,
+        snapToGrid: canvasPrefs.snapToGrid,
+        save: () => {
+          void saveWorkflow(false);
+        },
+        run: runWorkflow,
+        autoLayout: handleAutoLayout,
+        openJsonEditor: () => setShowJsonEditor(true),
+        openImport: () => setShowImportToNodes(true),
+        openHistory: () => setShowHistory(true),
+        undo,
+        redo,
+        group: groupSelected,
+        ungroup: ungroupSelected,
+        toggleLock: () =>
+          useCanvasPrefsStore
+            .getState()
+            .setCanvasPrefs({ locked: !canvasPrefs.locked }),
+        toggleSnapToGrid: () =>
+          useCanvasPrefsStore
+            .getState()
+            .setCanvasPrefs({ snapToGrid: !canvasPrefs.snapToGrid }),
+        focusMode: openFocusMode,
+        addNode: addCommandNode,
+      }),
+    [
+      addCommandNode,
+      canRedo,
+      canUndo,
+      canvasPrefs.locked,
+      canvasPrefs.snapToGrid,
+      groupSelected,
+      handleAutoLayout,
+      isHydrated,
+      isRunning,
+      redo,
+      runWorkflow,
+      saveWorkflow,
+      openFocusMode,
+      undo,
+      ungroupSelected,
+    ],
+  );
+
+  const previousFocusTarget =
+    isFocusMode && modalNode
+      ? adjacentFocusModeNode(
+          nodes,
+          edges,
+          modalNode.id,
+          "previous",
+        )
+      : null;
+  const nextFocusTarget =
+    isFocusMode && modalNode
+      ? adjacentFocusModeNode(nodes, edges, modalNode.id, "next")
+      : null;
+
   /*
    * The camera moves during a run, and only during a run — see `useRunCamera`.
    *
@@ -1506,6 +1629,7 @@ export function WorkflowCanvas({
           setShowJsonEditor(true);
         }}
         onImport={() => setShowImportToNodes(true)}
+        onCommandPalette={() => setIsCommandPaletteOpen(true)}
         onRun={runWorkflow}
         onCancel={cancelRun}
         onRunFromLastFailed={runFromLastFailed}
@@ -1547,6 +1671,12 @@ export function WorkflowCanvas({
         workspaceId={scope.workspaceId ?? ""}
       />
 
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        commands={commands}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
+
       {/* Keyed by node id so each open re-mounts with that node's label
           prefilled — PromptDialog seeds its input from `defaultValue` once. */}
       <PromptDialog
@@ -1581,7 +1711,16 @@ export function WorkflowCanvas({
               config: (modalNode.data.config as Record<string, unknown>) || {},
             },
           }}
-          onClose={() => setModalNode(null)}
+          onClose={() => {
+            setIsFocusMode(false);
+            setModalNode(null);
+          }}
+          {...(previousFocusTarget
+            ? { onPrevious: () => stepFocusMode("previous") }
+            : {})}
+          {...(nextFocusTarget
+            ? { onNext: () => stepFocusMode("next") }
+            : {})}
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
