@@ -1,10 +1,11 @@
 // fallow-ignore-file code-duplication -- this table's presentation columns are intentionally distinct from other tables
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../atoms/Button";
 import { Badge } from "../atoms/Badge";
 import { invoke } from "../../utils/apiweaveClient";
+import { useVisibleInterval } from "../../hooks/useVisibleInterval";
 import type { ConflictListItem } from "../../types/cloud";
 
 const POLL_MS = 10_000;
@@ -53,11 +54,7 @@ export function ConflictList() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  useVisibleInterval(() => void load(), POLL_MS);
 
   if (conflicts.length === 0 && error === null) return null;
 

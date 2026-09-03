@@ -37,6 +37,7 @@ export type { ExtractorFormProps } from "./ExtractorFormProps";
 export type { SecretsPanelProps } from "./SecretsPanelProps";
 export type { Workflow } from "./Workflow";
 export type { CanvasNode } from "./CanvasNode";
+export type { CanvasEdge } from "./CanvasEdge";
 export type { NodeType } from "./NodeType";
 export type { NodeData } from "./NodeData";
 export type { NodeStatus } from "./NodeStatus";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Workflow } from "@shared/types/Workflow";
-import type { Node, Edge } from "reactflow";
+import type { Node, Edge } from "@xyflow/react";
 import { workflowToCanvas } from "../adapters/workflowCanvas";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";

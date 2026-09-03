@@ -1,4 +1,4 @@
-import type { ReactFlowState } from "reactflow";
+import type { ReactFlowState } from "@xyflow/react";
 import type { MinimapTransformView } from "../types/MinimapTransformView";
 
 /**

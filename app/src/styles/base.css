@@ -14,18 +14,46 @@
    ────────────────────────────────────────────── */
 :root,
 [data-theme="apiweave"] {
-  /* Surface colors — true zinc neutrals */
-  --aw-surface: #fafafa;
-  --aw-surface-raised: #ffffff;
-  --aw-surface-overlay: #f4f4f5;
+  /* The tint triple — one ink value per theme, with the quiet neutral roles
+     (border, secondary text, muted text) expressed as alphas of it. A theme
+     flip is this line plus the surfaces; nothing else has a twin to drift.
+     Channels are space-separated because every consumer is `rgb(… / a)`:
+     the legacy comma form `rgba(var(--x), .1)` cannot take a channel var. */
+  --aw-tint-rgb: 58 48 38; /* warm near-black — the ink side */
 
-  /* Text colors */
-  --aw-text-primary: #09090b;
-  --aw-text-secondary: #52525b;
-  --aw-text-muted: #a1a1aa;
+  /* The alphas the quiet roles are drawn at. Per theme, because they are what
+     pays for the warmth: a warm ink is lighter than zinc-950, so the same
+     alpha over a warm ground reads weaker. Light needs more of the tint to
+     hold its contrast floors; dark keeps the quieter values it already had. */
+  --aw-a-border: 0.1;
+  --aw-a-secondary: 0.78;
+  --aw-a-muted: 0.6;
 
-  /* Border colors — hairline */
-  --aw-border: #e4e4e7;
+  /* Surfaces — the one palette a theme still owns outright. Channels rather
+     than hexes so Tailwind can still take an opacity modifier (bg-surface/90).
+     No light surface reaches 255: an app someone sits in front of all day
+     should not be the brightest thing the screen can do. */
+  --aw-surface-rgb: 251 248 243; /* #fbf8f3 — page   */
+  --aw-surface-raised-rgb: 253 251 247; /* #fdfbf7 — cards  */
+  --aw-surface-overlay-rgb: 243 239 231; /* #f3efe7 — hover  */
+  --aw-surface-sunken-rgb: 245 241 234; /* #f5f1ea — canvas */
+
+  /* Composed, for the stylesheets that want a colour and not channels. */
+  --aw-surface: rgb(var(--aw-surface-rgb));
+  --aw-surface-raised: rgb(var(--aw-surface-raised-rgb));
+  --aw-surface-overlay: rgb(var(--aw-surface-overlay-rgb));
+  --aw-surface-sunken: rgb(var(--aw-surface-sunken-rgb));
+
+  /* Text — strong ink is the tint at full strength, so it needs no per-theme
+     hex of its own; the quiet roles are alphas of the same tint. */
+  --aw-text-primary: rgb(var(--aw-tint-rgb));
+  --aw-text-secondary: rgb(var(--aw-tint-rgb) / var(--aw-a-secondary));
+  --aw-text-muted: rgb(var(--aw-tint-rgb) / var(--aw-a-muted));
+
+  /* Border — a hairline alpha, deliberately not the same value as
+     --aw-surface-overlay. Those two roles collided at #27272a in dark under
+     the paired palettes, which is why a hover fill grew a visible edge. */
+  --aw-border: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
   --aw-border-focus: #0d5c6e;
 
   /* Brand / Primary — single ink-teal accent */
@@ -102,13 +130,13 @@
      ────────────────────────────────────────── */
 
   /* Node supporting text.
-     --aw-text-muted is #a1a1aa, which is 2.56:1 on white — fine for a
-     placeholder inside a bordered input, but the node layer uses muted text
-     for real content: the metrics row, the rest line's argument, the skipped
-     label, and the idle status glyph. Those need to be read. zinc-500 is
-     4.83:1 and still visibly quieter than --aw-text-secondary at 7.73:1.
-     Dark mode keeps --aw-text-muted, which is already 3.67:1 there. */
-  --aw-node-text-muted: #71717a;
+     --aw-text-muted is a placeholder colour: it clears the 3:1 non-text floor
+     and no more. The node layer uses muted text for real content — the metrics
+     row, the rest line's argument, the skipped label, the idle status glyph —
+     and those have to be read, so they get a heavier alpha of the same tint:
+     5.2:1 on a node, still visibly quieter than the title at 12.5:1.
+     Dark keeps --aw-text-muted, which is already 4.35:1 there. */
+  --aw-node-text-muted: rgb(var(--aw-tint-rgb) / 0.72);
 
   /* Node radius */
   --aw-radius-node: 14px; /* the node slab                        */
@@ -164,15 +192,20 @@
    ────────────────────────────────────────────── */
 .dark,
 [data-theme="apiweave-dark"] {
-  --aw-surface: #09090b;
-  --aw-surface-raised: #18181b;
-  --aw-surface-overlay: #27272a;
+  --aw-tint-rgb: 250 250 250; /* the whole flip, one line */
 
-  --aw-text-primary: #fafafa;
-  --aw-text-secondary: #a1a1aa;
-  --aw-text-muted: #71717a;
+  /* Dark is not warmed: the warmth answers an all-day white page, and a
+     near-black surface never had that problem. */
+  --aw-surface-rgb: 9 9 11;
+  --aw-surface-raised-rgb: 24 24 27;
+  --aw-surface-overlay-rgb: 39 39 42;
+  --aw-surface-sunken-rgb: 9 9 11; /* the canvas is already the darkest thing */
 
-  --aw-border: #27272a;
+  /* Quieter than light: a luminous tint on near-black does not need as much
+     of itself to be read. Every colour role inherits from :root. */
+  --aw-a-secondary: 0.65;
+  --aw-a-muted: 0.45;
+
   --aw-border-focus: #2dd4bf;
 
   --aw-primary: #2dd4bf;

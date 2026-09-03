@@ -7,7 +7,8 @@ import {
   useMemo,
   type MutableRefObject,
 } from "react";
-import ReactFlow, {
+import {
+  ReactFlow,
   Controls,
   ControlButton,
   Background,
@@ -25,8 +26,8 @@ import ReactFlow, {
   type NodeTypes,
   type EdgeTypes,
   type ReactFlowInstance,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import AssertionNode from "./nodes/AssertionNode";
@@ -36,6 +37,7 @@ import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
 import CustomEdge from "./CustomEdge";
+import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -89,6 +91,8 @@ import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+import type { CanvasNode } from "../types/CanvasNode";
+import type { CanvasEdge } from "../types/CanvasEdge";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
@@ -106,14 +110,23 @@ const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 void NOISE_DATA_URI;
 
+// Every kind goes through `withNodeBoundary`: a throw while one node renders
+// must cost that one tile, not the canvas — see NodeBoundary. Registering a new
+// kind here is what covers it.
 const nodeTypes: NodeTypes = {
-  "http-request": HTTPRequestNode as NodeTypes[string],
-  assertion: AssertionNode as NodeTypes[string],
-  delay: DelayNode as NodeTypes[string],
-  start: StartNode as NodeTypes[string],
-  end: EndNode as NodeTypes[string],
-  merge: MergeNode as NodeTypes[string],
-  workflow: CallWorkflowNode as NodeTypes[string],
+  "http-request": withNodeBoundary(
+    HTTPRequestNode,
+    "http-request",
+  ) as NodeTypes[string],
+  assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
+  delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
+  start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
+  end: withNodeBoundary(EndNode, "end") as NodeTypes[string],
+  merge: withNodeBoundary(MergeNode, "merge") as NodeTypes[string],
+  workflow: withNodeBoundary(
+    CallWorkflowNode,
+    "workflow",
+  ) as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -197,10 +210,8 @@ export function WorkflowCanvas({
   } = useWorkflow();
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
-  const [nodes, setNodes, onNodesChange] =
-    useNodesState<WorkflowCanvasNodeData>(initialNodes);
-  const [edges, setEdges, onEdgesChange] =
-    useEdgesState<WorkflowCanvasEdgeData>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
 
   const nodesRef = useRef(nodes);
   useEffect(() => {
@@ -228,11 +239,11 @@ export function WorkflowCanvas({
   }, [workflowVariables]);
 
   const reactFlowInstanceRef = useRef<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>(null) as MutableRefObject<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>;
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
@@ -1061,17 +1072,18 @@ export function WorkflowCanvas({
     return "var(--aw-border)";
   }, []);
 
-  const rfInstanceRef = useRef<
-    Parameters<NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>>[0] | null
-  >(null);
+  const rfInstanceRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
+    null,
+  );
 
-  const handleInit = useCallback<
-    NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>
-  >((instance) => {
-    rfInstanceRef.current = instance;
-    (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
-      instance;
-  }, []);
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
+      rfInstanceRef.current = instance;
+      (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
+        instance;
+    },
+    [],
+  );
 
   // Position changes flow through onNodesChange, so the 700ms autosave persists them.
   const handleAutoLayout = useCallback(() => {
@@ -1104,13 +1116,13 @@ export function WorkflowCanvas({
   return (
     <main
       ref={canvasRef}
-      className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
+      className="w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300"
       aria-label="Workflow canvas"
     >
-      <div
-        className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none"
-        aria-hidden="true"
-      />
+      {/* Removed: a second, static 32px line grid drawn over this one. It was
+          pinned to the viewport rather than the canvas, so it did not move
+          when the canvas did — the exact opposite of what a backdrop is for.
+          The dot grid below is the surface; it pans and zooms with the graph. */}
       {/* Noise overlay with mix-blend removed for 60fps pan: mix-blend-multiply
           forces a full-viewport blend on every transform frame, preventing the
           viewport from staying on a single composited layer. Re-introduce only
@@ -1162,7 +1174,13 @@ export function WorkflowCanvas({
         <Background
           variant={BackgroundVariant.Dots}
           gap={24}
-          size={1}
+          // Bigger, and quieter than it looks: 22% of `--aw-text-muted` used
+          // to be 22% of a solid grey, and that token is now itself an alpha
+          // of the tint — so the same number lands at about 0.13 rather than
+          // 0.22. A 1px dot at that strength disappears the moment anyone
+          // zooms out, and the canvas stops reading as a surface at all;
+          // 2.5px survives the zoom without getting louder up close.
+          size={2.5}
           color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
 

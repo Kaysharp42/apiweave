@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from "react";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import { toast } from "sonner";
 import useCanvasStore from "../stores/CanvasStore";
 import { getCanvasClipboardShortcutAction } from "../utils/shortcutGuards";

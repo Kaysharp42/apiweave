@@ -1,4 +1,4 @@
-import type { Viewport } from "reactflow";
+import type { Viewport } from "@xyflow/react";
 import type { AttentionPoint } from "../types/AttentionPoint";
 import type { CameraFocus } from "../types/CameraFocus";
 import type { CameraFraming } from "../types/CameraFraming";

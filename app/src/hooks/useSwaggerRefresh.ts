@@ -5,7 +5,7 @@ import { authenticatedFetch } from "../utils/apiweaveClient";
 import { buildSwaggerRefreshSummary } from "../utils/swaggerRefreshSummary";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { workflowImportOpenapiRemoteUrl } from "../utils/apiweaveClient";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { ImportedItem } from "../types/ImportedItem";

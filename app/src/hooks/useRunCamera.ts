@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import type { Edge, Node, Viewport } from "reactflow";
+import type { Edge, Node, Viewport } from "@xyflow/react";
 import {
   CanvasCornerGutter,
   CanvasToolbarBand,
@@ -134,6 +134,18 @@ function orderedSeen(
     });
 }
 
+/** Measured size, falling back to the layout's own guess while ReactFlow has not
+ * measured yet. Split out so `attentionPointFor` stays a null check plus a
+ * struct build rather than carrying every fallback branch itself. */
+function nodeSize(node: Node): { width: number; height: number } {
+  return {
+    // ReactFlow fills these in once it has measured; a node still waiting for
+    // its first `dimensions` change gets the layout's own guess.
+    width: node.measured?.width ?? node.width ?? NODE_FALLBACK_WIDTH,
+    height: node.measured?.height ?? node.height ?? NODE_FALLBACK_HEIGHT,
+  };
+}
+
 /** Where a node is on the canvas, or null when there is nothing to point at:
  * deleted mid-run, or not in this canvas at all (a sub-workflow's node arriving
  * on the parent's stream). */
@@ -141,16 +153,15 @@ function attentionPointFor(
   node: Node | undefined,
   record: SeenRunNode,
 ): AttentionPoint | null {
-  const position = node?.positionAbsolute ?? node?.position;
+  const position = node?.position;
   if (!node || !position) return null;
 
+  const { width, height } = nodeSize(node);
   return {
     x: position.x,
     y: position.y,
-    // ReactFlow fills these in once it has measured; a node still waiting for its
-    // first `dimensions` change gets the layout's own guess.
-    width: node.width ?? NODE_FALLBACK_WIDTH,
-    height: node.height ?? NODE_FALLBACK_HEIGHT,
+    width,
+    height,
     running: record.running,
     since: record.since,
   };

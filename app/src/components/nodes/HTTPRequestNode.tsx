@@ -1,5 +1,5 @@
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useReactFlow } from "reactflow";
+import { useNodeConfigPatch } from "../../hooks/useNodeConfigPatch";
 import { useWorkflow } from "../../contexts/WorkflowContext";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import FileUploadSection from "../FileUploadSection";
@@ -390,27 +390,8 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
 };
 
 const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
-  const { setNodes } = useReactFlow();
+  const updateNodeData = useNodeConfigPatch(id);
   const { variables } = useWorkflow();
-
-  const updateNodeData = useCallback(
-    (field: string, value: unknown) => {
-      setNodes((nds) =>
-        nds.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  config: { ...node.data.config, [field]: value },
-                },
-              }
-            : node,
-        ),
-      );
-    },
-    [id, setNodes],
-  );
 
   const method = (data.config?.method ?? "GET") as HttpMethod;
   const methodBadgeClass = methodBadgeClasses[method] ?? methodBadgeClasses.GET;
@@ -424,8 +405,11 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
 
   const icon = useMemo(() => <Globe className="w-4 h-4" />, []);
 
-  // The method carries the node's identity hue, so the tile is method-coloured
-  // and the chip repeats the name for anyone who cannot use the colour.
+  // The method carries the node's identity hue: the icon tile and the slab's
+  // 3px cap are both drawn from it. The name itself is not encoded by colour
+  // alone either — it is the first word of the rest line (`POST api.shop…`),
+  // and the method select once the node is expanded. So there is no pill: it
+  // was a third rendering of one fact, and it took width from the title.
   const tileHue = `var(--aw-method-${method.toLowerCase()})`;
 
   const typeChip = useMemo(
@@ -442,15 +426,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
             <Snowflake className="w-3 h-3" /> {data.branchCount}x
           </span>
         )}
-        <span
-          className={`flex-shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip leading-none ${methodBadgeClass}`}
-          title={`HTTP ${method}`}
-        >
-          {method}
-        </span>
       </>
     ),
-    [data.branchCount, data.schemaRefreshWarning, method, methodBadgeClass],
+    [data.branchCount, data.schemaRefreshWarning],
   );
 
   const status = data.executionStatus ?? "idle";
