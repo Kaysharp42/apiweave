@@ -4,7 +4,15 @@ import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 
 type FocusableNode = Node<WorkflowCanvasNodeData>;
 
-function isFocusableNode(node: FocusableNode): boolean {
+/**
+ * Whether a node has a details editor at all.
+ *
+ * Frames and notes are canvas objects, not steps: they are edited in place on
+ * the canvas. Start and end carry nothing to edit. Focus mode and the
+ * double-click editor share this one definition so a node cannot be reachable
+ * through one and not the other.
+ */
+export function isEditableNode(node: FocusableNode): boolean {
   return node.type !== "group" && node.type !== "note" && node.type !== "start" && node.type !== "end";
 }
 
@@ -57,7 +65,7 @@ export function focusModeOrder(
   nodes: readonly FocusableNode[],
   edges: readonly Edge[],
 ): string[] {
-  const focusableNodes = nodes.filter(isFocusableNode);
+  const focusableNodes = nodes.filter(isEditableNode);
   const topologicalOrder = topologicalNodeOrder(focusableNodes, edges);
   const executedIds = focusableNodes
     .filter((node) => typeof node.data.executionTimestamp === "number")

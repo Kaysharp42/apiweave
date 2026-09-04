@@ -113,7 +113,7 @@ import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
-import { adjacentFocusModeNode } from "../utils/focusModeOrder";
+import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -816,7 +816,9 @@ export function WorkflowCanvas({
       ) {
         return;
       }
-      if (node.type !== "start" && node.type !== "end") {
+      // Frames and notes are canvas objects: a double-click renames them in
+      // place (see `GroupNode`/`NoteNode`), it does not open a step editor.
+      if (isEditableNode(node)) {
         setIsFocusMode(false);
         setModalNode(node);
       }
@@ -827,7 +829,8 @@ export function WorkflowCanvas({
   /**
    * Double-click the empty pane to frame the whole graph. The gesture is free
    * because `zoomOnDoubleClick` is off — and on a *node* it already opens the
-   * editor, which is a better use of it than framing that one node.
+   * editor (or renames a frame/note), which is a better use of it than framing
+   * that one node.
    *
    * Through `suspendFollow` like the zoom controls: a mid-run double-click
    * would otherwise fight the camera and snap straight back.
@@ -911,7 +914,7 @@ export function WorkflowCanvas({
   const openFocusMode = useCallback(() => {
     const node =
       selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
-    if (!node || node.type === "group" || node.type === "note" || node.type === "start" || node.type === "end") {
+    if (!node || !isEditableNode(node)) {
       toast.info("Select an editable node to enter focus mode");
       return;
     }

@@ -15,6 +15,14 @@ export const GROUP_PAD = 28;
 export const FRAME_FALLBACK_WIDTH = 320;
 export const FRAME_FALLBACK_HEIGHT = 220;
 
+/**
+ * The smallest a frame may get. `GroupNode`'s resizer enforces it on a drag;
+ * auto-layout's refit honours the same floor, so a frame holding one small
+ * node does not shrink below a grabbable size.
+ */
+export const FRAME_MIN_WIDTH = 160;
+export const FRAME_MIN_HEIGHT = 120;
+
 function nodeSize(node: CanvasNode): { width: number; height: number } {
   return {
     width: node.measured?.width ?? node.width ?? NODE_FALLBACK_WIDTH,

@@ -1,14 +1,21 @@
 import { memo } from "react";
 import { Pin, StickyNote } from "lucide-react";
+import { useReactFlow } from "@xyflow/react";
 import { TextArea } from "../atoms/TextArea";
 import { useNodeConfigPatch } from "../../hooks/useNodeConfigPatch";
 import type { CanvasNode } from "../../types/CanvasNode";
 import type { NodeProps } from "@xyflow/react";
 
+/**
+ * A note is a canvas object, not a step: it has no details dialog, so both its
+ * title and its body are edited in place here (`onNodeDoubleClick` skips it).
+ */
 function NoteNode({ id, data, selected }: NodeProps<CanvasNode>) {
+  const { updateNodeData } = useReactFlow<CanvasNode>();
   const patchConfig = useNodeConfigPatch(id);
   const content = typeof data.config?.content === "string" ? data.config.content : "";
-  const label = data.label?.trim() || "Note";
+  const title = typeof data.label === "string" ? data.label : "";
+  const label = title.trim() || "Note";
 
   return (
     <article
@@ -47,9 +54,14 @@ function NoteNode({ id, data, selected }: NodeProps<CanvasNode>) {
           <div className="border-b border-[color-mix(in_srgb,var(--aw-text-muted)_18%,transparent)]" />
           <div className="border-b border-[color-mix(in_srgb,var(--aw-text-muted)_18%,transparent)]" />
         </div>
-        <p className="mb-1.5 truncate font-display text-sm font-bold tracking-[-0.01em] text-text-primary dark:text-text-primary-dark" title={label}>
-          {label}
-        </p>
+        <input
+          className="nodrag relative z-10 mb-1.5 w-full truncate border-0 bg-transparent p-0 font-display text-sm font-bold tracking-[-0.01em] text-text-primary outline-none placeholder:font-normal placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-primary-dark"
+          value={title}
+          onChange={(event) => updateNodeData(id, { label: event.target.value })}
+          placeholder="Note"
+          title={label}
+          aria-label="Note title"
+        />
         <TextArea
           size="xs"
           className="nodrag relative z-10 min-h-24 resize-y !border-0 !bg-transparent !px-0 !py-0 font-mono leading-6"

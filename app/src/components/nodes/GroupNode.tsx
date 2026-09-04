@@ -3,7 +3,11 @@ import { NodeResizer, useReactFlow } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Frame, Ungroup } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
-import { ungroupFrames } from "../../utils/canvasGroups";
+import {
+  FRAME_MIN_HEIGHT,
+  FRAME_MIN_WIDTH,
+  ungroupFrames,
+} from "../../utils/canvasGroups";
 import type { CanvasNode } from "../../types/CanvasNode";
 import { GROUP_TINTS } from "../../constants/GroupTints";
 import type { GroupTint } from "../../types/GroupTint";
@@ -35,8 +39,8 @@ function GroupNode({ id, data, selected }: NodeProps<CanvasNode>) {
       <NodeResizer
         isVisible={selected ?? false}
         color={tint}
-        minWidth={160}
-        minHeight={120}
+        minWidth={FRAME_MIN_WIDTH}
+        minHeight={FRAME_MIN_HEIGHT}
         // The dashed border below already is the outline; the resizer only
         // needs to contribute handles.
         lineStyle={{ borderColor: "transparent" }}

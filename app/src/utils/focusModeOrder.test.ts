@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Edge, Node } from "@xyflow/react";
-import { adjacentFocusModeNode, focusModeOrder } from "./focusModeOrder";
+import { adjacentFocusModeNode, focusModeOrder, isEditableNode } from "./focusModeOrder";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 
 function node(id: string, executionTimestamp?: number): Node<WorkflowCanvasNodeData> {
@@ -32,5 +32,16 @@ describe("focusModeOrder", () => {
     const nodes = [node("a", 30), node("b", 10), node("c", 20)];
 
     expect(focusModeOrder(nodes, diamondEdges)).toEqual(["b", "c", "a"]);
+  });
+});
+
+describe("isEditableNode", () => {
+  // Frames and notes are edited in place on the canvas; treating them as steps
+  // is what opened an empty node-details dialog on a double-click.
+  it("keeps canvas objects and the terminals out of the details editor", () => {
+    expect(isEditableNode(node("a"))).toBe(true);
+    for (const type of ["group", "note", "start", "end"]) {
+      expect(isEditableNode({ ...node("a"), type })).toBe(false);
+    }
   });
 });
