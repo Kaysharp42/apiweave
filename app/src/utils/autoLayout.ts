@@ -104,6 +104,17 @@ function tidyFrame<N extends Node, E extends Edge>(
   return changed;
 }
 
+function frameChildren<N extends Node>(nodes: readonly N[]): Map<string, N[]> {
+  const childrenByFrame = new Map<string, N[]>();
+  for (const node of nodes) {
+    if (node.parentId === undefined) continue;
+    const siblings = childrenByFrame.get(node.parentId);
+    if (siblings === undefined) childrenByFrame.set(node.parentId, [node]);
+    else siblings.push(node);
+  }
+  return childrenByFrame;
+}
+
 /**
  * Auto-layout that respects frames.
  *
@@ -129,13 +140,7 @@ export function autoLayoutRootNodes<N extends Node, E extends Edge>(
   if (movable.length === nodes.length) return autoLayout(nodes, edges, direction);
 
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const childrenByFrame = new Map<string, N[]>();
-  for (const node of nodes) {
-    if (node.parentId === undefined) continue;
-    const siblings = childrenByFrame.get(node.parentId);
-    if (siblings === undefined) childrenByFrame.set(node.parentId, [node]);
-    else siblings.push(node);
-  }
+  const childrenByFrame = frameChildren(nodes);
 
   const tidied = new Map<string, N>();
   for (const [frameId, children] of childrenByFrame) {

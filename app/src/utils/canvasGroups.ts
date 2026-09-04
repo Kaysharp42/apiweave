@@ -9,6 +9,7 @@ import type { GroupOutcome } from "../types/GroupOutcome";
 export { FRAME_NODE_TYPE, isFrameNode };
 
 /** Breathing room between the selection's bounding box and the frame edge. */
+// fallow-ignore-next-line code-duplication -- frame geometry constants share syntax, not behavior, with unrelated camera tuning constants.
 export const GROUP_PAD = 28;
 
 /** A frame with no size yet — a paste, or a hand-written workflow JSON. */
