@@ -4,6 +4,8 @@ import { registerCloudHandlers } from "../cloud"
 import {
   CloudAccountMismatchError,
   CloudUnlinkRequiresConfirmationError,
+  CloudWorkspaceLockedError,
+  CloudWorkspacePassphraseAdminOnlyError,
   type CloudBindWorkspaceInput,
   type CloudInitializeWorkspaceInput,
   type CloudLinkInput,
@@ -23,6 +25,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
   public readonly refreshCatalogSpy = vi.fn<() => Promise<void>>()
   public readonly initializeSpy = vi.fn<(input: CloudInitializeWorkspaceInput) => Promise<void>>()
   public readonly createTeamWorkspaceSpy = vi.fn<(input: CloudCreateTeamWorkspaceInput) => Promise<void>>()
+  public readonly setEncryptionSpy = vi.fn<() => Promise<void>>()
   private current: CloudSyncStatus = {
     linked: false,
     active: false,
@@ -36,6 +39,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
     bindings: [],
     workspaceCatalog: [],
     teamCatalog: [],
+    encryptionDecisionPending: [],
   }
 
   public status(): CloudSyncStatus {
@@ -72,12 +76,30 @@ class FakeCloudSyncControl implements CloudSyncControl {
         canResolveConflicts: true,
       }],
       teamCatalog: [],
+      encryptionDecisionPending: [],
     }
     await this.linkSpy(input)
     return this.current
   }
 
   public cancelLink(): CloudSyncStatus {
+    return this.current
+  }
+
+  public async setWorkspaceEncryption(): Promise<CloudSyncStatus> {
+    await this.setEncryptionSpy()
+    return this.current
+  }
+
+  public async declineWorkspaceEncryption(): Promise<CloudSyncStatus> {
+    return this.current
+  }
+
+  public async unlockWorkspace(): Promise<CloudSyncStatus> {
+    return this.current
+  }
+
+  public lockWorkspace(): CloudSyncStatus {
     return this.current
   }
 
@@ -96,6 +118,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
       bindings: [],
       workspaceCatalog: [],
       teamCatalog: [],
+      encryptionDecisionPending: [],
     }
     return this.current
   }
@@ -117,6 +140,7 @@ class FakeCloudSyncControl implements CloudSyncControl {
       bindings: this.current.bindings,
       workspaceCatalog: this.current.workspaceCatalog,
       teamCatalog: this.current.teamCatalog,
+      encryptionDecisionPending: [],
     }
     await this.bindSpy(input)
     return this.current
@@ -298,6 +322,66 @@ describe("cloud IPC handlers", () => {
         code: "conflict",
         details: { accountMismatch: true, accountIdentityRequired: false },
       },
+    })
+  })
+
+  it("enforces the passphrase floor at the seam, but never when unlocking", async () => {
+    const cloud = new FakeCloudSyncControl()
+    const router = new IpcRouter()
+    registerCloudHandlers(router, { cloud } as never)
+    const short = "hunter2"
+    const long = "correct horse battery staple"
+
+    const setShort = await router.dispatch({
+      domain: "cloud",
+      action: "setWorkspaceEncryption",
+      payload: { workspaceId: "workspace-2", passphrase: short },
+    })
+    const teamShort = await router.dispatch({
+      domain: "cloud",
+      action: "createTeamWorkspace",
+      payload: { name: "Checkout", slug: "checkout", teamId: "team-platform", passphrase: short },
+    })
+    const setLong = await router.dispatch({
+      domain: "cloud",
+      action: "setWorkspaceEncryption",
+      payload: { workspaceId: "workspace-2", passphrase: long },
+    })
+    // Unlocking verifies a passphrase the workspace already has; a floor there
+    // would lock the workspace out rather than protect it.
+    const unlockShort = await router.dispatch({
+      domain: "cloud",
+      action: "unlockWorkspace",
+      payload: { workspaceId: "workspace-2", passphrase: short },
+    })
+
+    expect(setShort).toMatchObject({ ok: false, error: { code: "validation" } })
+    expect(teamShort).toMatchObject({ ok: false, error: { code: "validation" } })
+    expect(setLong).toMatchObject({ ok: true })
+    expect(unlockShort).toMatchObject({ ok: true })
+    // The floor is a gate, not a warning: neither short passphrase reached main.
+    expect(cloud.createTeamWorkspaceSpy).not.toHaveBeenCalled()
+    expect(cloud.setEncryptionSpy).toHaveBeenCalledOnce()
+  })
+
+  it("tags a locked workspace and an admin-only refusal distinguishably", async () => {
+    const cloud = new FakeCloudSyncControl()
+    const router = new IpcRouter()
+    registerCloudHandlers(router, { cloud } as never)
+    const payload = { workspaceId: "workspace-2", passphrase: "correct horse battery staple" }
+
+    cloud.setEncryptionSpy.mockRejectedValueOnce(new CloudWorkspaceLockedError())
+    const locked = await router.dispatch({ domain: "cloud", action: "setWorkspaceEncryption", payload })
+    cloud.setEncryptionSpy.mockRejectedValueOnce(new CloudWorkspacePassphraseAdminOnlyError())
+    const denied = await router.dispatch({ domain: "cloud", action: "setWorkspaceEncryption", payload })
+
+    expect(locked).toMatchObject({
+      ok: false,
+      error: { code: "conflict", details: { workspaceLocked: true } },
+    })
+    expect(denied).toMatchObject({
+      ok: false,
+      error: { code: "denied", details: { passphraseAdminOnly: true } },
     })
   })
 

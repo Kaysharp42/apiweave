@@ -141,6 +141,7 @@ export async function installDesktopIpc(
               bindings: [],
               workspaceCatalog: [],
               teamCatalog: [],
+              encryptionDecisionPending: [],
             };
             handled = true;
           }

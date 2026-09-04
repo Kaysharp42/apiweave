@@ -9,6 +9,7 @@ import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_
 import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
   AgentRepository,
+  AppSettingsRepository,
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
@@ -293,6 +294,7 @@ if (!hasSingleInstanceLock) {
     const nodePresets = new NodePresetRepository(database.kvStore)
     const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
+    const appSettings = new AppSettingsRepository(database.kvStore)
 
     // Auth + sync seams: single-owner always-allow, local-only no-op.
     const existence: ScopeExistence = {
@@ -330,10 +332,7 @@ if (!hasSingleInstanceLock) {
     // flipped live on the shared instance below.
     const readAllowPrivateNetworks = (): boolean => {
       if (database === null) return false
-      const row = database.kvStore.get<{ value: string }>(
-        "SELECT value FROM app_settings WHERE key = 'http.allow_private_networks'",
-      )
-      return row?.value === "true"
+      return appSettings.getBoolean("http.allow_private_networks")
     }
     const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: readAllowPrivateNetworks() })
     const functions = new DynamicFunctions(clock, rng)
@@ -408,10 +407,7 @@ if (!hasSingleInstanceLock) {
         setAllowPrivateNetworks: (enabled) => {
           http.setAllowPrivateNetworks(enabled)
           if (database === null) return
-          database.kvStore.set(
-            "INSERT INTO app_settings (key, value) VALUES ('http.allow_private_networks', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            [enabled ? "true" : "false"],
-          )
+          appSettings.setBoolean("http.allow_private_networks", enabled)
         },
       },
       cloud,
@@ -442,17 +438,11 @@ if (!hasSingleInstanceLock) {
     })
     const readMcpEnabled = (): boolean => {
       if (database === null) return false
-      const row = database.kvStore.get<{ value: string }>(
-        "SELECT value FROM app_settings WHERE key = 'mcp.enabled'",
-      )
-      return row?.value === "true"
+      return appSettings.getBoolean("mcp.enabled")
     }
     const writeMcpEnabled = (enabled: boolean): void => {
       if (database === null) return
-      database.kvStore.set(
-        "INSERT INTO app_settings (key, value) VALUES ('mcp.enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [enabled ? "true" : "false"],
-      )
+      appSettings.setBoolean("mcp.enabled", enabled)
     }
     const requireTrustedSender = <Args extends unknown[], R>(
       handler: (...args: Args) => R,
@@ -584,17 +574,12 @@ if (!hasSingleInstanceLock) {
     // user approving a specific version is the only verification there is.
     const readUpdatePolicy = (): UpdatePolicy | null => {
       if (database === null) return null
-      const row = database.kvStore.get<{ value: string }>(
-        "SELECT value FROM app_settings WHERE key = 'updates.policy'",
-      )
-      return isUpdatePolicy(row?.value) ? row.value : null
+      const value = appSettings.get("updates.policy")
+      return isUpdatePolicy(value) ? value : null
     }
     const writeUpdatePolicy = (policy: UpdatePolicy): void => {
       if (database === null) return
-      database.kvStore.set(
-        "INSERT INTO app_settings (key, value) VALUES ('updates.policy', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        [policy],
-      )
+      appSettings.set("updates.policy", policy)
     }
     const updates = new UpdateManager({
       onChange: (status) => {

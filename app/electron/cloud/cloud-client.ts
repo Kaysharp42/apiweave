@@ -1,3 +1,8 @@
+// fallow-ignore-file code-duplication -- CloudClient's methods are one Connect
+// RPC per method: build a request, call(), fromJson() the response. Every
+// method gained clones every other by construction (same reasoning as
+// apiweaveClient.ts); fallow 2.104 has no range form, so file-level is the
+// narrowest marker that still covers the groups
 /**
  * Cloud client and device token store.
  *
@@ -20,14 +25,22 @@ import {
   CreateSyncWorkspaceRequestSchema,
   DeviceService,
   EnsureSyncWorkspaceRequestSchema,
+  GetWorkspaceEncryptionRequestSchema,
   RevokeDeviceRequestSchema,
+  SetWorkspacePassphraseRequestSchema,
   SyncTeamListSchema,
   SyncWorkspaceListSchema,
   SyncWorkspaceSchema,
+  WorkspaceEncryptionSchema,
   type SyncTeamList,
   type SyncWorkspace,
-  type SyncWorkspaceList,
 } from "@apiweave/proto/apiweave/v1/device_pb"
+import {
+  toEncryptionMessage,
+  toEncryptionRecord,
+  type WorkspaceEncryptionBundle,
+  type WorkspaceEncryptionRecord,
+} from "./workspace-encryption"
 import {
   CreateTeamRequestSchema,
   TeamSchema,
@@ -267,12 +280,43 @@ export class ErrProtocolMismatch extends Error {
   }
 }
 
-/** A non-2xx Connect response (other than 401). Carries the HTTP status so
- * callers can react to a specific code — e.g. 409 (Aborted). */
+/** A non-2xx Connect response (other than 401).
+ *
+ * Carries the Connect error `code` as well as the HTTP status, because the
+ * status alone cannot tell two very different failures apart: Connect maps both
+ * `aborted` and `already_exists` onto HTTP 409. `code` is `undefined` when the
+ * server sent no parsable Connect error envelope — a bare proxy error page, an
+ * empty body — so a caller that must distinguish codes has to treat the absent
+ * case as "not the one I am looking for" rather than assuming a default. */
 export class ErrCloudRequestFailed extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string,
+  ) {
     super(message)
     this.name = "ErrCloudRequestFailed"
+  }
+}
+
+/**
+ * The `code` out of a Connect error envelope (`{"code":"...","message":"..."}`).
+ *
+ * Returns undefined for anything that is not one — an empty body, HTML from a
+ * proxy, a JSON array. Reading the body is best-effort by construction: it is
+ * already an error path, and failing to parse it must not replace the real
+ * failure with a parse error.
+ */
+async function connectErrorCode(response: Response): Promise<string | undefined> {
+  try {
+    const parsed = await response.json() as unknown
+    if (typeof parsed !== "object" || parsed === null) {
+      return undefined
+    }
+    const code = (parsed as { code?: unknown }).code
+    return typeof code === "string" ? code : undefined
+  } catch {
+    return undefined
   }
 }
 
@@ -334,6 +378,8 @@ const METHOD_LIST_SYNC_WORKSPACES = "ListSyncWorkspaces"
 const METHOD_LIST_SYNC_TEAMS = "ListSyncTeams"
 const METHOD_ENSURE_SYNC_WORKSPACE = "EnsureSyncWorkspace"
 const METHOD_CREATE_SYNC_WORKSPACE = "CreateSyncWorkspace"
+const METHOD_GET_WORKSPACE_ENCRYPTION = "GetWorkspaceEncryption"
+const METHOD_SET_WORKSPACE_PASSPHRASE = "SetWorkspacePassphrase"
 const METHOD_CREATE_TEAM = "CreateTeam"
 const METHOD_REVOKE_DEVICE = "RevokeDevice"
 const METHOD_RESOLVE_CONFLICT = "ResolveConflict"
@@ -421,13 +467,13 @@ export class CloudClient {
     return fromJson(PushDeltasResponseSchema, json, { ignoreUnknownFields: true })
   }
 
-  public async listSyncWorkspaces(): Promise<SyncWorkspaceList> {
+  public async listSyncWorkspaces(): Promise<readonly SyncWorkspace[]> {
     const json = await this.call(
       DeviceService.typeName,
       METHOD_LIST_SYNC_WORKSPACES,
       toJson(EmptySchema, create(EmptySchema)),
     )
-    return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true })
+    return fromJson(SyncWorkspaceListSchema, json, { ignoreUnknownFields: true }).workspaces
   }
 
   public async listSyncTeams(): Promise<SyncTeamList> {
@@ -439,17 +485,25 @@ export class CloudClient {
     return fromJson(SyncTeamListSchema, json, { ignoreUnknownFields: true })
   }
 
+  /**
+   * `encryption` is applied ONLY to a workspace this call creates. On a
+   * workspace that already exists the server silently ignores it and reports
+   * the stored mode, which is why the caller must read `encryptionMode` off the
+   * returned entry and never assume the bundle took.
+   */
   public async ensureSyncWorkspace(params: {
     workspaceId: string
     name: string
     slug: string
     isPersonal: boolean
+    encryption?: WorkspaceEncryptionBundle
   }): Promise<SyncWorkspace> {
     const request = create(EnsureSyncWorkspaceRequestSchema, {
       workspaceId: params.workspaceId,
       name: params.name,
       slug: params.slug,
       isPersonal: params.isPersonal,
+      ...(params.encryption !== undefined ? { encryption: toEncryptionMessage(params.encryption) } : {}),
     })
     const json = await this.call(
       DeviceService.typeName,
@@ -459,19 +513,62 @@ export class CloudClient {
     return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
   }
 
+  /**
+   * Every retry of a `requestId` must carry the byte-identical `encryption`
+   * bundle or the server fails it `ALREADY_EXISTS`. The request body is built
+   * once here and reused by {@link call}'s post-refresh retry, so the caller
+   * only has to avoid re-deriving a bundle for a repeat of the same requestId.
+   */
   public async createSyncWorkspace(params: {
     requestId: string
     teamId: string
     name: string
     slug: string
+    encryption?: WorkspaceEncryptionBundle
   }): Promise<SyncWorkspace> {
-    const request = create(CreateSyncWorkspaceRequestSchema, params)
+    const { encryption, ...fields } = params
+    const request = create(CreateSyncWorkspaceRequestSchema, {
+      ...fields,
+      ...(encryption !== undefined ? { encryption: toEncryptionMessage(encryption) } : {}),
+    })
     const json = await this.call(
       DeviceService.typeName,
       METHOD_CREATE_SYNC_WORKSPACE,
       toJson(CreateSyncWorkspaceRequestSchema, request),
     )
     return fromJson(SyncWorkspaceSchema, json, { ignoreUnknownFields: true })
+  }
+
+  /** Any member may read a workspace's encryption record. Plaintext → `mode: "none"`. */
+  public async getWorkspaceEncryption(cloudWorkspaceId: string): Promise<WorkspaceEncryptionRecord> {
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_GET_WORKSPACE_ENCRYPTION,
+      toJson(GetWorkspaceEncryptionRequestSchema, create(GetWorkspaceEncryptionRequestSchema, {
+        workspaceId: cloudWorkspaceId,
+      })),
+    )
+    return toEncryptionRecord(fromJson(WorkspaceEncryptionSchema, json, { ignoreUnknownFields: true }))
+  }
+
+  /** Admin only, and the bundle's fingerprint must match the stored one (same WDEK, new passphrase). */
+  public async setWorkspacePassphrase(
+    cloudWorkspaceId: string,
+    bundle: WorkspaceEncryptionBundle,
+  ): Promise<WorkspaceEncryptionRecord> {
+    const encryption = toEncryptionMessage(bundle)
+    const json = await this.call(
+      DeviceService.typeName,
+      METHOD_SET_WORKSPACE_PASSPHRASE,
+      toJson(SetWorkspacePassphraseRequestSchema, create(SetWorkspacePassphraseRequestSchema, {
+        workspaceId: cloudWorkspaceId,
+        wrappedWdek: encryption.wrappedWdek,
+        kdfSalt: encryption.kdfSalt,
+        kdfParams: encryption.kdfParams,
+        wdekFingerprint: encryption.wdekFingerprint,
+      })),
+    )
+    return toEncryptionRecord(fromJson(WorkspaceEncryptionSchema, json, { ignoreUnknownFields: true }))
   }
 
   public async createTeam(name: string, slug: string): Promise<Team> {
@@ -515,11 +612,24 @@ export class CloudClient {
       )
       return fromJson(ResolveConflictResponseSchema, json, { ignoreUnknownFields: true })
     } catch (error) {
-      // Aborted (HTTP 409) here means "keep local" hit the server's rev guard:
-      // the record moved past the snapshot's cloud_rev. Surface it as a stale
-      // conflict so the caller can recover instead of showing a raw transport
-      // error.
-      if (error instanceof ErrCloudRequestFailed && error.status === 409) {
+      // Aborted here means "keep local" hit the server's rev guard: the record
+      // moved past the snapshot's cloud_rev. Surface it as a stale conflict so
+      // the caller can recover instead of showing a raw transport error.
+      //
+      // Matched on the Connect code, not on HTTP 409, which `already_exists`
+      // also maps to. ResolveConflict routes every domain error through the
+      // server's mapSyncError, whose only 409 is Aborted, so the status was an
+      // accurate proxy — but it stopped being a safe one the moment another 409
+      // became reachable elsewhere on this client.
+      //
+      // The status still stands in when no code came back at all (a proxy's
+      // error page, an empty body). Dropping that would turn a stale conflict
+      // into an unrecoverable raw transport error whenever the envelope is
+      // unreadable, and on this RPC a 409 has no other meaning to confuse it
+      // with.
+      const stale = error instanceof ErrCloudRequestFailed
+        && (error.code === "aborted" || (error.code === undefined && error.status === 409))
+      if (stale) {
         throw new ErrCloudConflictStale()
       }
       throw error
@@ -656,9 +766,11 @@ export class CloudClient {
     }
 
     if (!response.ok) {
+      const code = await connectErrorCode(response)
       throw new ErrCloudRequestFailed(
         response.status,
-        `Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}`,
+        `Connect call failed: ${serviceName}/${methodName} — HTTP ${response.status}${code === undefined ? "" : ` (${code})`}`,
+        code,
       )
     }
 

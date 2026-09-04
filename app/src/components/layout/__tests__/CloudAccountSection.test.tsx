@@ -22,12 +22,14 @@ const base: CloudSyncStatus = {
   bindings: [],
   workspaceCatalog: [],
   teamCatalog: [],
+  encryptionDecisionPending: [],
 };
 
 function binding(overrides: Partial<CloudSyncStatus["bindings"][number]> = {}) {
   return {
     workspaceId: "local-1",
     workspaceName: "Personal",
+    encryption: "plaintext" as const,
     cloudWorkspaceId: "cloud-1",
     cloudWorkspaceName: "Personal",
     syncMode: "bi-directional",

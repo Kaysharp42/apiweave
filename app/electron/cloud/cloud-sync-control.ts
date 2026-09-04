@@ -4,19 +4,30 @@ import type { KVStore } from "../../core/db"
 import { generateId } from "../../core/id"
 import { getLogger } from "../../core/logging/logger"
 import type { Workspace } from "@shared/types/Workspace"
-import { CloudSyncRepository, WorkspaceRepository } from "../../core/repositories"
+import {
+  AppSettingsRepository,
+  CloudSyncRepository,
+  WorkspaceRepository,
+  type CloudWorkspaceBinding,
+} from "../../core/repositories"
 import { CloudFirstSyncService } from "../../core/services/cloud_first_sync_service"
 import {
+  isWorkspaceClaimable,
   reconcileWorkspaces,
   type ReconcilerBindInput,
   type ReconcilerCatalogEntry,
+  type ReconcilerEncryptionPlan,
 } from "./cloud-workspace-reconciler"
 import type { SyncProvider } from "../../core/sync"
 import {
   CloudUnlinkRequiresConfirmationError,
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
+  CloudWorkspaceEncryptionInvalidError,
+  CloudWorkspaceEncryptionSettledError,
+  CloudWorkspaceLockedError,
   CloudWorkspaceOwnedByAnotherAccountError,
+  CloudWorkspacePassphraseAdminOnlyError,
   type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
   type CloudCreateTeamWorkspaceInput,
@@ -27,8 +38,13 @@ import {
   type CloudSyncControl,
   type CloudSyncStatus,
   type CloudSyncState,
+  type CloudPendingEncryptionDecision,
   type CloudUnbindWorkspaceInput,
   type CloudUnlinkInput,
+  type CloudWorkspaceEncryptionState,
+  type CloudWorkspacePassphraseInput,
+  type CloudWorkspaceRefInput,
+  type WorkspaceEncryptionMode,
   type CloudWorkspaceBindingStatus,
   type CloudWorkspaceCatalogEntry,
   type CloudTeamCatalogEntry,
@@ -41,7 +57,12 @@ import {
   ErrLinkCancelled,
   startDeviceLink,
 } from "./cloud-link"
-import { CloudClient, DeviceTokenStore, ErrCloudOffline } from "./cloud-client"
+import {
+  CloudClient,
+  DeviceTokenStore,
+  ErrCloudOffline,
+  ErrCloudRequestFailed,
+} from "./cloud-client"
 import {
   CANONICAL_CLOUD_ENTRY_URL,
   fetchDesktopCloudConfig,
@@ -51,6 +72,20 @@ import {
   type DesktopCloudConfigClient,
 } from "./cloud-config"
 import { CloudSyncProvider } from "./cloud-transport"
+import { cacheWdek, clearCachedWdek, readCachedWdek } from "./wdek-cache"
+import {
+  clearWorkspaceEncryption as unregisterWorkspaceKey,
+  hasWorkspaceKey,
+  setWorkspaceEncryption as registerWorkspaceKey,
+  workspaceWdek,
+} from "./workspace-keys"
+import {
+  createEncryptionBundle,
+  encryptionModeOf,
+  openEncryptionBundle,
+  rewrapBundle,
+  type WorkspaceEncryptionBundle,
+} from "./workspace-encryption"
 import { getState, setState } from "./cloud-state"
 import type { SyncConflictResolver } from "./conflict-ui-bridge"
 
@@ -85,9 +120,36 @@ const KEY_WORKSPACE_CATALOG = "cloud.workspace_catalog"
 const KEY_TEAM_CATALOG = "cloud.team_catalog"
 const KEY_ACCOUNT_IDENTITY = "cloud.account_identity"
 const KEY_AUTHENTICATION_REQUIRED = "cloud.authentication_required"
+/**
+ * Per-local-workspace encryption state, alongside `wdek-cache.ts`'s
+ * `cloud.e2ee.wdek.<id>` in the same `app_settings` table.
+ *
+ * `mode` is both the user's DECISION (before provisioning) and the server's
+ * ANSWER (after it, overwritten from every provisioning response and catalog
+ * refresh). Absent means nobody has decided and the server has not said:
+ * pending, which blocks provisioning and blocks sync. `pending` holds the
+ * derived bundle between "the user chose a passphrase" and "the cloud row
+ * exists", so a crash in between does not lose the decision — and so a retry
+ * re-sends the byte-identical bundle the server's request-id rule demands.
+ */
+const KEY_ENCRYPTION_MODE_PREFIX = "cloud.e2ee.mode."
+const KEY_ENCRYPTION_PENDING_PREFIX = "cloud.e2ee.pending."
+/**
+ * Set when the server has told us the cloud row already exists under a key that
+ * is not ours, so the pending bundle must never be offered again — see
+ * {@link DesktopCloudSyncControl.adoptExistingEncryption}. Provisioning then
+ * proceeds with no bundle and takes the row's own mode.
+ *
+ * Persisted rather than kept in memory for the same reason `pending` is: the
+ * bundle is deleted the moment this is set, so a crash before the bundle-less
+ * retry lands would otherwise leave a workspace recorded `e2ee` with no bundle,
+ * which reads as `pending` and blocks provisioning forever.
+ */
+const KEY_ENCRYPTION_ADOPT_PREFIX = "cloud.e2ee.adopt."
 
 export class DesktopCloudSyncControl implements CloudSyncControl {
   private readonly repository: CloudSyncRepository
+  private readonly settings: AppSettingsRepository
   private readonly tokenStore: DeviceTokenStore
   private readonly firstSyncService: CloudFirstSyncService
   private activeProvider: CloudSyncProvider | null = null
@@ -99,12 +161,14 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
 
   public constructor(private readonly options: DesktopCloudSyncControlOptions) {
     this.repository = new CloudSyncRepository(options.store, options.onWorkflowChanged)
+    this.settings = new AppSettingsRepository(options.store)
     this.tokenStore = new DeviceTokenStore(this.repository, options.keyfilePath)
     this.firstSyncService = new CloudFirstSyncService(options.store)
     this.activeConfig = this.loadPersistedConfig()
     this.workspaceCatalog = this.loadWorkspaceCatalog()
     this.teamCatalog = this.loadTeamCatalog()
     this.activateIfReady(true)
+    this.backfillEncryptionModes()
   }
 
   public status(): CloudSyncStatus {
@@ -126,6 +190,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       ...(binding.lastSyncedAt !== null ? { lastSyncedAt: binding.lastSyncedAt } : {}),
       ...(binding.initializedAt !== null ? { initializedAt: binding.initializedAt } : {}),
       ...(binding.lastError !== null ? { lastError: binding.lastError } : {}),
+      encryption: this.encryptionStateOf(binding.workspaceId),
     }))
     const pendingCount = this.repository.countPendingOutbox()
     const deadLetterCount = this.repository.countDeadLetterOutbox()
@@ -160,7 +225,122 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       bindings,
       workspaceCatalog: this.workspaceCatalog,
       teamCatalog: this.teamCatalog,
+      encryptionDecisionPending: linked ? this.pendingEncryptionDecisions(bindings) : [],
     }
+  }
+
+  /**
+   * Choose end-to-end encryption for a workspace.
+   *
+   * Before provisioning this mints the workspace key, caches it, registers it
+   * for the transport and records the decision — which is what releases the
+   * workspace from the reconciler's pending gate — then reconciles so the
+   * workspace is provisioned WITH its bundle. Afterwards, on an already-
+   * encrypted workspace whose key is unlocked, it re-wraps that same key under
+   * the new passphrase (`SetWorkspacePassphrase`, admin only).
+   */
+  public async setWorkspaceEncryption(input: CloudWorkspacePassphraseInput): Promise<CloudSyncStatus> {
+    const mode = this.storedEncryptionMode(input.workspaceId)
+    if (mode === "none") {
+      // The server enforces encryption_mode write-once: a plaintext row can
+      // never be upgraded, so refuse here rather than fail on the wire.
+      throw new CloudWorkspaceEncryptionSettledError()
+    }
+    if (this.repository.getWorkspaceBinding(input.workspaceId) !== undefined) {
+      // Already provisioned: `EnsureSyncWorkspace` never applies a bundle to an
+      // existing row, so minting one here would seal every record under a key
+      // the server does not hold. With no recorded mode there is nothing to
+      // rewrap either — unlocking is what asks the server for the truth.
+      if (mode === undefined) {
+        throw new CloudWorkspaceLockedError()
+      }
+      return this.changeWorkspacePassphrase(input)
+    }
+    // Mid-adoption: the server has already refused a key for this row, so
+    // minting another cannot provision it either — `encryptionPlan` returns
+    // `adopt` and the bundle would never reach the wire. Refusing matters more
+    // than the wasted call, though: accepting the key here would register it as
+    // this workspace's, and the transport would seal records with a key the
+    // server holds no wrapping for the moment the binding appears. The way in
+    // is the passphrase that already opens the row.
+    if (this.settings.get(KEY_ENCRYPTION_ADOPT_PREFIX + input.workspaceId) !== undefined) {
+      throw new CloudWorkspaceLockedError(
+        "This workspace is already encrypted in the cloud with a different passphrase. "
+          + "Enter that passphrase to unlock it — a new one can't replace it.",
+      )
+    }
+    const { bundle, wdek } = createEncryptionBundle(input.passphrase)
+    // Decision and bundle land together, before any network call: a crash
+    // between here and provisioning leaves the choice made and the bundle
+    // reusable, so the retry sends the byte-identical one.
+    this.settings.set(KEY_ENCRYPTION_MODE_PREFIX + input.workspaceId, "e2ee")
+    this.settings.set(KEY_ENCRYPTION_PENDING_PREFIX + input.workspaceId, JSON.stringify(bundle))
+    this.acceptWorkspaceKey(input.workspaceId, wdek)
+    try {
+      await this.reconcileAfterDecision()
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  /**
+   * Choose NO encryption for a workspace, releasing it from the pending gate.
+   * Irreversible once the cloud row exists — that is the server's rule, not
+   * ours — so it is a separate, explicit call rather than a default.
+   */
+  public async declineWorkspaceEncryption(input: CloudWorkspaceRefInput): Promise<CloudSyncStatus> {
+    if (this.storedEncryptionMode(input.workspaceId) === "e2ee") {
+      throw new CloudWorkspaceEncryptionSettledError()
+    }
+    this.recordEncryptionMode(input.workspaceId, "none")
+    try {
+      await this.reconcileAfterDecision()
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  /**
+   * Unlock an encrypted workspace so sync can resume.
+   *
+   * The KEK is derived with the SERVER's stored salt and parameters, never the
+   * current defaults, and the recovered key's fingerprint must match the one
+   * the server names before it is accepted — so a passphrase that happens to
+   * unwrap something cannot silently install the wrong key.
+   */
+  public async unlockWorkspace(input: CloudWorkspacePassphraseInput): Promise<CloudSyncStatus> {
+    const binding = this.repository.getWorkspaceBinding(input.workspaceId)
+    if (binding === undefined || this.activeConfig === null) {
+      throw new Error("Cloud workspace binding is unavailable")
+    }
+    try {
+      const record = await this.createClient(this.activeConfig)
+        .getWorkspaceEncryption(binding.cloudWorkspaceId)
+      if (record.mode !== "e2ee") {
+        // Authoritative answer: record it (a plaintext workspace stops being
+        // treated as locked) and there is nothing to unlock.
+        this.recordEncryptionMode(input.workspaceId, record.mode)
+        return this.status()
+      }
+      this.recordEncryptionMode(input.workspaceId, "e2ee")
+      this.acceptWorkspaceKey(input.workspaceId, openEncryptionBundle(record, input.passphrase))
+      return this.status()
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  /** Forget an unlocked key, here and in the OS keychain. */
+  public lockWorkspace(input: CloudWorkspaceRefInput): CloudSyncStatus {
+    clearCachedWdek(this.settings, input.workspaceId)
+    // Re-registered as locked, NOT unregistered: an unregistered workspace
+    // reads as plaintext to the transport, which would push its records in the
+    // clear on the very next cycle.
+    registerWorkspaceKey(input.workspaceId, null)
+    this.notifyStatusChanged()
+    return this.status()
   }
 
   public async link(input: CloudLinkInput): Promise<CloudSyncStatus> {
@@ -284,6 +464,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       ? this.loadAccountIdentity()?.accountId
       : undefined
 
+    for (const binding of this.repository.listWorkspaceBindings()) {
+      this.forgetWorkspaceEncryption(binding.workspaceId)
+    }
+    unregisterWorkspaceKey()
     this.repository.transaction((repository) => {
       this.tokenStore.clearTokens()
       if (purgeAccountId !== undefined) {
@@ -306,30 +490,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public async bindWorkspace(input: CloudBindWorkspaceInput): Promise<CloudSyncStatus> {
-    const deviceId = this.tokenStore.getDeviceId()
-    if (deviceId === undefined || !this.tokenStore.hasTokens()) {
-      throw new Error("Cloud account must be linked before binding a workspace")
-    }
-    const target = this.workspaceCatalog.find((workspace) => workspace.workspaceId === input.cloudWorkspaceId)
-    if (target === undefined) {
-      throw new Error("Cloud workspace is not authorized for this account")
-    }
-    if (!target.canPull || !target.canPush) {
-      throw new Error("Cloud workspace does not allow the required sync capabilities")
-    }
-    if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
-      throw new Error("Cloud workspace team metadata does not match the authorized catalog")
-    }
-    const account = this.loadAccountIdentity()
-    if (account === undefined) {
-      throw new CloudAccountIdentityRequiredError()
-    }
-    // Same ownership rule the reconciler enforces, applied to the manual path:
-    // a workspace holding another account's data is never pushed to this one.
-    const owner = this.repository.getWorkspaceAccountId(input.workspaceId)
-    if (owner !== undefined && owner !== account.accountId) {
-      throw new CloudWorkspaceOwnedByAnotherAccountError()
-    }
+    const deviceId = this.requireLinkedDeviceId()
+    const target = this.resolveBindTarget(input)
+    const account = this.resolveBindAccount(input.workspaceId)
     const binding = this.firstSyncService.bindAndSnapshot({
       workspaceId: input.workspaceId,
       cloudWorkspaceId: input.cloudWorkspaceId,
@@ -340,6 +503,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       deviceId,
       accountId: account.accountId,
     })
+    this.recordEncryptionMode(input.workspaceId, target.encryptionMode ?? "unspecified")
     this.activateIfReady(false, true)
     const provider = this.requireActiveProvider()
     void provider.initializeWorkspace(binding.workspaceId)
@@ -347,6 +511,42 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       .finally(() => this.notifyStatusChanged())
     this.notifyStatusChanged()
     return this.status()
+  }
+
+  private requireLinkedDeviceId(): string {
+    const deviceId = this.tokenStore.getDeviceId()
+    if (deviceId === undefined || !this.tokenStore.hasTokens()) {
+      throw new Error("Cloud account must be linked before binding a workspace")
+    }
+    return deviceId
+  }
+
+  private resolveBindTarget(input: CloudBindWorkspaceInput): CloudWorkspaceCatalogEntry {
+    const target = this.workspaceCatalog.find((workspace) => workspace.workspaceId === input.cloudWorkspaceId)
+    if (target === undefined) {
+      throw new Error("Cloud workspace is not authorized for this account")
+    }
+    if (!target.canPull || !target.canPush) {
+      throw new Error("Cloud workspace does not allow the required sync capabilities")
+    }
+    if (input.teamId !== undefined && input.teamId !== null && input.teamId !== target.teamId) {
+      throw new Error("Cloud workspace team metadata does not match the authorized catalog")
+    }
+    return target
+  }
+
+  private resolveBindAccount(workspaceId: string): CloudAccountIdentity {
+    const account = this.loadAccountIdentity()
+    if (account === undefined) {
+      throw new CloudAccountIdentityRequiredError()
+    }
+    // Same ownership rule the reconciler enforces, applied to the manual path:
+    // a workspace holding another account's data is never pushed to this one.
+    const owner = this.repository.getWorkspaceAccountId(workspaceId)
+    if (!isWorkspaceClaimable(owner, account.accountId)) {
+      throw new CloudWorkspaceOwnedByAnotherAccountError()
+    }
+    return account
   }
 
   public async createTeamWorkspace(input: CloudCreateTeamWorkspaceInput): Promise<Workspace> {
@@ -363,11 +563,15 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     const team = await this.resolveTeamForCreation(input, client)
 
     const localSlug = this.uniqueLocalSlug(input.slug)
+    const encryption = input.passphrase === undefined
+      ? undefined
+      : createEncryptionBundle(input.passphrase)
     const provisioned = await client.createSyncWorkspace({
       requestId: generateId(),
       teamId: team.teamId,
       name: input.name,
       slug: localSlug,
+      ...(encryption !== undefined ? { encryption: encryption.bundle } : {}),
     })
     const catalogEntry = toCatalogEntry(provisioned)
     const local = new WorkspaceRepository(this.options.store).createWithId({
@@ -389,6 +593,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       deviceId,
       accountId: account.accountId,
     })
+    this.adoptCreatedWorkspaceKey(local.workspaceId, encryptionModeOf(provisioned.encryptionMode), encryption?.wdek)
     this.workspaceCatalog = [
       ...this.workspaceCatalog.filter((entry) => entry.workspaceId !== catalogEntry.workspaceId),
       catalogEntry,
@@ -404,6 +609,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
 
   public unbindWorkspace(input: CloudUnbindWorkspaceInput): CloudSyncStatus {
     this.repository.removeWorkspaceBinding(input.workspaceId)
+    this.forgetWorkspaceEncryption(input.workspaceId)
     this.activateIfReady(false, true)
     this.notifyStatusChanged()
     return this.status()
@@ -427,11 +633,11 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
     try {
       const client = this.createClient(this.activeConfig)
-      const [response, teamResponse] = await Promise.all([
+      const [workspaces, teamResponse] = await Promise.all([
         client.listSyncWorkspaces(),
         client.listSyncTeams(),
       ])
-      const catalog = response.workspaces.map(toCatalogEntry)
+      const catalog = workspaces.map(toCatalogEntry)
       const teams = teamResponse.teams.map(toTeamCatalogEntry)
       this.repository.setSetting(KEY_WORKSPACE_CATALOG, JSON.stringify(catalog))
       this.repository.setSetting(KEY_TEAM_CATALOG, JSON.stringify(teams))
@@ -583,6 +789,19 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     }
   }
 
+  /**
+   * Reconcile in a pass that STARTED after the encryption decision was written.
+   * The coalescing above is wrong here: a pass already in flight — `syncNewWorkspace`
+   * fires one on every local creation — read this workspace's plan while it was
+   * still `pending`, so awaiting it would report success for a workspace it
+   * never provisioned. Settle that pass first (its outcome is not ours to
+   * report), then reconcile; concurrent deciders still share the one follow-up.
+   */
+  private async reconcileAfterDecision(): Promise<void> {
+    await this.reconcileInFlight?.catch(() => undefined)
+    await this.reconcile()
+  }
+
   private async runReconcile(): Promise<void> {
     const deviceId = this.tokenStore.getDeviceId()
     if (deviceId === undefined || !this.tokenStore.hasTokens() || this.activeConfig === null) {
@@ -596,6 +815,18 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       cloudReconcileLog.warn("skipped: cloud account identity is unavailable")
       return
     }
+    // Already-bound workspaces get their mode refreshed from the freshly
+    // fetched catalog, so a binding created before E2EE existed (mode unknown,
+    // therefore locked) heals on the next link or catalog refresh without an
+    // extra round trip.
+    // A device upgrading from a pre-E2EE build has no recorded mode for its
+    // bindings, so `backfillEncryptionModes` fires one refresh at launch to
+    // land here without the user asking.
+    const catalogModes = new Map(this.workspaceCatalog.map((entry) => [entry.workspaceId, entry.encryptionMode]))
+    for (const binding of this.repository.listWorkspaceBindings()) {
+      this.recordEncryptionMode(binding.workspaceId, catalogModes.get(binding.cloudWorkspaceId) ?? "unspecified")
+    }
+
     const client = this.createClient(this.activeConfig)
     await reconcileWorkspaces({
       accountId: account.accountId,
@@ -621,7 +852,36 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
           cloudWorkspaceId: binding.cloudWorkspaceId,
         })),
       catalog: () => this.workspaceCatalog as readonly ReconcilerCatalogEntry[],
-      ensureSyncWorkspace: async (input) => toCatalogEntry(await client.ensureSyncWorkspace(input)),
+      encryptionPlan: (workspaceId) => this.encryptionPlan(workspaceId),
+      // Retried once without the bundle when the server refuses it, so one user
+      // action reaches the right end state instead of waiting for a later pass:
+      // the workspace binds, its real mode is recorded, and it lands locked so
+      // the UI asks for the passphrase that actually opens it. The adopt flag
+      // adoptExistingEncryption sets is the crash net, not the mechanism — it is
+      // what makes the *next* pass skip the bundle if this retry never lands.
+      //
+      // AlreadyExists is unambiguous here: on the EnsureSyncWorkspace path it is
+      // raised only for a key-material mismatch (a slug collision is
+      // disambiguated server-side, and no access denial maps to it), and the
+      // retry is attempted only when we actually sent a bundle.
+      ensureSyncWorkspace: async (input) => {
+        try {
+          return toCatalogEntry(await client.ensureSyncWorkspace(input))
+        } catch (error) {
+          const mismatch = input.encryption !== undefined
+            && error instanceof ErrCloudRequestFailed
+            && error.code === "already_exists"
+          if (!mismatch) {
+            throw error
+          }
+          this.adoptExistingEncryption(input.workspaceId)
+          // Stripped from a copy rather than rebuilt field by field, so a field
+          // added to the request later rides the retry instead of being dropped.
+          const withoutBundle = { ...input }
+          delete withoutBundle.encryption
+          return toCatalogEntry(await client.ensureSyncWorkspace(withoutBundle))
+        }
+      },
       createLocalFromCloud: (input) => {
         new WorkspaceRepository(this.options.store).createWithId({
           id: input.id,
@@ -643,6 +903,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
           accountId: account.accountId,
           recordBaseline: input.recordBaseline,
         })
+        // Recorded from the SERVER's answer, in the same step that creates the
+        // binding, so the workspace is classified before `reactivate()` builds
+        // the provider and before any row is pushed.
+        this.recordEncryptionMode(input.workspaceId, input.encryptionMode)
       },
       reactivate: () => this.activateIfReady(false, true),
       initializeWorkspace: (workspaceId) => this.requireActiveProvider().initializeWorkspace(workspaceId),
@@ -652,15 +916,12 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   private activateIfReady(resumePending = false, replace = false): void {
-    if (this.activeProvider !== null && !replace) {
+    if (this.deactivateForReplaceOrSkip(replace)) {
       return
     }
-    if (replace && this.activeProvider !== null) {
-      this.activeProvider.deactivate()
-      this.activeProvider = null
-    }
     const workspaceBindings = this.repository.listWorkspaceBindings()
-    if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+    const config = this.resolveActivationConfig(workspaceBindings)
+    if (config === undefined) {
       if (replace) {
         this.options.setSyncProviderTarget(new LocalOnlySyncProvider())
         setState("idle")
@@ -668,7 +929,41 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       return
     }
 
-    const client = this.createClient(this.activeConfig)
+    // BEFORE the provider exists: the transport reads the key registry on its
+    // very first push, and an unregistered e2ee workspace pushes plaintext.
+    this.registerWorkspaceKeys(workspaceBindings)
+    const provider = this.createActiveProvider(config, workspaceBindings)
+    if (resumePending && workspaceBindings.some((binding) => binding.initializationState !== "initialized")) {
+      void provider.resumePendingInitializations().catch(() => undefined)
+    }
+  }
+
+  /** True when activation should stop here: already active and not replacing. */
+  private deactivateForReplaceOrSkip(replace: boolean): boolean {
+    if (this.activeProvider !== null && !replace) {
+      return true
+    }
+    if (replace && this.activeProvider !== null) {
+      this.activeProvider.deactivate()
+      this.activeProvider = null
+    }
+    return false
+  }
+
+  private resolveActivationConfig(
+    workspaceBindings: readonly CloudWorkspaceBinding[],
+  ): DesktopCloudConfig | undefined {
+    if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+      return undefined
+    }
+    return this.activeConfig
+  }
+
+  private createActiveProvider(
+    config: DesktopCloudConfig,
+    workspaceBindings: readonly CloudWorkspaceBinding[],
+  ): CloudSyncProvider {
+    const client = this.createClient(config)
     const provider = new CloudSyncProvider(client, this.tokenStore, this.repository, {
       workspaceBindings,
     }, (state) => {
@@ -678,8 +973,29 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.activeProvider = provider
     this.options.setSyncProviderTarget(provider)
     setState(this.repository.countDeadLetterOutbox() > 0 ? "error" : "idle")
-    if (resumePending && workspaceBindings.some((binding) => binding.initializationState !== "initialized")) {
-      void provider.resumePendingInitializations().catch(() => undefined)
+    return provider
+  }
+
+  /**
+   * A device upgrading from a pre-E2EE build holds a catalog serialized
+   * without `encryptionMode`, so every bound workspace reads as unknown —
+   * therefore locked, therefore never pushed — until the user refreshes by
+   * hand. One catalog fetch at launch heals that.
+   *
+   * ponytail: once per process, at construction, and silent on failure — an
+   * offline device stays locked and heals on the next refresh, which is
+   * exactly today's behaviour.
+   */
+  private backfillEncryptionModes(): void {
+    // A provider exists only when tokens, config and bindings all do, which
+    // is precisely when a refresh can run and has something to fix.
+    if (this.activeProvider === null) {
+      return
+    }
+    const unknown = this.repository.listWorkspaceBindings()
+      .some((binding) => this.storedEncryptionMode(binding.workspaceId) === undefined)
+    if (unknown) {
+      void this.refreshWorkspaceCatalog().catch(() => undefined)
     }
   }
 
@@ -847,9 +1163,253 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     return current
   }
 
+  /** The recorded mode, or `undefined` when the decision is still pending. */
+  private storedEncryptionMode(workspaceId: string): "none" | "e2ee" | undefined {
+    const value = this.settings.get(KEY_ENCRYPTION_MODE_PREFIX + workspaceId)
+    return value === "none" || value === "e2ee" ? value : undefined
+  }
+
+  /**
+   * Persist what the SERVER says a workspace's mode is, and make the transport
+   * agree. `unspecified` is deliberately not persisted: it is the absence of an
+   * answer, and recording it would be indistinguishable from recording `none`.
+   */
+  private recordEncryptionMode(workspaceId: string, mode: WorkspaceEncryptionMode): void {
+    if (mode === "unspecified") {
+      this.registerWorkspaceKeys([{ workspaceId }])
+      return
+    }
+    this.settings.set(KEY_ENCRYPTION_MODE_PREFIX + workspaceId, mode)
+    this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    // The adopt intent has served its purpose once the server's own answer is
+    // recorded: the row exists and its mode is known, so the next plan for this
+    // workspace comes from that mode rather than from the refusal that led here.
+    this.settings.delete(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId)
+    if (mode === "none") {
+      // The server provisioned this workspace in the clear — including the case
+      // where we asked for E2EE, `EnsureSyncWorkspace` refused the bundle because
+      // the row already existed as plaintext, and the bundle-less retry adopted
+      // it. Drop the key we minted; keeping it would seal records under a key the
+      // server does not know about.
+      clearCachedWdek(this.settings, workspaceId)
+    }
+    this.registerWorkspaceKeys([{ workspaceId }])
+  }
+
+  /**
+   * Classify a workspace `CreateSyncWorkspace` just created, off the mode in
+   * its RESPONSE and never off what we asked for. The bundle is derived once
+   * per call and reused by `CloudClient`'s post-refresh retry, which is what
+   * the server's byte-identical-per-request_id rule requires — re-deriving here
+   * would fail the retry `ALREADY_EXISTS`.
+   */
+  private adoptCreatedWorkspaceKey(
+    workspaceId: string,
+    mode: WorkspaceEncryptionMode,
+    wdek: Uint8Array | undefined,
+  ): void {
+    if (mode === "e2ee" && wdek !== undefined) {
+      this.acceptWorkspaceKey(workspaceId, wdek)
+    }
+    this.recordEncryptionMode(workspaceId, mode)
+  }
+
+  /** Cache a freshly recovered or freshly minted WDEK and hand it to the transport. */
+  private acceptWorkspaceKey(workspaceId: string, wdek: Uint8Array): void {
+    const refusal = cacheWdek(this.settings, workspaceId, wdek)
+    if (refusal !== null) {
+      // Not fatal: the key still works for this session, the user is just asked
+      // again next launch. Never a reason to skip registering it.
+      cloudSyncControlLog.warn(`workspace key not cached: ${refusal}`)
+    }
+    registerWorkspaceKey(workspaceId, wdek)
+  }
+
+  /**
+   * Tell the transport what every bound workspace's key situation is. MUST run
+   * before the provider is built, because an unregistered workspace is treated
+   * as plaintext and would push in the clear on the first cycle.
+   *
+   * This is also the launch unlock path: an e2ee workspace whose WDEK is in the
+   * OS keychain comes back unlocked, and one whose cache is missing (another
+   * machine, cleared keychain, a Linux box with no keyring) is registered
+   * `null` — locked, surfaced in `status()`, and not pushed.
+   */
+  private registerWorkspaceKeys(bindings: readonly { readonly workspaceId: string }[]): void {
+    for (const binding of bindings) {
+      const mode = this.storedEncryptionMode(binding.workspaceId)
+      if (mode === "none") {
+        unregisterWorkspaceKey(binding.workspaceId)
+        continue
+      }
+      // A key unlocked this session is authoritative over the cache: `cacheWdek`
+      // refuses to store on a keyring-less box, so re-reading here would re-lock
+      // a workspace whose passphrase was just typed. This runs on every reconcile.
+      if (mode === "e2ee" && hasWorkspaceKey(binding.workspaceId)) {
+        continue
+      }
+      // Unknown mode registers as LOCKED, never as plaintext: the workspace may
+      // be e2ee and we simply have not been told, and guessing plaintext there
+      // is unrecoverable. It resolves on the next catalog refresh or unlock.
+      registerWorkspaceKey(
+        binding.workspaceId,
+        mode === "e2ee" ? readCachedWdek(this.settings, binding.workspaceId) ?? null : null,
+      )
+    }
+  }
+
+  private encryptionStateOf(workspaceId: string): CloudWorkspaceEncryptionState {
+    const mode = this.storedEncryptionMode(workspaceId)
+    if (mode === "none") return "plaintext"
+    if (mode === undefined) return "unknown"
+    return hasWorkspaceKey(workspaceId) ? "unlocked" : "locked"
+  }
+
+  /**
+   * Local workspaces the reconciler is holding back for want of an encryption
+   * decision — the renderer's cue to prompt. A workspace leaves this list by
+   * `setWorkspaceEncryption` or `declineWorkspaceEncryption`.
+   *
+   * Only workspaces the reconciler would actually claim: the recorded mode is
+   * write-once, so prompting about another account's workspace would let this
+   * user commit it to plaintext forever, for a sync that can never happen here.
+   */
+  private pendingEncryptionDecisions(
+    bindings: readonly CloudWorkspaceBindingStatus[],
+  ): readonly CloudPendingEncryptionDecision[] {
+    // `runReconcile` bails outright without an identity, so nothing is pending.
+    const accountId = this.loadAccountIdentity()?.accountId
+    if (accountId === undefined) {
+      return []
+    }
+    const bound = new Set(bindings.map((binding) => binding.workspaceId))
+    const owners = this.repository.listWorkspaceAccounts()
+    return new WorkspaceRepository(this.options.store)
+      .listAll()
+      .filter((workspace) =>
+        workspace.deletedAt === null
+        && !bound.has(workspace.workspaceId)
+        && isWorkspaceClaimable(owners.get(workspace.workspaceId), accountId)
+        && this.storedEncryptionMode(workspace.workspaceId) === undefined)
+      .map((workspace) => ({ workspaceId: workspace.workspaceId, workspaceName: workspace.name }))
+  }
+
+  /** The decision recorded for a workspace that has not been provisioned yet. */
+  private encryptionPlan(workspaceId: string): ReconcilerEncryptionPlan {
+    // Checked before the recorded mode, and before the bundle: the server has
+    // already refused our key for this row, so nothing local can outrank that.
+    if (this.settings.get(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId) !== undefined) {
+      return { mode: "adopt" }
+    }
+    const mode = this.storedEncryptionMode(workspaceId)
+    if (mode === "none") {
+      return { mode: "none" }
+    }
+    const stored = mode === "e2ee"
+      ? this.settings.get(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+      : undefined
+    if (stored === undefined) {
+      return { mode: "pending" }
+    }
+    try {
+      return { mode: "e2ee", bundle: JSON.parse(stored) as WorkspaceEncryptionBundle }
+    } catch {
+      return { mode: "pending" }
+    }
+  }
+
+  /** Re-wrap the workspace's existing key under a new passphrase. Admin only, server-side. */
+  private async changeWorkspacePassphrase(input: CloudWorkspacePassphraseInput): Promise<CloudSyncStatus> {
+    const binding = this.repository.getWorkspaceBinding(input.workspaceId)
+    // The held key first, the cache only as a fallback: `encryptionStateOf`
+    // reports "unlocked" off `hasWorkspaceKey`, and that is what renders this
+    // button — but `cacheWdek` refuses to store on a keyring-less box, so
+    // reading the cache would reject a workspace the same screen calls unlocked.
+    const wdek = hasWorkspaceKey(input.workspaceId)
+      ? workspaceWdek(input.workspaceId) ?? undefined
+      : readCachedWdek(this.settings, input.workspaceId)
+    if (binding === undefined || this.activeConfig === null || wdek === undefined) {
+      // Rewrapping needs the current key. Without it there is nothing to
+      // re-wrap — unlock first, which is a strictly better error than wiping
+      // the workspace's key and stranding its data.
+      throw new CloudWorkspaceLockedError()
+    }
+    const bundle = rewrapBundle(wdek, input.passphrase)
+    try {
+      await this.createClient(this.activeConfig).setWorkspacePassphrase(binding.cloudWorkspaceId, bundle)
+      this.acceptWorkspaceKey(input.workspaceId, wdek)
+      return this.status()
+    } catch (error) {
+      throw setPassphraseFailure(error)
+    } finally {
+      this.notifyStatusChanged()
+    }
+  }
+
+  /**
+   * Give up on the key this device minted for a workspace the cloud already
+   * holds under a different one, and switch to adopting the stored one.
+   *
+   * The server rejects a bundle whose fingerprint is not the row's, because
+   * believing it was stored is how a device ends up sealing every record under
+   * a WDEK the server has no wrapping for — unreadable for the whole workspace,
+   * not just this device. So the minted key is dropped here rather than kept
+   * around: it can never decrypt anything in this workspace.
+   *
+   * The recorded mode deliberately stays `e2ee`. It is the truth — the row is
+   * encrypted, just not with our key — and it is what makes
+   * `registerWorkspaceKeys` treat the workspace as locked rather than plaintext
+   * on the way through. The key is re-registered as null for that same reason:
+   * an *unregistered* workspace reads as plaintext to the transport, which
+   * would push its records in the clear on the very next cycle.
+   */
+  private adoptExistingEncryption(workspaceId: string): void {
+    this.settings.set(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId, "1")
+    this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    clearCachedWdek(this.settings, workspaceId)
+    registerWorkspaceKey(workspaceId, null)
+    cloudSyncControlLog.warn(
+      `workspace ${workspaceId} already exists in the cloud under a different key; adopting it — the existing passphrase is needed`,
+    )
+  }
+
+  /**
+   * Drop every trace of a workspace's encryption: the cached key, the recorded
+   * mode, the pending bundle and any adopt intent. Called on unbind and
+   * disconnect — the key is account-scoped material and must not outlive the
+   * link. Rebinding re-reads the mode from the server and re-prompts for the
+   * passphrase.
+   */
+  private forgetWorkspaceEncryption(workspaceId: string): void {
+    clearCachedWdek(this.settings, workspaceId)
+    this.settings.delete(KEY_ENCRYPTION_MODE_PREFIX + workspaceId)
+    this.settings.delete(KEY_ENCRYPTION_PENDING_PREFIX + workspaceId)
+    this.settings.delete(KEY_ENCRYPTION_ADOPT_PREFIX + workspaceId)
+    unregisterWorkspaceKey(workspaceId)
+  }
+
   private notifyStatusChanged(): void {
     this.options.onStatusChanged?.()
   }
+}
+
+/**
+ * Name the two ways the server refuses `SetWorkspacePassphrase`, so the seam can
+ * say which one happened instead of forwarding "Connect call failed — HTTP 403".
+ *
+ * `ErrCloudRequestFailed` carries the HTTP status Connect derived from the
+ * handler's error code (connect-go's connectCodeToHTTP): PermissionDenied → 403
+ * for the admin-only check, and FailedPrecondition → 400, which this endpoint
+ * returns when the update matches zero rows because the stored
+ * `wdek_fingerprint` is not the one this device just wrapped.
+ */
+function setPassphraseFailure(error: unknown): unknown {
+  if (!(error instanceof ErrCloudRequestFailed)) return error
+  if (error.status === 403) return new CloudWorkspacePassphraseAdminOnlyError()
+  if (error.status === 400) {
+    return new CloudWorkspaceEncryptionInvalidError("the key stored in the cloud is not the one this device holds")
+  }
+  return error
 }
 
 export function cloudDefaults(version: string): DesktopCloudSyncDefaults {
@@ -860,7 +1420,9 @@ export function cloudDefaults(version: string): DesktopCloudSyncDefaults {
   }
 }
 
-function toCatalogEntry(workspace: import("@apiweave/proto/apiweave/v1/device_pb").SyncWorkspace): CloudWorkspaceCatalogEntry {
+function toCatalogEntry(
+  workspace: import("@apiweave/proto/apiweave/v1/device_pb").SyncWorkspace,
+): CloudWorkspaceCatalogEntry {
   return {
     workspaceId: workspace.workspaceId,
     workspaceName: workspace.workspaceName,
@@ -871,6 +1433,7 @@ function toCatalogEntry(workspace: import("@apiweave/proto/apiweave/v1/device_pb
     canPull: workspace.capabilities?.canPull ?? false,
     canPush: workspace.capabilities?.canPush ?? false,
     canResolveConflicts: workspace.capabilities?.canResolveConflicts ?? false,
+    encryptionMode: encryptionModeOf(workspace.encryptionMode),
   }
 }
 
@@ -883,20 +1446,32 @@ function toTeamCatalogEntry(team: import("@apiweave/proto/apiweave/v1/device_pb"
   }
 }
 
-function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
-  if (typeof value !== "object" || value === null) {
-    return false
-  }
-  const entry = value as Record<string, unknown>
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === "string"
+}
+
+function hasRequiredCatalogFields(entry: Record<string, unknown>): boolean {
   return typeof entry["workspaceId"] === "string"
     && typeof entry["workspaceName"] === "string"
-    && (entry["teamId"] === undefined || typeof entry["teamId"] === "string")
-    && (entry["teamName"] === undefined || typeof entry["teamName"] === "string")
     && typeof entry["isPersonal"] === "boolean"
     && typeof entry["effectiveRole"] === "number"
     && typeof entry["canPull"] === "boolean"
     && typeof entry["canPush"] === "boolean"
     && typeof entry["canResolveConflicts"] === "boolean"
+}
+
+function hasOptionalCatalogFields(entry: Record<string, unknown>): boolean {
+  return isOptionalString(entry["teamId"])
+    && isOptionalString(entry["teamName"])
+    && isOptionalString(entry["encryptionMode"])
+}
+
+function isCatalogEntry(value: unknown): value is CloudWorkspaceCatalogEntry {
+  if (typeof value !== "object" || value === null) {
+    return false
+  }
+  const entry = value as Record<string, unknown>
+  return hasRequiredCatalogFields(entry) && hasOptionalCatalogFields(entry)
 }
 
 function isTeamCatalogEntry(value: unknown): value is CloudTeamCatalogEntry {
