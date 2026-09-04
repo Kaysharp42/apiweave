@@ -8,6 +8,7 @@ const base: CanvasPrefs = {
   snapToGrid: false,
   gridSize: 24,
   wheelZoom: true,
+  tipsEnabled: true,
 };
 
 describe("canvasInteractionProps", () => {

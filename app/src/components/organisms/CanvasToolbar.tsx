@@ -15,6 +15,8 @@ import {
   Undo2,
   Redo2,
   Command,
+  Frame,
+  Ungroup,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -46,6 +48,10 @@ export function CanvasToolbar({
   onRedo,
   canUndo,
   canRedo,
+  onGroup,
+  onUngroup,
+  canGroup,
+  canUngroup,
   onHistory,
   onJsonEditor,
   onImport,
@@ -157,6 +163,34 @@ export function CanvasToolbar({
             size="sm"
           >
             <Redo2 className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onGroup}
+            disabled={!canGroup}
+            tooltip={
+              canGroup
+                ? "Frame selection (Ctrl+G)"
+                : "Select two ungrouped nodes to frame"
+            }
+            aria-label="Frame selection"
+            variant="ghost"
+            size="sm"
+          >
+            <Frame className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onUngroup}
+            disabled={!canUngroup}
+            tooltip={
+              canUngroup
+                ? "Ungroup selection (Ctrl+Shift+G)"
+                : "Select a frame or framed node to ungroup"
+            }
+            aria-label="Ungroup selection"
+            variant="ghost"
+            size="sm"
+          >
+            <Ungroup className="w-4 h-4" />
           </IconButton>
           {!useOverflow && (
             <ToolbarButton

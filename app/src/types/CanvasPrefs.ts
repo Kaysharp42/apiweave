@@ -13,4 +13,6 @@ export interface CanvasPrefs {
   gridSize: number;
   /** Wheel zooms (true, the historical behaviour) or pans (false). */
   wheelZoom: boolean;
+  /** Contextual hints appear on the canvas until the user turns them off. */
+  tipsEnabled: boolean;
 }

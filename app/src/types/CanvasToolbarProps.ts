@@ -4,6 +4,10 @@ export interface CanvasToolbarProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onGroup: () => void;
+  onUngroup: () => void;
+  canGroup: boolean;
+  canUngroup: boolean;
   onHistory: () => void;
   onJsonEditor: () => void;
   onImport: () => void;

@@ -22,7 +22,7 @@ const selectButtonClass =
  * reachable without leaving the workflow.
  */
 export function CanvasSettingsPanel() {
-  const { dragMode, snapToGrid, gridSize, wheelZoom, setCanvasPrefs } =
+  const { dragMode, snapToGrid, gridSize, wheelZoom, tipsEnabled, setCanvasPrefs } =
     useCanvasPrefsStore();
 
   return (
@@ -64,6 +64,13 @@ export function CanvasSettingsPanel() {
         description="Dragged nodes land on the canvas grid instead of anywhere."
         checked={snapToGrid}
         onToggle={() => setCanvasPrefs({ snapToGrid: !snapToGrid })}
+      />
+
+      <ToggleSetting
+        title="Contextual canvas tips"
+        description="Show a shortcut when the current selection unlocks an action."
+        checked={tipsEnabled}
+        onToggle={() => setCanvasPrefs({ tipsEnabled: !tipsEnabled })}
       />
 
       {snapToGrid && (

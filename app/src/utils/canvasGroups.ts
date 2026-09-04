@@ -63,6 +63,77 @@ function freedFromFrame(
   return freed;
 }
 
+/** The frame containing a node's centre, if one owns that point. */
+export function frameContainingNode(
+  nodes: readonly CanvasNode[],
+  nodeId: string,
+): string | null {
+  const byId = nodesById(nodes);
+  const node = byId.get(nodeId);
+  if (node === undefined || isFrameNode(node)) return null;
+
+  const position = absoluteNodePosition(node, byId);
+  const size = nodeSize(node);
+  const center = {
+    x: position.x + size.width / 2,
+    y: position.y + size.height / 2,
+  };
+
+  for (const frame of nodes) {
+    if (!isFrameNode(frame) || frame.id === node.id) continue;
+    const frameSize = nodeSize(frame);
+    if (
+      center.x >= frame.position.x &&
+      center.x <= frame.position.x + frameSize.width &&
+      center.y >= frame.position.y &&
+      center.y <= frame.position.y + frameSize.height
+    ) {
+      return frame.id;
+    }
+  }
+  return null;
+}
+
+/**
+ * Move a node into a frame, or set it free when `frameId` is null.
+ *
+ * Both cases preserve the node's absolute position. Keeping this transform pure
+ * means palette drops and node drags cannot disagree about coordinate space.
+ */
+export function adoptIntoFrame(
+  nodes: readonly CanvasNode[],
+  nodeId: string,
+  frameId: string | null,
+): CanvasNode[] {
+  const byId = nodesById(nodes);
+  const node = byId.get(nodeId);
+  const frame = frameId === null ? undefined : byId.get(frameId);
+  if (
+    node === undefined ||
+    isFrameNode(node) ||
+    (frameId !== null && frame === undefined) ||
+    (frame !== undefined && !isFrameNode(frame))
+  ) {
+    return sortFramesFirst(nodes);
+  }
+
+  const position = absoluteNodePosition(node, byId);
+  const adopted = nodes.map((current) => {
+    if (current.id !== nodeId) return current;
+    if (frame === undefined) return freedFromFrame(current, position);
+    return {
+      ...current,
+      parentId: frame.id,
+      extent: "parent" as const,
+      position: {
+        x: position.x - frame.position.x,
+        y: position.y - frame.position.y,
+      },
+    };
+  });
+  return sortFramesFirst(adopted);
+}
+
 export function nodesById(
   nodes: readonly CanvasNode[],
 ): Map<string, CanvasNode> {

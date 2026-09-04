@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CanvasNode } from "../types/CanvasNode";
 import {
+  adoptIntoFrame,
+  frameContainingNode,
   GROUP_PAD,
   groupSelection,
   reconcileFrames,
@@ -136,5 +138,30 @@ describe("canvasGroups", () => {
     // This runs on every drag frame; a copy per frame is the thing to avoid.
     expect(withAbsolutePositions(graph)).toBe(graph);
     expect(sortFramesFirst(graph).map((n) => n.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("adopts by centre and frees a node without moving it on screen", () => {
+    const { nodes: grouped } = group(graph, ["a", "b"]);
+    const candidate = node("d", 300, 180);
+    const withCandidate = [...grouped, candidate];
+
+    expect(frameContainingNode(withCandidate, "d")).toBe("frame-1");
+    const adopted = adoptIntoFrame(withCandidate, "d", "frame-1");
+    expect(withAbsolutePositions(adopted).find((item) => item.id === "d")?.position)
+      .toEqual(candidate.position);
+
+    const frame = adopted[0]!;
+    const draggedOut = adopted.map((item) =>
+      item.id === "d"
+        ? { ...item, position: { x: 700 - frame.position.x, y: 180 - frame.position.y } }
+        : item,
+    );
+    expect(frameContainingNode(draggedOut, "d")).toBeNull();
+
+    const freed = adoptIntoFrame(draggedOut, "d", null);
+    expect(freed.find((item) => item.id === "d")).toMatchObject({
+      position: { x: 700, y: 180 },
+    });
+    expect(freed.find((item) => item.id === "d")).not.toHaveProperty("parentId");
   });
 });

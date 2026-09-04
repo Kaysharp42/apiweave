@@ -1,6 +1,12 @@
 import { useCallback } from "react";
 import type { Node, XYPosition } from "@xyflow/react";
 import type { CanvasNode, CanvasNodeTemplate } from "../types";
+import {
+  adoptIntoFrame,
+  FRAME_FALLBACK_HEIGHT,
+  FRAME_FALLBACK_WIDTH,
+  frameContainingNode,
+} from "../utils/canvasGroups";
 
 interface NodeConfig {
   [key: string]: unknown;
@@ -49,7 +55,7 @@ export function createCanvasNode(
   position: XYPosition,
 ): CanvasNode {
   const config = { ...getDefaultConfig(template.type), ...template.config };
-  return {
+  const node: CanvasNode = {
     id: `${template.type}-${Date.now()}`,
     type: template.type,
     position,
@@ -58,6 +64,12 @@ export function createCanvasNode(
       config,
     },
   };
+  if (template.type === "group") {
+    node.width = FRAME_FALLBACK_WIDTH;
+    node.height = FRAME_FALLBACK_HEIGHT;
+    node.dragHandle = ".aw-group-handle";
+  }
+  return node;
 }
 
 interface UseCanvasDropParams {
@@ -137,7 +149,14 @@ export default function useCanvasDrop({
         position,
       );
 
-      setNodes((nds) => [...nds, newNode]);
+      setNodes((nds) => {
+        const next = [...nds, newNode];
+        return adoptIntoFrame(
+          next,
+          newNode.id,
+          frameContainingNode(next, newNode.id),
+        );
+      });
     },
     [reactFlowInstanceRef, setNodes],
   );

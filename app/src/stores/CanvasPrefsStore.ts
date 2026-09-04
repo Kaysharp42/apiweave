@@ -23,17 +23,19 @@ const useCanvasPrefsStore = create<CanvasPrefsState>()(
       // can actually see rather than on an invisible lattice of its own.
       gridSize: 24,
       wheelZoom: true,
+      tipsEnabled: true,
 
       setCanvasPrefs: (patch: Partial<CanvasPrefs>) => set(patch),
     }),
     {
       name: "apiweave:v1:canvasPrefs",
-      partialize: ({ dragMode, locked, snapToGrid, gridSize, wheelZoom }) => ({
+      partialize: ({ dragMode, locked, snapToGrid, gridSize, wheelZoom, tipsEnabled }) => ({
         dragMode,
         locked,
         snapToGrid,
         gridSize,
         wheelZoom,
+        tipsEnabled,
       }),
     },
   ),
