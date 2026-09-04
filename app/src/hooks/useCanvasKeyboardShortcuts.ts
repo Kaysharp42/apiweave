@@ -58,6 +58,17 @@ const SHIFT_CHORDS: ChordTable = {
   arrowright: (h) => () => h.onFocusDirection("right"),
 };
 
+const CANVAS_SHORTCUT_LABELS: Record<string, string> = {
+  group: "Ctrl+G",
+  ungroup: "Ctrl+Shift+G",
+  undo: "Ctrl+Z",
+};
+
+/** Labels for surfaces that teach a canvas shortcut instead of handling it. */
+export function canvasShortcutLabel(shortcut: string): string | null {
+  return CANVAS_SHORTCUT_LABELS[shortcut] ?? null;
+}
+
 function runChord(
   e: KeyboardEvent,
   table: ChordTable,

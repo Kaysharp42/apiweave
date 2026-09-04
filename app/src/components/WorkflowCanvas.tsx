@@ -42,6 +42,7 @@ import NoteNode from "./nodes/NoteNode";
 import CustomEdge from "./CustomEdge";
 import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
 import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
+import { CanvasTip } from "./atoms/CanvasTip";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -71,7 +72,11 @@ import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
-import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
+import {
+  canvasShortcutLabel,
+  useCanvasKeyboardShortcuts,
+} from "../hooks/useCanvasKeyboardShortcuts";
+import { useCanvasTip } from "../hooks/useCanvasTip";
 import { useSpacePan } from "../hooks/useSpacePan";
 import {
   preserveCanvasRuntimeState,
@@ -85,6 +90,8 @@ import {
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import {
   groupSelection,
+  adoptIntoFrame,
+  frameContainingNode,
   isFrameNode,
   selectedFrameIds,
   selectedIds,
@@ -106,7 +113,7 @@ import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
-import { adjacentFocusModeNode } from "../utils/focusModeOrder";
+import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -771,15 +778,33 @@ export function WorkflowCanvas({
     selectedNodeRef.current = null;
   }, []);
 
-  const onNodeDragStart = useCallback(() => {
+  const onNodeDragStart = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
     // isDraggingNodeRef removed — auto-save skips during drag via isSwaggerRefreshing guard
     // Dragging a node under a moving camera is unusable; the camera yields.
     suspendFollow();
-  }, [suspendFollow]);
+    // A constrained child cannot ever cross its frame boundary, so temporarily
+    // lift the constraint. Drag stop immediately reparents it or restores it.
+    if (node.parentId !== undefined) {
+      setNodes((current) =>
+        current.map((item) => {
+          if (item.id !== node.id || item.extent === undefined) return item;
+          const dragged = { ...item };
+          delete dragged.extent;
+          return dragged;
+        }),
+      );
+    }
+  }, [setNodes, suspendFollow]);
 
-  const onNodeDragStop = useCallback(() => {
-    // Drag stop handler — no-op, auto-save resumes naturally
-  }, []);
+  const onNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
+    setNodes((current) =>
+      adoptIntoFrame(
+        current,
+        node.id,
+        frameContainingNode(current, node.id),
+      ),
+    );
+  }, [setNodes]);
 
   const onNodeDoubleClick = useCallback(
     (event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
@@ -791,7 +816,9 @@ export function WorkflowCanvas({
       ) {
         return;
       }
-      if (node.type !== "start" && node.type !== "end") {
+      // Frames and notes are canvas objects: a double-click renames them in
+      // place (see `GroupNode`/`NoteNode`), it does not open a step editor.
+      if (isEditableNode(node)) {
         setIsFocusMode(false);
         setModalNode(node);
       }
@@ -802,7 +829,8 @@ export function WorkflowCanvas({
   /**
    * Double-click the empty pane to frame the whole graph. The gesture is free
    * because `zoomOnDoubleClick` is off — and on a *node* it already opens the
-   * editor, which is a better use of it than framing that one node.
+   * editor (or renames a frame/note), which is a better use of it than framing
+   * that one node.
    *
    * Through `suspendFollow` like the zoom controls: a mid-run double-click
    * would otherwise fight the camera and snap straight back.
@@ -886,7 +914,7 @@ export function WorkflowCanvas({
   const openFocusMode = useCallback(() => {
     const node =
       selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
-    if (!node || node.type === "group" || node.type === "note" || node.type === "start" || node.type === "end") {
+    if (!node || !isEditableNode(node)) {
       toast.info("Select an editable node to enter focus mode");
       return;
     }
@@ -1192,6 +1220,32 @@ export function WorkflowCanvas({
     apply: applyHistoryEntry,
   });
 
+  const canvasTipContext = useMemo(() => {
+    const selection = selectedIds(nodes);
+    const selected = nodes.filter((node) => selection.has(node.id));
+    const hasUnconnectedNode = nodes.some(
+      (node) =>
+        !isFrameNode(node) &&
+        node.type !== "note" &&
+        node.type !== "start" &&
+        node.type !== "end" &&
+        !edges.some((edge) => edge.source === node.id || edge.target === node.id),
+    );
+    return {
+      isRunning,
+      canGroup:
+        selected.length >= 2 &&
+        selected.every(
+          (node) => !isFrameNode(node) && node.parentId === undefined,
+        ),
+      canUngroup: selectedFrameIds(nodes, selection).size > 0,
+      canUndo,
+      hasUnconnectedNode,
+    };
+  }, [canUndo, edges, isRunning, nodes]);
+  const { tip: canvasTip, dismiss: dismissCanvasTip } =
+    useCanvasTip(canvasTipContext);
+
   useCanvasKeyboardShortcuts({
     isEditorOverlayOpen,
     isRunning,
@@ -1392,10 +1446,11 @@ export function WorkflowCanvas({
         x: canvasBounds.left + canvasBounds.width / 2,
         y: canvasBounds.top + canvasBounds.height / 2,
       });
-      setNodes((currentNodes) => [
-        ...currentNodes,
-        createCanvasNode(template, position),
-      ]);
+      setNodes((currentNodes) => {
+        const node = createCanvasNode(template, position);
+        const next = [...currentNodes, node];
+        return adoptIntoFrame(next, node.id, frameContainingNode(next, node.id));
+      });
     },
     [setNodes],
   );
@@ -1621,6 +1676,10 @@ export function WorkflowCanvas({
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+        onGroup={groupSelected}
+        onUngroup={ungroupSelected}
+        canGroup={canvasTipContext.canGroup}
+        canUngroup={canvasTipContext.canUngroup}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {
@@ -1673,6 +1732,16 @@ export function WorkflowCanvas({
         onShowVariablesPanel={onShowVariablesPanel}
         workspaceId={scope.workspaceId ?? ""}
       />
+
+      {canvasPrefs.tipsEnabled && canvasTip && (
+        <CanvasTip
+          tip={canvasTip}
+          shortcut={
+            canvasTip.chord ? canvasShortcutLabel(canvasTip.chord) : null
+          }
+          onDismiss={() => dismissCanvasTip(canvasTip.id)}
+        />
+      )}
 
       <CommandPalette
         open={isCommandPaletteOpen}

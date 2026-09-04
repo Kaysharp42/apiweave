@@ -13,6 +13,7 @@ import {
   Pencil,
   Trash2,
   StickyNote,
+  Frame,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -55,6 +56,7 @@ const sectionIcons: Record<string, LucideIcon> = {
   "Control Flow": GitBranch,
   Validation: CheckCircle,
   Annotations: StickyNote,
+  Layout: Frame,
 };
 
 interface PaletteItem {
@@ -163,6 +165,16 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
         type: "note",
         label: "Note",
         description: "Document a branch without running it",
+      },
+    ],
+  },
+  {
+    category: "Layout",
+    nodes: [
+      {
+        type: "group",
+        label: "Group Frame",
+        description: "Organize related nodes",
       },
     ],
   },

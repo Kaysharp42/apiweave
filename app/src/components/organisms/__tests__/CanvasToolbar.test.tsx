@@ -10,6 +10,10 @@ function renderToolbar() {
       onRedo={vi.fn()}
       canUndo={false}
       canRedo={false}
+      onGroup={vi.fn()}
+      onUngroup={vi.fn()}
+      canGroup={false}
+      canUngroup={false}
       onHistory={vi.fn()}
       onJsonEditor={vi.fn()}
       onImport={vi.fn()}

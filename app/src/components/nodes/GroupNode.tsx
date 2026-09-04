@@ -3,7 +3,12 @@ import { NodeResizer, useReactFlow } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Frame, Ungroup } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
-import { ungroupFrames } from "../../utils/canvasGroups";
+import { useNodeConfigPatch } from "../../hooks/useNodeConfigPatch";
+import {
+  FRAME_MIN_HEIGHT,
+  FRAME_MIN_WIDTH,
+  ungroupFrames,
+} from "../../utils/canvasGroups";
 import type { CanvasNode } from "../../types/CanvasNode";
 import { GROUP_TINTS } from "../../constants/GroupTints";
 import type { GroupTint } from "../../types/GroupTint";
@@ -24,10 +29,19 @@ import type { GroupTint } from "../../types/GroupTint";
  */
 function GroupNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const { updateNodeData, setNodes } = useReactFlow<CanvasNode>();
+  const patchConfig = useNodeConfigPatch(id);
   const [isRenaming, setIsRenaming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const tint = GROUP_TINTS[(data.config?.color as GroupTint) ?? "slate"];
+  // A stored name that is no longer a tint (renamed token, hand-edited file)
+  // would leave `--aw-group-tint` undefined and collapse every color-mix that
+  // draws this node, so it falls back rather than rendering an invisible frame.
+  const stored = data.config?.color;
+  const tintName: GroupTint =
+    typeof stored === "string" && stored in GROUP_TINTS
+      ? (stored as GroupTint)
+      : "slate";
+  const tint = GROUP_TINTS[tintName];
   const label = typeof data.label === "string" ? data.label : "Group";
 
   return (
@@ -35,8 +49,8 @@ function GroupNode({ id, data, selected }: NodeProps<CanvasNode>) {
       <NodeResizer
         isVisible={selected ?? false}
         color={tint}
-        minWidth={160}
-        minHeight={120}
+        minWidth={FRAME_MIN_WIDTH}
+        minHeight={FRAME_MIN_HEIGHT}
         // The dashed border below already is the outline; the resizer only
         // needs to contribute handles.
         lineStyle={{ borderColor: "transparent" }}
@@ -80,6 +94,21 @@ function GroupNode({ id, data, selected }: NodeProps<CanvasNode>) {
 
           {selected && (
             <span className="aw-group__actions nodrag">
+              <span className="aw-group__tints" role="group" aria-label={`Tint for ${label}`}>
+                {(Object.keys(GROUP_TINTS) as GroupTint[]).map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="aw-group__swatch"
+                    style={{ "--aw-swatch": GROUP_TINTS[name] } as React.CSSProperties}
+                    data-active={name === tintName ? "true" : "false"}
+                    aria-pressed={name === tintName}
+                    aria-label={name}
+                    title={name}
+                    onClick={() => patchConfig("color", name)}
+                  />
+                ))}
+              </span>
               <IconButton
                 size="xs"
                 variant="ghost"

@@ -210,34 +210,146 @@ describe("autoLayout with bezier edges", () => {
     );
   });
   // #4: dagre lays out a flat graph, and a framed node's position is relative
-  // to its frame. Laying them out together scatters the user's groups and puts
-  // absolute coordinates into a relative space.
-  it("leaves frames and their members where they are", () => {
-    const { nodes, edges } = buildGraph(6);
-    const framed = [
-      {
-        id: "frame-1",
-        type: "group",
-        position: { x: -50, y: -50 },
-        width: 400,
-        height: 300,
-        data: {},
-      },
-      ...nodes.map((node) =>
-        node.id === "n2" ? { ...node, parentId: "frame-1" } : node,
-      ),
-    ] as Node[];
+  // to its frame. Excluding frames instead left them parked where they were
+  // while the freed chain fragments were laid out from the origin, straight
+  // over the top of them.
+  describe("with a frame", () => {
+    /** A 6-node chain with n2 and n3 framed, both parked overlapping at 0,0. */
+    function framedChain() {
+      const { nodes, edges } = buildGraph(6);
+      const members = new Set(["n2", "n3"]);
+      const framed = [
+        {
+          id: "frame-1",
+          type: "group",
+          position: { x: -50, y: -50 },
+          width: 400,
+          height: 300,
+          data: {},
+        },
+        ...nodes.map((node) =>
+          members.has(node.id)
+            ? { ...node, parentId: "frame-1", position: { x: 0, y: 0 } }
+            : node,
+        ),
+      ] as Node[];
+      return { framed, edges };
+    }
 
-    const laidOut = autoLayoutRootNodes(framed, edges);
-    const byId = new Map(laidOut.map((node) => [node.id, node.position]));
+    function frameRect(laidOut: Node[]): Rect {
+      const frame = laidOut.find((node) => node.id === "frame-1");
+      if (frame === undefined) throw new Error("frame missing from layout");
+      return {
+        x: frame.position.x,
+        y: frame.position.y,
+        width: frame.width ?? 0,
+        height: frame.height ?? 0,
+      };
+    }
 
-    expect(byId.get("frame-1")).toEqual({ x: -50, y: -50 });
-    expect(byId.get("n2")).toEqual(
-      framed.find((node) => node.id === "n2")?.position,
-    );
-    // Everything else still moved.
-    expect(byId.get("n1")).not.toEqual(
-      nodes.find((node) => node.id === "n1")?.position,
-    );
+    function overlaps(a: Rect, b: Rect): boolean {
+      return (
+        a.x < b.x + b.width &&
+        a.x + a.width > b.x &&
+        a.y < b.y + b.height &&
+        a.y + a.height > b.y
+      );
+    }
+
+    it("tidies members inside the frame's own coordinate space", () => {
+      const { framed, edges } = framedChain();
+      const laidOut = autoLayoutRootNodes(framed, edges);
+      const byId = new Map(laidOut.map((node) => [node.id, node]));
+      const n2 = byId.get("n2");
+      const n3 = byId.get("n3");
+
+      // n2 -> n3, so the edge orders them left to right, and neither is left
+      // sitting on top of the other.
+      expect(n2?.position.x).toBeLessThan(n3?.position.x ?? 0);
+      expect(overlaps(rectFor(n2 as Node), rectFor(n3 as Node))).toBe(false);
+      // Still frame-relative: a member laid out in absolute canvas coordinates
+      // would render an unpredictable distance outside its frame.
+      expect(n2?.parentId).toBe("frame-1");
+      expect(n2?.position.x).toBeGreaterThanOrEqual(0);
+      expect(n2?.position.y).toBeGreaterThanOrEqual(0);
+    });
+
+    it("refits the frame around what it holds", () => {
+      const { framed, edges } = framedChain();
+      const laidOut = autoLayoutRootNodes(framed, edges);
+      const rect = frameRect(laidOut);
+
+      // Every member fits, with room to spare on all four sides.
+      for (const member of laidOut.filter((n) => n.parentId === "frame-1")) {
+        expect(member.position.x).toBeGreaterThan(0);
+        expect(member.position.y).toBeGreaterThan(0);
+        expect(member.position.x + NODE_W).toBeLessThan(rect.width);
+        expect(member.position.y + NODE_H).toBeLessThan(rect.height);
+      }
+      // Two 280px nodes side by side no longer fit the original 400px box.
+      expect(rect.width).toBeGreaterThan(400);
+    });
+
+    it("lays the frame out clear of every other node", () => {
+      const { framed, edges } = framedChain();
+      const laidOut = autoLayoutRootNodes(framed, edges);
+      const rect = frameRect(laidOut);
+
+      const colliding = laidOut
+        .filter((node) => node.id !== "frame-1" && node.parentId === undefined)
+        .filter((node) => overlaps(rectFor(node), rect))
+        .map((node) => node.id);
+
+      expect(colliding).toEqual([]);
+    });
+
+    it("keeps the chain's order through the frame", () => {
+      const { framed, edges } = framedChain();
+      const laidOut = autoLayoutRootNodes(framed, edges);
+      const x = (id: string) =>
+        laidOut.find((node) => node.id === id)?.position.x ?? NaN;
+
+      // n1 -> n2 and n3 -> n4 collapse to n1 -> frame -> n4, so the frame has
+      // to sit between them. Dropping those edges is what let the freed
+      // fragments pile up at the origin.
+      expect(x("n1")).toBeLessThan(x("frame-1"));
+      expect(x("frame-1")).toBeLessThan(x("n4"));
+    });
+
+    it("leaves notes where the user put them", () => {
+      const { nodes, edges } = buildGraph(4);
+      const withNote = [
+        ...nodes,
+        { id: "note-1", type: "note", position: { x: 999, y: 999 }, data: {} },
+      ] as Node[];
+
+      const laidOut = autoLayoutRootNodes(withNote, edges);
+      expect(laidOut.find((node) => node.id === "note-1")?.position).toEqual({
+        x: 999,
+        y: 999,
+      });
+    });
+
+    it("grows the frame to cover a note it holds rather than clipping it", () => {
+      const { framed, edges } = framedChain();
+      const withNote = [
+        ...framed,
+        {
+          id: "note-1",
+          type: "note",
+          parentId: "frame-1",
+          position: { x: 40, y: 800 },
+          width: 200,
+          height: 120,
+          data: {},
+        },
+      ] as Node[];
+
+      const laidOut = autoLayoutRootNodes(withNote, edges);
+      const note = laidOut.find((node) => node.id === "note-1");
+
+      expect(note?.position).toEqual({ x: 40, y: 800 });
+      expect(frameRect(laidOut).height).toBeGreaterThan(920);
+    });
   });
 });
