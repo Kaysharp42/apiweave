@@ -8,7 +8,7 @@ const pkg = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
 );
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(pkg.version),
   },
@@ -28,6 +28,7 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     outDir: "dist/renderer",
+    ...(mode === "development" ? { minify: false, sourcemap: true } : {}),
   },
   server: {
     port: 3000,
