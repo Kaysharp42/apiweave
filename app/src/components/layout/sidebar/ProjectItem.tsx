@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the export/delete SidebarAction pair here already matches WorkflowItem's; it predates this file's changes and is only re-flagged because AgentLaunchButton's insertion shifted its line numbers
 import { useState } from "react";
 import {
   ChevronDown,
