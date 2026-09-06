@@ -486,9 +486,12 @@ export class CloudClient {
   }
 
   /**
-   * `encryption` is applied ONLY to a workspace this call creates. On a
-   * workspace that already exists the server silently ignores it and reports
-   * the stored mode, which is why the caller must read `encryptionMode` off the
+   * `encryption` is applied ONLY to a workspace this call creates. On one that
+   * already exists the server checks the bundle instead of applying it: a
+   * bundle matching the stored mode and fingerprint is accepted, one that
+   * differs fails with `already_exists`, and the retry that gets past it is the
+   * same call without a bundle, which adopts whatever mode the workspace
+   * already carries. Either way the caller must read `encryptionMode` off the
    * returned entry and never assume the bundle took.
    */
   public async ensureSyncWorkspace(params: {

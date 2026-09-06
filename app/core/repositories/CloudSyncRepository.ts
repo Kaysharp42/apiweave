@@ -1253,7 +1253,11 @@ export class CloudSyncRepository {
     // payload took a path that skipped it — `resolveConflictMerged`, which
     // applies the server's merged winner, is the one that still can on an
     // encrypted workspace. Fail loudly instead of storing an unreadable record.
-    if (payload["e2ee"] === 1) {
+    // Any top-level `e2ee` key, not just version 1: this is the last guard
+    // before the local tables, and it has to match the server's own detection
+    // rule (IsSealedEnvelope) rather than the narrower shape the server happens
+    // to accept on push today.
+    if (payload["e2ee"] !== undefined) {
       throw new ErrForbiddenCloudPayload("e2ee")
     }
     switch (change.kind) {
