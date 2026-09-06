@@ -17,6 +17,9 @@ const { agentsMock } = vi.hoisted(() => ({
   },
 }));
 
+const { toastMock } = vi.hoisted(() => ({ toastMock: { error: vi.fn() } }));
+
+vi.mock("sonner", () => ({ toast: toastMock }));
 vi.mock("../../../utils/apiweaveClient", () => ({ agents: agentsMock }));
 vi.mock("../../../contexts/WorkspaceContext", () => ({
   useWorkspace: () => ({ currentWorkspace: { workspaceId: "ws-1" } }),
@@ -167,6 +170,63 @@ describe("AgentLaunchButton", () => {
     );
 
     expect(await screen.findByRole("alert")).toHaveTextContent("dialog failed");
+  });
+
+  /**
+   * The prompt pipeline was built end to end in main — argv, flag and stdin
+   * modes, and a refusal for an external stdin launch — and no caller ever sent
+   * one. This is the field that does.
+   */
+  it("hands the typed task to the launch, once", async () => {
+    const onEmbeddedSession = vi.fn();
+    render(
+      <AgentLaunchButton
+        scopeKind="workflow"
+        scopeId="wf-1"
+        onEmbeddedSession={onEmbeddedSession}
+      />,
+    );
+    await screen.findByRole("button", { name: /Alpha/ });
+
+    await userEvent.click(screen.getByRole("button", { name: "Agent options" }));
+    await userEvent.type(
+      await screen.findByRole("textbox", { name: "Task for the agent" }),
+      "add a 404 assertion{Enter}",
+    );
+
+    await waitFor(() => {
+      expect(agentsMock.launchEmbedded).toHaveBeenCalledWith(
+        expect.objectContaining({ prompt: "add a 404 assertion" }),
+      );
+    });
+
+    // Cleared on dispatch, so the next launch does not repeat the same task.
+    await userEvent.click(screen.getByRole("button", { name: /Alpha/ }));
+    await waitFor(() => {
+      expect(agentsMock.launchEmbedded).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ prompt: expect.anything() }),
+      );
+    });
+  });
+
+  /**
+   * The sidebar's project rows clip a popover on both axes, so compact drops
+   * the menu — and a failure there has to reach a toast instead of the error
+   * card it can no longer render. Losing it silently is the whole risk.
+   */
+  it("has no menu in compact mode, and reports failures as a toast", async () => {
+    agentsMock.launchExternal.mockRejectedValue(new Error("spawn ENOENT"));
+    render(
+      <AgentLaunchButton scopeKind="project" scopeId="p-1" showLabel={false} compact />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /Alpha/ }));
+
+    await waitFor(() => {
+      expect(toastMock.error).toHaveBeenCalledWith("spawn ENOENT");
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Agent options" })).toBeNull();
   });
 
   /**

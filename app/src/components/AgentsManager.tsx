@@ -16,6 +16,7 @@ import { useAgentSessions } from "../contexts/AgentSessionsContext";
 import { useAgentDockSelection } from "../hooks/useAgentDockControls";
 import { useKillSessionAction } from "../hooks/useKillSessionAction";
 import { describeError } from "../utils/describeError";
+import { formatTimestamp } from "../utils/formatTimestamp";
 
 interface AgentsManagerProps {
   readonly className?: string;
@@ -267,6 +268,13 @@ function SessionRow({
           <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
             <FolderOpen className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
             <span className="truncate">{session.cwd}</span>
+          </span>
+          {/* When it ran. The list is ordered live-first and then by recency, so
+              without this every finished session below the fold is undated —
+              and the row that reads identically to the one under it is usually
+              the same agent in the same folder on a different day. */}
+          <span className="mt-0.5 block text-[11px] text-text-muted dark:text-text-muted-dark">
+            {formatTimestamp(session.startedAt)}
           </span>
           {session.error !== null && session.error !== undefined && (
             <span className="mt-1 block text-[11px] text-status-error">

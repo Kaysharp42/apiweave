@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
 import { IconButton } from "../../atoms/IconButton";
+import { AgentLaunchButton } from "../../organisms/AgentLaunchButton";
 import { SidebarAction } from "./SidebarAction";
 import { WorkflowItem } from "./WorkflowItem";
 import { ContextMenu } from "../../molecules/ContextMenu";
@@ -90,7 +91,30 @@ export function ProjectItem({
           </Badge>
         </button>
 
-        <div className="ml-1 flex w-[64px] shrink-0 items-center justify-end gap-1">
+        <div className="ml-1 flex w-[92px] shrink-0 items-center justify-end gap-1">
+          {/*
+            Where the Agents section says agents are launched from. It renders
+            nothing outside the desktop app, and `collectionId` rather than the
+            `projectId` alias because the local-path table keys on the DB
+            primary key — the same id `CollectionManager` passes.
+
+            Compact: the list panel is 236px wide and clips, so this is the
+            launch on its own. Choosing another agent or repointing the folder
+            stays in the Projects dialog and the canvas toolbar.
+
+            ponytail: one path resolution per row on mount (the roster fetch
+            beside it is already cached in the service for 30s). Lift it to a
+            single batched read if a workspace with many projects makes the
+            Projects tab feel slow to open.
+          */}
+          <AgentLaunchButton
+            scopeKind="project"
+            scopeId={project.collectionId}
+            showLabel={false}
+            compact
+            className="opacity-40 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
+          />
+
           <SidebarAction
             icon={Download}
             label="Export project"
