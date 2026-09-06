@@ -28,6 +28,25 @@ import type {
 
 type ViewMode = "list" | "create" | "edit";
 
+/**
+ * Form data as the environments API takes it.
+ *
+ * Empty optional text becomes `null`, never `undefined`: the update is a patch
+ * merged over the stored record, so an omitted key keeps the old value. Clearing
+ * Swagger Doc URL or Description used to be a silent no-op unless you left a
+ * space in the field — `" "` is truthy, and the repository normalizes it to null
+ * on the way in.
+ */
+export function environmentWritePayload(data: EnvironmentFormData) {
+  return {
+    name: data.name,
+    description: data.description.trim() || null,
+    swaggerDocUrl: data.swaggerDocUrl.trim() || null,
+    baseEnvironmentId: data.baseEnvironmentId,
+    variables: data.variables,
+  };
+}
+
 /** An environment plus the workspace it belongs to — the pair every action needs. */
 interface EnvironmentTarget {
   readonly environment: ScopedEnvironment;
@@ -145,13 +164,7 @@ export default function WorkspaceEnvironmentsPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: data.name,
-            description: data.description || undefined,
-            swaggerDocUrl: data.swaggerDocUrl || undefined,
-            baseEnvironmentId: data.baseEnvironmentId,
-            variables: data.variables,
-          }),
+          body: JSON.stringify(environmentWritePayload(data)),
         },
       );
       setViewMode("list");
@@ -174,13 +187,7 @@ export default function WorkspaceEnvironmentsPage() {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: data.name,
-            description: data.description || undefined,
-            swaggerDocUrl: data.swaggerDocUrl || undefined,
-            baseEnvironmentId: data.baseEnvironmentId,
-            variables: data.variables,
-          }),
+          body: JSON.stringify(environmentWritePayload(data)),
         },
       );
       setViewMode("list");

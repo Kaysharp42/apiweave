@@ -85,6 +85,33 @@ describe("RunScheduler", () => {
       expect(scheduler.getActiveCount()).toBe(0)
     })
 
+    // Canvas-only nodes are furniture. Left in the graph the executor answers
+    // them with `{ status: "skipped" }`, a row in the timeline and JUnit report
+    // for something that was never a step.
+    it("never schedules canvas-only nodes", async () => {
+      const ws = seedWorkspace()
+      const wf = workflows.create({
+        workspaceId: ws,
+        name: "framed-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 }, parentId: "frame" },
+          { nodeId: "end", type: "end", position: { x: 1, y: 0 } },
+          { nodeId: "frame", type: "group", position: { x: -20, y: -20 }, config: { width: 300, height: 200 } },
+          { nodeId: "note", type: "note", position: { x: 0, y: 220 }, config: { content: "Context" } },
+        ] as WorkflowNode[],
+        edges: [{ edgeId: "e1", source: "start", target: "end" }] as WorkflowEdge[],
+      }).workflowId
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({ emitProgress: (_runId, event) => events.push(event) })
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(runs.getById(runId)?.status).toBe("completed")
+      expect(Object.keys(runs.getById(runId)?.nodeStatuses ?? {})).toEqual(["start", "end"])
+       expect(events.filter((e) => e.kind === "node.status" && (e.nodeId === "frame" || e.nodeId === "note"))).toEqual([])
+    })
+
     // Regression: `runs_create` echoed `selectedEnvironmentId: null` even when
     // the workflow had one set, so an MCP agent triggering a run without an
     // explicit env left `{{env.*}}` placeholders as literal text and got a
@@ -174,6 +201,42 @@ describe("RunScheduler", () => {
         request: { url: "http://169.254.169.254/auth?<REDACTED>" },
       })
       expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
+    })
+
+    it("persists a completed node result before a downstream delay finishes", async () => {
+      const ws = seedWorkspace()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "live node result",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "blocked-request",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: "http://169.254.169.254", continueOnFail: true },
+          },
+          { nodeId: "wait", type: "delay", position: { x: 2, y: 0 }, config: { duration: 1_000 } as never },
+          { nodeId: "end", type: "end", position: { x: 3, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "blocked-request" },
+          { edgeId: "e2", source: "blocked-request", target: "wait" },
+          { edgeId: "e3", source: "wait", target: "end" },
+        ],
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+
+      const liveRun = runs.getById(runId)
+      expect(liveRun?.status).toBe("running")
+      expect(liveRun?.results).toContainEqual(expect.objectContaining({
+        nodeId: "blocked-request",
+        status: "failed",
+        error: "SSRF blocked",
+      }))
     })
 
     it("resolves inherited variables from a base environment, with the child overriding on conflict", async () => {

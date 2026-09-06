@@ -1,8 +1,17 @@
 export interface CanvasToolbarProps {
   onSave: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onGroup: () => void;
+  onUngroup: () => void;
+  canGroup: boolean;
+  canUngroup: boolean;
   onHistory: () => void;
   onJsonEditor: () => void;
   onImport: () => void;
+  onCommandPalette: () => void;
   onRun: () => void;
   onCancel?: () => void;
   onRunFromLastFailed?: () => void;

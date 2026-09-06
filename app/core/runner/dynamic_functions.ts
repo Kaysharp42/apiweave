@@ -1,4 +1,5 @@
 import type { ClockProvider, RngProvider } from "./harness/providers"
+import { DYNAMIC_FUNCTIONS } from "@shared/constants/dynamicFunctions"
 
 /**
  * Dynamic functions for workflow variable substitution.
@@ -127,21 +128,7 @@ export class DynamicFunctions {
 
   /** Documentation map for the UI panel. */
   public getAllFunctions(): Record<string, string> {
-    return {
-      "randomString(length)": "Generate a random alphanumeric string. Default length: 10",
-      "randomNumber(size)": "Generate a random number with specified digits. Default: 6 digits",
-      "randomEmail()": "Generate a random email address",
-      "uuid()": "Generate a UUID v4",
-      "timestamp()": "Get current Unix timestamp",
-      "iso_timestamp()": "Get current ISO 8601 timestamp",
-      "date(format)": "Get current date. Default format: %Y-%m-%d",
-      "futureDate(days, format)": "Get a future date. Default: 1 day, format: %Y-%m-%d",
-      "pastDate(days, format)": "Get a past date. Default: 1 day, format: %Y-%m-%d",
-      "randomChoice(options)": "Pick random choice from comma-separated options",
-      "randomAlpha(length)": "Generate random alphabetic string (letters only). Default: 10",
-      "randomNumeric(length)": "Generate random numeric string (digits only). Default: 10",
-      "randomHex(length)": "Generate random hexadecimal string. Default: 16",
-    }
+    return Object.fromEntries(DYNAMIC_FUNCTIONS.map(({ signature, description }) => [signature, description]))
   }
 }
 

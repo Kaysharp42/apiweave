@@ -11,6 +11,7 @@ import {
   lookingAt,
   planCrossing,
   screenDiagonalPx,
+  snapTransform,
   stepCamera,
   stepZoomTarget,
   transformOf,
@@ -815,6 +816,42 @@ describe("crossing to another branch", () => {
     expect(advanced).toBeGreaterThan(0);
     expect(isAtRest(motion)).toBe(true);
     expect(Math.abs(offsetPx(motion, destination))).toBeLessThan(box.width / 2);
+  });
+});
+
+describe("snapTransform", () => {
+  it("puts the translation on the device-pixel grid and leaves zoom alone", () => {
+    expect(snapTransform({ x: 100.4, y: -50.6, zoom: 0.7314 }, 1)).toEqual({
+      x: 100,
+      y: -51,
+      zoom: 0.7314,
+    });
+  });
+
+  it("snaps to the fractional grid of a scaled display", () => {
+    expect(snapTransform({ x: 10.3, y: 10.7, zoom: 1 }, 2)).toEqual({
+      x: 10.5,
+      y: 10.5,
+      zoom: 1,
+    });
+  });
+
+  it("never drifts more than half a device pixel, which is the whole promise", () => {
+    for (let i = 0; i < 200; i += 1) {
+      const x = i * 0.37 - 40;
+      const y = 12.5 - i * 0.61;
+      const snapped = snapTransform({ x, y, zoom: 0.45 }, 1.5);
+      expect(Math.abs(snapped.x - x)).toBeLessThanOrEqual(0.5 / 1.5 + 1e-9);
+      expect(Math.abs(Math.round(snapped.y * 1.5) - snapped.y * 1.5)).toBeLessThan(1e-9);
+    }
+  });
+
+  it("treats a nonsense ratio as 1 rather than dividing by zero", () => {
+    expect(snapTransform({ x: 3.6, y: 3.2, zoom: 1 }, 0)).toEqual({
+      x: 4,
+      y: 3,
+      zoom: 1,
+    });
   });
 });
 

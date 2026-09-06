@@ -70,6 +70,22 @@ describe("workflow graph analyzer", () => {
     })
   })
 
+  // A frame has no edges, so every topology rule would call it unreachable and
+  // every dataflow rule would call it a step that produces nothing. It is not a
+  // step at all — the analyzer drops frames before it looks.
+  it("ignores group frames entirely", () => {
+    const framed = healthyWorkflow()
+    const withFrame = {
+      ...framed,
+      nodes: [
+        ...framed.nodes.map((node) => (node.nodeId === "login" ? { ...node, parentId: "frame-1" } : node)),
+        { nodeId: "frame-1", type: "group" as const, label: "Auth", position: { x: 60, y: -40 }, config: { width: 300, height: 200 } },
+      ],
+    }
+
+    expect(analyzeWorkflowGraph(withFrame)).toEqual(analyzeWorkflowGraph(framed))
+  })
+
   it("returns no findings for a healthy static graph", () => {
     const diagnosis = analyzeWorkflowGraph(healthyWorkflow())
     expect(diagnosis).toEqual({

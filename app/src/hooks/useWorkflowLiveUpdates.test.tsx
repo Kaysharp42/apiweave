@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { Workflow } from "@shared/types/Workflow";
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import { workflowToCanvas } from "../adapters/workflowCanvas";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import useWorkflowLiveUpdates from "./useWorkflowLiveUpdates";

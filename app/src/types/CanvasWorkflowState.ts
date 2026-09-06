@@ -1,5 +1,5 @@
 import type { JsonValue } from "@shared/types/JsonValue";
-import type { Edge, Node } from "reactflow";
+import type { Edge, Node } from "@xyflow/react";
 import type { WorkflowCanvasEdgeData } from "./WorkflowCanvasEdgeData";
 import type { WorkflowCanvasNodeData } from "./WorkflowCanvasNodeData";
 

@@ -6,20 +6,21 @@ colors:
   primary-light: "#0f766e"
   primary-hover: "#0b4a59"
   primary-dark: "#0b3d49"
-  surface: "#fafafa"
-  surface-raised: "#ffffff"
-  surface-overlay: "#f4f4f5"
+  surface: "#fbf8f3"
+  surface-raised: "#fdfbf7"
+  surface-overlay: "#f3efe7"
+  surface-sunken: "#f5f1ea"
   surface-dark: "#09090b"
   surface-dark-raised: "#18181b"
   surface-dark-overlay: "#27272a"
-  text-primary: "#09090b"
-  text-secondary: "#52525b"
-  text-muted: "#a1a1aa"
+  text-primary: "#3a3026"
+  text-secondary: "#655d54"
+  text-muted: "#88817a"
   text-primary-dark: "#fafafa"
-  text-secondary-dark: "#a1a1aa"
-  text-muted-dark: "#71717a"
-  border: "#e4e4e7"
-  border-dark: "#27272a"
+  text-secondary-dark: "#ababac"
+  text-muted-dark: "#7e7e7f"
+  border: "#eae7e2"
+  border-dark: "#2f2f31"
   border-focus: "#0d5c6e"
   border-focus-dark: "#2dd4bf"
   status-success: "#15803d"
@@ -124,21 +125,21 @@ components:
 
 APIWeave is a developer tool for building visual API test workflows. Its design philosophy descends from the workshop, not the gallery: every surface exists to make the tool disappear into the task. The interface is a workbench — organized, well-lit, with every instrument within reach and nothing decorative on the table.
 
-The system rests on a foundation of **earned familiarity.** Users should sit down and trust this interface within seconds because it behaves like the best tools they already use: consistent affordances, predictable navigation, density without clutter. The palette is restrained — zinc-neutral surfaces with a single ink-teal accent used sparingly to signal primary actions, active states, and focus. Shadows are minimal (separation comes from hairline borders, not elevation). Typography runs on one family (Inter) across the entire surface; JetBrains Mono is reserved for code, JSON, and URLs.
+The system rests on a foundation of **earned familiarity.** Users should sit down and trust this interface within seconds because it behaves like the best tools they already use: consistent affordances, predictable navigation, density without clutter. The palette is restrained — warm paper surfaces in light, zinc-neutral in dark, with a single ink-teal accent used sparingly to signal primary actions, active states, and focus. Shadows are minimal (separation comes from hairline borders, not elevation). Typography runs on one family (Inter) across the entire surface; JetBrains Mono is reserved for code, JSON, and URLs.
 
 The Swiss-minimalist tradition is the root, but this is not a design exercise — it's a production tool for API engineers who spend hours in it. Every pixel is justified by the task.
 
 **Key Characteristics:**
-- **Restrained palette** — zinc neutrals + one ink-teal accent, used at ≤10% of any given screen
+- **Restrained palette** — warm paper (light) / zinc neutrals (dark) + one ink-teal accent, used at ≤10% of any given screen
 - **One-family typography** — Inter carries body, headlines, labels, and UI. JetBrains Mono reserved for code
-- **Hairline borders over shadows** — separation via 1px zinc-200/800 lines, not drop shadows
+- **Hairline borders over shadows** — separation via 1px tint-at-10% lines, not drop shadows
 - **Compact density** — developer tool pacing: information-dense but never cramped
 - **Balanced light/dark mode** — both are first-class; light mode is not an afterthought
 - **State-rich semantics** — every interactive element defines default, hover, focus, active, disabled, loading, and error
 
 ## 2. Colors
 
-The palette is intentionally restrained. One ink-teal accent on a zinc-neutral base. Color saturation is reserved for semantic meaning — status, method, state — never decoration.
+The palette is intentionally restrained. One ink-teal accent on a neutral base — warm paper in light, zinc in dark. Color saturation is reserved for semantic meaning — status, method, state — never decoration.
 
 ### Primary
 
@@ -146,19 +147,36 @@ The palette is intentionally restrained. One ink-teal accent on a zinc-neutral b
 
 ### Neutral
 
-- **Zinc-50** (#fafafa): Page background in light mode. Near-white, cool-neutral, minimal chroma.
-- **White** (#ffffff): Raised surfaces — cards, panels, modals — in light mode.
-- **Zinc-100** (#f4f4f5): Overlay/hover backgrounds in light mode. Dropdowns, popovers.
-- **Zinc-200** (#e4e4e7): Hairline border color in light mode.
+**One tint, three alphas.** A theme owns exactly two things: one ink tint
+(`--aw-tint-rgb`) and three surface channel triples. Every quiet neutral role
+— hairline borders, secondary text, muted text — is an alpha of that tint, so
+flipping the theme is one value and not a parallel palette that can drift.
+Anything that needs a *hex* per theme (strong ink, the accent, status, methods)
+says so explicitly. `src/styles/base.css` is the only file where a neutral
+value is written down; `tailwind.config.js` resolves through it.
+
+- **Ink tint** (`58 48 38` light / `250 250 250` dark): a warm near-black, and
+  zinc-50. The one value a theme flip changes.
+- **Paper** (#fbf8f3): Page background in light mode.
+- **Card** (#fdfbf7): Raised surfaces — cards, panels, modals — in light mode.
+- **Panel** (#f3efe7): Overlay/hover backgrounds in light mode. Dropdowns, popovers.
+- **Sunken** (#f5f1ea): The canvas backdrop. Darker than a node on purpose (see below).
 - **Zinc-950** (#09090b): Dark mode page background. Near-black, cool-neutral.
 - **Zinc-900** (#18181b): Dark mode raised surfaces.
-- **Zinc-800** (#27272a): Dark mode overlay and hairline borders.
+- **Zinc-800** (#27272a): Dark mode overlay/hover background.
+- **Hairline** (tint at 10%): Border colour in both themes. An alpha rather
+  than a hex because a border sits over whatever surface is behind it. It is
+  deliberately not the same value as the overlay fill — the two roles collided
+  at #27272a in dark under the old paired palettes, which made a hover fill
+  grow a visible edge.
 
 ### Text
 
-- **Ink** (#09090b / #fafafa dark): Primary text, headings. Full contrast against respective surfaces. Body text passes 4.5:1 minimum.
-- **Mist** (#52525b / #a1a1aa dark): Secondary text — labels, descriptions, metadata. Passes 3:1 minimum against raised surfaces.
-- **Dust** (#a1a1aa / #71717a dark): Placeholder text, hints, disabled content. **2.56:1 on white** — it does not pass 4.5:1, and does not clear the 3:1 non-text floor either. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (zinc-500, 4.83:1) instead. `src/components/__tests__/node-layer-contrast.test.ts` enforces this.
+- **Ink** (tint at 100% — #3a3026 / #fafafa dark): Primary text, headings. Strong ink is simply the tint undiluted, so it needs no per-theme value of its own. 12.5:1 on a card.
+- **Mist** (tint at 78% light / 65% dark): Secondary text — labels, descriptions, metadata. 6.3:1 on a card, 7.7:1 on zinc-900. Carries content, so it holds the 4.5:1 body floor.
+- **Dust** (tint at 60% light / 45% dark): Placeholder text, hints, disabled content. **3.7:1 on a card** — it clears the 3:1 non-text floor but not 4.5:1. Use it only where the meaning survives not reading it: an input placeholder beside a label, a disabled control. Never for content. The node layer needs muted *content* — the metrics row, the rest line's argument — so it uses `--aw-node-text-muted` (tint at 72%, 5.2:1) instead.
+- **The alphas are per theme, the tint is not.** A warm ink is lighter than zinc-950, so the same alpha over a warm ground reads weaker; light pays for its warmth by drawing the quiet roles harder (`--aw-a-secondary`, `--aw-a-muted`). Only those two scalars differ between themes — no colour role does.
+- **Enforcement:** `src/styles/__tests__/theme-contrast.test.ts` computes every text/surface pair in both themes from `base.css` itself, and `src/components/__tests__/node-layer-contrast.test.ts` applies the tighter node-layer floors. Retuning an alpha is safe because those two tests recompute; changing one without running them is not.
 
 ### Semantic Status
 
@@ -177,6 +195,16 @@ All status colors are paired with distinct icons and text labels — never encod
 ### Named Rules
 
 **The One Voice Rule.** The ink-teal accent is used on ≤10% of any given screen. Its rarity is the point — when the user sees it, they know it means "act here" or "this is current."
+
+**The No-255 Rule.** No light surface reaches 255 on any channel. The page is
+#fbf8f3, a card #fdfbf7. This is an app someone sits in front of all day; it
+should not be the brightest thing the screen can do. The warmth is also not
+decoration — it is what lets four surfaces be told apart without four borders.
+
+**The Sunken Canvas Rule.** The canvas backdrop (#f5f1ea) is darker than the
+nodes on it (#fdfbf7). Reverse that and a node loses its edge against its own
+stage, which no amount of border fixes. Dark mode gets this for free: the page
+is already the darkest thing in the app.
 
 **The Status-Only Saturation Rule.** Fully saturated colors (green, red, amber, blue, yellow) are reserved exclusively for semantic status and HTTP methods. They never appear as decorative accents, backgrounds, or branding flourishes.
 
@@ -275,7 +303,9 @@ The node layer is governed by its own doctrine — see §7, "The Node Layer: The
 - **Shape:** Soft-cornered slab (180px min, 320px max width). Hairline border. `--aw-radius-node` (14px) — the node layer is the one place in the app with a visible corner radius, and it uses a scoped `--aw-radius-node*` family so the chrome's near-zero radius is untouched.
 - **BaseNode shell** provides a header (28px icon tile + title + type chip + one status affordance), an optional run strip, and connection handles.
 - **Rest state is quiet.** A collapsed node shows the icon tile, the title, and one muted rest line identifying it (`POST api.shop.dev/auth/login`, `2 assertions`, `waits 1.5s`). Configuration — method select, URL input, assertion list — lives one chevron away, not on the canvas at rest.
-- **Color coding by node type:** the icon tile carries the type hue as a 12% tint with the icon at full hue. Method/type identity also appears as a chip in the header. Hues come from the existing method and status tokens; the redesign introduces none.
+- **Color coding by node type:** the kind's hue is drawn twice, on the two channels that cost nothing. The icon tile carries it as a 12% tint with the icon at full hue, and the slab carries a **3px cap on its top edge** — legible at any zoom, no layout cost, and it takes no width from the title. Hues come from the existing method and status tokens; the redesign introduces none.
+- **No method pill.** The method was a third rendering of one fact: the tile hue, the cap, *and* a pill in the header. The name itself is still there in text — the first word of the rest line (`POST api.shop.dev/auth/login`), and the method select once the node is expanded — so nothing is encoded by hue alone. The header is for the title.
+- **The cap is the one exception** to "no coloured side border over 1px" (§6). It applies to the top edge, on the node layer, for kind — never to a card, a list row, or a callout, and never for status. Status owns the other three sides.
 - **States:** Default = flat, no glow, no animation. Running = amber border + breathing glow layer + run strip. Success = calm green border, glow settles away over 600ms. Error = red border + glow that persists. Skipped = hairline border + dash affordance, never a check. Selected = ink-teal ring, composing with any state glow.
 - **One fact, one rendering.** A node's status is drawn once, as a single 16px affordance (hollow ring / spinner / check / ✗ / ⟳ / dash) plus the border and glow that state implies. Not as a badge *and* a dot *and* an icon.
 
@@ -283,9 +313,11 @@ The node layer is governed by its own doctrine — see §7, "The Node Layer: The
 
 - **Path:** bezier curves, not orthogonal steps. Multiple edges leaving one node fan out from a single source point.
 - **State:** an edge takes its state from its source node. Idle = 1px hairline. Active = 1.5px amber with a single bright dot travelling source→target. Traversed = 1.5px green at 55%. Failed = 1.5px red. Skipped = dashed hairline. Assertion pass/fail branches keep their semantic colors.
-- **Handles:** 8px neutral sockets at rest — a resting handle reads as a socket, not a button. Lit to ink-teal on node hover or while connecting, and to the edge's state color when a live edge is attached. The visual size is never the hit area; a transparent 20px box is.
+- **Handles:** 8px neutral sockets at rest — a resting handle reads as a socket, not a button. Lit to ink-teal at 11px with a soft accent halo on node hover, while connecting, or on keyboard focus, and to the edge's state color when a live edge is attached. The visual size is never the hit area; a transparent 20px box is.
+- **A socket with an edge hides itself** at rest, and comes back on approach. The edge is the affordance from that point on, and a dot sitting under it is only something for the eye to trip over. A socket with **no** edge always stays visible: hide those too and a first-time user has nothing on the canvas telling them a node can be connected at all. Revisit only once the empty-canvas hint ships.
 - **Midpoint affordance:** an insert `+` and a delete `×`, revealed on edge hover **or keyboard focus**, and reachable by tab.
-- **Backdrop:** the dot grid stays. It is felt, not read — `--aw-text-muted` at 22%, 20px gap.
+- **Backdrop:** one grid, and it belongs to the canvas — it pans and zooms with the graph. 2.5px dots at 24px gap, `--aw-text-muted` at 22%, which since that token became an alpha of the tint lands around 0.13 rather than 0.22. Bigger and quieter than a 1px dot: it survives a zoom-out, where a 1px dot vanishes and the canvas stops reading as a surface. A second grid pinned to the viewport is not a backdrop — it does not move when the canvas does, which is the one thing a surface has to do.
+- **Dashed means metadata.** A 1px dashed border marks annotation — a tag row, a container, something *about* the graph rather than part of it. Solid means control. Keep the two apart: a dashed frame has to read as "container" before anything can use it to mean one.
 
 ## 6. Do's and Don'ts
 

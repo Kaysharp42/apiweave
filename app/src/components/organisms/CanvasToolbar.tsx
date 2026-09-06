@@ -10,6 +10,13 @@ import {
   MoreHorizontal,
   RefreshCw,
   ChevronDown,
+  Lock,
+  LockOpen,
+  Undo2,
+  Redo2,
+  Command,
+  Frame,
+  Ungroup,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
@@ -19,6 +26,7 @@ import { AgentLaunchButton } from "./AgentLaunchButton";
 import { useOpenAgentSession } from "../../hooks/useAgentDockControls";
 import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
 import { useElementWidth } from "../../hooks/useElementWidth";
+import useCanvasPrefsStore from "../../stores/CanvasPrefsStore";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
 import { buildEnvironmentOptions, resolveToolbarDensity } from "./canvasToolbarUtils";
@@ -36,9 +44,18 @@ const RESUME_ENABLED = false;
 
 export function CanvasToolbar({
   onSave,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  onGroup,
+  onUngroup,
+  canGroup,
+  canUngroup,
   onHistory,
   onJsonEditor,
   onImport,
+  onCommandPalette,
   onRun,
   onCancel,
   onRunFromLastFailed,
@@ -59,6 +76,11 @@ export function CanvasToolbar({
   const runMenuRef = useRef<HTMLDivElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
   const openAgentSession = useOpenAgentSession();
+  // Straight from the store rather than down a prop chain: the lock is one
+  // boolean the canvas reads from the same place, and threading it through
+  // `CanvasToolbarProps` would only give it a second name.
+  const canvasLocked = useCanvasPrefsStore((s) => s.locked);
+  const setCanvasPrefs = useCanvasPrefsStore((s) => s.setCanvasPrefs);
   const safeResumeOptions = resumeOptions ?? EMPTY_RESUME_OPTIONS;
 
   const hasResumeOptions = safeResumeOptions.length > 0;
@@ -109,6 +131,67 @@ export function CanvasToolbar({
             tooltip="Save workflow (Ctrl+S)"
             showLabel={showLabels}
           />
+          <IconButton
+            onClick={onCommandPalette}
+            tooltip="Command palette (Ctrl+K)"
+            aria-label="Open command palette"
+            variant="ghost"
+            size="sm"
+          >
+            <Command className="w-4 h-4" />
+          </IconButton>
+          {/* Icon-only at every density, like the camera lock: undo is a
+              reflex, and a reflex two clicks deep in an overflow menu is not
+              one. The disabled state is the only affordance telling you
+              whether there is anything left to undo. */}
+          <IconButton
+            onClick={onUndo}
+            disabled={!canUndo}
+            tooltip="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            variant="ghost"
+            size="sm"
+          >
+            <Undo2 className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onRedo}
+            disabled={!canRedo}
+            tooltip="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
+            variant="ghost"
+            size="sm"
+          >
+            <Redo2 className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onGroup}
+            disabled={!canGroup}
+            tooltip={
+              canGroup
+                ? "Frame selection (Ctrl+G)"
+                : "Select two ungrouped nodes to frame"
+            }
+            aria-label="Frame selection"
+            variant="ghost"
+            size="sm"
+          >
+            <Frame className="w-4 h-4" />
+          </IconButton>
+          <IconButton
+            onClick={onUngroup}
+            disabled={!canUngroup}
+            tooltip={
+              canUngroup
+                ? "Ungroup selection (Ctrl+Shift+G)"
+                : "Select a frame or framed node to ungroup"
+            }
+            aria-label="Ungroup selection"
+            variant="ghost"
+            size="sm"
+          >
+            <Ungroup className="w-4 h-4" />
+          </IconButton>
           {!useOverflow && (
             <ToolbarButton
               icon={History}
@@ -134,6 +217,23 @@ export function CanvasToolbar({
               showLabel={showLabels}
             />
           )}
+          {/* Icon-only at every density, and never in the overflow menu: this
+              is reached mid-drag, when the map has just slid out from under
+              someone, and a lock two clicks deep does not get used. */}
+          <IconButton
+            onClick={() => setCanvasPrefs({ locked: !canvasLocked })}
+            tooltip={canvasLocked ? "Unlock camera" : "Lock camera"}
+            aria-pressed={canvasLocked}
+            aria-label={canvasLocked ? "Unlock camera" : "Lock camera"}
+            variant={canvasLocked ? "primary" : "ghost"}
+            size="sm"
+          >
+            {canvasLocked ? (
+              <Lock className="w-4 h-4" />
+            ) : (
+              <LockOpen className="w-4 h-4" />
+            )}
+          </IconButton>
         </div>
 
         {useOverflow && (

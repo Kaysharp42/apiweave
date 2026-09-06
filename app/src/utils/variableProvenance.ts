@@ -1,4 +1,4 @@
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import { analyzeVariableProvenance } from "@shared/analysis/workflow_graph_analyzer";
 import type { VariableProvenanceMap } from "@shared/types/VariableProvenanceMap";

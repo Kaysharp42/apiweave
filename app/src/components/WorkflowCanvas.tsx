@@ -7,12 +7,14 @@ import {
   useMemo,
   type MutableRefObject,
 } from "react";
-import ReactFlow, {
+import {
+  ReactFlow,
   Controls,
   ControlButton,
   Background,
   BackgroundVariant,
   ConnectionLineType,
+  SelectionMode,
   // Aliased: `molecules` exports a Panel of its own, and one of the two names
   // has to say which layer it belongs to.
   Panel as FlowPanel,
@@ -25,8 +27,8 @@ import ReactFlow, {
   type NodeTypes,
   type EdgeTypes,
   type ReactFlowInstance,
-} from "reactflow";
-import "reactflow/dist/style.css";
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
 import AssertionNode from "./nodes/AssertionNode";
@@ -35,7 +37,12 @@ import StartNode from "./nodes/StartNode";
 import EndNode from "./nodes/EndNode";
 import MergeNode from "./nodes/MergeNode";
 import CallWorkflowNode from "./nodes/CallWorkflowNode";
+import GroupNode from "./nodes/GroupNode";
+import NoteNode from "./nodes/NoteNode";
 import CustomEdge from "./CustomEdge";
+import { withNodeBoundary } from "./atoms/flow/NodeBoundary";
+import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
+import { CanvasTip } from "./atoms/CanvasTip";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
 import NodeModal from "./NodeModal";
@@ -49,19 +56,28 @@ import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
+import { CommandPalette } from "./organisms/CommandPalette";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 import { computeProvenance } from "../utils/variableProvenance";
 import useCanvasStore from "../stores/CanvasStore";
+import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
 import useNodePresetStore from "../stores/NodePresetStore";
 import useAutoSave from "../hooks/useAutoSave";
-import useCanvasDrop from "../hooks/useCanvasDrop";
+import useCanvasHistory from "../hooks/useCanvasHistory";
+import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
+import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
-import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
+import {
+  canvasShortcutLabel,
+  useCanvasKeyboardShortcuts,
+} from "../hooks/useCanvasKeyboardShortcuts";
+import { useCanvasTip } from "../hooks/useCanvasTip";
+import { useSpacePan } from "../hooks/useSpacePan";
 import {
   preserveCanvasRuntimeState,
   useHydration,
@@ -72,6 +88,16 @@ import {
   shouldActOnDetach,
 } from "../utils/canvasRefreshGuards";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
+import {
+  groupSelection,
+  adoptIntoFrame,
+  frameContainingNode,
+  isFrameNode,
+  selectedFrameIds,
+  selectedIds,
+  ungroupFrames,
+  withAbsolutePositions,
+} from "../utils/canvasGroups";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import { useNodeBranchCounts } from "../hooks/useNodeBranchCounts";
 import { useSwaggerRefresh } from "../hooks/useSwaggerRefresh";
@@ -82,35 +108,58 @@ import {
   readSaveFailureEnvelope,
 } from "../utils/workflowSaveFailure";
 import { workflowDetailUrl } from "../utils/apiweaveClient";
-import { autoLayout } from "../utils/autoLayout";
+import { autoLayoutRootNodes } from "../utils/autoLayout";
+import { canvasInteractionProps } from "../utils/canvasInteraction";
+import { nearestInDirection } from "../utils/directionalFocus";
+import type { FocusDirection } from "../types/FocusDirection";
+import type { FocusModeDirection } from "../types/FocusModeDirection";
+import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
 import { Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+import type { CanvasNode } from "../types/CanvasNode";
+import type { CanvasEdge } from "../types/CanvasEdge";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
 import { authenticatedFetch } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
+import { snapTransform } from "../utils/runCamera";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
+import { createCanvasCommandRegistry } from "../commands/registry";
+import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
+// Kept for validation step 1 toggle — re-enable the commented div below to restore.
 const NOISE_DATA_URI =
   "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
+void NOISE_DATA_URI;
 
+// Every kind goes through `withNodeBoundary`: a throw while one node renders
+// must cost that one tile, not the canvas — see NodeBoundary. Registering a new
+// kind here is what covers it.
 const nodeTypes: NodeTypes = {
-  "http-request": HTTPRequestNode as NodeTypes[string],
-  assertion: AssertionNode as NodeTypes[string],
-  delay: DelayNode as NodeTypes[string],
-  start: StartNode as NodeTypes[string],
-  end: EndNode as NodeTypes[string],
-  merge: MergeNode as NodeTypes[string],
-  workflow: CallWorkflowNode as NodeTypes[string],
+  "http-request": withNodeBoundary(
+    HTTPRequestNode,
+    "http-request",
+  ) as NodeTypes[string],
+  assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
+  delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
+  start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
+  end: withNodeBoundary(EndNode, "end") as NodeTypes[string],
+  merge: withNodeBoundary(MergeNode, "merge") as NodeTypes[string],
+  workflow: withNodeBoundary(
+    CallWorkflowNode,
+    "workflow",
+  ) as NodeTypes[string],
+  group: withNodeBoundary(GroupNode, "group") as NodeTypes[string],
+  note: withNodeBoundary(NoteNode, "note") as NodeTypes[string],
 };
 
 const edgeTypes: EdgeTypes = {
@@ -150,6 +199,14 @@ const miniMapStyle = {
 };
 
 const controlsStyle = { margin: CanvasCornerGutter };
+
+// Every modifier anyone might reach for, rather than Control alone: which key
+// adds to a selection is muscle memory from another app, and there is no cost
+// to honouring all three.
+const multiSelectionKeyCode = ["Shift", "Meta", "Control"];
+
+// Framing one node through the full-graph options would zoom to 2.5x on it.
+const focusViewOptions = { ...fitViewOptions, maxZoom: 1 };
 
 // WeakMap IDs track extractor-config identity by ref so the signature doesn't churn during position-only drag frames.
 const extractorConfigIdMap = new WeakMap<object, number>();
@@ -194,14 +251,18 @@ export function WorkflowCanvas({
   } = useWorkflow();
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
-  const [nodes, setNodes, onNodesChange] =
-    useNodesState<WorkflowCanvasNodeData>(initialNodes);
-  const [edges, setEdges, onEdgesChange] =
-    useEdgesState<WorkflowCanvasEdgeData>([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
 
   const nodesRef = useRef(nodes);
+  // The same graph as `nodesRef`, with frames dropped and every position made
+  // absolute. Anything that measures canvas distance reads this one: a framed
+  // node's `position` is relative to its frame, and neither the run camera nor
+  // the directional focus has any business knowing that.
+  const flatNodesRef = useRef(nodes);
   useEffect(() => {
     nodesRef.current = nodes;
+    flatNodesRef.current = withAbsolutePositions(nodes);
   }, [nodes]);
 
   const edgesRef = useRef(edges);
@@ -225,11 +286,11 @@ export function WorkflowCanvas({
   }, [workflowVariables]);
 
   const reactFlowInstanceRef = useRef<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>(null) as MutableRefObject<ReactFlowInstance<
-    WorkflowCanvasNodeData,
-    WorkflowCanvasEdgeData
+    CanvasNode,
+    CanvasEdge
   > | null>;
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
@@ -237,6 +298,22 @@ export function WorkflowCanvas({
     null,
   );
   const hydrationVersionRef = useRef(0);
+
+  // ── Canvas preferences ───────────────────────────────────────────────
+
+  const canvasPrefs = useCanvasPrefsStore();
+  const spacePan = useSpacePan();
+  // Memoised on the store object, which only changes when a preference does:
+  // `snapGrid` is an array, and a fresh one every render re-triggers ReactFlow
+  // layout work during pan and drag for the reason `reactFlowStyle` is hoisted.
+  const interaction = useMemo(
+    () => canvasInteractionProps(canvasPrefs, spacePan),
+    [canvasPrefs, spacePan],
+  );
+  // The camera lock, for the things that read it outside render: the run camera
+  // and the double-click handler.
+  const lockedRef = useRef(canvasPrefs.locked);
+  lockedRef.current = canvasPrefs.locked;
 
   // ── Run camera ──────────────────────────────────────────────────────
   //
@@ -256,15 +333,55 @@ export function WorkflowCanvas({
     onViewportInteraction,
   } = useRunCamera({
     instanceRef: reactFlowInstanceRef,
-    nodesRef,
+    nodesRef: flatNodesRef,
     edgesRef,
     containerRef: canvasRef,
+    lockedRef,
   });
+
+  // `lockedRef` only covers runs that *start* locked. A lock thrown mid-run has
+  // to hand the camera back too, or the one thing that moves the viewport
+  // without asking carries on doing it — `setViewport` never sees `panOnDrag`.
+  useEffect(() => {
+    if (canvasPrefs.locked) suspendFollow();
+  }, [canvasPrefs.locked, isFollowingRun, suspendFollow]);
+
+  // Manual-pan flag for minimap freeze (validation step 3). Camera already
+  // freezes via `isCameraMoving`; user drag was still recomputing O(n) minimap
+  // every d3 tick. Track between onMoveStart(null guard)/onMoveEnd.
+  const [isUserPanning, setIsUserPanning] = useState(false);
+  const handleMoveStart = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      if (event) setIsUserPanning(true);
+      onViewportInteraction(event);
+    },
+    [onViewportInteraction],
+  );
+  // A hand-driven move leaves the transform on a fractional pixel, and
+  // ReactFlow keeps it there — so one wheel-zoom makes every later drag blur,
+  // for the reason documented on `snapTransform`. Snap once on release. Guarded
+  // on `event` for the same reason `onMoveStart` is: a null event is the
+  // camera's own write, which is already snapped, and a `setViewport` the camera
+  // did not make reads to it as the user taking over.
+  const handleMoveEnd = useCallback(
+    (event: MouseEvent | TouchEvent | null) => {
+      setIsUserPanning(false);
+      if (!event) return;
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) return;
+      instance.setViewport(
+        snapTransform(instance.getViewport(), window.devicePixelRatio),
+      );
+    },
+    [reactFlowInstanceRef],
+  );
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
   // CanvasStore) because only the canvas can resolve a nodeId to its live
@@ -287,7 +404,11 @@ export function WorkflowCanvas({
   // ── Hooks ──────────────────────────────────────────────────────────
 
   const isEditorOverlayOpen =
-    !!modalNode || showJsonEditor || showImportToNodes || showHistory;
+    !!modalNode ||
+    showJsonEditor ||
+    showImportToNodes ||
+    showHistory ||
+    isCommandPaletteOpen;
 
   const { selectedNodeRef, newDuplicateNodeRef } = useClipboardActions({
     nodes,
@@ -607,6 +728,21 @@ export function WorkflowCanvas({
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
+      // Deleting a frame must free its members, not take them with it. Rebasing
+      // them to absolute space here — before ReactFlow applies the removal —
+      // is what keeps every node exactly where it looked.
+      const removedFrames = new Set(
+        changes
+          .filter((change) => change.type === "remove")
+          .map((change) => nodesRef.current.find((n) => n.id === change.id))
+          .filter((node): node is CanvasNode => node !== undefined)
+          .filter(isFrameNode)
+          .map((node) => node.id),
+      );
+      if (removedFrames.size > 0) {
+        setNodes((nds) => ungroupFrames(nds, removedFrames));
+      }
+
       const filteredChanges = changes.filter((change) => {
         if (
           change.type === "select" &&
@@ -618,7 +754,7 @@ export function WorkflowCanvas({
       });
       onNodesChangeRef.current(filteredChanges);
     },
-    [],
+    [setNodes],
   );
 
   const handleEdgesChange = useCallback(
@@ -642,15 +778,33 @@ export function WorkflowCanvas({
     selectedNodeRef.current = null;
   }, []);
 
-  const onNodeDragStart = useCallback(() => {
+  const onNodeDragStart = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
     // isDraggingNodeRef removed — auto-save skips during drag via isSwaggerRefreshing guard
     // Dragging a node under a moving camera is unusable; the camera yields.
     suspendFollow();
-  }, [suspendFollow]);
+    // A constrained child cannot ever cross its frame boundary, so temporarily
+    // lift the constraint. Drag stop immediately reparents it or restores it.
+    if (node.parentId !== undefined) {
+      setNodes((current) =>
+        current.map((item) => {
+          if (item.id !== node.id || item.extent === undefined) return item;
+          const dragged = { ...item };
+          delete dragged.extent;
+          return dragged;
+        }),
+      );
+    }
+  }, [setNodes, suspendFollow]);
 
-  const onNodeDragStop = useCallback(() => {
-    // Drag stop handler — no-op, auto-save resumes naturally
-  }, []);
+  const onNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
+    setNodes((current) =>
+      adoptIntoFrame(
+        current,
+        node.id,
+        frameContainingNode(current, node.id),
+      ),
+    );
+  }, [setNodes]);
 
   const onNodeDoubleClick = useCallback(
     (event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
@@ -662,12 +816,171 @@ export function WorkflowCanvas({
       ) {
         return;
       }
-      if (node.type !== "start" && node.type !== "end") {
+      // Frames and notes are canvas objects: a double-click renames them in
+      // place (see `GroupNode`/`NoteNode`), it does not open a step editor.
+      if (isEditableNode(node)) {
+        setIsFocusMode(false);
         setModalNode(node);
       }
     },
     [],
   );
+
+  /**
+   * Double-click the empty pane to frame the whole graph. The gesture is free
+   * because `zoomOnDoubleClick` is off — and on a *node* it already opens the
+   * editor (or renames a frame/note), which is a better use of it than framing
+   * that one node.
+   *
+   * Through `suspendFollow` like the zoom controls: a mid-run double-click
+   * would otherwise fight the camera and snap straight back.
+   */
+  const onPaneDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.classList?.contains("react-flow__pane")) return;
+      if (lockedRef.current) return;
+      suspendFollow();
+      reactFlowInstanceRef.current?.fitView(fitViewOptions);
+    },
+    [suspendFollow],
+  );
+
+  /**
+   * Ctrl+Shift+arrow moves the selection to the nearest node that way — the
+   * canvas's only keyboard access, so it also has to be able to get *into* the
+   * graph from nothing selected. See `nearestInDirection` for the scoring.
+   */
+  const focusDirection = useCallback(
+    (direction: FocusDirection) => {
+      const targetId = nearestInDirection(
+        flatNodesRef.current,
+        selectedNodeRef.current?.id ?? null,
+        direction,
+      );
+      if (targetId === null) return;
+
+      selectedNodeRef.current =
+        nodesRef.current.find((n) => n.id === targetId) ?? null;
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.selected === (n.id === targetId)
+            ? n
+            : { ...n, selected: n.id === targetId },
+        ),
+      );
+      // The camera has to come along: `onlyRenderVisibleElements` means the
+      // node focus just moved to is very likely not even mounted.
+      suspendFollow();
+      reactFlowInstanceRef.current?.fitView({
+        ...focusViewOptions,
+        nodes: [{ id: targetId }],
+      });
+    },
+    [setNodes, suspendFollow],
+  );
+
+  /**
+   * Frame the current selection.
+   *
+   * Explicit, never hit-tested: the frame is the selection's bounding box plus
+   * padding, so nothing here has to guess what the user dropped onto what.
+   * Refusals come back as text because every one of them is a fact the user
+   * needs ("those nodes are already in a frame"), not a silent no-op.
+   */
+  const groupSelected = useCallback(() => {
+    const current = nodesRef.current;
+    const outcome = groupSelection(current, selectedIds(current), {
+      frameId: `group-${Date.now()}`,
+      gridSize: useCanvasPrefsStore.getState().gridSize,
+    });
+    if (!outcome.ok) {
+      toast.info(outcome.reason);
+      return;
+    }
+    setNodes(outcome.nodes);
+  }, [setNodes]);
+
+  const ungroupSelected = useCallback(() => {
+    const current = nodesRef.current;
+    const frames = selectedFrameIds(current, selectedIds(current));
+    if (frames.size === 0) {
+      toast.info("Select a frame, or a node inside one, to ungroup");
+      return;
+    }
+    setNodes(ungroupFrames(current, frames));
+  }, [setNodes]);
+
+  const openFocusMode = useCallback(() => {
+    const node =
+      selectedNodeRef.current ?? nodesRef.current.find((item) => item.selected);
+    if (!node || !isEditableNode(node)) {
+      toast.info("Select an editable node to enter focus mode");
+      return;
+    }
+    setIsFocusMode(true);
+    setModalNode(node);
+  }, []);
+
+  const stepFocusMode = useCallback(
+    (direction: FocusModeDirection) => {
+      if (!modalNode) return;
+      const targetId = adjacentFocusModeNode(
+        nodesRef.current,
+        edgesRef.current,
+        modalNode.id,
+        direction,
+      );
+      if (!targetId) return;
+      const target = nodesRef.current.find((node) => node.id === targetId);
+      if (target) setModalNode(target);
+    },
+    [modalNode],
+  );
+
+  /**
+   * ReactFlow's own delete pass adds every child of a deleted parent
+   * (`getElementsToRemove`). For a frame that is the wrong reading of the
+   * gesture — deleting the frame around some nodes should leave the nodes.
+   */
+  const handleBeforeDelete = useCallback(
+    async ({ nodes: doomed, edges: doomedEdges }: {
+      nodes: CanvasNode[];
+      edges: CanvasEdge[];
+    }) => {
+      const frames = new Set(doomed.filter(isFrameNode).map((node) => node.id));
+      if (frames.size === 0) return true;
+      const explicit = new Set(doomed.map((node) => node.id));
+      return {
+        nodes: doomed.filter(
+          (node) =>
+            node.parentId === undefined ||
+            !frames.has(node.parentId) ||
+            // A member the user selected alongside the frame really was asked
+            // for; only the ones ReactFlow added on its own are spared.
+            (explicit.has(node.id) && node.selected === true),
+        ),
+        edges: doomedEdges,
+      };
+    },
+    [],
+  );
+
+  /**
+   * Keep frame labels readable when the graph is zoomed out to fit.
+   *
+   * One CSS variable on the canvas root, written per move frame — the pills
+   * counter-scale in CSS. A React subscription to the zoom would re-render
+   * every frame node instead, which is the mistake `index.css` already
+   * documents this canvas paying for once.
+   */
+  const handleMove = useCallback(() => {
+    const element = canvasRef.current;
+    const zoom = reactFlowInstanceRef.current?.getViewport().zoom;
+    if (!element || zoom === undefined || zoom <= 0) return;
+    const boost = zoom < 1 ? Math.min(1 / zoom, 4) : 1;
+    element.style.setProperty("--aw-group-label-boost", boost.toFixed(2));
+  }, [reactFlowInstanceRef]);
 
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
@@ -882,6 +1195,57 @@ export function WorkflowCanvas({
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
 
+  // ── Undo / redo ──────────────────────────────────────
+
+  // Same merge `showWorkflow` uses: a snapshot carries the persisted graph
+  // only, so the run the user is looking at has to be carried across the swap
+  // rather than restored from a state that never held it.
+  const applyHistoryEntry = useCallback(
+    (entry: CanvasHistoryEntry) => {
+      setNodes((previousNodes) =>
+        preserveCanvasRuntimeState(entry.nodes, previousNodes),
+      );
+      setEdges(entry.edges.slice());
+      updateVariables(entry.variables);
+    },
+    [setNodes, setEdges, updateVariables],
+  );
+
+  const { undo, redo, canUndo, canRedo } = useCanvasHistory({
+    nodes,
+    edges,
+    variables: workflowVariables,
+    resetKey: hydrationVersionRef.current,
+    enabled: isHydrated,
+    apply: applyHistoryEntry,
+  });
+
+  const canvasTipContext = useMemo(() => {
+    const selection = selectedIds(nodes);
+    const selected = nodes.filter((node) => selection.has(node.id));
+    const hasUnconnectedNode = nodes.some(
+      (node) =>
+        !isFrameNode(node) &&
+        node.type !== "note" &&
+        node.type !== "start" &&
+        node.type !== "end" &&
+        !edges.some((edge) => edge.source === node.id || edge.target === node.id),
+    );
+    return {
+      isRunning,
+      canGroup:
+        selected.length >= 2 &&
+        selected.every(
+          (node) => !isFrameNode(node) && node.parentId === undefined,
+        ),
+      canUngroup: selectedFrameIds(nodes, selection).size > 0,
+      canUndo,
+      hasUnconnectedNode,
+    };
+  }, [canUndo, edges, isRunning, nodes]);
+  const { tip: canvasTip, dismiss: dismissCanvasTip } =
+    useCanvasTip(canvasTipContext);
+
   useCanvasKeyboardShortcuts({
     isEditorOverlayOpen,
     isRunning,
@@ -894,6 +1258,12 @@ export function WorkflowCanvas({
       }
       setShowJsonEditor(true);
     },
+    onFocusDirection: focusDirection,
+    onUndo: undo,
+    onRedo: redo,
+    onGroup: groupSelected,
+    onUngroup: ungroupSelected,
+    onOpenCommandPalette: () => setIsCommandPaletteOpen(true),
   });
 
   // ── JSON editor ──────────────────────────────────────────────────────
@@ -905,6 +1275,9 @@ export function WorkflowCanvas({
         type: node.type ?? "",
         ...(node.data.label ? { label: node.data.label } : {}),
         position: node.position,
+        // Without this, opening the JSON editor and applying it unframed every
+        // grouped node on the canvas.
+        ...(node.parentId === undefined ? {} : { parentId: node.parentId }),
         config: node.data.config || {},
       })),
       edges: edges.map((edge) => ({
@@ -1012,6 +1385,10 @@ export function WorkflowCanvas({
       return "var(--aw-status-success)";
     if (n.data?.executionStatus === "error") return "var(--aw-status-error)";
 
+    // A frame is the biggest node on the canvas and the least important thing
+    // in an overview — painted in the node colour it dominates the minimap.
+    if (n.type === "group")
+      return "color-mix(in srgb, var(--aw-text-muted) 22%, transparent)";
     if (n.type === "start") return "var(--aw-primary-light)";
     if (n.type === "end") return "var(--aw-status-error)";
     if (n.type === "httpRequest" || n.type === "http-request")
@@ -1019,6 +1396,7 @@ export function WorkflowCanvas({
     if (n.type === "assertion") return "var(--aw-status-success)";
     if (n.type === "delay") return "var(--aw-status-warning)";
     if (n.type === "merge") return "var(--aw-branch-edge)";
+    if (n.type === "note") return "var(--aw-status-warning)";
 
     return "var(--aw-text-muted)";
   }, []);
@@ -1028,26 +1406,119 @@ export function WorkflowCanvas({
     return "var(--aw-border)";
   }, []);
 
-  const rfInstanceRef = useRef<
-    Parameters<NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>>[0] | null
-  >(null);
+  // Every new workflow is seeded with `start` and `end`, so "empty" is "nothing
+  // but the two endpoints" — key it off the node count alone and the hint never
+  // appears once.
+  const isCanvasEmpty = useMemo(
+    () => nodes.every((n) => n.type === "start" || n.type === "end"),
+    [nodes],
+  );
 
-  const handleInit = useCallback<
-    NonNullable<Parameters<typeof ReactFlow>[0]["onInit"]>
-  >((instance) => {
-    rfInstanceRef.current = instance;
-    (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
-      instance;
-  }, []);
+  const rfInstanceRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
+    null,
+  );
+
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
+      rfInstanceRef.current = instance;
+      (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
+        instance;
+    },
+    [],
+  );
 
   // Position changes flow through onNodesChange, so the 700ms autosave persists them.
   const handleAutoLayout = useCallback(() => {
     // Re-laying out the graph and then fitting it is a camera act of its own; a
     // run camera still following would take the view straight back off it.
     suspendFollow();
-    setNodes((nds) => autoLayout(nds, edgesRef.current));
+    setNodes((nds) => autoLayoutRootNodes(nds, edgesRef.current));
     requestAnimationFrame(() => rfInstanceRef.current?.fitView(fitViewOptions));
   }, [setNodes, suspendFollow]);
+
+  const addCommandNode = useCallback(
+    (template: CanvasNodeTemplate) => {
+      const canvasBounds = canvasRef.current?.getBoundingClientRect();
+      const instance = reactFlowInstanceRef.current;
+      if (!canvasBounds || !instance) return;
+
+      const position = instance.screenToFlowPosition({
+        x: canvasBounds.left + canvasBounds.width / 2,
+        y: canvasBounds.top + canvasBounds.height / 2,
+      });
+      setNodes((currentNodes) => {
+        const node = createCanvasNode(template, position);
+        const next = [...currentNodes, node];
+        return adoptIntoFrame(next, node.id, frameContainingNode(next, node.id));
+      });
+    },
+    [setNodes],
+  );
+
+  const commands = useMemo(
+    () =>
+      createCanvasCommandRegistry({
+        isHydrated,
+        isRunning,
+        canUndo,
+        canRedo,
+        isLocked: canvasPrefs.locked,
+        snapToGrid: canvasPrefs.snapToGrid,
+        save: () => {
+          void saveWorkflow(false);
+        },
+        run: runWorkflow,
+        autoLayout: handleAutoLayout,
+        openJsonEditor: () => setShowJsonEditor(true),
+        openImport: () => setShowImportToNodes(true),
+        openHistory: () => setShowHistory(true),
+        undo,
+        redo,
+        group: groupSelected,
+        ungroup: ungroupSelected,
+        toggleLock: () =>
+          useCanvasPrefsStore
+            .getState()
+            .setCanvasPrefs({ locked: !canvasPrefs.locked }),
+        toggleSnapToGrid: () =>
+          useCanvasPrefsStore
+            .getState()
+            .setCanvasPrefs({ snapToGrid: !canvasPrefs.snapToGrid }),
+        focusMode: openFocusMode,
+        addNode: addCommandNode,
+      }),
+    [
+      addCommandNode,
+      canRedo,
+      canUndo,
+      canvasPrefs.locked,
+      canvasPrefs.snapToGrid,
+      groupSelected,
+      handleAutoLayout,
+      isHydrated,
+      isRunning,
+      redo,
+      runWorkflow,
+      saveWorkflow,
+      openFocusMode,
+      undo,
+      ungroupSelected,
+    ],
+  );
+
+  const previousFocusTarget =
+    isFocusMode && modalNode
+      ? adjacentFocusModeNode(
+          nodes,
+          edges,
+          modalNode.id,
+          "previous",
+        )
+      : null;
+  const nextFocusTarget =
+    isFocusMode && modalNode
+      ? adjacentFocusModeNode(nodes, edges, modalNode.id, "next")
+      : null;
 
   /*
    * The camera moves during a run, and only during a run — see `useRunCamera`.
@@ -1071,21 +1542,18 @@ export function WorkflowCanvas({
   return (
     <main
       ref={canvasRef}
-      className="w-full h-full min-h-0 relative overflow-hidden bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark transition-colors duration-300"
+      className="w-full h-full min-h-0 relative overflow-hidden bg-surface-sunken text-text-primary dark:text-text-primary-dark transition-colors duration-300"
       aria-label="Workflow canvas"
     >
-      <div
-        className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] bg-[linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] bg-[size:32px_32px] text-text-primary dark:text-text-primary-dark pointer-events-none"
-        aria-hidden="true"
-      />
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen"
-        style={{
-          backgroundImage: NOISE_DATA_URI,
-          backgroundSize: "240px 240px",
-        }}
-      />
+      {/* Removed: a second, static 32px line grid drawn over this one. It was
+          pinned to the viewport rather than the canvas, so it did not move
+          when the canvas did — the exact opposite of what a backdrop is for.
+          The dot grid below is the surface; it pans and zooms with the graph. */}
+      {/* Noise overlay with mix-blend removed for 60fps pan: mix-blend-multiply
+          forces a full-viewport blend on every transform frame, preventing the
+          viewport from staying on a single composited layer. Re-introduce only
+          as a non-blending opacity layer if needed. */}
+      {/* <div aria-hidden="true" className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen" style={{ backgroundImage: NOISE_DATA_URI, backgroundSize: "240px 240px" }} /> */}
       <ReactFlow
         className="relative z-10 bg-transparent"
         style={reactFlowStyle}
@@ -1099,10 +1567,20 @@ export function WorkflowCanvas({
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
+        {...interaction}
+        // The pane double-click is ours now — see `onPaneDoubleClick`.
+        zoomOnDoubleClick={false}
+        onDoubleClick={onPaneDoubleClick}
+        // Partial: a box only has to touch a node to take it, which is what
+        // makes a drag-select over a dense graph usable.
+        selectionMode={SelectionMode.Partial}
         // ReactFlow passes the d3 source event through, and its own transitions
         // have none — so this fires with an event only when a hand is actually
         // on the canvas, including one that grabs it mid-glide.
-        onMoveStart={onViewportInteraction}
+        onMoveStart={handleMoveStart}
+        onMove={handleMove}
+        onMoveEnd={handleMoveEnd}
+        onBeforeDelete={handleBeforeDelete}
         onInit={handleInit}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -1116,7 +1594,7 @@ export function WorkflowCanvas({
         minZoom={0.02}
         maxZoom={2.5}
         deleteKeyCode="Delete"
-        multiSelectionKeyCode="Control"
+        multiSelectionKeyCode={multiSelectionKeyCode}
         // While the run camera moves, only the slice of the graph it frames is
         // mounted — a 130-node workflow keeps about a dozen nodes in the DOM
         // instead of all of them, and that is the per-frame cost `setViewport`
@@ -1124,11 +1602,20 @@ export function WorkflowCanvas({
         // so the minimap and the camera keep their positions without them.
         onlyRenderVisibleElements
       >
-        {/* The grid should be felt, not read. */}
+        {/* The grid should be felt, not read.
+            Validation step 2: Background dots repaint every pan frame (SVG pattern).
+            Keep enabled for now — next toggle to test is commenting this out.
+            Gap 24 (~30% fewer dots than 20) is the sweet spot if kept. */}
         <Background
           variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
+          gap={24}
+          // Bigger, and quieter than it looks: 22% of `--aw-text-muted` used
+          // to be 22% of a solid grey, and that token is now itself an alpha
+          // of the tint — so the same number lands at about 0.13 rather than
+          // 0.22. A 1px dot at that strength disappears the moment anyone
+          // zooms out, and the canvas stops reading as a surface at all;
+          // 2.5px survives the zoom without getting louder up close.
+          size={2.5}
           color="color-mix(in srgb, var(--aw-text-muted) 22%, transparent)"
         />
 
@@ -1165,7 +1652,7 @@ export function WorkflowCanvas({
             no repaints. */}
         <RunMiniMap
           nodes={nodes}
-          frozen={isCameraMoving}
+          frozen={isCameraMoving || isUserPanning}
           position="bottom-right"
           paint={{
             nodeColor: getNodeColor,
@@ -1181,8 +1668,18 @@ export function WorkflowCanvas({
         />
       </ReactFlow>
 
+      {isCanvasEmpty && <EmptyCanvasHint />}
+
       <CanvasToolbar
         onSave={() => saveWorkflow(false)}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onGroup={groupSelected}
+        onUngroup={ungroupSelected}
+        canGroup={canvasTipContext.canGroup}
+        canUngroup={canvasTipContext.canUngroup}
         onHistory={() => setShowHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {
@@ -1194,6 +1691,7 @@ export function WorkflowCanvas({
           setShowJsonEditor(true);
         }}
         onImport={() => setShowImportToNodes(true)}
+        onCommandPalette={() => setIsCommandPaletteOpen(true)}
         onRun={runWorkflow}
         onCancel={cancelRun}
         onRunFromLastFailed={runFromLastFailed}
@@ -1235,6 +1733,22 @@ export function WorkflowCanvas({
         workspaceId={scope.workspaceId ?? ""}
       />
 
+      {canvasPrefs.tipsEnabled && canvasTip && (
+        <CanvasTip
+          tip={canvasTip}
+          shortcut={
+            canvasTip.chord ? canvasShortcutLabel(canvasTip.chord) : null
+          }
+          onDismiss={() => dismissCanvasTip(canvasTip.id)}
+        />
+      )}
+
+      <CommandPalette
+        open={isCommandPaletteOpen}
+        commands={commands}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
+
       {/* Keyed by node id so each open re-mounts with that node's label
           prefilled — PromptDialog seeds its input from `defaultValue` once. */}
       <PromptDialog
@@ -1269,7 +1783,16 @@ export function WorkflowCanvas({
               config: (modalNode.data.config as Record<string, unknown>) || {},
             },
           }}
-          onClose={() => setModalNode(null)}
+          onClose={() => {
+            setIsFocusMode(false);
+            setModalNode(null);
+          }}
+          {...(previousFocusTarget
+            ? { onPrevious: () => stepFocusMode("previous") }
+            : {})}
+          {...(nextFocusTarget
+            ? { onNext: () => stepFocusMode("next") }
+            : {})}
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }

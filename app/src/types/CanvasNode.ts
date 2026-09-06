@@ -1,4 +1,4 @@
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { WorkflowCanvasNodeData } from "./WorkflowCanvasNodeData";
 
 export type CanvasNode = Node<WorkflowCanvasNodeData>;

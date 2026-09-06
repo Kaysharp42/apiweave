@@ -238,6 +238,46 @@ describe("parseOpenApiSpec edge cases", () => {
     expect(JSON.parse((node as { config: { body: string } }).config.body)).toEqual({ name: "string" })
   })
 
+  it("bounds the example body for a shared-component schema instead of expanding it combinatorially", () => {
+    // A fan-out DAG: every level references the level below from 6 properties.
+    // Nothing here is a cycle, so the activeRefs guard does not apply — only
+    // the depth/budget bound keeps this from becoming 6^depth values. The real
+    // spec that motivated this produced a 43 MB body from one endpoint.
+    const width = 6
+    const levels = 8
+    const schemas: Record<string, unknown> = {
+      Leaf: { type: "object", properties: { v: { type: "string" } } },
+    }
+    for (let l = 0; l < levels; l++) {
+      const props: Record<string, unknown> = {}
+      for (let w = 0; w < width; w++) {
+        props[`p${w}`] = { $ref: `#/components/schemas/${l === 0 ? "Leaf" : `L${l - 1}`}` }
+      }
+      schemas[`L${l}`] = { type: "object", properties: props }
+    }
+    const spec = {
+      openapi: "3.0.1",
+      info: { title: "Wide", version: "1.0" },
+      paths: {
+        "/wide": {
+          post: {
+            operationId: "createWide",
+            requestBody: {
+              content: { "application/json": { schema: { $ref: `#/components/schemas/L${levels - 1}` } } },
+            },
+          },
+        },
+      },
+      components: { schemas },
+    }
+
+    const wf = parseOpenApiSpec(spec)
+    const body = (wf.nodes.find((n) => n.type === "http-request") as { config: { body: string } }).config.body
+
+    expect(JSON.parse(body)).toBeTypeOf("object")
+    expect(body.length).toBeLessThan(200_000)
+  })
+
   it("does not double up slashes on a relative servers entry", () => {
     const spec = {
       openapi: "3.0.1",

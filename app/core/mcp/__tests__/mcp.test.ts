@@ -452,6 +452,23 @@ describe("MCP bridge — second transport, parity by construction", () => {
     await client.close()
   })
 
+  it("runs_get uses runRev rather than the workflow revision name", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "run revision name",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+
+    const client = await connectClient()
+    const result = await client.callTool({ name: "runs_get", arguments: { workspaceId: workspace.workspaceId, runId: run.runId } })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+
+    expect(parsed["runRev"]).toBe(run.rev)
+    expect(parsed).not.toHaveProperty("rev")
+    await client.close()
+  })
+
   it("maps an unknown workspace to an isError result carrying not_found (existence-hiding)", async () => {
     const client = await connectClient()
     const result = await client.callTool({
@@ -1021,6 +1038,123 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     expect(patched.result.touchedNodeIds).toEqual(["doomed"])
     // e3 was upserted; e2 was implicitly dropped as the incoming/outgoing edge of the removed node, but is not named here.
     expect(patched.result.touchedEdgeIds).toEqual(["e3"])
+    await client.close()
+  })
+
+  it("workflows_get returns only requested nodes and their direct edges", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "filtered read",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: { method: "GET", url: "https://example.test" } },
+        { nodeId: "end", type: "end", position: { x: 200, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "workflows_get",
+      arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, nodeIds: ["start", "request"] },
+    })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      nodes: Array<{ nodeId: string }>
+      edges: Array<{ edgeId: string }>
+    }
+
+    expect(parsed.nodes.map((node) => node.nodeId)).toEqual(["start", "request"])
+    expect(parsed.edges.map((edge) => edge.edgeId)).toEqual(["e1"])
+    await client.close()
+  })
+
+  it("workflows_patch merges an existing node's config without resetting its position", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "safe partial patch",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "request",
+          type: "http-request",
+          position: { x: 120, y: 40 },
+          config: {
+            method: "POST",
+            url: "https://example.test/expenses",
+            headers: [{ key: "Content-Type", value: "application/json" }],
+            auth: { type: "bearer", bearer: { token: "{{secrets.API_TOKEN}}" } },
+            timeout: 30,
+            body: "{\"amount\": 10}",
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 240, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "request" },
+        { edgeId: "e2", source: "request", target: "end" },
+      ],
+    })
+
+    const client = await connectClient()
+    const patched = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        expectedRevision: created.rev,
+        layout: false,
+        upsertNodes: [{ nodeId: "request", config: { body: "{\"amount\": 20}" } }],
+      },
+    })
+    expect((patched as { isError?: boolean }).isError).toBeFalsy()
+
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number }; config: Record<string, unknown> }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
+    )
+    const request = persisted.nodes.find((node) => node.nodeId === "request")!
+    expect(request.position).toEqual({ x: 120, y: 40 })
+    expect(request.config).toMatchObject({
+      body: "{\"amount\": 20}",
+      headers: [{ key: "Content-Type", value: "application/json" }],
+      auth: { type: "bearer", bearer: { token: "{{secrets.API_TOKEN}}" } },
+      timeout: 30,
+    })
+    await client.close()
+  })
+
+  it("diagnoses an unknown dynamic placeholder function before a run", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "workflows_create",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        name: "unknown function",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "request", type: "http-request", position: { x: 100, y: 0 }, config: { url: "https://example.test/{{randomInt(1,9)}}" } },
+          { nodeId: "end", type: "end", position: { x: 200, y: 0 } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "request" },
+          { edgeId: "e2", source: "request", target: "end" },
+        ],
+      },
+    })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      diagnosis: { diagnostics: Array<{ code: string; evidence: { functionName: string } }> }
+    }
+    expect(parsed.diagnosis.diagnostics).toContainEqual(expect.objectContaining({
+      code: "unknown_function",
+      evidence: { functionName: "randomInt" },
+    }))
     await client.close()
   })
 })

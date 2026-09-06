@@ -2,12 +2,13 @@ import type { Run } from "@shared/types/Run"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
+import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ResolvedSubWorkflow } from "./executor"
+import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
@@ -186,7 +187,10 @@ export class RunScheduler {
 
       const mergedVariables = { ...workflow.variables, ...(run.variables ?? {}) }
       const graph: WorkflowGraph = {
-        nodes: workflow.nodes as unknown as WorkflowGraph["nodes"],
+        // Canvas-only nodes are furniture with no edges. Left in, the executor
+        // answers them with `{ status: "skipped" }` — a row in the run timeline
+        // and the JUnit report for something that was never a step.
+        nodes: withoutCanvasOnlyNodes(workflow.nodes) as unknown as WorkflowGraph["nodes"],
         edges: workflow.edges as unknown as WorkflowGraph["edges"],
         ...(Object.keys(mergedVariables).length > 0 ? { variables: mergedVariables as Record<string, unknown> } : {}),
       }
@@ -222,7 +226,7 @@ export class RunScheduler {
           if (!target) return undefined
           return {
             name: target.name,
-            nodes: target.nodes as unknown as WorkflowGraph["nodes"],
+            nodes: withoutCanvasOnlyNodes(target.nodes) as unknown as WorkflowGraph["nodes"],
             edges: target.edges as unknown as WorkflowGraph["edges"],
             variables: target.variables as Record<string, unknown>,
           }
@@ -319,7 +323,11 @@ export class RunScheduler {
     return { ...(Object.keys(secrets).length > 0 ? { secrets } : {}), resolvedSecrets }
   }
 
-  private handleProgress(runId: string, event: RunEvent): void {
+  private handleProgress(runId: string, event: ExecutorProgressEvent): void {
+    if (event.kind === "node.result") {
+      this.handleNodeResult(runId, event)
+      return
+    }
     // The executor only ever hands us node events; started/terminal events are
     // emitted separately. Narrow so appendNodeStatus stays node-only.
     if (event.kind !== "node.status") return
@@ -341,6 +349,15 @@ export class RunScheduler {
       ...(event.message ? { message: event.message } : {}),
       ...(event.statusCode !== undefined ? { statusCode: event.statusCode } : {}),
     })
+  }
+
+  // Persist the completed node immediately so runs_getNodeResult is useful
+  // while independent branches are still running. This event deliberately
+  // never reaches the progress broker because it can carry request/response
+  // bodies; MCP and renderer subscribers only receive the safe status event.
+  private handleNodeResult(runId: string, event: NodeResultEvent): void {
+    const result = sanitizeRunResults([event.result])[0]
+    if (result !== undefined) this.deps.runs.upsertNodeResult(runId, result)
   }
 }
 

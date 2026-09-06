@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import type { Edge, Node, Viewport } from "reactflow";
+import type { Edge, Node, Viewport } from "@xyflow/react";
 import useRunCamera from "./useRunCamera";
 import {
   centreOf,

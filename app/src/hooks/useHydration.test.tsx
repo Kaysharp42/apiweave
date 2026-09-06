@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { preserveCanvasRuntimeState, useHydration } from "./useHydration";
 import type { Workflow } from "@shared/types/Workflow";
-import type { Node } from "reactflow";
+import type { Node } from "@xyflow/react";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 
 function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {

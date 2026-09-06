@@ -1,4 +1,4 @@
-import type { Transform } from "reactflow";
+import type { Transform } from "@xyflow/react";
 
 /**
  * What the minimap re-derives on every viewport change: the transform that

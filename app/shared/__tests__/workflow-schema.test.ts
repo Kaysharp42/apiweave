@@ -136,4 +136,13 @@ describe("WorkflowSchema", () => {
       config: { assertions: [{ source: "prev", path: "body.id", operator: "matchesRegex", expectedValue: ".*" }] },
     }).success).toBe(false)
   })
+
+  it("accepts a canvas-only note", () => {
+    expect(WorkflowNodeSchema.safeParse({
+      nodeId: "note-1",
+      type: "note",
+      position: { x: 0, y: 0 },
+      config: { content: "Retries begin here." },
+    }).success).toBe(true)
+  })
 })

@@ -89,10 +89,20 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
-  readonly emitProgress?: (event: RunEvent) => void
+  readonly emitProgress?: (event: ExecutorProgressEvent) => void
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
 }
+
+/** Internal terminal-node event. The scheduler persists it but never relays its body over progress transports. */
+export interface NodeResultEvent {
+  readonly kind: "node.result"
+  readonly runId: string
+  readonly nodeId: string
+  readonly result: RunResult
+}
+
+export type ExecutorProgressEvent = RunEvent | NodeResultEvent
 
 export interface ExecuteOptions {
   readonly runId?: string
@@ -604,9 +614,9 @@ export class WorkflowExecutor {
       // Update node status
       const mappedStatus: RunnerNodeStatus = executionStatus === "success" || executionStatus === "warning" ? "passed" : "failed"
       const nodeCompletedAt = this.deps.clock.isoNow()
-      this.updateNodeStatus(nodeId, mappedStatus, result)
       result = { ...result, type: nodeType, startedAt: nodeStartedAt, completedAt: nodeCompletedAt, secretRefs }
       this.results.set(nodeId, result)
+      this.updateNodeStatus(nodeId, mappedStatus, result)
 
       // Handle failures
       if (executionStatus === "error" && nodeType !== "assertion" && !effectiveContinueOnFail) {
@@ -1746,6 +1756,14 @@ export class WorkflowExecutor {
         ...(status === "failed" && message ? { message } : {}),
         ...(status === "failed" && statusCode !== undefined ? { statusCode } : {}),
       })
+      if (result !== undefined) {
+        this.deps.emitProgress({
+          kind: "node.result",
+          runId: this.activeRunId,
+          nodeId,
+          result: buildRunResult(nodeId, status, result),
+        })
+      }
     }
   }
 

@@ -2,8 +2,10 @@ import { z } from "zod"
 import { AssertionNodeDataSchema } from "./AssertionNodeDataSchema"
 import { DelayNodeDataSchema } from "./DelayNodeDataSchema"
 import { EndNodeDataSchema } from "./EndNodeDataSchema"
+import { GroupNodeDataSchema } from "./GroupNodeDataSchema"
 import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
+import { NoteNodeDataSchema } from "./NoteNodeDataSchema"
 import { PositionSchema } from "./PositionSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
@@ -16,11 +18,16 @@ import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
  * `label` is nullable-optional to round-trip the persisted `null` label
  * (the canvas writes `null` when the user clears it) without zod
  * `optional()` accepting `undefined`-but-present.
+ *
+ * `parentId` lives here rather than on one member because a frame can hold any
+ * kind of node — declaring it once gives it to all of them, and a member added
+ * later cannot forget it.
  */
 const baseNode = z.object({
   nodeId: z.string().min(1).describe("Unique id for this node within the workflow; edges reference it by this id."),
   label: z.string().nullable().optional().describe("Display name shown on the canvas."),
   position: PositionSchema.default({ x: 0, y: 0 }).describe("Canvas coordinates. Layout only — it does not affect execution order, which comes from the edges."),
+  parentId: z.string().min(1).optional().describe('Node id of the group frame this node sits inside. When set, `position` is relative to that frame. Layout only.'),
 })
 
 /**
@@ -90,4 +97,18 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .describe("Runs another workflow in the same workspace inline, as one step, with input/output variable mappings. One input, one output."),
+  baseNode
+    .extend({
+      type: z.literal("group"),
+      config: GroupNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe("A frame drawn behind its members. Purely visual: it has no handles, takes no edges and never executes — the runner and the graph validator drop it before they see the graph. Nodes join it by setting `parentId` to its id, which makes their `position` relative to the frame."),
+  baseNode
+    .extend({
+      type: z.literal("note"),
+      config: NoteNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe("A sticky note for documenting a workflow branch. Purely visual: it has no handles, takes no edges, and never executes."),
 ])

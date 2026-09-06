@@ -27,6 +27,7 @@ import {
   NodeModalShell,
 } from "./node-modal";
 import { normalizeHttpRequestConfig } from "./node-modal/httpRequestConfigCompat";
+import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
 import type { HttpMethod } from "@shared/types/HttpMethod";
 import { HttpMethodSchema } from "@shared/zod-schemas/HttpMethodSchema";
 import type { NodeModalProps } from "../types/NodeModalProps";
@@ -106,6 +107,8 @@ export function NodeModal({
   node,
   onClose,
   onSave,
+  onPrevious,
+  onNext,
   workspaceId,
   currentWorkflowId,
 }: NodeModalProps) {
@@ -153,6 +156,32 @@ export function NodeModal({
   const handleLabelChange = (newLabel: string) => {
     workingDataRef.current = { ...workingDataRef.current, label: newLabel };
   };
+
+  const navigate = (callback: (() => void) | undefined) => {
+    if (!callback) return;
+    onSave({
+      ...node,
+      data: workingDataRef.current as unknown as typeof node.data,
+    });
+    callback();
+  };
+
+  useEffect(() => {
+    if (!open || (!onPrevious && !onNext)) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isEditableKeyboardTarget(event.target)) return;
+      if (event.key === "ArrowLeft" && onPrevious) {
+        event.preventDefault();
+        navigate(onPrevious);
+      }
+      if (event.key === "ArrowRight" && onNext) {
+        event.preventDefault();
+        navigate(onNext);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onNext, onPrevious, open]);
 
   const updateHttpConfig = (newConfig: NodeModalHTTPRequestConfig) => {
     const normalizedConfig = normalizeHttpRequestConfig(newConfig);
@@ -405,6 +434,8 @@ export function NodeModal({
       onClose={handleClose}
       onCancel={handleClose}
       onSave={handleSave}
+      {...(onPrevious ? { onPrevious: () => navigate(onPrevious) } : {})}
+      {...(onNext ? { onNext: () => navigate(onNext) } : {})}
       initialFocus={nameLabelRef}
       requestBar={
         node.type === "http-request" ? renderHttpRequestBar() : renderTypeBar()

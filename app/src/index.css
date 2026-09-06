@@ -184,6 +184,26 @@
 }
 
 /* ──────────────────────────────────────────────
+   Canvas viewport — what NOT to put here
+
+   d3-zoom writes `translate(x,y) scale(k)` on .react-flow__viewport, and every
+   node, edge and glyph is rasterised relative to it. Two hints look like free
+   performance here and both cost more than they give:
+
+   `will-change: transform` disqualifies the layer from Chromium's transformed
+   rasterisation — the mechanism that renders text sharp at a fractional
+   translation. Without it the layer keeps the raster translation it was first
+   given and the compositor resamples the drift, so the whole canvas softens
+   while the camera moves. It buys no frames either: the camera already runs at
+   the display's refresh rate. The camera snaps its own writes to whole device
+   pixels instead (`snapTransform` in utils/runCamera.ts), which is the real fix.
+
+   `contain: paint`/`content`, here or on .react-flow__nodes: both are 100%x100%
+   boxes that get translated, so containment clips the graph to that translated
+   rectangle and the canvas looks chopped as soon as you pan.
+   ────────────────────────────────────────────── */
+
+/* ──────────────────────────────────────────────
    Handles — a socket at rest, an affordance on approach.
 
    The Handle element is a 20px transparent hit area; the visible dot is
@@ -222,24 +242,44 @@
   transition:
     background-color var(--aw-dur-fast) var(--aw-ease-standard),
     box-shadow var(--aw-dur-fast) var(--aw-ease-standard),
+    opacity var(--aw-dur-fast) var(--aw-ease-standard),
     width var(--aw-dur-fast) var(--aw-ease-standard),
     height var(--aw-dur-fast) var(--aw-ease-standard);
 }
 
-/* On approach the accent appears: "you can touch this". */
+/* A socket with an edge on it has said everything it has to say: the edge is
+   the affordance now, and the dot underneath is only clutter. It comes back on
+   approach, below. A socket with *no* edge stays visible — it is the only
+   thing on the canvas that says a node can be connected at all. */
+.aw-node-handle[data-connected="true"] .aw-node-handle__dot {
+  opacity: 0;
+}
+
+/* On approach the accent appears: "you can touch this". Bigger than the
+   resting socket and carrying a soft accent halo, which is what makes it
+   findable the moment it is shown. */
 .react-flow__node:hover .aw-node-handle .aw-node-handle__dot,
 .react-flow__handle-connecting .aw-node-handle__dot,
 .react-flow__handle.connectionindicator:hover .aw-node-handle__dot {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
+  opacity: 1;
   background-color: var(--aw-handle-color, var(--aw-primary));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 35%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--aw-primary) 35%, transparent),
+    0 0 8px color-mix(in srgb, var(--aw-primary) 55%, transparent);
 }
 
 .react-flow__handle.aw-node-handle:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: 1px;
   border-radius: var(--aw-radius-node-rail);
+}
+
+/* Keyboard focus reveals the socket too, or tabbing onto a connected handle
+   would ring an empty box. */
+.react-flow__handle.aw-node-handle:focus-visible .aw-node-handle__dot {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -347,6 +387,145 @@
 [data-sonner-toast] [data-close-button] {
   pointer-events: auto !important;
   cursor: pointer;
+}
+
+/* ──────────────────────────────────────────────
+   Group frames (#4)
+   ──────────────────────────────────────────────
+   A frame is a node the pointer must be able to ignore. `pointer-events: none`
+   on the wrapper is what lets a click inside a frame reach the pane and a box
+   selection start there — and it is also what stops two frames swallowing each
+   other's clicks. Only the pill, the actions and the resize controls take
+   pointer events back.
+
+   The wrapper reset above deliberately excludes `.react-flow__node-group`:
+   this node draws its own dashed box, so it wants the wrapper's geometry, not
+   its default chrome. */
+.react-flow__node-group {
+  background-color: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  pointer-events: none !important;
+}
+
+.react-flow__node-group .react-flow__resize-control,
+.aw-group__pill,
+.aw-group__actions {
+  pointer-events: auto;
+}
+
+.aw-group {
+  position: absolute;
+  inset: 0;
+  border: 1.5px dashed color-mix(in srgb, var(--aw-group-tint) 45%, transparent);
+  border-radius: var(--aw-radius-node, 8px);
+  background: color-mix(in srgb, var(--aw-group-tint) 5%, transparent);
+}
+
+.aw-group[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--aw-group-tint) 80%, transparent);
+}
+
+/* The bar rides on the top edge, outside the box, so the frame's own area
+   stays entirely usable. */
+.aw-group__bar {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* Counter-scale: `onMove` writes the boost on the canvas root, so a name
+     stays readable when the graph is zoomed out to fit 130 nodes. */
+  transform: translateY(-50%) scale(var(--aw-group-label-boost, 1));
+  transform-origin: 0 50%;
+}
+
+.aw-group__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 22ch;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--aw-group-tint) 35%, transparent);
+  border-radius: 999px;
+  background: var(--aw-surface-raised);
+  color: var(--aw-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  cursor: grab;
+}
+
+.aw-group__name,
+.aw-group__input {
+  max-width: 18ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+}
+
+.aw-group__input:focus-visible,
+.aw-group__name:focus-visible {
+  outline: 2px solid var(--aw-primary);
+  outline-offset: var(--aw-focus-ring-offset);
+}
+
+/* Tints sit inline in the bar, shown with the frame's other actions.
+   ponytail: six swatches read at a glance and need no open/dismiss state —
+   move to a popover if the palette grows. */
+.aw-group__tints {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--aw-group-tint) 35%, transparent);
+  border-radius: 999px;
+  background: var(--aw-surface-raised);
+}
+
+.aw-group__swatch {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--aw-swatch) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--aw-swatch) 55%, transparent);
+  cursor: pointer;
+  transition:
+    transform var(--aw-dur-fast) var(--aw-ease-standard),
+    background-color var(--aw-dur-fast) var(--aw-ease-standard);
+}
+
+.aw-group__swatch:hover {
+  transform: scale(1.3);
+  background: var(--aw-swatch);
+}
+
+.aw-group__swatch[data-active="true"] {
+  background: var(--aw-swatch);
+  border-color: var(--aw-swatch);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--aw-swatch) 28%, transparent);
+}
+
+.aw-group__swatch:focus-visible {
+  outline: 2px solid var(--aw-primary);
+  outline-offset: var(--aw-focus-ring-offset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-group__swatch {
+    transition: none;
+  }
+
+  .aw-group__swatch:hover {
+    transform: none;
+  }
 }
 
 /* Node layer reduced-motion rules live in styles/node-motion.css, next to

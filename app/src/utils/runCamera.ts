@@ -1,4 +1,4 @@
-import type { Viewport } from "reactflow";
+import type { Viewport } from "@xyflow/react";
 import type { AttentionPoint } from "../types/AttentionPoint";
 import type { CameraFocus } from "../types/CameraFocus";
 import type { CameraFraming } from "../types/CameraFraming";
@@ -509,6 +509,40 @@ export function transformOf(
     x: viewport.width / 2 - framing.x * framing.zoom,
     y: viewport.height / 2 - framing.y * framing.zoom,
     zoom: framing.zoom,
+  };
+}
+
+/**
+ * The same transform, with its translation snapped to the device-pixel grid.
+ *
+ * ReactFlow moves the canvas with one `translate(x,y) scale(k)` on
+ * `.react-flow__viewport`, and every node, edge and glyph is rasterised
+ * relative to it. Chromium rasterises such a layer once, at a raster
+ * translation chosen from the transform it first saw, and then *keeps that
+ * raster translation as the transform changes* so a moving layer does not
+ * invalidate its tilings every frame. The fractional part of the difference is
+ * left to the compositor, which resamples — so the whole canvas softens while
+ * the camera moves and snaps sharp the moment it stops. It is worst at a half
+ * pixel of drift and it does not care how simple the graph is: a single row of
+ * nodes panning sideways blurs exactly as much as a hundred.
+ *
+ * The spring integrates in continuous graph coordinates and must keep doing so —
+ * a camera quantised at the model level judders. Only the *written* transform is
+ * snapped, which leaves at most half a device pixel of aim error, far inside the
+ * deadzone, and removes the fraction the compositor was resampling.
+ *
+ * Note `k` is deliberately not snapped. It multiplies the children, not this
+ * translation, so at a settled zoom it contributes a fixed sub-pixel offset that
+ * bakes into the raster once instead of shimmering per frame. Zoom *changes*
+ * blur regardless — that is a re-raster at a new scale, and the only cure is not
+ * zooming.
+ */
+export function snapTransform(transform: Viewport, dpr: number): Viewport {
+  const scale = dpr > 0 ? dpr : 1;
+  return {
+    x: Math.round(transform.x * scale) / scale,
+    y: Math.round(transform.y * scale) / scale,
+    zoom: transform.zoom,
   };
 }
 

@@ -1,5 +1,6 @@
 import type { Run } from "@shared/types/Run"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { RunResult } from "@shared/types/RunResult"
 import type { RunCreate, RunRepository } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
@@ -112,6 +113,12 @@ export class RunService {
   /** Merge freshly extracted variables into the run — targeted column write. */
   setExtractedVariables(runId: string, variables: Record<string, JsonValue>): void {
     this.runs.mergeExtractedVariables(runId, variables)
+  }
+
+  /** Persist one completed node's evidence so it can be inspected before run completion. */
+  // fallow-ignore-next-line code-duplication -- thin repository delegate, matches existing sibling methods
+  upsertNodeResult(runId: string, result: RunResult): void {
+    this.runs.upsertNodeResult(runId, result)
   }
 
   /** Transition the run to a terminal status (completed/failed/cancelled/interrupted). */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ReactElement } from "react";
 import { render, screen } from "@testing-library/react";
-import { ReactFlowProvider } from "reactflow";
+import { ReactFlowProvider } from "@xyflow/react";
 import StartNode from "./StartNode";
 import EndNode from "./EndNode";
 

@@ -1,7 +1,15 @@
 import { useCallback } from "react";
-import type { Node, XYPosition } from "reactflow";
+import type { Node, XYPosition } from "@xyflow/react";
+import type { CanvasNode, CanvasNodeTemplate } from "../types";
+import {
+  adoptIntoFrame,
+  FRAME_FALLBACK_HEIGHT,
+  FRAME_FALLBACK_WIDTH,
+  frameContainingNode,
+} from "../utils/canvasGroups";
 
 interface NodeConfig {
+  [key: string]: unknown;
   method?: string;
   url?: string;
   queryParams?: unknown[];
@@ -35,9 +43,33 @@ function getDefaultConfig(type: string): NodeConfig {
       return { duration: 1000 };
     case "merge":
       return { mergeStrategy: "all", conditions: [] };
+    case "note":
+      return { content: "" };
     default:
       return {};
   }
+}
+
+export function createCanvasNode(
+  template: CanvasNodeTemplate,
+  position: XYPosition,
+): CanvasNode {
+  const config = { ...getDefaultConfig(template.type), ...template.config };
+  const node: CanvasNode = {
+    id: `${template.type}-${Date.now()}`,
+    type: template.type,
+    position,
+    data: {
+      label: template.label,
+      config,
+    },
+  };
+  if (template.type === "group") {
+    node.width = FRAME_FALLBACK_WIDTH;
+    node.height = FRAME_FALLBACK_HEIGHT;
+    node.dragHandle = ".aw-group-handle";
+  }
+  return node;
 }
 
 interface UseCanvasDropParams {
@@ -106,19 +138,25 @@ export default function useCanvasDrop({
         config.method = method;
       }
 
-      const newNode: Node = {
-        id: `${type}-${Date.now()}`,
-        type,
-        position,
-        data: {
+      const newNode = createCanvasNode(
+        {
+          type,
           label:
             labelFromTemplate ??
             type.replace("-", " ").replace(/\b\w/g, (l) => l.toUpperCase()),
           config,
         },
-      };
+        position,
+      );
 
-      setNodes((nds) => [...nds, newNode]);
+      setNodes((nds) => {
+        const next = [...nds, newNode];
+        return adoptIntoFrame(
+          next,
+          newNode.id,
+          frameContainingNode(next, newNode.id),
+        );
+      });
     },
     [reactFlowInstanceRef, setNodes],
   );

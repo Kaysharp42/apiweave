@@ -13,8 +13,9 @@ import {
   getBezierPath,
   useReactFlow,
   useStore,
+  type Edge,
   type EdgeProps,
-} from "reactflow";
+} from "@xyflow/react";
 import { X } from "lucide-react";
 import type { NodeStatus } from "../types/NodeStatus";
 import type { EdgePresentation } from "../types/EdgePresentation";
@@ -22,9 +23,10 @@ import type { EdgePhase } from "../types/EdgePhase";
 
 interface CustomEdgeData {
   animated?: boolean;
+  [key: string]: unknown;
 }
 
-type CustomEdgeProps = EdgeProps<CustomEdgeData>;
+type CustomEdgeProps = EdgeProps<Edge<CustomEdgeData>>;
 
 const EMPTY_EDGE_STYLE: CSSProperties = {};
 
@@ -223,7 +225,7 @@ function CustomEdge({
    * a string, so an edge only re-renders when its own source changes state.
    */
   const sourceStatus = useStore((state) => {
-    const node = state.nodeInternals.get(source);
+    const node = state.nodeLookup.get(source);
     const status = (node?.data as { executionStatus?: string } | undefined)
       ?.executionStatus;
     return (status ?? "idle") as NodeStatus;

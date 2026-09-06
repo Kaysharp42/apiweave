@@ -59,6 +59,10 @@ describe("WorkspaceEnvironmentsPage", () => {
   });
 
   it("saves edited environment variables", () => {
-    expect(source.match(/variables: data\.variables/g)).toHaveLength(2);
+    // Create and update both build their payload through the shared
+    // environmentWritePayload(), which is where `variables: data.variables`
+    // now lives — no more duplicated inline object per handler.
+    expect(source).toContain("variables: data.variables");
+    expect(source.match(/environmentWritePayload\(data\)/g)).toHaveLength(2);
   });
 });

@@ -7,7 +7,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
-import type { Edge, Node, Viewport } from "reactflow";
+import type { Edge, Node, Viewport } from "@xyflow/react";
 import {
   CanvasCornerGutter,
   CanvasToolbarBand,
@@ -22,6 +22,7 @@ import {
   isAtRest,
   lookingAt,
   planCrossing,
+  snapTransform,
   stepCamera,
   transformOf,
   ATTENTION_POINTS_MAX,
@@ -62,6 +63,15 @@ interface UseRunCameraParams {
   edgesRef: MutableRefObject<Edge[]>;
   /** The element the flow is drawn in — measured for its on-screen size. */
   containerRef: RefObject<HTMLElement | null>;
+  /**
+   * The canvas camera lock, as a ref. The camera writes `setViewport` directly
+   * and so bypasses `panOnDrag` entirely — a locked canvas would still be
+   * dragged around by a run unless the lock is honoured here. A run started
+   * under the lock therefore begins already suspended: the follow pill appears
+   * and following is one click away, rather than the lock being silently
+   * overruled by the next run.
+   */
+  lockedRef?: MutableRefObject<boolean>;
 }
 
 interface UseRunCameraResult {
@@ -133,6 +143,18 @@ function orderedSeen(
     });
 }
 
+/** Measured size, falling back to the layout's own guess while ReactFlow has not
+ * measured yet. Split out so `attentionPointFor` stays a null check plus a
+ * struct build rather than carrying every fallback branch itself. */
+function nodeSize(node: Node): { width: number; height: number } {
+  return {
+    // ReactFlow fills these in once it has measured; a node still waiting for
+    // its first `dimensions` change gets the layout's own guess.
+    width: node.measured?.width ?? node.width ?? NODE_FALLBACK_WIDTH,
+    height: node.measured?.height ?? node.height ?? NODE_FALLBACK_HEIGHT,
+  };
+}
+
 /** Where a node is on the canvas, or null when there is nothing to point at:
  * deleted mid-run, or not in this canvas at all (a sub-workflow's node arriving
  * on the parent's stream). */
@@ -140,16 +162,15 @@ function attentionPointFor(
   node: Node | undefined,
   record: SeenRunNode,
 ): AttentionPoint | null {
-  const position = node?.positionAbsolute ?? node?.position;
+  const position = node?.position;
   if (!node || !position) return null;
 
+  const { width, height } = nodeSize(node);
   return {
     x: position.x,
     y: position.y,
-    // ReactFlow fills these in once it has measured; a node still waiting for its
-    // first `dimensions` change gets the layout's own guess.
-    width: node.width ?? NODE_FALLBACK_WIDTH,
-    height: node.height ?? NODE_FALLBACK_HEIGHT,
+    width,
+    height,
     running: record.running,
     since: record.since,
   };
@@ -292,26 +313,37 @@ function noteMoving(
   setMoving(moving);
 }
 
-/** Write the transform, unless it is invisibly close to the last one: sub-pixel
- * changes are invisible and a `setViewport` is not free, so the tail of every
- * ease-out costs nothing. Returns the transforms now known to be the camera's. */
+/**
+ * Write the transform, snapped to the device-pixel grid and skipped when it
+ * lands where the last one did.
+ *
+ * The snap is what keeps the canvas sharp while the camera moves — see
+ * `snapTransform`. It also subsumes the sub-pixel guard this used to carry: a
+ * snapped translation either moves a whole device pixel or does not move, so the
+ * tail of every ease-out stops writing on its own rather than against a
+ * threshold picked by hand. Returns the transforms now known to be the camera's.
+ */
 function writeViewport(
   instance: RunCameraInstance,
   next: Viewport,
   written: readonly Viewport[],
 ): Viewport[] {
+  const snapped = snapTransform(
+    next,
+    typeof window === "undefined" ? 1 : window.devicePixelRatio,
+  );
   const [last] = written;
   if (
     last &&
-    Math.abs(next.x - last.x) <= 0.25 &&
-    Math.abs(next.y - last.y) <= 0.25 &&
-    Math.abs(next.zoom - last.zoom) <= 0.0002
+    snapped.x === last.x &&
+    snapped.y === last.y &&
+    Math.abs(snapped.zoom - last.zoom) <= 0.0002
   ) {
     return [...written];
   }
 
-  instance.setViewport(next);
-  return [next, ...written].slice(0, 4);
+  instance.setViewport(snapped);
+  return [snapped, ...written].slice(0, 4);
 }
 
 /** Nothing left to integrate: the motion has stopped, and — unless the run is
@@ -377,6 +409,7 @@ export default function useRunCamera({
   nodesRef,
   edgesRef,
   containerRef,
+  lockedRef,
 }: UseRunCameraParams): UseRunCameraResult {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
@@ -608,16 +641,20 @@ export default function useRunCamera({
           noteNode(fronts, nodeId, false, Date.now());
         }
 
+        const locked = lockedRef?.current === true;
+
         followingRef.current = true;
-        suspendedRef.current = false;
+        suspendedRef.current = locked;
         endingRef.current = false;
         motionRef.current = null;
         writtenRef.current = [];
         engageRef.current = true;
         setIsFollowing(true);
-        setIsSuspended(false);
+        setIsSuspended(locked);
 
-        schedule();
+        // `schedule` returns early while suspended anyway; not calling it says
+        // the lock is the reason rather than leaving that to be inferred.
+        if (!locked) schedule();
       },
 
       onNodeShown: (nodeId, status) => {
@@ -647,7 +684,7 @@ export default function useRunCamera({
         schedule();
       },
     };
-  }, [edgesRef, release, schedule]);
+  }, [edgesRef, lockedRef, release, schedule]);
 
   useEffect(() => cancelFrame, [cancelFrame]);
 

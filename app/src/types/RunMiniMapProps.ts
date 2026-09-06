@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Node, PanelPosition } from "reactflow";
+import type { Node, PanelPosition } from "@xyflow/react";
 import type { RunMiniMapPaint } from "./RunMiniMapPaint";
 
 /**
@@ -13,7 +13,9 @@ import type { RunMiniMapPaint } from "./RunMiniMapPaint";
  * of following a run independent of the minimap, and it thaws the moment the
  * camera comes to rest.
  */
-export interface RunMiniMapProps<TData = unknown> {
+export interface RunMiniMapProps<
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> {
   /** Canvas nodes, from `WorkflowCanvas` state — not the store. Passed as a
    * prop so the node layer repaints only when the graph changes, which a store
    * subscription could not tell apart from viewport noise. */

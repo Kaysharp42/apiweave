@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { createElement, type ReactElement } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ReactFlowProvider } from "reactflow";
+import { ReactFlowProvider } from "@xyflow/react";
 import { BaseNode } from "./BaseNode";
 import { NodeRunStrip } from "./NodeRunStrip";
 import type { NodeStatus } from "../../../types/NodeStatus";

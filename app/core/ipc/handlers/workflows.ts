@@ -13,9 +13,9 @@ import { canonicalizeNodeConfig } from "../../repositories/helpers"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowDiagnosis } from "@shared/types/WorkflowDiagnosis"
-import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowWriteResult } from "@shared/types/WorkflowWriteResult"
+import type { WorkflowNodePatch } from "../../services/workflow_service"
 import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
@@ -30,6 +30,21 @@ const ws = z.string().min(1)
 const canonicalNodes = z.preprocess(
   (value) => (Array.isArray(value) ? value.map((node) => canonicalizeNodeConfig(node)) : value),
   z.array(WorkflowNodeSchema),
+)
+
+const partialNodePatch = z
+  .object({
+    nodeId: z.string().min(1),
+    type: z.enum(["http-request", "assertion", "delay", "merge", "start", "end", "workflow"]).optional(),
+    label: z.string().nullable().optional(),
+    position: PositionSchema.partial().optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict()
+
+const patchNodes = z.preprocess(
+  (value) => (Array.isArray(value) ? value.map((node) => canonicalizeNodeConfig(node)) : value),
+  z.array(z.union([WorkflowNodeSchema, partialNodePatch])),
 )
 
 /** Fields a client may set on create/update — server-managed columns (id/rev/timestamps) excluded. */
@@ -77,9 +92,9 @@ const patchInput = z
     ),
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
-    upsertNodes: canonicalNodes
+    upsertNodes: patchNodes
       .optional()
-      .describe("Nodes to add or replace, matched by nodeId. A node not named here is left exactly as stored."),
+      .describe("Nodes to add or patch, matched by nodeId. Existing nodes merge recursively: omitted config fields and position stay as stored. A new node must include its type and complete schema-valid config."),
     removeNodeIds: z
       .array(z.string().min(1))
       .optional()
@@ -104,6 +119,9 @@ const patchInput = z
   .strict()
 
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
+const getInput = idInput.extend({
+  nodeIds: z.array(z.string().min(1)).min(1).optional().describe("Return only these nodes and edges directly between them. Use for targeted reads of a large workflow."),
+}).strict()
 const diagnoseInput = idInput.extend({ runId: z.string().min(1).optional() }).strict()
 
 const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
@@ -147,9 +165,18 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   })
 
   router.register("workflows", "get", {
-    input: idInput,
+    input: getInput,
     output: WorkflowSchema,
-    handle: (i) => workflows.get(i.workspaceId, i.workflowId),
+    handle: async (i) => {
+      const workflow = await workflows.get(i.workspaceId, i.workflowId)
+      if (i.nodeIds === undefined) return workflow
+      const nodeIds = new Set(i.nodeIds)
+      return {
+        ...workflow,
+        nodes: workflow.nodes.filter((node) => nodeIds.has(node.nodeId)),
+        edges: workflow.edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target)),
+      }
+    },
   })
 
   router.register("workflows", "diagnose", {
@@ -182,7 +209,7 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     input: patchInput.extend({ return: returnShape, layout: layoutFlag }).strict(),
     output: WorkflowWriteResultSchema,
     handle: ({ workspaceId, workflowId, return: shape, layout: _layout, ...patch }) => {
-      const upsertNodeIds = ((patch.upsertNodes as readonly WorkflowNode[] | undefined) ?? []).map((n) => n.nodeId)
+      const upsertNodeIds = ((patch.upsertNodes as readonly WorkflowNodePatch[] | undefined) ?? []).map((n) => n.nodeId)
       const upsertEdgeIds = ((patch.upsertEdges as readonly WorkflowEdge[] | undefined) ?? []).map((e) => e.edgeId)
       return projectWriteResult(
         shape ?? "summary",

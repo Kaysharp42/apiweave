@@ -13,6 +13,8 @@ import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkflowTombstone, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
+import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
+import { canonicalizeNodeConfig } from "../repositories/helpers"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import { clearDepartingCallTargets } from "./workspace_move"
@@ -23,7 +25,7 @@ export interface WorkflowGraphPatch {
   readonly expectedRevision?: number
   readonly name?: string
   readonly description?: string | null
-  readonly upsertNodes?: readonly Workflow["nodes"][number][]
+  readonly upsertNodes?: readonly WorkflowNodePatch[]
   readonly removeNodeIds?: readonly string[]
   readonly upsertEdges?: readonly Workflow["edges"][number][]
   readonly removeEdgeIds?: readonly string[]
@@ -39,6 +41,15 @@ export interface WorkflowGraphPatch {
   readonly repositionNodes?: Readonly<Record<string, { readonly x: number; readonly y: number }>>
 }
 
+/** A partial update for a stored node, or the complete definition for a new one. */
+export interface WorkflowNodePatch {
+  readonly nodeId: string
+  readonly type?: Workflow["nodes"][number]["type"] | undefined
+  readonly label?: string | null | undefined
+  readonly position?: Readonly<{ x?: number | undefined; y?: number | undefined }> | undefined
+  readonly config?: Readonly<Record<string, unknown>> | undefined
+}
+
 /**
  * Fold a {@link WorkflowGraphPatch} into the stored graph, producing the full
  * update to persist. Exported so the MCP bridge can compute the same merged
@@ -46,7 +57,7 @@ export interface WorkflowGraphPatch {
  * *whole* graph in the same write, not just the touched nodes.
  */
 export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): WorkflowUpdate & { nodes: Workflow["nodes"] } {
-  const upserted = mergeById(existing.nodes, patch.upsertNodes, patch.removeNodeIds, (node) => node.nodeId)
+  const upserted = mergeWorkflowNodePatches(existing.nodes, patch.upsertNodes, patch.removeNodeIds)
   const nodes = patch.repositionNodes === undefined
     ? upserted
     : upserted.map((node) => {
@@ -68,6 +79,62 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
   }
+}
+
+/**
+ * Merge node updates field-by-field. Existing nodes retain every omitted field,
+ * including nested request configuration and canvas position; adding a node still
+ * requires a complete schema-valid definition.
+ */
+export function mergeWorkflowNodePatches(
+  existing: readonly Workflow["nodes"][number][],
+  upserts: readonly WorkflowNodePatch[] | undefined,
+  removeIds: readonly string[] | undefined,
+): Workflow["nodes"] {
+  const nodes = existing.filter((node) => !(removeIds ?? []).includes(node.nodeId))
+  const indexById = new Map(nodes.map((node, index) => [node.nodeId, index]))
+
+  for (const patch of upserts ?? []) {
+    const index = indexById.get(patch.nodeId)
+    if (index === undefined) {
+      const node = WorkflowNodeSchema.parse(canonicalizeNodeConfig(patch))
+      indexById.set(node.nodeId, nodes.length)
+      nodes.push(node)
+      continue
+    }
+
+    const current = nodes[index]!
+    if (patch.type !== undefined && patch.type !== current.type) {
+      throw new ValidationError(`node ${patch.nodeId} cannot change type through a partial patch`)
+    }
+    const merged = {
+      ...current,
+      ...(patch.label !== undefined ? { label: patch.label } : {}),
+      ...(patch.position !== undefined ? { position: { ...current.position, ...patch.position } } : {}),
+      ...(patch.config !== undefined ? { config: mergeRecord(current.config, patch.config) } : {}),
+    }
+    nodes[index] = WorkflowNodeSchema.parse(canonicalizeNodeConfig(merged))
+  }
+  return nodes
+}
+
+/** Recursively merge plain-object config values; arrays and scalar values replace. */
+function mergeRecord(
+  current: Readonly<Record<string, unknown>> | undefined,
+  patch: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...current }
+  for (const [key, value] of Object.entries(patch)) {
+    const oldValue = merged[key]
+    merged[key] = isPlainRecord(oldValue) && isPlainRecord(value)
+      ? mergeRecord(oldValue, value)
+      : value
+  }
+  return merged
+}
+
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 /** Replace-by-id then append, after dropping `removeIds`. Order of surviving entries is preserved. */

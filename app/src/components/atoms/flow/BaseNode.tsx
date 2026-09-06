@@ -183,12 +183,20 @@ export function BaseNode({
   const config = statusConfig[status] ?? statusConfig.idle;
   const running = hasRun(status);
 
-  // The icon tile's hue arrives as a token reference (`var(--aw-method-post)`)
-  // and is wired in as a custom property, so the tint and the icon colour stay
-  // single-sourced and no colour literal enters the component.
-  const tileStyle = tileHue
-    ? ({ "--aw-node-tile-hue": tileHue } as React.CSSProperties)
-    : undefined;
+  // The kind's hue arrives as a token reference (`var(--aw-method-post)`) and
+  // is wired in as a custom property on the slab, so the icon tile and the
+  // 3px cap both read one value and no colour literal enters the component.
+  //
+  // `borderTopColor` is inline rather than a class because the status border
+  // colours all four sides: which of the two wins on the top edge would
+  // otherwise depend on the order Tailwind happens to emit them in.
+  const slabStyle = {
+    fontSize: "12px",
+    ...(tileHue && {
+      "--aw-node-tile-hue": tileHue,
+      borderTopColor: tileHue,
+    }),
+  } as React.CSSProperties;
 
   const chip = typeChip ?? titleExtra;
 
@@ -293,11 +301,15 @@ export function BaseNode({
             config.surface,
             "transition-colors duration-aw-fast ease-aw-standard motion-reduce:transition-none",
             config.border,
+            // What kind of node this is, on the one edge nothing else uses.
+            // Legible at any zoom, costs no layout, and takes no width from
+            // the title — which is what a method pill in the header did.
+            tileHue ? "border-t-[3px]" : "",
             className,
           ]
             .filter(Boolean)
             .join(" ")}
-          style={{ fontSize: "12px" }}
+          style={slabStyle}
           aria-label={`Node status: ${config.ariaLabel}`}
         >
           {title && (
@@ -317,7 +329,6 @@ export function BaseNode({
                       ? "bg-[color-mix(in_srgb,var(--aw-node-tile-hue)_12%,transparent)] text-[var(--aw-node-tile-hue)]"
                       : "bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark",
                   ].join(" ")}
-                  {...(tileStyle && { style: tileStyle })}
                 >
                   {icon}
                 </span>
