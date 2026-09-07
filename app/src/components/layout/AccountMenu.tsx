@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/useAuth";
 import { useCloudSync } from "../../hooks/useCloudSync";
 import { Button } from "../atoms/Button";
 import { CloudAccountSection } from "./CloudAccountSection";
+import { getCloudAttention } from "../../utils/cloudAttention";
 import {
   getAccountInitials,
   getConnectionBadge,
@@ -87,6 +88,9 @@ export function AccountMenu() {
   const initials = getAccountInitials(user, name);
   const roleSummary = getRoleSummary(user);
   const connection = getConnectionBadge(cloud.status, cloud.unavailable);
+  // The avatar is the only cloud surface on screen at all times, so it carries
+  // the "something needs you" dot. Same derivation as the banner and the pill.
+  const attention = getCloudAttention(cloud.status, cloud.unavailable)[0] ?? null;
   const avatarVisible = Boolean(avatarUrl) && !avatarFailed;
 
   const closeMenu = (focusTrigger = false) => {
@@ -132,10 +136,14 @@ export function AccountMenu() {
         onClick={() => setOpen((prev) => !prev)}
         onKeyDown={handleTriggerKeyDown}
         className="h-9 w-9 overflow-hidden !rounded-full border border-border bg-surface-raised !p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
-        aria-label={`Account menu for ${name}`}
+        aria-label={
+          attention
+            ? `Account menu for ${name} — ${attention.badgeLabel}`
+            : `Account menu for ${name}`
+        }
         aria-haspopup="menu"
         aria-expanded={open}
-        title={name}
+        title={attention ? `${name} — ${attention.title}` : name}
       >
         {avatarVisible ? (
           <img
@@ -153,6 +161,15 @@ export function AccountMenu() {
           </span>
         )}
       </Button>
+
+      {/* Outside the trigger: it is overflow-hidden, which would clip a dot
+          sitting on the avatar's edge. */}
+      {attention && connection && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-surface-raised dark:ring-surface-dark-raised ${connection.dotClassName}`}
+        />
+      )}
 
       {open && (
         <div

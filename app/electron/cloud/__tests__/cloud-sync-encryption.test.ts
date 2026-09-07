@@ -27,6 +27,7 @@ import { DesktopCloudSyncControl } from "../cloud-sync-control"
 import {
   CloudWorkspaceEncryptionInvalidError,
   CloudWorkspaceEncryptionSettledError,
+  CloudWorkspaceKeyUnavailableError,
   CloudWorkspaceLockedError,
   CloudWorkspacePassphraseAdminOnlyError,
 } from "../../../core/services/cloud_sync_control"
@@ -274,6 +275,89 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
     expect(() => workspaceWdek(WORKSPACE_ID)).toThrow(WorkspaceLocked)
     expect(settings.get(`cloud.e2ee.wdek.${WORKSPACE_ID}`)).toBeUndefined()
     expect(subject.status().bindings[0]?.encryption).toBe("locked")
+  })
+
+  // Unlocking asks the server for the wrapped key BEFORE it tries the
+  // passphrase, so none of these are passphrase failures — and each one used to
+  // arrive at the prompt as a raw "Connect call failed — HTTP nnn", which reads
+  // there as "you typed it wrong". The reason is what the dialog branches on.
+  function nockGetEncryptionFailure(status: number, body: unknown): nock.Scope {
+    return nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/GetWorkspaceEncryption`, { workspaceId: CLOUD_WORKSPACE_ID })
+      .reply(status, body)
+  }
+
+  it.each([
+    // Cloud collapses a deleted workspace and a revoked membership into one
+    // NotFound so ids cannot be probed; this side must not invent the split.
+    { status: 404, code: "not_found", reason: "no-access" },
+    { status: 500, code: "internal", reason: "unreachable" },
+    // Unreachable on this path since the BFF gateway routing fix. If it comes
+    // back it is a server bug, and it must not be shown as a typo.
+    { status: 403, code: "permission_denied", reason: "rejected" },
+    // Our own bug: an empty workspace_id. Still not the user's passphrase.
+    { status: 400, code: "invalid_argument", reason: "rejected" },
+  ])("reports a $code fetch as $reason, not as a wrong passphrase", async ({ status, code, reason }) => {
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    nockGetEncryptionFailure(status, { code, message: code })
+    const subject = control()
+
+    await expect(subject.unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE }))
+      .rejects.toMatchObject({ name: "CloudWorkspaceKeyUnavailableError", reason })
+
+    // The key was never fetched, so nothing may have moved.
+    expect(() => workspaceWdek(WORKSPACE_ID)).toThrow(WorkspaceLocked)
+    expect(subject.status().bindings[0]?.encryption).toBe("locked")
+  })
+
+  it("reports an unreachable cloud as unreachable, not as a wrong passphrase", async () => {
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/GetWorkspaceEncryption`)
+      .replyWithError({ code: "ECONNREFUSED" })
+    const subject = control()
+
+    await expect(subject.unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE }))
+      .rejects.toMatchObject({ name: "CloudWorkspaceKeyUnavailableError", reason: "unreachable" })
+    expect(subject.status().bindings[0]?.encryption).toBe("locked")
+  })
+
+  it("stays locked when the server does not name the encryption mode", async () => {
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    // A mode this client cannot read is not a licence to treat the workspace as
+    // plaintext: doing so would resume sync and push its records in the clear.
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/GetWorkspaceEncryption`)
+      .reply(200, { mode: "WORKSPACE_ENCRYPTION_MODE_UNSPECIFIED" })
+    const subject = control()
+
+    await expect(subject.unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE }))
+      .rejects.toThrow(CloudWorkspaceKeyUnavailableError)
+
+    expect(settings.get(`cloud.e2ee.mode.${WORKSPACE_ID}`)).toBe("e2ee")
+    expect(subject.status().bindings[0]?.encryption).toBe("locked")
+  })
+
+  it("closes cleanly when the workspace turns out not to be encrypted", async () => {
+    linked()
+    bindWorkspace()
+    settings.set(`cloud.e2ee.mode.${WORKSPACE_ID}`, "e2ee")
+    // Not an error and not a decrypt failure — there is simply nothing to
+    // unlock, so the prompt must resolve rather than blame the passphrase.
+    nock("https://api.test")
+      .post(`${DEVICE_SERVICE}/GetWorkspaceEncryption`)
+      .reply(200, { mode: "WORKSPACE_ENCRYPTION_MODE_NONE" })
+
+    const status = await control().unlockWorkspace({ workspaceId: WORKSPACE_ID, passphrase: PASSPHRASE })
+
+    expect(settings.get(`cloud.e2ee.mode.${WORKSPACE_ID}`)).toBe("none")
+    expect(status.bindings[0]?.encryption).not.toBe("locked")
   })
 
   it("keeps a workspace unlocked across a reconcile when the keychain refuses to cache", async () => {

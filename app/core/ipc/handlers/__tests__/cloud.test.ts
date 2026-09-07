@@ -46,6 +46,10 @@ class FakeCloudSyncControl implements CloudSyncControl {
     return this.current
   }
 
+  public setStatus(patch: Partial<CloudSyncStatus>): void {
+    this.current = { ...this.current, ...patch }
+  }
+
   public async link(input: CloudLinkInput): Promise<CloudSyncStatus> {
     this.current = {
       linked: true,
@@ -212,6 +216,40 @@ describe("cloud IPC handlers", () => {
     })
     expect(bound).toMatchObject({ ok: true, data: { workspaceIds: ["cloud-workspace-2"] } })
     expect(cloud.bindSpy).toHaveBeenCalledWith({ workspaceId: "workspace-2", cloudWorkspaceId: "cloud-workspace-2" })
+  })
+
+  it("ignores catalog keys a newer build wrote to settings", async () => {
+    const cloud = new FakeCloudSyncControl()
+    const router = new IpcRouter()
+    registerCloudHandlers(router, { cloud } as never)
+    // The catalog is persisted JSON: a build that knows a field we do not can
+    // have written it. Ignoring it beats failing every cloud route.
+    cloud.setStatus({
+      workspaceCatalog: [{
+        workspaceId: "cloud-workspace-2",
+        workspaceName: "Personal",
+        isPersonal: true,
+        effectiveRole: 5,
+        canPull: true,
+        canPush: true,
+        canResolveConflicts: true,
+        fromTheFuture: "whatever",
+      }] as never,
+      account: { accountId: "account-1", alsoFromTheFuture: true } as never,
+      teamCatalog: [{
+        teamId: "team-1",
+        teamName: "Team",
+        isPersonal: false,
+        canCreateWorkspaces: true,
+        stillFromTheFuture: 1,
+      }] as never,
+    })
+
+    const result = await router.dispatch({ domain: "cloud", action: "status", payload: {} })
+
+    expect(result).toMatchObject({ ok: true })
+    expect((result as { data: CloudSyncStatus }).data.workspaceCatalog[0])
+      .not.toHaveProperty("fromTheFuture")
   })
 
   it("rejects renderer-supplied cloud endpoints", async () => {

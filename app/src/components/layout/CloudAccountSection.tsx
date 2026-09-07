@@ -13,6 +13,7 @@ import { Button } from "../atoms/Button";
 import { useCloudSync } from "../../hooks/useCloudSync";
 import { IpcError } from "../../utils/apiweaveClient";
 import type { CloudSyncStatus } from "../../types/cloud";
+import { getCloudAttention } from "../../utils/cloudAttention";
 
 interface CloudAccountSectionProps {
   /** Close the account menu (called before navigating away). */
@@ -56,6 +57,7 @@ export function CloudAccountSection({
   const navigate = useNavigate();
   const cloud = useCloudSync();
   const { status, unavailable, busy } = cloud;
+  const attention = getCloudAttention(status, unavailable)[0] ?? null;
 
   // Not in an Electron runtime (web preview) — cloud sync is desktop-only.
   if (unavailable) return null;
@@ -65,7 +67,18 @@ export function CloudAccountSection({
     navigate(path);
   };
 
-  const itemRef = (offset: number) => registerItem?.(startIndex + offset);
+  // Shown above the routine controls, never instead of them: a locked
+  // workspace still lets you sync the ones that aren't locked.
+  const showAttention =
+    attention !== null &&
+    attention.kind !== "authRequired" &&
+    status?.linkState === "linked" &&
+    status.bindings.length > 0;
+
+  // The notice's own action claims the first index when it is showing, so the
+  // roving tabindex order keeps matching the DOM order.
+  const itemRef = (offset: number) =>
+    registerItem?.(startIndex + (showAttention ? 1 : 0) + offset);
 
   const wrap =
     (action: () => Promise<CloudSyncStatus>) => async (): Promise<void> => {
@@ -216,60 +229,6 @@ export function CloudAccountSection({
       );
     }
 
-    // Conflicts take priority over the routine active view.
-    if (status.conflictCount > 0) {
-      return (
-        <div className="space-y-2">
-          <div className="flex items-start gap-2 rounded-lg bg-status-warning/10 px-2.5 py-2 text-[11px] text-text-secondary dark:text-text-secondary-dark">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-warning dark:text-status-warning-dark" />
-            <span>
-              {status.conflictCount} sync{" "}
-              {status.conflictCount === 1 ? "conflict needs" : "conflicts need"}{" "}
-              your review.
-            </span>
-          </div>
-          <Button
-            ref={itemRef(0)}
-            role="menuitem"
-            variant="primary"
-            size="sm"
-            fullWidth
-            onClick={() => goTo("/cloud/conflicts")}
-          >
-            Resolve conflicts
-          </Button>
-        </div>
-      );
-    }
-
-    // Error / dead-letter — send the user to diagnostics.
-    if (
-      status.syncState === "error" ||
-      status.deadLetterCount > 0 ||
-      status.lastError
-    ) {
-      return (
-        <div className="space-y-2">
-          <div className="flex items-start gap-2 rounded-lg bg-status-error/10 px-2.5 py-2 text-[11px] text-text-secondary dark:text-text-secondary-dark">
-            <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-status-error dark:text-status-error-dark" />
-            <span className="min-w-0 break-words">
-              {status.lastError ?? "Sync stopped with an error."}
-            </span>
-          </div>
-          <Button
-            ref={itemRef(0)}
-            role="menuitem"
-            variant="secondary"
-            size="sm"
-            fullWidth
-            onClick={() => goTo("/cloud/sync")}
-          >
-            Open Cloud Sync
-          </Button>
-        </div>
-      );
-    }
-
     // Initializing / syncing — show progress and lock out duplicate actions.
     if (status.syncState === "initializing" || status.syncState === "syncing") {
       return (
@@ -314,7 +273,8 @@ export function CloudAccountSection({
           <Button
             ref={itemRef(0)}
             role="menuitem"
-            variant="primary"
+            /* One primary per section: when something is wrong, that's the fix. */
+            variant={showAttention ? "secondary" : "primary"}
             size="sm"
             fullWidth
             loading={busy}
@@ -340,6 +300,39 @@ export function CloudAccountSection({
   return (
     <div className="rounded-lg border border-border px-3 py-2.5 dark:border-border-dark">
       {heading}
+      {showAttention && attention && (
+        <div className="mb-2 space-y-2">
+          <div
+            className={`flex items-start gap-2 rounded-lg px-2.5 py-2 text-[11px] text-text-secondary dark:text-text-secondary-dark ${
+              attention.severity === "error"
+                ? "bg-status-error/10"
+                : "bg-status-warning/10"
+            }`}
+          >
+            {attention.severity === "error" ? (
+              <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-status-error dark:text-[var(--aw-status-error)]" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]" />
+            )}
+            <span className="min-w-0 break-words">
+              <span className="font-medium text-text-primary dark:text-text-primary-dark">
+                {attention.title}
+              </span>{" "}
+              {attention.detail}
+            </span>
+          </div>
+          <Button
+            ref={registerItem?.(startIndex)}
+            role="menuitem"
+            variant="primary"
+            size="sm"
+            fullWidth
+            onClick={() => goTo(attention.route)}
+          >
+            {attention.actionLabel}
+          </Button>
+        </div>
+      )}
       {body()}
     </div>
   );

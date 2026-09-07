@@ -47,8 +47,8 @@ vi.mock("../AppNavBar", () => ({
 vi.mock("../Sidebar", () => ({ Sidebar: () => <div data-testid="sidebar" /> }));
 vi.mock("../MainHeader", () => ({ MainHeader: () => null }));
 vi.mock("../MainFooter", () => ({ MainFooter: () => null }));
-vi.mock("../../organisms/UpdateReadyBanner", () => ({
-  UpdateReadyBanner: () => null,
+vi.mock("../../organisms/UpdateBanner", () => ({
+  UpdateBanner: () => null,
 }));
 vi.mock("../../organisms/AgentDock", () => ({
   AgentDock: () => <div data-testid="agent-dock" />,

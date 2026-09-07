@@ -110,6 +110,20 @@ describe("CloudAccountSection", () => {
     expect(await item(/resolve conflicts/i)).toBeInTheDocument();
   });
 
+  it("keeps the routine actions available while something needs attention", async () => {
+    setStatus({
+      ...base,
+      linked: true,
+      active: true,
+      linkState: "linked",
+      bindings: [binding({ encryption: "locked" })],
+    });
+    renderSection();
+    expect(await item(/unlock workspace/i)).toBeInTheDocument();
+    expect(await item(/sync now/i)).toBeInTheDocument();
+    expect(await item(/manage/i)).toBeInTheDocument();
+  });
+
   it("offers Sync now in the active/idle state", async () => {
     const invoke = setStatus({
       ...base,

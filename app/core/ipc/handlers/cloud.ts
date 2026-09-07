@@ -11,6 +11,7 @@ import {
   CloudUnlinkRequiresConfirmationError,
   CloudWorkspaceEncryptionInvalidError,
   CloudWorkspaceEncryptionSettledError,
+  CloudWorkspaceKeyUnavailableError,
   CloudWorkspaceLockedError,
   CloudWorkspaceOwnedByAnotherAccountError,
   CloudWorkspacePassphraseAdminOnlyError,
@@ -20,6 +21,10 @@ import {
 
 const linkStateSchema = z.enum(["unlinked", "linking", "linked", "authenticationRequired"])
 const stateSchema = z.enum(["idle", "initializing", "syncing", "conflict", "error", "offline"])
+// NOT .strict(): these three are round-tripped through settings JSON, so the
+// version that wrote them is not always the version reading them. A newer build
+// adds a key, an older one reads it back, and strict would fail every cloud
+// route instead of ignoring a key it does not know. Zod strips extras for us.
 const workspaceCatalogEntrySchema = z
   .object({
     workspaceId: z.string().min(1),
@@ -33,19 +38,18 @@ const workspaceCatalogEntrySchema = z
     canResolveConflicts: z.boolean(),
     encryptionMode: z.enum(["unspecified", "none", "e2ee"]).optional(),
   })
-  .strict()
 const teamCatalogEntrySchema = z.object({
   teamId: z.string().min(1),
   teamName: z.string().min(1),
   isPersonal: z.boolean(),
   canCreateWorkspaces: z.boolean(),
-}).strict()
+})
 const accountSchema = z.object({
   accountId: z.string().min(1),
   email: z.string().min(1).optional(),
   displayName: z.string().min(1).optional(),
   avatarUrl: z.string().min(1).optional(),
-}).strict()
+})
 const deviceSchema = z.object({
   deviceId: z.string().min(1),
   label: z.string().min(1),
@@ -330,6 +334,18 @@ async function encryptionErrors(run: () => Promise<CloudSyncStatus>): Promise<Cl
     }
     if (error instanceof CloudWorkspaceLockedError) {
       throw new ConflictError(error.message, { workspaceLocked: true })
+    }
+    // The reason travels as the flag's VALUE, not as another boolean sibling:
+    // the prompt has to pick one of four ways out, and four more flags would
+    // let two of them be true at once.
+    if (error instanceof CloudWorkspaceKeyUnavailableError) {
+      // "denied" wherever the server refused this caller, "conflict" for a cloud
+      // we never reached — the renderer branches on the flag, but the contract
+      // code is what every other caller sees.
+      const details = { workspaceKeyUnavailable: error.reason }
+      throw error.reason === "unreachable"
+        ? new ConflictError(error.message, details)
+        : new DeniedError(error.message, details)
     }
     // "denied", not "conflict": this is the server refusing a caller, which is
     // exactly what the contract's 403 code is for — no state has to change for

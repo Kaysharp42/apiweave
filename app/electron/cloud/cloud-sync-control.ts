@@ -25,6 +25,7 @@ import {
   CloudAccountMismatchError,
   CloudWorkspaceEncryptionInvalidError,
   CloudWorkspaceEncryptionSettledError,
+  CloudWorkspaceKeyUnavailableError,
   CloudWorkspaceLockedError,
   CloudWorkspaceOwnedByAnotherAccountError,
   CloudWorkspacePassphraseAdminOnlyError,
@@ -62,6 +63,7 @@ import {
   DeviceTokenStore,
   ErrCloudOffline,
   ErrCloudRequestFailed,
+  ErrUnauthorized,
 } from "./cloud-client"
 import {
   CANONICAL_CLOUD_ENTRY_URL,
@@ -316,8 +318,26 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
       throw new Error("Cloud workspace binding is unavailable")
     }
     try {
-      const record = await this.createClient(this.activeConfig)
-        .getWorkspaceEncryption(binding.cloudWorkspaceId)
+      // Phase 1 — fetch the key material. Nothing here is about the passphrase,
+      // so every failure is renamed before it can reach the prompt that asked
+      // for one.
+      let record
+      try {
+        record = await this.createClient(this.activeConfig).getWorkspaceEncryption(binding.cloudWorkspaceId)
+      } catch (error) {
+        throw getEncryptionFailure(error)
+      }
+      if (record.mode === "unspecified") {
+        // Not an answer, and emphatically not "plaintext": `encryptionModeOf`
+        // maps everything it does not recognise here precisely so a server this
+        // client cannot read never talks it into pushing in the clear. Falling
+        // through to the `!== "e2ee"` branch below would undo that by treating
+        // silence as a licence to unlock.
+        throw new CloudWorkspaceKeyUnavailableError(
+          "rejected",
+          "The cloud did not say whether this workspace is encrypted, so it stays locked. Update APIWeave and try again.",
+        )
+      }
       if (record.mode !== "e2ee") {
         // Authoritative answer: record it (a plaintext workspace stops being
         // treated as locked) and there is nothing to unlock.
@@ -325,6 +345,8 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         return this.status()
       }
       this.recordEncryptionMode(input.workspaceId, "e2ee")
+      // Phase 2 — the key material is in hand, so from here a failure IS the
+      // passphrase (`CloudWorkspacePassphraseIncorrectError`).
       this.acceptWorkspaceKey(input.workspaceId, openEncryptionBundle(record, input.passphrase))
       return this.status()
     } finally {
@@ -1410,6 +1432,63 @@ function setPassphraseFailure(error: unknown): unknown {
     return new CloudWorkspaceEncryptionInvalidError("the key stored in the cloud is not the one this device holds")
   }
   return error
+}
+
+/**
+ * Name the ways `GetWorkspaceEncryption` can fail, so the unlock prompt renders
+ * the reason where it belongs instead of dropping "Connect call failed — HTTP
+ * 403" under the passphrase field.
+ *
+ * Codes come from the handler in apps/api/internal/connect/workspace_encryption.go:
+ * a non-member and a deleted workspace are collapsed into the same NotFound on
+ * purpose (`authz.ErrResourceNotFound`) so ids cannot be probed, so they are one
+ * reason here too rather than a distinction this side invents.
+ *
+ * `rejected` is the bucket nothing should land in: after the BFF gateway routing
+ * fix it means the server refused a call it defines as member-readable, which is
+ * a server bug and not something the user can act on. The code is kept in the
+ * message because that is the only thing a report can be triaged from.
+ */
+function getEncryptionFailure(error: unknown): unknown {
+  if (error instanceof ErrUnauthorized) {
+    return new CloudWorkspaceKeyUnavailableError(
+      "signed-out",
+      "This device is no longer signed in to the cloud, so it could not fetch this workspace's key. "
+        + "Reconnect the device from Cloud settings, then unlock again.",
+    )
+  }
+  if (error instanceof ErrCloudOffline) {
+    return new CloudWorkspaceKeyUnavailableError(
+      "unreachable",
+      "Couldn't reach the cloud to fetch this workspace's key. Nothing has changed — try again in a moment.",
+    )
+  }
+  if (!(error instanceof ErrCloudRequestFailed)) return error
+  if (error.status === 404) {
+    return new CloudWorkspaceKeyUnavailableError(
+      "no-access",
+      "You no longer have access to this workspace in the cloud — it was deleted, or your membership was removed. "
+        + "Your local data is untouched.",
+    )
+  }
+  if (error.status >= 500) {
+    return new CloudWorkspaceKeyUnavailableError(
+      "unreachable",
+      "The cloud could not return this workspace's key right now. Nothing has changed — try again in a moment.",
+    )
+  }
+  // Logged rather than swallowed: `invalid_argument` here means this client sent
+  // an empty workspace_id and `permission_denied` means the server is routing
+  // DeviceService to the BFF gateway again. Both are our bugs, and the prompt
+  // that shows the user a report-this message is the last place either surfaces.
+  cloudSyncControlLog.error(
+    `GetWorkspaceEncryption refused: HTTP ${error.status} (${error.code ?? "no Connect code"})`,
+  )
+  return new CloudWorkspaceKeyUnavailableError(
+    "rejected",
+    `The cloud refused the request for this workspace's key (${error.code ?? `HTTP ${error.status}`}). `
+      + "This is not a passphrase problem — please report it.",
+  )
 }
 
 export function cloudDefaults(version: string): DesktopCloudSyncDefaults {

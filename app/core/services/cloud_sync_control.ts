@@ -200,6 +200,30 @@ export class CloudWorkspaceEncryptionSettledError extends Error {
   }
 }
 
+/**
+ * The workspace's key material could not be fetched, so the passphrase was
+ * never tried.
+ *
+ * Unlocking has two phases and only the second can be the user's fault: it asks
+ * the server for the wrapped key, then opens that key with the passphrase.
+ * Every failure of the first phase is one no retyping fixes, which is exactly
+ * why it needs its own error — routed as a bare transport failure it lands in
+ * the passphrase field and reads as "wrong passphrase", which is the one thing
+ * it never is.
+ *
+ * `reason` is carried rather than baked into the message because the prompt
+ * offers a different way out of each: reconnect, give up, retry, report.
+ */
+export class CloudWorkspaceKeyUnavailableError extends Error {
+  public constructor(
+    public readonly reason: "signed-out" | "no-access" | "unreachable" | "rejected",
+    message: string,
+  ) {
+    super(message)
+    this.name = "CloudWorkspaceKeyUnavailableError"
+  }
+}
+
 export class CloudAccountIdentityRequiredError extends Error {
   public constructor() {
     super("The existing cloud account cannot be verified safely. Disconnect it before linking again.")

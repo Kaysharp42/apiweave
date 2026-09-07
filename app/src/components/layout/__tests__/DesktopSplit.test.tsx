@@ -45,8 +45,8 @@ vi.mock("../AppNavBar", () => ({ AppNavBar: () => null }));
 vi.mock("../Sidebar", () => ({ Sidebar: () => null }));
 vi.mock("../MainHeader", () => ({ MainHeader: () => null }));
 vi.mock("../MainFooter", () => ({ MainFooter: () => null }));
-vi.mock("../../organisms/UpdateReadyBanner", () => ({
-  UpdateReadyBanner: () => null,
+vi.mock("../../organisms/UpdateBanner", () => ({
+  UpdateBanner: () => null,
 }));
 vi.mock("../../../contexts/AgentSessionsContext", () => ({
   AgentSessionsProvider: ({

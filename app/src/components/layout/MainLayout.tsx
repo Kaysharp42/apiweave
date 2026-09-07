@@ -22,7 +22,8 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
-import { UpdateReadyBanner } from "../organisms/UpdateReadyBanner";
+import { UpdateBanner } from "../organisms/UpdateBanner";
+import { CloudAttentionBanner } from "./CloudAttentionBanner";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
@@ -152,8 +153,9 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <HorizontalDivider />
 
-        {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
-        <UpdateReadyBanner />
+        {/* Both render nothing unless there is something to act on. */}
+        <CloudAttentionBanner />
+        <UpdateBanner />
 
         <div className="flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
           {isCompact ? (

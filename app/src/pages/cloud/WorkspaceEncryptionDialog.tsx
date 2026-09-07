@@ -39,13 +39,39 @@ interface WorkspaceEncryptionDialogProps {
  * never the message: an untagged error arrives with Electron's
  * "Error invoking remote method" prefix wrapped around it.
  */
-function hasDetailFlag(error: unknown, flag: string): boolean {
-  return (
-    error instanceof IpcError &&
+function detailOf(error: unknown, flag: string): unknown {
+  return error instanceof IpcError &&
     typeof error.details === "object" &&
-    error.details !== null &&
-    (error.details as Record<string, unknown>)[flag] === true
-  );
+    error.details !== null
+    ? (error.details as Record<string, unknown>)[flag]
+    : undefined;
+}
+
+function hasDetailFlag(error: unknown, flag: string): boolean {
+  return detailOf(error, flag) === true;
+}
+
+/**
+ * `unlockWorkspace` fetches the workspace's wrapped key before it touches the
+ * passphrase, so a failure of that fetch is not something a different passphrase
+ * fixes. Main tags those with the reason (`encryptionErrors` in
+ * core/ipc/handlers/cloud.ts) and the dialog takes the field away rather than
+ * asking again for a secret that was never the problem.
+ */
+const KEY_UNAVAILABLE_REASONS = [
+  "signed-out",
+  "no-access",
+  "unreachable",
+  "rejected",
+] as const;
+
+type KeyUnavailableReason = (typeof KEY_UNAVAILABLE_REASONS)[number];
+
+function keyUnavailableReason(error: unknown): KeyUnavailableReason | null {
+  const reason = detailOf(error, "workspaceKeyUnavailable");
+  return KEY_UNAVAILABLE_REASONS.includes(reason as KeyUnavailableReason)
+    ? (reason as KeyUnavailableReason)
+    : null;
 }
 
 /**
@@ -76,6 +102,7 @@ export function WorkspaceEncryptionDialog({
   const passphraseRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState(EMPTY_PASSPHRASE_DRAFT);
   const [error, setError] = useState<string | null>(null);
+  const [blockedBy, setBlockedBy] = useState<KeyUnavailableReason | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // The page leaves this dialog mounted between openings; without the reset it
@@ -84,6 +111,7 @@ export function WorkspaceEncryptionDialog({
     if (!open) return;
     setDraft(EMPTY_PASSPHRASE_DRAFT);
     setError(null);
+    setBlockedBy(null);
     setSubmitting(false);
   }, [open, mode, workspaceName]);
 
@@ -91,6 +119,7 @@ export function WorkspaceEncryptionDialog({
   const canSubmit =
     !submitting &&
     !busy &&
+    blockedBy === null &&
     (isNewPassphrase
       ? passphraseFieldsReady(draft, workspaceName)
       : draft.passphrase.length > 0);
@@ -104,7 +133,15 @@ export function WorkspaceEncryptionDialog({
       await onSubmit(draft.passphrase);
       onClose();
     } catch (submitError) {
-      if (hasDetailFlag(submitError, "passphraseIncorrect")) {
+      const unavailable = keyUnavailableReason(submitError);
+      if (unavailable !== null) {
+        // The key material never arrived, so the passphrase was never tried.
+        // Hide the field: leaving it up under this message is what makes every
+        // one of these read as "you typed it wrong".
+        setBlockedBy(unavailable);
+        setError(submitErrorMessage(submitError));
+        setDraft(EMPTY_PASSPHRASE_DRAFT);
+      } else if (hasDetailFlag(submitError, "passphraseIncorrect")) {
         // Not a sync failure and not a broken workspace: a typo. Clear the
         // field, put focus back in it, and say only that.
         setError(
@@ -143,39 +180,66 @@ export function WorkspaceEncryptionDialog({
           />
         )
       }
-      footer={() => (
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form={formId}
-            loading={submitting}
-            disabled={!canSubmit}
-          >
-            {copy.submitLabel}
-          </Button>
-        </>
-      )}
+      footer={() =>
+        blockedBy !== null ? (
+          <>
+            <Button variant="ghost" onClick={onClose}>
+              Close
+            </Button>
+            {/* Only the transient reason gets a retry. Offering one for a
+                revoked membership or a server bug is a button that cannot
+                work. */}
+            {blockedBy === "unreachable" ? (
+              <Button
+                onClick={() => {
+                  setBlockedBy(null);
+                  setError(null);
+                }}
+              >
+                Try again
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              form={formId}
+              loading={submitting}
+              disabled={!canSubmit}
+            >
+              {copy.submitLabel}
+            </Button>
+          </>
+        )
+      }
     >
       <form
         id={formId}
         onSubmit={(event) => void handleSubmit(event)}
         className="space-y-4 p-5"
       >
-        <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          {copy.lead}
-        </p>
+        {/* Blocked: the lead promises that entering a passphrase resumes sync,
+            which is untrue when the key could not be fetched. Only the alert. */}
+        {blockedBy === null ? (
+          <>
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+              {copy.lead}
+            </p>
 
-        {copy.notes.map((note) => (
-          <p
-            key={note}
-            className="text-xs text-text-muted dark:text-text-muted-dark"
-          >
-            {note}
-          </p>
-        ))}
+            {copy.notes.map((note) => (
+              <p
+                key={note}
+                className="text-xs text-text-muted dark:text-text-muted-dark"
+              >
+                {note}
+              </p>
+            ))}
+          </>
+        ) : null}
 
         {error ? (
           <div
@@ -186,7 +250,7 @@ export function WorkspaceEncryptionDialog({
           </div>
         ) : null}
 
-        {isNewPassphrase ? (
+        {blockedBy !== null ? null : isNewPassphrase ? (
           <PassphraseFields
             workspaceName={workspaceName}
             value={draft}
