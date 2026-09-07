@@ -15,8 +15,8 @@ import { WorkspaceEncryptionDialog } from "../../pages/cloud/WorkspaceEncryption
 import {
   cloudAttentionSignature,
   getCloudAttention,
-  type CloudAttentionItem,
 } from "../../utils/cloudAttention";
+import type { CloudAttentionItem } from "../../types/CloudAttentionItem";
 
 const ICONS: Record<CloudAttentionItem["kind"], typeof Lock> = {
   authRequired: AlertTriangle,

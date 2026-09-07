@@ -320,46 +320,51 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
 }
 
 /**
- * Map the encryption failures the renderer must tell apart into a ConflictError
- * with a discriminating detail flag. In particular a wrong passphrase has to be
- * distinguishable from a transport failure so the prompt can say "try again"
- * instead of "sync is broken".
+ * The encryption failures the renderer must tell apart, mapped to a
+ * ConflictError/DeniedError carrying a discriminating detail flag. In
+ * particular a wrong passphrase has to be distinguishable from a transport
+ * failure so the prompt can say "try again" instead of "sync is broken".
+ * Anything unrecognized passes through unchanged.
  */
+function mapEncryptionError(error: unknown): unknown {
+  if (error instanceof CloudWorkspacePassphraseIncorrectError) {
+    return new ConflictError(error.message, { passphraseIncorrect: true })
+  }
+  if (error instanceof CloudWorkspaceLockedError) {
+    return new ConflictError(error.message, { workspaceLocked: true })
+  }
+  // The reason travels as the flag's VALUE, not as another boolean sibling:
+  // the prompt has to pick one of four ways out, and four more flags would
+  // let two of them be true at once.
+  if (error instanceof CloudWorkspaceKeyUnavailableError) {
+    // "denied" wherever the server refused this caller, "conflict" for a cloud
+    // we never reached — the renderer branches on the flag, but the contract
+    // code is what every other caller sees.
+    const details = { workspaceKeyUnavailable: error.reason }
+    return error.reason === "unreachable"
+      ? new ConflictError(error.message, details)
+      : new DeniedError(error.message, details)
+  }
+  // "denied", not "conflict": this is the server refusing a caller, which is
+  // exactly what the contract's 403 code is for — no state has to change for
+  // the same request to succeed for someone else.
+  if (error instanceof CloudWorkspacePassphraseAdminOnlyError) {
+    return new DeniedError(error.message, { passphraseAdminOnly: true })
+  }
+  if (error instanceof CloudWorkspaceEncryptionSettledError) {
+    return new ConflictError(error.message, { encryptionModeSettled: true })
+  }
+  if (error instanceof CloudWorkspaceEncryptionInvalidError) {
+    return new ConflictError(error.message, { encryptionSettingsInvalid: true })
+  }
+  return error
+}
+
 async function encryptionErrors(run: () => Promise<CloudSyncStatus>): Promise<CloudSyncStatus> {
   try {
     return await run()
   } catch (error) {
-    if (error instanceof CloudWorkspacePassphraseIncorrectError) {
-      throw new ConflictError(error.message, { passphraseIncorrect: true })
-    }
-    if (error instanceof CloudWorkspaceLockedError) {
-      throw new ConflictError(error.message, { workspaceLocked: true })
-    }
-    // The reason travels as the flag's VALUE, not as another boolean sibling:
-    // the prompt has to pick one of four ways out, and four more flags would
-    // let two of them be true at once.
-    if (error instanceof CloudWorkspaceKeyUnavailableError) {
-      // "denied" wherever the server refused this caller, "conflict" for a cloud
-      // we never reached — the renderer branches on the flag, but the contract
-      // code is what every other caller sees.
-      const details = { workspaceKeyUnavailable: error.reason }
-      throw error.reason === "unreachable"
-        ? new ConflictError(error.message, details)
-        : new DeniedError(error.message, details)
-    }
-    // "denied", not "conflict": this is the server refusing a caller, which is
-    // exactly what the contract's 403 code is for — no state has to change for
-    // the same request to succeed for someone else.
-    if (error instanceof CloudWorkspacePassphraseAdminOnlyError) {
-      throw new DeniedError(error.message, { passphraseAdminOnly: true })
-    }
-    if (error instanceof CloudWorkspaceEncryptionSettledError) {
-      throw new ConflictError(error.message, { encryptionModeSettled: true })
-    }
-    if (error instanceof CloudWorkspaceEncryptionInvalidError) {
-      throw new ConflictError(error.message, { encryptionSettingsInvalid: true })
-    }
-    throw error
+    throw mapEncryptionError(error)
   }
 }
 

@@ -331,6 +331,8 @@ export type { PassphraseDraft } from "./PassphraseDraft";
 export type { CloudCreateTeamWorkspaceInput } from "./CloudCreateTeamWorkspaceInput";
 export type { CloudSyncStatus } from "./CloudSyncStatus";
 export type { CloudBindWorkspaceInput } from "./CloudBindWorkspaceInput";
+export type { CloudAttentionKind } from "./CloudAttentionKind";
+export type { CloudAttentionItem } from "./CloudAttentionItem";
 export type { AgentLaunchMenuItem } from "./AgentLaunchMenuItem";
 export type { DetachDecisionInput } from "./DetachDecisionInput";
 export type { BackgroundRefreshInput } from "./BackgroundRefreshInput";

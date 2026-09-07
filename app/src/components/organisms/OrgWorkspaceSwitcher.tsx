@@ -23,6 +23,44 @@ import type { Workspace } from "../../types";
 import { useCloudSync } from "../../hooks/useCloudSync";
 
 /**
+ * The current workspace's name and source, with the lock badge swapped in
+ * when sync is paused. Split out of the switcher button so the open/close
+ * chevron logic isn't sharing a render-prop arrow with this branching.
+ */
+function WorkspaceSwitcherLabel({
+  label,
+  locked,
+  source,
+}: {
+  label: string;
+  locked: boolean;
+  source: string;
+}) {
+  return (
+    <span className="min-w-0 flex-1">
+      <span className="flex items-center gap-1 text-xs font-medium text-text-primary dark:text-text-primary-dark">
+        <span className="truncate">{label}</span>
+        {locked && (
+          <Lock
+            className="h-3 w-3 flex-shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]"
+            aria-hidden="true"
+          />
+        )}
+      </span>
+      <span
+        className={`block truncate text-xxs ${
+          locked
+            ? "text-status-warning dark:text-[var(--aw-status-warning)]"
+            : "text-text-muted dark:text-text-muted-dark"
+        }`}
+      >
+        {locked ? "Sync paused · locked" : source}
+      </span>
+    </span>
+  );
+}
+
+/**
  * Workspace scope selector. Lives at the top of the sidebar panel — directly
  * above the list it scopes — so the current workspace reads as the heading for
  * everything below it.
@@ -125,26 +163,11 @@ export function OrgWorkspaceSwitcher() {
                 {sourceIcon(displaySource, "h-3.5 w-3.5")}
               </span>
 
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-1 text-xs font-medium text-text-primary dark:text-text-primary-dark">
-                  <span className="truncate">{displayLabel}</span>
-                  {displayLocked && (
-                    <Lock
-                      className="h-3 w-3 flex-shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]"
-                      aria-hidden="true"
-                    />
-                  )}
-                </span>
-                <span
-                  className={`block truncate text-xxs ${
-                    displayLocked
-                      ? "text-status-warning dark:text-[var(--aw-status-warning)]"
-                      : "text-text-muted dark:text-text-muted-dark"
-                  }`}
-                >
-                  {displayLocked ? "Sync paused · locked" : displaySource}
-                </span>
-              </span>
+              <WorkspaceSwitcherLabel
+                label={displayLabel}
+                locked={displayLocked}
+                source={displaySource}
+              />
 
               <ChevronDown
                 className={[
@@ -259,6 +282,7 @@ interface WorkspaceItemProps {
   itemRef: (el: HTMLButtonElement | null) => void;
 }
 
+// fallow-ignore-next-line code-duplication
 function WorkspaceItem({
   entry,
   index,

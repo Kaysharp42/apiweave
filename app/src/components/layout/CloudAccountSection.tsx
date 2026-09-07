@@ -44,6 +44,68 @@ function formatSyncedAt(iso?: string): string {
 }
 
 /**
+ * Active / idle — the steady state: last sync time (or an offline notice)
+ * plus the two routine actions. Split out of `body` so that dispatching
+ * between cloud states stays a flat chain of guard clauses.
+ */
+function renderActiveState({
+  offline,
+  lastSyncedAt,
+  showAttention,
+  busy,
+  itemRef,
+  onSyncNow,
+  onManage,
+}: {
+  offline: boolean;
+  lastSyncedAt: string | undefined;
+  showAttention: boolean;
+  busy: boolean;
+  itemRef: (offset: number) => ((el: HTMLButtonElement | null) => void) | undefined;
+  onSyncNow: () => void;
+  onManage: () => void;
+}): ReactNode {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-[11px] text-text-secondary dark:text-text-secondary-dark">
+        {offline ? (
+          <CloudOff className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
+        ) : (
+          <Cloud className="h-3.5 w-3.5 shrink-0 text-status-success dark:text-status-success-dark" />
+        )}
+        <span className="truncate">
+          {offline ? "Offline — will sync when reconnected" : formatSyncedAt(lastSyncedAt)}
+        </span>
+      </div>
+      <div className="flex gap-2">
+        <Button
+          ref={itemRef(0)}
+          role="menuitem"
+          /* One primary per section: when something is wrong, that's the fix. */
+          variant={showAttention ? "secondary" : "primary"}
+          size="sm"
+          fullWidth
+          loading={busy}
+          icon={<RefreshCw className="h-4 w-4" />}
+          onClick={onSyncNow}
+        >
+          Sync now
+        </Button>
+        <Button
+          ref={itemRef(1)}
+          role="menuitem"
+          variant="secondary"
+          size="sm"
+          onClick={onManage}
+        >
+          Manage
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * State-specific cloud controls rendered inside the account menu. Reads the
  * shared cloud status and shows exactly one primary action per state, always
  * with visible text describing what happens next. Deep management (workspace
@@ -253,48 +315,16 @@ export function CloudAccountSection({
       );
     }
 
-    // Offline — synced later; let the user retry.
-    const offline = status.syncState === "offline";
-
     // Active / idle — the steady state.
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-[11px] text-text-secondary dark:text-text-secondary-dark">
-          {offline ? (
-            <CloudOff className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
-          ) : (
-            <Cloud className="h-3.5 w-3.5 shrink-0 text-status-success dark:text-status-success-dark" />
-          )}
-          <span className="truncate">
-            {offline ? "Offline — will sync when reconnected" : formatSyncedAt(status.lastSyncedAt)}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            ref={itemRef(0)}
-            role="menuitem"
-            /* One primary per section: when something is wrong, that's the fix. */
-            variant={showAttention ? "secondary" : "primary"}
-            size="sm"
-            fullWidth
-            loading={busy}
-            icon={<RefreshCw className="h-4 w-4" />}
-            onClick={() => void syncNow()}
-          >
-            Sync now
-          </Button>
-          <Button
-            ref={itemRef(1)}
-            role="menuitem"
-            variant="secondary"
-            size="sm"
-            onClick={() => goTo("/cloud/sync")}
-          >
-            Manage
-          </Button>
-        </div>
-      </div>
-    );
+    return renderActiveState({
+      offline: status.syncState === "offline",
+      lastSyncedAt: status.lastSyncedAt,
+      showAttention,
+      busy,
+      itemRef,
+      onSyncNow: () => void syncNow(),
+      onManage: () => goTo("/cloud/sync"),
+    });
   };
 
   return (

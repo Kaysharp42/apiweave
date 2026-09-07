@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type Ref,
+} from "react";
 import { KeyRound, Lock } from "lucide-react";
 import { Button } from "../../components/atoms/Button";
 import { Input } from "../../components/atoms/Input";
@@ -9,6 +15,7 @@ import {
   passphraseFieldsReady,
 } from "../../components/molecules/PassphraseFields";
 import { IpcError } from "../../utils/apiweaveClient";
+import type { PassphraseDraft } from "../../types/PassphraseDraft";
 
 /**
  * The one passphrase dialog: choosing encryption for a workspace, unlocking a
@@ -91,6 +98,151 @@ function submitErrorMessage(error: unknown): string {
     : "That didn't work. Try again.";
 }
 
+/**
+ * Only the transient reason gets a retry. Offering one for a revoked
+ * membership or a server bug is a button that cannot work. Split out of the
+ * dialog so the blocked/normal split isn't a nested ternary in JSX.
+ */
+function renderDialogFooter({
+  blockedBy,
+  onClose,
+  onRetry,
+  submitting,
+  canSubmit,
+  formId,
+  submitLabel,
+}: {
+  blockedBy: KeyUnavailableReason | null;
+  onClose: () => void;
+  onRetry: () => void;
+  submitting: boolean;
+  canSubmit: boolean;
+  formId: string;
+  submitLabel: string;
+}) {
+  if (blockedBy !== null) {
+    return (
+      <>
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+        {blockedBy === "unreachable" ? (
+          <Button onClick={onRetry}>Try again</Button>
+        ) : null}
+      </>
+    );
+  }
+  return (
+    <>
+      <Button variant="ghost" onClick={onClose} disabled={submitting}>
+        Cancel
+      </Button>
+      <Button type="submit" form={formId} loading={submitting} disabled={!canSubmit}>
+        {submitLabel}
+      </Button>
+    </>
+  );
+}
+
+/** `headerExtra`: the lock icon while unlocking, the key icon otherwise. */
+function dialogHeaderIcon(mode: EncryptionDialogMode) {
+  return mode === "unlock" ? (
+    <Lock
+      className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
+      aria-hidden="true"
+    />
+  ) : (
+    <KeyRound
+      className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
+ * The form's main content: blocked notice, lead copy, error, and the
+ * passphrase field(s). Split out so the blocked/lead/field branches read as
+ * guard clauses instead of a chain of JSX ternaries.
+ */
+function renderDialogBody({
+  blockedBy,
+  copy,
+  error,
+  isNewPassphrase,
+  workspaceName,
+  draft,
+  setDraft,
+  submitting,
+  passphraseRef,
+}: {
+  blockedBy: KeyUnavailableReason | null;
+  copy: (typeof DIALOG_COPY)[EncryptionDialogMode];
+  error: string | null;
+  isNewPassphrase: boolean;
+  workspaceName: string;
+  draft: PassphraseDraft;
+  setDraft: (draft: PassphraseDraft) => void;
+  submitting: boolean;
+  passphraseRef: Ref<HTMLInputElement>;
+}) {
+  return (
+    <>
+      {/* Blocked: the lead promises that entering a passphrase resumes sync,
+          which is untrue when the key could not be fetched. Only the alert. */}
+      {blockedBy === null && (
+        <>
+          <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+            {copy.lead}
+          </p>
+
+          {copy.notes.map((note) => (
+            <p
+              key={note}
+              className="text-xs text-text-muted dark:text-text-muted-dark"
+            >
+              {note}
+            </p>
+          ))}
+        </>
+      )}
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:border-[var(--aw-status-error)]/30 dark:text-[var(--aw-status-error)]"
+        >
+          {error}
+        </div>
+      )}
+
+      {blockedBy === null &&
+        (isNewPassphrase ? (
+          <PassphraseFields
+            workspaceName={workspaceName}
+            value={draft}
+            onChange={setDraft}
+            passphraseLabel={copy.passphraseLabel}
+            disabled={submitting}
+            passphraseRef={passphraseRef}
+          />
+        ) : (
+          <Input
+            ref={passphraseRef}
+            type="password"
+            label={copy.passphraseLabel}
+            autoComplete="current-password"
+            value={draft.passphrase}
+            onChange={(event) =>
+              setDraft({ ...draft, passphrase: event.target.value })
+            }
+            spellCheck={false}
+            disabled={submitting}
+          />
+        ))}
+    </>
+  );
+}
+
 export function WorkspaceEncryptionDialog({
   open,
   mode,
@@ -167,54 +319,20 @@ export function WorkspaceEncryptionDialog({
       title={copy.title(workspaceName)}
       size="sm"
       initialFocus={passphraseRef}
-      headerExtra={
-        mode === "unlock" ? (
-          <Lock
-            className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
-            aria-hidden="true"
-          />
-        ) : (
-          <KeyRound
-            className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
-            aria-hidden="true"
-          />
-        )
-      }
+      headerExtra={dialogHeaderIcon(mode)}
       footer={() =>
-        blockedBy !== null ? (
-          <>
-            <Button variant="ghost" onClick={onClose}>
-              Close
-            </Button>
-            {/* Only the transient reason gets a retry. Offering one for a
-                revoked membership or a server bug is a button that cannot
-                work. */}
-            {blockedBy === "unreachable" ? (
-              <Button
-                onClick={() => {
-                  setBlockedBy(null);
-                  setError(null);
-                }}
-              >
-                Try again
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <Button variant="ghost" onClick={onClose} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form={formId}
-              loading={submitting}
-              disabled={!canSubmit}
-            >
-              {copy.submitLabel}
-            </Button>
-          </>
-        )
+        renderDialogFooter({
+          blockedBy,
+          onClose,
+          onRetry: () => {
+            setBlockedBy(null);
+            setError(null);
+          },
+          submitting,
+          canSubmit,
+          formId,
+          submitLabel: copy.submitLabel,
+        })
       }
     >
       <form
@@ -222,57 +340,17 @@ export function WorkspaceEncryptionDialog({
         onSubmit={(event) => void handleSubmit(event)}
         className="space-y-4 p-5"
       >
-        {/* Blocked: the lead promises that entering a passphrase resumes sync,
-            which is untrue when the key could not be fetched. Only the alert. */}
-        {blockedBy === null ? (
-          <>
-            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              {copy.lead}
-            </p>
-
-            {copy.notes.map((note) => (
-              <p
-                key={note}
-                className="text-xs text-text-muted dark:text-text-muted-dark"
-              >
-                {note}
-              </p>
-            ))}
-          </>
-        ) : null}
-
-        {error ? (
-          <div
-            role="alert"
-            className="rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:border-[var(--aw-status-error)]/30 dark:text-[var(--aw-status-error)]"
-          >
-            {error}
-          </div>
-        ) : null}
-
-        {blockedBy !== null ? null : isNewPassphrase ? (
-          <PassphraseFields
-            workspaceName={workspaceName}
-            value={draft}
-            onChange={setDraft}
-            passphraseLabel={copy.passphraseLabel}
-            disabled={submitting}
-            passphraseRef={passphraseRef}
-          />
-        ) : (
-          <Input
-            ref={passphraseRef}
-            type="password"
-            label={copy.passphraseLabel}
-            autoComplete="current-password"
-            value={draft.passphrase}
-            onChange={(event) =>
-              setDraft({ ...draft, passphrase: event.target.value })
-            }
-            spellCheck={false}
-            disabled={submitting}
-          />
-        )}
+        {renderDialogBody({
+          blockedBy,
+          copy,
+          error,
+          isNewPassphrase,
+          workspaceName,
+          draft,
+          setDraft,
+          submitting,
+          passphraseRef,
+        })}
       </form>
     </Modal>
   );

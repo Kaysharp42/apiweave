@@ -1,36 +1,99 @@
 import type { CloudSyncStatus } from "../types/cloud";
+import type { CloudAttentionItem } from "../types/CloudAttentionItem";
 
-/**
- * The cloud states that are the user's problem to fix, derived once and read by
- * every surface that announces them (the shell banner, the avatar dot, the
- * account-menu pill and section). One derivation, so the dot can never disagree
- * with the banner about whether something needs attention.
- */
-export type CloudAttentionKind =
-  | "authRequired"
-  | "locked"
-  | "conflicts"
-  | "encryptionChoice"
-  | "error";
-
-export interface CloudAttentionItem {
-  readonly kind: CloudAttentionKind;
-  /** Headline: what is wrong. */
-  readonly title: string;
-  /** One sentence: the consequence, and what the action does about it. */
-  readonly detail: string;
-  readonly actionLabel: string;
-  /** Where the action goes when a surface can't handle it in place. */
-  readonly route: string;
-  /** Short label for the connection pill and the dot's accessible name. */
-  readonly badgeLabel: string;
-  /** Whose passphrase / choice is missing — empty for the other kinds. */
-  readonly workspaces: readonly { readonly id: string; readonly name: string }[];
-  readonly severity: "error" | "warning";
-}
+// The cloud states that are the user's problem to fix, derived once and read by
+// every surface that announces them (the shell banner, the avatar dot, the
+// account-menu pill and section). One derivation, so the dot can never disagree
+// with the banner about whether something needs attention.
+// See types/CloudAttentionKind.ts and types/CloudAttentionItem.ts for the shapes.
 
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
+}
+
+function lockedAttention(status: CloudSyncStatus): CloudAttentionItem | null {
+  const locked = status.bindings.filter(
+    (binding) => binding.encryption === "locked",
+  );
+  if (locked.length === 0) return null;
+  const names = locked.map((binding) => ({
+    id: binding.workspaceId,
+    name: binding.workspaceName,
+  }));
+  const firstName = names[0]?.name ?? "";
+  return {
+    kind: "locked",
+    title:
+      locked.length === 1
+        ? `“${firstName}” is locked`
+        : `${locked.length} workspaces are locked`,
+    detail:
+      locked.length === 1
+        ? "It is end-to-end encrypted and sync is paused until you enter its passphrase on this device. Your local data is untouched."
+        : "They are end-to-end encrypted and sync is paused until you enter each passphrase on this device. Your local data is untouched.",
+    actionLabel: locked.length === 1 ? "Unlock workspace" : "Unlock workspaces",
+    route: "/cloud/sync",
+    badgeLabel: "Locked",
+    workspaces: names,
+    severity: "warning",
+  };
+}
+
+function conflictsAttention(status: CloudSyncStatus): CloudAttentionItem | null {
+  if (status.conflictCount === 0) return null;
+  return {
+    kind: "conflicts",
+    title: `${status.conflictCount} sync ${plural(status.conflictCount, "conflict needs", "conflicts need")} your review`,
+    detail:
+      "The same item changed in two places. Pick which version wins — nothing syncs past a conflict until you do.",
+    actionLabel: "Resolve conflicts",
+    route: "/cloud/conflicts",
+    badgeLabel: plural(status.conflictCount, "1 conflict", `${status.conflictCount} conflicts`),
+    workspaces: [],
+    severity: "warning",
+  };
+}
+
+function encryptionChoiceAttention(
+  status: CloudSyncStatus,
+): CloudAttentionItem | null {
+  const pending = status.encryptionDecisionPending;
+  if (pending.length === 0) return null;
+  return {
+    kind: "encryptionChoice",
+    title:
+      pending.length === 1
+        ? `“${pending[0]?.workspaceName ?? ""}” isn't syncing yet`
+        : `${pending.length} workspaces aren't syncing yet`,
+    detail:
+      "Waiting on a one-time choice: encrypt end-to-end with a passphrase, or sync without encryption. Both answers are permanent.",
+    actionLabel: "Choose encryption",
+    route: "/cloud/sync",
+    badgeLabel: "Choice needed",
+    workspaces: pending.map((decision) => ({
+      id: decision.workspaceId,
+      name: decision.workspaceName,
+    })),
+    severity: "warning",
+  };
+}
+
+function errorAttention(status: CloudSyncStatus): CloudAttentionItem | null {
+  const hasError =
+    status.syncState === "error" ||
+    status.deadLetterCount > 0 ||
+    Boolean(status.lastError);
+  if (!hasError) return null;
+  return {
+    kind: "error",
+    title: "Sync stopped with an error",
+    detail: status.lastError ?? "Open Cloud Sync to see what failed and retry.",
+    actionLabel: "Open Cloud Sync",
+    route: "/cloud/sync",
+    badgeLabel: "Sync error",
+    workspaces: [],
+    severity: "error",
+  };
 }
 
 /**
@@ -64,88 +127,12 @@ export function getCloudAttention(
 
   if (status.linkState !== "linked") return [];
 
-  const items: CloudAttentionItem[] = [];
-
-  const locked = status.bindings.filter(
-    (binding) => binding.encryption === "locked",
-  );
-  if (locked.length > 0) {
-    const names = locked.map((binding) => ({
-      id: binding.workspaceId,
-      name: binding.workspaceName,
-    }));
-    const firstName = names[0]?.name ?? "";
-    items.push({
-      kind: "locked",
-      title:
-        locked.length === 1
-          ? `“${firstName}” is locked`
-          : `${locked.length} workspaces are locked`,
-      detail:
-        locked.length === 1
-          ? "It is end-to-end encrypted and sync is paused until you enter its passphrase on this device. Your local data is untouched."
-          : "They are end-to-end encrypted and sync is paused until you enter each passphrase on this device. Your local data is untouched.",
-      actionLabel: locked.length === 1 ? "Unlock workspace" : "Unlock workspaces",
-      route: "/cloud/sync",
-      badgeLabel: "Locked",
-      workspaces: names,
-      severity: "warning",
-    });
-  }
-
-  if (status.conflictCount > 0) {
-    items.push({
-      kind: "conflicts",
-      title: `${status.conflictCount} sync ${plural(status.conflictCount, "conflict needs", "conflicts need")} your review`,
-      detail:
-        "The same item changed in two places. Pick which version wins — nothing syncs past a conflict until you do.",
-      actionLabel: "Resolve conflicts",
-      route: "/cloud/conflicts",
-      badgeLabel: plural(status.conflictCount, "1 conflict", `${status.conflictCount} conflicts`),
-      workspaces: [],
-      severity: "warning",
-    });
-  }
-
-  const pending = status.encryptionDecisionPending;
-  if (pending.length > 0) {
-    items.push({
-      kind: "encryptionChoice",
-      title:
-        pending.length === 1
-          ? `“${pending[0]?.workspaceName ?? ""}” isn't syncing yet`
-          : `${pending.length} workspaces aren't syncing yet`,
-      detail:
-        "Waiting on a one-time choice: encrypt end-to-end with a passphrase, or sync without encryption. Both answers are permanent.",
-      actionLabel: "Choose encryption",
-      route: "/cloud/sync",
-      badgeLabel: "Choice needed",
-      workspaces: pending.map((decision) => ({
-        id: decision.workspaceId,
-        name: decision.workspaceName,
-      })),
-      severity: "warning",
-    });
-  }
-
-  if (
-    status.syncState === "error" ||
-    status.deadLetterCount > 0 ||
-    status.lastError
-  ) {
-    items.push({
-      kind: "error",
-      title: "Sync stopped with an error",
-      detail: status.lastError ?? "Open Cloud Sync to see what failed and retry.",
-      actionLabel: "Open Cloud Sync",
-      route: "/cloud/sync",
-      badgeLabel: "Sync error",
-      workspaces: [],
-      severity: "error",
-    });
-  }
-
-  return items;
+  return [
+    lockedAttention(status),
+    conflictsAttention(status),
+    encryptionChoiceAttention(status),
+    errorAttention(status),
+  ].filter((item): item is CloudAttentionItem => item !== null);
 }
 
 /**
