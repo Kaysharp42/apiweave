@@ -7,6 +7,7 @@ import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
 import { MainHeader } from "./MainHeader";
 import { MainFooter } from "./MainFooter";
+import { SyncAlerts } from "./SyncAlerts";
 import { useShallow } from "zustand/react/shallow";
 import { AgentSessionsProvider } from "../../contexts/AgentSessionsContext";
 import { CanvasSurfaceContext } from "../../contexts/CanvasSurfaceContext";
@@ -33,7 +34,7 @@ import { isSettingsRoute } from "../../utils/isSettingsRoute";
  *
  * This now *chooses* a branch rather than hiding one: crossing it swaps
  * `CompactShell` for `DesktopSplit`, which remounts the content. The desktop
- * shell clamps its window to `minWidth: 1024`, so only the browser build can
+ * shell clamps its window to `minWidth: 900`, so only the browser build can
  * cross it, and only by a deliberate resize.
  */
 const COMPACT_LAYOUT_QUERY = "(max-width: 767.98px)";
@@ -154,6 +155,10 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         {/* Renders nothing unless an update is downloaded and waiting on a restart. */}
         <UpdateReadyBanner />
+
+        {/* Renders nothing unless cloud sync is blocked on something only the
+            user can clear. */}
+        <SyncAlerts />
 
         <div className="flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">
           {isCompact ? (
