@@ -151,10 +151,14 @@ async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    // The floor the canvas toolbar was sized against: below this the sidebar,
-    // the agent panel and a usable canvas stop fitting side by side. Still
-    // narrow enough to snap to half of a 1080p screen.
-    minWidth: 1024,
+    // Deliberately below the ~1024px the canvas toolbar was sized against.
+    // A tiling compositor gives the window the tile it decided on and ignores
+    // this hint, but Chromium still keeps the *viewport* at the minimum — so a
+    // 1024 floor in a 956px half-screen tile put the last 68px of every row
+    // (window controls, footer, banner actions) permanently off-screen, with
+    // nothing the page could do about it. Half of a 1080p screen, gaps
+    // included, fits under this.
+    minWidth: 900,
     minHeight: 700,
     frame: false,
     backgroundColor: "#0b0b0f",

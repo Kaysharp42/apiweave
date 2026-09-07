@@ -34,7 +34,7 @@ import { isSettingsRoute } from "../../utils/isSettingsRoute";
  *
  * This now *chooses* a branch rather than hiding one: crossing it swaps
  * `CompactShell` for `DesktopSplit`, which remounts the content. The desktop
- * shell clamps its window to `minWidth: 1024`, so only the browser build can
+ * shell clamps its window to `minWidth: 900`, so only the browser build can
  * cross it, and only by a deliberate resize.
  */
 const COMPACT_LAYOUT_QUERY = "(max-width: 767.98px)";
