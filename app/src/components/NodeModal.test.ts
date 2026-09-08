@@ -16,6 +16,10 @@ const httpRequestOutputSource = readFileSync(
   join(process.cwd(), "src/components/node-modal/HttpRequestOutputPanel.tsx"),
   "utf8",
 );
+const sseConfigSource = readFileSync(
+  join(process.cwd(), "src/components/node-modal/SseConfigPanel.tsx"),
+  "utf8",
+);
 const nodeModalShellSource = readFileSync(
   join(process.cwd(), "src/components/node-modal/NodeModalShell.tsx"),
   "utf8",
@@ -44,6 +48,18 @@ test("NodeModal uses the Modal molecule for focus trapping and Escape key handli
 test("NodeModal delegates HTTP request config to HTTPRequestConfigPanel", () => {
   assert.match(nodeModalSource, /import \{[\s\S]*?HTTPRequestConfigPanel/);
   assert.match(nodeModalSource, /<HTTPRequestConfigPanel/);
+});
+
+test("NodeModal delegates SSE config to SseConfigPanel", () => {
+  assert.match(nodeModalSource, /import \{[\s\S]*?SseConfigPanel/);
+  assert.match(nodeModalSource, /<SseConfigPanel/);
+  assert.match(nodeModalSource, /\{ key: "endpoint", label: "Endpoint"/);
+  assert.match(nodeModalSource, /\{ key: "headers", label: "Headers"/);
+  assert.match(nodeModalSource, /\{ key: "finish", label: "Finish"/);
+  assert.match(sseConfigSource, /label="Events to collect"/);
+  assert.match(sseConfigSource, /title="Finish trigger"/);
+  assert.match(sseConfigSource, /label="Extract variables"/);
+  assert.match(sseConfigSource, /response\.body\.events\[0\]\.data/);
 });
 
 test("NodeModal delegates HTTP output to HttpRequestOutputPanel", () => {

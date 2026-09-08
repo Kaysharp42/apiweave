@@ -37,6 +37,18 @@ function getDefaultConfig(type: string): NodeConfig {
         body: "",
         timeout: 30,
       };
+    case "sse":
+      return {
+        url: "",
+        queryParams: [],
+        headers: [],
+        timeout: 30,
+        followRedirects: true,
+        sslVerify: true,
+        maxEvents: 1,
+        finishConditions: [],
+        extractors: {},
+      };
     case "assertion":
       return { assertions: [] };
     case "delay":

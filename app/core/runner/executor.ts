@@ -3,6 +3,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError } from "./safe_http"
+import { collectSseEvents, type SseEvent } from "./sse"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
@@ -29,7 +30,7 @@ import type { JsonValueType } from "@shared/types/JsonValueType"
 
 export interface WorkflowNode {
   readonly nodeId: string
-  readonly type: "http-request" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
+  readonly type: "http-request" | "sse" | "assertion" | "delay" | "merge" | "start" | "end" | "workflow"
   readonly label?: string | null
   readonly config?: Record<string, unknown>
 }
@@ -92,6 +93,20 @@ export interface ExecutorDeps {
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
+}
+
+interface SseFinishCondition {
+  readonly path: string
+  readonly operator: string
+  readonly expectedValue?: unknown
+}
+
+function appendQueryParams(url: string, queryParams: Readonly<Record<string, string>>): string {
+  if (Object.keys(queryParams).length === 0) return url
+  const [base = url, existingQuery] = url.split("?")
+  const params = new URLSearchParams(existingQuery ?? "")
+  for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
+  return `${base}?${params.toString()}`
 }
 
 /** Internal terminal-node event. The scheduler persists it but never relays its body over progress transports. */
@@ -190,6 +205,9 @@ export class WorkflowExecutor {
    * join it. See `executeFromNode`.
    */
   private readonly nodeRuns = new Map<string, Promise<unknown>>()
+  /** Background SSE consumers which own connections after the Ready path has started. */
+  private readonly sseListeners = new Map<string, AbortController>()
+  private readonly sseTasks = new Set<Promise<void>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private stepCount = 0
@@ -240,6 +258,8 @@ export class WorkflowExecutor {
     // Per-run, like the step budget above it: a handle left over from a previous
     // run would make every node on that path look already-executed.
     this.nodeRuns.clear()
+    this.sseListeners.clear()
+    this.sseTasks.clear()
 
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
@@ -278,13 +298,25 @@ export class WorkflowExecutor {
         }
       }
 
+      await this.waitForSseTasks()
       const finalStatus: "passed" | "failed" = this.hasFailures ? "failed" : "passed"
       return this.buildOutput(caseName, startedAt, seed, finalStatus)
     } catch (error) {
       if (error instanceof StopBranch) {
+        // The Ready branch can fail while an SSE consumer is still running.
+        // Settle those consumers before snapshotting the run so no completed
+        // run can retain a running SSE node or omit its terminal result.
+        this.abortSseListeners()
+        await this.waitForSseTasks()
         return this.buildOutput(caseName, startedAt, seed, "failed")
       }
       throw error
+    } finally {
+      // A trigger-path failure, cancellation, or executor exception must not
+      // leave a stream alive. Successful runs have already waited above, so
+      // this is a no-op in the normal case.
+      this.abortSseListeners()
+      await this.waitForSseTasks()
     }
   }
 
@@ -425,8 +457,13 @@ export class WorkflowExecutor {
       }
     }
 
+    // SSE has two phases. The Ready path continues after its handshake; its
+    // Complete path is scheduled by the background consumer when it closes.
+    if (node.type === "sse") {
+      const ready = await this.startSseListener(node, nodes, edges, cancelSignal, continueOnFail, path)
+      if (!ready) return
     // Execute node (skip start)
-    if (node.type !== "start") {
+    } else if (node.type !== "start") {
       try {
         const nodeExecResult = await this.executeNode(node, edges, cancelSignal, continueOnFail)
         if (nodeExecResult !== null && nodeExecResult.shouldContinue === false) {
@@ -441,6 +478,9 @@ export class WorkflowExecutor {
 
     // Find next nodes
     let nextEdges = edges.filter((e) => e.source === nodeId)
+    if (node.type === "sse") {
+      nextEdges = nextEdges.filter((edge) => edge.sourceHandle === "ready")
+    }
     if (nextEdges.length === 0) return
 
     // Assertion routing
@@ -578,7 +618,7 @@ export class WorkflowExecutor {
       let result: NodeResult
 
       if (nodeType === "http-request") {
-        result = await this.executeHttpRequest(node)
+        result = await this.executeHttpRequest(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -649,7 +689,7 @@ export class WorkflowExecutor {
 
   // -------------------- HTTP request --------------------
 
-  private async executeHttpRequest(node: WorkflowNode): Promise<NodeResult> {
+  private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
@@ -699,12 +739,7 @@ export class WorkflowExecutor {
 
     this.applyAuthConfig(auth, headers, queryParams)
 
-    if (Object.keys(queryParams).length > 0) {
-      const [base = url, existingQuery] = url.split("?")
-      const params = new URLSearchParams(existingQuery ?? "")
-      for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
-      url = `${base}?${params.toString()}`
-    }
+    url = appendQueryParams(url, queryParams)
 
     let fetchBody: string | Buffer | UndiciFormData | undefined
     try {
@@ -734,7 +769,7 @@ export class WorkflowExecutor {
       const fetchInit: UndiciRequestInit = {
         method,
         headers,
-        signal: AbortSignal.timeout(timeout * 1000),
+        signal: cancelSignal ? AbortSignal.any([AbortSignal.timeout(timeout * 1000), cancelSignal]) : AbortSignal.timeout(timeout * 1000),
       }
       if (fetchBody !== undefined && method !== "GET") {
         fetchInit.body = fetchBody
@@ -816,6 +851,235 @@ export class WorkflowExecutor {
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       })
+    }
+  }
+
+  // -------------------- Server-Sent Events --------------------
+
+  // fallow-ignore-next-line complexity -- this is one listener lifecycle: normalize its request, validate the response, then register its owned task; splitting those transitions obscures the cancellation boundary between them.
+  private async startSseListener(
+    node: WorkflowNode,
+    nodes: Map<string, WorkflowNode>,
+    edges: readonly WorkflowEdge[],
+    cancelSignal: AbortSignal | undefined,
+    continueOnFail: boolean,
+    ancestors: ReadonlySet<string>,
+  ): Promise<boolean> {
+    const config = node.config ?? {}
+    const timeout = (config["timeout"] as number | undefined) ?? 30
+    const maxEvents = (config["maxEvents"] as number | undefined) ?? 1
+    const eventType = config["eventType"] as string | undefined
+    const finishConditions = (config["finishConditions"] as readonly SseFinishCondition[] | undefined) ?? []
+    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    const extractors = config["extractors"] as Record<string, string> | undefined
+    const startedAt = this.deps.clock.isoNow()
+    const secretRefs = collectSecretRefs(node.config)
+    let url = (config["url"] as string | undefined) ?? ""
+    const startTime = Date.now()
+
+    this.updateNodeStatus(node.nodeId, "running")
+    if (!url) {
+      this.completeSseNode(node, { status: "error", error: "URL is required for SSE stream", duration: 0 }, startedAt, secretRefs)
+      return false
+    }
+
+    url = this.substituteVariables(url, { allowSecrets: false })
+    if (this.deps.baseUrl && !url.startsWith("http")) url = `${this.deps.baseUrl}${url}`
+    type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
+    const headers = this.normalizeKeyValueField(config["headers"] as KVField)
+    const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
+    this.applyAuthConfig(auth, headers, queryParams)
+    for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
+    headers["Accept"] = "text/event-stream"
+    url = appendQueryParams(url, queryParams)
+    const unresolvedPlaceholders = collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)])
+    const abortController = new AbortController()
+    const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
+
+    // fallow-ignore-next-line code-duplication -- both sides of the listener boundary complete the same SSE node shape, but one owns HTTP setup while the other owns stream consumption and edge traversal.
+    try {
+      this.deps.http.validateUrl(url)
+      const response = await this.deps.http.safeFetch(
+        url,
+        { method: "GET", headers, signal },
+        { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000 },
+      )
+      const responseHeaders: Record<string, string> = {}
+      response.headers.forEach((value, key) => { responseHeaders[key] = value })
+      const statusCode = response.status
+      if (statusCode < 200 || statusCode >= 300) {
+        const { text, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
+        this.completeSseNode(node, {
+          status: "error", statusCode, headers: responseHeaders, body: text, duration: Date.now() - startTime, method: "GET", url,
+          response: { statusCode, headers: responseHeaders, body: text, ...(truncated ? { truncated: true } : {}) },
+          error: `SSE endpoint returned HTTP ${statusCode}`,
+          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+        }, startedAt, secretRefs)
+        return false
+      }
+      const contentType = response.headers.get("content-type") ?? ""
+      if (!contentType.toLowerCase().startsWith("text/event-stream")) {
+        await response.body?.cancel()
+        this.completeSseNode(node, {
+          status: "error", statusCode, headers: responseHeaders, duration: Date.now() - startTime, method: "GET", url,
+          response: { statusCode, headers: responseHeaders, body: { events: [], eventCount: 0 } },
+          error: `Expected text/event-stream response, received ${contentType || "no Content-Type"}`,
+          ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+        }, startedAt, secretRefs)
+        return false
+      }
+
+      this.sseListeners.set(node.nodeId, abortController)
+      let task: Promise<void>
+      task = this.consumeSseListener({
+        node, nodes, edges, cancelSignal, continueOnFail, ancestors, response, statusCode, responseHeaders, url, startedAt,
+        secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders,
+      }).finally(() => {
+        this.sseListeners.delete(node.nodeId)
+        this.sseTasks.delete(task)
+      })
+      this.sseTasks.add(task)
+      return true
+    } catch (error) {
+      this.completeSseNode(node, {
+        status: "error", error: error instanceof SafeUrlError ? `SSRF blocked: ${error.message}` : String(error), method: "GET", url,
+        duration: Date.now() - startTime,
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+      }, startedAt, secretRefs)
+      return false
+    }
+  }
+
+  // fallow-ignore-next-line complexity -- success, an incomplete stream, and cancellation errors are the terminal states of the same listener task; extracting them would split its result ownership.
+  private async consumeSseListener(input: {
+    readonly node: WorkflowNode
+    readonly nodes: Map<string, WorkflowNode>
+    readonly edges: readonly WorkflowEdge[]
+    readonly cancelSignal: AbortSignal | undefined
+    readonly continueOnFail: boolean
+    readonly ancestors: ReadonlySet<string>
+    readonly response: import("undici").Response
+    readonly statusCode: number
+    readonly responseHeaders: Record<string, string>
+    readonly url: string
+    readonly startedAt: string
+    readonly secretRefs: readonly string[]
+    readonly startTime: number
+    readonly maxEvents: number
+    readonly eventType: string | undefined
+    readonly finishConditions: readonly SseFinishCondition[]
+    readonly extractors: Record<string, string> | undefined
+    readonly unresolvedPlaceholders: readonly string[]
+  }): Promise<void> {
+    const { node, response, statusCode, responseHeaders, url, startedAt, secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders } = input
+    try {
+      const collected = await collectSseEvents(response, {
+        maxEvents,
+        ...(eventType === undefined ? {} : { eventType }),
+        ...(finishConditions.length === 0 ? {} : { finishWhen: (event: SseEvent) => this.sseEventMatches(event, finishConditions) }),
+      })
+      const body = {
+        events: collected.events,
+        eventCount: collected.eventCount,
+        termination: collected.termination,
+        ...(collected.retryMs === undefined ? {} : { retryMs: collected.retryMs }),
+      }
+      const result: NodeResult = collected.termination === "stream-ended"
+        ? {
+            status: "error", statusCode, headers: responseHeaders, body, duration: Date.now() - startTime, method: "GET", url,
+            response: { statusCode, headers: responseHeaders, body },
+            error: `SSE stream ended after ${collected.eventCount}/${maxEvents} captured matching event(s)`,
+            ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+          }
+        : {
+            status: "success", statusCode, headers: responseHeaders, body, duration: Date.now() - startTime, method: "GET", url,
+            response: { statusCode, headers: responseHeaders, body },
+            ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+          }
+      const completed = this.completeSseNode(node, result, startedAt, secretRefs, extractors)
+      if (completed.status === "success") {
+        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal, input.continueOnFail, input.ancestors)
+      }
+    } catch (error) {
+      this.completeSseNode(node, {
+        status: "error", error: error instanceof SafeUrlError ? `SSRF blocked: ${error.message}` : String(error), method: "GET", url,
+        duration: Date.now() - startTime,
+        ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
+      }, startedAt, secretRefs, extractors)
+    }
+  }
+
+  private completeSseNode(
+    node: WorkflowNode,
+    result: NodeResult,
+    startedAt: string,
+    secretRefs: readonly string[],
+    extractors?: Record<string, string>,
+  ): NodeResult {
+    const withExtractors = extractors
+      ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
+      : result
+    const failed = withExtractors.status === "error" || withExtractors.status === "client_error" || withExtractors.status === "server_error"
+    const completed: NodeResult = { ...withExtractors, type: "sse", startedAt, completedAt: this.deps.clock.isoNow(), secretRefs }
+    this.results.set(node.nodeId, completed)
+    this.updateNodeStatus(node.nodeId, failed ? "failed" : "passed", completed)
+    if (failed) {
+      this.hasFailures = true
+      this.failedNodes.add(node.nodeId)
+      if (!this.firstErrorMessage) this.firstErrorMessage = completed.error ?? `Node ${node.nodeId} failed`
+    }
+    return completed
+  }
+
+  private sseEventMatches(event: SseEvent, conditions: readonly SseFinishCondition[]): boolean {
+    let parsedData: unknown = event.data
+    try {
+      parsedData = JSON.parse(event.data) as unknown
+    } catch {
+      // Non-JSON SSE data is still matchable as the raw `data` string.
+    }
+    const value = { event: event.event, ...(event.id === undefined ? {} : { id: event.id }), data: parsedData }
+    return conditions.every((condition) => {
+      const expected = this.resolveAssertionExpected(toAssertionOperator(condition.operator), condition.expectedValue)
+      if (expected.state === "unresolved-template") return false
+      try {
+        return this.compareValues(this.getNestedValue(value, condition.path), condition.operator, expected.value)
+      } catch {
+        return false
+      }
+    })
+  }
+
+  private async traverseSseCompleteEdges(
+    node: WorkflowNode,
+    nodes: Map<string, WorkflowNode>,
+    edges: readonly WorkflowEdge[],
+    cancelSignal: AbortSignal | undefined,
+    continueOnFail: boolean,
+    ancestors: ReadonlySet<string>,
+  ): Promise<void> {
+    const completeEdges = edges.filter((edge) => edge.source === node.nodeId && edge.sourceHandle === "complete")
+    const tasks = completeEdges.map(async (edge) => {
+      const target = nodes.get(edge.target)
+      if (!target) return
+      if (target.type === "end") {
+        this.updateNodeStatus(target.nodeId, "passed")
+        return
+      }
+      await this.executeFromNode(target.nodeId, nodes, edges, cancelSignal, continueOnFail, ancestors)
+    })
+    await Promise.allSettled(tasks)
+  }
+
+  private abortSseListeners(): void {
+    for (const controller of this.sseListeners.values()) controller.abort()
+  }
+
+  private async waitForSseTasks(): Promise<void> {
+    while (this.sseTasks.size > 0) {
+      await Promise.allSettled([...this.sseTasks])
     }
   }
 
@@ -968,7 +1232,7 @@ export class WorkflowExecutor {
     if (source === "variables") {
       actual = this.workflowVariables[path]
     } else {
-      const resolution = this.resolveAssertionHttpSource(assertionNodeId, edges)
+      const resolution = this.resolveAssertionResponseSource(assertionNodeId, edges)
       if (resolution.state !== "resolved") {
         return {
           ...base,
@@ -1064,7 +1328,8 @@ export class WorkflowExecutor {
       : { state: "resolved-template", value }
   }
 
-  private resolveAssertionHttpSource(
+  // fallow-ignore-next-line complexity -- this breadth-first walk must distinguish missing, ambiguous, and completed response sources before an assertion can safely read prior output.
+  private resolveAssertionResponseSource(
     assertionNodeId: string,
     edges: readonly WorkflowEdge[],
   ):
@@ -1079,7 +1344,7 @@ export class WorkflowExecutor {
       if (visited.has(nodeId)) continue
       visited.add(nodeId)
       const node = this.workflowNodes.get(nodeId)
-      if (node?.type === "http-request") {
+      if (node?.type === "http-request" || node?.type === "sse") {
         sourceIds.add(nodeId)
         continue
       }
@@ -1093,7 +1358,7 @@ export class WorkflowExecutor {
     }
     const nodeId = [...sourceIds][0]!
     const result = this.results.get(nodeId)
-    return result?.type === "http-request"
+    return result?.type === "http-request" || result?.type === "sse"
       ? { state: "resolved", nodeId, result }
       : { state: "source-unavailable" }
   }
@@ -1244,7 +1509,7 @@ export class WorkflowExecutor {
     for (const predId of predecessorNodeIds) {
       const dataNodeId = this.findDataProducingAncestor(predId, edges)
       const result = this.results.get(dataNodeId)
-      if (result && result.type === "http-request") {
+      if (result && (result.type === "http-request" || result.type === "sse")) {
         predecessorResults.push([dataNodeId, result])
       }
     }
@@ -1385,7 +1650,7 @@ export class WorkflowExecutor {
       if (visited.has(id)) return id
       visited.add(id)
       const result = this.results.get(id)
-      if (result && result.type === "http-request") return id
+      if (result && (result.type === "http-request" || result.type === "sse")) return id
       const incoming = edges.filter((e) => e.target === id)
       if (incoming.length === 0) return id
       if (incoming.length === 1) return visit(incoming[0]!.source)
@@ -1809,7 +2074,7 @@ export class WorkflowExecutor {
   private buildOutputs(): Record<string, unknown> {
     const outputs: Record<string, unknown> = {}
     for (const [nodeId, result] of this.results.entries()) {
-      if (result.type === "http-request") {
+      if (result.type === "http-request" || result.type === "sse") {
         outputs[nodeId] = { status: result.statusCode, body: result.body }
       } else if (result.type === "assertion") {
         outputs[nodeId] = { passed: result.assertionOutcome === "pass", message: result.message }

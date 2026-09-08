@@ -127,7 +127,7 @@ Every node has:
 | Field      | Type   | Required | Description |
 |-----------|--------|----------|-------------|
 | nodeId    | string | yes | Unique ID. Convention: \`{type}_{unix_timestamp_ms}\` e.g. \`httpRequest_1738900000000\` |
-| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
+| type      | string | yes | One of: \`start\`, \`end\`, \`http-request\`, \`sse\`, \`assertion\`, \`delay\`, \`merge\`, \`workflow\` |
 | label     | string | no  | Display name shown on the canvas |
 | position  | object | yes | \`{ "x": number, "y": number }\` — canvas coordinates |
 | config    | object | yes | Node-type-specific configuration (see below) |
@@ -213,7 +213,39 @@ Makes an API call. The most commonly used node.
 - \`response.statusCode\` — HTTP status code
 - \`response.headers.Content-Type\` — Response header
 
-### 4. Assertion Node (\`type: "assertion"\`)
+### 4. SSE Stream Node (\`type: "sse"\`)
+Starts a bounded Server-Sent Events listener. Wire its \`ready\` output to the
+request that triggers an event and its \`complete\` output to an Assertion node.
+Without finish rules it closes when \`maxEvents\` matching events have arrived;
+with finish rules it closes when one event matches every rule.
+
+\`headers\` and \`queryParams\` are arrays of \`{ "key", "value" }\` entries.
+
+\`\`\`json
+{
+  "nodeId": "sse_1738900000003",
+  "type": "sse",
+  "label": "Observe order update",
+  "position": { "x": 700, "y": 200 },
+  "config": {
+    "url": "{{env.BASE_URL}}/events/orders",
+    "headers": [{ "key": "Authorization", "value": "Bearer {{secrets.API_TOKEN}}" }],
+    "eventType": "order.updated",
+    "maxEvents": 10,
+    "timeout": 0,
+    "finishConditions": [{ "path": "data.status", "operator": "equals", "expectedValue": "complete" }],
+    "extractors": {
+      "eventData": "response.body.events[0].data"
+    }
+  }
+}
+\`\`\`
+
+The result body has \`events\`, \`eventCount\`, and \`termination\`. Each event
+has \`event\`, optional \`id\`, and string \`data\` fields. Assertions and
+extractors can target paths such as \`response.body.events[0].data\`.
+
+### 5. Assertion Node (\`type: "assertion"\`)
 Validates API responses. Has **two output handles**: Pass (✓) and Fail (✗) for branching.
 
 \`\`\`json
@@ -352,7 +384,7 @@ Every edge connects two nodes:
 | edgeId | string | Unique edge ID |
 | source | string | Source nodeId |
 | target | string | Target nodeId |
-| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes. \`null\` for all others |
+| sourceHandle | string or null | \`"pass"\` or \`"fail"\` for assertion nodes; \`"ready"\` or \`"complete"\` for SSE nodes; \`null\` for other nodes |
 | targetHandle | string or null | Usually \`null\` |
 | label | string or null | Optional label: \`"Pass"\`, \`"Fail"\`, etc. |
 

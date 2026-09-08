@@ -124,7 +124,7 @@ export class AssertionAuthoringService {
     runId?: string,
   ): Promise<AssertionValidationResult> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
-    requireHttpNode(workflow, sourceNodeId)
+    requireResponseNode(workflow, sourceNodeId)
 
     let sourceResult: RunResult | undefined
     if (runId !== undefined) {
@@ -210,7 +210,7 @@ export class AssertionAuthoringService {
     sourceNodeId: string,
   ): Promise<{ readonly run: Run; readonly sourceResult: RunResult | undefined }> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
-    requireHttpNode(workflow, sourceNodeId)
+    requireResponseNode(workflow, sourceNodeId)
     const run = await this.runs.get(workspaceId, runId)
     if (run.workflowId !== workflowId) throw new NotFoundError(`run ${runId} not found`)
     return { run, sourceResult: run.results.find((result) => result.nodeId === sourceNodeId) }
@@ -232,11 +232,14 @@ function countSuggestion(path: string, count: number, kind: "array" | "object"):
   }
 }
 
-function requireHttpNode(workflow: Workflow, sourceNodeId: string): void {
+function requireResponseNode(workflow: Workflow, sourceNodeId: string): void {
   const node = workflow.nodes.find((candidate) => candidate.nodeId === sourceNodeId)
-  if (!node || node.type !== "http-request") throw new NotFoundError(`HTTP node ${sourceNodeId} not found`)
+  if (!node || (node.type !== "http-request" && node.type !== "sse")) {
+    throw new NotFoundError(`Response node ${sourceNodeId} not found`)
+  }
 }
 
+// fallow-ignore-next-line code-duplication -- assertion lookup and response-node validation share the same workflow error vocabulary, but have different validation contracts.
 function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): string {
   const assertion = workflow.nodes.find((node) => node.nodeId === assertionNodeId)
   if (!assertion || assertion.type !== "assertion") {
@@ -249,10 +252,11 @@ function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): st
   const sources = new Set<string>()
   while (queue.length > 0) {
     const current = queue.shift()
+    // fallow-ignore-next-line code-duplication -- this service walks raw edges while the analyzer walks its precomputed adjacency map; sharing the loop would couple authoring to diagnostic internals.
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
     const node = nodes.get(current)
-    if (node?.type === "http-request") {
+    if (node?.type === "http-request" || node?.type === "sse") {
       sources.add(current)
       continue
     }
@@ -260,8 +264,8 @@ function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): st
   }
   if (sources.size !== 1) {
     throw new ValidationError(sources.size === 0
-      ? "assertion node has no upstream HTTP source"
-      : "assertion node has ambiguous upstream HTTP sources")
+      ? "assertion node has no upstream response source"
+      : "assertion node has ambiguous upstream response sources")
   }
   return [...sources][0]!
 }

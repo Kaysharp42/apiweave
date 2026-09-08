@@ -8,6 +8,7 @@ import {
   KeyRound,
   Link2,
   ListChecks,
+  Radio,
   Settings,
   SlidersHorizontal,
   Timer,
@@ -18,6 +19,7 @@ import { Tooltip } from "./atoms/Tooltip";
 import ButtonSelect from "./ButtonSelect";
 import {
   HTTPRequestConfigPanel,
+  SseConfigPanel,
   HttpRequestOutputPanel,
   NodeOutputPanel,
   AssertionConfigPanel,
@@ -41,6 +43,8 @@ import type {
   NodeModalDelayConfig,
   NodeModalDelayTabKey,
   NodeModalHttpTabKey,
+  NodeModalSseConfig,
+  NodeModalSseTabKey,
   NodeModalMergeTabKey,
   NodeModalShellTab,
   SelectOption,
@@ -70,6 +74,13 @@ const HTTP_TABS: NodeModalShellTab[] = [
   { key: "settings", label: "Settings", icon: Settings },
 ];
 
+const SSE_TABS: NodeModalShellTab[] = [
+  { key: "endpoint", label: "Endpoint", icon: Radio },
+  { key: "headers", label: "Headers", icon: FileText },
+  { key: "finish", label: "Finish", icon: ListChecks },
+  { key: "settings", label: "Settings", icon: Settings },
+];
+
 const ASSERTION_TABS: NodeModalShellTab[] = [
   { key: "rules", label: "Rules", icon: ListChecks },
   { key: "settings", label: "Settings", icon: Settings },
@@ -92,6 +103,7 @@ function isHttpMethod(value: string): value is HttpMethod {
 
 function getTypeLabel(nodeType: NodeModalNodeType): string {
   if (nodeType === "http-request") return "HTTP Request";
+  if (nodeType === "sse") return "SSE Stream";
   return nodeType.charAt(0).toUpperCase() + nodeType.slice(1);
 }
 
@@ -115,6 +127,7 @@ export function NodeModal({
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
   const nameLabelRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useState<NodeModalHttpTabKey>("params");
+  const [sseActiveTab, setSseActiveTab] = useState<NodeModalSseTabKey>("endpoint");
   const [assertionActiveTab, setAssertionActiveTab] =
     useState<NodeModalAssertionTabKey>("rules");
   const [delayActiveTab, setDelayActiveTab] =
@@ -131,6 +144,7 @@ export function NodeModal({
     if (!open) return;
     workingDataRef.current = { ...node.data };
     setActiveTab("params");
+    setSseActiveTab("endpoint");
     setAssertionActiveTab("rules");
     setDelayActiveTab("duration");
     setMergeActiveTab("strategy");
@@ -304,6 +318,16 @@ export function NodeModal({
       );
     }
 
+    if (node.type === "sse") {
+      return (
+        <SseConfigPanel
+          initialConfig={node.data.config as Partial<NodeModalSseConfig>}
+          workingDataRef={workingDataRef}
+          activeTab={sseActiveTab}
+        />
+      );
+    }
+
     if (node.type === "assertion") {
       return (
         <AssertionConfigPanel
@@ -394,6 +418,8 @@ export function NodeModal({
   const shellTabs =
     node.type === "http-request"
       ? httpTabs
+      : node.type === "sse"
+        ? SSE_TABS
       : node.type === "assertion"
         ? ASSERTION_TABS
         : node.type === "delay"
@@ -404,6 +430,8 @@ export function NodeModal({
   const shellActiveTab =
     node.type === "http-request"
       ? activeTab
+      : node.type === "sse"
+        ? sseActiveTab
       : node.type === "assertion"
         ? assertionActiveTab
         : node.type === "delay"
@@ -423,6 +451,7 @@ export function NodeModal({
         if (isHttpMethod(tabKey)) return;
         if (node.type === "http-request")
           setActiveTab(tabKey as NodeModalHttpTabKey);
+        if (node.type === "sse") setSseActiveTab(tabKey as NodeModalSseTabKey);
         if (node.type === "assertion")
           setAssertionActiveTab(tabKey as NodeModalAssertionTabKey);
         if (node.type === "delay")

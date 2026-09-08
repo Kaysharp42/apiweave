@@ -15,7 +15,8 @@
 - [Node Types](#node-types)
   - [Start](#start)
   - [End](#end)
-  - [HTTP Request](#http-request)
+   - [HTTP Request](#http-request)
+   - [SSE Stream](#sse-stream)
   - [Assertion](#assertion)
   - [Delay](#delay)
   - [Merge](#merge)
@@ -51,7 +52,7 @@ A simple login flow looks like this on the canvas:
 
 ## Node Types
 
-APIWeave ships seven node types. Each does one job. Two of them (Start, End) mark flow boundaries; the rest do work.
+APIWeave ships several node types. Each does one job. Start and End mark flow boundaries; the rest do work.
 
 ### Start
 
@@ -97,6 +98,25 @@ APIWeave ships seven node types. Each does one job. Two of them (Start, End) mar
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 **Handles:** one input, one output.
+
+### SSE Stream
+
+**Purpose:** Starts a bounded Server-Sent Events listener for contract testing. It signals **Ready** only after the SSE handshake succeeds, so a downstream trigger can run without racing the subscription. It closes deliberately on an event cap, a matching finish trigger, timeout, cancellation, or workflow failure.
+
+| Field | What it does |
+| --- | --- |
+| `url` | SSE endpoint URL. Supports environment, variable, and secret placeholders. |
+| `query params` / `headers` | Optional structured request values. The node always sends `Accept: text/event-stream`; use headers for authenticated streams. |
+| `event type` | Optional exact filter for the SSE `event:` field. Other events do not count toward the target. |
+| `events to collect` | Maximum matching events retained (default 1; maximum 100). With no finish trigger, reaching this cap closes the connection. |
+| `finish trigger` | Assertion-like rules evaluated against each matching event. All rules must match one event to close it. Paths support `event`, `id`, raw `data`, and JSON `data.*` fields. |
+| `timeout` | Maximum time to wait, in seconds. Set to `0` only with a finish trigger to wait until that state arrives. |
+| `follow redirects` / `verify TLS` | HTTP transport controls, both enabled by default. |
+| `continue on fail` | Per-node override of the workflow's `continueOnFail` setting. |
+
+The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
+
+**Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final bounded result exists. Use the Complete path for a regular Assertion node that checks `response.body.events`.
 
 **Expected status (negative tests).** By default a node passes on any 2xx status and fails on everything else. Set **Expected status** — for example `409` or `409, 422` — and that rule is fully replaced: the node passes only when the actual status matches one of the expected values, and fails otherwise, *even for a 2xx response*. This is how you assert a negative test ("the API must reject this with 409") on the request itself. A matched status renders as a green node showing the status text (for example `409 Conflict`). Use it instead of a `continueOnFail` flag plus a downstream assertion that pins a non-2xx status; `workflow_diagnose` suggests exactly that migration when it sees that pattern.
 

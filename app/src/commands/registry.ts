@@ -30,6 +30,7 @@ const nodeCommands: readonly CanvasNodeTemplate[] = [
     label: "PATCH Request",
     config: { method: "PATCH" },
   },
+  { type: "sse", label: "SSE Stream", config: { maxEvents: 1, timeout: 30 } },
   { type: "assertion", label: "Assertion" },
   { type: "delay", label: "Delay" },
   { type: "merge", label: "Merge" },

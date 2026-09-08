@@ -206,7 +206,7 @@ export function generateHTML(run: Readonly<Run>, options?: Readonly<ReporterOpti
     const detailRows: string[] = []
 
     // Type-specific details
-    if (nodeType === "http-request" || nodeType === "http_request") {
+    if (nodeType === "http-request" || nodeType === "http_request" || nodeType === "sse") {
       // Try to extract from result if available
       const req = result?.request
       const res = result?.response
@@ -223,6 +223,14 @@ export function generateHTML(run: Readonly<Run>, options?: Readonly<ReporterOpti
         const statusCode = resObj["statusCode"] ?? resObj["status"]
         if (statusCode !== undefined) {
           detailRows.push(`<div class="metric"><span class="label">Status:</span> ${escapeHtml(String(statusCode))}</div>`)
+        }
+        if (nodeType === "sse" && resObj["body"] && typeof resObj["body"] === "object") {
+          const streamBody = resObj["body"] as Record<string, unknown>
+          const eventCount = streamBody["eventCount"]
+          const termination = streamBody["termination"]
+          if (eventCount !== undefined || termination !== undefined) {
+            detailRows.push(`<div class="metric"><span class="label">Events:</span> ${escapeHtml(String(eventCount ?? 0))}${termination === undefined ? "" : ` (${escapeHtml(String(termination))})`}</div>`)
+          }
         }
       }
     }

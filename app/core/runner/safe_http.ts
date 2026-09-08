@@ -84,6 +84,8 @@ export type SafeFetchOptions = {
   readonly followRedirects?: boolean
   /** Verify the TLS certificate chain (default true). Per-node opt-out for self-signed dev endpoints. */
   readonly rejectUnauthorized?: boolean
+  /** Override the default response/body timeout. Set to zero only for a caller-managed stream lifetime. */
+  readonly timeoutMs?: number
 }
 
 export class SafeHttp {
@@ -216,9 +218,14 @@ export class SafeHttp {
     // external cancellation aren't dropped. The timeout signal is never cleared,
     // so it keeps enforcing while the caller reads the body — undici aborts the
     // body stream if the signal fires, closing the "slow/endless body" gap.
-    const signals: AbortSignal[] = [AbortSignal.timeout(this.timeoutMs)]
+    const timeoutMs = opts.timeoutMs ?? this.timeoutMs
+    const signals: AbortSignal[] = []
+    // SSE listeners with an event finish rule can deliberately wait without a
+    // deadline. Their AbortController still owns cancellation; never create an
+    // AbortSignal.timeout(0), which aborts immediately rather than meaning none.
+    if (timeoutMs > 0) signals.push(AbortSignal.timeout(timeoutMs))
     if (init.signal) signals.push(init.signal)
-    const signal = AbortSignal.any(signals)
+    const signal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
     const followRedirects = opts.followRedirects ?? true
     const rejectUnauthorized = opts.rejectUnauthorized ?? true
     const maxHops = followRedirects ? this.maxRedirectHops : 0

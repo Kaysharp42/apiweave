@@ -50,7 +50,7 @@ export function KeyValueEditor({
 
       {pairs.map((pair, index) => (
         <div
-          key={`${pair.key}-${index}`}
+          key={index}
           className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1"
         >
           <Input

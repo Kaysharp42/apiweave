@@ -1,7 +1,6 @@
 import { z } from "zod"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import type { ZodRawShape } from "zod"
 import { WorkflowDiagnosisSchema } from "@shared/zod-schemas"
 import type { Workflow } from "@shared/types/Workflow"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
@@ -26,10 +25,10 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
       throw new Error(`MCP whitelist references unknown handler: ${spec.domain}.${spec.action}`)
     }
 
-    // The SDK builds the tool's JSON argument schema from a Zod raw shape. Our
-    // inputs are `.strict()` ZodObjects; NoInput (optional empty object) has no
-    // shape, so a zero-arg tool gets an empty shape.
-    const inputSchema: ZodRawShape = reg.input instanceof z.ZodObject ? reg.input.shape : {}
+    // Pass the complete object: rebuilding from `.shape` loses strictness and
+    // lets the SDK strip unknown keys before the router can reject them.
+    // NoInput is an optional empty object; MCP supplies an argument object.
+    const inputSchema = reg.input instanceof z.ZodObject ? reg.input : z.object({}).strict()
     const outputValueSchema = spec.resultProjection === "run" ? z.unknown() : reg.output
     // `result` stays byte-identical to the IPC response so parity holds; the
     // diagnosis rides alongside it as a sibling key.

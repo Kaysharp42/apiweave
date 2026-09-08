@@ -145,6 +145,7 @@ or array order.
 | \`start\` | entry point; the run begins here | output only, exactly one per workflow |
 | \`end\` | terminal point | input only, **exactly one** — converge branches on it |
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
+| \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
 | \`delay\` | waits a fixed number of milliseconds | 1 in, 1 out |
 | \`merge\` | joins parallel branches | many in, 1 out |
@@ -181,11 +182,27 @@ or array order.
   orthogonal to \`continueOnFail\`: \`expectedStatus\` decides whether the node
   failed, \`continueOnFail\` decides whether a failure stops the branch.
 
+### sse
+
+An SSE node is a **bounded test listener**, never a permanent subscription. It sends
+\`GET\` with \`Accept: text/event-stream\`. Its \`ready\` handle is traversed only
+after the handshake succeeds; use it to trigger the action that should emit an event.
+Its \`complete\` handle is traversed once the final result is available. Without
+\`finishConditions\`, it closes at \`maxEvents\` (default 1). With finish rules, all
+rules must match one event; paths address \`event\`, \`id\`, raw \`data\`, or parsed
+JSON \`data.*\`. Set \`timeout: 0\` only with finish rules to wait until the state is
+observed. The connection still closes on cancellation, workflow failure, or its 1 MiB
+raw capture cap.
+
+The captured result body has \`events\`, \`eventCount\`, and \`termination\`.
+Each event has \`event\`, optional \`id\`, and its exact string \`data\`, so an
+assertion or extractor can target \`response.body.events[0].data\`.
+
 ### assertion
 
-An assertion node checks values from **the nearest \`http-request\` node
+An assertion node checks values from **the nearest response-producing node**
 upstream** — in a chain of several, that is the closest one, not the first.
-Zero \`http-request\` nodes upstream, or two at the same distance, makes the
+Zero response-producing nodes upstream, or two at the same distance, makes the
 source ambiguous and the node fails — \`workflow_diagnose\` reports this as
 \`assertion_source_missing\` or \`assertion_source_ambiguous\` before you ever run it.
 
@@ -276,6 +293,44 @@ removes by id:
 compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
+
+### Insert a node and rewire in one patch
+
+The keys are \`upsertNodes\` and \`upsertEdges\`. To insert \`check\` into an
+existing \`request → end\` connection named \`request-end\`, send the new node,
+the old edge removal, and both replacement edges in **one** \`workflows_patch\`
+call. Splitting these across calls can leave a saved branch disconnected.
+Use the actual node/edge ids and current \`rev\` from \`workflows_get\`:
+
+\`\`\`json
+{
+  "workspaceId": "...",
+  "workflowId": "...",
+  "expectedRevision": 7,
+  "upsertNodes": [
+    {
+      "nodeId": "check",
+      "type": "assertion",
+      "position": { "x": 0, "y": 0 },
+      "config": {
+        "assertions": [
+          { "source": "status", "path": "", "operator": "equals", "expectedValue": 200 }
+        ]
+      }
+    }
+  ],
+  "removeEdgeIds": ["request-end"],
+  "upsertEdges": [
+    { "edgeId": "request-check", "source": "request", "target": "check" },
+    { "edgeId": "check-end", "source": "check", "target": "end", "sourceHandle": "pass" }
+  ]
+}
+\`\`\`
+
+Read the returned \`diagnosis\` and confirm \`touchedNodeIds\` / \`touchedEdgeIds\`
+include the intended edits before running. A successful write means the edit
+was saved, not that the graph is runnable; diagnosis is reported after saving.
+On a revision conflict, read the workflow again and recompute the complete patch.
 `
 
 const PLACEHOLDERS = `# Placeholders
@@ -461,7 +516,7 @@ Clear every \`error\` before running.
 | \`assertion_branch_handle_invalid\` | an edge leaving an assertion has no \`sourceHandle\`, or one that is not \`pass\`/\`fail\`. The branch stops silently at run time. |
 | \`assertion_branch_duplicate\` | more than one edge leaves one assertion handle — the branches run in parallel (notice, not warning) |
 | \`assertion_fail_wired_on_all\` | a \`fail\` handle is wired straight to \`end\`, which does what leaving it unconnected already does — an unwired \`fail\` is the normal expected shape (notice) |
-| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, \`http-request\` node reachable upstream |
+| \`assertion_source_missing\` / \`assertion_source_ambiguous\` | zero, or more than one, response-producing (\`http-request\` or \`sse\`) node reachable upstream |
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
 | \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |

@@ -31,6 +31,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import HTTPRequestNode from "./nodes/HTTPRequestNode";
+import SseNode from "./nodes/SseNode";
 import AssertionNode from "./nodes/AssertionNode";
 import DelayNode from "./nodes/DelayNode";
 import StartNode from "./nodes/StartNode";
@@ -145,10 +146,12 @@ void NOISE_DATA_URI;
 // must cost that one tile, not the canvas — see NodeBoundary. Registering a new
 // kind here is what covers it.
 const nodeTypes: NodeTypes = {
+  // fallow-ignore-next-line code-duplication -- this is ReactFlow's declarative node-type registry: every entry must explicitly bind its renderer to its error boundary.
   "http-request": withNodeBoundary(
     HTTPRequestNode,
     "http-request",
   ) as NodeTypes[string],
+  sse: withNodeBoundary(SseNode, "sse") as NodeTypes[string],
   assertion: withNodeBoundary(AssertionNode, "assertion") as NodeTypes[string],
   delay: withNodeBoundary(DelayNode, "delay") as NodeTypes[string],
   start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
@@ -465,7 +468,7 @@ export function WorkflowCanvas({
   const extractorsSig = useMemo(() => {
     const parts: string[] = [];
     for (const node of nodes) {
-      if (node.type === "http-request" && node.data?.config?.extractors) {
+      if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
         const extractors = node.data.config.extractors as object;
         let id = extractorConfigIdMap.get(extractors);
         if (id === undefined) {
@@ -481,7 +484,7 @@ export function WorkflowCanvas({
   useEffect(() => {
     const extractorsFromNodes: Record<string, string> = {};
     nodesRef.current.forEach((node) => {
-      if (node.type === "http-request" && node.data?.config?.extractors) {
+      if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
         Object.entries(node.data.config.extractors).forEach(([name, value]) => {
           if (typeof value === "string") {
             extractorsFromNodes[name] = value;
@@ -524,7 +527,7 @@ export function WorkflowCanvas({
       if (!deletedVars || deletedVars.length === 0) return;
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
-          if (node.type === "http-request" && node.data?.config?.extractors) {
+          if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
             const updatedExtractors = {
               ...node.data.config.extractors,
             } as Record<string, unknown>;
@@ -1393,6 +1396,7 @@ export function WorkflowCanvas({
     if (n.type === "end") return "var(--aw-status-error)";
     if (n.type === "httpRequest" || n.type === "http-request")
       return "var(--aw-status-info)";
+    if (n.type === "sse") return "var(--aw-status-info)";
     if (n.type === "assertion") return "var(--aw-status-success)";
     if (n.type === "delay") return "var(--aw-status-warning)";
     if (n.type === "merge") return "var(--aw-branch-edge)";
@@ -1771,6 +1775,7 @@ export function WorkflowCanvas({
             ...modalNode,
             type: modalNode.type as
               | "http-request"
+              | "sse"
               | "assertion"
               | "delay"
               | "merge"
