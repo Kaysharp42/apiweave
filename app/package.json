@@ -29,6 +29,11 @@
     "audit:types": "node scripts/audit-types.mjs",
     "doctor": "npx react-doctor@latest",
     "qa:ui": "playwright test",
+    "capture:media": "playwright test --config=tools/marketing-capture/playwright.config.ts capture.spec.ts",
+    "capture:demo": "playwright test --config=tools/marketing-capture/playwright.config.ts demo.spec.ts",
+    "capture:encode": "node tools/marketing-capture/encode.mjs",
+    "capture:validate": "node tools/marketing-capture/validate.mjs",
+    "capture:all": "npm run capture:media && npm run capture:demo && npm run capture:encode && npm run capture:validate",
     "parity": "node core/runner/harness/run-parity.mjs",
     "parity:capture": "node core/runner/harness/run-parity.mjs --capture",
     "rebuild:electron": "node scripts/rebuild-sqlite.mjs electron",
@@ -143,7 +148,8 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "msi"
       ],
       "icon": "build/icon.ico"
     },

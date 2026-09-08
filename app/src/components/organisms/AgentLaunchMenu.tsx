@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import { Input } from "../atoms/Input";
 import type { AgentLaunchMenuItem } from "../../types";
 
 interface AgentLaunchMenuProps {
@@ -9,6 +10,11 @@ interface AgentLaunchMenuProps {
   /** Set when the roster has no ready agent — an explanation row instead of items. */
   readonly empty: boolean;
   readonly items: readonly AgentLaunchMenuItem[];
+  /** The opening prompt, handed to whichever agent the user then picks. */
+  readonly prompt: string;
+  readonly onPromptChange: (value: string) => void;
+  /** Enter in the prompt field — launch the preferred agent with it. */
+  readonly onPromptSubmit: () => void;
   readonly onClose: () => void;
 }
 
@@ -23,15 +29,20 @@ export function AgentLaunchMenu({
   folderPath,
   empty,
   items,
+  prompt,
+  onPromptChange,
+  onPromptSubmit,
   onClose,
 }: AgentLaunchMenuProps) {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const promptRef = useRef<HTMLInputElement>(null);
 
-  // Opening the menu puts focus on the first item, so the next keypress is an
-  // arrow, not a Tab hunt.
+  // Opening the menu puts focus in the prompt field — the one control here that
+  // has to be typed into — and ArrowDown from it reaches the agents, so the
+  // keyboard path to "just launch" is one key longer and nothing else moves.
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
-      itemRefs.current[0]?.focus();
+      (promptRef.current ?? itemRefs.current[0])?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, []);
@@ -83,6 +94,32 @@ export function AgentLaunchMenu({
         >
           {folderPath}
         </p>
+        {/* Every agent in the roster takes an opening prompt (`promptMode` is
+            `argv` or `flag` for all of them), so this is offered unconditionally
+            rather than gated on the one the user has not picked yet. A custom
+            agent configured `none` drops it, which is the same thing that
+            happens to a prompt typed at its own banner. */}
+        <Input
+          ref={promptRef}
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onPromptSubmit();
+            } else if (event.key === "ArrowDown") {
+              event.preventDefault();
+              focusItem(0);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          placeholder="Task for the agent (optional)"
+          aria-label="Task for the agent"
+          size="xs"
+          className="mt-2"
+        />
       </div>
       {empty && (
         <p className="px-3 py-2 text-xs text-text-secondary dark:text-text-secondary-dark">

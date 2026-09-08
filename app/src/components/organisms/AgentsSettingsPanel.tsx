@@ -9,7 +9,10 @@ import {
   Trash2,
 } from "lucide-react";
 import type { AgentAvailabilityState } from "@shared/types/AgentAvailability";
-import type { AgentDefinition } from "@shared/types/AgentDefinition";
+import type {
+  AgentDefinition,
+  AgentPromptMode,
+} from "@shared/types/AgentDefinition";
 import type { AgentRosterEntry } from "@shared/types/AgentsBridge";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
@@ -51,7 +54,7 @@ interface AgentDraft {
   readonly name: string;
   readonly detectCmd: string;
   readonly argv: string;
-  readonly promptMode: "none" | "argv" | "flag";
+  readonly promptMode: AgentPromptMode;
   readonly promptFlag: string;
   readonly mcpArgs: string;
   readonly env: string;
@@ -378,6 +381,12 @@ export function AgentsSettingsPanel() {
                   <option value="none">Not supported</option>
                   <option value="argv">As positional argument</option>
                   <option value="flag">As flag value</option>
+                  {/* The service has always implemented this (it writes the
+                      prompt into the live PTY); only the form was missing it.
+                      Embedded launches only — an external one has no stdin to
+                      write to, and `launchExternal` refuses rather than
+                      dropping the prompt silently. */}
+                  <option value="stdin">Typed into the terminal</option>
                 </select>
               </FormField>
               <FormField
@@ -613,10 +622,10 @@ function openInstallUrl(url: string): void {
 }
 
 function toDraft(definition: AgentDefinition): AgentDraft {
-  const mode: AgentDraft["promptMode"] =
-    definition.promptMode === "argv" || definition.promptMode === "flag"
-      ? definition.promptMode
-      : "none";
+  // The schema defaults this, so every stored definition already carries one of
+  // the four modes — the old two-way narrowing quietly rewrote `stdin` to
+  // `none`, which is what made an agent lose its prompt mode on any edit.
+  const mode = definition.promptMode;
   return {
     agentKey: definition.agentKey,
     name: definition.name,

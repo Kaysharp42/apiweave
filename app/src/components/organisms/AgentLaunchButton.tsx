@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Bot,
   ChevronDown,
@@ -38,6 +39,19 @@ interface AgentLaunchButtonProps {
    */
   readonly showLabel?: boolean;
   /**
+   * The caller has no room for a popover — the sidebar's project rows, whose
+   * list panel is 236px wide and clips on both axes, where a 260px menu and a
+   * 320px error card would both be cut in half.
+   *
+   * So compact drops the dropdown entirely and sends failures to a toast
+   * instead. What is left is the one action the row is for: launch the default
+   * agent here, or set the folder if there is none. Choosing a different agent,
+   * changing the folder and launching externally all still live in the two
+   * surfaces that have the width for them — the canvas toolbar and the Projects
+   * dialog.
+   */
+  readonly compact?: boolean;
+  /**
    * Given by callers that have somewhere to show a terminal — the canvas
    * toolbar, whose view owns the bottom dock. Its presence is what makes the
    * primary action an embedded session; without it the primary action opens the
@@ -72,6 +86,7 @@ export function AgentLaunchButton({
   scopeId,
   className,
   showLabel = true,
+  compact = false,
   onEmbeddedSession,
 }: AgentLaunchButtonProps) {
   const { currentWorkspace } = useWorkspace();
@@ -85,6 +100,12 @@ export function AgentLaunchButton({
   const [roster, setRoster] = useState<readonly AgentRosterEntry[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * The opening prompt, typed in the menu and cleared once it has been handed
+   * to a launch. Kept here rather than in the menu because the menu unmounts on
+   * every close — a half-typed task must survive a stray click outside it.
+   */
+  const [prompt, setPrompt] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerWrapRef = useRef<HTMLSpanElement>(null);
@@ -168,7 +189,12 @@ export function AgentLaunchButton({
   };
 
   const fail = (cause: unknown): void => {
-    if (mountedRef.current) setError(describe(cause));
+    if (!mountedRef.current) return;
+    // A toast rather than the popover, because in compact mode the popover has
+    // nowhere to render — and a launch that fails silently is the one outcome
+    // this control must never have.
+    if (compact) toast.error(describe(cause));
+    else setError(describe(cause));
   };
 
   const chooseFolder = (): void => {
@@ -195,6 +221,14 @@ export function AgentLaunchButton({
 
   const launch = (agentKey: string, embedded: boolean): void => {
     beginAction();
+    // Spread rather than passed as `prompt: trimmed || undefined`, because the
+    // bridge's field is optional and `exactOptionalPropertyTypes` rejects an
+    // explicit `undefined` for one.
+    const opening = prompt.trim();
+    const withPrompt = opening.length === 0 ? {} : { prompt: opening };
+    // Cleared on dispatch, not on success: the launch has taken the text, and
+    // leaving it in the field invites the user to send the same task twice.
+    setPrompt("");
     const started =
       embedded && onEmbeddedSession !== undefined
         ? agents
@@ -202,6 +236,7 @@ export function AgentLaunchButton({
               workspaceId,
               agentKey,
               scope,
+              ...withPrompt,
               cols: INITIAL_COLS,
               rows: INITIAL_ROWS,
             })
@@ -210,7 +245,7 @@ export function AgentLaunchButton({
               // terminal pinned to a view the user has already left.
               if (mountedRef.current) onEmbeddedSession(session.sessionId);
             })
-        : agents.launchExternal({ workspaceId, agentKey, scope });
+        : agents.launchExternal({ workspaceId, agentKey, scope, ...withPrompt });
     void started.catch(fail).finally(settle);
   };
 
@@ -246,15 +281,20 @@ export function AgentLaunchButton({
       </div>
     );
 
+  // Compact sits in a sidebar row beside 26px icon actions; the default anchors
+  // a toolbar. One pair of values, because both branches below render a trigger.
+  const triggerSize = compact ? "xs" : "sm";
+  const triggerHeight = compact ? "h-7" : "h-8";
+
   if (path.localPath === null) {
     return (
       <span className={`relative inline-flex ${className ?? ""}`}>
         <Button
           variant="ghost"
-          size="sm"
+          size={triggerSize}
           onClick={chooseFolder}
           disabled={busy}
-          className="h-8 whitespace-nowrap"
+          className={`${triggerHeight} whitespace-nowrap`}
           title="Choose the local folder for this project, so agents launch in the right place"
           aria-label="Set folder"
           icon={<FolderOpen className="h-4 w-4" />}
@@ -325,10 +365,10 @@ export function AgentLaunchButton({
     <div className={`relative flex ${className ?? ""}`} ref={menuRef}>
       <Button
         variant="ghost"
-        size="sm"
+        size={triggerSize}
         onClick={() => preferred && launch(preferred.definition.agentKey, true)}
         disabled={busy || preferred === null}
-        className="h-8 whitespace-nowrap rounded-r-none"
+        className={`${triggerHeight} whitespace-nowrap ${compact ? "" : "rounded-r-none"}`}
         title={
           preferred === null
             ? "No working agent CLI was found — check Settings → Agents"
@@ -346,24 +386,26 @@ export function AgentLaunchButton({
           <span>{preferred === null ? "No agent" : preferred.definition.name}</span>
         )}
       </Button>
-      <span ref={triggerWrapRef} className="inline-flex">
-        <IconButton
-          onClick={() => setMenuOpen((open) => !open)}
-          onKeyDown={handleTriggerKeyDown}
-          tooltip="Agent options"
-          aria-label="Agent options"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-controls={menuId}
-          variant="ghost"
-          size="sm"
-          className="h-8 rounded-l-none border-l border-border dark:border-border-dark"
-        >
-          <ChevronDown
-            className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`}
-          />
-        </IconButton>
-      </span>
+      {!compact && (
+        <span ref={triggerWrapRef} className="inline-flex">
+          <IconButton
+            onClick={() => setMenuOpen((open) => !open)}
+            onKeyDown={handleTriggerKeyDown}
+            tooltip="Agent options"
+            aria-label="Agent options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-controls={menuId}
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-l-none border-l border-border dark:border-border-dark"
+          >
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${menuOpen ? "rotate-180" : ""}`}
+            />
+          </IconButton>
+        </span>
+      )}
 
       {/*
         One popover slot, not two. The menu and the error both hang off the same
@@ -383,6 +425,11 @@ export function AgentLaunchButton({
           folderPath={path.localPath}
           empty={launchable.length === 0}
           items={menuItems}
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          onPromptSubmit={() => {
+            if (preferred !== null) launch(preferred.definition.agentKey, true);
+          }}
           onClose={closeMenu}
         />
       ) : (
