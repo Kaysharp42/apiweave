@@ -5,4 +5,4 @@ import { z } from "zod"
  * `WorkflowNodeSchema`. `start`/`end` are deliberately excluded: they carry no
  * config, so there is nothing about them worth naming and reusing.
  */
-export const NodePresetNodeTypeSchema = z.enum(["http-request", "assertion", "delay", "merge", "workflow"])
+export const NodePresetNodeTypeSchema = z.enum(["http-request", "sse", "assertion", "delay", "merge", "workflow"])

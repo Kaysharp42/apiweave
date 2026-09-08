@@ -6,6 +6,7 @@ import {
   PanelRightOpen,
   Search,
   Globe,
+  Radio,
   GitBranch,
   CheckCircle,
   Bookmark,
@@ -53,6 +54,7 @@ const methodBadge: Record<string, string> = {
 
 const sectionIcons: Record<string, LucideIcon> = {
   "HTTP Requests": Globe,
+  Streaming: Radio,
   "Control Flow": GitBranch,
   Validation: CheckCircle,
   Annotations: StickyNote,
@@ -128,6 +130,16 @@ const nodeTemplates: { category: string; nodes: NodeTemplate[] }[] = [
         label: "PATCH Request",
         description: "Make a PATCH request",
         method: "PATCH",
+      },
+    ],
+  },
+  {
+    category: "Streaming",
+    nodes: [
+      {
+        type: "sse",
+        label: "SSE Stream",
+        description: "Listen for events, then trigger and assert",
       },
     ],
   },

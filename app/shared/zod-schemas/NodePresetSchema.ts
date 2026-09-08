@@ -5,6 +5,7 @@ import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { NodePresetNodeTypeSchema } from "./NodePresetNodeTypeSchema"
+import { SseNodeDataSchema } from "./SseNodeDataSchema"
 import { RevisionSchema } from "./RevisionSchema"
 import { TimestampSchema } from "./TimestampSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
@@ -36,6 +37,7 @@ export const NodePresetSchema = z
 
 const CONFIG_SCHEMA_BY_NODE_TYPE = {
   "http-request": HTTPNodeDataSchema,
+  sse: SseNodeDataSchema,
   assertion: AssertionNodeDataSchema,
   delay: DelayNodeDataSchema,
   merge: MergeNodeDataSchema,

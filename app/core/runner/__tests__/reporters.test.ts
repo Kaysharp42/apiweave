@@ -203,6 +203,29 @@ describe("generateJUnit", () => {
   })
 })
 
+describe("generateHTML — SSE node", () => {
+  it("reports captured event metadata", () => {
+    const html = generateHTML(makeRun({
+      nodeStatuses: { stream: "passed" },
+      results: [{
+        nodeId: "stream",
+        status: "passed",
+        duration: 120,
+        request: { method: "GET", url: "https://example.test/events" },
+        response: {
+          statusCode: 200,
+          headers: { "content-type": "text/event-stream" },
+          body: { eventCount: 2, termination: "event-limit", events: [] },
+        },
+        assertions: null,
+      }],
+    }), { nodeTypes: { stream: "sse" } })
+
+    expect(html).toContain("GET https://example.test/events")
+    expect(html).toContain("Events:</span> 2 (event-limit)")
+  })
+})
+
 // -------------------- HTML report --------------------
 
 describe("generateHTML", () => {

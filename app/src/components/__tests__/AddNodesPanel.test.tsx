@@ -194,3 +194,25 @@ describe("AddNodesPanel — saved presets section", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("AddNodesPanel — streaming node", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useNodePresetStore.setState({
+      presets: [],
+      isLoading: false,
+      loadedWorkspaceId: null,
+      loadError: null,
+    });
+    mockList.mockResolvedValue({ items: [], total: 0 });
+  });
+
+  it("offers the finite SSE stream node in the palette", async () => {
+    renderPanel();
+    await openPalette();
+
+    expect(screen.getByText("Streaming")).toBeInTheDocument();
+    expect(screen.getByText("SSE Stream")).toBeInTheDocument();
+    expect(screen.getByText("Listen for events, then trigger and assert")).toBeInTheDocument();
+  });
+});

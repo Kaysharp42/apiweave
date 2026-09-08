@@ -35,7 +35,7 @@ const canonicalNodes = z.preprocess(
 const partialNodePatch = z
   .object({
     nodeId: z.string().min(1),
-    type: z.enum(["http-request", "assertion", "delay", "merge", "start", "end", "workflow"]).optional(),
+    type: z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow"]).optional(),
     label: z.string().nullable().optional(),
     position: PositionSchema.partial().optional(),
     config: z.record(z.string(), z.unknown()).optional(),

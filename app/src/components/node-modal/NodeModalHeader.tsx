@@ -21,6 +21,8 @@ export function NodeModalHeader({
   const typeName =
     nodeType === "http-request"
       ? "HTTP Request"
+      : nodeType === "sse"
+        ? "SSE Stream"
       : nodeType === "assertion"
         ? "Assertion"
         : nodeType === "delay"

@@ -95,6 +95,31 @@ describe("workflow graph analyzer", () => {
     })
   })
 
+  it("accepts an assertion immediately downstream from an SSE stream", () => {
+    const workflow = healthyWorkflow()
+    const streamWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "login"
+        ? {
+            ...node,
+            type: "sse",
+            config: {
+              url: "https://example.test/events",
+              maxEvents: 1,
+              extractors: { eventData: "response.body.events[0].data" },
+            },
+          }
+        : node),
+    })
+
+    const codes = analyzeWorkflowGraph(streamWorkflow).diagnostics.map((item) => item.code)
+    expect(codes).not.toContain("assertion_source_missing")
+    expect(codes).not.toContain("assertion_source_ambiguous")
+    expect(analyzeVariableProvenance(streamWorkflow.nodes)["eventData"]?.producers).toEqual([
+      { nodeId: "login", nodeLabel: "Login", path: "response.body.events[0].data" },
+    ])
+  })
+
   it("detects topology, assertion, branch, extractor, and variable faults in stable order", () => {
     const workflow = healthyWorkflow()
     const broken = WorkflowSchema.parse({

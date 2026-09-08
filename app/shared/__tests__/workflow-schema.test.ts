@@ -145,4 +145,33 @@ describe("WorkflowSchema", () => {
       config: { content: "Retries begin here." },
     }).success).toBe(true)
   })
+
+  it("accepts bounded SSE finish triggers and requires one for an unlimited timeout", () => {
+    const base = {
+      nodeId: "sse-1",
+      type: "sse",
+      position: { x: 0, y: 0 },
+    }
+
+    expect(WorkflowNodeSchema.safeParse({
+      ...base,
+      config: {
+        url: "https://example.test/events",
+        eventType: "order.updated",
+        maxEvents: 2,
+        timeout: 30,
+        headers: [{ key: "Authorization", value: "Bearer {{secrets.API_TOKEN}}" }],
+      },
+    }).success).toBe(true)
+    expect(WorkflowNodeSchema.safeParse({
+      ...base,
+      config: {
+        url: "https://example.test/events",
+        timeout: 0,
+        finishConditions: [{ path: "data.status", operator: "equals", expectedValue: "complete" }],
+      },
+    }).success).toBe(true)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { timeout: 0 } }).success).toBe(false)
+    expect(WorkflowNodeSchema.safeParse({ ...base, config: { maxEvents: 0 } }).success).toBe(false)
+  })
 })

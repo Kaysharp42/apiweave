@@ -125,7 +125,7 @@ function traverse(startIds: readonly string[], adjacency: ReadonlyMap<string, Re
   return visited
 }
 
-function upstreamHttpSources(
+function upstreamResponseSources(
   nodeId: string,
   nodesById: ReadonlyMap<string, WorkflowNode>,
   predecessors: ReadonlyMap<string, ReadonlySet<string>>,
@@ -139,7 +139,7 @@ function upstreamHttpSources(
     if (visited.has(candidateId)) continue
     visited.add(candidateId)
     const candidate = nodesById.get(candidateId)
-    if (candidate?.type === "http-request") {
+    if (candidate?.type === "http-request" || candidate?.type === "sse") {
       sources.add(candidateId)
       continue
     }
@@ -376,14 +376,14 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
         { kind: "add_assertion_rule", nodeId: node.nodeId },
       ))
     }
-    const sources = upstreamHttpSources(node.nodeId, nodesById, predecessors)
+    const sources = upstreamResponseSources(node.nodeId, nodesById, predecessors)
     if (sources.length === 0) {
       diagnostics.push(diagnostic(
         "assertion_source_missing",
         "error",
         "assertion",
         [node.nodeId],
-        "The assertion node has no upstream HTTP source.",
+        "The assertion node has no upstream response source.",
         {},
         { kind: "connect_http_source", nodeId: node.nodeId },
       ))
@@ -393,7 +393,7 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
         "error",
         "assertion",
         [node.nodeId, ...sources],
-        "The assertion node has multiple upstream HTTP sources.",
+        "The assertion node has multiple upstream response sources.",
         { sourceNodeIds: sources },
         { kind: "connect_single_http_source", nodeId: node.nodeId },
       ))
@@ -567,7 +567,7 @@ function addExpectedStatusMigrationDiagnostics(workflow: WorkflowGraphInput, dia
 
   for (const node of candidateRequests) {
     for (const assertion of assertions) {
-      if (!upstreamHttpSources(assertion.nodeId, nodesById, predecessors).includes(node.nodeId)) continue
+      if (!upstreamResponseSources(assertion.nodeId, nodesById, predecessors).includes(node.nodeId)) continue
       addMigrationDiagnosticsForPair(node, assertion, diagnostics)
     }
   }
@@ -578,7 +578,7 @@ function addDataflowDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   const provenance = analyzeVariableProvenance(workflow.nodes)
   const variables = workflow.variables ?? {}
   for (const node of workflow.nodes) {
-    if (node.type !== "http-request") continue
+    if (node.type !== "http-request" && node.type !== "sse") continue
     for (const [variableName, path] of Object.entries(node.config?.extractors ?? {})) {
       // Persisted graphs are read without re-validation, so a drifted/imported
       // config can carry a non-string extractor value — treat it as invalid
@@ -686,7 +686,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
       continue
     }
 
-    if (node.type === "http-request") {
+    if (node.type === "http-request" || node.type === "sse") {
       const statusCode = statusCodeOf(result)
       const response = responseMetadata(result)
       if (result.status === "failed") {
@@ -697,13 +697,13 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()
         diagnostics.push(diagnostic(
-          "http_request_failed",
+          node.type === "sse" ? "sse_stream_failed" : "http_request_failed",
           "error",
           "execution",
           [node.nodeId, ...blockedNodeIds],
           statusCode === undefined
-            ? "An HTTP request failed before a response status was available."
-            : "An HTTP request returned an error status.",
+            ? `A ${node.type === "sse" ? "Server-Sent Events stream" : "HTTP request"} failed before a response status was available.`
+            : `${node.type === "sse" ? "A Server-Sent Events stream" : "An HTTP request"} returned an error status.`,
           {
             ...(statusCode === undefined ? { failureKind: "transport" } : { statusCode }),
             blockedNodeIds,
@@ -726,7 +726,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
         .some(pathTargetsResponseBody)
       const assertionNeedsBody = workflow.nodes.some((candidate) =>
         candidate.type === "assertion"
-          && upstreamHttpSources(candidate.nodeId, nodesById, predecessors).includes(node.nodeId)
+          && upstreamResponseSources(candidate.nodeId, nodesById, predecessors).includes(node.nodeId)
           && (candidate.config?.assertions ?? []).some((assertion) =>
             assertion.source === "prev" && pathTargetsResponseBody(assertion.path),
           ),
@@ -767,7 +767,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
     }
 
     if (node.type === "assertion") {
-      const staticSources = upstreamHttpSources(node.nodeId, nodesById, predecessors)
+      const staticSources = upstreamResponseSources(node.nodeId, nodesById, predecessors)
       for (const evaluation of result.assertions ?? []) {
         if (staticSources.length === 1 && evaluation.sourceNodeId !== null && evaluation.sourceNodeId !== staticSources[0]) {
           diagnostics.push(diagnostic(
@@ -775,7 +775,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
             "error",
             "assertion",
             [node.nodeId, evaluation.sourceNodeId, staticSources[0]!],
-            "The assertion used a different HTTP source than the current graph resolves.",
+            "The assertion used a different response source than the current graph resolves.",
             { observedSourceNodeId: evaluation.sourceNodeId, configuredSourceNodeId: staticSources[0]! },
             { kind: "reconnect_assertion_source", nodeId: node.nodeId },
           ))
@@ -814,7 +814,7 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
   }
 
   for (const node of workflow.nodes) {
-    if (node.type !== "http-request" || Object.keys(node.config?.extractors ?? {}).length === 0) continue
+    if ((node.type !== "http-request" && node.type !== "sse") || Object.keys(node.config?.extractors ?? {}).length === 0) continue
     if (!resultsByNode.has(node.nodeId)) {
       diagnostics.push(diagnostic(
         "extractor_producer_not_executed",

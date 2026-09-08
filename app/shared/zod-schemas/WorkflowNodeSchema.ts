@@ -7,6 +7,7 @@ import { HTTPNodeDataSchema } from "./HTTPNodeDataSchema"
 import { MergeNodeDataSchema } from "./MergeNodeDataSchema"
 import { NoteNodeDataSchema } from "./NoteNodeDataSchema"
 import { PositionSchema } from "./PositionSchema"
+import { SseNodeDataSchema } from "./SseNodeDataSchema"
 import { StartNodeDataSchema } from "./StartNodeDataSchema"
 import { WorkflowCallNodeDataSchema } from "./WorkflowCallNodeDataSchema"
 
@@ -55,12 +56,19 @@ export const WorkflowNodeSchema = z.discriminatedUnion("type", [
     .describe("Sends one HTTP request and optionally extracts values from the response into workflow variables. One input, one output."),
   baseNode
     .extend({
+      type: z.literal("sse"),
+      config: SseNodeDataSchema.optional(),
+    })
+    .strict()
+    .describe('Starts a Server-Sent Events listener. Its "ready" output runs after the SSE handshake succeeds; its "complete" output runs after the bounded stream ends. Finish rules may close on a matching event. The complete path can feed an assertion node using the collected SSE response.'),
+  baseNode
+    .extend({
       type: z.literal("assertion"),
       config: AssertionNodeDataSchema.optional(),
     })
     .strict()
     .describe(
-      'Checks values from the single upstream http-request node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one http-request node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
+      'Checks values from the single upstream response-producing node and branches on the result. TWO outputs: every outgoing edge MUST set sourceHandle to "pass" or "fail". Exactly one HTTP request or SSE node must be reachable upstream — zero or two makes the source ambiguous and the node fails.',
     ),
   baseNode
     .extend({
