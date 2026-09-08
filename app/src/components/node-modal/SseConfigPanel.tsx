@@ -20,6 +20,7 @@ const CableCardIcon = createCardIcon(Cable);
 const SettingsCardIcon = createCardIcon(Settings);
 const SlidersCardIcon = createCardIcon(SlidersHorizontal);
 
+// fallow-ignore-next-line complexity -- each fallback is an independent persisted SSE setting; a generic defaults layer would hide the panel's complete configuration shape.
 function defaultConfig(config: Partial<NodeModalSseConfig>): NodeModalSseConfig {
   return {
     url: config.url ?? "",
@@ -47,6 +48,10 @@ function nonNegativeInteger(value: string, fallback: number): number {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function numberInput(min: number, max: number, value: number, onChange: (value: string) => void) {
+  return <Input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="max-w-40 font-mono" />;
+}
+
 const FINISH_OPERATOR_OPTIONS: SelectOption[] = [
   "equals", "notEquals", "contains", "notContains", "gt", "gte", "lt", "lte", "count", "exists", "notExists",
 ].map((operator) => ({ label: operator, value: operator }));
@@ -69,9 +74,13 @@ function extractorsFromPairs(pairs: KeyValuePair[]): Record<string, string> {
 
 export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: SseConfigPanelProps) {
   const [config, setConfig] = useState<NodeModalSseConfig>(() => defaultConfig(initialConfig));
+  const [extractorRows, setExtractorRows] = useState<KeyValuePair[]>(() =>
+    extractorPairs(initialConfig.extractors ?? {}),
+  );
 
   useEffect(() => {
     setConfig(defaultConfig(initialConfig));
+    setExtractorRows(extractorPairs(initialConfig.extractors ?? {}));
   }, [initialConfig]);
 
   const updateConfig = (patch: Partial<NodeModalSseConfig>) => {
@@ -100,7 +109,7 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
               <Input value={config.eventType ?? ""} onChange={(event) => updateEventType(event.target.value)} placeholder="order.updated" className="font-mono" />
             </FormField>
             <FormField label="Events to collect" hint="The connection closes as soon as this many matching events arrive.">
-              <Input type="number" min="1" max="100" value={config.maxEvents} onChange={(event) => updateConfig({ maxEvents: positiveInteger(event.target.value, config.maxEvents) })} className="max-w-40 font-mono" />
+              {numberInput(1, 100, config.maxEvents, (value) => updateConfig({ maxEvents: positiveInteger(value, config.maxEvents) }))}
             </FormField>
           </div>
         </Card>
@@ -135,7 +144,7 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
             The listener closes when every rule matches the same event. Use <code className="font-mono">data.status</code> for JSON event data, or <code className="font-mono">data</code>, <code className="font-mono">event</code>, and <code className="font-mono">id</code> for event fields.
           </div>
           {config.finishConditions.map((condition, index) => (
-            <div key={`${condition.path}-${index}`} className="space-y-3 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+            <div key={index} className="space-y-3 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
               <div className="grid gap-3 sm:grid-cols-2">
                 <FormField label="Event path">
                   <Input value={condition.path} onChange={(event) => updateCondition(index, { path: event.target.value })} placeholder="data.status" className="font-mono" />
@@ -162,15 +171,18 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
     <Card title="Stream limits" icon={SettingsCardIcon}>
       <div className="space-y-4">
         <FormField label="Timeout (seconds)" hint="Set to 0 to wait until a finish trigger matches. A finish rule is required when timeout is 0.">
-          <Input type="number" min="0" max="300" value={config.timeout} onChange={(event) => updateConfig({ timeout: nonNegativeInteger(event.target.value, config.timeout) })} className="max-w-40 font-mono" />
+          {numberInput(0, 300, config.timeout, (value) => updateConfig({ timeout: nonNegativeInteger(value, config.timeout) }))}
         </FormField>
         <Toggle label="Follow redirects" checked={config.followRedirects} onChange={(event) => updateConfig({ followRedirects: event.target.checked })} />
         <Toggle label="Verify TLS certificates" checked={config.sslVerify} onChange={(event) => updateConfig({ sslVerify: event.target.checked })} />
         <Toggle label="Continue if stream test fails" checked={config.continueOnFail} onChange={(event) => updateConfig({ continueOnFail: event.target.checked })} />
         <FormField label="Extract variables" hint="Map a variable name to a path such as response.body.events[0].data.">
           <KeyValueEditor
-            pairs={extractorPairs(config.extractors)}
-            onChange={(pairs) => updateConfig({ extractors: extractorsFromPairs(pairs) })}
+            pairs={extractorRows}
+            onChange={(pairs) => {
+              setExtractorRows(pairs);
+              updateConfig({ extractors: extractorsFromPairs(pairs) });
+            }}
             keyPlaceholder="eventPayload"
             valuePlaceholder="response.body.events[0].data"
           />

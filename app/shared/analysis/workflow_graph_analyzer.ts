@@ -125,6 +125,7 @@ function traverse(startIds: readonly string[], adjacency: ReadonlyMap<string, Re
   return visited
 }
 
+// fallow-ignore-next-line complexity -- this traversal deliberately stops at response-producing nodes while retaining every non-response predecessor for diagnostics.
 function upstreamResponseSources(
   nodeId: string,
   nodesById: ReadonlyMap<string, WorkflowNode>,

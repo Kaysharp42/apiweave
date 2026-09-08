@@ -101,6 +101,14 @@ interface SseFinishCondition {
   readonly expectedValue?: unknown
 }
 
+function appendQueryParams(url: string, queryParams: Readonly<Record<string, string>>): string {
+  if (Object.keys(queryParams).length === 0) return url
+  const [base = url, existingQuery] = url.split("?")
+  const params = new URLSearchParams(existingQuery ?? "")
+  for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
+  return `${base}?${params.toString()}`
+}
+
 /** Internal terminal-node event. The scheduler persists it but never relays its body over progress transports. */
 export interface NodeResultEvent {
   readonly kind: "node.result"
@@ -295,6 +303,11 @@ export class WorkflowExecutor {
       return this.buildOutput(caseName, startedAt, seed, finalStatus)
     } catch (error) {
       if (error instanceof StopBranch) {
+        // The Ready branch can fail while an SSE consumer is still running.
+        // Settle those consumers before snapshotting the run so no completed
+        // run can retain a running SSE node or omit its terminal result.
+        this.abortSseListeners()
+        await this.waitForSseTasks()
         return this.buildOutput(caseName, startedAt, seed, "failed")
       }
       throw error
@@ -726,12 +739,7 @@ export class WorkflowExecutor {
 
     this.applyAuthConfig(auth, headers, queryParams)
 
-    if (Object.keys(queryParams).length > 0) {
-      const [base = url, existingQuery] = url.split("?")
-      const params = new URLSearchParams(existingQuery ?? "")
-      for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
-      url = `${base}?${params.toString()}`
-    }
+    url = appendQueryParams(url, queryParams)
 
     let fetchBody: string | Buffer | UndiciFormData | undefined
     try {
@@ -848,6 +856,7 @@ export class WorkflowExecutor {
 
   // -------------------- Server-Sent Events --------------------
 
+  // fallow-ignore-next-line complexity -- this is one listener lifecycle: normalize its request, validate the response, then register its owned task; splitting those transitions obscures the cancellation boundary between them.
   private async startSseListener(
     node: WorkflowNode,
     nodes: Map<string, WorkflowNode>,
@@ -884,16 +893,12 @@ export class WorkflowExecutor {
     this.applyAuthConfig(auth, headers, queryParams)
     for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
     headers["Accept"] = "text/event-stream"
-    if (Object.keys(queryParams).length > 0) {
-      const [base = url, existingQuery] = url.split("?")
-      const params = new URLSearchParams(existingQuery ?? "")
-      for (const [key, value] of Object.entries(queryParams)) params.set(key, value)
-      url = `${base}?${params.toString()}`
-    }
+    url = appendQueryParams(url, queryParams)
     const unresolvedPlaceholders = collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)])
     const abortController = new AbortController()
     const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
 
+    // fallow-ignore-next-line code-duplication -- both sides of the listener boundary complete the same SSE node shape, but one owns HTTP setup while the other owns stream consumption and edge traversal.
     try {
       this.deps.http.validateUrl(url)
       const response = await this.deps.http.safeFetch(
@@ -947,6 +952,7 @@ export class WorkflowExecutor {
     }
   }
 
+  // fallow-ignore-next-line complexity -- success, an incomplete stream, and cancellation errors are the terminal states of the same listener task; extracting them would split its result ownership.
   private async consumeSseListener(input: {
     readonly node: WorkflowNode
     readonly nodes: Map<string, WorkflowNode>
@@ -1322,6 +1328,7 @@ export class WorkflowExecutor {
       : { state: "resolved-template", value }
   }
 
+  // fallow-ignore-next-line complexity -- this breadth-first walk must distinguish missing, ambiguous, and completed response sources before an assertion can safely read prior output.
   private resolveAssertionResponseSource(
     assertionNodeId: string,
     edges: readonly WorkflowEdge[],

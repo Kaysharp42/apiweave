@@ -146,6 +146,7 @@ void NOISE_DATA_URI;
 // must cost that one tile, not the canvas — see NodeBoundary. Registering a new
 // kind here is what covers it.
 const nodeTypes: NodeTypes = {
+  // fallow-ignore-next-line code-duplication -- this is ReactFlow's declarative node-type registry: every entry must explicitly bind its renderer to its error boundary.
   "http-request": withNodeBoundary(
     HTTPRequestNode,
     "http-request",

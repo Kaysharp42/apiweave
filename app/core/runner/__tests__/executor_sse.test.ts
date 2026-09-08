@@ -181,4 +181,38 @@ describe("WorkflowExecutor — SSE node", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()))
     }
   })
+
+  it("settles the listener before snapshotting a failure on the ready path", async () => {
+    const { createServer } = await import("node:http")
+    const server = createServer((request, response) => {
+      if (request.url === "/events") {
+        response.writeHead(200, { "content-type": "text/event-stream" })
+        response.flushHeaders()
+        return
+      }
+      response.writeHead(500)
+      response.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const port = (server.address() as { port: number }).port
+    try {
+      const output = await makeExecutor().executeWorkflow({
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "stream", type: "sse", config: { url: `http://127.0.0.1:${port}/events` } },
+          { nodeId: "trigger", type: "http-request", config: { method: "POST", url: `http://127.0.0.1:${port}/trigger` } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "stream" },
+          { edgeId: "e2", source: "stream", target: "trigger", sourceHandle: "ready" },
+        ],
+      })
+
+      expect(output.status).toBe("failed")
+      expect(output.nodeStatuses["stream"]).toBe("failed")
+      expect(output.results.find((entry) => entry.nodeId === "stream")).toBeDefined()
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
 })

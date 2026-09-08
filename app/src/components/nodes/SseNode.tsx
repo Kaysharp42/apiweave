@@ -16,6 +16,7 @@ function SseOutputHandle({ id, label, offsetY }: { id: "ready" | "complete"; lab
   );
 }
 
+// fallow-ignore-next-line complexity -- this presentational node derives labels and optional display slots directly from stream configuration; moving those branches to helpers would not simplify the rendered contract.
 function SseNode({ id, data, selected }: SseNodeProps) {
   const maxEvents = data.config?.maxEvents ?? 1;
   const eventType = data.config?.eventType;

@@ -239,6 +239,7 @@ function requireResponseNode(workflow: Workflow, sourceNodeId: string): void {
   }
 }
 
+// fallow-ignore-next-line code-duplication -- assertion lookup and response-node validation share the same workflow error vocabulary, but have different validation contracts.
 function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): string {
   const assertion = workflow.nodes.find((node) => node.nodeId === assertionNodeId)
   if (!assertion || assertion.type !== "assertion") {
@@ -251,6 +252,7 @@ function resolveAssertionSource(workflow: Workflow, assertionNodeId: string): st
   const sources = new Set<string>()
   while (queue.length > 0) {
     const current = queue.shift()
+    // fallow-ignore-next-line code-duplication -- this service walks raw edges while the analyzer walks its precomputed adjacency map; sharing the loop would couple authoring to diagnostic internals.
     if (current === undefined || visited.has(current)) continue
     visited.add(current)
     const node = nodes.get(current)
