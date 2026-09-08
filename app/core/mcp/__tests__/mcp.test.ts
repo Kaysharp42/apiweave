@@ -862,6 +862,25 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     await client.close()
   })
 
+  it.each(["addNodes", "addEdges"])("rejects unknown MCP patch key %s without changing the workflow", async (key) => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      ...brokenGraph,
+    })
+    const ids = { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId }
+    const before = await dispatchOk("workflows", "get", ids)
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "workflows_patch",
+      arguments: { ...ids, name: "must not be saved", [key]: [] },
+    })
+    expect(result.isError).toBe(true)
+    expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain(key)
+    expect(await dispatchOk("workflows", "get", ids)).toEqual(before)
+    await client.close()
+  })
+
   it("rejects a patch computed against a stale revision instead of clobbering", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflow = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {

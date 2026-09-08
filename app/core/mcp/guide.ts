@@ -293,6 +293,44 @@ removes by id:
 compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
+
+### Insert a node and rewire in one patch
+
+The keys are \`upsertNodes\` and \`upsertEdges\`. To insert \`check\` into an
+existing \`request → end\` connection named \`request-end\`, send the new node,
+the old edge removal, and both replacement edges in **one** \`workflows_patch\`
+call. Splitting these across calls can leave a saved branch disconnected.
+Use the actual node/edge ids and current \`rev\` from \`workflows_get\`:
+
+\`\`\`json
+{
+  "workspaceId": "...",
+  "workflowId": "...",
+  "expectedRevision": 7,
+  "upsertNodes": [
+    {
+      "nodeId": "check",
+      "type": "assertion",
+      "position": { "x": 0, "y": 0 },
+      "config": {
+        "assertions": [
+          { "source": "status", "path": "", "operator": "equals", "expectedValue": 200 }
+        ]
+      }
+    }
+  ],
+  "removeEdgeIds": ["request-end"],
+  "upsertEdges": [
+    { "edgeId": "request-check", "source": "request", "target": "check" },
+    { "edgeId": "check-end", "source": "check", "target": "end", "sourceHandle": "pass" }
+  ]
+}
+\`\`\`
+
+Read the returned \`diagnosis\` and confirm \`touchedNodeIds\` / \`touchedEdgeIds\`
+include the intended edits before running. A successful write means the edit
+was saved, not that the graph is runnable; diagnosis is reported after saving.
+On a revision conflict, read the workflow again and recompute the complete patch.
 `
 
 const PLACEHOLDERS = `# Placeholders
