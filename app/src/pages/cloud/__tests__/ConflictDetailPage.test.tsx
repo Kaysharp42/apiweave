@@ -182,6 +182,32 @@ describe("ConflictDetailPage", () => {
     expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
   });
 
+  // An end-to-end encrypted workspace never gets a server-side 3-way merge: the
+  // server cannot read the payloads, so auto_mergeable is always false and
+  // merge_residual_paths always empty. That must read as "choose one whole
+  // copy", never as a failure or a blocked control.
+  it("offers a whole-record choice, not an error, when no auto-merge is available", async () => {
+    const encryptedConflict: Conflict = {
+      ...workflowConflict,
+      auto_mergeable: false,
+      merge_residual_paths: [],
+    };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: encryptedConflict };
+      return { ok: true, data: [] };
+    });
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    expect(screen.getByText("whole-record choice")).toBeInTheDocument();
+    expect(screen.getByText("Choose one complete copy")).toBeInTheDocument();
+    // No merge is offered at all — not a disabled one, and no warning banner.
+    expect(screen.queryByRole("button", { name: "Apply merge to workspace" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Merge unavailable for this conflict")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep Local copy" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Keep Cloud copy" })).toBeEnabled();
+  });
+
   it("blocks the merge and warns when a residual path has no matching diff entry", async () => {
     const mismatchConflict: Conflict = { ...workflowConflict, merge_residual_paths: ["nonexistent.deep.path"] };
     invokeMock.mockImplementation(async (_domain: string, action: string) => {

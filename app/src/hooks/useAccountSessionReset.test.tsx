@@ -38,6 +38,7 @@ function statusForAccount(accountId: string | null): CloudSyncStatus {
     bindings: [],
     workspaceCatalog: [],
     teamCatalog: [],
+    encryptionDecisionPending: [],
     ...(accountId === null ? {} : { account: { accountId } }),
   } as CloudSyncStatus;
 }

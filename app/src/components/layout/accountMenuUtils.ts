@@ -1,5 +1,6 @@
 import type { User } from "../../types";
 import type { CloudSyncStatus } from "../../types/cloud";
+import { getCloudAttention } from "../../utils/cloudAttention";
 
 /**
  * The name + email shown in the account menu. Prefers the linked cloud account
@@ -31,15 +32,42 @@ const MUTED_BADGE =
   "bg-surface-overlay text-text-muted dark:bg-surface-dark-overlay dark:text-text-muted-dark";
 const MUTED_DOT = "bg-text-muted dark:bg-text-muted-dark";
 
+const ATTENTION_BADGE: Record<
+  "error" | "warning",
+  { className: string; dotClassName: string }
+> = {
+  warning: {
+    className:
+      "bg-status-warning/10 text-status-warning dark:bg-[var(--aw-status-warning)]/10 dark:text-[var(--aw-status-warning)]",
+    dotClassName: "bg-status-warning dark:bg-[var(--aw-status-warning)]",
+  },
+  error: {
+    className:
+      "bg-status-error/10 text-status-error dark:bg-[var(--aw-status-error)]/10 dark:text-[var(--aw-status-error)]",
+    dotClassName: "bg-status-error dark:bg-[var(--aw-status-error)]",
+  },
+};
+
 /**
  * Small connection pill next to the role badge. Returns null in web preview
  * (no cloud bridge) or before the first status load.
+ *
+ * Anything `getCloudAttention` reports wins over the steady-state label: a
+ * pill reading "Synced" next to a workspace whose sync is actually paused is
+ * worse than no pill at all.
  */
 export function getConnectionBadge(
   status: CloudSyncStatus | null,
   unavailable: boolean,
 ): ConnectionBadge | null {
   if (unavailable || status === null) return null;
+
+  const [attention] = getCloudAttention(status, unavailable);
+  if (attention) {
+    // Literal strings, not interpolated ones: Tailwind only emits classes it
+    // can read verbatim in the source.
+    return { label: attention.badgeLabel, ...ATTENTION_BADGE[attention.severity] };
+  }
 
   switch (status.linkState) {
     case "unlinked":
@@ -50,22 +78,7 @@ export function getConnectionBadge(
       };
     case "linking":
       return { label: "Linking…", className: MUTED_BADGE, dotClassName: MUTED_DOT };
-    case "authenticationRequired":
-      return {
-        label: "Sign-in needed",
-        className:
-          "bg-status-warning/10 text-status-warning dark:text-status-warning-dark",
-        dotClassName: "bg-status-warning dark:bg-status-warning-dark",
-      };
     case "linked":
-      if (status.syncState === "error" || status.lastError) {
-        return {
-          label: "Sync error",
-          className:
-            "bg-status-error/10 text-status-error dark:text-status-error-dark",
-          dotClassName: "bg-status-error dark:bg-status-error-dark",
-        };
-      }
       return {
         label: status.syncState === "offline" ? "Offline" : "Synced",
         className:

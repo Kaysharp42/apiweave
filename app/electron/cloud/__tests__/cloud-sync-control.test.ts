@@ -19,6 +19,16 @@ import {
 } from "../../../core/services/cloud_sync_control"
 
 const WORKSPACE_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+
+/**
+ * Classify WORKSPACE_ID as plaintext, which is what `bind()` does from the
+ * server's answer in production. Fixtures upsert a binding straight into the
+ * repository and would otherwise be unclassified — and an unclassified
+ * workspace is deliberately treated as locked, not as plaintext.
+ */
+function markPlaintext(repository: CloudSyncRepository): void {
+  repository.setSetting(`cloud.e2ee.mode.${WORKSPACE_ID}`, "none")
+}
 const CLOUD_WORKSPACE_ID = "01CLOUDWORKSPACE00000000000"
 
 describe("DesktopCloudSyncControl", () => {
@@ -62,6 +72,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -104,6 +115,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -184,6 +196,7 @@ describe("DesktopCloudSyncControl", () => {
       "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
       ["downloaded-team", "Downloaded Team", "downloaded-team", "team", "bi-directional", "{}"],
     )
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: "downloaded-team",
       cloudWorkspaceId: "cloud-downloaded-team",
@@ -366,6 +379,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -461,6 +475,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -517,6 +532,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -639,6 +655,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -784,6 +801,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -846,6 +864,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -891,6 +910,7 @@ describe("DesktopCloudSyncControl", () => {
       publicKey: new Uint8Array(32),
       createdAt: new Date().toISOString(),
     })
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,
@@ -959,6 +979,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("rejects relink when the existing binding account cannot be verified or does not match", async () => {
     const repository = new CloudSyncRepository(store)
+    markPlaintext(repository)
     repository.upsertWorkspaceBinding({
       workspaceId: WORKSPACE_ID,
       cloudWorkspaceId: CLOUD_WORKSPACE_ID,

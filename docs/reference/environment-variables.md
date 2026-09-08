@@ -1,6 +1,6 @@
 # Environment Variables
 
-*Canonical reference for every environment variable read by the APIWeave desktop app. The desktop app is a single Electron process: the renderer reads `VITE_*` variables at build time, and the main process reads its own configuration from the OS environment. There is no `.env` file inside the desktop app; settings that change at runtime live in the SQLite database and are managed through the in-app settings panel.*
+*Canonical reference for every environment variable read by the APIWeave desktop app. The desktop app is a single Electron process: the renderer reads `VITE_*` variables at build time, and the main process reads its own configuration from the OS environment. For local development, `app/.env.local` supplies machine-specific main-process overrides; settings that change at runtime live in the SQLite database and are managed through the in-app settings panel.*
 
 ## Prerequisites
 
@@ -19,27 +19,17 @@ Variables Vite injects into the browser bundle. They are baked in at build time,
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `VITE_APP_VERSION` | No | from `app/package.json` `version` | The app version shown in the footer. Injected by Vite at build time (via `define`), with a `"0.0.0"` fallback when the package version cannot be read. |
-| `VITE_API_URL` | No | `http://localhost:8000` (dev) | Legacy. The renderer always talks to the bundled main process over the typed IPC channel — in development and in packaged builds — and does not make HTTP calls to a separate backend. This variable is no longer read at runtime; it remains in `app/.env.example` and the `ImportMeta` type for compatibility. |
-| `VITE_API_WEAVE_URL` | No | `http://localhost:8000` (dev) | Legacy. Same as `VITE_API_URL`: the renderer uses the typed IPC channel and does not call a separate HTTP backend. No longer read at runtime; it remains only in `app/.env.example`. |
-
-### Example frontend `.env`
-
-```env
-VITE_API_URL=http://localhost:8000
-VITE_API_WEAVE_URL=http://localhost:8000
-```
-
-These values are legacy and are not read at runtime. The renderer always talks to the bundled main process over the typed IPC channel, in both development and packaged builds; there is no separate backend to point at.
+There are no renderer environment variables. The renderer always talks to the bundled main process over the typed IPC channel, in development and in packaged builds.
 
 ## Main Process (Desktop)
 
-Variables the Electron main process reads from the host environment. In a packaged app, defaults are baked in. In a development run from `app/`, you can set these in the shell before `npm run dev` to override the defaults.
+Variables the Electron main process reads from the host environment. In a packaged app, defaults are baked in. In a development run from `app/`, `npm run dev` reads ignored `app/.env.local` values and passes them to Electron.
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
 | `APIWEAVE_FRONTEND_DIST` | No | `process.resourcesPath/renderer` (packaged), `app.getAppPath()/dist/renderer` (dev) | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
 | `APIWEAVE_DEV_UPDATES` | No | unset | Set to `1` to rehearse the updater against a local manifest (`app/dev-app-update.yml`) instead of the release channel. |
-| `APIWEAVE_CLOUD_ENTRY_URL` | No | baked-in Cloud entry URL | Override the APIWeave Cloud endpoint the sync client talks to. |
+| `APIWEAVE_CLOUD_ENTRY_URL` | No | baked-in Cloud entry URL | Override the APIWeave Cloud entry URL. The desktop fetches this environment's configuration, which supplies the matching web (`https://dev.apiweave.app`), API (`https://api-dev.apiweave.app`), and auth (`https://auth-dev.apiweave.app`) URLs. |
 | `APPIMAGE` | No | set by AppImage runtime | Linux-only. Set automatically when the app runs from an AppImage; the updater uses it to self-update the AppImage in place. |
 
 Most main-process behavior is not environment-driven: the SQLite database path (`<userData>/apiweave.db`), the secret-store keyfile (`<userData>/keyfile.json`), the log level (`info`), and the Linux Wayland hint (`ozone-platform-hint=auto`) are fixed by the app rather than read from the environment. There is no `APIWEAVE_DB_PATH` or `APIWEAVE_KEYFILE_PATH` override.
@@ -54,15 +44,9 @@ Most main-process behavior is not environment-driven: the SQLite database path (
 
 A short list of foot-guns we have seen. Each one has tripped up a real user.
 
-### Mistake 1: Changing `VITE_API_URL` after the frontend has built
+### Mistake 1: Putting the API or auth URL in `.env.local`
 
-Vite injects these values at build time, then the browser bundle no longer reads `.env`. If you change the value in `app/.env` and forget to rebuild, the running app keeps the old URL. The fix is always `npm run build` after editing `app/.env`.
-
-```bash
-cd app
-# Edit .env, then rebuild
-npm run build:renderer
-```
+Set only the cloud entry URL. The desktop fetches the environment configuration from it and validates that its web, API, and auth endpoints belong together. For the development environment, create `app/.env.local` from `app/.env.example`; it is ignored by Git.
 
 ### Mistake 2: Copying only the database to a new machine
 
@@ -70,7 +54,7 @@ The keyfile and the database must travel together. If you copy `apiweave.db` to 
 
 ## Troubleshooting
 
-- **If the renderer shows stale build-time configuration**, rebuild the renderer (`npm run build:renderer` from `app/`). The desktop app always loads the built bundle.
+- **If development changes do not appear**, stop and restart `npm run dev`. The Vite renderer reloads browser changes, while Electron main-process changes require a restart.
 - **If the main process refuses to start with a database error**, the user data directory is not writable. Check permissions and free disk space.
 - **If an MCP client cannot connect**, enable the bridge in **Settings** and copy the live loopback URL from the **MCP** panel. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
 - **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile (`keyfile.json`) from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.

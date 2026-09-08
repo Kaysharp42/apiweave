@@ -188,6 +188,7 @@ describe("OrgWorkspaceSwitcher", () => {
         workspaceName: "Kyra",
         cloudWorkspaceId: "cloud-team-ws",
         cloudWorkspaceName: "Kyra",
+        encryption: "plaintext",
         teamId: "team-kyra",
         teamName: "Kyra Team",
         syncMode: "bi-directional",
@@ -199,6 +200,7 @@ describe("OrgWorkspaceSwitcher", () => {
       }],
       workspaceCatalog: [],
       teamCatalog: [],
+      encryptionDecisionPending: [],
     };
     setContext({
       availableWorkspaces: [makeEntry(personalWs), makeEntry(teamWs)],

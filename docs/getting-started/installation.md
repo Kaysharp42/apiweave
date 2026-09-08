@@ -158,7 +158,7 @@ scripts/desktop.ps1 build
 ./scripts/desktop.sh build
 ```
 
-The installer lands in `app/release/`. For day-to-day development, run `cd app && npm run dev` instead. It builds the main process and renderer, then launches Electron with the renderer loaded from `app://local/`. It does not start an HTTP server. Restart the command after source changes.
+The installer lands in `app/release/`. For day-to-day development, run `cd app && npm run dev` instead. It creates a development-mode renderer bundle, builds Electron, and launches the app with the renderer embedded behind `app://local/`. No HTTP server is started. Restart the command after source changes.
 
 ## Verify the Install
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { UpdateReadyBanner } from "./UpdateReadyBanner";
+import { UpdateBanner } from "./UpdateBanner";
 import { UpdateStatusProvider } from "../../contexts/UpdateStatusContext";
 import type { UpdateStatus } from "@shared/types/UpdateStatus";
 
@@ -25,19 +25,27 @@ const downloaded: UpdateStatus = {
 };
 
 const restartAndInstall = vi.fn();
+const downloadSpy = vi.fn();
+const openReleasePage = vi.fn();
 
 function installBridge(initial: UpdateStatus) {
   const listeners = new Set<(status: UpdateStatus) => void>();
   (window as unknown as Record<string, unknown>)["__APIWEAVE_UPDATES__"] = {
     getStatus: () => Promise.resolve(initial),
     check: () => Promise.resolve(initial),
-    download: () => Promise.resolve(initial),
+    download: () => {
+      downloadSpy();
+      return Promise.resolve(initial);
+    },
     setPolicy: () => Promise.resolve(initial),
     restartAndInstall: () => {
       restartAndInstall();
       return Promise.resolve();
     },
-    openReleasePage: () => Promise.resolve(),
+    openReleasePage: () => {
+      openReleasePage();
+      return Promise.resolve();
+    },
     openLogFile: () => Promise.resolve(),
     onStatusChanged: (callback: (status: UpdateStatus) => void) => {
       listeners.add(callback);
@@ -56,7 +64,7 @@ function installBridge(initial: UpdateStatus) {
 function renderBanner() {
   return render(
     <UpdateStatusProvider>
-      <UpdateReadyBanner />
+      <UpdateBanner />
     </UpdateStatusProvider>,
   );
 }
@@ -64,9 +72,18 @@ function renderBanner() {
 afterEach(() => {
   delete (window as unknown as Record<string, unknown>)["__APIWEAVE_UPDATES__"];
   restartAndInstall.mockClear();
+  downloadSpy.mockClear();
+  openReleasePage.mockClear();
 });
 
-describe("UpdateReadyBanner", () => {
+const available: UpdateStatus = {
+  ...baseStatus,
+  state: "available",
+  latestVersion: "0.7.0",
+  releaseUrl: "https://example.test/releases/0.7.0",
+};
+
+describe("UpdateBanner", () => {
   it("stays out of the way until an update is staged", async () => {
     installBridge(baseStatus);
     renderBanner();
@@ -89,6 +106,57 @@ describe("UpdateReadyBanner", () => {
     await waitFor(() => {
       expect(screen.queryByRole("status")).toBeNull();
     });
+  });
+
+  it("announces a release the user still has to ask for", async () => {
+    installBridge(available);
+    renderBanner();
+
+    expect(await screen.findByText(/v0\.7\.0 is available/)).toBeTruthy();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /download update/i }),
+    );
+    expect(downloadSpy).toHaveBeenCalledOnce();
+  });
+
+  it("sends platforms that can't self-install to the release page", async () => {
+    installBridge({ ...available, supportsAutoInstall: false });
+    renderBanner();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /view release/i }),
+    );
+    expect(openReleasePage).toHaveBeenCalledOnce();
+    expect(downloadSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps showing progress for the download it started", async () => {
+    const bridge = installBridge(available);
+    renderBanner();
+    await userEvent.click(
+      await screen.findByRole("button", { name: /download update/i }),
+    );
+
+    act(() =>
+      bridge.push({
+        ...available,
+        state: "downloading",
+        downloadProgressPercent: 42,
+      }),
+    );
+
+    expect(await screen.findByText(/42%/)).toBeTruthy();
+  });
+
+  it("still announces the restart after dismissing the same version's download notice", async () => {
+    const bridge = installBridge(available);
+    renderBanner();
+    await userEvent.click(await screen.findByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByRole("status")).toBeNull();
+
+    act(() => bridge.push(downloaded));
+
+    expect(await screen.findByText(/v0\.7\.0 is ready/)).toBeTruthy();
   });
 
   it("names the version waiting on a restart", async () => {

@@ -15,6 +15,24 @@ export interface UseCloudSync {
   readonly bindWorkspace: (
     input: CloudBindWorkspaceInput,
   ) => Promise<CloudSyncStatus>;
+  /**
+   * Choose end-to-end encryption. Before the workspace reaches the cloud this
+   * mints its key; on an already-encrypted, unlocked workspace the same call is
+   * a passphrase change (admin only).
+   */
+  readonly setWorkspaceEncryption: (
+    workspaceId: string,
+    passphrase: string,
+  ) => Promise<CloudSyncStatus>;
+  /** Choose NO encryption. Permanent once the workspace exists in the cloud. */
+  readonly declineWorkspaceEncryption: (
+    workspaceId: string,
+  ) => Promise<CloudSyncStatus>;
+  readonly unlockWorkspace: (
+    workspaceId: string,
+    passphrase: string,
+  ) => Promise<CloudSyncStatus>;
+  readonly lockWorkspace: (workspaceId: string) => Promise<CloudSyncStatus>;
   readonly unbindWorkspace: (workspaceId: string) => Promise<CloudSyncStatus>;
   readonly initializeWorkspace: (
     workspaceId: string,

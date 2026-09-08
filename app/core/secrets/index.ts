@@ -34,3 +34,16 @@ export type {
   SecretScopeChain,
   SecretScopeType,
 } from "./scoped_secret_resolver"
+export {
+  DEFAULT_KDF_PARAMS,
+  EnvelopeAuthFailed,
+  WorkspaceKeyMismatch,
+  deriveKek,
+  envelopeAad,
+  fingerprint,
+  openEnvelope,
+  sealEnvelope,
+  unwrapWdek,
+  wrapWdek,
+} from "./workspace_key"
+export type { KdfParams } from "./workspace_key"

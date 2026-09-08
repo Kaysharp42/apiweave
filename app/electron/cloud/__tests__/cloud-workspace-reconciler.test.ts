@@ -4,11 +4,12 @@ import {
   type ReconcilerBindInput,
   type ReconcilerCatalogEntry,
   type ReconcilerDeps,
+  type ReconcilerEncryptionPlan,
   type ReconcilerLocalWorkspace,
 } from "../cloud-workspace-reconciler"
 
 interface Recorder {
-  ensured: { workspaceId: string; isPersonal: boolean }[]
+  ensured: { workspaceId: string; isPersonal: boolean; encrypted: boolean }[]
   created: { id: string; origin: string }[]
   bound: ReconcilerBindInput[]
   initialized: string[]
@@ -23,6 +24,7 @@ function makeDeps(
   bound: { workspaceId: string; cloudWorkspaceId: string }[],
   catalog: ReconcilerCatalogEntry[],
   accountId = ACCOUNT_A,
+  plans: Record<string, ReconcilerEncryptionPlan> = {},
 ): { deps: ReconcilerDeps; rec: Recorder } {
   const rec: Recorder = {
     ensured: [],
@@ -36,8 +38,13 @@ function makeDeps(
     listLocalWorkspaces: () => locals,
     listBoundPairs: () => bound,
     catalog: () => catalog,
+    encryptionPlan: (workspaceId) => plans[workspaceId] ?? { mode: "none" },
     ensureSyncWorkspace: async (input) => {
-      rec.ensured.push({ workspaceId: input.workspaceId, isPersonal: input.isPersonal })
+      rec.ensured.push({
+        workspaceId: input.workspaceId,
+        isPersonal: input.isPersonal,
+        encrypted: input.encryption !== undefined,
+      })
       // Server provisions under the client-provided id (localId == cloudId).
       return {
         workspaceId: input.workspaceId,
@@ -45,6 +52,8 @@ function makeDeps(
         isPersonal: input.isPersonal,
         canPull: true,
         canPush: true,
+        // The server reports E2EE only when it actually applied our bundle.
+        encryptionMode: input.encryption === undefined ? "none" : "e2ee",
       }
     },
     createLocalFromCloud: (input) => {
@@ -103,7 +112,7 @@ describe("reconcileWorkspaces", () => {
     }
     const { deps, rec } = makeDeps([local], [], [])
     await reconcileWorkspaces(deps)
-    expect(rec.ensured).toEqual([{ workspaceId: "local-proj", isPersonal: false }])
+    expect(rec.ensured).toEqual([{ workspaceId: "local-proj", isPersonal: false, encrypted: false }])
     expect(rec.bound).toEqual([
       expect.objectContaining({
         workspaceId: "local-proj",

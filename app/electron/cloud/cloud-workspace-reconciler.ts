@@ -24,7 +24,20 @@
  * cloud Personal on the isPersonal flag alone and push the previous account's
  * workflows into it. The other account's cloud Personal is still downloaded —
  * it just arrives as its own local workspace instead of taking over this one.
+ *
+ * ENCRYPTION: a workspace this reconciler *creates* server-side commits its
+ * encryption mode forever (the server enforces write-once), so provisioning is
+ * gated on an explicit decision — see {@link ReconcilerEncryptionPlan}. A
+ * workspace that already exists in the cloud carries its own mode in the
+ * catalog and is bound with it; `unspecified` there means "we do not know",
+ * which is treated as locked, never as plaintext.
  */
+
+import type {
+  CloudWorkspaceCatalogEntry,
+  WorkspaceEncryptionMode,
+} from "../../core/services/cloud_sync_control"
+import type { WorkspaceEncryptionBundle } from "./workspace-encryption"
 
 // fallow-ignore-next-line code-duplication
 export interface ReconcilerLocalWorkspace {
@@ -36,15 +49,39 @@ export interface ReconcilerLocalWorkspace {
   readonly ownerAccountId?: string
 }
 
-export interface ReconcilerCatalogEntry {
-  readonly workspaceId: string
-  readonly workspaceName: string
-  readonly teamId?: string
-  readonly teamName?: string
-  readonly isPersonal: boolean
-  readonly canPull: boolean
-  readonly canPush: boolean
-}
+/**
+ * The slice of the cloud workspace catalog this reconciler needs. Derived from
+ * {@link CloudWorkspaceCatalogEntry} rather than redeclared, because the caller
+ * passes its catalog straight in — a second copy of the field list would drift.
+ *
+ * `encryptionMode` is optional there because catalogs persisted before E2EE
+ * existed have no such field, and absent reads as `"unspecified"`: locked,
+ * never plaintext.
+ */
+export type ReconcilerCatalogEntry = Pick<
+  CloudWorkspaceCatalogEntry,
+  "workspaceId" | "workspaceName" | "teamId" | "teamName" | "isPersonal" | "canPull" | "canPush" | "encryptionMode"
+>
+
+/**
+ * What to do about encryption for a local workspace that has never been
+ * provisioned. `pending` means nobody has been asked yet: the workspace is NOT
+ * provisioned, because the server's `encryption_mode` is write-once and a
+ * plaintext row can never be upgraded afterwards.
+ *
+ * `adopt` means provision with no bundle and take whatever mode the row already
+ * has. It exists for the case where this device minted a key for a workspace
+ * the cloud already holds under a different one: the server rejects that bundle
+ * (it would seal records under a key it has no wrapping for), and the only way
+ * forward is to stop offering ours and unlock theirs. Distinct from `none`,
+ * which asks for a *plaintext* row and would be the wrong request here — and
+ * distinct from `pending`, because the decision has been made, not deferred.
+ */
+export type ReconcilerEncryptionPlan =
+  | { readonly mode: "e2ee"; readonly bundle: WorkspaceEncryptionBundle }
+  | { readonly mode: "none" }
+  | { readonly mode: "adopt" }
+  | { readonly mode: "pending" }
 
 export interface ReconcilerBindInput {
   readonly workspaceId: string
@@ -53,6 +90,14 @@ export interface ReconcilerBindInput {
   readonly teamId?: string
   readonly teamName?: string
   readonly recordBaseline: boolean
+  /**
+   * The mode the SERVER reports for this workspace — off the provisioning
+   * response, not off what we asked for. `EnsureSyncWorkspace` silently ignores
+   * an `encryption` bundle on a workspace that already exists, so assuming our
+   * bundle was applied is exactly how a workspace ends up pushing plaintext
+   * under a key nobody holds.
+   */
+  readonly encryptionMode: WorkspaceEncryptionMode
 }
 
 // fallow-ignore-next-line code-duplication
@@ -62,11 +107,14 @@ export interface ReconcilerDeps {
   listLocalWorkspaces(): readonly ReconcilerLocalWorkspace[]
   listBoundPairs(): readonly { readonly workspaceId: string; readonly cloudWorkspaceId: string }[]
   catalog(): readonly ReconcilerCatalogEntry[]
+  /** The encryption decision recorded for a local workspace that is not yet provisioned. */
+  encryptionPlan(workspaceId: string): ReconcilerEncryptionPlan
   ensureSyncWorkspace(input: {
     workspaceId: string
     name: string
     slug: string
     isPersonal: boolean
+    encryption?: WorkspaceEncryptionBundle
   }): Promise<ReconcilerCatalogEntry>
   createLocalFromCloud(input: {
     id: string
@@ -79,6 +127,17 @@ export interface ReconcilerDeps {
   reactivate(): void
   initializeWorkspace(workspaceId: string): Promise<void>
   log(message: string, data?: Record<string, unknown>): void
+}
+
+/**
+ * A workspace is claimable when it has never synced, or last synced with the
+ * account linking now. Anything else belongs to a different account: leave it
+ * local, never bind it, never push it. Exported because anything that gates on
+ * "will this workspace sync under the current account?" — the manual bind path,
+ * the encryption-decision prompt — has to answer it exactly as this pass does.
+ */
+export function isWorkspaceClaimable(ownerAccountId: string | undefined, accountId: string): boolean {
+  return ownerAccountId === undefined || ownerAccountId === accountId
 }
 
 /**
@@ -99,17 +158,40 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
   const catalog = deps.catalog()
   const toInitialize: string[] = []
 
-  // A workspace is claimable when it has never synced, or last synced with the
-  // account linking now. Anything else belongs to a different account: leave it
-  // local, never bind it, never push it.
   const isClaimable = (workspace: ReconcilerLocalWorkspace): boolean => {
-    if (workspace.ownerAccountId === undefined || workspace.ownerAccountId === deps.accountId) {
+    if (isWorkspaceClaimable(workspace.ownerAccountId, deps.accountId)) {
       return true
     }
     deps.log("reconcile skipped workspace owned by another account", {
       workspaceId: workspace.workspaceId,
     })
     return false
+  }
+
+  // Bind a local workspace to the cloud row it pairs with, provisioning one
+  // first when `paired` is omitted, and queue its first sync. Cases 1 and 2
+  // differ only in whether a cloud row already exists; failures (including a
+  // pending encryption decision) are isolated per workspace so one bad
+  // workspace cannot abort the pass.
+  const bindOrProvision = async (
+    local: ReconcilerLocalWorkspace,
+    paired?: Pairing,
+  ): Promise<void> => {
+    try {
+      const target = paired ?? await provision(deps, local)
+      deps.bind({
+        workspaceId: local.workspaceId,
+        cloudWorkspaceId: target.workspaceId,
+        cloudWorkspaceName: target.workspaceName,
+        recordBaseline: true,
+        encryptionMode: target.encryptionMode,
+      })
+      boundCloud.add(target.workspaceId)
+      boundLocal.add(local.workspaceId)
+      toInitialize.push(local.workspaceId)
+    } catch (error) {
+      deps.log("reconcile skipped workspace", { workspaceId: local.workspaceId, reason: String(error) })
+    }
   }
 
   // 1. Personal: pair the local personal workspace with the cloud one (ids
@@ -119,38 +201,15 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
     (workspace) => workspace.isPersonal && isClaimable(workspace),
   )
   if (localPersonal !== undefined && !boundLocal.has(localPersonal.workspaceId)) {
+    // Pairing with an existing cloud row inherits that row's mode; only the
+    // provisioning arm creates a row, and only that arm is gated.
     const cloudPersonal = catalog.find(
       (entry) => entry.isPersonal && !boundCloud.has(entry.workspaceId),
     )
-    try {
-      if (cloudPersonal !== undefined) {
-        deps.bind({
-          workspaceId: localPersonal.workspaceId,
-          cloudWorkspaceId: cloudPersonal.workspaceId,
-          cloudWorkspaceName: cloudPersonal.workspaceName,
-          recordBaseline: true,
-        })
-        boundCloud.add(cloudPersonal.workspaceId)
-      } else {
-        const provisioned = await deps.ensureSyncWorkspace({
-          workspaceId: localPersonal.workspaceId,
-          name: localPersonal.name,
-          slug: localPersonal.slug,
-          isPersonal: true,
-        })
-        deps.bind({
-          workspaceId: localPersonal.workspaceId,
-          cloudWorkspaceId: provisioned.workspaceId,
-          cloudWorkspaceName: provisioned.workspaceName,
-          recordBaseline: true,
-        })
-        boundCloud.add(provisioned.workspaceId)
-      }
-      boundLocal.add(localPersonal.workspaceId)
-      toInitialize.push(localPersonal.workspaceId)
-    } catch (error) {
-      deps.log("reconcile personal failed", { workspaceId: localPersonal.workspaceId, error: String(error) })
-    }
+    await bindOrProvision(
+      localPersonal,
+      cloudPersonal === undefined ? undefined : toPairing(cloudPersonal),
+    )
   }
 
   // 2. Local-only, non-personal: provision into the personal team, then push.
@@ -158,25 +217,7 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
     if (local.isPersonal || boundLocal.has(local.workspaceId) || !isClaimable(local)) {
       continue
     }
-    try {
-      const provisioned = await deps.ensureSyncWorkspace({
-        workspaceId: local.workspaceId,
-        name: local.name,
-        slug: local.slug,
-        isPersonal: false,
-      })
-      deps.bind({
-        workspaceId: local.workspaceId,
-        cloudWorkspaceId: provisioned.workspaceId,
-        cloudWorkspaceName: provisioned.workspaceName,
-        recordBaseline: true,
-      })
-      boundLocal.add(local.workspaceId)
-      boundCloud.add(provisioned.workspaceId)
-      toInitialize.push(local.workspaceId)
-    } catch (error) {
-      deps.log("reconcile provision failed", { workspaceId: local.workspaceId, error: String(error) })
-    }
+    await bindOrProvision(local)
   }
 
   // 3. Cloud-only: download as a new local workspace keyed by the cloud id.
@@ -204,6 +245,7 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
         ...(origin === "team" && entry.teamId !== undefined ? { teamId: entry.teamId } : {}),
         ...(origin === "team" && entry.teamName !== undefined ? { teamName: entry.teamName } : {}),
         recordBaseline: false,
+        encryptionMode: toPairing(entry).encryptionMode,
       })
       boundCloud.add(entry.workspaceId)
       toInitialize.push(entry.workspaceId)
@@ -222,4 +264,47 @@ export async function reconcileWorkspaces(deps: ReconcilerDeps): Promise<void> {
   for (const workspaceId of toInitialize) {
     void deps.initializeWorkspace(workspaceId).catch(() => undefined)
   }
+}
+
+interface Pairing {
+  readonly workspaceId: string
+  readonly workspaceName: string
+  readonly encryptionMode: WorkspaceEncryptionMode
+}
+
+/** A catalog entry with no mode predates E2EE: unknown, and therefore locked. */
+function toPairing(entry: ReconcilerCatalogEntry): Pairing {
+  return {
+    workspaceId: entry.workspaceId,
+    workspaceName: entry.workspaceName,
+    encryptionMode: entry.encryptionMode ?? "unspecified",
+  }
+}
+
+/**
+ * Nobody has said whether this workspace should be encrypted, so it is not
+ * provisioned — the gate. Thrown rather than returned so it rides the
+ * per-workspace catch each case already has: nothing is bound, nothing is
+ * queued, and the rest of the pass carries on.
+ */
+export class EncryptionDecisionPending extends Error {
+  public constructor(workspaceId: string) {
+    super(`Workspace ${workspaceId} is waiting for an encryption decision, so it was not provisioned.`)
+    this.name = "EncryptionDecisionPending"
+  }
+}
+
+/** Provision a cloud row for a local workspace, once its encryption decision is made. */
+async function provision(deps: ReconcilerDeps, local: ReconcilerLocalWorkspace): Promise<Pairing> {
+  const plan = deps.encryptionPlan(local.workspaceId)
+  if (plan.mode === "pending") {
+    throw new EncryptionDecisionPending(local.workspaceId)
+  }
+  return toPairing(await deps.ensureSyncWorkspace({
+    workspaceId: local.workspaceId,
+    name: local.name,
+    slug: local.slug,
+    isPersonal: local.isPersonal,
+    ...(plan.mode === "e2ee" ? { encryption: plan.bundle } : {}),
+  }))
 }
