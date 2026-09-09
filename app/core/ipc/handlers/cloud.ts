@@ -8,6 +8,7 @@ import { NoInput } from "./common"
 import {
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
+  CloudSyncInactiveError,
   CloudUnlinkRequiresConfirmationError,
   CloudWorkspaceEncryptionInvalidError,
   CloudWorkspaceEncryptionSettledError,
@@ -235,7 +236,7 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
         if (error instanceof CloudWorkspaceOwnedByAnotherAccountError) {
           throw new ConflictError(error.message, { workspaceOwnedByAnotherAccount: true })
         }
-        throw error
+        throw mapCloudError(error)
       }
     },
   })
@@ -249,19 +250,19 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
   router.register("cloud", "setWorkspaceEncryption", {
     input: workspacePassphraseInput,
     output: statusSchema,
-    handle: (input) => encryptionErrors(() => required(control).setWorkspaceEncryption(input)),
+    handle: (input) => cloudErrors(() => required(control).setWorkspaceEncryption(input)),
   })
 
   router.register("cloud", "declineWorkspaceEncryption", {
     input: workspaceRefInput,
     output: statusSchema,
-    handle: (input) => encryptionErrors(() => required(control).declineWorkspaceEncryption(input)),
+    handle: (input) => cloudErrors(() => required(control).declineWorkspaceEncryption(input)),
   })
 
   router.register("cloud", "unlockWorkspace", {
     input: unlockWorkspaceInput,
     output: statusSchema,
-    handle: (input) => encryptionErrors(() => required(control).unlockWorkspace(input)),
+    handle: (input) => cloudErrors(() => required(control).unlockWorkspace(input)),
   })
 
   router.register("cloud", "lockWorkspace", {
@@ -279,19 +280,19 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
   router.register("cloud", "initializeWorkspace", {
     input: initializeWorkspaceInput,
     output: statusSchema,
-    handle: (input) => required(control).initializeWorkspace(input),
+    handle: (input) => cloudErrors(() => required(control).initializeWorkspace(input)),
   })
 
   router.register("cloud", "refreshWorkspaceCatalog", {
     input: NoInput,
     output: statusSchema,
-    handle: () => required(control).refreshWorkspaceCatalog(),
+    handle: () => cloudErrors(() => required(control).refreshWorkspaceCatalog()),
   })
 
   router.register("cloud", "retryDeadLetters", {
     input: deadLetterInput,
     output: statusSchema,
-    handle: (input) => required(control).retryDeadLetters(input),
+    handle: (input) => cloudErrors(() => required(control).retryDeadLetters(input)),
   })
 
   router.register("cloud", "listFailedRecords", {
@@ -309,24 +310,30 @@ export function registerCloudHandlers(router: IpcRouter, deps: HandlerDeps): voi
   router.register("cloud", "pull", {
     input: NoInput,
     output: statusSchema,
-    handle: () => required(control).pull(),
+    handle: () => cloudErrors(() => required(control).pull()),
   })
 
   router.register("cloud", "push", {
     input: NoInput,
     output: statusSchema,
-    handle: () => required(control).push(),
+    handle: () => cloudErrors(() => required(control).push()),
   })
 }
 
 /**
- * The encryption failures the renderer must tell apart, mapped to a
+ * The cloud failures the renderer must tell apart, mapped to a
  * ConflictError/DeniedError carrying a discriminating detail flag. In
  * particular a wrong passphrase has to be distinguishable from a transport
  * failure so the prompt can say "try again" instead of "sync is broken".
  * Anything unrecognized passes through unchanged.
  */
-function mapEncryptionError(error: unknown): unknown {
+function mapCloudError(error: unknown): unknown {
+  // A paused sync is state, not a bug: mapped so the toast reads the reason
+  // instead of Electron's "Error invoking remote method" wrapper around a
+  // re-thrown internal error.
+  if (error instanceof CloudSyncInactiveError) {
+    return new ConflictError(error.message, { syncInactive: error.reason })
+  }
   if (error instanceof CloudWorkspacePassphraseIncorrectError) {
     return new ConflictError(error.message, { passphraseIncorrect: true })
   }
@@ -360,11 +367,11 @@ function mapEncryptionError(error: unknown): unknown {
   return error
 }
 
-async function encryptionErrors(run: () => Promise<CloudSyncStatus>): Promise<CloudSyncStatus> {
+async function cloudErrors(run: () => Promise<CloudSyncStatus>): Promise<CloudSyncStatus> {
   try {
     return await run()
   } catch (error) {
-    throw mapEncryptionError(error)
+    throw mapCloudError(error)
   }
 }
 
