@@ -45,11 +45,11 @@ describe("node chrome", () => {
     expect(selected?.style.borderTopColor).toBe(unselectedCap);
   });
 
-  it("reports whether a socket has an edge, so only connected ones can hide", () => {
-    // The gotcha this pins down: hiding every socket at rest leaves a
-    // first-time user nothing to say a node can be connected at all. An
-    // unconnected socket stays visible, and `data-connected` is what the
-    // stylesheet keys that off.
+  it("sizes the socket to the socket, so edges land on the node", () => {
+    // The gotcha this pins down: ReactFlow attaches an edge to this element's
+    // box edge, not its centre, so the box must be the 8px socket. Grow it
+    // into a 20px hit area and every edge floats off into open canvas — the
+    // pointer target is a ::before instead. See index.css.
     const { container } = mount(
       <BaseNode
         title="Login"
@@ -59,6 +59,7 @@ describe("node chrome", () => {
     );
 
     const handle = container.querySelector(".aw-node-handle");
-    expect(handle?.getAttribute("data-connected")).toBe("false");
+    expect(handle?.className).toContain("!h-2");
+    expect(handle?.className).toContain("!w-2");
   });
 });

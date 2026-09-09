@@ -86,29 +86,14 @@ test actually does, but do not go looking for the workflow in it.
 
 ## Before your first tool call
 
-1. Read \`apiweave://guide/start-here\`. It is the order of operations that
-   avoids wasted runs, and it is short.
-2. Read the ${label.toLowerCase()} itself — \`workflows_get\` with the id above${
-    isWorkflow ? "" : ", or `workflows_list` for what the project contains"
+1. Read \`apiweave://guide/start-here\` (or \`guides_get\` with slug
+   \`start-here\` when resources are unavailable), then the
+   ${label.toLowerCase()} itself — \`workflows_get\` with the id above${
+    isWorkflow ? "" : ", or `workflows_search` with collectionId for what the project contains"
   }.
-3. \`tools/list\` and \`resources/list\` are the rest of the surface; the other
-   guides are listed by \`server_info\`.
-
-## Conventions that are easy to get wrong
-
-- Prefer \`workflows_patch\` over \`workflows_update\`: patch changes nodes by
-  id, update replaces the whole graph.
-- Writes are revision-guarded. Send the \`rev\` you last read as
-  \`expectedRevision\`; a conflict means the user edited it while you worked, so
-  re-read rather than retry.
-- Every write returns a \`diagnosis\`. Read it and fix the errors it names
-  before moving on — a graph with a bad edge saves cleanly and only misbehaves
-  at run time.
-- \`runs_create\` sends real HTTP to a real service. Everything else is free;
-  that is not.
-- Reads withhold secret values by design. Never copy a credential into a
-  workflow — reference it as \`{{secrets.NAME}}\`.
-
+2. The initialize instructions plus that guide carry the revision, patch, and
+   diagnosis rules — follow them rather than re-deriving the flow here.
+${context.mcpWired ? "" : "This session was launched without APIWeave's MCP server (see above): the workflow tools are absent, so say so instead of working around them.\n"}
 The user asked for an agent, not an autopilot: confirm before deleting anything
 you did not create.
 `

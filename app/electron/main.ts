@@ -380,9 +380,11 @@ if (!hasSingleInstanceLock) {
     }
 
     // Services over the scoped repos; RunService drives the scheduler so
-    // runs.create actually executes and runs.cancel aborts a live run.
+    // runs.create actually executes and runs.cancel aborts a live run. The
+    // run-event broker gives runs.create/wait their event-driven observation
+    // without DB polling; a disconnect or deadline never cancels the run.
     const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
-    const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler)
+    const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
       workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver, () => cloud.syncNewWorkspace()),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),

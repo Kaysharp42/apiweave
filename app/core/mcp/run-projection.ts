@@ -8,21 +8,29 @@ import type { RunResult } from "@shared/types/RunResult"
  * still receives full local run payloads over IPC, while agents cannot read
  * bodies, headers, cookies, URLs, variable values, or assertion actual values
  * through the projected run tools. The one exception is runs.getNodeResult,
- * which returns a single node's stored request/response after the shared
- * secret-redaction pass; it does not go through this projection.
+ * which returns bounded per-node evidence after the shared secret-redaction
+ * pass; it does not go through this projection.
+ *
+ * Summaries aggregate: one row carries identity, status, timing, failure
+ * counts and revision — never per-node results. A single read additionally
+ * names every failed node with its expected status and unresolved
+ * placeholders, so a matched negative test or a missing value is legible
+ * without a second call. Per-node detail beyond that lives in the evidence
+ * tool, in a single representation rather than duplicated nodeStatuses plus
+ * results maps.
  */
 export function projectRunToolResult(value: unknown): unknown {
   if (value === null) return null
 
   const run = RunSchema.safeParse(value)
-  if (run.success) return projectRun(run.data)
+  if (run.success) return projectRunSummary(run.data)
 
   if (isRecord(value) && Array.isArray(value["items"])) {
     return {
       total: typeof value["total"] === "number" ? value["total"] : value["items"].length,
       items: value["items"].map((item) => {
         const parsed = RunSchema.safeParse(item)
-        return parsed.success ? projectRun(parsed.data) : null
+        return parsed.success ? projectRunHistoryRow(parsed.data) : null
       }).filter((item) => item !== null),
     }
   }
@@ -30,95 +38,70 @@ export function projectRunToolResult(value: unknown): unknown {
   throw new Error("MCP run projection received an unexpected handler result")
 }
 
-function projectRun(run: Run): Record<string, JsonValue> {
+function projectRunSummary(run: Run): Record<string, JsonValue> {
+  return {
+    ...projectRunHistoryRow(run),
+    statusCounts: projectStatusCounts(run.results),
+    failedNodeDetails: run.results
+      .filter((result) => result.status === "failed")
+      .map((result) => projectFailedNode(result)),
+  }
+}
+
+function projectRunHistoryRow(run: Run): Record<string, JsonValue> {
+  const failedNodes = run.failedNodes ? [...run.failedNodes] : []
   return {
     runId: run.runId,
     workspaceId: run.workspaceId,
     workflowId: run.workflowId,
     selectedEnvironmentId: run.selectedEnvironmentId ?? null,
     status: run.status,
+    terminal: TERMINAL_STATUSES.has(run.status),
     trigger: run.trigger,
     startedAt: run.startedAt ?? null,
     completedAt: run.completedAt ?? null,
     duration: run.duration ?? null,
     hasError: Boolean(run.error || run.failureMessage),
-    failedNodes: run.failedNodes ? [...run.failedNodes] : [],
-    nodeStatuses: projectNodeStatuses(run.nodeStatuses),
-    results: run.results.map(projectResult),
-    resumeFromRunId: run.resumeFromRunId ?? null,
-    resumeFromNodeIds: run.resumeFromNodeIds ? [...run.resumeFromNodeIds] : [],
-    resumeMode: run.resumeMode ?? null,
+    failedNodes,
+    failedNodeCount: failedNodes.length,
+    nodeCount: run.results.length,
+    runRev: run.rev,
+    createdAt: run.createdAt,
+    updatedAt: run.updatedAt,
     resolvedSecrets: (run.resolvedSecrets ?? []).map((secret) => ({
       name: secret.name,
       scopeType: secret.scopeType,
       resolved: secret.resolved,
     })),
-    runRev: run.rev,
-    createdAt: run.createdAt,
-    updatedAt: run.updatedAt,
   }
 }
 
-function projectNodeStatuses(statuses: Run["nodeStatuses"]): Record<string, JsonValue> {
-  const projected: Record<string, JsonValue> = {}
-  for (const [nodeId, entry] of Object.entries(statuses)) {
-    if (typeof entry === "string") {
-      projected[nodeId] = { status: entry }
-      continue
-    }
-    if (!isRecord(entry)) continue
-    const status = entry["status"]
-    const statusCode = entry["statusCode"]
-    projected[nodeId] = {
-      ...(typeof status === "string" ? { status } : {}),
-      ...(typeof statusCode === "number" ? { statusCode } : {}),
-      hasError: typeof entry["error"] === "string" || typeof entry["message"] === "string",
-    }
+/** Aggregate per-status counts over stored node results — constant shape, no per-node payload. */
+function projectStatusCounts(results: Run["results"]): Record<string, JsonValue> {
+  const counts: Record<string, number> = {}
+  for (const result of results) {
+    counts[result.status] = (counts[result.status] ?? 0) + 1
   }
-  return projected
+  return counts as Record<string, JsonValue>
 }
 
-function projectResult(result: RunResult): JsonValue {
+/**
+ * One failed node's debug essentials. `expectedStatus` keeps a matched
+ * negative test legible; `unresolvedPlaceholders` names references that went
+ * out as literal text (a 401 with placeholders present is a missing value,
+ * not bad credentials). Bodies stay in the evidence tool.
+ */
+function projectFailedNode(result: RunResult): JsonValue {
   const response = isRecord(result.response) ? result.response : null
   const statusCode = response?.["statusCode"]
-  const truncated = response?.["truncated"]
   return {
     nodeId: result.nodeId,
     status: result.status,
-    duration: result.duration,
-    startedAt: result.startedAt ?? null,
-    completedAt: result.completedAt ?? null,
-    secretRefs: result.secretRefs ? [...result.secretRefs] : [],
+    durationMs: result.duration,
+    ...(result.expectedStatus !== undefined ? { expectedStatus: result.expectedStatus } : {}),
     unresolvedPlaceholders: result.unresolvedPlaceholders ? [...result.unresolvedPlaceholders] : [],
     hasError: typeof result.error === "string" && result.error.length > 0,
-    response: {
-      ...(typeof statusCode === "number" ? { statusCode } : {}),
-      ...(typeof truncated === "boolean" ? { truncated } : {}),
-    },
-    // Configured expectedStatus (http-request), so a matched negative test
-    // (e.g. a passed node showing a 409) is legible without re-reading the config.
-    ...(result.expectedStatus !== undefined ? { expectedStatus: result.expectedStatus } : {}),
-    assertions: (result.assertions ?? []).map((assertion) => ({
-      ruleIndex: assertion.ruleIndex,
-      source: assertion.source,
-      path: assertion.path,
-      operator: assertion.operator,
-      sourceNodeId: assertion.sourceNodeId,
-      expectedState: assertion.expectedState,
-      expectedType: assertion.expectedType,
-      actualState: assertion.actualState,
-      actualType: assertion.actualType,
-      outcome: assertion.outcome,
-      reasonCode: assertion.reasonCode,
-    })),
-    extractorOutcomes: (result.extractorOutcomes ?? []).map((outcome) => ({
-      producerNodeId: outcome.producerNodeId,
-      variableName: outcome.variableName,
-      path: outcome.path,
-      matched: outcome.matched,
-      observedType: outcome.observedType,
-      failureReason: outcome.failureReason ?? null,
-    })),
+    ...(typeof statusCode === "number" ? { responseStatusCode: statusCode } : {}),
   }
 }
 

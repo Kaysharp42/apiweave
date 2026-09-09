@@ -8,6 +8,7 @@ import type { RunResult } from "@shared/types/RunResult"
 import type { Workflow } from "@shared/types/Workflow"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { isValidRuntimePath } from "@shared/analysis/workflow_graph_analyzer"
+import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { isSecretKey, looksLikeSecretValue } from "./secret_utils"
 import type { RunService } from "./run_service"
@@ -85,12 +86,13 @@ export class AssertionAuthoringService {
       } else {
         const bodyRecord = asRecord(body)
         if (bodyRecord) {
+          const used = new Set(suggestions.map((suggestion) => suggestion.id))
           for (const key of Object.keys(bodyRecord).filter(isPathSegment).sort().slice(0, 8)) {
             suggestions.push({
-              id: `body-${slug(key)}-exists`,
+              id: uniqueId(`body-${slug(key)}-exists`, used),
               title: `Require response field ${key}`,
               confidence: "medium",
-              rationale: `The selected JSON object contained the top-level ${key} field (${jsonType(bodyRecord[key])}).`,
+              rationale: `Top-level ${key} field (${jsonType(bodyRecord[key])}).`,
               overfitRisk: "low",
               rules: canonicalRules([{ source: "prev", path: `response.body.${key}`, operator: "exists" }]),
             })
@@ -185,10 +187,14 @@ export class AssertionAuthoringService {
     assertionNodeId: string,
     mode: "append" | "replace",
     drafts: readonly unknown[],
+    runId?: string,
   ): Promise<AssertionApplyResult> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
     const sourceNodeId = resolveAssertionSource(workflow, assertionNodeId)
-    const validation = await this.validate(workspaceId, workflowId, sourceNodeId, drafts)
+    // Syntax validation always runs; run evidence is checked only when the
+    // caller names the intended run. A call without runId validates rule shape
+    // alone and must never be read as evidence-checked.
+    const validation = await this.validate(workspaceId, workflowId, sourceNodeId, drafts, runId)
     if (!validation.valid) {
       throw new ValidationError("assertion rules failed validation", validation.issues)
     }
@@ -376,8 +382,17 @@ function validateEvidencePath(rule: AssertionItem, ruleIndex: number, result: Ru
   if (response?.["truncated"] === true) {
     return { ruleIndex, code: "response_truncated", severity: "warning", message: "Body-path compatibility is unavailable because the response was truncated." }
   }
-  const relative = rule.path.replace(/^response\./, "")
-  return nestedValue(response, relative).found ? undefined : missingPath(ruleIndex)
+  // Shared evidence-path semantics: the authoritative extractor grammar
+  // (`response.body.items[0].id`), resolved against the stored response object.
+  // `resolveExtractorPath` distinguishes a path that addresses nothing
+  // (path-missing) from one that traverses a non-object (type-mismatch); both
+  // are errors here, with distinct codes.
+  const resolution = resolveExtractorPath({ response }, rule.path)
+  if (resolution.failureReason === null) return undefined
+  if (resolution.failureReason === "type-mismatch") {
+    return { ruleIndex, code: "path_type_mismatch", severity: "error", message: "The target path traverses a non-object value in the selected run evidence." }
+  }
+  return missingPath(ruleIndex)
 }
 
 function missingPath(ruleIndex: number): ValidationIssue {
@@ -408,16 +423,6 @@ function findHeader(headers: Record<string, JsonValue> | undefined, name: string
   return typeof entry?.[1] === "string" ? entry[1] : undefined
 }
 
-function nestedValue(value: JsonValue | undefined, path: string): { readonly found: boolean } {
-  let current: JsonValue | undefined = value
-  for (const segment of path.split(".").filter(Boolean)) {
-    const record = asRecord(current)
-    if (!record || !(segment in record)) return { found: false }
-    current = record[segment]
-  }
-  return { found: current !== undefined }
-}
-
 function isSecretReference(value: string): boolean {
   return /^\{\{secrets\.[A-Za-z_][A-Za-z0-9_]*\}\}$/.test(value)
 }
@@ -428,6 +433,18 @@ function isPathSegment(value: string): boolean {
 
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+}
+
+function uniqueId(base: string, used: Set<string>): string {
+  if (!used.has(base)) {
+    used.add(base)
+    return base
+  }
+  let index = 2
+  while (used.has(`${base}-${index}`)) index += 1
+  const id = `${base}-${index}`
+  used.add(id)
+  return id
 }
 
 function jsonType(value: JsonValue | undefined): string {

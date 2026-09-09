@@ -39,7 +39,7 @@ export interface McpPromptSpec {
 }
 
 const AUTHOR_ASSERTIONS_DESCRIPTION =
-  "Guide the agent to translate a natural-language assertion request into canonical rules, validate/preview them, get user approval, then apply them to an existing assertion node."
+  "Guide the agent to translate a natural-language assertion request into canonical rules, preview them for user approval when approval is needed, then apply them to an existing assertion node."
 
 const SOURCES = AssertionSourceSchema.options.join(", ")
 const OPERATORS = AssertionOperatorSchema.options.join(", ")
@@ -57,14 +57,14 @@ function buildAuthorAssertions(args: AuthorAssertionsArgs): GetPromptResult {
       ? `The user is working in this context:\n${context.join("\n")}\n\n`
       : "No workflow/run context was supplied. Ask the user which workflow, assertion node, and (optionally) run to work against, or discover them with the read tools below.\n\n"
 
-  const text = `You are authoring APIWeave workflow assertions on the user's behalf. APIWeave does NOT interpret natural language itself — you do. Follow this flow and never skip validation or approval.
+  const text = `You are authoring APIWeave workflow assertions on the user's behalf. APIWeave does NOT interpret natural language itself — you do.
 
 ${contextBlock}## Flow
 
-1. **Inspect.** Read the workflow with \`workflows_get\`. If a run is available, read it with \`runs_get\` and \`workflow_diagnose\`, and call \`assertion_suggest\` on the source HTTP node for deterministic candidates. These return metadata only — never raw bodies or secret values.
+1. **Inspect.** Read the workflow with \`workflows_get\`. If a run is available, read it with \`runs_get\` and \`workflow_diagnose\`, and call \`assertion_suggest\` on the source HTTP node for deterministic candidates. These return metadata only — never raw bodies or secret values. Suggestions never modify the workflow; apply chosen rules explicitly.
 2. **Translate.** Convert the user's intent into canonical assertion rules (schema below). Prefer the shapes returned by \`assertion_suggest\` when they match the intent.
-3. **Validate & preview.** Call \`assertion_validate\` with the rules. Show the returned human-readable \`preview\` and any \`issues\` to the user. If it is not \`valid\`, fix the rules and validate again — do not proceed on errors.
-4. **Approve.** Ask the user to confirm the previewed rules. Do not apply anything without explicit approval.
+3. **Validate & preview when approval or evidence is needed.** Call \`assertion_validate\` with the rules (plus \`runId\` to check against stored evidence) and show the returned human-readable \`preview\` and any \`issues\` to the user. If it is not \`valid\`, fix the rules and validate again — do not proceed on errors. Skip this call when the user already specified the exact rules and no preview was asked for: \`assertion_apply\` validates shape itself, and accepts \`runId\` to check evidence in the same call.
+4. **Approve (approval flow only).** Ask the user to confirm the previewed rules. Do not apply anything without explicit approval when approval was requested.
 5. **Apply.** Call \`assertion_apply\` with \`assertionNodeId\`, \`mode\` ("append" or "replace"), the validated \`rules\`, and \`expectedRevision\` taken from the workflow's current \`rev\` (from \`workflows_get\`). If it returns a conflict, the user edited the workflow meanwhile — re-read, re-validate, and ask again.
 
 ## Canonical rule schema
@@ -85,7 +85,7 @@ The full reference is the \`apiweave://guide/assertions\` resource.
 
 - Never copy an observed token, password, or other secret-looking value into an \`expectedValue\`. If the user wants to compare against a secret, use a \`{{secrets.NAME}}\` reference — literal credential values are rejected by validation.
 - Assertions attach to an existing assertion node whose single upstream HTTP node is the source. This prompt does not create new nodes.
-- Everything you apply must pass \`assertion_validate\` first, and \`assertion_apply\` is revision-guarded — an invalid or stale change is rejected regardless of what you send.`
+- \`assertion_apply\` validates shape itself and is revision-guarded — an invalid or stale change is rejected regardless of what you send. Use \`assertion_validate\` first only when you need a preview, an evidence check, or explicit approval.`
 
   return {
     description: AUTHOR_ASSERTIONS_DESCRIPTION,

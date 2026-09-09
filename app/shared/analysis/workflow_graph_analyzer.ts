@@ -278,8 +278,6 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
   }
   if (ends.length === 0) {
     diagnostics.push(diagnostic("missing_end_node", "error", "topology", [], "The workflow has no end node.", {}, { kind: "add_end_node" }))
-  } else if (ends.length > 1) {
-    diagnostics.push(diagnostic("duplicate_end_node", "error", "topology", ends, "The workflow has more than one end node.", { count: ends.length }, { kind: "keep_single_end_node" }))
   }
 
   const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)

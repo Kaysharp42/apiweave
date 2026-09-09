@@ -38,7 +38,15 @@ type ReadonlyResult<T> = T extends (infer U)[]
 export type HandlerRegistration<I extends z.ZodType, O extends z.ZodType> = {
   readonly input: I
   readonly output: O
-  readonly handle: (input: CleanInput<z.infer<I>>) => Promise<ReadonlyResult<z.infer<O>>> | ReadonlyResult<z.infer<O>>
+  readonly handle: (
+    input: CleanInput<z.infer<I>>,
+    context?: HandlerContext,
+  ) => Promise<ReadonlyResult<z.infer<O>>> | ReadonlyResult<z.infer<O>>
+}
+
+/** Per-request context threaded through dispatch — currently only cancellation. */
+export type HandlerContext = {
+  readonly signal?: AbortSignal
 }
 
 /** A registered handler, read-only. Lets a second transport (MCP) reuse the same input schema + handler. */
@@ -107,6 +115,25 @@ function toErrorEnvelope(error: unknown): ContractResult<never> {
 }
 
 /**
+ * An aborted wait — client disconnect, wait timeout raced with teardown, or an
+ * explicit SDK cancellation. Never a run cancellation and never an internal
+ * bug: the run keeps going, only the observation stops.
+ */
+export function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" ||
+      (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError"))
+  )
+}
+
+export function abortError(reason?: string): Error {
+  const error = new Error(reason ?? "wait cancelled")
+  error.name = "AbortError"
+  return error
+}
+
+/**
  * The IPC dispatch core, deliberately free of any `electron` import so it is unit
  * testable. `register.ts` bolts it onto `ipcMain.handle`; `dispatch` is the seam
  * the tests drive directly.
@@ -171,7 +198,10 @@ export class IpcRouter {
    * caller can fall into it — the renderer reads literal values, and an imported
    * bundle legitimately carries `<SECRET>` that the operator refills in the UI.
    */
-  async dispatch(request: InvokeRequest, opts?: { readonly redactSecrets?: boolean }): Promise<ContractResult<unknown>> {
+  async dispatch(
+    request: InvokeRequest,
+    opts?: { readonly redactSecrets?: boolean; readonly signal?: AbortSignal },
+  ): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
     if (handler === undefined) {
       const message = `no IPC handler: ${key(request.domain, request.action)}`
@@ -202,8 +232,15 @@ export class IpcRouter {
 
     let output: unknown
     try {
-      output = await handler.handle(parsed.data)
+      output = await handler.handle(
+        parsed.data,
+        opts?.signal !== undefined ? { signal: opts.signal } : undefined,
+      )
     } catch (error) {
+      // An aborted wait is client cancellation, not a server bug: unwind without
+      // the internal-error log line. The run itself keeps going — cancel-wait
+      // never cancels the run.
+      if (isAbortError(error)) throw error
       this.notifyHandlerError(request, error)
       return toErrorEnvelope(error)
     }
@@ -278,6 +315,7 @@ export class IpcRouter {
   }
 
   private notifyHandlerError(request: InvokeRequest, error: unknown): void {
+    if (isAbortError(error)) return
     if (error instanceof AppError) {
       this.notifyError({
         domain: request.domain,

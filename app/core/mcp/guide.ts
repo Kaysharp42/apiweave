@@ -38,8 +38,8 @@ node and follows edges. Nothing runs unless an edge leads to it.
 
 ## Order of operations that avoids wasted runs
 
-1. **Look for an existing workflow first.** \`workflows_list\` then
-   \`workflows_get\` on anything similar in the workspace. A real workflow shows
+1. **Look for an existing workflow first.** \`workflows_search\` then
+   \`workflows_get\` (outline first, then nodes) on anything similar in the workspace. A real workflow shows
    you the conventions this workspace already uses — base URLs, auth headers,
    variable names — faster than any documentation. Credential values are
    withheld, the structure is not.
@@ -48,9 +48,10 @@ node and follows edges. Nothing runs unless an edge leads to it.
 3. **Build ONE branch end to end**, not three in parallel. A syntax mistake made
    once is one diagnostic; made three times it is nine, and the report gets hard
    to read. Get one chain clean, then copy it.
-4. **Read the \`diagnosis\` in the write response.** \`workflows_create\`,
-   \`workflows_update\` and \`workflows_patch\` each return a static diagnosis
-   alongside the workflow. Fix every \`error\` before going further — see
+4. **Read the one \`diagnosis\` in a graph-write response.** Graph writes return a
+   compact result plus a static diagnosis. \`status: "unavailable"\` means the
+   write saved but analysis did not run; it is not a clean result. Fix every
+   \`error\` before going further — see
    \`apiweave://guide/diagnostics\`.
 5. **Fix with \`workflows_patch\`, not \`workflows_update\`.** Patch changes nodes
    and edges by id; update replaces the whole graph and makes you re-send every
@@ -104,9 +105,9 @@ Three things to copy from this:
 
 - Edges leaving \`check\` carry \`sourceHandle\`. Without it the branch stops silently.
 - The \`prev\` path is \`response.body.id\`, not \`id\`.
-- There is **exactly one \`start\` and exactly one \`end\`**. Branches converge on
-  the same \`end\` rather than each getting their own — a second \`end\` node is
-  reported as \`duplicate_end_node\`.
+- There is **exactly one \`start\` and at least one \`end\`**. Branches may converge
+  on one end or terminate at separate end nodes for distinct success/failure
+  paths.
 
 This graph leaves \`check\`'s \`fail\` handle unwired — the normal, expected shape:
 the run still records the failed assertion and terminates that branch. Wire
@@ -143,7 +144,7 @@ or array order.
 | type | what it does | handles |
 | --- | --- | --- |
 | \`start\` | entry point; the run begins here | output only, exactly one per workflow |
-| \`end\` | terminal point | input only, **exactly one** — converge branches on it |
+| \`end\` | terminal point | input only, one or more per workflow |
 | \`http-request\` | sends one request, optionally extracts variables | 1 in, 1 out |
 | \`sse\` | starts a bounded SSE listener and captures its final events | 1 in, **2 out: \`ready\` and \`complete\`** |
 | \`assertion\` | checks the upstream response and branches | 1 in, **2 out: \`pass\` and \`fail\`** |
@@ -269,7 +270,8 @@ That rule constrains which handle an edge that *exists* must use — it does not
 require an edge on *every* handle. Leaving \`fail\` unconnected is normal: the run
 still records the failed assertion and stops that branch there.
 
-Nodes of every other type have one output; leave \`sourceHandle\` unset for them.
+Except for SSE (\`ready\`/\`complete\`) and visual \`group\`/\`note\` nodes (no handles),
+all other node types have one output; leave \`sourceHandle\` unset for them.
 
 ## Changing a graph
 
@@ -430,7 +432,7 @@ node to take its \`pass\` branch.
 | \`cookies\` | one response cookie | the cookie name, e.g. \`session\` |
 | \`variables\` | one workflow variable | the variable name, e.g. \`token\` |
 
-A **bare field name is not a path**. \`{"source": "prev", "path": "id"}\` does not
+Array elements use \`[0]\`: \`response.body.items[0].id\` — the same grammar as extractors and evidence paths. A **bare field name is not a path**. \`{"source": "prev", "path": "id"}\` does not
 address anything; the value lives at \`response.body.id\`. \`assertion_validate\`
 canonicalizes a path that is merely missing its prefix (\`body.id\` becomes
 \`response.body.id\`) and rejects anything that cannot address a value, with a
@@ -468,13 +470,14 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
    already verified against it. Use this whenever a run exists — it is faster and
    more reliable than writing paths by hand. It needs a completed result for that
    node; before any run exists, write rules from the table above instead.
-2. \`assertion_validate\` with the rules. Read the returned \`preview\` and
-   \`issues\`. The returned \`rules\` are canonicalized — pass those on, not your
-   originals. \`valid: false\` means at least one error-severity issue.
+2. Use \`assertion_validate\` when you need a preview, evidence check, or explicit
+   user approval. Its returned \`rules\` are canonicalized — pass those on, not
+   your originals. \`valid: false\` means at least one error-severity issue.
 3. \`assertion_apply\` with \`assertionNodeId\`, \`mode\` (\`"append"\` or
-   \`"replace"\`), the validated rules, and \`expectedRevision\` taken from the
-   workflow's \`rev\`. A conflict means the workflow changed underneath you:
-   re-read, re-validate, retry.
+   \`"replace"\`), the rules, and \`expectedRevision\` taken from the workflow's
+   \`rev\`. Apply validates rules itself; validation is not a required duplicate
+   call when no preview is needed. A conflict means the workflow changed
+   underneath you: re-read, recompute, retry.
 
 \`assertion_apply\` targets an existing assertion node — it does not create one.
 Add the node with \`workflows_create\`/\`workflows_patch\` first, remembering the
@@ -503,7 +506,7 @@ Clear every \`error\` before running.
 | code | meaning |
 | --- | --- |
 | \`missing_start_node\` / \`duplicate_start_node\` | a workflow needs exactly one \`start\` |
-| \`missing_end_node\` / \`duplicate_end_node\` | a workflow needs exactly one \`end\`; converge branches on it rather than adding a second |
+| \`missing_end_node\` | a workflow needs at least one \`end\`; separate terminal paths may use separate end nodes |
 | \`duplicate_node_id\` / \`duplicate_edge_id\` | ids must be unique |
 | \`dangling_edge\` | an edge references a nodeId that does not exist |
 | \`unreachable_nodes\` | no path from \`start\` reaches these — they never run |
@@ -588,15 +591,16 @@ usually omit it — patch only touches the nodes you name.
 
 ## Run reads
 
-Runs are metadata only: status, timing, per-node status and status code,
-assertion outcomes with the *type* and *state* of actual values but never the
-values themselves. No response bodies, headers, cookies, URLs or variable values
-cross this bridge on any run tool except one: \`runs_getNodeResult\` returns the
-full stored request/response for a single node of a run, body included, after
-the same secret-redaction pass every other read gets — secret-shaped values in
-the body, headers, URL or request come back withheld. Everything else about
-runs stays metadata-only; to see other payloads, open the run in the desktop
-app.
+Runs are metadata only: status, timing, aggregate counts and failed-node
+detail with the *type* and *state* of actual values but never the values
+themselves. No response bodies, headers, cookies, URLs or variable values
+cross this bridge on any run tool except one: \`runs_getNodeResult\` returns
+bounded evidence for up to 50 nodes of a run — selected sections, an
+extractor-grammar path within a JSON response body, and capped text previews
+with explicit truncation accounting — after the same secret-redaction pass
+every other read gets. Bodies travel as previews, never whole. Everything
+else about runs stays metadata-only; to see other payloads, open the run in
+the desktop app.
 
 This is why \`assertion_suggest\` exists: it reads the stored response
 server-side and returns *rules*, so you get verified paths without the payload.
@@ -606,6 +610,42 @@ server-side and returns *rules*, so you get verified paths without the payload.
 \`secrets_list\` and \`secrets_resolve\` return names, scopes and which scope a
 name binds to — never a value, plaintext or encrypted. Secrets cannot be created,
 changed or deleted over MCP; that is a desktop action.
+`
+
+const EDIT_DEBUG = `# Edit and debug loop
+
+For an existing workflow: find it, read the failing part, patch it, re-check it.
+
+1. **Find.** \`workflows_search\` by name (summaries carry rev, counts, project —
+   never graphs), then \`workflows_get\` outline, then nodes for the few ids you
+   will touch. Outline pages explicitly; a stale cursor means re-read.
+2. **Explain.** \`workflows_debugContext\` with the workflow id (and a run id, or
+   none for the latest failed run). One bounded call: current rev, run status,
+   failed/blocked nodes with run-correlated diagnosis, configs of the relevant
+   failures plus predecessors, placeholders, environment key presence, secret
+   resolution metadata, and error previews with \`runs_getNodeResult\` selectors.
+   Counts describe every failure even when detail is capped.
+3. **Patch.** \`workflows_patch\` with \`expectedRevision\` from the rev you read.
+   One call carries the new node, old edge removals, and replacement edges
+   together. Topology changes (new/removed nodes or edges, group membership)
+   lay out once on the saved revision; config/label-only patches keep every
+   position. A conflict means someone edited meanwhile: re-read and recompute.
+4. **Verify.** Read the write's \`diagnosis\` (errors first, then warnings; an
+   \`unavailable\` check is not clean), then \`runs_create\` with a bounded wait
+   for short runs. A wait timeout returns the run id for \`runs_wait\` — it never
+   cancels the run.
+5. **Assertions.** \`assertion_suggest\` derives rules from a stored response;
+   suggestions never modify anything. \`assertion_validate\` is for previews and
+   evidence checks; direct \`assertion_apply\` (with optional \`runId\`) is correct
+   when the rules are already decided. Paths use \`response.body.x\` with
+   \`[0]\` for arrays; a bare field name is not a path.
+
+Two mistakes this loop prevents: edges leaving an assertion need
+\`sourceHandle\` \`pass\`/\`fail\` (an unhandled edge never runs), and
+\`<SECRET>\` from a read is a placeholder — omit the field, send the real value,
+or send \`{{secrets.NAME}}\`, never write it back. Full references:
+\`apiweave://guide/workflow-authoring\`, \`apiweave://guide/assertions\`,
+\`apiweave://guide/diagnostics\`.
 `
 
 /**
@@ -622,29 +662,26 @@ changed or deleted over MCP; that is a desktop action.
  * slug that no longer exists is worse than no pointer at all.
  */
 export const MCP_INSTRUCTIONS = `APIWeave is a desktop app for building and running API test workflows. A
-workflow is a graph of nodes — HTTP requests, assertions, delays — that a user
-runs against a real service. These tools read and write the user's real
-workflows in the app they have open in front of them.
+workflow is a graph of nodes (requests, assertions, delays) that runs against a
+real service. Workflows live in APIWeave's database, not in files — these tools
+are the only way to reach one.
 
-The workflows are not files. They live in APIWeave's database, and these tools
-are the only way to reach one — searching the working directory for it will
-find nothing.
+Scope: if launched from APIWeave, APIWEAVE_WORKSPACE_ID plus APIWEAVE_WORKFLOW_ID
+or APIWEAVE_PROJECT_ID name what the user was looking at. Start there.
 
-If you were launched from APIWeave, the session's own ids are in your
-environment: APIWEAVE_WORKSPACE_ID, and APIWEAVE_WORKFLOW_ID or
-APIWEAVE_PROJECT_ID for what the user was looking at. Start there rather than
-asking which workflow they mean.
+Rules for every edit: prefer \`workflows_patch\` (subset change by id) over
+\`workflows_update\` (whole-graph replace); send the \`rev\` you last read as
+\`expectedRevision\` and re-read on a conflict; read the one \`diagnosis\` graph
+writes return (\`unavailable\` means saved-but-unchecked, never clean).
+\`runs_create\` sends real HTTP; everything else is free. Reads withhold secret
+values — reference them as {{secrets.NAME}}, never write an observed credential.
 
-Read \`${GUIDE_URI_PREFIX}start-here\` before authoring anything. It is short, and
-it is the order of operations that catches mistakes statically instead of with
-live HTTP requests. \`server_info\` lists the other guides.
-
-Four things that are easy to get wrong: prefer \`workflows_patch\` over
-\`workflows_update\`; send the \`rev\` you last read as \`expectedRevision\` and
-re-read on a conflict; read the \`diagnosis\` returned by every write; and
-remember that \`runs_create\` sends real HTTP to a real service while everything
-else is free. Reads withhold secret values by design — never write an observed
-credential into a workflow, reference it as {{secrets.NAME}}.`
+Focused context, cheapest first: \`workflows_search\` (summaries, never graphs)
+-> \`workflows_get\` outline then nodes -> \`workflows_debugContext\` for a
+failure (one bounded call) -> \`runs_getNodeResult\` for evidence slices.
+Read ${GUIDE_URI_PREFIX}start-here before authoring and
+${GUIDE_URI_PREFIX}edit-debug for the repair loop; \`server_info\` lists
+the rest.`
 
 export const MCP_GUIDES: readonly McpGuide[] = [
   {
@@ -680,6 +717,13 @@ export const MCP_GUIDES: readonly McpGuide[] = [
     title: "Diagnostic codes",
     description: "What every workflow_diagnose code means and how to fix it.",
     text: DIAGNOSTICS,
+  },
+  {
+    slug: "edit-debug",
+    title: "Edit and debug loop",
+    description:
+      "The short repair loop for an existing workflow: find, explain, patch, verify, and the assertion shortcut.",
+    text: EDIT_DEBUG,
   },
   {
     slug: "redaction",

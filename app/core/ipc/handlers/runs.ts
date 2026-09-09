@@ -1,32 +1,20 @@
 import fs from "node:fs"
 import { z } from "zod"
-import { RunSchema, JsonValueSchema } from "@shared/zod-schemas"
-import type { Run, RunResult } from "@shared/types"
+import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
-import { NotFoundError } from "../errors"
+import { ValidationError } from "../errors"
+import {
+  EVIDENCE_PREVIEW_MAX_BYTES,
+  NODE_DETAIL_MAX_LIMIT,
+  RUN_HISTORY_DEFAULT_LIMIT,
+  RUN_HISTORY_MAX_LIMIT,
+  RUN_WAIT_DEFAULT_MS,
+  RUN_WAIT_MAX_MS,
+} from "../../services/read_budgets"
+import type { EvidenceSection } from "../../services/run_evidence"
 import { readReportArtifacts, resolveArtifactPath } from "../../runner/reporters"
-
-// The full request/response for one node, redacted for nothing (this is the
-// desktop IPC path, not MCP): everything the runner recorded for that node.
-function buildNodeResultProjection(run: Run, result: RunResult, nodeId: string) {
-  return {
-    runId: run.runId,
-    workflowId: run.workflowId,
-    nodeId,
-    status: result.status,
-    duration: result.duration,
-    startedAt: result.startedAt ?? null,
-    completedAt: result.completedAt ?? null,
-    request: result.request ?? null,
-    response: result.response ?? null,
-    error: result.error ?? null,
-    extractorOutcomes: result.extractorOutcomes ?? [],
-    unresolvedPlaceholders: result.unresolvedPlaceholders ?? [],
-    assertions: result.assertions ?? [],
-  }
-}
 
 const ws = z.string().min(1)
 
@@ -39,23 +27,52 @@ const createInput = z
     variables: z.record(z.string(), JsonValueSchema).optional(),
     selectedEnvironmentId: z.string().nullable().optional(),
     nodeStatuses: z.record(z.string(), JsonValueSchema).optional(),
+    waitMs: z.number().int().min(0).max(RUN_WAIT_MAX_MS).optional().describe("Bounded wait after enqueue in ms (default 10000, max 30000). 0 returns immediately with the queued snapshot; otherwise waits for completion up to this long and returns the current run on deadline — reuse its runId with runs_wait. A timeout or disconnect never cancels the run."),
+    operationId: z.string().min(1).max(128).optional().describe("Caller idempotency key for safe retries: the same id in the same workspace with the same request returns the first run instead of enqueueing again; the same id with a changed request conflicts."),
   })
   .strict()
 
 const runIdInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
+
+const waitInput = z.object({
+  workspaceId: ws,
+  runId: z.string().min(1),
+  waitMs: z.number().int().min(0).max(RUN_WAIT_MAX_MS).optional().describe("How long to wait for completion in ms (default 10000, max 30000). 0 re-reads immediately. On deadline returns the current run — terminal:false in the MCP projection — plus its runId for another runs_wait. Cancelling the wait never cancels the run; use runs_cancel to stop it."),
+}).strict()
 const workflowIdInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 
-// Single-node request/response fetch. The metadata-only `runs.get` projection
-// keeps the body and headers off the wire because most reads don't need them —
-// but when a single node fails, the body is where the target explains the
-// failure, and stripping it sends the user grepping Java source and Postgres
-// for an answer the response already contained. Opt-in by node: only the
-// one node an agent asks about travels, and the same redaction pass every
-// other MCP read applies (Authorization headers, secret-looking values, URL
-// query strings) still runs on the MCP transport.
-const nodeResultInput = z
-  .object({ workspaceId: ws, runId: z.string().min(1), nodeId: z.string().min(1) })
-  .strict()
+const historyInput = z.object({
+  workspaceId: ws,
+  workflowId: z.string().min(1).optional().describe("Only runs of this workflow. Omitted lists the whole workspace."),
+  status: z.enum(["pending", "running", "completed", "failed", "cancelled", "interrupted"]).optional().describe("Only runs in this status."),
+  limit: z.number().int().min(1).max(RUN_HISTORY_MAX_LIMIT).optional().describe("Rows per page (default 20, max 100). Rows carry status/timing/failure counts, never per-node results."),
+  cursor: z.string().min(1).optional().describe("Continue a history read. Bound to these filters and to the history revision; a stale cursor is rejected, so re-read without it."),
+}).strict()
+
+const evidenceSection = z.enum(["error", "assertions", "extractors", "request", "response"])
+
+// Targeted evidence for a small node set. Bodies travel as bounded previews
+// with explicit truncation accounting — never whole — and sections the caller
+// skips are named in omittedSections. Unknown node ids are reported in
+// missingNodeIds, not silently dropped.
+const nodeResultInput = z.object({
+  workspaceId: ws,
+  runId: z.string().min(1),
+  nodeId: z.string().min(1).optional().describe("One node to inspect. Prefer nodeIds for up to 50 nodes in one call."),
+  nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes to inspect, in the order to return. Combined with nodeId at most 50."),
+  sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). Omitted sections are named, never silently absent."),
+  path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) selecting within the RESPONSE body. A miss reports path-missing or type-mismatch distinctly."),
+  maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per body in bytes (default 2048)."),
+  start: z.number().int().min(0).optional().describe("Start offset into a text preview."),
+  end: z.number().int().min(0).optional().describe("End offset into a text preview; must exceed start."),
+}).strict().superRefine((value, context) => {
+  if (value.nodeId === undefined && value.nodeIds === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
+  }
+  if (value.start !== undefined && value.end !== undefined && value.end <= value.start) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["end"], message: "end must be greater than start." })
+  }
+})
 
 export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { runs } = deps
@@ -63,7 +80,23 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   router.register("runs", "create", {
     input: createInput,
     output: RunSchema,
-    handle: ({ workspaceId, ...input }) => runs.createRun(workspaceId, input),
+    handle: ({ workspaceId, waitMs, operationId, ...input }, context) =>
+      runs.createRun(
+        workspaceId,
+        input,
+        {
+          waitMs: waitMs ?? RUN_WAIT_DEFAULT_MS,
+          ...(operationId !== undefined ? { operationId } : {}),
+        },
+        context?.signal !== undefined ? { signal: context.signal } : {},
+      ),
+  })
+
+  router.register("runs", "wait", {
+    input: waitInput,
+    output: RunSchema,
+    handle: (i, context) =>
+      runs.waitForRun(i.workspaceId, i.runId, i.waitMs ?? RUN_WAIT_DEFAULT_MS, context?.signal !== undefined ? { signal: context.signal } : {}),
   })
 
   router.register("runs", "get", {
@@ -74,15 +107,31 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
 
   router.register("runs", "getNodeResult", {
     input: nodeResultInput,
-    output: z.unknown(),
-    handle: async ({ workspaceId, runId, nodeId }) => {
-      const run = await runs.get(workspaceId, runId)
-      const result = run.results.find((r) => r.nodeId === nodeId)
-      if (result === undefined) {
-        throw new NotFoundError(`node ${nodeId} not found in run ${runId}`)
+    output: NodeEvidencePageSchema,
+    handle: ({ workspaceId, runId, nodeId, nodeIds, sections, path, maxBytes, start, end }) => {
+      const merged = [...(nodeId !== undefined ? [nodeId] : []), ...(nodeIds ?? [])]
+      const ordered = [...new Set(merged)]
+      if (ordered.length > NODE_DETAIL_MAX_LIMIT) {
+        throw new ValidationError(`Select at most ${NODE_DETAIL_MAX_LIMIT} nodes per evidence read; got ${ordered.length}.`)
       }
-      return buildNodeResultProjection(run, result, nodeId)
+      return runs.getNodeEvidence(workspaceId, runId, {
+        nodeIds: ordered,
+        ...(sections !== undefined ? { sections: sections as readonly EvidenceSection[] } : {}),
+        ...(path !== undefined ? { path } : {}),
+        ...(maxBytes !== undefined ? { maxBytes } : {}),
+        ...(start !== undefined ? { start } : {}),
+        ...(end !== undefined ? { end } : {}),
+      })
     },
+  })
+
+  router.register("runs", "history", {
+    input: historyInput,
+    output: RunHistoryPageSchema,
+    handle: (i) => runs.history(i.workspaceId, {
+      ...(i.workflowId !== undefined ? { workflowId: i.workflowId } : {}),
+      ...(i.status !== undefined ? { status: i.status } : {}),
+    }, i.limit ?? RUN_HISTORY_DEFAULT_LIMIT, i.cursor),
   })
 
   router.register("runs", "listByWorkflow", {

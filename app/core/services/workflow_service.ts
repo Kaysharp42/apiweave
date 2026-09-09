@@ -1,13 +1,26 @@
 import type { Workflow } from "@shared/types/Workflow"
 import type { AssertionItem } from "@shared/types/AssertionItem"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
+import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
+import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type {
   CollectionRepository,
   EnvironmentRepository,
   WorkflowCreate,
   WorkflowRepository,
+  WorkflowSummaryFilters,
+  WorkflowSummaryRow,
   WorkflowUpdate,
 } from "../repositories"
+import {
+  buildNodesView,
+  buildOutlineView,
+  openSearchCursor,
+  searchWorkflowNodes,
+  sealSearchCursor,
+  type NodeSearchRequest,
+} from "./workflow_reads"
 import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkflowTombstone, recordWorkflowUpsert } from "../sync/cloud-mutations"
@@ -19,6 +32,9 @@ import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
+import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
+import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
+import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 /** A subset change to a stored graph — see {@link WorkflowService.patch}. */
 export interface WorkflowGraphPatch {
@@ -34,11 +50,18 @@ export interface WorkflowGraphPatch {
   /**
    * Move existing nodes without resending them: applied after upserts/removals,
    * to whichever named ids still exist. Position-only — unlike `upsertNodes`,
-   * this does not make a node count as "touched" (see `mcp/bridge.ts`
-   * `applyAutoLayout`, the one caller that needs to move a whole graph without
-   * that showing up as every node being a content change).
+   * this does not make a node count as "touched" in the compact write summary.
    */
   readonly repositionNodes?: Readonly<Record<string, { readonly x: number; readonly y: number }>>
+  /**
+   * Layout control for the shared revision-aware write path. `true` lays out
+   * when the write changes topology (new/removed nodes, edges, group
+   * membership or node type); any other value preserves every position exactly
+   * as sent/stored, so config/label-only writes never move the canvas. The MCP
+   * bridge sends `true` unless the caller passes `layout: false`; the renderer
+   * omits the key and always preserves.
+   */
+  readonly layout?: boolean
 }
 
 /** A partial update for a stored node, or the complete definition for a new one. */
@@ -47,14 +70,55 @@ export interface WorkflowNodePatch {
   readonly type?: Workflow["nodes"][number]["type"] | undefined
   readonly label?: string | null | undefined
   readonly position?: Readonly<{ x?: number | undefined; y?: number | undefined }> | undefined
+  readonly parentId?: string | undefined
   readonly config?: Readonly<Record<string, unknown>> | undefined
 }
 
 /**
+ * True when the write changes graph topology — the only case auto-layout runs.
+ * New/removed node ids, added/removed/retargeted edges (including handle
+ * changes), node type changes, and group membership (`parentId`) changes all
+ * count. Config, label, and position-only edits do not: they preserve every
+ * stored position.
+ */
+export function graphTopologyChanged(
+  existingNodes: readonly WorkflowNode[],
+  existingEdges: readonly WorkflowEdge[],
+  nextNodes: readonly WorkflowNode[],
+  nextEdges: readonly WorkflowEdge[],
+): boolean {
+  if (existingNodes.length !== nextNodes.length || existingEdges.length !== nextEdges.length) {
+    const existingIds = new Set(existingNodes.map((node) => node.nodeId))
+    const nextIds = new Set(nextNodes.map((node) => node.nodeId))
+    if (existingIds.size !== nextIds.size || [...existingIds].some((id) => !nextIds.has(id))) return true
+    const existingEdgeIds = new Set(existingEdges.map((edge) => edge.edgeId))
+    const nextEdgeIds = new Set(nextEdges.map((edge) => edge.edgeId))
+    if (existingEdgeIds.size !== nextEdgeIds.size || [...existingEdgeIds].some((id) => !nextEdgeIds.has(id))) return true
+  }
+  const existingByNode = new Map(existingNodes.map((node) => [node.nodeId, node]))
+  for (const next of nextNodes) {
+    const current = existingByNode.get(next.nodeId)
+    if (current === undefined) return true
+    if (current.type !== next.type) return true
+    if ((current.parentId ?? null) !== (next.parentId ?? null)) return true
+  }
+  const existingByEdge = new Map(existingEdges.map((edge) => [edge.edgeId, edge]))
+  for (const next of nextEdges) {
+    const current = existingByEdge.get(next.edgeId)
+    if (current === undefined) return true
+    if (current.source !== next.source || current.target !== next.target) return true
+    if ((current.sourceHandle ?? null) !== (next.sourceHandle ?? null)) return true
+  }
+  // Same cardinalities but different id sets also reach here when lengths
+  // match by coincidence (replace one node with another); the loops above
+  // already returned true for the missing ids.
+  return false
+}
+
+/**
  * Fold a {@link WorkflowGraphPatch} into the stored graph, producing the full
- * update to persist. Exported so the MCP bridge can compute the same merged
- * graph a `workflows_patch` call is about to write — needed to lay out the
- * *whole* graph in the same write, not just the touched nodes.
+ * update to persist. `WorkflowService.patch` lays out this merged result when
+ * the write changes topology, so the layout and the write share one revision.
  */
 export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): WorkflowUpdate & { nodes: Workflow["nodes"] } {
   const upserted = mergeWorkflowNodePatches(existing.nodes, patch.upsertNodes, patch.removeNodeIds)
@@ -111,6 +175,7 @@ export function mergeWorkflowNodePatches(
       ...current,
       ...(patch.label !== undefined ? { label: patch.label } : {}),
       ...(patch.position !== undefined ? { position: { ...current.position, ...patch.position } } : {}),
+      ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
       ...(patch.config !== undefined ? { config: mergeRecord(current.config, patch.config) } : {}),
     }
     nodes[index] = WorkflowNodeSchema.parse(canonicalizeNodeConfig(merged))
@@ -167,12 +232,15 @@ export class WorkflowService {
     private readonly environments?: EnvironmentRepository,
   ) {}
 
-  async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId">): Promise<Workflow> {
+  async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId">, options?: { readonly layout?: boolean }): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
-    const created = this.workflows.create({ ...input, workspaceId })
+    const nodes = options?.layout === true && input.nodes !== undefined
+      ? layoutWorkflowNodes(input.nodes, input.edges ?? [])
+      : input.nodes
+    const created = this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })
     recordWorkflowUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     return created
@@ -191,9 +259,66 @@ export class WorkflowService {
     return this.workflows.listByWorkspace(workspaceId, includeAttached)
   }
 
-  async update(workspaceId: string, workflowId: string, patch: WorkflowUpdate): Promise<Workflow> {
+  /**
+   * Bounded graph-free discovery over a workspace. Unlike `list`, this never
+   * returns configs, variables or graph arrays, searches project-attached
+   * workflows as well, and pages with an opaque filter-bound revision-safe
+   * cursor: a cursor issued against a changed list is rejected so the caller
+   * re-reads from the start.
+   */
+  async search(
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    limit: number,
+    cursor: string | undefined,
+  ): Promise<{ items: readonly WorkflowSummaryRow[]; nextCursor: string | null }> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    const snapshot = this.workflows.summariesSnapshot(workspaceId, filters)
+    const after = cursor === undefined
+      ? undefined
+      : openSearchCursor(cursor, { workspaceId, filters }, snapshot).after
+    const page = this.workflows.listSummaries(workspaceId, filters, after, limit)
+    const last = page.items[page.items.length - 1]
+    return {
+      items: page.items,
+      nextCursor: page.hasMore && last !== undefined
+        ? sealSearchCursor({
+          workspaceId,
+          filters,
+          limit,
+          after: { updatedAt: last.updatedAt, workflowId: last.workflowId },
+          snapshot: page.snapshot,
+        })
+        : null,
+    }
+  }
+
+  /** Bounded structural overview of one workflow (no positions, no configs). */
+  async getOutline(
+    workspaceId: string,
+    workflowId: string,
+    nodeLimit: number,
+    nodeCursor: string | undefined,
+  ): Promise<WorkflowOutlineView> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    return buildOutlineView(this.mustGet(workspaceId, workflowId), nodeLimit, nodeCursor)
+  }
+
+  /** Full configs for a small node set plus incident edges and boundary identities. */
+  async getNodesView(workspaceId: string, workflowId: string, nodeIds: readonly string[]): Promise<WorkflowNodesView> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    return buildNodesView(this.mustGet(workspaceId, workflowId), nodeIds)
+  }
+
+  /** Locate nodes by safe fields only — never bodies, headers, auth or values. */
+  async searchNodes(workspaceId: string, workflowId: string, request: NodeSearchRequest): Promise<NodeSearchPage> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    return searchWorkflowNodes(this.mustGet(workspaceId, workflowId), request)
+  }
+
+  async update(workspaceId: string, workflowId: string, patch: WorkflowUpdate, options?: { readonly layout?: boolean }): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
-    this.mustGet(workspaceId, workflowId)
+    const existing = this.mustGet(workspaceId, workflowId)
     if ("collectionId" in patch) this.assertCollectionInWorkspace(patch.collectionId ?? null, workspaceId)
     if ("selectedEnvironmentId" in patch) {
       this.assertEnvironmentInWorkspace(patch.selectedEnvironmentId ?? null, workspaceId)
@@ -201,7 +326,15 @@ export class WorkflowService {
     if ("nodes" in patch) {
       this.assertCallWorkflowTargetsInWorkspace(patch.nodes, workspaceId, workflowId)
     }
-    const updated = this.workflows.update(workflowId, patch)
+    let next: WorkflowUpdate = patch
+    if (options?.layout === true && (patch.nodes !== undefined || patch.edges !== undefined)) {
+      const nextNodes = patch.nodes ?? existing.nodes
+      const nextEdges = patch.edges ?? existing.edges
+      if (graphTopologyChanged(existing.nodes, existing.edges, nextNodes, nextEdges)) {
+        next = { ...patch, nodes: layoutWorkflowNodes(nextNodes, nextEdges) }
+      }
+    }
+    const updated = this.workflows.update(workflowId, next)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
@@ -233,9 +366,25 @@ export class WorkflowService {
     const next = mergeGraphPatch(existing, patch)
     this.assertCallWorkflowTargetsInWorkspace(next.nodes, workspaceId, workflowId)
 
+    // Revision-aware auto-layout on the snapshot being saved — never on a
+    // redacted or pre-dispatch copy. The service reads the stored (unredacted)
+    // graph, merges this patch, and lays out that merged result when topology
+    // changed. Config/label-only patches keep every position untouched.
+    let nodes = next.nodes
+    const edges = next.edges ?? []
+    if (patch.layout === true && graphTopologyChanged(existing.nodes, existing.edges, next.nodes, edges)) {
+      const laidOut = layoutWorkflowNodes(next.nodes, edges)
+      const positions = new Map(laidOut.map((node) => [node.nodeId, node.position]))
+      nodes = next.nodes.map((node) => {
+        const position = positions.get(node.nodeId)
+        return position === undefined ? node : { ...node, position }
+      })
+    }
+    const persist: WorkflowUpdate & { nodes: Workflow["nodes"] } = { ...next, nodes, edges }
+
     const updated = patch.expectedRevision === undefined
-      ? this.workflows.update(workflowId, next)
-      : this.workflows.updateAtRevision(workflowId, patch.expectedRevision, next)
+      ? this.workflows.update(workflowId, persist)
+      : this.workflows.updateAtRevision(workflowId, patch.expectedRevision, persist)
     if (updated === undefined) {
       const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
       if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)

@@ -347,6 +347,44 @@ test.describe("node layer behaviour", () => {
     await expect(metrics).toBeVisible();
   });
 
+  test("edges land on their nodes, not in open canvas", async ({ page }) => {
+    await openCanvas(page);
+
+    // ReactFlow takes an edge's endpoint from the handle element's outer face,
+    // not its centre, so the handle's *box* is the socket and the hit area has
+    // to be a pseudo-element. When the box was the 20px hit area instead, both
+    // endpoints sat 10px out in empty canvas and every link on the graph read
+    // as unplugged. Measured in flow units off the path's own screen CTM.
+    const gap = await page.evaluate(() => {
+      const path = document.querySelector<SVGPathElement>(
+        '.react-flow__edge[data-id="e5"] .react-flow__edge-path',
+      );
+      const ctm = path?.getScreenCTM();
+      const source = document
+        .querySelector('.react-flow__node[data-id="backoff"]')
+        ?.getBoundingClientRect();
+      const target = document
+        .querySelector('.react-flow__node[data-id="retry-cart"]')
+        ?.getBoundingClientRect();
+      if (!path || !ctm || !source || !target) return null;
+
+      const at = (length: number) =>
+        path.getPointAtLength(length).matrixTransform(ctm);
+      const start = at(0);
+      const end = at(path.getTotalLength());
+
+      // ctm.a is the canvas zoom; report the gaps at 100%.
+      return {
+        source: (start.x - source.right) / ctm.a,
+        target: (target.left - end.x) / ctm.a,
+      };
+    });
+
+    expect(gap, "edge e5 or its nodes were not found").not.toBeNull();
+    expect(Math.abs(gap!.source), `source gap ${gap!.source}px`).toBeLessThan(1.5);
+    expect(Math.abs(gap!.target), `target gap ${gap!.target}px`).toBeLessThan(1.5);
+  });
+
   test("edge deletion is reachable from the keyboard", async ({ page }) => {
     await openCanvas(page);
 

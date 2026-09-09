@@ -221,7 +221,6 @@ describe("workflow graph analyzer", () => {
       "assertion_source_ambiguous",
       "assertion_source_path_invalid",
       "duplicate_edge_id",
-      "duplicate_end_node",
       "duplicate_node_id",
       "duplicate_start_node",
       "variable_producer_not_upstream",
