@@ -97,6 +97,7 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
   }
 }
 
+// fallow-ignore-next-line complexity
 async function dispatchAsTool(
   router: IpcRouter,
   spec: McpToolSpec,

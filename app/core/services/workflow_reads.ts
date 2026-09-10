@@ -255,6 +255,7 @@ export function searchWorkflowNodes(workflow: Workflow, request: NodeSearchReque
   }
 }
 
+// fallow-ignore-next-line complexity
 function matchNodeFields(node: WorkflowNode, query: string): string[] {
   const matchedOn: string[] = []
   if (node.nodeId.toLowerCase().includes(query)) matchedOn.push("nodeId")

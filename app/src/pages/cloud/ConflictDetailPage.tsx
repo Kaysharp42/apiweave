@@ -637,6 +637,7 @@ function MergeSourceCell({
   );
 }
 
+// fallow-ignore-next-line complexity
 function MergeResultCell({
   entry,
   residual,

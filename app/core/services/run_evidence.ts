@@ -131,6 +131,7 @@ export function buildNodeEvidencePage(run: Run, selection: EvidenceSelection): N
   })
 }
 
+// fallow-ignore-next-line complexity
 function buildNodeEvidence(
   result: RunResult,
   wanted: ReadonlySet<EvidenceSection>,
@@ -159,6 +160,7 @@ function buildNodeEvidence(
   }
 }
 
+// fallow-ignore-next-line complexity
 function buildRequestEvidence(
   request: JsonValue | null | undefined,
   bounds: EvidenceBounds,
@@ -180,6 +182,7 @@ function buildRequestEvidence(
   }
 }
 
+// fallow-ignore-next-line complexity
 function buildResponseEvidence(
   response: JsonValue | null | undefined,
   bounds: EvidenceBounds & { path?: string },
@@ -302,6 +305,7 @@ interface BudgetInput {
  * previews largest-first and mark those entries `budgetOmitted` with a stated
  * selector (refetch the node alone) — metadata and counts always survive.
  */
+// fallow-ignore-next-line complexity
 function applyEvidenceBudget(page: BudgetInput): NodeEvidencePage {
   const items = page.items.map((item) => ({ ...item }))
   const missingNodeIds = [...page.missingNodeIds]

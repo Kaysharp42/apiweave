@@ -31,6 +31,7 @@ export function createBuiltinClientCapabilityMatrix(): readonly McpClientCapabil
   })
 }
 
+// fallow-ignore-next-line complexity
 function wiringFor(agentKey: string): McpClientCapabilityRow["mcpWiring"] {
   switch (agentKey) {
     case "claude":

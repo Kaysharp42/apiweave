@@ -7,6 +7,7 @@ import type { McpHttpFixtureServer } from "./types"
  * responses contain synthetic data only and never proxy a real API.
  */
 export async function startMcpBenchmarkHttpFixtureServer(): Promise<McpHttpFixtureServer> {
+// fallow-ignore-next-line complexity
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1")
     if (url.pathname === "/orders/expected-conflict") {

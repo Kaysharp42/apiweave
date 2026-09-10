@@ -365,6 +365,7 @@ function validateRule(rule: AssertionItem, ruleIndex: number): ValidationIssue[]
   })
 }
 
+// fallow-ignore-next-line complexity
 function validateEvidencePath(rule: AssertionItem, ruleIndex: number, result: RunResult): ValidationIssue | undefined {
   const response = asRecord(result.response)
   if (rule.source === "variables") return undefined

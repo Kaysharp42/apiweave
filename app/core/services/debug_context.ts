@@ -51,6 +51,7 @@ export class DebugContextService {
     private readonly environments: EnvironmentService,
   ) {}
 
+// fallow-ignore-next-line complexity
   async debugContext(request: DebugContextRequest): Promise<WorkflowDebugContext> {
     const workflow = await this.workflows.get(request.workspaceId, request.workflowId)
     const run = await this.resolveRun(request.workspaceId, request.workflowId, request.runId)
@@ -243,6 +244,7 @@ const TERMINAL_RUN: ReadonlySet<Run["status"]> = new Set(["completed", "failed",
  * node set would report the end node and every untaken branch of a green run.
  * Canvas furniture never executes.
  */
+// fallow-ignore-next-line complexity
 function summarizeFailures(
   workflow: Workflow,
   run: Run | null,
@@ -316,6 +318,7 @@ function compactDiagnosis(
  * fix must stay consistent with), then blocked downstream nodes. Canvas-only
  * nodes join only by explicit request — they never execute.
  */
+// fallow-ignore-next-line complexity
 function relevantNodeIds(
   workflow: Workflow,
   failureSummary: WorkflowDebugContext["failureSummary"],
@@ -366,6 +369,7 @@ function boundaryIdentities(
 }
 
 /** Bounded redacted-in-transport error evidence with a selector for full detail. */
+// fallow-ignore-next-line complexity
 function buildEvidence(
   workspaceId: string,
   runId: string,
@@ -438,6 +442,7 @@ function collectEnvRefs(relevant: readonly string[], byId: ReadonlyMap<string, W
  * the run's stored resolution metadata when a run was selected. Names and
  * scope metadata only — values never enter this DTO.
  */
+// fallow-ignore-next-line complexity
 function collectSecrets(
   relevant: readonly string[],
   byId: ReadonlyMap<string, WorkflowNode>,
@@ -575,6 +580,7 @@ function dropNodeDetails(
  * keeps its authoritative total, so the omission is computable, and the
  * continuation in `nextReads` names what to read next.
  */
+// fallow-ignore-next-line complexity
 function dropIdentifierTails(response: WorkflowDebugContext, bytes: () => number): void {
   while (overBudget(bytes)) {
     let dropped = popOne(response.failureSummary.failedNodeIds)

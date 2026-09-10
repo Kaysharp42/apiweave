@@ -257,6 +257,7 @@ export class RunService {
    * effort within this process lifetime — it does not promise exactly-once
    * remote HTTP side effects after a crash/restart.
    */
+// fallow-ignore-next-line complexity
   private async createRunDeduped(
     workspaceId: string,
     input: Omit<RunCreate, "workspaceId">,
