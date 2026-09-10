@@ -59,3 +59,22 @@ export const DEBUG_CONTEXT_MAX_ISSUE_LIMIT = 50
 /** Default/maximum error characters per evidence entry in a debug context. */
 export const DEBUG_CONTEXT_DEFAULT_ERROR_BYTES = 2048
 export const DEBUG_CONTEXT_MAX_ERROR_BYTES = 8192
+
+/**
+ * Cut `text` to at most `maxBytes` UTF-8 bytes on a character boundary. Every
+ * cap here is stated in bytes, so a preview has to be measured in them:
+ * slicing by characters lets one multi-byte body overrun its cap several times
+ * over (and blow the aggregate budget), while a cut mid-sequence would not be
+ * valid UTF-8 at all.
+ */
+export function truncateUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
+  let end = Math.max(0, Math.min(text.length, Math.floor((maxBytes / Math.max(1, Buffer.byteLength(text, "utf8"))) * text.length)))
+  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) {
+    end = Math.floor(end * 0.9)
+  }
+  // A cut between the halves of a surrogate pair encodes as a replacement
+  // character, not the astral character it belonged to: drop the lone half.
+  if (end > 0 && end < text.length && (text.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1
+  return text.slice(0, end)
+}

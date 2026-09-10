@@ -55,8 +55,8 @@ export interface WorkflowGraphPatch {
   readonly repositionNodes?: Readonly<Record<string, { readonly x: number; readonly y: number }>>
   /**
    * Layout control for the shared revision-aware write path. `true` lays out
-   * when the write changes topology (new/removed nodes, edges, group
-   * membership or node type); any other value preserves every position exactly
+   * when the write changes topology (new/removed nodes, edges, edge handles,
+   * group membership or node type); any other value preserves every position exactly
    * as sent/stored, so config/label-only writes never move the canvas. The MCP
    * bridge sends `true` unless the caller passes `layout: false`; the renderer
    * omits the key and always preserves.
@@ -70,7 +70,7 @@ export interface WorkflowNodePatch {
   readonly type?: Workflow["nodes"][number]["type"] | undefined
   readonly label?: string | null | undefined
   readonly position?: Readonly<{ x?: number | undefined; y?: number | undefined }> | undefined
-  readonly parentId?: string | undefined
+  readonly parentId?: string | null | undefined
   readonly config?: Readonly<Record<string, unknown>> | undefined
 }
 
@@ -108,6 +108,9 @@ export function graphTopologyChanged(
     if (current === undefined) return true
     if (current.source !== next.source || current.target !== next.target) return true
     if ((current.sourceHandle ?? null) !== (next.sourceHandle ?? null)) return true
+    // Re-pointing an edge at another input port (a merge node's `branch-1`)
+    // rewires the graph as much as changing its target node does.
+    if ((current.targetHandle ?? null) !== (next.targetHandle ?? null)) return true
   }
   // Same cardinalities but different id sets also reach here when lengths
   // match by coincidence (replace one node with another); the loops above
@@ -178,6 +181,10 @@ export function mergeWorkflowNodePatches(
       ...(patch.parentId !== undefined ? { parentId: patch.parentId } : {}),
       ...(patch.config !== undefined ? { config: mergeRecord(current.config, patch.config) } : {}),
     }
+    // `parentId: null` is the patch spelling of "leave the group". Stored nodes
+    // (and the canvas) say "no parent" by omitting the key, so drop it rather
+    // than persist a second spelling the node schema would reject anyway.
+    if (patch.parentId === null) delete merged.parentId
     nodes[index] = WorkflowNodeSchema.parse(canonicalizeNodeConfig(merged))
   }
   return nodes

@@ -242,6 +242,32 @@ describe("Phase 4 — single create-and-wait for short runs", () => {
     expect(runService.getActiveWaitCount()).toBe(0)
   })
 
+  // The 10s default is MCP-transport policy (see `dispatchAsTool`), not shared
+  // registry policy: putting it on the handler made every renderer `runs.create`
+  // block for up to 10s. Omitting `waitMs` must stay immediate over plain IPC
+  // and still wait over MCP.
+  it("defaults to no wait over IPC and to a bounded wait over MCP", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const workflowId = seedWorkflow(workspace.workspaceId, 1000)
+    const started = Date.now()
+    const direct = await dispatchOk<{ runId: string; status: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+    })
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(["pending", "running"]).toContain(direct.status)
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_create",
+      arguments: { workspaceId: workspace.workspaceId, workflowId },
+    })
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+    expect(parsed["terminal"]).toBe(true)
+    expect(["completed", "failed"]).toContain(parsed["status"])
+    await client.close()
+    expect(runService.getActiveWaitCount()).toBe(0)
+  })
+
   it("resolves via MCP with a compact summary and failure evidence on completion", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
     const workflowId = seedWorkflow(workspace.workspaceId)
@@ -397,6 +423,29 @@ describe("Phase 4 — retriable creation does not double-enqueue", () => {
       operationId: "op-1",
     })
     expect(second.runId).toBe(first.runId)
+    const history = await dispatchOk<{ items: unknown[] }>("runs", "history", { workspaceId: workspace.workspaceId })
+    expect(history.items).toHaveLength(1)
+  })
+
+  it("re-enqueues when the replayed run row has been deleted", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const workflowId = seedWorkflow(workspace.workspaceId)
+    const first = await dispatchOk<{ runId: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+      waitMs: 5000,
+      operationId: "op-gone",
+    })
+    expect(runRepository.delete(first.runId)).toBe(true)
+    // The idempotency key must still accept the retry: a not-found naming a run
+    // nobody has is the opposite of what the key is for.
+    const second = await dispatchOk<{ runId: string }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+      waitMs: 5000,
+      operationId: "op-gone",
+    })
+    expect(second.runId).not.toBe(first.runId)
     const history = await dispatchOk<{ items: unknown[] }>("runs", "history", { workspaceId: workspace.workspaceId })
     expect(history.items).toHaveLength(1)
   })

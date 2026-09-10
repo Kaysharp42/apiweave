@@ -38,6 +38,7 @@ function conflictDetails(details: unknown): McpToolError["details"] | undefined 
   if (!isRecord(details)) return undefined
   const expectedRevision = numberAt(details, "expectedRevision")
   const currentRevision = numberAt(details, "currentRevision")
+  if (expectedRevision === undefined && currentRevision === undefined) return undefined
   return {
     ...(expectedRevision === undefined ? {} : { expectedRevision }),
     ...(currentRevision === undefined ? {} : { currentRevision }),
@@ -48,7 +49,10 @@ function validationDetails(details: unknown): McpToolError["details"] | undefine
   if (Array.isArray(details)) {
     const issues = details
       .slice(0, MAX_ISSUES)
-      .flatMap((issue) => validationIssue(issue) === undefined ? [] : [validationIssue(issue)!])
+      .flatMap((issue) => {
+        const projected = validationIssue(issue)
+        return projected === undefined ? [] : [projected]
+      })
     return issues.length > 0 ? { issues } : undefined
   }
   if (!isRecord(details)) return undefined
@@ -72,7 +76,7 @@ function validationIssue(value: unknown): McpValidationIssue | undefined {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function numberAt(value: Record<string, unknown>, key: string): number | undefined {

@@ -283,6 +283,56 @@ describe("RunRepository", () => {
       resolvedSecrets: [],
     })
   })
+
+  // listRunSummaries lifts trigger/duration/failedNodes/results-length out of
+  // the metadata blob in SQL instead of parsing it. This pins those four to the
+  // full-row path across pages, for runs with and without failures/results and
+  // for an old-build row whose metadata keys are absent entirely.
+  it("summarizes run history identically to the full-row read, including old rows", () => {
+    const { workspaceId, workflowId, runId: withResults } = seedRun()
+    runs.update(withResults, {
+      status: "failed",
+      trigger: "schedule",
+      duration: 12,
+      results: [
+        { nodeId: "n0", status: "failed", duration: 3 },
+        { nodeId: "n1", status: "passed", duration: 4 },
+      ],
+      failedNodes: ["n0"],
+    })
+    const clean = runs.create({ workspaceId, workflowId }).runId
+    runs.update(clean, { status: "completed", results: [{ nodeId: "n0", status: "passed", duration: 1 }] })
+    const empty = runs.create({ workspaceId, workflowId }).runId
+    const legacy = runs.create({ workspaceId, workflowId }).runId
+    db.kvStore.set("UPDATE runs SET response_metadata_json = '{}' WHERE id = ?", [legacy])
+
+    const seen: string[] = []
+    let cursor: { createdAt: string; runId: string } | undefined
+    for (;;) {
+      const page = runs.listRunSummaries(workspaceId, { workflowId }, cursor, 2)
+      for (const item of page.items) {
+        const full = runs.getById(item.runId)!
+        expect(item.trigger).toBe(full.trigger)
+        expect(item.duration).toBe(full.duration)
+        expect(item.failedNodes).toEqual(full.failedNodes ?? [])
+        expect(item.failedNodeCount).toBe((full.failedNodes ?? []).length)
+        expect(item.nodeCount).toBe(full.results.length)
+        seen.push(item.runId)
+      }
+      if (!page.hasMore) break
+      const last = page.items[page.items.length - 1]!
+      cursor = { createdAt: last.createdAt, runId: last.runId }
+    }
+    expect(seen).toHaveLength(4)
+    expect(new Set(seen).size).toBe(4)
+
+    // Spot-check the two extremes the SQL lift has to get right on its own:
+    // a schedule-triggered failure with results, and a keyless legacy row.
+    const rows = new Map(runs.listRunSummaries(workspaceId, { workflowId }, undefined, 10).items.map((r) => [r.runId, r]))
+    expect(rows.get(withResults)).toMatchObject({ trigger: "schedule", duration: 12, nodeCount: 2, failedNodeCount: 1 })
+    expect(rows.get(empty)).toMatchObject({ trigger: "manual", duration: null, nodeCount: 0, failedNodes: [] })
+    expect(rows.get(legacy)).toMatchObject({ trigger: "manual", duration: null, nodeCount: 0, failedNodes: [] })
+  })
 })
 
 describe("EnvironmentRepository", () => {

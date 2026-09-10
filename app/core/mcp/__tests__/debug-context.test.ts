@@ -245,8 +245,9 @@ describe("Phase 3 — one call explains a known failure", () => {
 
     expect(context.failureSummary.failedNodeIds).toEqual(["login"])
     expect(context.failureSummary.failedNodeCount).toBe(1)
-    // check never ran: skipped result plus unexecuted end node are blocked.
-    expect(context.failureSummary.blockedNodeIds).toEqual(expect.arrayContaining(["check", "end"]))
+    // check never ran: its skipped result is blocked. `end` is not — the
+    // executor never persists a row for one, so its absence proves nothing.
+    expect(context.failureSummary.blockedNodeIds).toEqual(["check"])
     expect(context.failureSummary.blockedNodeCount).toBe(context.failureSummary.blockedNodeIds.length)
 
     // Failed config plus nearest dependency (start) travel with handles intact.
@@ -378,6 +379,54 @@ describe("Phase 3 — empty, denied and stale cases are explicit", () => {
     expect(context.nextReads.map((read) => read.tool)).toContain("runs_history")
   })
 
+  it("blames neither end nodes nor untaken branches on a green terminal run", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "branching",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "login", type: "http-request", position: { x: 100, y: 0 }, config: { method: "POST", url: "https://example.test/login" } },
+        {
+          nodeId: "check",
+          type: "assertion",
+          position: { x: 200, y: 0 },
+          config: { assertions: [{ source: "prev", path: "response.statusCode", operator: "equals", expectedValue: 200 }] },
+        },
+        { nodeId: "ok", type: "http-request", position: { x: 300, y: 0 }, config: { method: "GET", url: "https://example.test/orders" } },
+        { nodeId: "recover", type: "http-request", position: { x: 300, y: 120 }, config: { method: "POST", url: "https://example.test/retry" } },
+        { nodeId: "end", type: "end", position: { x: 400, y: 0 } },
+        { nodeId: "end-fail", type: "end", position: { x: 400, y: 120 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "login" },
+        { edgeId: "e2", source: "login", target: "check" },
+        { edgeId: "e3", source: "check", target: "ok", sourceHandle: "pass" },
+        { edgeId: "e4", source: "check", target: "recover", sourceHandle: "fail" },
+        { edgeId: "e5", source: "ok", target: "end" },
+        { edgeId: "e6", source: "recover", target: "end-fail" },
+      ],
+    })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    // Everything that ran passed; the executor persists no row for an `end`
+    // node and none for the `fail` branch it never took, so neither is
+    // evidence of a blocked node and neither may eat a node-detail slot.
+    runRepository.update(run.runId, {
+      status: "completed",
+      results: [
+        { nodeId: "login", status: "passed", duration: 5, response: { statusCode: 200 } },
+        { nodeId: "check", status: "passed", duration: 1 },
+        { nodeId: "ok", status: "passed", duration: 4, response: { statusCode: 200 } },
+      ],
+      failedNodes: [],
+    })
+
+    const context = await debugContext({ workspaceId, workflowId: workflow.workflowId, runId: run.runId })
+    expect(context.failureSummary).toMatchObject({ failedNodeIds: [], blockedNodeIds: [], blockedNodeCount: 0 })
+    expect(context.nodes.map((node) => node.nodeId)).toEqual([])
+    expect(context.totalRelevantNodeCount).toBe(0)
+  })
+
   it("hides workflows outside the workspace", async () => {
     const seed = await seedFailure()
     const error = await dispatchErr("workflows", "debugContext", {
@@ -491,7 +540,7 @@ describe("Phase 3 — provenance edge cases", () => {
 })
 
 describe("Phase 3 — budgets, truncation and continuation", () => {
-  async function seedManyFailures(count: number): Promise<{ workspaceId: string; workflowId: string; runId: string }> {
+  async function seedManyFailures(count: number, error?: string): Promise<{ workspaceId: string; workflowId: string; runId: string }> {
     const workspaceId = await seedWorkspace()
     const nodes = [{ nodeId: "start", type: "start", position: { x: 0, y: 0 } }]
     const edges: Array<Record<string, unknown>> = []
@@ -513,7 +562,7 @@ describe("Phase 3 — budgets, truncation and continuation", () => {
         nodeId: `n${index}`,
         status: "failed" as const,
         duration: index,
-        error: `failure ${index}: ${"z".repeat(3000)}`,
+        error: error ?? `failure ${index}: ${"z".repeat(3000)}`,
       })),
       failedNodes: Array.from({ length: count }, (_, index) => `n${index}`),
     })
@@ -572,6 +621,70 @@ describe("Phase 3 — budgets, truncation and continuation", () => {
     expect(item?.errorBytes).toBeGreaterThan(64)
     expect(Buffer.byteLength(item?.errorPreview ?? "", "utf8")).toBeLessThanOrEqual(64)
     expect(item?.moreDetail.tool).toBe("runs_getNodeResult")
+  })
+
+  it("keeps a non-ASCII error whole when it fits the byte budget", async () => {
+    // byteLength > length here, so a character-count budget would silently cut the tail.
+    const error = "café — naïve 🚀 upstream"
+    const seed = await seedManyFailures(1, error)
+    const context = await debugContext({
+      workspaceId: seed.workspaceId,
+      workflowId: seed.workflowId,
+      errorBytes: 64,
+    })
+    const item = context.evidence[0]
+    expect(item?.errorPreview).toBe(error)
+    expect(item?.errorTruncated).toBe(false)
+    expect(item?.errorBytes).toBe(Buffer.byteLength(error, "utf8"))
+  })
+
+  it("bounds the missing-env-key continuation hint so the aggregate budget still holds", async () => {
+    // The trimming ladder runs before nextReads is appended, so a hint that
+    // named every missing key pushed the response back over the budget it had
+    // just enforced — with nothing left marked omittable.
+    const workspaceId = await seedWorkspace()
+    const environment = await dispatchOk<{ environmentId: string }>("environments", "create", {
+      workspaceId,
+      name: "empty",
+      variables: {},
+    })
+    const keys = Array.from({ length: 300 }, (_, index) => `MISSING_KEY_${String(index).padStart(4, "0")}`)
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "env-heavy",
+      selectedEnvironmentId: environment.environmentId,
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "call",
+          type: "http-request",
+          position: { x: 100, y: 0 },
+          config: { method: "POST", url: "https://example.test/submit", body: keys.map((key) => `{{env.${key}}}`).join(" ") },
+        },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    runRepository.update(run.runId, {
+      status: "failed",
+      selectedEnvironmentId: environment.environmentId,
+      results: [{ nodeId: "call", status: "failed" as const, duration: 1, error: "boom" }],
+      failedNodes: ["call"],
+    })
+
+    const context = await debugContext({ workspaceId, workflowId: workflow.workflowId })
+
+    expect(context.environment.totalKeyCount).toBe(keys.length)
+    expect(context.budgetBytes).toBeLessThanOrEqual(context.budgetLimitBytes)
+    expect(Buffer.byteLength(JSON.stringify(context), "utf8")).toBeLessThanOrEqual(32 * 1024)
+    // The hint states the full count and how many names it left out, so the
+    // omission is arithmetic rather than a silently sliced list.
+    const envRead = context.nextReads.find((read) => read.tool === "environments_get")
+    const stated = /^(\d+) referenced env key\(s\) \(([^)]*)\) missing/.exec(envRead?.reason ?? "")
+    expect(stated).not.toBeNull()
+    const listed = (stated?.[2] ?? "").split(", ")
+    const unnamed = Number(/^\+(\d+) more$/.exec(listed[listed.length - 1] ?? "")?.[1])
+    expect(listed.length - 1 + unnamed).toBe(Number(stated?.[1]))
   })
 
   it("rejects oversized node and issue selections", async () => {

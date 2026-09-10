@@ -182,6 +182,58 @@ describe("ConflictDetailPage", () => {
     expect(toastSuccess).toHaveBeenCalledWith("Merged both copies");
   });
 
+  it("offers arrows for automatic changes and forwards an explicit override", async () => {
+    const automaticMergeConflict: Conflict = {
+      ...workflowConflict,
+      auto_mergeable: true,
+      merge_residual_paths: [],
+    };
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: automaticMergeConflict };
+      if (action === "conflict-resolve") return { ok: true, data: automaticMergeConflict };
+      return { ok: true, data: [] };
+    });
+    const user = userEvent.setup();
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    await user.click(screen.getByRole("button", { name: "Accept Cloud for Name" }));
+    expect(screen.getByText("Accepted cloud")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Apply merge to workspace" }));
+    await user.click(screen.getByRole("button", { name: "Apply to workspace" }));
+
+    await waitFor(() => expect(screen.getByText("conflicts index")).toBeInTheDocument());
+    expect(invokeMock).toHaveBeenCalledWith("cloud", "conflict-resolve", {
+      conflict_id: "conflict-1",
+      winner: "merged",
+      device_id: "desktop",
+      defer_push: true,
+      resolutions: [{ path: "name", side: "cloud" }],
+    });
+  });
+
+  it("switches sides and resets a required field without applying the merge", async () => {
+    invokeMock.mockImplementation(async (_domain: string, action: string) => {
+      if (action === "conflict-get") return { ok: true, data: { ...workflowConflict, merge_residual_paths: ["name"] } };
+      return { ok: true, data: [] };
+    });
+    const user = userEvent.setup();
+    renderPage("/cloud/conflicts/conflict-1");
+    await user.click(await screen.findByRole("button", { name: "Accept Cloud for Name" }));
+    const result = screen.getByLabelText("Merge result for Name");
+    expect(result).toHaveTextContent("Cloud API smoke test");
+    await user.click(screen.getByRole("button", { name: "Accept Local for Name" }));
+    expect(result).toHaveTextContent("Local API smoke test");
+    expect(result).not.toHaveTextContent("Cloud API smoke test");
+    expect(screen.getByRole("button", { name: "Selected Local for Name" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Accept Cloud for Name" })).toHaveAttribute("aria-pressed", "false");
+    await user.click(screen.getByRole("button", { name: "Reset selection for Name" }));
+    expect(screen.getByText("1 unresolved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply merge to workspace" })).toBeDisabled();
+    expect(invokeMock.mock.calls.some((call) => call[1] === "conflict-resolve")).toBe(false);
+  });
+
   // An end-to-end encrypted workspace never gets a server-side 3-way merge: the
   // server cannot read the payloads, so auto_mergeable is always false and
   // merge_residual_paths always empty. That must read as "choose one whole

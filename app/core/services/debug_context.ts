@@ -1,4 +1,4 @@
-import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer"
+import { analyzeWorkflowGraph, buildGraph, traverse } from "@shared/analysis/workflow_graph_analyzer"
 import { isCanvasOnlyNode } from "@shared/graph/frames"
 import type { Environment } from "@shared/types/Environment"
 import type { Run } from "@shared/types/Run"
@@ -13,6 +13,7 @@ import {
   DEBUG_CONTEXT_DEFAULT_ISSUE_LIMIT,
   DEBUG_CONTEXT_MAX_NODE_DETAILS,
   INLINE_RESULT_BUDGET_BYTES,
+  truncateUtf8,
 } from "./read_budgets"
 import type { EnvironmentService } from "./environment_service"
 import type { RunService } from "./run_service"
@@ -235,8 +236,12 @@ const TERMINAL_RUN: ReadonlySet<Run["status"]> = new Set(["completed", "failed",
 /**
  * Failed ids from stored metadata plus failed results (either may be absent on
  * older rows); blocked ids are skipped results plus, on a terminal run, the
- * executable non-start nodes that never produced a result — the downstream
- * branches an upstream failure starved. Canvas furniture never executes.
+ * resultless executable nodes DOWNSTREAM of a failure — the branches that
+ * failure starved. Absence of a result is not on its own evidence of being
+ * blocked: the executor marks `end` nodes passed without persisting a result,
+ * and a branch the run never took stores nothing either, so an unreachable
+ * node set would report the end node and every untaken branch of a green run.
+ * Canvas furniture never executes.
  */
 function summarizeFailures(
   workflow: Workflow,
@@ -258,9 +263,11 @@ function summarizeFailures(
     if (result.status === "skipped" && !failedSet.has(result.nodeId)) blocked.add(result.nodeId)
   }
   if (TERMINAL_RUN.has(run.status)) {
-    for (const node of workflow.nodes) {
-      if (node.type === "start" || isCanvasOnlyNode(node)) continue
-      if (!resultsByNode.has(node.nodeId) && !failedSet.has(node.nodeId)) blocked.add(node.nodeId)
+    const { nodesById, successors } = buildGraph(workflow.nodes, workflow.edges)
+    for (const nodeId of traverse(failedNodeIds, successors)) {
+      const node = nodesById.get(nodeId)
+      if (node === undefined || node.type === "start" || node.type === "end" || isCanvasOnlyNode(node)) continue
+      if (!resultsByNode.has(nodeId) && !failedSet.has(nodeId)) blocked.add(nodeId)
     }
   }
   const blockedNodeIds = [...blocked].sort()
@@ -374,7 +381,7 @@ function buildEvidence(
     nodeId: result.nodeId,
     status: result.status,
     hasError: error.length > 0,
-    ...(error.length === 0 ? {} : { errorPreview: truncateUtf8(error, truncated ? errorBudget : error.length) }),
+    ...(error.length === 0 ? {} : { errorPreview: truncated ? truncateUtf8(error, errorBudget) : error }),
     errorTruncated: truncated,
     errorBytes,
     ...(result.expectedStatus !== undefined ? { expectedStatus: result.expectedStatus } : {}),
@@ -392,15 +399,6 @@ function buildEvidence(
       },
     },
   }
-}
-
-function truncateUtf8(text: string, maxBytes: number): string {
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) return text
-  let end = Math.max(0, Math.min(text.length, Math.floor((maxBytes / Math.max(1, Buffer.byteLength(text, "utf8"))) * text.length)))
-  while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") > maxBytes) {
-    end = Math.floor(end * 0.9)
-  }
-  return text.slice(0, end)
 }
 
 /** Distinct unresolved placeholders across failed and blocked node results. */
@@ -497,8 +495,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * value-per-byte: error previews first (rows and selectors survive), then
  * diagnosis items from the notices end (summary counts survive), then node
  * detail entries from the lowest-priority end (counts, evidence selectors and
- * omission ids survive). Metadata is never dropped, so this terminates with a
- * valid, explicitly partial response.
+ * omission ids survive), then identifier tails with the continuation hints
+ * already weighed. Metadata is never dropped, so this terminates with a valid,
+ * explicitly partial response.
  */
 function fitBudget(
   response: WorkflowDebugContext,
@@ -513,11 +512,14 @@ function fitBudget(
   dropErrorPreviews(response, bytes)
   dropDiagnosisTail(response, bytes)
   dropNodeDetails(response, byId, bytes)
+  // The continuations are part of the response, so they go on the scales
+  // before the last rung — appended afterwards they re-broke the budget the
+  // ladder had just held. Node/diagnosis omissions are final by here, so the
+  // hints they restate are accurate.
+  response.nextReads = buildNextReads(response, workspaceId, workflowId, runId, environment)
   dropIdentifierTails(response, bytes)
   response.budgetBytes = bytes()
   response.budgetLimitBytes = INLINE_RESULT_BUDGET_BYTES
-  response.nextReads = buildNextReads(response, workspaceId, workflowId, runId, environment)
-  response.budgetBytes = bytes()
   return response
 }
 
@@ -631,10 +633,16 @@ function buildNextReads(
   }
   const missingKeys = environment.keys.filter((key) => !key.present)
   if (environment.evaluatedEnvironmentId !== null && missingKeys.length > 0) {
+    // The names are a hint, not a payload: an unbounded list is a second copy
+    // of the key set that no rung of the ladder can shorten. Cap it and state
+    // how many names were left out; `environment.keys` carries the rest.
+    const named = missingKeys.slice(0, 10).map((key) => key.name)
+    const unnamedCount = missingKeys.length - named.length
+    const names = unnamedCount > 0 ? `${named.join(", ")}, +${unnamedCount} more` : named.join(", ")
     nextReads.push({
       tool: "environments_get",
       args: { workspaceId, environmentId: environment.evaluatedEnvironmentId },
-      reason: `${missingKeys.length} referenced env key(s) (${missingKeys.map((key) => key.name).join(", ")}) missing from the evaluated environment; inspect it here.`,
+      reason: `${missingKeys.length} referenced env key(s) (${names}) missing from the evaluated environment; inspect it here.`,
     })
   }
   return nextReads

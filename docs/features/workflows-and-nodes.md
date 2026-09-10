@@ -67,7 +67,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 
 ### End
 
-**Purpose:** Marks the terminal point of a path. A workflow has exactly one End node — converge success and cleanup paths on it rather than adding a second, which `workflow_diagnose` reports as `duplicate_end_node`.
+**Purpose:** Marks the terminal point of a path. A workflow needs at least one End node and may have several. Converging your success and cleanup paths on a single End keeps a large graph easier to read, so prefer it when the paths mean the same thing; use separate End nodes when the outcomes are genuinely distinct and you want them distinguishable on the canvas. Either shape runs the same way — the runner marks each End it reaches as passed, on its own.
 
 | Config | What it does |
 | --- | --- |

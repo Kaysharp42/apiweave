@@ -627,9 +627,11 @@ For an existing workflow: find it, read the failing part, patch it, re-check it.
    Counts describe every failure even when detail is capped.
 3. **Patch.** \`workflows_patch\` with \`expectedRevision\` from the rev you read.
    One call carries the new node, old edge removals, and replacement edges
-   together. Topology changes (new/removed nodes or edges, group membership)
-   lay out once on the saved revision; config/label-only patches keep every
-   position. A conflict means someone edited meanwhile: re-read and recompute.
+   together. Topology changes (new/removed nodes or edges, retargeted edge
+   handles, group membership — \`parentId\` on an upserted node, \`null\` to take
+   it out of its frame) lay out once on the saved revision; config/label-only
+   patches keep every position. A conflict means someone edited meanwhile:
+   re-read and recompute.
 4. **Verify.** Read the write's \`diagnosis\` (errors first, then warnings; an
    \`unavailable\` check is not clean), then \`runs_create\` with a bounded wait
    for short runs. A wait timeout returns the run id for \`runs_wait\` — it never

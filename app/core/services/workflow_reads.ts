@@ -155,7 +155,10 @@ export function buildOutlineView(
     edgeCount: workflow.edges.length,
     nodes: window.map((node) => ({ nodeId: node.nodeId, type: node.type, label: node.label ?? null })),
     edges,
-    omittedNodeCount: workflow.nodes.length - startIndex - window.length,
+    // Omission is measured against the whole graph, not the tail after this
+    // page: `nodes.length + omittedNodeCount === nodeCount` on every page, so a
+    // paging caller can always state exactly what this page does not show.
+    omittedNodeCount: workflow.nodes.length - window.length,
     omittedEdgeCount: workflow.edges.length - edges.length,
     nextNodeCursor: startIndex + window.length < workflow.nodes.length && last !== undefined
       ? sealOutlineCursor({ workflowId: workflow.workflowId, rev: workflow.rev, afterNodeId: last.nodeId })

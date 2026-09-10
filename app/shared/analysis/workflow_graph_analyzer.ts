@@ -95,7 +95,7 @@ export function analyzeVariableProvenance(nodes: readonly VariableProvenanceNode
   return map
 }
 
-function buildGraph(nodes: readonly WorkflowNode[], edges: readonly WorkflowEdge[]) {
+export function buildGraph(nodes: readonly WorkflowNode[], edges: readonly WorkflowEdge[]) {
   const nodesById = new Map<string, WorkflowNode>()
   for (const node of nodes) if (!nodesById.has(node.nodeId)) nodesById.set(node.nodeId, node)
   const predecessors = new Map<string, Set<string>>()
@@ -112,7 +112,7 @@ function buildGraph(nodes: readonly WorkflowNode[], edges: readonly WorkflowEdge
   return { nodesById, predecessors, successors }
 }
 
-function traverse(startIds: readonly string[], adjacency: ReadonlyMap<string, ReadonlySet<string>>): Set<string> {
+export function traverse(startIds: readonly string[], adjacency: ReadonlyMap<string, ReadonlySet<string>>): Set<string> {
   const visited = new Set<string>()
   const queue = [...startIds]
   let queueIndex = 0
@@ -691,7 +691,12 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
       if (result.status === "failed") {
         const descendants = traverse([node.nodeId], successors)
         descendants.delete(node.nodeId)
+        // The executor marks `start`/`end` passed without recording a result, so their
+        // absence from the run is structural — never evidence the failure starved them.
+        // Canvas-only nodes are already dropped in `analyzeWorkflowGraph`.
         const blockedNodeIds = [...descendants].filter((nodeId) => {
+          const downstreamType = nodesById.get(nodeId)?.type
+          if (downstreamType === "start" || downstreamType === "end") return false
           const downstreamResult = resultsByNode.get(nodeId)
           return downstreamResult === undefined || downstreamResult.status === "skipped"
         }).sort()

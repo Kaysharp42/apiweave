@@ -1,8 +1,16 @@
 import { z } from "zod"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { McpWorkflowWriteToolResultSchema, WorkflowDiagnosisSchema } from "@shared/zod-schemas"
+import {
+  McpWorkflowWriteToolResultSchema,
+  WorkflowDebugContextSchema,
+  WorkflowDiagnosisSchema,
+  WorkflowNodesViewSchema,
+  WorkflowOutlineViewSchema,
+  WorkflowSchema,
+} from "@shared/zod-schemas"
 import type { IpcRouter } from "../ipc/router"
+import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 import { encodeMcpResult } from "./result-encoding"
@@ -13,6 +21,40 @@ import {
   unavailableWorkflowDiagnosis,
   workflowIdentity,
 } from "./projections/workflow-write"
+
+/**
+ * A stored node object, advertised without the ~22 KB `WorkflowNodeSchema`
+ * discriminated union.
+ *
+ * MCP output schemas are optional (spec 2025-11-25), and a looser advertisement
+ * is always satisfied by the stricter data — the router still validates every
+ * response against the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`
+ * on the shared IPC path, so nothing about validation strength or the bytes an
+ * agent receives changes. What changes is that the node union is advertised
+ * ONCE, on the write tools' *input* schemas (`workflows_create/update/patch`),
+ * which is where it is actually enforced and where an agent has to read it
+ * anyway to author a node.
+ */
+const AdvertisedNodeSchema = z.record(z.string(), z.unknown())
+
+/**
+ * MCP-only output advertisements for the two reads whose schemas re-embedded
+ * the node union a second and third time. Keyed by public tool name.
+ */
+const ADVERTISED_OUTPUT: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.ZodTypeAny>([
+  // `full` is the whole stored graph — everything but node internals stays
+  // typed. `outline` and `nodes` keep their exact schemas, so the partial-read
+  // markers (`view`, `partial: true`) stay advertised and enforced.
+  [
+    "workflows_get",
+    z.union([
+      WorkflowOutlineViewSchema,
+      WorkflowNodesViewSchema,
+      WorkflowSchema.extend({ nodes: z.array(AdvertisedNodeSchema) }),
+    ]),
+  ],
+  ["workflows_debugContext", WorkflowDebugContextSchema.extend({ nodes: z.array(AdvertisedNodeSchema) })],
+])
 
 /**
  * Register every whitelisted IPC handler as an MCP tool on `server`. Each tool
@@ -34,7 +76,9 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
     // lets the SDK strip unknown keys before the router can reject them.
     // NoInput is an optional empty object; MCP supplies an argument object.
     const inputSchema = reg.input instanceof z.ZodObject ? reg.input : z.object({}).strict()
-    const outputValueSchema = spec.resultProjection === "run" ? z.unknown() : reg.output
+    const outputValueSchema = spec.resultProjection === "run"
+      ? z.unknown()
+      : ADVERTISED_OUTPUT.get(toolName(spec)) ?? reg.output
     const outputSchema = spec.resultProjection === "workflowWrite"
       ? McpWorkflowWriteToolResultSchema
       : z.object({ result: outputValueSchema })
@@ -59,7 +103,8 @@ async function dispatchAsTool(
   args: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<CallToolResult> {
-  const payload = args ?? {}
+  // Copy: the SDK owns `args`, and the defaults below must not write into it.
+  const payload = { ...args }
   // MCP default: topology-aware auto-layout is on unless the caller opts out
   // with `layout: false`. The service itself defaults to preserving positions
   // (the renderer omits the key), so this default lives on the MCP transport —
@@ -68,6 +113,14 @@ async function dispatchAsTool(
   // being saved, never on a redacted or pre-dispatch copy.
   if (spec.autoLayout === true && payload["layout"] === undefined) {
     payload["layout"] = true
+  }
+  // MCP default: `runs_create` waits up to 10s so an agent gets the outcome in
+  // one call. Same reasoning as `layout` above — the service (and therefore the
+  // renderer, which observes runs over the per-run progress topic) defaults to
+  // returning the queued snapshot immediately, so this agent-facing policy
+  // lives on the MCP transport, never on the shared IPC handler.
+  if (spec.domain === "runs" && spec.action === "create" && payload["waitMs"] === undefined) {
+    payload["waitMs"] = RUN_WAIT_DEFAULT_MS
   }
 
   let result

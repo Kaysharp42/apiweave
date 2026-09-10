@@ -1,4 +1,4 @@
-import type { KVStore, SqliteRow } from "../db"
+import type { KVStore, SqliteRow, SqliteValue } from "../db"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
@@ -191,10 +191,13 @@ export class RunRepository {
 
   /**
    * Bounded, per-node-result-free history query with deterministic keyset
-   * ordering. Deliberately skips `node_statuses_json` and
-   * `extracted_variables_json`: history rows need identity/status/timing plus
-   * failure aggregates from the metadata blob, and loading every historical
-   * per-node payload merely to discard it is the cost this surface removes.
+   * ordering. Skips `node_statuses_json` and `extracted_variables_json`
+   * entirely, and lifts the four metadata leaves a history row needs
+   * (`trigger`, `duration`, `failedNodes`, `results` length) out of
+   * `response_metadata_json` in SQL — selecting the blob and parsing every
+   * historical per-node payload merely to discard it is the cost this surface
+   * removes. Absent keys read as SQL NULL and degrade to the same defaults the
+   * full-row path applies.
    */
   public listRunSummaries(
     workspaceId: string,
@@ -210,7 +213,14 @@ export class RunRepository {
     }
     params.push(limit + 1)
     const rows = this.store.query<RunSummaryQueryRow>(
-      `SELECT id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, response_metadata_json FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
+      "SELECT id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, " +
+        "json_extract(response_metadata_json, '$.trigger') AS trigger, " +
+        "json_extract(response_metadata_json, '$.duration') AS duration, " +
+        // `->` (not json_extract) so a legacy scalar comes back as JSON text
+        // rather than a bare value that would not parse.
+        "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
+        "json_array_length(response_metadata_json, '$.results') AS node_count " +
+        `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
       params,
     )
     return { items: rows.slice(0, limit).map(rowToRunSummary), hasMore: rows.length > limit, snapshot }
@@ -533,7 +543,11 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
-  readonly response_metadata_json: string
+  /** The four metadata leaves the summary needs, lifted in SQL; NULL when absent. */
+  readonly trigger: SqliteValue
+  readonly duration: SqliteValue
+  readonly failed_nodes_json: string | null
+  readonly node_count: number | null
 }
 
 function runHistoryFilterClauses(
@@ -554,13 +568,9 @@ function runHistoryFilterClauses(
 }
 
 function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
-  const metadata = parseJson<unknown>(row.response_metadata_json)
-  const record = isRecord(metadata) ? metadata : {}
-  const failedNodes = Array.isArray(record["failedNodes"])
-    ? record["failedNodes"].filter((item): item is string => typeof item === "string")
-    : []
-  const nodeCount = Array.isArray(record["results"]) ? record["results"].length : 0
-  const trigger = record["trigger"] === "schedule" ? "schedule" : "manual"
+  const stored = row.failed_nodes_json === null ? null : parseJson<unknown>(row.failed_nodes_json)
+  const failedNodes = Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : []
+  const trigger = row.trigger === "schedule" ? "schedule" : "manual"
   return {
     runId: row.id,
     workspaceId: row.workspace_id,
@@ -569,10 +579,10 @@ function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
     trigger,
     startedAt: row.startedAt,
     completedAt: row.completedAt,
-    duration: typeof record["duration"] === "number" ? record["duration"] : null,
+    duration: typeof row.duration === "number" ? row.duration : null,
     failedNodes,
     failedNodeCount: failedNodes.length,
-    nodeCount,
+    nodeCount: row.node_count ?? 0,
     runRev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

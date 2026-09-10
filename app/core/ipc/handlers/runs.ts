@@ -63,8 +63,8 @@ const nodeResultInput = z.object({
   sections: z.array(evidenceSection).min(1).optional().describe("Which evidence to include (default all). Omitted sections are named, never silently absent."),
   path: z.string().min(1).max(500).optional().describe("Extractor-grammar path (response.body.items[0].id) selecting within the RESPONSE body. A miss reports path-missing or type-mismatch distinctly."),
   maxBytes: z.number().int().min(1).max(EVIDENCE_PREVIEW_MAX_BYTES).optional().describe("Preview cap per body in bytes (default 2048)."),
-  start: z.number().int().min(0).optional().describe("Start offset into a text preview."),
-  end: z.number().int().min(0).optional().describe("End offset into a text preview; must exceed start."),
+  start: z.number().int().min(0).optional().describe("Start byte offset into a text preview; rounded down to a character boundary."),
+  end: z.number().int().min(0).optional().describe("End byte offset into a text preview, rounded down to a character boundary; must exceed start."),
 }).strict().superRefine((value, context) => {
   if (value.nodeId === undefined && value.nodeIds === undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["nodeId"], message: "Name a node: nodeId for one, nodeIds for several." })
@@ -85,7 +85,11 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         workspaceId,
         input,
         {
-          waitMs: waitMs ?? RUN_WAIT_DEFAULT_MS,
+          // Passed through: the service returns the queued snapshot when the
+          // caller omits `waitMs` (the renderer observes runs over the per-run
+          // progress topic). The agent-facing 10s default is applied by the MCP
+          // transport in `mcp/bridge.ts`, not by this shared registry.
+          ...(waitMs !== undefined ? { waitMs } : {}),
           ...(operationId !== undefined ? { operationId } : {}),
         },
         context?.signal !== undefined ? { signal: context.signal } : {},
@@ -95,6 +99,9 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
   router.register("runs", "wait", {
     input: waitInput,
     output: RunSchema,
+    // `wait` keeps its default here, for every transport: an explicit wait with
+    // no `waitMs` that returned immediately would be a no-op re-read. Only
+    // `create` has a caller (the renderer) that must not block.
     handle: (i, context) =>
       runs.waitForRun(i.workspaceId, i.runId, i.waitMs ?? RUN_WAIT_DEFAULT_MS, context?.signal !== undefined ? { signal: context.signal } : {}),
   })

@@ -49,7 +49,7 @@ const partialNodePatch = z
     type: z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow", "group", "note"]).optional(),
     label: z.string().nullable().optional(),
     position: PositionSchema.partial().optional(),
-    parentId: z.string().min(1).optional().describe("Group frame this node sits inside. Changing it is a topology change for auto-layout."),
+    parentId: z.string().min(1).nullable().optional().describe("Group frame this node sits inside; null takes it out of its frame. Changing it is a topology change for auto-layout."),
     config: z.record(z.string(), z.unknown()).optional(),
   })
   .strict()
@@ -181,7 +181,8 @@ const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default)
 // MCP-only meta field (stripped before it reaches the repository): the service
 // reads it to decide whether to re-lay-out the merged graph it is about to
 // persist. Auto-layout runs only on topology changes (new/removed nodes,
-// edges, group membership); config/label-only writes keep every position.
+// edges, edge handles, group membership); config/label-only writes keep every
+// position.
 const layoutFlag = z
   .boolean()
   .optional()

@@ -64,7 +64,7 @@ export interface RunWaitOptions {
  * these is Task 15's concern, not this service's.
  */
 export class RunService {
-  private readonly createDedup = new Map<string, { workspaceId: string; canonical: string; runId: string }>()
+  private readonly createDedup = new Map<string, { canonical: string; runId: string }>()
   private readonly createInflight = new Map<string, Promise<Run>>()
 
   constructor(
@@ -268,14 +268,22 @@ export class RunService {
     const canonical = canonicalCreateRequest(input)
     const existing = this.createDedup.get(key)
     if (existing !== undefined) {
-      if (existing.workspaceId !== workspaceId || existing.canonical !== canonical) {
+      // Workspace binding is the key's first component, so only the canonical
+      // request has to be compared here.
+      if (existing.canonical !== canonical) {
         throw new ConflictError("This operationId was already used with a different request; use a new operationId.", {
           operationId,
         })
       }
-      const run = this.mustGet(workspaceId, existing.runId)
-      if (waitMs === 0) return run
-      return this.waitForRun(workspaceId, existing.runId, waitMs, signal !== undefined ? { signal } : {})
+      // A replay whose run row is gone (deleted history) drops the entry and
+      // falls through to a fresh enqueue: an idempotency key exists to make the
+      // retry work, not to fail it with a not-found for a run nobody has.
+      const run = this.runs.getById(existing.runId)
+      if (run !== undefined && run.workspaceId === workspaceId) {
+        if (waitMs === 0) return run
+        return this.waitForRun(workspaceId, existing.runId, waitMs, signal !== undefined ? { signal } : {})
+      }
+      this.createDedup.delete(key)
     }
     const inflight = this.createInflight.get(key)
     if (inflight !== undefined) {
@@ -285,7 +293,7 @@ export class RunService {
     }
     const pending = (async (): Promise<Run> => {
       const run = await this.enqueueRun(workspaceId, input)
-      this.createDedup.set(key, { workspaceId, canonical, runId: run.runId })
+      this.createDedup.set(key, { canonical, runId: run.runId })
       if (this.createDedup.size > MAX_DEDUP_ENTRIES) {
         const oldest = this.createDedup.keys().next().value
         if (oldest !== undefined) this.createDedup.delete(oldest)

@@ -291,15 +291,9 @@ export class McpHost {
       session.inflight = Math.max(0, session.inflight - 1)
       // Reset the idle clock from completion, not just from arrival: a wait
       // that held the connection open just proved the session is alive.
-      if (this.sessionsHas(session)) this.touchSession(session)
+      const id = session.transport.sessionId
+      if (id !== undefined && this.sessions.get(id) === session) this.touchSession(session)
     }
-  }
-
-  private sessionsHas(session: Session): boolean {
-    for (const candidate of this.sessions.values()) {
-      if (candidate === session) return true
-    }
-    return false
   }
 
   /** Reset a session's idle timer; on expiry the transport is closed (which

@@ -664,13 +664,9 @@ export default function useWorkflowPolling({
         // input schema is .strict() and the scheduler's resume path isn't wired
         // yet, so this triggers a full run. Restore once the composition-root
         // enqueue handler + resume plumbing land (deferred Task 13/21 wiring).
-        // waitMs: 0 keeps the canvas interactive: the run is observed over the
-        // per-run IPC progress topic, not by blocking this call. Agents use
-        // runs_create's bounded wait instead.
         const run = await apiweave.runs.create({
           workspaceId,
           workflowId,
-          waitMs: 0,
           ...(runEnvId ? { selectedEnvironmentId: runEnvId } : {}),
         });
 

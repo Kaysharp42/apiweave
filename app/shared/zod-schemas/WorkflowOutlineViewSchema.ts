@@ -30,8 +30,16 @@ export const WorkflowOutlineViewSchema = z
     edgeCount: z.number().int().nonnegative(),
     nodes: z.array(OutlineNodeSchema),
     edges: z.array(WorkflowEdgeSchema),
-    omittedNodeCount: z.number().int().nonnegative(),
-    omittedEdgeCount: z.number().int().nonnegative(),
+    omittedNodeCount: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Nodes of the whole graph this page does not show, on any page: nodes.length + omittedNodeCount === nodeCount."),
+    omittedEdgeCount: z
+      .number()
+      .int()
+      .nonnegative()
+      .describe("Edges of the whole graph this page does not show: edges.length + omittedEdgeCount === edgeCount."),
     nextNodeCursor: z.string().min(1).nullable(),
   })
   .strict()

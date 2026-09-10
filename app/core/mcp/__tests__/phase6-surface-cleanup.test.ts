@@ -318,3 +318,97 @@ describe("Phase 6 — project membership through the workflow tools", () => {
     await client.close()
   })
 })
+
+/**
+ * Phase 6 (schema-reference evaluation): the installed SDK converter forwards
+ * only `target`/`io` (`server/zod-json-schema-compat.js`), so `$ref` reuse is
+ * not reachable through `registerTool`. Instead the bridge advertises the two
+ * reads that re-embedded `WorkflowNodeSchema` with plain-object nodes, and the
+ * node union is published once — on the write tools' INPUT schemas, where it
+ * is actually enforced. The advertised contract is looser than the data, never
+ * looser than the validation: the router still checks every response against
+ * the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`.
+ */
+describe("Phase 6 — advertised output schemas publish the node union once", () => {
+  const OPAQUE_NODE = { type: "object", propertyNames: { type: "string" }, additionalProperties: {} }
+
+  type Branch = { properties?: { nodes?: { items?: unknown } } }
+
+  async function outputBranches(toolNameToFind: string): Promise<Branch[]> {
+    const client = await connectClient()
+    const { tools } = await client.listTools()
+    await client.close()
+    const schema = tools.find((tool) => tool.name === toolNameToFind)?.outputSchema as
+      | { properties?: { result?: { anyOf?: Branch[] } & Branch } }
+      | undefined
+    const result = schema?.properties?.result
+    expect(result, toolNameToFind).toBeDefined()
+    return result?.anyOf ?? [result as Branch]
+  }
+
+  it("keeps outline and nodes views typed and leaves the full graph's nodes opaque", async () => {
+    const [outline, nodesView, full] = await outputBranches("workflows_get")
+
+    // outline: identity/structure branch, node summaries stay typed.
+    expect(outline?.properties?.nodes?.items).toMatchObject({ properties: { nodeId: { type: "string" } } })
+    // nodes: the targeted-edit read keeps the authoritative per-type union.
+    expect(nodesView?.properties?.nodes?.items).toHaveProperty("oneOf")
+    // full: whole-graph read, node internals not restated.
+    expect(full?.properties?.nodes?.items).toEqual(OPAQUE_NODE)
+  })
+
+  it("leaves debugContext's node configs opaque instead of re-embedding the union", async () => {
+    const [debugContext] = await outputBranches("workflows_debugContext")
+    expect(debugContext?.properties?.nodes?.items).toEqual(OPAQUE_NODE)
+  })
+
+  it("publishes the node union on the write inputs that enforce it", async () => {
+    const client = await connectClient()
+    const { tools } = await client.listTools()
+    await client.close()
+    for (const name of ["workflows_create", "workflows_update", "workflows_patch"]) {
+      const input = JSON.stringify(tools.find((tool) => tool.name === name)?.inputSchema)
+      expect(input, name).toContain('"const":"http-request"')
+    }
+  })
+
+  it("still returns complete node configs and partial-read markers over the bridge", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "opaque",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "a",
+          type: "http-request",
+          position: { x: 100, y: 0 },
+          config: { method: "GET", url: "https://example.test/a" },
+        },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "a" }],
+    })
+    const client = await connectClient()
+    const call = async (args: Record<string, unknown>) =>
+      (await client.callTool({ name: "workflows_get", arguments: { workspaceId, workflowId: workflow.workflowId, ...args } })) as {
+        structuredContent?: { result: Record<string, unknown> }
+        content: Array<{ type: string; text?: string }>
+        isError?: boolean
+      }
+
+    const full = await call({})
+    expect(full.isError).toBeFalsy()
+    const fullNodes = full.structuredContent?.result["nodes"] as Array<Record<string, unknown>>
+    // The opaque advertisement changes no bytes: configs and positions still ship.
+    expect(fullNodes[1]?.["config"]).toMatchObject({ url: "https://example.test/a" })
+    expect(fullNodes[1]?.["position"]).toEqual({ x: 100, y: 0 })
+    expect(JSON.parse(textOf(full))).toEqual(full.structuredContent?.result)
+
+    const outline = await call({ view: "outline" })
+    expect(outline.structuredContent?.result).toMatchObject({ view: "outline", partial: true })
+    const nodesView = await call({ view: "nodes", nodeIds: ["a"] })
+    expect(nodesView.structuredContent?.result).toMatchObject({ view: "nodes", partial: true })
+
+    await client.close()
+  })
+})

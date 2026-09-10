@@ -388,7 +388,34 @@ describe("Phase 2 — outline and nodes views bound targeted edits", () => {
     })
     expect((second["nodes"] as Array<Record<string, unknown>>).map((node) => node["nodeId"])).toEqual(["b", "end"])
     expect(second["nextNodeCursor"]).toBeNull()
-    expect(second).toMatchObject({ omittedNodeCount: 0 })
+    // Omission is measured against the whole graph, not the tail after the page.
+    expect(second).toMatchObject({ nodeCount: 4, omittedNodeCount: 2 })
+  })
+
+  it("every outline page accounts for every node and edge of the graph", async () => {
+    const { workspaceId, workflowId } = await seedChain()
+    const seen: string[] = []
+    let cursor: unknown = undefined
+    let pages = 0
+    do {
+      const page = await dispatchOk<Record<string, unknown>>("workflows", "get", {
+        workspaceId,
+        workflowId,
+        view: "outline",
+        nodeLimit: 1,
+        ...(cursor === undefined ? {} : { nodeCursor: cursor }),
+      })
+      const nodes = page["nodes"] as Array<Record<string, unknown>>
+      const edges = page["edges"] as unknown[]
+      expect(nodes.length + (page["omittedNodeCount"] as number)).toBe(page["nodeCount"])
+      expect(edges.length + (page["omittedEdgeCount"] as number)).toBe(page["edgeCount"])
+      seen.push(...nodes.map((node) => node["nodeId"] as string))
+      cursor = page["nextNodeCursor"] ?? undefined
+      pages += 1
+    } while (cursor !== undefined)
+
+    expect(pages).toBe(4)
+    expect(seen).toEqual(["start", "a", "b", "end"])
   })
 
   it("outline cursors are revision-bound", async () => {
@@ -855,6 +882,48 @@ describe("Phase 2 — targeted node evidence", () => {
     })
     expect(window.items[0]?.request?.preview).toBe("\"user\":")
     expect(window.items[0]?.request?.previewTruncated).toBe(true)
+  })
+
+  it("caps multi-byte previews in bytes, on character boundaries", async () => {
+    const workspaceId = await seedWorkspace()
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", { workspaceId, name: "utf8" })
+    const run = runRepository.create({ workspaceId, workflowId: workflow.workflowId })
+    // 20001 bytes over 10001 UTF-16 units: a character-sliced cap overran
+    // maxBytes fourfold and cut a surrogate pair in half.
+    const body = `a${"\u{1F642}".repeat(5000)}`
+    runRepository.update(run.runId, {
+      status: "failed",
+      results: [{ nodeId: "emoji", status: "failed", duration: 3, response: { statusCode: 200, body } }],
+    })
+
+    const page = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "emoji",
+      sections: ["response"],
+      maxBytes: 8192,
+    })
+    const response = page.items[0]?.response
+    const preview = response?.preview as string
+    const previewBytes = Buffer.byteLength(preview, "utf8")
+    expect(page.items[0]?.budgetOmitted).toBe(false)
+    expect(previewBytes).toBeLessThanOrEqual(8192)
+    expect(Buffer.from(preview, "utf8").toString("utf8")).toBe(preview)
+    expect(response?.totalBytes).toBe(20_001)
+    expect(response?.previewTruncated).toBe(previewBytes < 20_001)
+
+    const window = await dispatchOk<EvidencePage>("runs", "getNodeResult", {
+      workspaceId,
+      runId: run.runId,
+      nodeId: "emoji",
+      sections: ["response"],
+      start: 5,
+      end: 41,
+    })
+    const windowed = window.items[0]?.response?.preview as string
+    expect(Buffer.byteLength(windowed, "utf8")).toBeLessThanOrEqual(36)
+    expect(Buffer.from(windowed, "utf8").toString("utf8")).toBe(windowed)
+    expect(window.items[0]?.response?.previewTruncated).toBe(true)
   })
 
   it("flags stored truncation distinctly from output omission", async () => {

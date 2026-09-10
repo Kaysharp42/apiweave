@@ -90,6 +90,33 @@ describe("MCP compact write projections", () => {
       },
     })
   })
+
+  it("omits conflict details that carry no revision an agent can act on", () => {
+    const stale = { code: "conflict" as const, message: "workflow revision is stale", writeCommitted: false }
+    // An array is not a revision record: it must not project as an empty details key.
+    expect(projectMcpError("conflict", stale.message, [{ expectedRevision: 4, currentRevision: 5 }])).toEqual(stale)
+    expect(projectMcpError("conflict", stale.message, { secret: "must-not-leak" })).toEqual(stale)
+    // ...and an array is never a record, even when it carries revision-shaped properties.
+    expect(projectMcpError("conflict", stale.message, Object.assign([], { expectedRevision: 4 }))).toEqual(stale)
+  })
+
+  it("projects each validation issue exactly once", () => {
+    let messageReads = 0
+    const issue = {
+      code: "invalid_type",
+      get message() {
+        messageReads += 1
+        return "Expected object"
+      },
+    }
+
+    const error = projectMcpError("validation", "request validation failed", [issue])
+
+    expect(error.details?.issues).toEqual([{ code: "invalid_type", message: "Expected object" }])
+    // One projection pass reads message twice (type guard, then copy). Projecting
+    // each issue twice would double every read for identical output.
+    expect(messageReads).toBe(2)
+  })
 })
 
 function diagnostic(code: string, severity: "error" | "warning" | "notice") {

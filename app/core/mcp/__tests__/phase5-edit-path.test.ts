@@ -339,6 +339,96 @@ describe("Phase 5 — topology-aware auto-layout in the service write path", () 
       { nodeId: "a", type: "http-request", position: { x: 1, y: 1 }, parentId: "frame", config: {} },
     ] as never
     expect(graphTopologyChanged(nodes, edges, regrouped, edges)).toBe(true)
+    // Leaving a frame is as much a topology change as joining one.
+    expect(graphTopologyChanged(regrouped, edges, nodes, edges)).toBe(true)
+    // An absent handle and an explicitly undefined/null one are the same edge.
+    const spelledOut = [{ edgeId: "e1", source: "start", target: "a", sourceHandle: undefined, targetHandle: null }] as never
+    expect(graphTopologyChanged(nodes, edges, nodes, spelledOut)).toBe(false)
+  })
+
+  it("treats a re-pointed merge input handle as a topology change", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "merge-handles",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "a", type: "http-request", position: { x: 0, y: 0 }, config: { method: "GET", url: "https://example.test/a" } },
+        { nodeId: "b", type: "http-request", position: { x: 0, y: 0 }, config: { method: "GET", url: "https://example.test/b" } },
+        { nodeId: "m", type: "merge", position: { x: 0, y: 0 }, config: { mergeStrategy: "all" } },
+        { nodeId: "end", type: "end", position: { x: 0, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "a" },
+        { edgeId: "e2", source: "start", target: "b" },
+        { edgeId: "e3", source: "a", target: "m", targetHandle: "branch-0" },
+        { edgeId: "e4", source: "b", target: "m", targetHandle: "branch-1" },
+        { edgeId: "e5", source: "m", target: "end" },
+      ],
+      layout: false,
+    })
+    const client = await connectClient()
+    // Swap which merge input each branch arrives at — nothing else changes.
+    const patched = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        expectedRevision: created.rev,
+        upsertEdges: [
+          { edgeId: "e3", source: "a", target: "m", targetHandle: "branch-1" },
+          { edgeId: "e4", source: "b", target: "m", targetHandle: "branch-0" },
+        ],
+      },
+    })
+    expect((patched as { isError?: boolean }).isError).toBeFalsy()
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
+    )
+    expect(persisted.nodes.every((node) => node.position.x === 0 && node.position.y === 0)).toBe(false)
+    await client.close()
+  })
+
+  it("takes a node out of its group frame when a patch sends parentId null", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "grouping",
+      nodes: [
+        { nodeId: "frame", type: "group", position: { x: 0, y: 0 }, config: { width: 400, height: 200 } },
+        { nodeId: "start", type: "start", position: { x: 10, y: 10 } },
+        { nodeId: "a", type: "http-request", position: { x: 20, y: 20 }, parentId: "frame", config: { method: "GET", url: "https://example.test/a" } },
+        { nodeId: "end", type: "end", position: { x: 30, y: 30 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "a" },
+        { edgeId: "e2", source: "a", target: "end" },
+      ],
+      layout: false,
+    })
+    const client = await connectClient()
+    const patched = await client.callTool({
+      name: "workflows_patch",
+      arguments: {
+        workspaceId: workspace.workspaceId,
+        workflowId: created.workflowId,
+        expectedRevision: created.rev,
+        upsertNodes: [{ nodeId: "a", parentId: null }],
+      },
+    })
+    expect((patched as { isError?: boolean }).isError).toBeFalsy()
+    const persisted = await dispatchOk<{
+      nodes: Array<{ nodeId: string; parentId?: string | null; position: { x: number; y: number } }>
+    }>("workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.workflowId })
+    const freed = persisted.nodes.find((node) => node.nodeId === "a")!
+    // WorkflowNodeSchema spells "no parent" as an absent key, never a null.
+    expect(freed).not.toHaveProperty("parentId")
+    // Leaving the frame is a topology change, so the freed node is laid out
+    // rather than left at the coordinates it held relative to the old frame.
+    expect(freed.position).not.toEqual({ x: 20, y: 20 })
+    await client.close()
   })
 
   it("preserves positions for config/label-only patches, including via MCP", async () => {

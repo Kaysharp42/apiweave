@@ -5,7 +5,7 @@ import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
-import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES } from "./read_budgets"
+import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8 } from "./read_budgets"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { ConflictError, ValidationError } from "../ipc/errors"
 import { openCursor, sealCursor } from "../ipc/opaque_cursor"
@@ -276,10 +276,17 @@ function previewText(
 ): { preview: string; previewTruncated: boolean; totalBytes: number } {
   const totalBytes = Buffer.byteLength(text, "utf8")
   const start = bounds.start ?? 0
-  const window = bounds.end === undefined ? text.slice(start) : text.slice(start, bounds.end)
-  const preview = window.slice(0, bounds.maxBytes)
-  const windowCut = start > 0 || (bounds.end !== undefined && bounds.end < text.length)
-  return { preview, previewTruncated: windowCut || preview.length < window.length, totalBytes }
+  // Every bound on this path is a byte count, so the window and the cap are
+  // both applied in bytes on character boundaries: character slicing let one
+  // CJK or emoji body overrun `maxBytes` fourfold — enough for the aggregate
+  // budget to drop the whole entry — and disagree with `totalBytes` about
+  // whether it was cut at all.
+  const head = bounds.end === undefined ? text : truncateUtf8(text, bounds.end)
+  const window = head.slice(truncateUtf8(head, start).length)
+  const preview = truncateUtf8(window, bounds.maxBytes)
+  const windowCut = start > 0 || (bounds.end !== undefined && bounds.end < totalBytes)
+  const cut = windowCut || Buffer.byteLength(preview, "utf8") < Buffer.byteLength(window, "utf8")
+  return { preview, previewTruncated: cut, totalBytes }
 }
 
 interface BudgetInput {
