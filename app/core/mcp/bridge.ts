@@ -1,13 +1,60 @@
 import { z } from "zod"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
-import { WorkflowDiagnosisSchema } from "@shared/zod-schemas"
-import type { Workflow } from "@shared/types/Workflow"
-import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
-import { mergeGraphPatch, type WorkflowGraphPatch } from "../services"
+import {
+  McpWorkflowWriteToolResultSchema,
+  WorkflowDebugContextSchema,
+  WorkflowDiagnosisSchema,
+  WorkflowNodesViewSchema,
+  WorkflowOutlineViewSchema,
+  WorkflowSchema,
+} from "@shared/zod-schemas"
 import type { IpcRouter } from "../ipc/router"
+import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
+import { encodeMcpResult } from "./result-encoding"
+import { projectMcpError } from "./error-projection"
+import {
+  compactWorkflowDiagnosis,
+  projectWorkflowWrite,
+  unavailableWorkflowDiagnosis,
+  workflowIdentity,
+} from "./projections/workflow-write"
+
+/**
+ * A stored node object, advertised without the ~22 KB `WorkflowNodeSchema`
+ * discriminated union.
+ *
+ * MCP output schemas are optional (spec 2025-11-25), and a looser advertisement
+ * is always satisfied by the stricter data — the router still validates every
+ * response against the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`
+ * on the shared IPC path, so nothing about validation strength or the bytes an
+ * agent receives changes. What changes is that the node union is advertised
+ * ONCE, on the write tools' *input* schemas (`workflows_create/update/patch`),
+ * which is where it is actually enforced and where an agent has to read it
+ * anyway to author a node.
+ */
+const AdvertisedNodeSchema = z.record(z.string(), z.unknown())
+
+/**
+ * MCP-only output advertisements for the two reads whose schemas re-embedded
+ * the node union a second and third time. Keyed by public tool name.
+ */
+const ADVERTISED_OUTPUT: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.ZodTypeAny>([
+  // `full` is the whole stored graph — everything but node internals stays
+  // typed. `outline` and `nodes` keep their exact schemas, so the partial-read
+  // markers (`view`, `partial: true`) stay advertised and enforced.
+  [
+    "workflows_get",
+    z.union([
+      WorkflowOutlineViewSchema,
+      WorkflowNodesViewSchema,
+      WorkflowSchema.extend({ nodes: z.array(AdvertisedNodeSchema) }),
+    ]),
+  ],
+  ["workflows_debugContext", WorkflowDebugContextSchema.extend({ nodes: z.array(AdvertisedNodeSchema) })],
+])
 
 /**
  * Register every whitelisted IPC handler as an MCP tool on `server`. Each tool
@@ -29,11 +76,11 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
     // lets the SDK strip unknown keys before the router can reject them.
     // NoInput is an optional empty object; MCP supplies an argument object.
     const inputSchema = reg.input instanceof z.ZodObject ? reg.input : z.object({}).strict()
-    const outputValueSchema = spec.resultProjection === "run" ? z.unknown() : reg.output
-    // `result` stays byte-identical to the IPC response so parity holds; the
-    // diagnosis rides alongside it as a sibling key.
-    const outputSchema = spec.diagnoseAfterWrite === true
-      ? z.object({ result: outputValueSchema, diagnosis: WorkflowDiagnosisSchema.optional() })
+    const outputValueSchema = spec.resultProjection === "run"
+      ? z.unknown()
+      : ADVERTISED_OUTPUT.get(toolName(spec)) ?? reg.output
+    const outputSchema = spec.resultProjection === "workflowWrite"
+      ? McpWorkflowWriteToolResultSchema
       : z.object({ result: outputValueSchema })
 
     server.registerTool(
@@ -44,26 +91,51 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
         outputSchema,
         annotations: toolAnnotations(spec),
       },
-      (args: Record<string, unknown>) => dispatchAsTool(router, spec, args),
+      (args: Record<string, unknown>, extra?: { readonly signal?: AbortSignal }) =>
+        dispatchAsTool(router, spec, args, extra?.signal),
     )
   }
 }
 
+// fallow-ignore-next-line complexity
 async function dispatchAsTool(
   router: IpcRouter,
   spec: McpToolSpec,
   args: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<CallToolResult> {
-  const payload = args ?? {}
-  await applyAutoLayout(router, spec, payload)
+  // Copy: the SDK owns `args`, and the defaults below must not write into it.
+  const payload = { ...args }
+  // MCP default: topology-aware auto-layout is on unless the caller opts out
+  // with `layout: false`. The service itself defaults to preserving positions
+  // (the renderer omits the key), so this default lives on the MCP transport —
+  // the one caller that never reasons about canvas coordinates — while the
+  // revision-aware layout decision lives in `WorkflowService` on the snapshot
+  // being saved, never on a redacted or pre-dispatch copy.
+  if (spec.autoLayout === true && payload["layout"] === undefined) {
+    payload["layout"] = true
+  }
+  // MCP default: `runs_create` waits up to 10s so an agent gets the outcome in
+  // one call. Same reasoning as `layout` above — the service (and therefore the
+  // renderer, which observes runs over the per-run progress topic) defaults to
+  // returning the queued snapshot immediately, so this agent-facing policy
+  // lives on the MCP transport, never on the shared IPC handler.
+  if (spec.domain === "runs" && spec.action === "create" && payload["waitMs"] === undefined) {
+    payload["waitMs"] = RUN_WAIT_DEFAULT_MS
+  }
 
   let result
   try {
     result = await router.dispatch(
       { domain: spec.domain, action: spec.action, payload },
-      { redactSecrets: true },
+      { redactSecrets: true, ...(signal !== undefined ? { signal } : {}) },
     )
-  } catch {
+  } catch (error) {
+    // A cancelled wait is client-side cancellation (disconnect, explicit cancel,
+    // host teardown): the run keeps going, only the observation stops. Re-throw
+    // so the SDK drops the response instead of sending an error for a gone client.
+    // Never confuse this with runs_cancel, which stops the run itself.
+    if (error instanceof Error && error.name === "AbortError") throw error
     // dispatch re-throws genuine internal bugs (HTTP-500 equivalent). Surface a
     // generic error to the client rather than leaking internals over the wire.
     return { content: [{ type: "text", text: "internal error" }], isError: true }
@@ -85,150 +157,54 @@ async function dispatchAsTool(
         ...(typeof workspaceId === "string" ? { workspaceId } : {}),
       })
     }
-    const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
-    const { result: envelopeResult, diagnosis } = await splitDiagnosis(router, spec, data)
-    if (diagnosis === undefined) {
-      // Graph-writing tools whose `result` does not carry a `workspaceId` (the
-      // compact summary/diagnosis projections, or any write whose re-diagnosis
-      // failed) cannot be re-diagnosed here — but they still ride inside the
-      // same `{ result }` envelope the wrapped case uses, so every write tool's
-      // text content is shape-stable across response sizes. Non-write tools
-      // keep the bare-handler text they always had (`structuredContent` still
-      // carries the `result` key).
-      const text = spec.diagnoseAfterWrite === true
-        ? JSON.stringify({ result: envelopeResult }, null, 2)
-        : JSON.stringify(envelopeResult, null, 2)
+    if (spec.resultProjection === "workflowWrite") {
+      const projected = projectWorkflowWrite(spec, payload, result.data)
+      if (projected === undefined) {
+        return { content: [{ type: "text", text: "internal error" }], isError: true }
+      }
+      const response = {
+        result: projected,
+        diagnosis: await diagnoseWritten(router, result.data, payload),
+      }
       return {
-        content: [{ type: "text", text }],
-        structuredContent: { result: envelopeResult },
+        content: [{ type: "text", text: encodeMcpResult(response) }],
+        structuredContent: response,
       }
     }
-    // Only the graph-writing tools take this branch, and only they carry the
-    // wrapper in their text content: a client that reads text and ignores
-    // structuredContent still has to see the diagnosis, or attaching it would
-    // achieve nothing. Every other tool's text stays the bare handler response.
+    const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
     return {
-      content: [{ type: "text", text: JSON.stringify({ result: envelopeResult, diagnosis }, null, 2) }],
-      structuredContent: { result: envelopeResult, diagnosis },
+      content: [{ type: "text", text: encodeMcpResult(data) }],
+      structuredContent: { result: data },
     }
   }
+  const error = projectMcpError(result.error.code, result.error.message, result.error.details)
   return {
-    content: [{ type: "text", text: `Error [${result.error.code}]: ${result.error.message}` }],
+    content: [{ type: "text", text: encodeMcpResult({ error }) }],
     isError: true,
   }
 }
 
 /**
- * Derive the sibling `diagnosis` for a graph-write's projected result, so the
- * one field every write tool's guide tells an agent to read after a write is
- * reliably at that top-level key regardless of `return` shape. The two
- * write-echo shapes disagree on where they already have it:
- *
- * - `"full"` is the bare persisted `Workflow`, which carries no `diagnosis` of
- *   its own but does carry `workspaceId` — {@link diagnoseWritten} fetches it.
- * - `"summary"`/`"diagnosis"` already compute their diagnosis inline (see
- *   `projectWriteResult`), because they carry no `workspaceId` for
- *   {@link diagnoseWritten} to re-fetch with. Reuse that embedded value as the
- *   sibling rather than re-deriving it — `result` keeps its own copy too, both
- *   `reg.output`'s `.strict()` schema and existing IPC/renderer callers expect
- *   it there.
+ * Diagnose the persisted graph once, after a graph write. A failed analysis does
+ * not turn a durable write into an error, but it is explicitly unavailable — it
+ * must never look like a clean graph.
  */
-async function splitDiagnosis(
+async function diagnoseWritten(
   router: IpcRouter,
-  spec: McpToolSpec,
-  data: unknown,
-): Promise<{ result: unknown; diagnosis: unknown }> {
-  if (spec.diagnoseAfterWrite !== true) return { result: data, diagnosis: undefined }
-  if (typeof data === "object" && data !== null && "diagnosis" in data) {
-    return { result: data, diagnosis: (data as { diagnosis: unknown }).diagnosis }
-  }
-  return { result: data, diagnosis: await diagnoseWritten(router, data) }
-}
-
-/**
- * Diagnose the workflow a write just produced, so the agent sees graph errors in
- * the write's own response instead of having to know to ask. Static analysis
- * only — no HTTP, no run.
- *
- * Best-effort by design: the write already succeeded and is durable, so a
- * diagnosis that cannot be produced is omitted rather than turned into a
- * failure the caller would reasonably read as "the write didn't land".
- */
-async function diagnoseWritten(router: IpcRouter, written: unknown): Promise<unknown> {
-  if (typeof written !== "object" || written === null) return undefined
-  const { workspaceId, workflowId } = written as { workspaceId?: unknown; workflowId?: unknown }
-  if (typeof workspaceId !== "string" || typeof workflowId !== "string") return undefined
+  written: unknown,
+  payload: Record<string, unknown>,
+) {
+  const identity = workflowIdentity(written, payload)
+  if (identity === undefined) return unavailableWorkflowDiagnosis()
   try {
     const result = await router.dispatch(
-      { domain: "workflows", action: "diagnose", payload: { workspaceId, workflowId } },
+      { domain: "workflows", action: "diagnose", payload: identity },
       { redactSecrets: true },
     )
-    return result.ok ? result.data : undefined
+    if (!result.ok) return unavailableWorkflowDiagnosis()
+    const diagnosis = WorkflowDiagnosisSchema.safeParse(result.data)
+    return diagnosis.success ? compactWorkflowDiagnosis(diagnosis.data) : unavailableWorkflowDiagnosis()
   } catch {
-    return undefined
+    return unavailableWorkflowDiagnosis()
   }
-}
-
-/**
- * Re-lay-out node positions in place on a `workflows.create`/`update`/`patch`
- * call's raw args, BEFORE `router.dispatch` validates and persists them — one
- * write, not a write-then-relayout-then-write-again round trip (each write
- * pushes to cloud sync; doubling that on every MCP graph edit is real latency
- * on a large workflow, not just an extra local disk write).
- *
- * Best-effort like {@link diagnoseWritten}: on anything unexpected this
- * no-ops and lets the original, unmodified args go to `router.dispatch` —
- * `dispatch` still validates and persists correctly, it just keeps whatever
- * positions the caller sent. A layout bug must never block a write.
- */
-async function applyAutoLayout(
-  router: IpcRouter,
-  spec: McpToolSpec,
-  args: Record<string, unknown>,
-): Promise<void> {
-  if (spec.autoLayout !== true || args["layout"] === false) return
-  try {
-    if (spec.action === "create" || spec.action === "update") {
-      const nodes = args["nodes"]
-      if (!Array.isArray(nodes)) return // metadata-only update, or a create with no nodes yet
-      const edges = Array.isArray(args["edges"])
-        ? args["edges"]
-        : spec.action === "update"
-          ? (await currentWorkflow(router, args))?.edges
-          : []
-      if (!Array.isArray(edges)) return
-      args["nodes"] = layoutWorkflowNodes(nodes as Workflow["nodes"], edges as Workflow["edges"])
-      return
-    }
-    if (spec.action === "patch") {
-      const existing = await currentWorkflow(router, args)
-      if (existing === undefined) return
-      const merged = mergeGraphPatch(existing, args as WorkflowGraphPatch)
-      const laidOut = layoutWorkflowNodes(merged.nodes, merged.edges ?? [])
-      // `repositionNodes`, not `upsertNodes`: the whole graph moves, but only
-      // the nodes the caller actually named should count as "touched" in the
-      // summary projection — see `WorkflowGraphPatch.repositionNodes`.
-      args["repositionNodes"] = Object.fromEntries(laidOut.map((n) => [n.nodeId, n.position]))
-    }
-  } catch {
-    // fall through with args unchanged
-  }
-}
-
-/**
- * Internal-only read of the workflow as it is actually stored — unredacted,
- * since the merged result is fed straight back into a write on the same
- * workflow, never shown to the MCP client. Using the normal `redactSecrets:
- * true` read here would bake the literal string `<SECRET>` into every
- * untouched node's config, which the write validators exist specifically to
- * reject (see `guide.ts` "Never write `<SECRET>` back").
- */
-async function currentWorkflow(router: IpcRouter, args: Record<string, unknown>): Promise<Workflow | undefined> {
-  const { workspaceId, workflowId } = args
-  if (typeof workspaceId !== "string" || typeof workflowId !== "string") return undefined
-  const result = await router.dispatch(
-    { domain: "workflows", action: "get", payload: { workspaceId, workflowId } },
-    { redactSecrets: false },
-  )
-  return result.ok ? (result.data as Workflow) : undefined
 }

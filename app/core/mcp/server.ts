@@ -7,6 +7,7 @@ import { MCP_GUIDES, MCP_INSTRUCTIONS, guideUri } from "./guide"
 import { registerResources } from "./resources"
 import { MCP_PROMPTS } from "./prompts"
 import { MCP_SERVER_INFO_TOOL, toolAnnotations } from "./tools"
+import { encodeMcpResult } from "./result-encoding"
 
 export const MCP_SERVER_NAME = "APIWeave"
 
@@ -59,7 +60,7 @@ export function createMcpServer(router: IpcRouter, version: string, broker?: Run
         })),
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
+        content: [{ type: "text", text: encodeMcpResult(result) }],
         structuredContent: { result },
       }
     },

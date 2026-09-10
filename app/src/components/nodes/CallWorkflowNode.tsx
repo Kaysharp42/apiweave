@@ -1,7 +1,9 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Workflow, CheckCircle, XCircle, ArrowRightLeft } from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { OpenNodeEditorButton } from "../atoms/flow/OpenNodeEditorButton";
+import useSidebarStore from "../../stores/SidebarStore";
+import { apiweave } from "../../utils/apiweaveClient";
 import type { WorkflowCallNodeProps } from "../../types/WorkflowCallNodeProps";
 
 type CallResult = NonNullable<WorkflowCallNodeProps["data"]["result"]>;
@@ -114,11 +116,23 @@ function resolveRun(data: WorkflowCallNodeProps["data"]) {
 }
 
 /** The rest and activity lines, which both hang off the target's name. */
-function describeTarget(targetName: string | null | undefined) {
+function describeTarget(
+  targetName: string | null | undefined,
+  targetWorkflowId: string | null | undefined,
+  targetNameResolved: boolean,
+) {
   if (!targetName) {
     return {
-      restLine: { operation: "no target workflow" },
-      activityLine: { operation: "running" },
+      restLine: targetWorkflowId
+        ? {
+            operation: targetNameResolved
+              ? "target workflow unavailable"
+              : "loading target workflow",
+          }
+        : { operation: "no target workflow" },
+      activityLine: targetNameResolved
+        ? { operation: "target workflow unavailable" }
+        : { operation: "running" },
     };
   }
   return {
@@ -152,14 +166,50 @@ const CallWorkflowBody = ({
 const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps) => {
   const { label, config = {} } = data;
   const { status, result, subWorkflow } = resolveRun(data);
+  const workspaceId = useSidebarStore((state) => state.activeWorkspaceId);
+  const targetWorkflowId = config.targetWorkflowId;
+  const [resolvedTargetName, setResolvedTargetName] = useState<
+    string | null | undefined
+  >(undefined);
+
+  useEffect(() => {
+    if (
+      !workspaceId ||
+      !targetWorkflowId ||
+      typeof config.targetWorkflowName === "string"
+    ) {
+      setResolvedTargetName(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setResolvedTargetName(undefined);
+    void apiweave.workflows
+      .get(workspaceId, targetWorkflowId)
+      .then((target) => {
+        if (!cancelled) setResolvedTargetName(target.name);
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedTargetName(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId, targetWorkflowId, config.targetWorkflowName]);
 
   const icon = useMemo(() => <Workflow className="w-4 h-4" />, []);
 
   const inputCount = Object.keys(config.inputMapping ?? {}).length;
   const outputCount = Object.keys(config.outputMapping ?? {}).length;
+  const targetNameResolved =
+    typeof config.targetWorkflowName === "string" ||
+    resolvedTargetName !== undefined;
 
   const { restLine, activityLine } = describeTarget(
-    config.targetWorkflowName ?? config.targetWorkflowId,
+    config.targetWorkflowName ?? resolvedTargetName ?? null,
+    targetWorkflowId,
+    targetNameResolved,
   );
   const resultSummary = summaryFor(subWorkflow);
 

@@ -221,7 +221,6 @@ describe("workflow graph analyzer", () => {
       "assertion_source_ambiguous",
       "assertion_source_path_invalid",
       "duplicate_edge_id",
-      "duplicate_end_node",
       "duplicate_node_id",
       "duplicate_start_node",
       "variable_producer_not_upstream",
@@ -652,5 +651,35 @@ describe("workflow graph analyzer", () => {
     expect(serialized).not.toContain(sentinel)
     expect(serialized).not.toContain("authorization")
     expect(serialized).not.toContain("failureMessage")
+  })
+
+  // The executor marks an `end` node passed without recording a result, so an
+  // `end` node is always missing from `run.results`. Listing it as blocked claims a
+  // terminal marker was starved by the failure.
+  it("omits the end node from http_request_failed blockedNodeIds but keeps starved nodes", () => {
+    const workflow = healthyWorkflow() as unknown as Workflow
+    const run = RunSchema.parse({
+      runId: "run-blocked",
+      workspaceId: workflow.workspaceId,
+      workflowId: workflow.workflowId,
+      status: "failed",
+      trigger: "manual",
+      variables: {},
+      results: [
+        { nodeId: "start", status: "passed", duration: 1 },
+        { nodeId: "login", status: "failed", duration: 5, response: { statusCode: 500 } },
+      ],
+      nodeStatuses: {},
+      failedNodes: ["login"],
+      rev: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })
+
+    const failure = analyzeWorkflowGraph(workflow, run).diagnostics
+      .find((item) => item.code === "http_request_failed")
+    expect(failure?.evidence["blockedNodeIds"]).toEqual(["assert-login", "profile"])
+    expect(failure?.nodeIds).toContain("login")
+    expect(failure?.nodeIds).not.toContain("end")
   })
 })

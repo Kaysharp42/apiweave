@@ -474,8 +474,12 @@ export const apiweave = {
       input: {
         readonly workspaceId: string;
         readonly workflowId: string;
+        readonly waitMs?: number;
+        readonly operationId?: string;
       } & Partial<IpcRun>,
     ) => invoke<IpcRun>("runs", "create", input),
+    wait: (workspaceId: string, runId: string, waitMs?: number) =>
+      invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "get", { workspaceId, runId }),
     listByWorkflow: (workspaceId: string, workflowId: string) =>

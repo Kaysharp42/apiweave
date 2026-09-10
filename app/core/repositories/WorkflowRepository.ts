@@ -33,6 +33,41 @@ export type WorkflowUpdate = Partial<
   >
 >
 
+/** Narrow metadata used by the bounded agent workflow discovery surface. */
+export interface WorkflowSummaryRow {
+  readonly workflowId: string
+  readonly workspaceId: string
+  readonly name: string
+  readonly description: string | null
+  readonly collectionId: string | null
+  readonly selectedEnvironmentId: string | null
+  readonly tags: readonly string[]
+  readonly nodeCount: number
+  readonly edgeCount: number
+  readonly rev: number
+  readonly updatedAt: string
+}
+
+export interface WorkflowSummaryFilters {
+  /** Case-insensitive substring match against the workflow name only. */
+  readonly query?: string
+  /** Narrow to one project (collection); omitted searches every workflow including project-attached ones. */
+  readonly collectionId?: string
+  /** Every named tag must be present. */
+  readonly tags?: readonly string[]
+}
+
+export interface WorkflowSummaryCursor {
+  readonly updatedAt: string
+  readonly workflowId: string
+}
+
+export interface WorkflowSummaryPage {
+  readonly items: readonly WorkflowSummaryRow[]
+  readonly hasMore: boolean
+  readonly snapshot: string
+}
+
 const COLUMNS =
   "id, workspace_id, name, graph_json, variables_json, settings_json, rev, createdAt, updatedAt"
 
@@ -142,6 +177,42 @@ export class WorkflowRepository {
       rowToWorkflow,
     ).filter((workflow) => workflow.collectionId === collectionId)
     return { items, total: items.length }
+  }
+
+  /** Bounded, graph-free discovery query with deterministic keyset ordering. */
+  public listSummaries(
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    after: WorkflowSummaryCursor | undefined,
+    limit: number,
+  ): WorkflowSummaryPage {
+    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
+    const snapshot = this.summariesSnapshot(workspaceId, filters)
+    if (after !== undefined) {
+      clauses.push("(updatedAt < ? OR (updatedAt = ? AND id < ?))")
+      params.push(after.updatedAt, after.updatedAt, after.workflowId)
+    }
+    params.push(limit + 1)
+    const rows = this.store.query<WorkflowDiscoveryRow>(
+      `SELECT id, workspace_id, name, graph_json, settings_json, rev, updatedAt FROM workflows WHERE ${clauses.join(" AND ")} ORDER BY updatedAt DESC, id DESC LIMIT ?`,
+      params,
+    )
+    return { items: rows.slice(0, limit).map(rowToSummary), hasMore: rows.length > limit, snapshot }
+  }
+
+  /**
+   * Revision fingerprint of a filtered discovery set (row count, revision sum,
+   * newest timestamp). Cursors seal this value; a page requested against a
+   * changed set is rejected so the caller re-reads from the start instead of
+   * silently skipping or repeating rows.
+   */
+  public summariesSnapshot(workspaceId: string, filters: WorkflowSummaryFilters): string {
+    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
+    const stamp = this.store.get<{ count: number; revisionSum: number; newest: string | null } & SqliteRow>(
+      `SELECT count(*) AS count, COALESCE(sum(rev), 0) AS revisionSum, max(updatedAt) AS newest FROM workflows WHERE ${clauses.join(" AND ")}`,
+      params,
+    )
+    return `${stamp?.count ?? 0}:${stamp?.revisionSum ?? 0}:${stamp?.newest ?? ""}`
   }
 
   public countByCollection(workspaceId: string, collectionId: string): number {
@@ -277,6 +348,60 @@ export class WorkflowRepository {
         getLogger("workflow-notify").error("observer failed for workflow", workflowId, error)
       }
     })
+  }
+}
+
+interface WorkflowDiscoveryRow extends SqliteRow {
+  readonly id: string
+  readonly workspace_id: string
+  readonly name: string
+  readonly graph_json: string
+  readonly settings_json: string
+  readonly rev: number
+  readonly updatedAt: string
+}
+
+function summaryFilterClauses(
+  workspaceId: string,
+  filters: WorkflowSummaryFilters,
+): { clauses: string[]; params: (string | number)[] } {
+  const clauses = ["workspace_id = ?"]
+  const params: (string | number)[] = [workspaceId]
+  if (filters.query !== undefined) {
+    clauses.push("lower(name) LIKE ? ESCAPE '\\'")
+    params.push(`%${escapeLike(filters.query.toLowerCase())}%`)
+  }
+  if (filters.collectionId !== undefined) {
+    clauses.push("json_extract(settings_json, '$.collectionId') = ?")
+    params.push(filters.collectionId)
+  }
+  for (const tag of filters.tags ?? []) {
+    clauses.push("EXISTS (SELECT 1 FROM json_each(settings_json, '$.tags') WHERE value = ?)")
+    params.push(tag)
+  }
+  return { clauses, params }
+}
+
+/** Escape the LIKE metacharacters in a caller's search text — no pattern injection. */
+function escapeLike(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
+}
+
+function rowToSummary(row: WorkflowDiscoveryRow): WorkflowSummaryRow {
+  const graph = parseJson<{ nodes: readonly unknown[]; edges: readonly unknown[] }>(row.graph_json)
+  const settings = parseJson<WorkflowSettings>(row.settings_json)
+  return {
+    workflowId: row.id,
+    workspaceId: row.workspace_id,
+    name: row.name,
+    description: settings.description,
+    collectionId: settings.collectionId,
+    selectedEnvironmentId: settings.selectedEnvironmentId,
+    tags: [...settings.tags],
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+    rev: row.rev,
+    updatedAt: row.updatedAt,
   }
 }
 

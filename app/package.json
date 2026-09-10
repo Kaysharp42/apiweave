@@ -36,6 +36,7 @@
     "capture:all": "npm run capture:media && npm run capture:demo && npm run capture:encode && npm run capture:validate",
     "parity": "node core/runner/harness/run-parity.mjs",
     "parity:capture": "node core/runner/harness/run-parity.mjs --capture",
+    "mcp:baseline": "tsx --tsconfig tsconfig.desktop.json core/mcp/harness/run-baseline.ts",
     "rebuild:electron": "node scripts/rebuild-sqlite.mjs electron",
     "rebuild:node": "node scripts/rebuild-sqlite.mjs node",
     "pretest": "npm run rebuild:node"

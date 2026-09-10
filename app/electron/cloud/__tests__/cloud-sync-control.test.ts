@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import nock from "nock"
 import type { Database, KVStore } from "../../../core/db"
 import { initDatabase } from "../../../core/db"
@@ -15,6 +15,7 @@ import { DesktopCloudSyncControl } from "../cloud-sync-control"
 import {
   CloudAccountIdentityRequiredError,
   CloudAccountMismatchError,
+  CloudSyncInactiveError,
   CloudUnlinkRequiresConfirmationError,
 } from "../../../core/services/cloud_sync_control"
 
@@ -1101,5 +1102,59 @@ describe("DesktopCloudSyncControl", () => {
     expect(changed).toEqual([
       { workspaceId: WORKSPACE_ID, workflowId: "workflow-pulled-1", deleted: false },
     ])
+  })
+
+  /**
+   * A linked, bound device whose cached public config went missing — the entry
+   * URL moved, or the row stopped parsing — used to be stuck: no provider, so
+   * every sync failed with "not linked to any workspace" and only a relink
+   * cleared it. The config is an unauthenticated fetch, so refetch it.
+   */
+  describe("a missing public config", () => {
+    const CONFIG = {
+      version: 1 as const,
+      webBaseUrl: "https://cloud.test",
+      apiBaseUrl: "https://api.test",
+      oidcIssuer: "https://auth.test",
+      desktopClientId: "desktop-test",
+      minimumDesktopVersion: "0.1.0",
+      syncProtocolVersions: [1],
+    }
+
+    /** Seed a linked+bound device, then drop only the config row. */
+    function unconfiguredDevice(): CloudSyncRepository {
+      const repository = new CloudSyncRepository(store)
+      linkedControlFixture(repository, "account-a")
+      repository.deleteSetting("cloud.public_config")
+      return repository
+    }
+
+    function control(configClient: () => Promise<typeof CONFIG>): DesktopCloudSyncControl {
+      return new DesktopCloudSyncControl({
+        store,
+        keyfilePath,
+        defaults: { cloudEntryUrl: "https://cloud.test", clientVersion: "1.0.0", deviceLabel: "Test Device" },
+        setSyncProviderTarget: () => undefined,
+        configClient,
+      })
+    }
+
+    it("refetches it at launch and reactivates sync", async () => {
+      const repository = unconfiguredDevice()
+      const subject = control(() => Promise.resolve(CONFIG))
+
+      await vi.waitFor(() => expect(subject.status().active).toBe(true))
+      // Persisted, so the next launch needs no round trip.
+      expect(repository.getSetting("cloud.public_config")).toBe(JSON.stringify(CONFIG))
+    })
+
+    it("names paused sync, not a missing workspace, when the refetch fails", async () => {
+      unconfiguredDevice()
+      const subject = control(() => Promise.reject(new Error("offline")))
+
+      await expect(subject.pull()).rejects.toSatisfy(
+        (error: unknown) => error instanceof CloudSyncInactiveError && error.reason === "configUnavailable",
+      )
+    })
   })
 })

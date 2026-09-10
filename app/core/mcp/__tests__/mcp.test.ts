@@ -204,7 +204,7 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     expect(MCP_TOOLS.find((spec) => toolName(spec) === "assertion_apply")).toMatchObject({ intent: "write" })
   })
 
-  it("excludes keystore mutations and Electron shell/dialog ops", () => {
+  it("excludes keystore mutations, Electron shell/dialog ops and phase-6 superseded selectors", () => {
     const names = new Set(MCP_TOOLS.map((t) => `${t.domain}.${t.action}`))
     for (const excluded of [
       "secrets.set",
@@ -217,6 +217,20 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "runs.getArtifacts",
       "runs.openArtifact",
       "runs.saveArtifactAs",
+      // Phase 6: runs.history is the one run query (workspace/workflow/status
+      // filtering, newest first, limit 1 for latest). The IPC handlers stay for
+      // the renderer and debug-context; they are just not agent tools.
+      "runs.listByWorkflow",
+      "runs.listByWorkspace",
+      "runs.getLatest",
+      "runs.getLatestFailed",
+      // Phase 6: projects.listWorkflows returned an unbounded full-workflow
+      // array (workflows.search with collectionId pages summaries instead), and
+      // projects.addWorkflow/removeWorkflow duplicate
+      // workflows.attachToCollection. IPC handlers stay for the renderer.
+      "projects.listWorkflows",
+      "projects.addWorkflow",
+      "projects.removeWorkflow",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }
@@ -265,23 +279,26 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
 })
 
 describe("MCP bridge — second transport, parity by construction", () => {
-  it("tools/list is non-empty, includes server_info + workflows_list, excludes secrets_set", async () => {
+  it("tools/list is non-empty, includes server_info + workflows_search, excludes secrets_set", async () => {
     const client = await connectClient()
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name)
-    expect(names).toContain("workflows_list")
+    expect(names).toContain("workflows_search")
+    expect(names).toContain("workflows_searchNodes")
+    expect(names).toContain("runs_history")
     expect(names).toContain("workflow_diagnose")
     expect(names).toContain("assertion_suggest")
     expect(names).toContain("assertion_validate")
     expect(names).toContain("assertion_apply")
     expect(names).toContain("server_info")
     expect(names).not.toContain("secrets_set")
+    expect(names).not.toContain("workflows_list")
     expect(names).not.toContain("runs_openArtifact")
-    const workflowList = tools.find((tool) => tool.name === "workflows_list")
+    const workflowSearch = tools.find((tool) => tool.name === "workflows_search")
     const workspaceDelete = tools.find((tool) => tool.name === "workspaces_delete")
     const runCreate = tools.find((tool) => tool.name === "runs_create")
     const workflowDiagnose = tools.find((tool) => tool.name === "workflow_diagnose")
-    expect(workflowList?.annotations).toMatchObject({
+    expect(workflowSearch?.annotations).toMatchObject({
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
@@ -295,7 +312,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
       idempotentHint: true,
       openWorldHint: false,
     })
-    expect(workflowList?.outputSchema).toMatchObject({ type: "object" })
+    expect(workflowSearch?.outputSchema).toMatchObject({ type: "object" })
     await client.close()
   })
 
@@ -308,19 +325,23 @@ describe("MCP bridge — second transport, parity by construction", () => {
 
     const client = await connectClient()
     const toolResult = await client.callTool({
-      name: "workflows_list",
+      name: "workflows_search",
       arguments: { workspaceId: workspace.workspaceId },
     })
     const viaTool = JSON.parse(textOf(toolResult as { content: Array<{ type: string; text?: string }> }))
-    const viaIpc = await dispatchOk("workflows", "list", { workspaceId: workspace.workspaceId })
+    const viaIpc = await dispatchOk("workflows", "search", { workspaceId: workspace.workspaceId })
 
     expect(viaTool).toEqual(viaIpc)
     expect((toolResult as { structuredContent?: unknown }).structuredContent).toEqual({ result: viaIpc })
     expect(viaTool.items.map((w: { workflowId: string }) => w.workflowId)).toContain(created.workflowId)
+    // Summaries carry counts, never graphs.
+    expect(viaTool.items[0]).not.toHaveProperty("nodes")
+    expect(viaTool.items[0]).not.toHaveProperty("edges")
+    expect(viaTool.items[0]).not.toHaveProperty("variables")
     await client.close()
   })
 
-  it("projects run tools to metadata and drops bodies, headers, URLs, values and assertion messages", async () => {
+  it("projects run tools to an aggregate summary and drops bodies, headers, URLs, values and per-node results", async () => {
     const secret = "opaque-value-that-must-never-cross-mcp"
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
@@ -348,6 +369,8 @@ describe("MCP bridge — second transport, parity by construction", () => {
             body: { innocuousKey: secret },
           },
           error: secret,
+          expectedStatus: 200,
+          unresolvedPlaceholders: ["env.EMAIL"],
           assertions: [{ outcome: "fail", message: `actual: ${secret}` }],
         },
       ],
@@ -368,22 +391,35 @@ describe("MCP bridge — second transport, parity by construction", () => {
     expect(text).not.toContain("variables")
     expect(text).not.toContain("message")
     expect(text).not.toContain("error\"")
-    expect(parsed["hasError"]).toBe(true)
-    expect(parsed["nodeStatuses"]).toEqual({ request: { status: "failed", statusCode: 401, hasError: true } })
-    expect(parsed["results"]).toEqual([
+    // One per-node representation (failed-node detail), not nodeStatuses + results.
+    expect(parsed).not.toHaveProperty("nodeStatuses")
+    expect(parsed).not.toHaveProperty("results")
+    expect(parsed).toMatchObject({
+      runId: run.runId,
+      status: "pending",
+      terminal: false,
+      hasError: true,
+      failedNodes: [],
+      failedNodeCount: 0,
+      nodeCount: 1,
+      statusCounts: { failed: 1 },
+    })
+    expect(parsed["failedNodeDetails"]).toEqual([
       expect.objectContaining({
         nodeId: "request",
         status: "failed",
+        durationMs: 12,
+        expectedStatus: 200,
+        unresolvedPlaceholders: ["env.EMAIL"],
         hasError: true,
-        response: { statusCode: 401 },
-        assertions: [expect.objectContaining({ outcome: "fail" })],
+        responseStatusCode: 401,
       }),
     ])
     expect((result as { structuredContent?: unknown }).structuredContent).toEqual({ result: parsed })
     await client.close()
   })
 
-  it("runs_getNodeResult returns the stored body for one node, with secret-looking values redacted", async () => {
+  it("runs_getNodeResult returns bounded evidence for one node, with secret-looking values redacted", async () => {
     const responseSecret = "Bearer sensitive-token-that-must-leave-redacted"
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
@@ -415,26 +451,41 @@ describe("MCP bridge — second transport, parity by construction", () => {
     })
     const text = textOf(toolResult as { content: Array<{ type: string; text?: string }> })
     const parsed = JSON.parse(text) as {
-      nodeId: string
-      status: string
-      request: { url: string; body?: string }
-      response: { statusCode: number; headers: Record<string, string>; body: { error: string; ref: string } }
+      runId: string
+      items: Array<{
+        nodeId: string
+        status: string
+        error: string
+        omittedSections: string[]
+        budgetOmitted: boolean
+        request: { method: string; url: string }
+        response: { statusCode: number; preview: string; storedTruncated: boolean }
+      }>
+      missingNodeIds: string[]
     }
 
-    // Body is exposed — the failure detail the target service returned is what
-    // makes this tool worth having, instead of the bare 404 the metadata-only
-    // `runs.get` returns:
-    expect(parsed.response.body).toEqual({ error: "LEGAL_CATEGORY_NOT_FOUND", ref: "ROLE_NOT_FOUND" })
-    expect(parsed.response.statusCode).toBe(404)
-    expect(parsed.nodeId).toBe("mc-create")
-    expect(parsed.status).toBe("failed")
+    // The failure detail the target service returned is what makes this tool
+    // worth having, instead of the bare 404 the summary returns — but it
+    // travels as a bounded preview, never a whole body:
+    const item = parsed.items[0]!
+    expect(parsed.items).toHaveLength(1)
+    expect(parsed.missingNodeIds).toEqual([])
+    expect(item.nodeId).toBe("mc-create")
+    expect(item.status).toBe("failed")
+    expect(item.error).toBe("Request configuration invalid")
+    expect(item.omittedSections).toEqual([])
+    expect(item.budgetOmitted).toBe(false)
+    expect(item.request.method).toBe("POST")
+    expect(JSON.parse(item.response.preview)).toEqual({ error: "LEGAL_CATEGORY_NOT_FOUND", ref: "ROLE_NOT_FOUND" })
+    expect(item.response.statusCode).toBe(404)
+    expect(item.response.storedTruncated).toBe(false)
     // The same secret-redaction pass every MCP read applies still runs (the
     // transport redacts Authorization headers and secret-looking strings):
     expect(text).not.toContain(responseSecret)
     await client.close()
   })
 
-  it("runs_getNodeResult hides whether a nodeId is unknown with not_found (existence parity)", async () => {
+  it("runs_getNodeResult reports unknown node ids as missing instead of not_found", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
       workspaceId: workspace.workspaceId,
@@ -446,6 +497,29 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const result = await client.callTool({
       name: "runs_getNodeResult",
       arguments: { workspaceId: workspace.workspaceId, runId: run.runId, nodeId: "nope" },
+    })
+    expect((result as { isError?: boolean }).isError).toBeFalsy()
+    const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      items: unknown[]
+      missingNodeIds: string[]
+    }
+    expect(parsed.items).toEqual([])
+    expect(parsed.missingNodeIds).toEqual(["nope"])
+    await client.close()
+  })
+
+  it("runs_getNodeResult still hides a run in another workspace (existence parity)", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "foreign-run",
+    })
+    const run = runRepository.create({ workspaceId: workspace.workspaceId, workflowId: workflow.workflowId })
+
+    const client = await connectClient()
+    const result = await client.callTool({
+      name: "runs_getNodeResult",
+      arguments: { workspaceId: "ws-not-mine", runId: run.runId, nodeId: "nope" },
     })
     expect((result as { isError?: boolean }).isError).toBe(true)
     expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain("not_found")
@@ -634,16 +708,18 @@ describe("MCP bridge — second transport, parity by construction", () => {
     }
     const applied = await client.callTool({ name: "assertion_apply", arguments: applyArgs })
     const appliedBody = JSON.parse(textOf(applied as { content: Array<{ type: string; text?: string }> })) as {
-      revision: number
-      workflow: { nodes: Array<{ nodeId: string; config?: { assertions?: unknown[] } }> }
+      result: { rev: number; touchedNodeIds: string[] }
+      diagnosis: { status: string }
     }
     const persisted = await dispatchOk<{ rev: number; nodes: Array<{ nodeId: string; config?: { assertions?: unknown[] } }> }>(
       "workflows",
       "get",
       { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
     )
-    expect(appliedBody.revision).toBe(persisted.rev)
-    expect(appliedBody.workflow.nodes.find((node) => node.nodeId === "assert")?.config?.assertions).toEqual([
+    expect(appliedBody.result.rev).toBe(persisted.rev)
+    expect(appliedBody.result.touchedNodeIds).toEqual(["assert"])
+    expect(appliedBody.diagnosis.status).toBe("complete")
+    expect(persisted.nodes.find((node) => node.nodeId === "assert")?.config?.assertions).toEqual([
       { source: "prev", path: "response.body.ready", operator: "exists" },
     ])
 
@@ -704,7 +780,7 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
 
     const instructions = client.getInstructions() ?? ""
     expect(instructions).toContain("APIWeave")
-    expect(instructions).toContain("not files")
+    expect(instructions).toContain("not in files")
     expect(instructions).toContain("APIWEAVE_WORKFLOW_ID")
     expect(instructions).toContain(guideUri("start-here"))
     await client.close()
@@ -768,10 +844,10 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     })
     const body = JSON.parse(textOf(created as { content: Array<{ type: string; text?: string }> })) as {
       result: { workflowId: string }
-      diagnosis: { summary: { errors: number }; diagnostics: Array<{ code: string }> }
+      diagnosis: { status: "complete"; summary: { errors: number }; items: Array<{ code: string }> }
     }
 
-    const codes = body.diagnosis.diagnostics.map((diagnostic) => diagnostic.code)
+    const codes = body.diagnosis.items.map((diagnostic) => diagnostic.code)
     expect(codes).toContain("assertion_branch_handle_invalid")
     expect(codes).toContain("assertion_source_path_invalid")
     expect(body.diagnosis.summary.errors).toBeGreaterThan(0)
@@ -798,8 +874,7 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
             config: { assertions: [{ source: "prev", path: "response.body.id", operator: "exists" }] },
           },
           { nodeId: "cleanup", type: "http-request", position: { x: 300, y: 100 }, config: {} },
-          // One end node: the analyzer reports a second as `duplicate_end_node`,
-          // so both branches converge rather than each getting their own.
+          // Branches may converge on one end, but multiple end nodes are also valid.
           { nodeId: "done", type: "end", position: { x: 400, y: 0 } },
         ],
         edges: [
@@ -836,7 +911,6 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
         workspaceId: workspace.workspaceId,
         workflowId: created.result.workflowId,
         expectedRevision: created.result.rev,
-        return: "full",
         // Only the two broken pieces travel — not the four nodes and three edges.
         upsertEdges: [{ edgeId: "e3", source: "assert", target: "end", sourceHandle: "pass" }],
         upsertNodes: [
@@ -850,13 +924,18 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       },
     })
     const body = JSON.parse(textOf(patched as { content: Array<{ type: string; text?: string }> })) as {
-      result: { nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string; sourceHandle?: string | null }> }
-      diagnosis: { diagnostics: Array<{ code: string }> }
+      result: { touchedNodeIds: string[]; touchedEdgeIds: string[] }
+      diagnosis: { items: Array<{ code: string }> }
     }
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string; sourceHandle?: string | null }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: created.result.workflowId },
+    )
 
-    expect(body.result.nodes.map((node) => node.nodeId)).toEqual(["start", "request", "assert", "end"])
-    expect(body.result.edges.find((edge) => edge.edgeId === "e3")?.sourceHandle).toBe("pass")
-    const codes = body.diagnosis.diagnostics.map((diagnostic) => diagnostic.code)
+    expect(persisted.nodes.map((node) => node.nodeId)).toEqual(["start", "request", "assert", "end"])
+    expect(persisted.edges.find((edge) => edge.edgeId === "e3")?.sourceHandle).toBe("pass")
+    expect(body.result.touchedNodeIds).toEqual(["assert"])
+    expect(body.result.touchedEdgeIds).toEqual(["e3"])
+    const codes = body.diagnosis.items.map((diagnostic) => diagnostic.code)
     expect(codes).not.toContain("assertion_branch_handle_invalid")
     expect(codes).not.toContain("assertion_source_path_invalid")
     await client.close()
@@ -876,6 +955,9 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       arguments: { ...ids, name: "must not be saved", [key]: [] },
     })
     expect(result.isError).toBe(true)
+    // The SDK rejects unknown tool arguments before the bridge runs, preserving
+    // the strict MCP input contract. Router-originated validation is covered by
+    // the redacted-placeholder test below.
     expect(textOf(result as { content: Array<{ type: string; text?: string }> })).toContain(key)
     expect(await dispatchOk("workflows", "get", ids)).toEqual(before)
     await client.close()
@@ -904,7 +986,14 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       },
     })
     expect((stale as { isError?: boolean }).isError).toBe(true)
-    expect(textOf(stale as { content: Array<{ type: string; text?: string }> })).toContain("conflict")
+    const error = JSON.parse(textOf(stale as { content: Array<{ type: string; text?: string }> })) as {
+      error: { code: string; writeCommitted: boolean; details?: { expectedRevision?: number; currentRevision?: number } }
+    }
+    expect(error.error).toMatchObject({
+      code: "conflict",
+      writeCommitted: false,
+      details: { expectedRevision: workflow.rev, currentRevision: workflow.rev + 1 },
+    })
     await client.close()
   })
 
@@ -933,7 +1022,6 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
           arguments: {
             workspaceId: workspace.workspaceId,
             workflowId: workflow.workflowId,
-            return: "full",
             removeNodeIds: ["doomed"],
             upsertEdges: [{ edgeId: "e3", source: "start", target: "end" }],
             setVariables: { added: "1" },
@@ -941,15 +1029,19 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
           },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
-    ) as { result: { nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string }>; variables: Record<string, unknown> } }
+    ) as { result: { workflowId: string; touchedNodeIds: string[]; touchedEdgeIds: string[] } }
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string }>; edges: Array<{ edgeId: string }>; variables: Record<string, unknown> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+    )
 
-    expect(patched.result.nodes.map((node) => node.nodeId)).toEqual(["start", "end"])
-    expect(patched.result.edges.map((edge) => edge.edgeId)).toEqual(["e3"])
-    expect(patched.result.variables).toEqual({ keep: "yes", added: "1" })
+    expect(patched.result.workflowId).toBe(workflow.workflowId)
+    expect(persisted.nodes.map((node) => node.nodeId)).toEqual(["start", "end"])
+    expect(persisted.edges.map((edge) => edge.edgeId)).toEqual(["e3"])
+    expect(persisted.variables).toEqual({ keep: "yes", added: "1" })
     await client.close()
   })
 
-  it("workflows_patch defaults to a compact summary projection, not the full graph echo (item 7)", async () => {
+  it("graph writes return one compact diagnosis without a full graph echo", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const created = await dispatchOk<{ workflowId: string; rev: number }>("workflows", "create", {
       workspaceId: workspace.workspaceId,
@@ -985,27 +1077,23 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
           arguments: {
             workspaceId: workspace.workspaceId,
             workflowId: created.workflowId,
-            // Intentionally no `return`: the default for workflows_patch is "summary".
             setVariables: { marker: "x" },
           },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
     ) as {
       result: {
-        kind: string
         workflowId: string
         rev: number
         nodeCount: number
         edgeCount: number
         touchedNodeIds: string[]
         touchedEdgeIds: string[]
-        diagnosis: { diagnostics: unknown[] }
       }
-      diagnosis: { diagnostics: unknown[] }
+      diagnosis: { status: "complete"; items: unknown[]; omittedItemCount: number }
     }
 
-    // Default patches return a small summary projection — NOT the full node/edge echo.
-    expect(patched.result.kind).toBe("summary")
+    // Graph writes return a small MCP DTO — never the stored node/edge arrays.
     expect(patched.result.workflowId).toBe(created.workflowId)
     expect(patched.result.rev).toBe(created.rev + 1)
     expect(patched.result.nodeCount).toBe(4)
@@ -1013,13 +1101,11 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     // No nodes/edges were touched by this patch.
     expect(patched.result.touchedNodeIds).toEqual([])
     expect(patched.result.touchedEdgeIds).toEqual([])
-    // Diagnosis always rides along, nested in result (the "summary" shape's own field, for
-    // IPC/renderer callers)...
-    expect(Array.isArray(patched.result.diagnosis.diagnostics)).toBe(true)
-    // ...and — regression (item 7) — also at the top-level sibling every write tool's guide
-    // says to read, the same place `return: "full"` puts it. It must not only live nested
-    // for this shape while `"full"` only has it as a sibling.
-    expect(patched.diagnosis).toEqual(patched.result.diagnosis)
+    expect(patched.result).not.toHaveProperty("nodes")
+    expect(patched.result).not.toHaveProperty("edges")
+    expect(patched.result).not.toHaveProperty("diagnosis")
+    expect(patched.diagnosis.status).toBe("complete")
+    expect(Array.isArray(patched.diagnosis.items)).toBe(true)
     await client.close()
   })
 
@@ -1060,7 +1146,7 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
     await client.close()
   })
 
-  it("workflows_get returns only requested nodes and their direct edges", async () => {
+  it("workflows_get nodes view returns selected configs, incident edges and boundary identities", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflow = await dispatchOk<{ workflowId: string }>("workflows", "create", {
       workspaceId: workspace.workspaceId,
@@ -1082,12 +1168,22 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, nodeIds: ["start", "request"] },
     })
     const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
+      view: string
+      partial: boolean
       nodes: Array<{ nodeId: string }>
       edges: Array<{ edgeId: string }>
+      boundaryNodes: Array<{ nodeId: string; type: string }>
+      missingNodeIds: string[]
     }
 
+    expect(parsed.view).toBe("nodes")
+    expect(parsed.partial).toBe(true)
     expect(parsed.nodes.map((node) => node.nodeId)).toEqual(["start", "request"])
-    expect(parsed.edges.map((edge) => edge.edgeId)).toEqual(["e1"])
+    // Incident edges — including the boundary edge the old between-only filter
+    // dropped, which is what makes a rewire possible without a full read.
+    expect(parsed.edges.map((edge) => edge.edgeId).sort()).toEqual(["e1", "e2"])
+    expect(parsed.boundaryNodes).toEqual([{ nodeId: "end", type: "end", label: null }])
+    expect(parsed.missingNodeIds).toEqual([])
     await client.close()
   })
 
@@ -1168,12 +1264,9 @@ describe("MCP graph writes — mistakes surface statically, before any live requ
       },
     })
     const parsed = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as {
-      diagnosis: { diagnostics: Array<{ code: string; evidence: { functionName: string } }> }
+      diagnosis: { items: Array<{ code: string; message: string }> }
     }
-    expect(parsed.diagnosis.diagnostics).toContainEqual(expect.objectContaining({
-      code: "unknown_function",
-      evidence: { functionName: "randomInt" },
-    }))
+    expect(parsed.diagnosis.items).toContainEqual(expect.objectContaining({ code: "unknown_function" }))
     await client.close()
   })
 })
@@ -1201,9 +1294,12 @@ describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", 
           arguments: { workspaceId: workspace.workspaceId, name: "stacked", nodes: stackedNodes, edges: stackedEdges },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
-    ) as { result: { nodes: Array<{ nodeId: string; position: { x: number; y: number } }> } }
+    ) as { result: { workflowId: string } }
+    const persisted = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: result.workflowId },
+    )
 
-    const xs = result.nodes.map((n) => n.position.x)
+    const xs = persisted.nodes.map((n) => n.position.x)
     expect(new Set(xs).size).toBe(4) // no longer all stacked at x:0
     await client.close()
   })
@@ -1224,13 +1320,16 @@ describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", 
           },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
-    ) as { result: { nodes: Array<{ position: { x: number; y: number } }> } }
+    ) as { result: { workflowId: string } }
+    const persisted = await dispatchOk<{ nodes: Array<{ position: { x: number; y: number } }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: result.workflowId },
+    )
 
-    expect(result.nodes.every((n) => n.position.x === 0 && n.position.y === 0)).toBe(true)
+    expect(persisted.nodes.every((n) => n.position.x === 0 && n.position.y === 0)).toBe(true)
     await client.close()
   })
 
-  it("workflows_patch re-lays-out the WHOLE graph in the same write, without inflating touchedNodeIds", async () => {
+  it("workflows_patch preserves positions on config-only edits and lays out once on topology edits", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const client = await connectClient()
     const created = JSON.parse(
@@ -1248,6 +1347,7 @@ describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", 
       ),
     ) as { result: { workflowId: string; rev: number } }
 
+    // Config-only: untouched nodes stay exactly where they were.
     const patched = JSON.parse(
       textOf(
         (await client.callTool({
@@ -1260,22 +1360,47 @@ describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", 
           },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
-    ) as { result: { kind: string; rev: number; touchedNodeIds: string[] } }
+    ) as { result: { rev: number; touchedNodeIds: string[] } }
 
     // One write, not a write-then-relayout second write.
     expect(patched.result.rev).toBe(created.result.rev + 1)
-    // Repositioning the rest of the graph is not a "touch" — only "a" was named.
     expect(patched.result.touchedNodeIds).toEqual(["a"])
 
-    const after = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
+    const afterConfig = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
       "workflows",
       "get",
       { workspaceId: workspace.workspaceId, workflowId: created.result.workflowId },
     )
-    // "b" was never named in the patch, yet it moved: the whole graph was
-    // re-laid-out, not just the node the caller upserted.
-    const b = after.nodes.find((n) => n.nodeId === "b")!
-    expect(b.position.x === 0 && b.position.y === 0).toBe(false)
+    // "b" was never named and topology did not change: no layout, still stacked.
+    const bStill = afterConfig.nodes.find((n) => n.nodeId === "b")!
+    expect(bStill.position).toEqual({ x: 0, y: 0 })
+
+    // Topology edit: inserting a node lays out the saved revision once.
+    const grown = JSON.parse(
+      textOf(
+        (await client.callTool({
+          name: "workflows_patch",
+          arguments: {
+            workspaceId: workspace.workspaceId,
+            workflowId: created.result.workflowId,
+            expectedRevision: patched.result.rev,
+            upsertNodes: [{ nodeId: "c", type: "http-request", position: { x: 0, y: 0 }, config: {} }],
+            upsertEdges: [{ edgeId: "e4", source: "b", target: "c" }],
+          },
+        })) as { content: Array<{ type: string; text?: string }> },
+      ),
+    ) as { result: { rev: number; touchedNodeIds: string[]; touchedEdgeIds: string[] } }
+    expect(grown.result.rev).toBe(patched.result.rev + 1)
+    expect(grown.result.touchedNodeIds).toEqual(["c"])
+    expect(grown.result.touchedEdgeIds).toEqual(["e4"])
+
+    const afterTopology = await dispatchOk<{ nodes: Array<{ nodeId: string; position: { x: number; y: number } }> }>(
+      "workflows",
+      "get",
+      { workspaceId: workspace.workspaceId, workflowId: created.result.workflowId },
+    )
+    const xs = afterTopology.nodes.map((n) => n.position.x)
+    expect(new Set(xs).size).toBeGreaterThan(1)
     await client.close()
   })
 
@@ -1293,12 +1418,15 @@ describe("MCP graph writes — auto-layout keeps nodes from ending up stacked", 
       textOf(
         (await client.callTool({
           name: "workflows_layout",
-          arguments: { workspaceId: workspace.workspaceId, workflowId: created.workflowId, return: "full" },
+          arguments: { workspaceId: workspace.workspaceId, workflowId: created.workflowId },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
-    ) as { result: { nodes: Array<{ position: { x: number; y: number } }> } }
+    ) as { result: { workflowId: string } }
+    const persisted = await dispatchOk<{ nodes: Array<{ position: { x: number; y: number } }> }>(
+      "workflows", "get", { workspaceId: workspace.workspaceId, workflowId: laidOut.result.workflowId },
+    )
 
-    const xs = laidOut.result.nodes.map((n) => n.position.x)
+    const xs = persisted.nodes.map((n) => n.position.x)
     expect(new Set(xs).size).toBe(4)
     await client.close()
   })
@@ -1472,9 +1600,14 @@ describe("MCP reads — redacted values, intact structure", () => {
     // Without this the placeholder persists and the next run sends the literal
     // string `<SECRET>` upstream as the credential.
     expect(rejected.isError).toBe(true)
-    const message = textOf(rejected)
-    expect(message).toContain("<SECRET>")
-    expect(message).toContain("{{secrets.NAME}}")
+    const error = JSON.parse(textOf(rejected)) as {
+      error: { code: string; writeCommitted: boolean; details?: { paths?: string[] } }
+    }
+    expect(error.error).toMatchObject({
+      code: "validation",
+      writeCommitted: false,
+      details: { paths: ["nodes[0].config.headers[0].value"] },
+    })
     await client.close()
   })
 
@@ -1948,7 +2081,13 @@ describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, 
         })) as { content: Array<{ type: string; text?: string }> },
       ),
     )
-    const callNode = created.nodes.find((n: { nodeId: string }) => n.nodeId === "call1")
+    const readBack = JSON.parse(textOf(
+      (await client.callTool({
+        name: "workflows_get",
+        arguments: { workspaceId: workspace.workspaceId, workflowId: created.workflowId, nodeIds: ["call1"] },
+      })) as { content: Array<{ type: string; text?: string }> },
+    )) as { nodes: Array<{ nodeId: string; config: Record<string, unknown> }> }
+    const callNode = readBack.nodes.find((node) => node.nodeId === "call1")!
     expect(callNode.config.targetWorkflowId).toBe(target.workflowId)
     expect(callNode.config.inputMapping).toEqual({ tenant: "{{variables.tenantId}}" })
     expect(callNode.config.outputMapping).toEqual({ cartId: "cartId", token: "<SECRET>" })
@@ -2139,7 +2278,7 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
 
     const ok = await post(port, { authorization: `Bearer ${token}` }, listBody)
     expect(ok.status).toBe(200)
-    expect(ok.text).toContain("workflows_list")
+    expect(ok.text).toContain("workflows_search")
   })
 
   it("rejects hostile browser origins and accepts native or loopback callers", async () => {
@@ -2270,7 +2409,7 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
 
     const client = await connectHttp(port, token)
     const { tools } = await client.listTools()
-    expect(tools.map((t) => t.name)).toContain("workflows_list")
+    expect(tools.map((t) => t.name)).toContain("workflows_search")
     expect(host.getSessionCount()).toBe(1)
   })
 
@@ -2397,7 +2536,7 @@ describe("MCP writes announce themselves — the renderer's only notice", () => 
     const client = await connectClient()
     agentWrites = []
 
-    await client.callTool({ name: "workflows_list", arguments: { workspaceId: workspace.workspaceId } })
+    await client.callTool({ name: "workflows_search", arguments: { workspaceId: workspace.workspaceId } })
     await client.callTool({ name: "environments_delete", arguments: { workspaceId: workspace.workspaceId, environmentId: "nope" } })
 
     expect(agentWrites).toEqual([])

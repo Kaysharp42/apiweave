@@ -22,6 +22,8 @@ interface Session {
   readonly transport: StreamableHTTPServerTransport
   readonly server: McpServer
   idleTimer: NodeJS.Timeout | null
+  /** In-flight tool/resource requests — idle expiry must not evict mid-wait. */
+  inflight: number
 }
 
 /** Fixed loopback port (decision #15). Falls back to an ephemeral port on collision. */
@@ -179,7 +181,9 @@ export class McpHost {
     const sessionId = headerValue(req.headers[SESSION_HEADER])
 
     // GET (server→client SSE) and DELETE (teardown) only make sense against an
-    // established session. Route them or reject as a bad request.
+    // established session. Route them or reject as a bad request. The SSE
+    // stream stays open, so it never counts as in-flight for idle purposes —
+    // otherwise a subscribed session could never be evicted.
     if (req.method === "GET" || req.method === "DELETE") {
       const session = sessionId ? this.sessions.get(sessionId) : undefined
       if (!session) return json(res, 400, { error: "no_session" })
@@ -211,8 +215,7 @@ export class McpHost {
     if (sessionId) {
       const session = this.sessions.get(sessionId)
       if (!session) return json(res, 404, { error: "unknown_session" })
-      this.touchSession(session)
-      await session.transport.handleRequest(req, res, body)
+      await this.handleSessionRequest(session, req, res, body)
       return
     }
 
@@ -255,7 +258,7 @@ export class McpHost {
         this.touchSession(session)
       },
     })
-    const session: Session = { transport, server: mcp, idleTimer: null }
+    const session: Session = { transport, server: mcp, idleTimer: null, inflight: 0 }
     // Any teardown path (DELETE, client disconnect, our own close) removes the
     // session and clears its idle timer — no orphaned listener or transport.
     transport.onclose = () => {
@@ -267,11 +270,43 @@ export class McpHost {
     await transport.handleRequest(req, res, body)
   }
 
+  /**
+   * Route one request to a retained session while accounting for it in idle
+   * cleanup. A bounded run wait (up to 30s) holds its POST open far longer
+   * than a metadata read; without the count an idle timer firing mid-wait
+   * would evict the session — and abort the wait — from underneath the tool
+   * call. The wait's own deadline stays independent of the idle timer.
+   */
+  private async handleSessionRequest(
+    session: Session,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    body?: unknown,
+  ): Promise<void> {
+    session.inflight += 1
+    this.touchSession(session)
+    try {
+      await session.transport.handleRequest(req, res, body)
+    } finally {
+      session.inflight = Math.max(0, session.inflight - 1)
+      // Reset the idle clock from completion, not just from arrival: a wait
+      // that held the connection open just proved the session is alive.
+      const id = session.transport.sessionId
+      if (id !== undefined && this.sessions.get(id) === session) this.touchSession(session)
+    }
+  }
+
   /** Reset a session's idle timer; on expiry the transport is closed (which
-   *  removes the session via onclose). */
+   *  removes the session via onclose). A session with in-flight requests is
+   *  never evicted — the timer is rescheduled instead, so a long wait cannot
+   *  be torn down by idle cleanup. */
   private touchSession(session: Session): void {
     if (session.idleTimer) clearTimeout(session.idleTimer)
     session.idleTimer = setTimeout(() => {
+      if (session.inflight > 0) {
+        this.touchSession(session)
+        return
+      }
       void this.closeSession(session)
     }, this.idleTimeoutMs)
     // Don't let an idle-timeout timer keep the process alive on quit.

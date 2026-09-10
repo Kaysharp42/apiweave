@@ -1,4 +1,4 @@
-import type { KVStore, SqliteRow } from "../db"
+import type { KVStore, SqliteRow, SqliteValue } from "../db"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
@@ -33,6 +33,40 @@ export type RunUpdate = Partial<
     | "resolvedSecrets"
   >
 >
+
+/** Compact history row: identity, status, timing and failure counts only. */
+export interface RunSummaryRow {
+  readonly runId: string
+  readonly workspaceId: string
+  readonly workflowId: string
+  readonly status: Run["status"]
+  readonly trigger: Run["trigger"]
+  readonly startedAt: string | null
+  readonly completedAt: string | null
+  readonly duration: number | null
+  readonly failedNodes: readonly string[]
+  readonly failedNodeCount: number
+  readonly nodeCount: number
+  readonly runRev: number
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+export interface RunHistoryFilters {
+  readonly workflowId?: string
+  readonly status?: Run["status"]
+}
+
+export interface RunHistoryCursor {
+  readonly createdAt: string
+  readonly runId: string
+}
+
+export interface RunSummaryPage {
+  readonly items: readonly RunSummaryRow[]
+  readonly hasMore: boolean
+  readonly snapshot: string
+}
 
 /** Where a persisted node-response body ended up. */
 export type BodyStorage = "inline" | "side"
@@ -153,6 +187,57 @@ export class RunRepository {
       [workflowId, workspaceId],
       rowToRun,
     )
+  }
+
+  /**
+   * Bounded, per-node-result-free history query with deterministic keyset
+   * ordering. Skips `node_statuses_json` and `extracted_variables_json`
+   * entirely, and lifts the four metadata leaves a history row needs
+   * (`trigger`, `duration`, `failedNodes`, `results` length) out of
+   * `response_metadata_json` in SQL — selecting the blob and parsing every
+   * historical per-node payload merely to discard it is the cost this surface
+   * removes. Absent keys read as SQL NULL and degrade to the same defaults the
+   * full-row path applies.
+   */
+  public listRunSummaries(
+    workspaceId: string,
+    filters: RunHistoryFilters,
+    after: RunHistoryCursor | undefined,
+    limit: number,
+  ): RunSummaryPage {
+    const { clauses, params } = runHistoryFilterClauses(workspaceId, filters)
+    const snapshot = this.runHistorySnapshot(workspaceId, filters)
+    if (after !== undefined) {
+      clauses.push("(createdAt < ? OR (createdAt = ? AND id < ?))")
+      params.push(after.createdAt, after.createdAt, after.runId)
+    }
+    params.push(limit + 1)
+    const rows = this.store.query<RunSummaryQueryRow>(
+      "SELECT id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, " +
+        "json_extract(response_metadata_json, '$.trigger') AS trigger, " +
+        "json_extract(response_metadata_json, '$.duration') AS duration, " +
+        // `->` (not json_extract) so a legacy scalar comes back as JSON text
+        // rather than a bare value that would not parse.
+        "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
+        "json_array_length(response_metadata_json, '$.results') AS node_count " +
+        `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
+      params,
+    )
+    return { items: rows.slice(0, limit).map(rowToRunSummary), hasMore: rows.length > limit, snapshot }
+  }
+
+  /**
+   * Revision fingerprint of a filtered history set (row count plus newest
+   * update). History cursors seal this value; a page requested against a
+   * changed set is rejected so the caller re-reads from the start.
+   */
+  public runHistorySnapshot(workspaceId: string, filters: RunHistoryFilters): string {
+    const { clauses, params } = runHistoryFilterClauses(workspaceId, filters)
+    const stamp = this.store.get<{ count: number; newest: string | null } & SqliteRow>(
+      `SELECT count(*) AS count, max(updatedAt) AS newest FROM runs WHERE ${clauses.join(" AND ")}`,
+      params,
+    )
+    return `${stamp?.count ?? 0}:${stamp?.newest ?? ""}`
   }
 
   /**
@@ -446,4 +531,60 @@ function normalizeRunResults(value: unknown): RunResult[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+interface RunSummaryQueryRow extends SqliteRow {
+  readonly id: string
+  readonly workspace_id: string
+  readonly workflow_id: string
+  readonly status: string
+  readonly startedAt: string | null
+  readonly completedAt: string | null
+  readonly rev: number
+  readonly createdAt: string
+  readonly updatedAt: string
+  /** The four metadata leaves the summary needs, lifted in SQL; NULL when absent. */
+  readonly trigger: SqliteValue
+  readonly duration: SqliteValue
+  readonly failed_nodes_json: string | null
+  readonly node_count: number | null
+}
+
+function runHistoryFilterClauses(
+  workspaceId: string,
+  filters: RunHistoryFilters,
+): { clauses: string[]; params: (string | number)[] } {
+  const clauses = ["workspace_id = ?"]
+  const params: (string | number)[] = [workspaceId]
+  if (filters.workflowId !== undefined) {
+    clauses.push("workflow_id = ?")
+    params.push(filters.workflowId)
+  }
+  if (filters.status !== undefined) {
+    clauses.push("status = ?")
+    params.push(filters.status)
+  }
+  return { clauses, params }
+}
+
+function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
+  const stored = row.failed_nodes_json === null ? null : parseJson<unknown>(row.failed_nodes_json)
+  const failedNodes = Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : []
+  const trigger = row.trigger === "schedule" ? "schedule" : "manual"
+  return {
+    runId: row.id,
+    workspaceId: row.workspace_id,
+    workflowId: row.workflow_id,
+    status: row.status as Run["status"],
+    trigger,
+    startedAt: row.startedAt,
+    completedAt: row.completedAt,
+    duration: typeof row.duration === "number" ? row.duration : null,
+    failedNodes,
+    failedNodeCount: failedNodes.length,
+    nodeCount: row.node_count ?? 0,
+    runRev: row.rev,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
 }

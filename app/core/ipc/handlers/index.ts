@@ -10,6 +10,7 @@ import { registerProjectHandlers } from "./projects"
 import { registerImportHandlers } from "./imports"
 import { registerCloudHandlers } from "./cloud"
 import { registerAssertionHandlers } from "./assertions"
+import { registerGuideHandlers } from "./guides"
 import { registerSettingsHandlers } from "./settings"
 
 export type { HandlerDeps } from "./common"
@@ -24,6 +25,7 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerWorkspaceHandlers(router, deps)
   registerWorkflowHandlers(router, deps)
   registerAssertionHandlers(router, deps)
+  registerGuideHandlers(router)
   registerEnvironmentHandlers(router, deps)
   registerNodePresetHandlers(router, deps)
   registerRunHandlers(router, deps)

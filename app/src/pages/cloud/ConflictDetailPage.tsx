@@ -11,6 +11,7 @@ import {
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../../components/atoms/Button";
+import { IconButton } from "../../components/atoms/IconButton";
 import { Badge } from "../../components/atoms/Badge";
 import { Spinner } from "../../components/atoms/Spinner";
 import { Card } from "../../components/molecules/Card";
@@ -135,16 +136,21 @@ export function ConflictDetailPage() {
 
   const [picks, setPicks] = useState<Record<string, Side>>({});
   useEffect(() => setPicks({}), [conflictId]);
-  const allPicked =
+  const allResidualsPicked =
     hasResiduals
     && unmatchedPaths.length === 0
     && residualEntries.every((entry) => picks[entry.path] !== undefined);
 
   function acceptAll(side: Side): void {
     const next: Record<string, Side> = {};
-    for (const entry of residualEntries) next[entry.path] = side;
+    for (const entry of diff) next[entry.path] = side;
     setPicks(next);
   }
+
+  const selectedResolutions = useMemo(
+    () => Object.entries(picks).map(([path, side]) => ({ path, side })),
+    [picks],
+  );
 
   function returnToConflictList(): void {
     if (location.state === "conflict-list") {
@@ -203,9 +209,9 @@ export function ConflictDetailPage() {
   const disabled = resolving || conflict.winner !== null;
 
   return (
-    <div className="flex h-full flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-4 dark:border-border-dark">
-        <div className="flex items-center gap-3">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface dark:bg-surface-dark">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-6 py-4 dark:border-border-dark">
+        <div className="flex min-w-0 items-center gap-3">
           <Button
             variant="ghost"
             size="sm"
@@ -214,11 +220,11 @@ export function ConflictDetailPage() {
           >
             Back
           </Button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
               Resolve conflict
             </h1>
-            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            <p className="truncate text-xs text-text-secondary dark:text-text-secondary-dark">
               {conflict.kind} · {conflict.name ?? <span className="font-mono">{conflict.record_id}</span>}
             </p>
           </div>
@@ -229,7 +235,7 @@ export function ConflictDetailPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain p-4 [scrollbar-gutter:stable] lg:p-6">
         {unmatchedPaths.length > 0 && conflict.winner === null ? (
           <ResidualMismatchWarning paths={unmatchedPaths} />
         ) : null}
@@ -248,6 +254,11 @@ export function ConflictDetailPage() {
           disabled={disabled}
           onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))}
           onAcceptAll={acceptAll}
+          onReset={(path) => setPicks((prev) => {
+            const next = { ...prev };
+            delete next[path];
+            return next;
+          })}
         />
         <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
@@ -260,7 +271,7 @@ export function ConflictDetailPage() {
         </details>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised lg:px-6">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised lg:px-6">
         <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
           Applies to your workspace only — use the Cloud Sync page to push when ready.
         </p>
@@ -281,7 +292,7 @@ export function ConflictDetailPage() {
               variant="secondary"
               intent="success"
               icon={<GitMerge className="h-4 w-4" aria-hidden="true" />}
-              disabled={disabled || !allPicked}
+              disabled={disabled || !allResidualsPicked}
               loading={resolving && pendingChoice === "merged"}
               onClick={() => setPendingChoice("merged")}
             >
@@ -315,8 +326,8 @@ export function ConflictDetailPage() {
         onClose={() => setPendingChoice(null)}
         onConfirm={() => {
           if (!pendingChoice) return;
-          if (pendingChoice === "merged" && residualEntries.length > 0) {
-            void resolve("merged", residualEntries.map((entry) => ({ path: entry.path, side: picks[entry.path]! })));
+          if (pendingChoice === "merged" && selectedResolutions.length > 0) {
+            void resolve("merged", selectedResolutions);
           } else {
             void resolve(pendingChoice);
           }
@@ -324,8 +335,8 @@ export function ConflictDetailPage() {
         title={pendingChoice === "merged" ? "Apply merge to workspace?" : "Resolve whole record?"}
         message={
           pendingChoice === "merged"
-            ? residualEntries.length > 0
-              ? "Combine both copies into your local workspace, using your per-field selections for the overlapping changes and keeping every non-overlapping change from both sides. This does not push to cloud — sync from the Cloud Sync page when ready."
+            ? selectedResolutions.length > 0
+              ? "Combine both copies into your local workspace, using your per-field selections and the automatic merge result for every unchanged selection. This does not push to cloud — sync from the Cloud Sync page when ready."
               : "Combine both copies into your local workspace, keeping every non-overlapping change from local and cloud. This does not push to cloud — sync from the Cloud Sync page when ready."
             : `Keep the ${pendingChoice ?? "selected"} copy in your local workspace and store the rejected copy for audit. This does not push to cloud.`
         }
@@ -375,6 +386,7 @@ function MergeWorkspace({
   disabled,
   onPick,
   onAcceptAll,
+  onReset,
 }: {
   readonly entries: readonly ConflictDiffEntry[];
   readonly residualPaths: readonly string[];
@@ -386,6 +398,7 @@ function MergeWorkspace({
   readonly disabled: boolean;
   readonly onPick: (path: string, side: Side) => void;
   readonly onAcceptAll: (side: Side) => void;
+  readonly onReset: (path: string) => void;
 }) {
   if (entries.length === 0) {
     return (
@@ -399,7 +412,7 @@ function MergeWorkspace({
   const unresolvedCount = residualPaths.length - pickedCount;
 
   return (
-    <section aria-labelledby="merge-workspace-heading">
+    <section className="min-w-[48rem]" aria-labelledby="merge-workspace-heading">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="merge-workspace-heading" className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
@@ -422,14 +435,14 @@ function MergeWorkspace({
         )}
       </div>
 
-      <div className="overflow-hidden rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised" data-testid="conflict-merge-workspace">
+      <div className="rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised" data-testid="conflict-merge-workspace">
         {/* IntelliJ-style three-pane header: Cloud | Result | Local */}
-        <div className="hidden grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay lg:grid">
+        <div className="sticky top-0 z-20 grid grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay">
           <MergePaneHeader
             icon={<Cloud className="h-4 w-4" aria-hidden="true" />}
             title="Cloud copy"
             subtitle={`Incoming · revision ${cloudRev} · ${cloudWriter}`}
-            action={residualPaths.length > 0 ? (
+            action={mergeAvailable ? (
               <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("cloud")}>
                 <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" /> Accept all
               </Button>
@@ -446,7 +459,7 @@ function MergeWorkspace({
             icon={<Laptop className="h-4 w-4" aria-hidden="true" />}
             title="Local copy"
             subtitle={`Current device · revision ${localRev}`}
-            action={residualPaths.length > 0 ? (
+            action={mergeAvailable ? (
               <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onAcceptAll("local")}>
                 Accept all <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               </Button>
@@ -466,15 +479,15 @@ function MergeWorkspace({
                   <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">{entry.label}</span>
                   <code className="min-w-0 break-all text-[10px] text-text-muted dark:text-text-muted-dark">{entry.path}</code>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 lg:divide-x lg:divide-border lg:dark:divide-border-dark">
+                <div className={`grid grid-cols-3 divide-x divide-border dark:divide-border-dark ${[entry.before, entry.after].some((value) => formatConflictValue(value).includes("\n") || formatConflictValue(value).length > 100) ? "h-64" : "h-32"}`}>
                   {/* Cloud (left) */}
                   <MergeSourceCell
                     label="Cloud copy"
                     value={entry.before}
                     kind={entry.kind}
                     source="cloud"
-                    residual={residual}
                     selected={selectedSide === "cloud"}
+                    selectable={mergeAvailable}
                     disabled={disabled}
                     onPick={onPick}
                     entry={entry}
@@ -483,8 +496,11 @@ function MergeWorkspace({
                   <MergeResultCell
                     entry={entry}
                     residual={residual}
+                    selectable={mergeAvailable}
                     selectedSide={selectedSide}
                     mergeAvailable={mergeAvailable}
+                    disabled={disabled}
+                    onReset={() => onReset(entry.path)}
                   />
                   {/* Local (right) */}
                   <MergeSourceCell
@@ -492,8 +508,8 @@ function MergeWorkspace({
                     value={entry.after}
                     kind={entry.kind}
                     source="local"
-                    residual={residual}
                     selected={selectedSide === "local"}
+                    selectable={mergeAvailable}
                     disabled={disabled}
                     onPick={onPick}
                     entry={entry}
@@ -550,34 +566,31 @@ function MergeSourceAcceptButton({
   readonly onPick: (path: string, side: Side) => void;
 }) {
   return (
-    <Button
-      size="xs"
-      variant={selected ? "secondary" : "ghost"}
+    <IconButton
+      size="sm"
+      variant={selected ? "success" : "secondary"}
       disabled={disabled}
       aria-pressed={selected}
-      aria-label={`Accept ${source === "cloud" ? "Cloud" : "Local"} for ${entry.label}`}
-      icon={
-        source === "cloud"
-          ? <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          : <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-      }
+      tooltip={`${selected ? "Selected" : "Accept"} ${source === "cloud" ? "Cloud" : "Local"} for ${entry.label}`}
+      className="shrink-0"
       onClick={() => onPick(entry.path, source)}
     >
-      {selected ? "Accepted" : "Accept"}
-    </Button>
+      {source === "cloud"
+        ? <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        : <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />}
+    </IconButton>
   );
 }
 
-// A read-only source pane (Cloud or Local). When the entry is a residual the
-// user must pick, the cell hosts a chevron button that pulls its value into
-// the center result — IntelliJ's accept-this-change arrow.
+// A read-only source pane (Cloud or Local). Its accept arrow is centered on the
+// inside edge, between the source and the merge result.
 function MergeSourceCell({
   label,
   value,
   kind,
   source,
-  residual,
   selected,
+  selectable,
   disabled,
   onPick,
   entry,
@@ -586,8 +599,8 @@ function MergeSourceCell({
   readonly value: unknown;
   readonly kind: ConflictDiffKind;
   readonly source: Side;
-  readonly residual: boolean;
   readonly selected: boolean;
+  readonly selectable: boolean;
   readonly disabled: boolean;
   readonly onPick: (path: string, side: Side) => void;
   readonly entry: ConflictDiffEntry;
@@ -605,68 +618,85 @@ function MergeSourceCell({
     : "";
 
   return (
-    <div className={`min-h-24 min-w-0 p-3 ${tint} ${isSelectedTint} bg-surface-raised dark:bg-surface-dark-raised`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">{label}</p>
-        {residual ? (
-          <MergeSourceAcceptButton
-            source={source}
-            selected={selected}
-            disabled={disabled}
-            entry={entry}
-            onPick={onPick}
-          />
-        ) : null}
+    <div aria-label={`${label} for ${entry.label}`} className={`flex min-h-0 min-w-0 ${source === "local" ? "flex-row-reverse" : ""} ${tint} ${isSelectedTint}`}>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain p-3 [scrollbar-gutter:stable]">
+        <ConflictValue value={value} />
       </div>
-      <ConflictValue value={value} />
+      {selectable ? (
+        <div className={`flex w-12 shrink-0 items-center justify-center bg-surface-overlay dark:bg-surface-dark-overlay ${source === "cloud" ? "border-l" : "border-r"} border-border dark:border-border-dark`}>
+        <MergeSourceAcceptButton
+          source={source}
+          selected={selected}
+          disabled={disabled}
+          entry={entry}
+          onPick={onPick}
+        />
+        </div>
+      ) : null}
     </div>
   );
 }
 
+// fallow-ignore-next-line complexity
 function MergeResultCell({
   entry,
   residual,
+  selectable,
   selectedSide,
   mergeAvailable,
+  disabled,
+  onReset,
 }: {
   readonly entry: ConflictDiffEntry;
   readonly residual: boolean;
+  readonly selectable: boolean;
   readonly selectedSide: Side | undefined;
   readonly mergeAvailable: boolean;
+  readonly disabled: boolean;
+  readonly onReset: () => void;
 }) {
   const selectedValue = selectedSide === "cloud" ? entry.before : selectedSide === "local" ? entry.after : undefined;
 
   return (
-    <div className="min-h-24 min-w-0 border-y border-border bg-primary/5 p-3 dark:border-border-dark lg:border-y-0">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark lg:hidden">Merge result</p>
-      {residual ? (
-        <div className="grid gap-2">
-          {selectedSide ? (
-            <div>
-              <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-status-success dark:text-[var(--aw-status-success)]">
-                <Check className="h-3 w-3" aria-hidden="true" />Accepted {selectedSide}
-              </p>
-              <ConflictValue value={selectedValue} />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-status-warning dark:text-[var(--aw-status-warning)]">Pick a side using the arrows ←</span>
-            </div>
-          )}
+    <div aria-label={`Merge result for ${entry.label}`} className="flex min-h-0 min-w-0 flex-col bg-primary/5">
+      {selectedSide ? (
+        <>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1 dark:border-border-dark">
+            <p role="status" className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-status-success dark:text-[var(--aw-status-success)]">
+              <Check className="h-3 w-3" aria-hidden="true" />Accepted {selectedSide}
+            </p>
+            <Button size="xs" variant="ghost" disabled={disabled} aria-label={`Reset selection for ${entry.label}`} onClick={onReset}>Reset</Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-3 [scrollbar-gutter:stable]">
+            <ConflictValue value={selectedValue} />
+          </div>
+        </>
+      ) : residual ? (
+        <div className="overflow-auto p-3">
+          <span className="text-xs text-status-warning dark:text-[var(--aw-status-warning)]">Choose Cloud → or ← Local to resolve this field.</span>
+        </div>
+      ) : selectable ? (
+        <div className="flex gap-2 overflow-auto p-3 text-xs text-text-secondary dark:text-text-secondary-dark">
+          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-success dark:text-[var(--aw-status-success)]" aria-hidden="true" />
+          <span><strong className="font-semibold text-text-primary dark:text-text-primary-dark">Included automatically.</strong> Use either arrow to override this result.</span>
         </div>
       ) : mergeAvailable ? (
-        <div className="flex gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
+        <div className="flex gap-2 overflow-auto p-3 text-xs text-text-secondary dark:text-text-secondary-dark">
           <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-status-success dark:text-[var(--aw-status-success)]" aria-hidden="true" />
           <span><strong className="font-semibold text-text-primary dark:text-text-primary-dark">Included automatically.</strong> The server preserves the side changed from the common base.</span>
         </div>
       ) : (
-        <div className="flex gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
+        <div className="flex gap-2 overflow-auto p-3 text-xs text-text-secondary dark:text-text-secondary-dark">
           <GitCompareArrows className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span><strong className="font-semibold text-text-primary dark:text-text-primary-dark">Whole-record decision.</strong> Keep the complete Cloud or Local copy below.</span>
         </div>
       )}
     </div>
   );
+}
+
+function formatConflictValue(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2) ?? "";
 }
 
 function ConflictValue({ value }: { readonly value: unknown }) {
@@ -678,8 +708,8 @@ function ConflictValue({ value }: { readonly value: unknown }) {
     );
   }
   return (
-    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-primary dark:text-text-primary-dark">
-      {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+    <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-text-primary dark:text-text-primary-dark">
+      {formatConflictValue(value)}
     </pre>
   );
 }

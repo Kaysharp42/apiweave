@@ -231,6 +231,36 @@ export class CloudAccountIdentityRequiredError extends Error {
   }
 }
 
+/** Which precondition of a live sync provider is missing. */
+export type CloudSyncInactiveReason = "unlinked" | "noWorkspace" | "configUnavailable"
+
+/**
+ * Sync has no live provider, so this request could not be attempted. `reason`
+ * names the missing precondition and the message says what to do about it: the
+ * three cases are told apart by nothing the renderer can see, and "not linked
+ * to any workspace" — the internal fact — is not something a user looking at a
+ * linked account and six bound workspaces can act on.
+ */
+// fallow-ignore-next-line code-duplication
+export class CloudSyncInactiveError extends Error {
+  public constructor(public readonly reason: CloudSyncInactiveReason) {
+    super(inactiveSyncMessage(reason))
+    this.name = "CloudSyncInactiveError"
+  }
+}
+
+function inactiveSyncMessage(reason: CloudSyncInactiveReason): string {
+  switch (reason) {
+    case "unlinked":
+      return "No cloud account is linked on this device, so there is nothing to sync. Link APIWeave Cloud to start."
+    case "noWorkspace":
+      return "No workspace on this device is connected to the cloud yet. Choose a cloud workspace in Cloud Sync to start syncing."
+    case "configUnavailable":
+      return "APIWeave Cloud settings could not be loaded, so sync is paused. Check your connection and try again — "
+        + "your local data and cloud account are untouched."
+  }
+}
+
 export interface CloudAccountIdentity {
   readonly accountId: string
   readonly email?: string

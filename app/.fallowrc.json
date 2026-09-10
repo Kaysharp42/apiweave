@@ -29,6 +29,7 @@
       "**/generated/**",
       "**/*.css",
       "src/types/**",
+      "shared/zod-schemas/**",
       "core/ipc/handlers/**",
       "core/mcp/tools.ts"
     ]

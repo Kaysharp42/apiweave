@@ -16,7 +16,7 @@ type ConflictKind = "workspace" | "project" | "collection" | "workflow" | "envir
 type JsonRecord = Record<string, unknown>
 
 // One per-leaf pick for a MERGED resolution: choose which side wins an
-// overlapping path the server reported in merge_residual_paths.
+// overlapping path or override an otherwise automatic merge choice.
 export interface FieldResolution {
   readonly path: string
   readonly side: "local" | "cloud"
@@ -26,8 +26,8 @@ export interface ResolveConflictInput {
   readonly conflict_id: string
   readonly winner: ConflictWinner
   readonly device_id: string
-  // Field-level picks for a MERGED resolution. Ignored for keep-local/keep-cloud
-  // and for a clean (residual-free) auto-merge.
+  // Field-level picks for a MERGED resolution. They settle overlaps and can
+  // override clean automatic merge choices. Ignored for keep-local/keep-cloud.
   readonly resolutions?: readonly FieldResolution[]
   // When true the resolution writes its result to the local store and marks
   // the conflict resolved, but does NOT trigger a sync cycle — the merged
@@ -92,8 +92,8 @@ const conflictListItemSchema = z.object({
   // auto_mergeable: the server reported this conflict as cleanly 3-way
   // mergeable, so the UI may offer a one-click Auto-merge.
   auto_mergeable: z.boolean(),
-  // merge_residual_paths: overlapping leaf paths for per-field picking. Non-empty
-  // => the UI offers a per-path winner choice that completes the merge.
+  // merge_residual_paths: overlapping leaf paths that require a per-field pick
+  // before applying a merged result.
   merge_residual_paths: z.array(z.string()),
 })
 const conflictSchema = conflictListItemSchema.extend({

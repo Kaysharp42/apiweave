@@ -56,6 +56,7 @@ export function registerAssertionHandlers(router: IpcRouter, deps: HandlerDeps):
         assertionNodeId: id,
         mode: z.enum(["append", "replace"]),
         rules: z.array(AssertionItemSchema).min(1),
+        runId: id.optional().describe("Optional run to validate rules against. When omitted only rule shape is checked; that is not evidence-checked. Pass the runId you validated against (or want checked) to validate and mutate in one call."),
       })
       .strict(),
     output: AssertionApplyResultSchema,
@@ -66,6 +67,7 @@ export function registerAssertionHandlers(router: IpcRouter, deps: HandlerDeps):
       input.assertionNodeId,
       input.mode,
       input.rules,
+      input.runId,
     ),
   })
 }

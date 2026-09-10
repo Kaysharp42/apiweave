@@ -29,6 +29,7 @@ import {
   CloudWorkspaceLockedError,
   CloudWorkspaceOwnedByAnotherAccountError,
   CloudWorkspacePassphraseAdminOnlyError,
+  CloudSyncInactiveError,
   type CloudAccountIdentity,
   type CloudBindWorkspaceInput,
   type CloudCreateTeamWorkspaceInput,
@@ -171,6 +172,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     this.teamCatalog = this.loadTeamCatalog()
     this.activateIfReady(true)
     this.backfillEncryptionModes()
+    // Linked and bound but inactive means the public config is the missing
+    // piece — refetch it now so sync resumes at launch. See `ensureConfig`.
+    void this.ensureConfig().catch(() => undefined)
   }
 
   public status(): CloudSyncStatus {
@@ -650,8 +654,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public async refreshWorkspaceCatalog(): Promise<CloudSyncStatus> {
+    await this.ensureConfig().catch(() => undefined)
     if (!this.tokenStore.hasTokens() || this.activeConfig === null) {
-      throw new Error("Cloud account must be linked before refreshing workspaces")
+      throw new CloudSyncInactiveError(this.tokenStore.hasTokens() ? "configUnavailable" : "unlinked")
     }
     try {
       const client = this.createClient(this.activeConfig)
@@ -744,6 +749,9 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public async pull(): Promise<CloudSyncStatus> {
+    // Swallowed: a failed refetch is reported by `requireActiveProvider` as the
+    // paused-sync reason, which says more than the fetch's own error.
+    await this.ensureConfig().catch(() => undefined)
     const provider = this.requireActiveProvider()
     try {
       await provider.pull()
@@ -754,6 +762,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   }
 
   public async push(): Promise<CloudSyncStatus> {
+    await this.ensureConfig().catch(() => undefined)
     const provider = this.requireActiveProvider()
     try {
       await provider.push()
@@ -1024,9 +1033,42 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   private requireActiveProvider(): CloudSyncProvider {
     this.activateIfReady()
     if (this.activeProvider === null) {
-      throw new Error("Cloud sync is not linked to any workspace")
+      throw new CloudSyncInactiveError(
+        !this.tokenStore.hasTokens()
+          ? "unlinked"
+          : this.repository.listWorkspaceBindings().length === 0
+            ? "noWorkspace"
+            : "configUnavailable",
+      )
     }
     return this.activeProvider
+  }
+
+  /**
+   * Refetch the public cloud config when this device has none. Sync needs
+   * tokens, a binding and that config; the first two are durable, the config is
+   * a cache of an unauthenticated endpoint (`/api/desktop/config`, the same call
+   * `link()` makes) that is dropped whenever it stops parsing — a moved entry
+   * URL, a row written by another build. Without this, losing that cache leaves
+   * a linked, bound device that can never sync again and offers no way out but
+   * disconnect and relink.
+   *
+   * ponytail: one attempt, no backoff — the callers are launch and an explicit
+   * sync, so a failure costs a single request and retries on the next one.
+   */
+  private async ensureConfig(): Promise<void> {
+    if (this.activeConfig !== null || !this.tokenStore.hasTokens()) {
+      return
+    }
+    const configClient = this.options.configClient ?? fetchDesktopCloudConfig
+    const config = await configClient(this.options.defaults.cloudEntryUrl, new AbortController().signal)
+    this.repository.setSetting(KEY_PUBLIC_CONFIG, JSON.stringify(config))
+    this.activeConfig = config
+    cloudSyncControlLog.info("refetched the missing cloud config; sync reactivated")
+    // resumePending: the config can go missing mid-first-sync, and the launch
+    // pass that would normally resume it found no config to activate with.
+    this.activateIfReady(true, true)
+    this.notifyStatusChanged()
   }
 
   private createClient(config: DesktopCloudConfig): CloudClient {
@@ -1053,7 +1095,11 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
     try {
       return parseDesktopCloudConfig(JSON.parse(value), normalizePublicBaseUrl(this.options.defaults.cloudEntryUrl))
     } catch {
-      this.repository.deleteSetting(KEY_PUBLIC_CONFIG)
+      // Kept, not deleted: the row is usually valid for a different entry URL
+      // (a dev cloud, a moved host), so dropping it turns "point me back at the
+      // right cloud" into a relink. `ensureConfig` overwrites it with the
+      // config this entry URL actually serves.
+      cloudSyncControlLog.warn("stored cloud config does not match this entry URL; refetching")
       return null
     }
   }
