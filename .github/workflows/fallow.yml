@@ -32,12 +32,19 @@ jobs:
           review-guidance: true
           fail-on-issues: true
 
+      - name: Debug - locate fallow results
+        if: always()
+        run: find / -xdev -iname 'fallow-results*' 2>/dev/null || true
+
       - name: Debug - upload fallow results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fallow-debug-results
           path: |
+            fallow-results.json
+            fallow-results-scoped.json
+            fallow-results.sarif
             app/fallow-results.json
             app/fallow-results-scoped.json
             app/fallow-results.sarif
