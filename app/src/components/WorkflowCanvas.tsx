@@ -57,6 +57,7 @@ import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
+import { CanvasNodeContextMenu } from "./organisms/CanvasNodeContextMenu";
 import { CommandPalette } from "./organisms/CommandPalette";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
@@ -134,6 +135,7 @@ import useEnvironmentStore, {
 } from "../stores/EnvironmentStore";
 import { createCanvasCommandRegistry } from "../commands/registry";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
+import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
@@ -157,10 +159,7 @@ const nodeTypes: NodeTypes = {
   start: withNodeBoundary(StartNode, "start") as NodeTypes[string],
   end: withNodeBoundary(EndNode, "end") as NodeTypes[string],
   merge: withNodeBoundary(MergeNode, "merge") as NodeTypes[string],
-  workflow: withNodeBoundary(
-    CallWorkflowNode,
-    "workflow",
-  ) as NodeTypes[string],
+  workflow: withNodeBoundary(CallWorkflowNode, "workflow") as NodeTypes[string],
   group: withNodeBoundary(GroupNode, "group") as NodeTypes[string],
   note: withNodeBoundary(NoteNode, "note") as NodeTypes[string],
 };
@@ -254,7 +253,8 @@ export function WorkflowCanvas({
   } = useWorkflow();
   const setProvenance = useVariableProvenanceStore((s) => s.setProvenance);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const [nodes, setNodes, onNodesChange] =
+    useNodesState<CanvasNode>(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<CanvasEdge>([]);
 
   const nodesRef = useRef(nodes);
@@ -384,6 +384,8 @@ export function WorkflowCanvas({
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [nodeContextMenu, setNodeContextMenu] =
+    useState<CanvasNodeContextMenuState | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
@@ -468,7 +470,10 @@ export function WorkflowCanvas({
   const extractorsSig = useMemo(() => {
     const parts: string[] = [];
     for (const node of nodes) {
-      if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
+      if (
+        (node.type === "http-request" || node.type === "sse") &&
+        node.data?.config?.extractors
+      ) {
         const extractors = node.data.config.extractors as object;
         let id = extractorConfigIdMap.get(extractors);
         if (id === undefined) {
@@ -484,7 +489,10 @@ export function WorkflowCanvas({
   useEffect(() => {
     const extractorsFromNodes: Record<string, string> = {};
     nodesRef.current.forEach((node) => {
-      if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
+      if (
+        (node.type === "http-request" || node.type === "sse") &&
+        node.data?.config?.extractors
+      ) {
         Object.entries(node.data.config.extractors).forEach(([name, value]) => {
           if (typeof value === "string") {
             extractorsFromNodes[name] = value;
@@ -508,7 +516,9 @@ export function WorkflowCanvas({
           id = nextConfigRefId++;
           configRefMap.set(cfg as object, id);
         }
-        parts.push(`${node.id}:${id}:${JSON.stringify(node.data?.label ?? null)}`);
+        parts.push(
+          `${node.id}:${id}:${JSON.stringify(node.data?.label ?? null)}`,
+        );
       } else {
         parts.push(`${node.id}:0:${JSON.stringify(node.data?.label ?? null)}`);
       }
@@ -527,7 +537,10 @@ export function WorkflowCanvas({
       if (!deletedVars || deletedVars.length === 0) return;
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
-          if ((node.type === "http-request" || node.type === "sse") && node.data?.config?.extractors) {
+          if (
+            (node.type === "http-request" || node.type === "sse") &&
+            node.data?.config?.extractors
+          ) {
             const updatedExtractors = {
               ...node.data.config.extractors,
             } as Record<string, unknown>;
@@ -641,9 +654,7 @@ export function WorkflowCanvas({
     if (
       !shouldActOnDetach({
         initiatedLocally: isLocalWorkflowRemoval(workflowId),
-        tabIsOpen: useTabStore
-          .getState()
-          .tabs.some((t) => t.id === workflowId),
+        tabIsOpen: useTabStore.getState().tabs.some((t) => t.id === workflowId),
       })
     ) {
       return;
@@ -779,35 +790,56 @@ export function WorkflowCanvas({
 
   const onPaneClick = useCallback(() => {
     selectedNodeRef.current = null;
+    setNodeContextMenu(null);
   }, []);
 
-  const onNodeDragStart = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
-    // isDraggingNodeRef removed — auto-save skips during drag via isSwaggerRefreshing guard
-    // Dragging a node under a moving camera is unusable; the camera yields.
-    suspendFollow();
-    // A constrained child cannot ever cross its frame boundary, so temporarily
-    // lift the constraint. Drag stop immediately reparents it or restores it.
-    if (node.parentId !== undefined) {
-      setNodes((current) =>
-        current.map((item) => {
-          if (item.id !== node.id || item.extent === undefined) return item;
-          const dragged = { ...item };
-          delete dragged.extent;
-          return dragged;
+  const onPaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      if (lockedRef.current) return;
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) return;
+      setNodeContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        position: instance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
         }),
-      );
-    }
-  }, [setNodes, suspendFollow]);
+      });
+    },
+    [],
+  );
 
-  const onNodeDragStop = useCallback((_: MouseEvent | TouchEvent, node: CanvasNode) => {
-    setNodes((current) =>
-      adoptIntoFrame(
-        current,
-        node.id,
-        frameContainingNode(current, node.id),
-      ),
-    );
-  }, [setNodes]);
+  const onNodeDragStart = useCallback(
+    (_: MouseEvent | TouchEvent, node: CanvasNode) => {
+      // isDraggingNodeRef removed — auto-save skips during drag via isSwaggerRefreshing guard
+      // Dragging a node under a moving camera is unusable; the camera yields.
+      suspendFollow();
+      // A constrained child cannot ever cross its frame boundary, so temporarily
+      // lift the constraint. Drag stop immediately reparents it or restores it.
+      if (node.parentId !== undefined) {
+        setNodes((current) =>
+          current.map((item) => {
+            if (item.id !== node.id || item.extent === undefined) return item;
+            const dragged = { ...item };
+            delete dragged.extent;
+            return dragged;
+          }),
+        );
+      }
+    },
+    [setNodes, suspendFollow],
+  );
+
+  const onNodeDragStop = useCallback(
+    (_: MouseEvent | TouchEvent, node: CanvasNode) => {
+      setNodes((current) =>
+        adoptIntoFrame(current, node.id, frameContainingNode(current, node.id)),
+      );
+    },
+    [setNodes],
+  );
 
   const onNodeDoubleClick = useCallback(
     (event: React.MouseEvent, node: Node<WorkflowCanvasNodeData>) => {
@@ -947,7 +979,10 @@ export function WorkflowCanvas({
    * gesture — deleting the frame around some nodes should leave the nodes.
    */
   const handleBeforeDelete = useCallback(
-    async ({ nodes: doomed, edges: doomedEdges }: {
+    async ({
+      nodes: doomed,
+      edges: doomedEdges,
+    }: {
       nodes: CanvasNode[];
       edges: CanvasEdge[];
     }) => {
@@ -1147,9 +1182,8 @@ export function WorkflowCanvas({
           // workspace, a rejected node). Both the toast and the console log
           // must name that reason, or nobody — user or debugger — can tell
           // what to fix.
-          const { detail, code, issues } = await readSaveFailureEnvelope(
-            response,
-          );
+          const { detail, code, issues } =
+            await readSaveFailureEnvelope(response);
           const cause =
             detail ??
             issues[0] ??
@@ -1232,7 +1266,9 @@ export function WorkflowCanvas({
         node.type !== "note" &&
         node.type !== "start" &&
         node.type !== "end" &&
-        !edges.some((edge) => edge.source === node.id || edge.target === node.id),
+        !edges.some(
+          (edge) => edge.source === node.id || edge.target === node.id,
+        ),
     );
     return {
       isRunning,
@@ -1418,9 +1454,10 @@ export function WorkflowCanvas({
     [nodes],
   );
 
-  const rfInstanceRef = useRef<ReactFlowInstance<CanvasNode, CanvasEdge> | null>(
-    null,
-  );
+  const rfInstanceRef = useRef<ReactFlowInstance<
+    CanvasNode,
+    CanvasEdge
+  > | null>(null);
 
   const handleInit = useCallback(
     (instance: ReactFlowInstance<CanvasNode, CanvasEdge>) => {
@@ -1453,10 +1490,31 @@ export function WorkflowCanvas({
       setNodes((currentNodes) => {
         const node = createCanvasNode(template, position);
         const next = [...currentNodes, node];
-        return adoptIntoFrame(next, node.id, frameContainingNode(next, node.id));
+        return adoptIntoFrame(
+          next,
+          node.id,
+          frameContainingNode(next, node.id),
+        );
       });
     },
     [setNodes],
+  );
+
+  const addContextMenuNode = useCallback(
+    (template: CanvasNodeTemplate) => {
+      if (!nodeContextMenu) return;
+      setNodes((currentNodes) => {
+        const node = createCanvasNode(template, nodeContextMenu.position);
+        const next = [...currentNodes, node];
+        return adoptIntoFrame(
+          next,
+          node.id,
+          frameContainingNode(next, node.id),
+        );
+      });
+      setNodeContextMenu(null);
+    },
+    [nodeContextMenu, setNodes],
   );
 
   const commands = useMemo(
@@ -1512,12 +1570,7 @@ export function WorkflowCanvas({
 
   const previousFocusTarget =
     isFocusMode && modalNode
-      ? adjacentFocusModeNode(
-          nodes,
-          edges,
-          modalNode.id,
-          "previous",
-        )
+      ? adjacentFocusModeNode(nodes, edges, modalNode.id, "previous")
       : null;
   const nextFocusTarget =
     isFocusMode && modalNode
@@ -1568,6 +1621,7 @@ export function WorkflowCanvas({
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onPaneContextMenu={onPaneContextMenu}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -1735,7 +1789,18 @@ export function WorkflowCanvas({
         showVariablesPanel={showVariablesPanel}
         onShowVariablesPanel={onShowVariablesPanel}
         workspaceId={scope.workspaceId ?? ""}
+        onAddNode={addCommandNode}
       />
+
+      {nodeContextMenu && (
+        <CanvasNodeContextMenu
+          x={nodeContextMenu.x}
+          y={nodeContextMenu.y}
+          workspaceId={scope.workspaceId ?? ""}
+          onSelect={addContextMenuNode}
+          onClose={() => setNodeContextMenu(null)}
+        />
+      )}
 
       {canvasPrefs.tipsEnabled && canvasTip && (
         <CanvasTip
@@ -1795,9 +1860,7 @@ export function WorkflowCanvas({
           {...(previousFocusTarget
             ? { onPrevious: () => stepFocusMode("previous") }
             : {})}
-          {...(nextFocusTarget
-            ? { onNext: () => stepFocusMode("next") }
-            : {})}
+          {...(nextFocusTarget ? { onNext: () => stepFocusMode("next") } : {})}
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
