@@ -44,13 +44,29 @@ describe("CanvasNodeContextMenu", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("filters nodes from the focused search box", async () => {
-    renderMenu();
+  it("filters from the focused search box and adds with Enter", async () => {
+    const onSelect = vi.fn();
+    renderMenu({ onSelect });
 
     await userEvent.keyboard("delay");
-
     expect(screen.getByRole("menuitem", { name: /Delay/i })).toBeInTheDocument();
     expect(screen.queryByText("GET Request")).not.toBeInTheDocument();
+
+    await userEvent.keyboard("{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "delay", label: "Delay" }),
+    );
+  });
+
+  it("wraps arrow navigation around the flattened list", async () => {
+    const onSelect = vi.fn();
+    renderMenu({ onSelect });
+
+    // Up from the first row lands on the last node of the last section.
+    await userEvent.keyboard("{ArrowUp}{Enter}");
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "group" }),
+    );
   });
 
   it("closes when Escape is pressed", async () => {
