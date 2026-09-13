@@ -1,30 +1,21 @@
 import type { EnvironmentOption, ToolbarDensity } from "../../types";
 
 /**
- * Measured off the real bar rather than guessed: the labelled row is ~855px
- * wide and the icon row ~505px, both with a short environment name. The
- * thresholds sit just above those, not above the worst case, because the
- * environment select is allowed to shrink — a long name gives up characters
- * before anything else gives up a whole tier.
+ * The next-narrower tier, for a bar that has just measured itself as too wide.
  *
- * The labels floor is deliberately under the canvas width of a default 1280px
- * window with the sidebar open (~870px). That is the size the app ships at, so
- * it is the one that should look finished.
+ * There used to be pixel thresholds here ("labels need 860px"), measured off
+ * the real bar. They were correct the day they were written and wrong the next
+ * time a button was added to the toolbar: the labelled row grew past 980px
+ * while the threshold still called 980px roomy, so the Run button hung off the
+ * edge of the canvas until a resize. Nothing here knows a width any more —
+ * `CanvasToolbar` steps down through these tiers until the bar stops
+ * overflowing, which also covers the labels it cannot predict (an agent name,
+ * a long environment name).
+ *
+ * `overflow` is the floor: it maps to itself so the step-down terminates.
  */
-const LABELS_MIN_WIDTH = 860;
-const ICONS_MIN_WIDTH = 640;
-
-/**
- * `null` means "not measured yet" and resolves to the roomiest tier, matching
- * what a first paint at a normal window size is about to become anyway.
- */
-export function resolveToolbarDensity(
-  availableWidth: number | null,
-): ToolbarDensity {
-  if (availableWidth === null || availableWidth >= LABELS_MIN_WIDTH) {
-    return "labels";
-  }
-  return availableWidth >= ICONS_MIN_WIDTH ? "icons" : "overflow";
+export function nextToolbarDensity(density: ToolbarDensity): ToolbarDensity {
+  return density === "labels" ? "icons" : "overflow";
 }
 
 export function buildEnvironmentOptions(

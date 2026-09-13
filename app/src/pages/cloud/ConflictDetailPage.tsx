@@ -235,40 +235,45 @@ export function ConflictDetailPage() {
         </div>
       </div>
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain p-4 [scrollbar-gutter:stable] lg:p-6">
-        {unmatchedPaths.length > 0 && conflict.winner === null ? (
-          <ResidualMismatchWarning paths={unmatchedPaths} />
-        ) : null}
-        <MergeWorkspace
-          entries={diff}
-          residualPaths={residualPaths}
-          picks={picks}
-          cloudRev={conflict.cloud_rev}
-          localRev={conflict.local_rev}
-          cloudWriter={cloudWriterLabel(conflict.cloud_writer)}
-          mergeAvailable={
-            conflict.winner === null
-            && unmatchedPaths.length === 0
-            && (Boolean(conflict.auto_mergeable) || hasResiduals)
-          }
-          disabled={disabled}
-          onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))}
-          onAcceptAll={acceptAll}
-          onReset={(path) => setPicks((prev) => {
-            const next = { ...prev };
-            delete next[path];
-            return next;
-          })}
-        />
-        <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
-            Technical detail (raw JSON)
-          </summary>
-          <div className="grid grid-cols-1 gap-4 border-t border-border p-4 dark:border-border-dark xl:grid-cols-2">
-            <RecordPane title="Local" payload={views.local} />
-            <RecordPane title="Cloud" payload={views.cloud} />
-          </div>
-        </details>
+      <div
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain [scrollbar-gutter:stable]"
+        data-testid="conflict-scroll-region"
+      >
+        <div className="p-4 lg:p-6">
+          {unmatchedPaths.length > 0 && conflict.winner === null ? (
+            <ResidualMismatchWarning paths={unmatchedPaths} />
+          ) : null}
+          <MergeWorkspace
+            entries={diff}
+            residualPaths={residualPaths}
+            picks={picks}
+            cloudRev={conflict.cloud_rev}
+            localRev={conflict.local_rev}
+            cloudWriter={cloudWriterLabel(conflict.cloud_writer)}
+            mergeAvailable={
+              conflict.winner === null
+              && unmatchedPaths.length === 0
+              && (Boolean(conflict.auto_mergeable) || hasResiduals)
+            }
+            disabled={disabled}
+            onPick={(path, side) => setPicks((prev) => ({ ...prev, [path]: side }))}
+            onAcceptAll={acceptAll}
+            onReset={(path) => setPicks((prev) => {
+              const next = { ...prev };
+              delete next[path];
+              return next;
+            })}
+          />
+          <details className="mt-4 rounded-sm border border-border dark:border-border-dark">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+              Technical detail (raw JSON)
+            </summary>
+            <div className="grid grid-cols-1 gap-4 border-t border-border p-4 dark:border-border-dark xl:grid-cols-2">
+              <RecordPane title="Local" payload={views.local} />
+              <RecordPane title="Cloud" payload={views.cloud} />
+            </div>
+          </details>
+        </div>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised lg:px-6">
@@ -437,7 +442,10 @@ function MergeWorkspace({
 
       <div className="rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised" data-testid="conflict-merge-workspace">
         {/* IntelliJ-style three-pane header: Cloud | Result | Local */}
-        <div className="sticky top-0 z-20 grid grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay">
+        <div
+          className="sticky top-0 z-20 grid grid-cols-3 border-b border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+          data-testid="conflict-merge-header"
+        >
           <MergePaneHeader
             icon={<Cloud className="h-4 w-4" aria-hidden="true" />}
             title="Cloud copy"

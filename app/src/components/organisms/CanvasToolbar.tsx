@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   Save,
   History,
@@ -29,7 +29,8 @@ import { useElementWidth } from "../../hooks/useElementWidth";
 import useCanvasPrefsStore from "../../stores/CanvasPrefsStore";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
-import { buildEnvironmentOptions, resolveToolbarDensity } from "./canvasToolbarUtils";
+import type { ToolbarDensity } from "../../types";
+import { buildEnvironmentOptions, nextToolbarDensity } from "./canvasToolbarUtils";
 
 const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
 const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps["resumeOptions"]> =
@@ -88,7 +89,33 @@ export function CanvasToolbar({
   // Measured on the track, not the bar: the bar is content-sized, so asking it
   // how wide it is only ever answers "as wide as I want to be".
   const [trackRef, availableWidth] = useElementWidth<HTMLDivElement>();
-  const density = resolveToolbarDensity(availableWidth);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [density, setDensity] = useState<ToolbarDensity>("labels");
+
+  // Every width change re-opens the question at the top tier, so widening the
+  // canvas gets the labels back instead of leaving the bar stuck in whatever
+  // tier it last fell to.
+  useLayoutEffect(() => {
+    setDensity("labels");
+  }, [availableWidth]);
+
+  // ...and then step down until it actually fits. This asks the bar whether it
+  // overflowed rather than comparing the track against a hard-coded "labels
+  // need 860px", which is the bug: that constant went stale the first time a
+  // button was added here, and the bar spilled past the canvas edge at a width
+  // the threshold still called roomy. Resizing the window was the only thing
+  // that made it re-measure.
+  //
+  // No dependency array on purpose — the bar's natural width also moves with
+  // its content (an agent name, a "Running…" label), not just with the canvas.
+  // It terminates because `nextToolbarDensity("overflow")` is `"overflow"`, and
+  // React bails out of a re-render when the state does not change.
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (bar === null) return;
+    // +1: subpixel layout widths report a half-pixel overflow that is not one.
+    if (bar.scrollWidth > bar.clientWidth + 1) setDensity(nextToolbarDensity);
+  });
   const showLabels = density === "labels";
   const useOverflow = density === "overflow";
 
@@ -119,6 +146,7 @@ export function CanvasToolbar({
       className="absolute top-3 inset-x-3 z-20 pointer-events-none flex justify-center"
     >
       <div
+        ref={barRef}
         className="pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center gap-1.5 px-2 py-1.5 rounded-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
         role="toolbar"
         aria-label="Workflow actions"

@@ -29,7 +29,7 @@ export const CanvasActionsBottom = CanvasCornerGutter * 2 + MiniMapSize.height;
  *
  * One row is a guarantee, not an observation: the toolbar is `flex-nowrap` and
  * sheds labels into an overflow menu as it runs out of width (see
- * `resolveToolbarDensity`) precisely so this number stays true at every window
+ * `nextToolbarDensity`) precisely so this number stays true at every window
  * size. A wrapping toolbar would silently make the camera aim too high.
  */
 export const CanvasToolbarBand = 56;

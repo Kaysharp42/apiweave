@@ -5,6 +5,7 @@ export type { ButtonProps } from "./ButtonProps";
 export type { IconButtonProps } from "./IconButtonProps";
 export type { InputProps } from "./InputProps";
 export type { TextAreaProps } from "./TextAreaProps";
+export type { ScrollableNodeTextAreaProps } from "./ScrollableNodeTextAreaProps";
 export type { BadgeProps } from "./BadgeProps";
 export type { ToggleProps } from "./ToggleProps";
 export type { SpinnerProps } from "./SpinnerProps";

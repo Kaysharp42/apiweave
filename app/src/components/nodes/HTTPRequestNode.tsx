@@ -29,6 +29,7 @@ import {
   stringifyKeyValuePairs,
 } from "../node-modal/httpRequestConfigCompat";
 import { NodeField } from "../atoms/flow/NodeField";
+import { ScrollableNodeTextArea } from "../atoms/flow/ScrollableNodeTextArea";
 import {
   NODE_TEXTAREA_CLASS,
   nodeInputClass,
@@ -561,11 +562,9 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               {method !== "GET" && (
                 <NodeField htmlFor="http-request-body" label="Body">
                   <div className="relative">
-                    <textarea
+                    <ScrollableNodeTextArea
                       id="http-request-body"
                       aria-label="Request body"
-                      className={NODE_TEXTAREA_CLASS}
-                      rows={3}
                       placeholder={'{\n  "key": "value"\n}'}
                       value={stringifyBody(data.config?.body)}
                       onChange={(e) => updateNodeData("body", e.target.value)}

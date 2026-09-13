@@ -29,7 +29,7 @@ export const NODE_ERROR_CLASS = "text-xs mt-1 text-[var(--aw-status-error)]";
  * class string do not resolve by source order.
  */
 const NODE_CONTROL_BASE =
-  "nodrag border rounded-node-ctl text-xs focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)]";
+  "nodrag border rounded-node-ctl focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)]";
 
 /** Resting colours: neutral border, raised surface, accent focus ring. */
 const NODE_CONTROL_RESTING =
@@ -39,9 +39,10 @@ const NODE_CONTROL_RESTING =
 const NODE_CONTROL_INVALID =
   "border-[var(--aw-status-error)] text-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5 focus-visible:outline-[var(--aw-status-error)]";
 
-export const NODE_SELECT_CLASS = `${NODE_CONTROL_BASE} w-full px-1.5 py-0.5 ${NODE_CONTROL_RESTING} cursor-pointer`;
+export const NODE_SELECT_CLASS = `${NODE_CONTROL_BASE} w-full px-1.5 py-0.5 text-xs ${NODE_CONTROL_RESTING} cursor-pointer`;
 
-export const NODE_TEXTAREA_CLASS = `${NODE_CONTROL_BASE} w-full px-1.5 py-1 font-mono ${NODE_CONTROL_RESTING}`;
+/** Keep compact fields at node width; large scrolling editors use their own atom. */
+export const NODE_TEXTAREA_CLASS = `${NODE_CONTROL_BASE} w-full px-1.5 py-1 text-xs font-mono resize-y ${NODE_CONTROL_RESTING}`;
 
 /**
  * A text input, coloured by validity. `mono` is for values the user reads as
@@ -54,6 +55,7 @@ export function nodeInputClass(
     NODE_CONTROL_BASE,
     options.width ?? "w-full",
     "px-1.5 py-0.5",
+    "text-xs",
     options.mono ? "font-mono" : "",
     options.invalid ? NODE_CONTROL_INVALID : NODE_CONTROL_RESTING,
   ]

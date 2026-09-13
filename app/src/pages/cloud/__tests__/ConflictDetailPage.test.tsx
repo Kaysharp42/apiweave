@@ -94,6 +94,19 @@ describe("ConflictDetailPage", () => {
     expect(screen.getByText("Local API smoke test")).toBeInTheDocument();
   });
 
+  it("anchors the sticky merge header to an unpadded scroll region", async () => {
+    renderPage("/cloud/conflicts/conflict-1");
+
+    await screen.findByRole("button", { name: "Keep Local copy" });
+    const scrollRegion = screen.getByTestId("conflict-scroll-region");
+    const mergeHeader = screen.getByTestId("conflict-merge-header");
+
+    expect(scrollRegion).toHaveClass("overflow-auto");
+    expect(scrollRegion).not.toHaveClass("p-4", "lg:p-6");
+    expect(scrollRegion.firstElementChild).toHaveClass("p-4", "lg:p-6");
+    expect(mergeHeader).toHaveClass("sticky", "top-0");
+  });
+
   it("shows the cloud-side author when the server attributed it", async () => {
     const attributed = {
       ...workflowConflict,
