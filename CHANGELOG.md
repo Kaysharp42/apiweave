@@ -9,6 +9,30 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] — 2026-09-14
+
+### Fixed
+
+- **Cloud sync "Keep local" conflict loop.** Resolving a push-detected
+  conflict with Keep Local asked the server to apply the local copy, then
+  discarded the server's `resultingRev` and re-enqueued the same payload at
+  the superseded `cloud_rev`. The next push returned `CONFLICT` with the
+  user's own payload as the cloud winner ("No structural differences"),
+  looping forever. Resolution now converges to the server-returned revision
+  (`convergeServerKeepLocal`), writes the winning copy when the local record
+  is a tombstone or missing, and re-pushes only genuinely newer queued edits.
+- **Canvas toolbar clipping.** The toolbar picked its density from hard-coded
+  width thresholds that no longer matched the button set, so Run could hang
+  off the edge at widths that still passed the labels tier. It now resets to
+  labels on width change and steps down tiers by measuring
+  `scrollWidth > clientWidth` in a layout effect before paint.
+- **Blurry node text on zoom.** The scrollable node textarea wrapper stayed a
+  scroll container (`overflow: auto`), promoting it to its own composited
+  layer that the compositor resampled under the canvas zoom transform. The
+  wrapper now uses `overflow: clip` at rest (no composited layer) and becomes
+  a real scroller only on `focus-within`, preserving caret, wheel, and resize
+  behavior while editing.
+
 ## [0.8.6] — 2026-08-31
 
 ### Added
