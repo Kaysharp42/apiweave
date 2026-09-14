@@ -26,7 +26,10 @@ describe("conflict-ui-bridge", () => {
       "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
       [WORKSPACE_ID, "Conflicts", "conflicts", "cloud", "bi-directional", "{}"],
     )
-    resolver = { resolveConflict: vi.fn().mockResolvedValue(undefined), nudgeSync: vi.fn() }
+    resolver = {
+      resolveConflict: vi.fn().mockResolvedValue({ resultingRev: 10, winnerPayload: new Uint8Array() }),
+      nudgeSync: vi.fn(),
+    }
     router = new IpcRouter()
     registerConflictUiHandlers(router, { store, syncService: resolver })
     await router.dispatch({ domain: "cloud", action: "conflict-list", payload: {} })
@@ -69,10 +72,17 @@ describe("conflict-ui-bridge", () => {
       "SELECT winner, status FROM cloud_conflicts WHERE conflict_id = ?",
       ["conflict-2"],
     )).toEqual({ winner: "local", status: "resolved" })
+    // The server applied our copy at resultingRev, so nothing is re-pushed and
+    // the record advances to it — re-pushing at the snapshot rev would conflict
+    // against the revision the resolution itself created, forever.
     expect(store.get<{ expected_rev: number }>(
       "SELECT expected_rev FROM cloud_outbox WHERE record_id = ?",
       ["workflow-1"],
-    )).toEqual({ expected_rev: 9 })
+    )).toBeUndefined()
+    expect(store.get<{ server_rev: number; local_rev: number; dirty: number; conflict_id: string | null }>(
+      "SELECT server_rev, local_rev, dirty, conflict_id FROM cloud_record_state WHERE record_id = ?",
+      ["workflow-1"],
+    )).toEqual({ server_rev: 10, local_rev: 10, dirty: 0, conflict_id: null })
 
     const loser = await router.dispatch({
       domain: "cloud",
@@ -81,6 +91,28 @@ describe("conflict-ui-bridge", () => {
     })
     expect(loser.ok).toBe(true)
     if (loser.ok) expect(loser.data).toMatchObject({ name: "Cloud Workflow" })
+  })
+
+  it("re-pushes a newer local edit on top of the rev the server resolution created", async () => {
+    insertConflict("conflict-rebase")
+    const newer = { name: "Newer Local Workflow", graph: { nodes: [], edges: [] }, variables: {} }
+    store.set(
+      `INSERT INTO cloud_outbox (id, workspace_id, kind, record_id, expected_rev, op, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["outbox-newer", WORKSPACE_ID, "workflow", "workflow-1", 9, "upsert", Buffer.from(JSON.stringify(newer)), Date.now()],
+    )
+
+    const result = await router.dispatch({
+      domain: "cloud",
+      action: "conflict-resolve",
+      payload: { conflict_id: "conflict-rebase", winner: "local", device_id: "device-1" },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(store.get<{ expected_rev: number }>(
+      "SELECT expected_rev FROM cloud_outbox WHERE record_id = ?",
+      ["workflow-1"],
+    )).toEqual({ expected_rev: 10 })
   })
 
   it("errors when resolving an already resolved conflict", async () => {

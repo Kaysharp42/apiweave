@@ -830,14 +830,29 @@ export class CloudSyncRepository {
   // cloud_rev + 1. Drop the blocked outbox, clear the conflict, and advance the
   // record's server_rev so the matching pulled change is ignored. Any newer
   // local edit queued behind the conflict is re-pushed on top of the new rev.
-  private convergeRemoteKeepLocal(conflict: CloudConflict): void {
-    const resultingRev = conflict.cloudRev + 1
+  private convergeRemoteKeepLocal(conflict: CloudConflict, appliedRev?: number): void {
+    // A server that reports no usable rev falls back to the contract default.
+    const resultingRev = appliedRev !== undefined && appliedRev > conflict.cloudRev ? appliedRev : conflict.cloudRev + 1
     const queued = this.listOutboxForRecord(conflict.workspaceId, conflict.kind, conflict.recordId)
     const latestLocal = queued.at(-1)
     this.store.delete(
       "DELETE FROM cloud_outbox WHERE workspace_id = ? AND kind = ? AND record_id = ?",
       [conflict.workspaceId, conflict.kind, conflict.recordId],
     )
+    // The local store normally already holds the copy that won, but a tombstone
+    // (and a record that never materialized locally) still has to be written —
+    // the same guard the local keep-local path applies.
+    if (conflict.localOp === "tombstone" || this.getLocalRecordRevision(conflict.kind, conflict.recordId) === undefined) {
+      this.applyRecord({
+        cursor: 0n,
+        workspaceId: conflict.workspaceId,
+        kind: cloudKindToRecordKind(conflict.kind),
+        recordId: conflict.recordId,
+        rev: BigInt(resultingRev),
+        op: outboxOpToChangeOp(conflict.localOp),
+        payload: conflict.localPayload ?? new Uint8Array(),
+      }, true)
+    }
     const hasNewerEdit = latestLocal !== undefined
       && !payloadsEquivalent(conflict.kind, latestLocal.payload, conflict.localPayload ?? new Uint8Array())
     if (hasNewerEdit) {
@@ -860,6 +875,25 @@ export class CloudSyncRepository {
       "UPDATE cloud_conflicts SET winner = 'local', status = 'resolved', resolvedAt = ? WHERE conflict_id = ? AND status = 'pending'",
       [new Date().toISOString(), conflict.conflictId],
     )
+  }
+
+  /**
+   * Converges after WE asked the server to resolve a push conflict with
+   * winner = local. The server applied our copy at resultingRev, so the local
+   * side must advance to it. Re-enqueuing the same payload at the snapshot's
+   * cloud_rev (what plain resolveConflict does) pushes against a revision the
+   * resolution itself superseded: the server answers CONFLICT, the winner it
+   * hands back is our own payload — a conflict with no structural differences —
+   * and resolving that one repeats the whole thing forever.
+   */
+  public convergeServerKeepLocal(conflictId: string, resultingRev: number): void {
+    this.transaction((repository) => {
+      const conflict = repository.getConflict(conflictId)
+      if (conflict === undefined || conflict.status !== "pending") {
+        return
+      }
+      repository.convergeRemoteKeepLocal(conflict, resultingRev)
+    })
   }
 
   // Converges after a server-side auto-merge (winner = MERGED). The server

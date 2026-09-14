@@ -175,10 +175,21 @@ export class ConflictUiBridge {
 
     if (conflict.serverConflictId !== null) {
       try {
-        await this.options.syncService.resolveConflict({
+        const outcome = await this.options.syncService.resolveConflict({
           ...input,
           conflict_id: conflict.serverConflictId,
         })
+        if (input.winner === "local") {
+          // The server just applied our copy at resultingRev. Converge to it
+          // instead of re-pushing at the snapshot's cloud_rev — that push
+          // conflicts against the revision this resolution created, returns our
+          // own payload as the cloud winner, and loops forever.
+          this.repository.convergeServerKeepLocal(input.conflict_id, outcome.resultingRev)
+          if (!input.defer_push) {
+            this.options.syncService.nudgeSync?.()
+          }
+          return this.get(input.conflict_id)
+        }
       } catch (error) {
         // A stale server snapshot on "keep local" (the cloud record advanced
         // past it) is recoverable: the local resolution below re-enqueues the
