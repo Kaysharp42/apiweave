@@ -70,7 +70,7 @@ There is no operations section in the desktop app: no authentication to set up f
 ## Tech Stack
 
 - Frontend (renderer): React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
-- Desktop shell: Electron 33, esbuild, electron-builder, electron-updater.
+- Desktop shell: Electron 44, esbuild, electron-builder, electron-updater.
 - Local store: better-sqlite3 (embedded SQLite, single file).
 - IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.
 - Secrets: Libsodium sealed-box write-only ingress, opened at run time with the per-install keyfile. No plaintext on the wire, no read API for stored values.

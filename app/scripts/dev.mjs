@@ -24,7 +24,6 @@ function run(command, args, environment = process.env) {
 const localEnv = loadEnv("development", process.cwd(), "")
 const developmentEnv = { ...process.env, ...localEnv }
 
-await run(process.execPath, ["scripts/rebuild-sqlite.mjs", "electron"], developmentEnv)
 await run(process.execPath, ["node_modules/vite/bin/vite.js", "build", "--mode", "development"], developmentEnv)
 await run(process.execPath, ["esbuild.config.cjs"], developmentEnv)
 await run(process.execPath, ["node_modules/electron/cli.js", "."], developmentEnv)
