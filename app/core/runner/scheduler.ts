@@ -1,4 +1,3 @@
-import type { Run } from "@shared/types/Run"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent"
 import type { JsonValue } from "@shared/types/JsonValue"
@@ -8,7 +7,7 @@ import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
+import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
@@ -231,6 +230,31 @@ export class RunScheduler {
             variables: target.variables as Record<string, unknown>,
           }
         },
+        // A Call Workflow node's sub-execution is a run of the *target*
+        // workflow, so it gets its own row in that workflow's history (same
+        // workspace and environment as the caller). Not queued through
+        // `enqueue`: it is already executing inside the caller's slot and must
+        // not wait behind the concurrency cap the caller is occupying.
+        subRun: {
+          begin: (workflowId) => {
+            const child = this.deps.runs.create({
+              workspaceId: run.workspaceId,
+              workflowId,
+              selectedEnvironmentId,
+            })
+            this.deps.runs.updateStatus(child.runId, "running")
+            return {
+              runId: child.runId,
+              // Spreading `executorDeps` carries `subRun` itself down, so a
+              // sub-workflow that calls a sub-workflow is recorded too.
+              deps: { ...executorDeps, emitProgress: (event) => this.handleProgress(child.runId, event) },
+            }
+          },
+          finish: (childRunId, childOutput) => {
+            if (childOutput) this.recordOutcome(childRunId, childOutput)
+            else this.deps.runs.updateStatus(childRunId, "failed", "Workflow execution failed")
+          },
+        },
       }
 
       const executor = new WorkflowExecutor(executorDeps)
@@ -240,22 +264,7 @@ export class RunScheduler {
         ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
       })
 
-      const extractedVariables = sanitizeFinalVariables(output)
-      const failureMessage = safeFailureMessage(output.failedNodes)
-      this.deps.runs.updateExecutionEvidence(runId, {
-        results: sanitizeRunResults(output.results),
-        extractedVariables,
-        failedNodes: output.failedNodes,
-        failureMessage,
-      })
-
-      const status: Run["status"] = output.status === "passed" ? "completed" : "failed"
-      this.deps.runs.updateStatus(
-        runId,
-        status,
-        status === "failed" ? failureMessage ?? "Workflow execution failed" : undefined,
-      )
-      this.emitFinished(runId, status)
+      this.emitFinished(runId, this.recordOutcome(runId, output))
     } catch {
       if (controller.signal.aborted) {
         this.deps.runs.updateStatus(runId, "cancelled")
@@ -277,6 +286,20 @@ export class RunScheduler {
       this.activeRuns.delete(runId)
       void this.drain()
     }
+  }
+
+  /** Persist an executor output as a run's terminal evidence + status. Shared by top-level runs and Call Workflow sub-runs. */
+  private recordOutcome(runId: string, output: ExecutorOutput): "completed" | "failed" {
+    const failureMessage = safeFailureMessage(output.failedNodes)
+    this.deps.runs.updateExecutionEvidence(runId, {
+      results: sanitizeRunResults(output.results),
+      extractedVariables: sanitizeFinalVariables(output),
+      failedNodes: output.failedNodes,
+      failureMessage,
+    })
+    const status = output.status === "passed" ? "completed" : "failed"
+    this.deps.runs.updateStatus(runId, status, status === "failed" ? failureMessage ?? "Workflow execution failed" : undefined)
+    return status
   }
 
   private emitFinished(runId: string, status: RunTerminalStatus): void {

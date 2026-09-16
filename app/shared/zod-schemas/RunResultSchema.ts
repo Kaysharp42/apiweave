@@ -37,6 +37,8 @@ export const RunResultSchema = z
     subWorkflow: z
       .object({
         workflowId: z.string().min(1),
+        /** The sub-execution's own run row — its entry in the target workflow's history. */
+        runId: z.string().min(1).optional(),
         status: z.enum(["passed", "failed"]),
         nodeCount: z.number().int().nonnegative(),
         failedNodeCount: z.number().int().nonnegative(),

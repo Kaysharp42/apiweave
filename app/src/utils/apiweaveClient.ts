@@ -100,6 +100,7 @@ type DesktopBridge = {
   readonly onMaximizeChange: (
     callback: (isMaximized: boolean) => void,
   ) => () => void;
+  readonly screenReader?: boolean;
 };
 
 type McpBridge = {
@@ -775,6 +776,12 @@ export const desktop = {
   close: () => getDesktopBridge()?.close(),
   onMaximizeChange: (callback: (isMaximized: boolean) => void) =>
     getDesktopBridge()?.onMaximizeChange(callback) ?? (() => undefined),
+  /**
+   * Whether the OS reports a screen reader, as main saw it at window creation.
+   * False outside Electron, which is also the right answer for the web preview:
+   * nothing there renders the terminal this gates.
+   */
+  hasScreenReader: (): boolean => getDesktopBridge()?.screenReader === true,
 } as const;
 
 function getMcpBridge(): McpBridge | undefined {

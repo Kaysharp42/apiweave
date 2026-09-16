@@ -1,16 +1,46 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { Workflow, CheckCircle, XCircle, ArrowRightLeft } from "lucide-react";
+import {
+  Workflow,
+  CheckCircle,
+  XCircle,
+  ArrowRightLeft,
+  ExternalLink,
+} from "lucide-react";
 import { BaseNode } from "../atoms/flow/BaseNode";
 import { OpenNodeEditorButton } from "../atoms/flow/OpenNodeEditorButton";
 import useSidebarStore from "../../stores/SidebarStore";
+import useCanvasStore from "../../stores/CanvasStore";
+import useTabStore from "../../stores/TabStore";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { WorkflowCallNodeProps } from "../../types/WorkflowCallNodeProps";
 
 type CallResult = NonNullable<WorkflowCallNodeProps["data"]["result"]>;
 type SubWorkflow = NonNullable<CallResult["subWorkflow"]>;
 
+/**
+ * Open the callee in a tab and show the run this call produced.
+ *
+ * The request is parked on the canvas store *before* the tab switch: the
+ * target canvas mounts fresh on activation and reads it there. Clearing it
+ * again on a failed lookup keeps a stale request from opening History the
+ * next time that workflow is opened by hand.
+ */
+async function openSubWorkflowRun(
+  workspaceId: string,
+  workflowId: string,
+  runId: string,
+): Promise<void> {
+  useCanvasStore.getState().openWorkflowHistory(workflowId, runId);
+  try {
+    useTabStore.getState().openTab(await apiweave.workflows.get(workspaceId, workflowId));
+  } catch {
+    useCanvasStore.getState().clearPendingHistory();
+  }
+}
+
 interface SubWorkflowSummaryProps {
   result: CallResult;
+  workspaceId: string | null | undefined;
 }
 
 /**
@@ -20,9 +50,14 @@ interface SubWorkflowSummaryProps {
  * not a rendering of the run: every branch below was previously counted
  * against `CallWorkflowNode`'s complexity budget.
  */
-const SubWorkflowSummary = ({ result }: SubWorkflowSummaryProps) => {
+const SubWorkflowSummary = ({
+  result,
+  workspaceId,
+}: SubWorkflowSummaryProps) => {
   const subWorkflow = result.subWorkflow;
   if (!subWorkflow) return null;
+  // Pre-fix runs (and harness runs, which persist nothing) carry no child run.
+  const subRunId = subWorkflow.runId;
 
   return (
     <div className="text-xs p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark">
@@ -43,6 +78,22 @@ const SubWorkflowSummary = ({ result }: SubWorkflowSummaryProps) => {
         <div className="mt-1 text-[var(--aw-node-text-muted)]">
           Mapped: {subWorkflow.outputVariableNames.join(", ")}
         </div>
+      )}
+      {subRunId && workspaceId && (
+        <button
+          type="button"
+          onClick={() =>
+            void openSubWorkflowRun(
+              workspaceId,
+              subWorkflow.workflowId,
+              subRunId,
+            )
+          }
+          className="nodrag cursor-pointer mt-2 flex items-center gap-1 text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+        >
+          <ExternalLink className="w-3 h-3" aria-hidden="true" />
+          Open this run in the target workflow
+        </button>
       )}
     </div>
   );
@@ -145,6 +196,7 @@ interface CallWorkflowBodyProps {
   nodeId: string;
   hasTarget: boolean;
   result: CallResult | undefined;
+  workspaceId: string | null | undefined;
 }
 
 /** The expanded body: retarget the call, and what the last call reported. */
@@ -152,6 +204,7 @@ const CallWorkflowBody = ({
   nodeId,
   hasTarget,
   result,
+  workspaceId,
 }: CallWorkflowBodyProps) => (
   <div className="space-y-2 pt-1 border-t border-border dark:border-border-dark">
     <OpenNodeEditorButton
@@ -159,7 +212,9 @@ const CallWorkflowBody = ({
       label={hasTarget ? "Change target" : "Choose target workflow"}
       ariaLabel="Open Call Workflow editor to change the target"
     />
-    {result && <SubWorkflowSummary result={result} />}
+    {result && (
+      <SubWorkflowSummary result={result} workspaceId={workspaceId} />
+    )}
   </div>
 );
 
@@ -243,6 +298,7 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
               nodeId={id}
               hasTarget={Boolean(config.targetWorkflowId)}
               result={result}
+              workspaceId={workspaceId}
             />
           </div>
         ) : null

@@ -332,6 +332,65 @@ describe("RunScheduler", () => {
       })
     })
 
+    it("records a failed sub-workflow as its own run in the target workflow's history", async () => {
+      const ws = seedWorkspace()
+      const target = workflows.create({
+        workspaceId: ws,
+        name: "target-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "sub_http",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: "http://169.254.169.254/blocked" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "sub_http" }],
+      })
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            position: { x: 1, y: 0 },
+            config: { targetWorkflowId: target.workflowId },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "call1" }],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const callerRunId = scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      // The point of the fix: the callee has a run to open, terminal and with the
+      // failing node's evidence on it — not an empty History.
+      const childRuns = runs.listByWorkflow(target.workflowId, ws).items
+      expect(childRuns).toHaveLength(1)
+      const childRun = childRuns[0]!
+      expect(childRun.status).toBe("failed")
+      expect(childRun.failedNodes).toEqual(["sub_http"])
+      expect(childRun.results).toContainEqual(expect.objectContaining({
+        nodeId: "sub_http",
+        status: "failed",
+        error: "SSRF blocked",
+      }))
+
+      // ...and the caller points at it, without absorbing the child's nodes.
+      const callerRun = runs.getById(callerRunId)
+      expect(callerRun?.results.find((r) => r.nodeId === "call1")?.subWorkflow).toMatchObject({
+        workflowId: target.workflowId,
+        runId: childRun.runId,
+        status: "failed",
+      })
+      expect(callerRun?.results.map((r) => r.nodeId)).not.toContain("sub_http")
+      expect(Object.keys(callerRun?.nodeStatuses ?? {})).not.toContain("sub_http")
+    })
+
     it("resolves {{secrets.*}} through the runtime resolver and substitutes plaintext into the outgoing request", async () => {
       const ws = seedWorkspace()
       // The renderer seals against the scope public key (publicKeyFromSeed(seed));

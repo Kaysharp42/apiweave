@@ -14,7 +14,7 @@ interface FakeWrite {
   readonly drain?: () => void;
 }
 
-const { terminalInstances, attachOutputMock, setPausedMock } = vi.hoisted(() => ({
+const { terminalInstances, attachOutputMock, setPausedMock, hasScreenReaderMock } = vi.hoisted(() => ({
   terminalInstances: [] as {
     readonly writes: FakeWrite[];
     readonly disposed: boolean;
@@ -27,6 +27,7 @@ const { terminalInstances, attachOutputMock, setPausedMock } = vi.hoisted(() => 
   }[],
   attachOutputMock: vi.fn(),
   setPausedMock: vi.fn(),
+  hasScreenReaderMock: vi.fn(),
 }))
 
 vi.mock("@xterm/xterm", () => ({
@@ -99,6 +100,7 @@ vi.mock("../../../utils/apiweaveClient", () => ({
     resize: vi.fn().mockResolvedValue(undefined),
     attachOutput: attachOutputMock,
   },
+  desktop: { hasScreenReader: hasScreenReaderMock },
 }))
 
 class FakeResizeObserver {
@@ -125,9 +127,26 @@ beforeEach(() => {
   terminalInstances.length = 0
   attachOutputMock.mockImplementation(() => Promise.resolve(() => undefined))
   setPausedMock.mockResolvedValue(undefined)
+  hasScreenReaderMock.mockReturnValue(false)
 })
 
 describe("AgentTerminal", () => {
+  // The screen-reader tree costs ~2.7x the renderer CPU of the terminal itself
+  // under a full-screen TUI, so it follows the OS's answer rather than being on
+  // for everyone — and it must still be there for the people it is for.
+  it.each([
+    [false, false],
+    [true, true],
+  ])("builds the screen-reader tree only when the OS reports one (%s)", async (present, expected) => {
+    hasScreenReaderMock.mockReturnValue(present)
+
+    await act(async () => {
+      render(<AgentTerminal sessionId="s-a11y" />)
+    })
+
+    expect(terminalInstances[0]?.options.screenReaderMode).toBe(expected)
+  })
+
   it("pauses the PTY when unparsed output passes the threshold", async () => {
     const unsubscribe = vi.fn()
     attachOutputMock.mockImplementation(() => Promise.resolve(unsubscribe))
@@ -324,16 +343,5 @@ describe("AgentTerminal", () => {
     expect(handler?.({ key: "Tab", shiftKey: true } as KeyboardEvent)).toBe(false)
     expect(handler?.({ key: "Tab", ctrlKey: true } as KeyboardEvent)).toBe(true)
     expect(handler?.({ key: "Enter" } as KeyboardEvent)).toBe(true)
-  })
-
-  /**
-   * Terminal content is a canvas no assistive technology can read; xterm's
-   * screen-reader mode is the live region that makes it reachable.
-   */
-  it("enables xterm's screen reader mode", async () => {
-    render(<AgentTerminal sessionId="session-1" />)
-    await act(async () => {})
-
-    expect(terminalInstances[0]?.options.screenReaderMode).toBe(true)
   })
 })

@@ -381,6 +381,8 @@ export function WorkflowCanvas({
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [historyRunId, setHistoryRunId] = useState<string | null>(null);
+  const pendingHistory = useCanvasStore((state) => state.pendingHistory);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -648,6 +650,16 @@ export function WorkflowCanvas({
         void reloadWorkflowFromServer();
       });
   }, [reloadWorkflowFromServer, workflowId]);
+
+  // A Call Workflow node in another workflow jumped here to show the run its
+  // call produced. This canvas mounts after that request is made, so the
+  // request is read from the store rather than received as an event.
+  useEffect(() => {
+    if (!workflowId || pendingHistory?.workflowId !== workflowId) return;
+    setHistoryRunId(pendingHistory.runId);
+    setShowHistory(true);
+    useCanvasStore.getState().clearPendingHistory();
+  }, [pendingHistory, workflowId]);
 
   const handleWorkflowDetached = useCallback(() => {
     if (!workflowId) return;
@@ -1873,7 +1885,11 @@ export function WorkflowCanvas({
         <HistoryModal
           workflowId={workflowId ?? ""}
           workspaceId={scope.workspaceId ?? ""}
-          onClose={() => setShowHistory(false)}
+          onClose={() => {
+            setShowHistory(false);
+            setHistoryRunId(null);
+          }}
+          {...(historyRunId ? { highlightRunId: historyRunId } : {})}
           onSelectRun={loadHistoricalRun}
           onShowTimeline={(runId) => {
             setTimelineRunId(runId);

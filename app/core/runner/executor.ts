@@ -93,6 +93,18 @@ export interface ExecutorDeps {
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
+  /**
+   * Persists a Call Workflow sub-execution as its own run row against the
+   * target workflow, so the callee's History has something to investigate when
+   * the call fails. `begin` returns the deps the child executor must use — its
+   * progress is recorded against the child run, not the caller's. `finish` runs
+   * exactly once per `begin`, with `undefined` when the sub-execution threw.
+   * Undefined dep keeps the old inline-only behaviour (harness, CLI, tests).
+   */
+  readonly subRun?: {
+    begin(workflowId: string): { readonly runId: string; readonly deps: ExecutorDeps }
+    finish(runId: string, output: ExecutorOutput | undefined): void
+  }
 }
 
 interface SseFinishCondition {
@@ -153,6 +165,8 @@ export interface NodeResult {
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
+    /** The sub-execution's own run row, when one was persisted — the callee's History entry for this call. */
+    readonly runId?: string
     readonly status: "passed" | "failed"
     readonly nodeCount: number
     readonly failedNodeCount: number
@@ -626,7 +640,7 @@ export class WorkflowExecutor {
       } else if (nodeType === "merge") {
         result = await this.executeMerge(node, edges)
       } else if (nodeType === "workflow") {
-        result = await this.executeCallWorkflow(node)
+        result = await this.executeCallWorkflow(node, cancelSignal)
       } else {
         result = { status: "skipped", message: `Unknown node type: ${nodeType}` }
       }
@@ -1528,15 +1542,21 @@ export class WorkflowExecutor {
 
   /**
    * Runs a target workflow in-process to completion and maps its outputs back
-   * onto the caller's variable scope. There is no persisted child Run row —
-   * the sub-execution is inline, summarized on the calling node's own result.
-   * Only the summary (status, node/failure counts, output variable names) is
-   * embedded, never the sub-workflow's raw per-node results: those carry
-   * unredacted request/response detail that only the top-level
-   * `sanitizeRunResults` pass (scheduler.ts) knows how to scrub, and it only
-   * walks the top-level results array.
+   * onto the caller's variable scope.
+   *
+   * The sub-execution gets its own Run row against the *target* workflow (via
+   * `deps.subRun`), so opening the callee and clicking History shows what
+   * actually happened inside a failed call. Its node statuses and per-node
+   * results land on that child run — they used to be written onto the caller's
+   * run under node ids that don't exist in the caller's graph.
+   *
+   * The caller's own node result still carries the summary only (status,
+   * node/failure counts, output variable names, child run id), never the
+   * sub-workflow's raw per-node results: those carry unredacted
+   * request/response detail, and the caller's `sanitizeRunResults` pass only
+   * walks its own top-level results array.
    */
-  private async executeCallWorkflow(node: WorkflowNode): Promise<NodeResult> {
+  private async executeCallWorkflow(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = (node.config ?? {}) as {
       readonly targetWorkflowId?: string | null
       readonly inputMapping?: Record<string, string>
@@ -1570,13 +1590,28 @@ export class WorkflowExecutor {
       inputVariables[targetVarName] = this.substituteVariables(sourceExpr, { allowSecrets: false })
     }
 
-    const childExecutor = new WorkflowExecutor(this.deps)
+    const sub = this.deps.subRun?.begin(targetWorkflowId)
+    const childExecutor = new WorkflowExecutor(sub?.deps ?? this.deps)
     childExecutor.callDepth = this.callDepth + 1
-    const childOutput = await childExecutor.executeWorkflow({
-      nodes: target.nodes,
-      edges: target.edges,
-      variables: { ...(target.variables ?? {}), ...inputVariables },
-    })
+    let output: ExecutorOutput | undefined
+    try {
+      output = await childExecutor.executeWorkflow(
+        {
+          nodes: target.nodes,
+          edges: target.edges,
+          variables: { ...(target.variables ?? {}), ...inputVariables },
+        },
+        {
+          ...(sub ? { runId: sub.runId } : {}),
+          ...(cancelSignal ? { cancelSignal } : {}),
+        },
+      )
+    } finally {
+      // Runs on the throw path too, or a cancelled/erroring sub-execution
+      // leaves its run row stuck in `running` until the next startup reconcile.
+      if (sub) this.deps.subRun?.finish(sub.runId, output)
+    }
+    const childOutput = output
 
     const outputMapping = config.outputMapping ?? {}
     for (const [callerVarName, subVarName] of Object.entries(outputMapping)) {
@@ -1594,6 +1629,7 @@ export class WorkflowExecutor {
           : `Sub-workflow ${targetLabel} failed in ${childOutput.failedNodes.length} node(s)`,
       subWorkflow: {
         workflowId: targetWorkflowId,
+        ...(sub ? { runId: sub.runId } : {}),
         status: childOutput.status,
         nodeCount: target.nodes.length,
         failedNodeCount: childOutput.failedNodes.length,

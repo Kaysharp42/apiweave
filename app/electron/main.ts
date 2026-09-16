@@ -65,6 +65,7 @@ import {
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
+  SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
@@ -147,6 +148,33 @@ function frontendDistDir(): string {
     : path.resolve(app.getAppPath(), "dist/renderer")
 }
 
+/**
+ * Tell the renderer whether a screen reader is listening.
+ *
+ * The one consumer is the agent terminal: xterm's `screenReaderMode` mirrors
+ * every rendered row into a DOM tree and fires a callback per printed
+ * character, which measured at ~2.7x the renderer CPU of the terminal itself
+ * under a TUI agent redrawing its whole screen — the difference between an idle
+ * app and a laggy one while Claude Code or opencode is running. So it is built
+ * when someone needs it and not otherwise, which is the same call VS Code makes
+ * for its own terminal.
+ *
+ * `--force-renderer-accessibility` is honoured beside the detection because
+ * detection is Chromium's, and on Linux it depends on an at-spi bridge that a
+ * minimal desktop may not be running: the flag is the documented way to say
+ * "assistive tech is here" when the automatic answer is wrong.
+ *
+ * ponytail: read once at window creation, so a screen reader started *after*
+ * the app needs a restart to be noticed. `accessibility-support-changed` plus a
+ * live `terminal.options.screenReaderMode` flip if that ever comes up.
+ */
+function screenReaderArgs(): string[] {
+  const present =
+    app.isAccessibilitySupportEnabled() ||
+    app.commandLine.hasSwitch("force-renderer-accessibility")
+  return present ? [SCREEN_READER_ARG] : []
+}
+
 async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: 1280,
@@ -171,6 +199,7 @@ async function createWindow(): Promise<void> {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: screenReaderArgs(),
     },
   })
 

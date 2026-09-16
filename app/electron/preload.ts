@@ -23,6 +23,7 @@ import {
   INVOKE_CHANNEL,
   runProgressChannel,
   RUN_STARTED_CHANNEL,
+  SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
@@ -94,6 +95,8 @@ type DesktopBridge = {
   readonly minimize: () => void
   readonly toggleMaximize: () => void
   readonly close: () => void
+  /** True when main detected assistive technology — see `screenReaderArgs` there. */
+  readonly screenReader: boolean
   readonly onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void
 }
 
@@ -101,6 +104,7 @@ const desktopBridge: DesktopBridge = {
   minimize: () => ipcRenderer.send("window:minimize"),
   toggleMaximize: () => ipcRenderer.send("window:toggleMaximize"),
   close: () => ipcRenderer.send("window:close"),
+  screenReader: process.argv.includes(SCREEN_READER_ARG),
   onMaximizeChange: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, value: boolean): void => {
       callback(value)

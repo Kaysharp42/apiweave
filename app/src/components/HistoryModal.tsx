@@ -109,6 +109,7 @@ function requestReducer(
 export default function HistoryModal({
   workflowId,
   workspaceId,
+  highlightRunId,
   onClose,
   onSelectRun,
   onShowTimeline,
@@ -344,6 +345,17 @@ export default function HistoryModal({
                   key={run.runId}
                   role="button"
                   tabIndex={0}
+                  // Bring the jumped-to run into view. Rows render once per
+                  // page load, so this runs on the row that appears, not on
+                  // every render.
+                  ref={
+                    run.runId === highlightRunId
+                      ? (el) => el?.scrollIntoView({ block: "center" })
+                      : null
+                  }
+                  {...(run.runId === highlightRunId && {
+                    "data-highlighted": "true",
+                  })}
                   onClick={() => handleRunClick(run)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -351,7 +363,11 @@ export default function HistoryModal({
                       handleRunClick(run);
                     }
                   }}
-                  className="w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light"
+                  className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
+                    run.runId === highlightRunId
+                      ? " bg-primary/5 dark:bg-primary/10 ring-2 ring-inset ring-primary dark:ring-primary-light"
+                      : ""
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">

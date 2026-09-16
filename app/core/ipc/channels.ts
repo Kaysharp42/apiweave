@@ -99,3 +99,15 @@ export const RUN_STARTED_CHANNEL = "apiweave:run-started"
  * announcing those would fight its optimistic updates.
  */
 export const AGENT_WRITE_CHANNEL = "apiweave:agent-write"
+
+/**
+ * Argv marker main passes to the renderer when the OS reports assistive
+ * technology. Not a channel, but it lives here for the same reason the channels
+ * do: main writes it, preload reads it, and a typo would be silent on both
+ * sides.
+ *
+ * It rides on `additionalArguments` rather than an IPC call because the one
+ * consumer — xterm's screen-reader tree — has to decide before its first frame,
+ * and a promise resolving after mount would mean rebuilding the terminal.
+ */
+export const SCREEN_READER_ARG = "--apiweave-screen-reader"

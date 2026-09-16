@@ -7,7 +7,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 // `styles/agent-terminal.css`, imported from `index.css` beside the other app
 // stylesheets — it only sets tokens and chrome, and never fights this one.
 import "@xterm/xterm/css/xterm.css";
-import { agents } from "../../utils/apiweaveClient";
+import { agents, desktop } from "../../utils/apiweaveClient";
 
 /**
  * How much un-parsed output is allowed to pile up before the PTY is told to
@@ -95,9 +95,14 @@ export function AgentTerminal({
       // would take keystrokes for a process that is gone until `readOnly`
       // happened to change value.
       disableStdin: readOnlyRef.current,
-      // xterm's screen-reader live region: terminal content is otherwise a
-      // canvas no assistive technology can read.
-      screenReaderMode: true,
+      // xterm's screen-reader tree: terminal content is otherwise a canvas no
+      // assistive technology can read. Built only when the OS says someone is
+      // listening — it mirrors every rendered row into the DOM and fires a
+      // callback per printed character, measured at ~2.7x the renderer CPU of
+      // the terminal itself under an agent redrawing a full-screen TUI, which
+      // is CPU taken from the canvas the user is trying to pan at the time.
+      // See `screenReaderArgs` in electron/main.ts for the detection.
+      screenReaderMode: desktop.hasScreenReader(),
       fontFamily: '"JetBrains Mono", "Fira Code", Consolas, monospace',
       fontSize: 12,
       lineHeight: 1.35,
