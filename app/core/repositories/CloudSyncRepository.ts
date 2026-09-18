@@ -1793,7 +1793,11 @@ function forbiddenPayloadEntry(
   parentPath: string,
   path: string,
 ): string | undefined {
-  if (isSyncSensitiveKey(key) && isWithheldSyncValue(value)) {
+  // Extractor *values* are response paths ("response.body.token"), not
+  // credentials — the same exemption the push sanitizer applies. Only the
+  // sensitive-key-name rule is skipped; the value is still scanned below, so an
+  // extractor that literally embeds credential material is still caught.
+  if (!isExtractorsMapping(parentPath) && isSyncSensitiveKey(key) && isWithheldSyncValue(value)) {
     return path
   }
   // Cookies routinely carry session material under innocuous names, so a cookie
@@ -1819,6 +1823,14 @@ function forbiddenFieldInJsonBody(body: string, path: string): string | undefine
     return undefined
   }
   return findForbiddenPayloadField(parsed, path)
+}
+
+// An `extractors` object maps a variable name to a response path. The variable
+// name can itself look sensitive (`token`, `api_key`), so the sensitive-key-name
+// rule must not fire for its direct children — but only inside a node config,
+// so a hostile server cannot claim the exemption at an arbitrary path.
+function isExtractorsMapping(path: string): boolean {
+  return path.endsWith(".config.extractors")
 }
 
 function objectProperty(value: Record<string, unknown>, key: string): Record<string, unknown> {

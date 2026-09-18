@@ -105,6 +105,18 @@ const FORBIDDEN_EXPORT_KEYS: ReadonlySet<string> = new Set([
   "hmac_secret",
 ])
 
+/**
+ * True for a key that names actual secret *storage* (`ciphertext`, `kek`, the
+ * vault fields) rather than a user credential slot (`token`, `password`).
+ * Sanitizers drop these keys outright: a blanked vault field is still a vault
+ * field, and keeping one would trip {@link assertNoSecretValues}. Never confuse
+ * this with a workflow's own `password`/`token` config, whose slot must survive
+ * so `{{variables.password}}` references do not dangle.
+ */
+export function isForbiddenSecretStorageKey(key: string): boolean {
+  return FORBIDDEN_EXPORT_KEYS.has(key)
+}
+
 const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
 
 /**
@@ -198,6 +210,15 @@ const STRIPE_LIVE_KEY_PATTERN = /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i
 const REF_SPAN_RE = /\{\{[^{}]*\}\}/g
 
 /**
+ * Lowercase stem a per-call placeholder is built from. Lowercase on purpose: a
+ * reference in a URL *host* is normalised to lowercase by `URL`, and a
+ * mixed-case token would come back unmatchable. A per-call random suffix makes
+ * the full token collision-safe against real text that happens to contain the
+ * stem.
+ */
+const URL_REFERENCE_TOKEN_STEM = "apiweave-ref-"
+
+/**
  * True if a string carries credential material once its `{{...}}` references
  * are removed. Stripping first is what makes `Authorization: Bearer
  * {{secrets.TOKEN}}` a keeper while `{{env.SCHEME}} eyJhbGci...` is not: a
@@ -228,6 +249,63 @@ export function isEmptySyncValue(value: unknown): boolean {
  */
 export function isCredentialFreeReference(value: unknown): boolean {
   return typeof value === "string" && containsIndirectionRef(value) && !containsCredentialMaterial(value)
+}
+
+/**
+ * The reference-preserving replacement shared by every redaction surface: a
+ * credential-free `{{...}}` indirection keeps its value, everything else is
+ * written back as `blank` (the sync blank, `<SECRET>`, or `[FILTERED]`). Keeping
+ * the slot is the point — a dropped variable or header orphans the
+ * `{{variables.NAME}}`/`{{secrets.NAME}}` reference elsewhere in the workflow.
+ */
+export function referenceOrBlank(value: unknown, blank: string): JsonValue {
+  return isCredentialFreeReference(value) ? (value as JsonValue) : blank
+}
+
+/**
+ * True when a string is nothing but `{{...}}` references (whitespace aside).
+ * Cookie values are held to this stricter bar than a header's `Bearer
+ * {{...}}`: session material can hide behind one appended reference, so only a
+ * value that is purely a slot survives.
+ */
+export function isReferenceOnlyValue(value: string): boolean {
+  const trimmed = value.trim()
+  return trimmed.length > 0 && trimmed.replace(REF_SPAN_RE, "").trim() === ""
+}
+
+const TEMPLATED_URL_START_RE = /^\s*\{\{[^{}]*\}\}/
+
+/**
+ * True when a value is a URL built from a leading `{{...}}` base reference,
+ * e.g. `{{env.BASE_URL}}/users?password=...`. The runtime supports prefixed
+ * template bases, so redaction must too; otherwise the plain reference check
+ * preserves the whole string and a literal credential in the query slips
+ * through. A bare `{{env.BASE_URL}}` (no path or query) is not a URL template.
+ */
+export function isTemplatedUrl(value: string): boolean {
+  const match = TEMPLATED_URL_START_RE.exec(value)
+  if (match === null) {
+    return false
+  }
+  return /[?/]/.test(value.slice(match[0].length))
+}
+
+/**
+ * Sanitize an `extractors` mapping. Each value is a response path by schema, so
+ * a valid path — or a `{{...}}` reference inside it — survives; a value that
+ * carries credential material is withheld. This matters because the validators
+ * exempt extractor *names* from the sensitive-key rule but still scan every
+ * string, so a credential left here dead-letters the push.
+ */
+export function sanitizeExtractorValues(
+  value: Record<string, JsonValue>,
+  blank: string,
+): Record<string, JsonValue> {
+  const sanitized: Record<string, JsonValue> = {}
+  for (const [name, path] of Object.entries(value)) {
+    sanitized[name] = typeof path === "string" && containsCredentialMaterial(path) ? blank : path
+  }
+  return sanitized
 }
 
 /**
@@ -346,28 +424,59 @@ export function extractSecretRefsFromString(value: string): string[] {
 export function sanitizeVariablesForExport(data: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(data)) {
-    if (isRecord(value)) {
-      sanitized[key] = sanitizeVariablesForExport(value)
-    } else if (typeof value === "string" && isSecretKey(key)) {
-      sanitized[key] = SECRET_PLACEHOLDER
-    } else if (typeof value === "string" && extractSecretRefsFromString(value).length > 0) {
-      // A `{{secrets.NAME}}` placeholder is a safe indirection, not the secret
-      // itself — collectSecretRefs tracks it separately, so it must survive
-      // export verbatim (and not get flagged by the "contains 'secret'" value
-      // heuristic below).
-      sanitized[key] = value
-    } else if (typeof value === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
-      // URL-shaped: strip embedded credentials/fragment surgically rather than
-      // nuking the whole value — a URL commonly contains "token"-ish substrings
-      // (e.g. an `access_token` fragment key) that aren't the full secret.
-      sanitized[key] = sanitizeUrlForExport(value)
-    } else if (typeof value === "string" && looksLikeSecretValue(value)) {
-      sanitized[key] = SECRET_PLACEHOLDER
-    } else {
-      sanitized[key] = value
+    if (isForbiddenSecretStorageKey(key)) {
+      continue
     }
+    sanitized[key] = sanitizeExportVariableValue(value, key)
   }
   return sanitized
+}
+
+/** One variable value: refs survive, secret-named keys and secret-shaped values are redacted. */
+function sanitizeExportVariableValue(value: JsonValue, key: string | null): JsonValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeExportVariableValue(item, null))
+  }
+  if (isRecord(value)) {
+    const sanitized: Record<string, JsonValue> = {}
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      if (isForbiddenSecretStorageKey(nestedKey)) {
+        continue
+      }
+      sanitized[nestedKey] = sanitizeExportVariableValue(nestedValue, nestedKey)
+    }
+    return sanitized
+  }
+  if (typeof value !== "string") {
+    return value
+  }
+  // URL-shaped: strip embedded credentials/fragment surgically rather than
+  // nuking the whole value — a URL commonly contains "token"-ish substrings
+  // (e.g. an `access_token` fragment key) that aren't the full secret. Under a
+  // secret-named key only a credential-free reference is allowed, so a plain
+  // URL is withheld whole instead of exported verbatim. A base-reference
+  // template (`{{env.BASE_URL}}/login?password=...`) is a URL here too, or its
+  // literal query would be preserved as part of a "reference". The URL walk is
+  // itself reference-aware, and running it before the plain reference check is
+  // what stops a reference elsewhere in the URL from laundering a literal
+  // secret query value (`?password=abc1234`).
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || isTemplatedUrl(value)) {
+    if (key !== null && isSecretKey(key) && !isCredentialFreeReference(value)) {
+      return SECRET_PLACEHOLDER
+    }
+    return sanitizeUrlForExport(value)
+  }
+  // A `{{...}}` indirection is a reference, not the secret, so it must be
+  // checked before the key-name heuristic: `{{variables.token}}` under a key
+  // literally named `token` is exactly the wiring export has to preserve. This
+  // covers every namespace the runtime resolves, not just `{{secrets.*}}`.
+  if (isCredentialFreeReference(value)) {
+    return value
+  }
+  if (key !== null && isSecretKey(key)) {
+    return SECRET_PLACEHOLDER
+  }
+  return looksLikeSecretValue(value) ? SECRET_PLACEHOLDER : value
 }
 
 const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
@@ -421,11 +530,12 @@ function sanitizeFileUploadsForExport(items: readonly JsonValue[]): JsonValue[] 
 /**
  * Redact a `{key, value}` pair array (HTTP headers/cookies/query params/etc.).
  *
- * `export` drops entries whose key names a secret entirely, so an imported
- * bundle forces the operator to re-enter the credential rather than sending a
- * placeholder upstream; `redactAllValues` additionally blanks every remaining
- * value regardless of key name (used for cookies, which routinely carry session
- * material under non-secret-looking names).
+ * `export` drops entries whose key names a secret and whose value is a literal,
+ * so an imported bundle forces the operator to re-enter the credential rather
+ * than sending a placeholder upstream (a `{{...}}` reference still survives);
+ * `redactAllValues` additionally blanks every remaining value regardless of key
+ * name (used for cookies, which routinely carry session material under
+ * non-secret-looking names).
  *
  * `agent-read` never drops an entry. An agent reading back what it just wrote
  * has to be able to tell "the header is stored, its value is withheld" from
@@ -441,7 +551,7 @@ function sanitizeKeyValueArray(items: readonly JsonValue[], redactAllValues: boo
   return sanitized
 }
 
-/** One `{key, value}` entry, or `undefined` when export mode drops it entirely. */
+/** One `{key, value}` entry, or `undefined` when export mode drops a literal secret entry. */
 function sanitizeKeyValueEntry(
   item: JsonValue,
   redactAllValues: boolean,
@@ -450,9 +560,18 @@ function sanitizeKeyValueEntry(
   if (!isRecord(item)) return item
   const key = item["key"]
   const secretKey = typeof key === "string" && isSecretKey(key)
-  if (secretKey && mode === "export") return undefined
   const value = item["value"]
   if (typeof value !== "string") return item
+  // A credential-free `{{...}}` reference is the slot's wiring, not the secret,
+  // so it survives even under a secret-named key that export would otherwise
+  // drop outright. Cookies (redactAllValues) trust only a value that is purely
+  // the reference.
+  if (isCredentialFreeReference(value) && (!redactAllValues || isReferenceOnlyValue(value))) {
+    return item
+  }
+  // Export still drops a literal secret-named entry (rather than writing a
+  // placeholder the operator might send upstream); an agent read keeps it.
+  if (secretKey && mode === "export") return undefined
   return withholdsPairValue(value, secretKey, redactAllValues)
     ? { ...item, value: SECRET_PLACEHOLDER }
     : item
@@ -461,9 +580,11 @@ function sanitizeKeyValueEntry(
 /**
  * Whether a `{key, value}` pair's value must be withheld.
  *
- * `redactAllValues` (cookies) withholds unconditionally — session material hides
- * under names that look harmless. Otherwise only a secret-named key withholds,
- * and even then a credential-free `{{...}}` indirection reference in any
+ * `redactAllValues` (cookies) withholds values even when their key name looks
+ * harmless — session material hides under names that look benign — but a value
+ * that is purely a `{{...}}` indirection reference still names a slot and
+ * survives. Otherwise only a secret-named key withholds, and even then a
+ * credential-free `{{...}}` indirection reference in any
  * namespace (env, variables, prev, secrets) survives: it is a reference, not
  * the secret, and seeing it is how an agent knows which slot a credential
  * binds to. A reference string that also carries credential material outside
@@ -518,25 +639,112 @@ function sanitizeBodyForAgentRead(body: string): string {
 /**
  * Strip credentials and tokens embedded in a URL: userinfo, secret-looking query
  * params, and the fragment (OAuth implicit-flow tokens live in `#access_token=`).
+ * `{{...}}` references are preserved byte-for-byte (see
+ * {@link sanitizeUrlWithReferences}).
  */
 function sanitizeUrlForExport(value: string): string {
+  return sanitizeUrlWithReferences(value, SECRET_PLACEHOLDER, isSecretKey)
+}
+
+/**
+ * The shared URL redactor for both export and cloud sync, differing only in the
+ * `blank` token and which key names count as sensitive.
+ *
+ * A `URL` round-trip reconstructs its query string through `URLSearchParams`,
+ * which percent-encodes the braces of a `{{variables.token}}` reference and
+ * silently breaks runtime substitution. So reference spans are swapped for
+ * per-call lowercase tokens before parsing and written back after serialization:
+ * the reference text is preserved exactly, while a value that also carries
+ * credential material is still withheld (a reference never launders a literal).
+ *
+ * A scheme-less template base (`{{env.BASE_URL}}/login?password=...`) is parsed
+ * behind a throwaway `http://` scheme and that prefix is stripped again, so a
+ * literal credential in a templated URL is redacted instead of preserved whole.
+ */
+export function sanitizeUrlWithReferences(
+  value: string,
+  blank: string,
+  isSensitiveKey: (key: string) => boolean,
+): string {
+  const references: string[] = []
+  const stem = `${URL_REFERENCE_TOKEN_STEM}${Math.random().toString(36).slice(2, 10)}-`
+  const tokenPattern = new RegExp(`${stem}(\\d+)`, "g")
+  const tokenized = value.replace(REF_SPAN_RE, (match) => {
+    const token = `${stem}${references.length}`
+    references.push(match)
+    return token
+  })
+  const restore = (text: string): string =>
+    text.replace(tokenPattern, (match, index: string) => references[Number(index)] ?? match)
+
+  let url: URL
+  let syntheticScheme = ""
   try {
-    const url = new URL(value)
-    const hasSecretQueryParam = [...url.searchParams.keys()].some(isSecretKey)
-    // Nothing to redact — return the original string verbatim so a plain
-    // env-var URL isn't silently reformatted (e.g. a bare origin gaining a
-    // trailing slash) by round-tripping it through the URL constructor.
-    if (!url.username && !url.password && !url.hash && !hasSecretQueryParam) return value
+    url = new URL(tokenized)
+  } catch {
+    if (!isTemplatedUrl(value)) {
+      return containsCredentialMaterial(value) ? blank : value
+    }
+    syntheticScheme = "http://"
+    try {
+      url = new URL(`${syntheticScheme}${tokenized}`)
+    } catch {
+      return containsCredentialMaterial(value) ? blank : value
+    }
+  }
+
+  let changed = false
+
+  if (url.username !== "" || url.password !== "") {
     url.username = ""
     url.password = ""
-    for (const [key] of url.searchParams) {
-      if (isSecretKey(key)) url.searchParams.set(key, SECRET_PLACEHOLDER)
+    changed = true
+  }
+  if (url.hash !== "") {
+    url.hash = ""
+    changed = true
+  }
+
+  const sanitizedPath = url.pathname
+    .split("/")
+    .map((segment) => (containsCredentialMaterial(segment) ? "" : segment))
+    .join("/")
+  if (sanitizedPath !== url.pathname) {
+    url.pathname = sanitizedPath
+    changed = true
+  }
+
+  // Iterate *entries*, not keys: `get(key)`/`set(key, ...)` collapses duplicate
+  // parameters, which would let `?password={{variables.p}}&password=literal`
+  // keep the literal behind the first (reference) value.
+  let queryChanged = false
+  const sanitizedEntries = [...url.searchParams.entries()].map(([key, queryValue]) => {
+    const original = restore(queryValue)
+    if (isCredentialFreeReference(original)) {
+      return [key, queryValue] as const
     }
-    if (url.hash) url.hash = ""
-    return url.toString()
-  } catch {
+    if (isSensitiveKey(key) || containsCredentialMaterial(original)) {
+      queryChanged = true
+      return [key, blank] as const
+    }
+    return [key, queryValue] as const
+  })
+  if (queryChanged) {
+    changed = true
+    url.search = ""
+    for (const [key, queryValue] of sanitizedEntries) {
+      url.searchParams.append(key, queryValue)
+    }
+  }
+
+  if (!changed) {
     return value
   }
+  const serialized = url.toString()
+  const withoutSynthetic = syntheticScheme !== "" && serialized.startsWith(syntheticScheme)
+    ? serialized.slice(syntheticScheme.length)
+    : serialized
+  return restore(withoutSynthetic)
 }
 
 /**
@@ -578,7 +786,9 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
   // Extractor values are response paths ("response.body.data.access_token") by
   // schema definition — never credentials — and the `token`-ish variable names
   // they map from would otherwise be redacted by the key-name heuristic below.
-  extractors: (value) => (isRecord(value) ? { ...value } : undefined),
+  // The path itself is still scanned: a credential pasted as a path is withheld
+  // so it cannot dead-letter a push or ride an export bundle.
+  extractors: (value) => (isRecord(value) ? sanitizeExtractorValues(value, SECRET_PLACEHOLDER) : undefined),
   url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
   // Export redacts a body leaf-by-leaf rather than flattening it to the
   // placeholder. A body is workflow config, and the bundle it lands in is what
@@ -615,6 +825,9 @@ function sanitizeValue(data: JsonValue, mode: SanitizeMode): JsonValue {
   }
   const sanitized: Record<string, JsonValue> = {}
   for (const [key, value] of Object.entries(data)) {
+    if (isForbiddenSecretStorageKey(key)) {
+      continue
+    }
     sanitized[key] = sanitizeField(key, value, mode) ?? sanitizeValue(value, mode)
   }
   return sanitized
@@ -665,7 +878,7 @@ export function collectSecretRefs(
 ): void {
   if (typeof data === "string") {
     for (const name of extractSecretRefsFromString(data)) {
-      const dedupeKey = `${name} ${scopeType} ${scopeId}`
+      const dedupeKey = `${name}\0${scopeType}\0${scopeId}`
       if (!seen.has(dedupeKey)) {
         seen.add(dedupeKey)
         into.push({ name, scopeType, scopeId })

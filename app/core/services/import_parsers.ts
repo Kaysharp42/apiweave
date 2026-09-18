@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml"
 import type { KeyValuePair } from "@shared/zod-schemas/KeyValuePairSchema"
-import { detectSecretsInValue } from "./secret_utils"
+import { detectSecretsInValue, isCredentialFreeReference, isReferenceOnlyValue, redactBodyLeaves } from "./secret_utils"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
 
@@ -292,6 +292,37 @@ function normalizeCurl(cmd: string): string {
   return cmd.replace(/\\\s*\n\s*/g, " ").trim()
 }
 
+/**
+ * Import sanitizers withhold a detected secret, but a `{{...}}` indirection is
+ * wiring, not a credential: keep it so an imported workflow's
+ * `{{variables.token}}`/`{{secrets.TOKEN}}` slot survives. `looksSecret` is the
+ * caller's detection result (key-aware for headers/cookies, value-only for a
+ * body), and a reference carrying credential material outside its `{{...}}`
+ * span is still withheld.
+ */
+function redactImportedValue(value: string, looksSecret: boolean): string {
+  return looksSecret && !isCredentialFreeReference(value) ? "[FILTERED]" : value
+}
+
+/**
+ * Sanitize an imported request body. A JSON body is walked leaf-by-leaf with
+ * the same shared redactor the export bundler uses: sensitive key names and
+ * credential-shaped leaves become `[FILTERED]` while `{{...}}` references
+ * survive, so a reference next to a literal password does not launder it. A
+ * non-JSON body keeps a value that is nothing but references, and is withheld
+ * whole when the broad import heuristic detects a secret — a reference anywhere
+ * must not smuggle a literal `password=...`.
+ */
+function sanitizeImportedBody(body: string): string {
+  try {
+    JSON.parse(body)
+  } catch {
+    if (isReferenceOnlyValue(body)) return body
+    return detectSecretsInValue(body) ? "[FILTERED]" : body
+  }
+  return redactBodyLeaves(body, "[FILTERED]")
+}
+
 function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestNode | null {
   try {
     let cmd = raw
@@ -319,7 +350,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
           if (colonIdx > 0) {
             const k = h.slice(0, colonIdx).trim()
             const v = h.slice(colonIdx + 1).trim()
-            headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
+            headers[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}:${v}`)) : v
           }
           i += 2; continue
         }
@@ -330,7 +361,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
             if (eq > 0) {
               const k = part.trim().slice(0, eq)
               const v = part.trim().slice(eq + 1)
-              cookies[k] = sanitize && (detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) ? "[FILTERED]" : v
+              cookies[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) : v
             }
           }
           i += 2; continue
@@ -338,7 +369,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
       } else if (token === "-d" || token === "--data" || token === "--data-raw") {
         if (i + 1 < tokens.length) {
           const raw = tokens[i + 1] ?? ""
-          body = sanitize && detectSecretsInValue(raw) ? "[FILTERED]" : raw
+          body = sanitize ? sanitizeImportedBody(raw) : raw
           if (method === "GET") method = "POST"
           i += 2; continue
         }
@@ -436,19 +467,19 @@ export function parseHarData(data: Record<string, unknown>, opts: HarParseOption
     for (const h of ((request["headers"] as { name?: string; value?: string }[]) ?? [])) {
       const k = h.name ?? ""
       const v = h.value ?? ""
-      headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
+      headers[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}:${v}`)) : v
     }
 
     const cookies: Record<string, string> = {}
     for (const ck of ((request["cookies"] as { name?: string; value?: string }[]) ?? [])) {
       const k = ck.name ?? ""
       const v = ck.value ?? ""
-      cookies[k] = sanitize && (detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) ? "[FILTERED]" : v
+      cookies[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) : v
     }
 
     const postData = (request["postData"] ?? {}) as Record<string, unknown>
     const rawBody = (postData["text"] as string) ?? ""
-    const body = sanitize && rawBody && detectSecretsInValue(rawBody) ? "[FILTERED]" : rawBody
+    const body = sanitize && rawBody ? sanitizeImportedBody(rawBody) : rawBody
 
     void response
 
@@ -506,12 +537,12 @@ export function harDryRun(data: Record<string, unknown>, opts: HarParseOptions =
     for (const h of ((request["headers"] as { name?: string; value?: string }[]) ?? [])) {
       const k = h.name ?? ""
       const v = h.value ?? ""
-      headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
+      headers[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}:${v}`)) : v
     }
 
     const postData = (request["postData"] ?? {}) as Record<string, unknown>
     const rawBody = (postData["text"] as string) ?? ""
-    const body = sanitize && rawBody && detectSecretsInValue(rawBody) ? "[FILTERED]" : rawBody
+    const body = sanitize && rawBody ? sanitizeImportedBody(rawBody) : rawBody
 
     return {
       method,
@@ -584,7 +615,7 @@ export function parseOpenApiSpec(
         const example = schema["example"] !== undefined ? String(schema["example"]) : ""
         if (paramIn === "query") queryParams[name] = example
         else if (paramIn === "header") {
-          headers[name] = sanitize && detectSecretsInValue(`${name}:${example}`) ? "[FILTERED]" : example
+          headers[name] = sanitize ? redactImportedValue(example, detectSecretsInValue(`${name}:${example}`)) : example
         }
       }
 
