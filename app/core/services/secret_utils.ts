@@ -117,6 +117,27 @@ export function isForbiddenSecretStorageKey(key: string): boolean {
   return FORBIDDEN_EXPORT_KEYS.has(key)
 }
 
+/**
+ * Walk a record's own entries, dropping any whose key names secret *storage*
+ * ({@link isForbiddenSecretStorageKey}) and transforming the rest. Every
+ * redaction pass that recurses into records (export, push-sync, snapshot,
+ * agent-read) shares this shape so a vault field can't survive one walk by
+ * accident of a hand-rolled loop.
+ */
+export function mapForbiddenKeyFilteredEntries<V, T>(
+  entries: Record<string, V>,
+  transform: (key: string, value: V) => T,
+): Record<string, T> {
+  const out: Record<string, T> = {}
+  for (const [key, value] of Object.entries(entries)) {
+    if (isForbiddenSecretStorageKey(key)) {
+      continue
+    }
+    out[key] = transform(key, value)
+  }
+  return out
+}
+
 const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
 
 /**
@@ -422,14 +443,7 @@ export function extractSecretRefsFromString(value: string): string[] {
  * credentials/query-string secrets from URL-shaped strings.
  */
 export function sanitizeVariablesForExport(data: Record<string, JsonValue>): Record<string, JsonValue> {
-  const sanitized: Record<string, JsonValue> = {}
-  for (const [key, value] of Object.entries(data)) {
-    if (isForbiddenSecretStorageKey(key)) {
-      continue
-    }
-    sanitized[key] = sanitizeExportVariableValue(value, key)
-  }
-  return sanitized
+  return mapForbiddenKeyFilteredEntries(data, (key, value) => sanitizeExportVariableValue(value, key))
 }
 
 /** One variable value: refs survive, secret-named keys and secret-shaped values are redacted. */
@@ -438,30 +452,40 @@ function sanitizeExportVariableValue(value: JsonValue, key: string | null): Json
     return value.map((item) => sanitizeExportVariableValue(item, null))
   }
   if (isRecord(value)) {
-    const sanitized: Record<string, JsonValue> = {}
-    for (const [nestedKey, nestedValue] of Object.entries(value)) {
-      if (isForbiddenSecretStorageKey(nestedKey)) {
-        continue
-      }
-      sanitized[nestedKey] = sanitizeExportVariableValue(nestedValue, nestedKey)
-    }
-    return sanitized
+    return mapForbiddenKeyFilteredEntries(value, (nestedKey, nestedValue) =>
+      sanitizeExportVariableValue(nestedValue, nestedKey))
   }
   if (typeof value !== "string") {
     return value
   }
+  return sanitizeExportVariableString(value, key)
+}
+
+/**
+ * The string leaf of {@link sanitizeExportVariableValue}: URL-shaped, reference,
+ * secret-named-key and secret-looking-value handling, in the order the
+ * contract requires (see the case-by-case notes below).
+ */
+const ABSOLUTE_URL_START_RE = /^[a-z][a-z0-9+.-]*:\/\//i
+
+// Under a secret-named key, a URL-shaped value survives export only as a
+// credential-free reference; a literal one is withheld whole rather than
+// exported (the surgical URL redaction below handles the non-secret-key case).
+function isLiteralSecretKeyUrl(value: string, key: string | null): boolean {
+  return key !== null && isSecretKey(key) && !isCredentialFreeReference(value)
+}
+
+function sanitizeExportVariableString(value: string, key: string | null): JsonValue {
   // URL-shaped: strip embedded credentials/fragment surgically rather than
   // nuking the whole value — a URL commonly contains "token"-ish substrings
-  // (e.g. an `access_token` fragment key) that aren't the full secret. Under a
-  // secret-named key only a credential-free reference is allowed, so a plain
-  // URL is withheld whole instead of exported verbatim. A base-reference
-  // template (`{{env.BASE_URL}}/login?password=...`) is a URL here too, or its
-  // literal query would be preserved as part of a "reference". The URL walk is
-  // itself reference-aware, and running it before the plain reference check is
-  // what stops a reference elsewhere in the URL from laundering a literal
-  // secret query value (`?password=abc1234`).
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || isTemplatedUrl(value)) {
-    if (key !== null && isSecretKey(key) && !isCredentialFreeReference(value)) {
+  // (e.g. an `access_token` fragment key) that aren't the full secret. A
+  // base-reference template (`{{env.BASE_URL}}/login?password=...`) is a URL
+  // here too, or its literal query would be preserved as part of a
+  // "reference". The URL walk is itself reference-aware, and running it before
+  // the plain reference check is what stops a reference elsewhere in the URL
+  // from laundering a literal secret query value (`?password=abc1234`).
+  if (ABSOLUTE_URL_START_RE.test(value) || isTemplatedUrl(value)) {
+    if (isLiteralSecretKeyUrl(value, key)) {
       return SECRET_PLACEHOLDER
     }
     return sanitizeUrlForExport(value)
@@ -562,11 +586,7 @@ function sanitizeKeyValueEntry(
   const secretKey = typeof key === "string" && isSecretKey(key)
   const value = item["value"]
   if (typeof value !== "string") return item
-  // A credential-free `{{...}}` reference is the slot's wiring, not the secret,
-  // so it survives even under a secret-named key that export would otherwise
-  // drop outright. Cookies (redactAllValues) trust only a value that is purely
-  // the reference.
-  if (isCredentialFreeReference(value) && (!redactAllValues || isReferenceOnlyValue(value))) {
+  if (isPreservedReferenceValue(value, redactAllValues)) {
     return item
   }
   // Export still drops a literal secret-named entry (rather than writing a
@@ -575,6 +595,14 @@ function sanitizeKeyValueEntry(
   return withholdsPairValue(value, secretKey, redactAllValues)
     ? { ...item, value: SECRET_PLACEHOLDER }
     : item
+}
+
+// A credential-free `{{...}}` reference is the slot's wiring, not the secret,
+// so it survives even under a secret-named key that export would otherwise
+// drop outright. Cookies (redactAllValues) trust only a value that is purely
+// the reference.
+function isPreservedReferenceValue(value: string, redactAllValues: boolean): boolean {
+  return isCredentialFreeReference(value) && (!redactAllValues || isReferenceOnlyValue(value))
 }
 
 /**
@@ -666,6 +694,27 @@ export function sanitizeUrlWithReferences(
   blank: string,
   isSensitiveKey: (key: string) => boolean,
 ): string {
+  const { tokenized, restore } = tokenizeUrlReferences(value)
+  const parsed = parseTokenizedUrl(tokenized, value)
+  if (parsed === undefined) {
+    return containsCredentialMaterial(value) ? blank : value
+  }
+  const { url, syntheticScheme } = parsed
+
+  const componentsChanged = redactUrlComponents(url)
+  const queryChanged = redactUrlQueryParams(url, blank, isSensitiveKey, restore)
+  if (!componentsChanged && !queryChanged) {
+    return value
+  }
+  const serialized = url.toString()
+  const withoutSynthetic = syntheticScheme !== "" && serialized.startsWith(syntheticScheme)
+    ? serialized.slice(syntheticScheme.length)
+    : serialized
+  return restore(withoutSynthetic)
+}
+
+/** Swap `{{...}}` reference spans for per-call tokens a `URL` round-trip won't mangle. */
+function tokenizeUrlReferences(value: string): { tokenized: string; restore: (text: string) => string } {
   const references: string[] = []
   const stem = `${URL_REFERENCE_TOKEN_STEM}${Math.random().toString(36).slice(2, 10)}-`
   const tokenPattern = new RegExp(`${stem}(\\d+)`, "g")
@@ -676,25 +725,35 @@ export function sanitizeUrlWithReferences(
   })
   const restore = (text: string): string =>
     text.replace(tokenPattern, (match, index: string) => references[Number(index)] ?? match)
+  return { tokenized, restore }
+}
 
-  let url: URL
-  let syntheticScheme = ""
+/**
+ * Parse the tokenized value as a `URL`, retrying behind a throwaway
+ * `http://` scheme for a scheme-less template base. `undefined` means neither
+ * parse succeeded, so the caller falls back to the plain value-level heuristic.
+ */
+function parseTokenizedUrl(
+  tokenized: string,
+  original: string,
+): { url: URL; syntheticScheme: string } | undefined {
   try {
-    url = new URL(tokenized)
+    return { url: new URL(tokenized), syntheticScheme: "" }
   } catch {
-    if (!isTemplatedUrl(value)) {
-      return containsCredentialMaterial(value) ? blank : value
+    if (!isTemplatedUrl(original)) {
+      return undefined
     }
-    syntheticScheme = "http://"
     try {
-      url = new URL(`${syntheticScheme}${tokenized}`)
+      return { url: new URL(`http://${tokenized}`), syntheticScheme: "http://" }
     } catch {
-      return containsCredentialMaterial(value) ? blank : value
+      return undefined
     }
   }
+}
 
+/** Strip userinfo, fragment and any credential-looking path segment. Returns whether it changed anything. */
+function redactUrlComponents(url: URL): boolean {
   let changed = false
-
   if (url.username !== "" || url.password !== "") {
     url.username = ""
     url.password = ""
@@ -704,7 +763,6 @@ export function sanitizeUrlWithReferences(
     url.hash = ""
     changed = true
   }
-
   const sanitizedPath = url.pathname
     .split("/")
     .map((segment) => (containsCredentialMaterial(segment) ? "" : segment))
@@ -713,7 +771,16 @@ export function sanitizeUrlWithReferences(
     url.pathname = sanitizedPath
     changed = true
   }
+  return changed
+}
 
+/** Blank a sensitive-key or credential-looking query value in place. Returns whether it changed anything. */
+function redactUrlQueryParams(
+  url: URL,
+  blank: string,
+  isSensitiveKey: (key: string) => boolean,
+  restore: (text: string) => string,
+): boolean {
   // Iterate *entries*, not keys: `get(key)`/`set(key, ...)` collapses duplicate
   // parameters, which would let `?password={{variables.p}}&password=literal`
   // keep the literal behind the first (reference) value.
@@ -730,21 +797,12 @@ export function sanitizeUrlWithReferences(
     return [key, queryValue] as const
   })
   if (queryChanged) {
-    changed = true
     url.search = ""
     for (const [key, queryValue] of sanitizedEntries) {
       url.searchParams.append(key, queryValue)
     }
   }
-
-  if (!changed) {
-    return value
-  }
-  const serialized = url.toString()
-  const withoutSynthetic = syntheticScheme !== "" && serialized.startsWith(syntheticScheme)
-    ? serialized.slice(syntheticScheme.length)
-    : serialized
-  return restore(withoutSynthetic)
+  return queryChanged
 }
 
 /**

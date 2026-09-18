@@ -13,6 +13,7 @@ import {
   isForbiddenSecretStorageKey,
   isReferenceOnlyValue,
   isSyncSensitiveKey,
+  mapForbiddenKeyFilteredEntries,
   redactBodyLeaves,
   referenceOrBlank,
   sanitizeExtractorValues,
@@ -188,16 +189,9 @@ function withheldCredentialStrings(value: unknown): unknown {
     return value.map(withheldCredentialStrings)
   }
   if (isRecord(value)) {
-    const scanned: Record<string, unknown> = {}
-    for (const [key, nested] of Object.entries(value)) {
-      // Final safety net: a vault/storage field name must not reach
-      // `assertNoSecretValues`, whatever record kind happened to carry it.
-      if (isForbiddenSecretStorageKey(key)) {
-        continue
-      }
-      scanned[key] = withheldCredentialStrings(nested)
-    }
-    return scanned
+    // Final safety net: a vault/storage field name must not reach
+    // `assertNoSecretValues`, whatever record kind happened to carry it.
+    return mapForbiddenKeyFilteredEntries(value, (_key, nested) => withheldCredentialStrings(nested))
   }
   return value
 }
@@ -365,35 +359,49 @@ function sanitizeSensitiveValue(value: unknown, inspectStringValues: boolean): J
   return referenceOrBlank(value, "")
 }
 
+// The array/record walk shared by the live-config pass (`sanitizeValue`) and
+// the snapshot pass (`sanitizeSnapshotValue`): both special-case a `{key,
+// value}` secret pair the same way and both drop forbidden-storage keys the
+// same way, differing only in which recursive sanitizer and sensitive-value
+// handler they thread through.
+
+function sanitizeArrayEntries(value: readonly unknown[], recurse: (item: unknown) => JsonValue): JsonValue[] {
+  const sanitized: JsonValue[] = []
+  for (const item of value) {
+    if (isSecretKeyValueItem(item)) {
+      const record = item as Record<string, JsonValue>
+      sanitized.push(
+        withholdPairValueUnlessReference(
+          recurse(record) as Record<string, JsonValue>,
+          record["value"],
+        ),
+      )
+      continue
+    }
+    sanitized.push(recurse(item))
+  }
+  return sanitized
+}
+
+function sanitizeRecordEntries(
+  value: Record<string, unknown>,
+  sanitizeSensitive: (nested: unknown) => JsonValue,
+  sanitizeOther: (key: string, nested: unknown) => JsonValue,
+): Record<string, JsonValue> {
+  return mapForbiddenKeyFilteredEntries(value, (key, nested) =>
+    isSyncSensitiveKey(key) ? sanitizeSensitive(nested) : sanitizeOther(key, nested))
+}
+
 function sanitizeValue(value: unknown, inspectStringValues = false): JsonValue {
   if (Array.isArray(value)) {
-    const sanitized: JsonValue[] = []
-    for (const item of value) {
-      if (isSecretKeyValueItem(item)) {
-        const record = item as Record<string, JsonValue>
-        sanitized.push(
-          withholdPairValueUnlessReference(
-            sanitizeValue(record, inspectStringValues) as Record<string, JsonValue>,
-            record["value"],
-          ),
-        )
-        continue
-      }
-      sanitized.push(sanitizeValue(item, inspectStringValues))
-    }
-    return sanitized
+    return sanitizeArrayEntries(value, (item) => sanitizeValue(item, inspectStringValues))
   }
   if (isRecord(value)) {
-    const sanitized: Record<string, JsonValue> = {}
-    for (const [key, nested] of Object.entries(value)) {
-      if (isForbiddenSecretStorageKey(key)) {
-        continue
-      }
-      sanitized[key] = isSyncSensitiveKey(key)
-        ? sanitizeSensitiveValue(nested, inspectStringValues)
-        : sanitizeValue(nested, inspectStringValues)
-    }
-    return sanitized
+    return sanitizeRecordEntries(
+      value,
+      (nested) => sanitizeSensitiveValue(nested, inspectStringValues),
+      (_key, nested) => sanitizeValue(nested, inspectStringValues),
+    )
   }
   if (typeof value === "string") {
     return inspectStringValues && containsCredentialMaterial(value) ? "" : value
@@ -426,33 +434,14 @@ function sanitizeSensitiveSnapshotValue(value: unknown): JsonValue {
 
 function sanitizeSnapshotValue(value: unknown): JsonValue {
   if (Array.isArray(value)) {
-    const sanitized: JsonValue[] = []
-    for (const item of value) {
-      if (isSecretKeyValueItem(item)) {
-        const record = item as Record<string, JsonValue>
-        sanitized.push(
-          withholdPairValueUnlessReference(
-            sanitizeSnapshotValue(record) as Record<string, JsonValue>,
-            record["value"],
-          ),
-        )
-        continue
-      }
-      sanitized.push(sanitizeSnapshotValue(item))
-    }
-    return sanitized
+    return sanitizeArrayEntries(value, sanitizeSnapshotValue)
   }
   if (isRecord(value)) {
-    const sanitized: Record<string, JsonValue> = {}
-    for (const [nestedKey, nestedValue] of Object.entries(value)) {
-      if (isForbiddenSecretStorageKey(nestedKey)) {
-        continue
-      }
-      sanitized[nestedKey] = isSyncSensitiveKey(nestedKey)
-        ? sanitizeSensitiveSnapshotValue(nestedValue)
-        : sanitizeConfigField(nestedKey, nestedValue, sanitizeSnapshotValue)
-    }
-    return sanitized
+    return sanitizeRecordEntries(
+      value,
+      sanitizeSensitiveSnapshotValue,
+      (key, nested) => sanitizeConfigField(key, nested, sanitizeSnapshotValue),
+    )
   }
   if (typeof value === "string") {
     return containsCredentialMaterial(value) ? "" : value
