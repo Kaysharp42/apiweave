@@ -1,5 +1,7 @@
 import { useState, type ElementType } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
+  BookOpen,
   Copy,
   Info,
   Search,
@@ -22,6 +24,8 @@ import {
   PanelTipsSheet,
 } from "./molecules/PanelTips";
 import { usePanelTips } from "../hooks/usePanelTips";
+import { tutorialLessonHref } from "../constants/tutorials/curriculum";
+import { resolveTutorialScope } from "../utils/tutorialScope";
 
 interface DynamicFunction {
   name: string;
@@ -173,6 +177,13 @@ export default function DynamicFunctionsHelper() {
   const [copiedFunc, setCopiedFunc] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const tips = usePanelTips("functions");
+  const location = useLocation();
+  const { orgSlug, workspaceSlug } = resolveTutorialScope(location.pathname);
+  const tutorialHref = tutorialLessonHref(
+    orgSlug,
+    workspaceSlug,
+    "placeholders-functions",
+  );
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(`{{${text}}}`);
@@ -422,6 +433,17 @@ export default function DynamicFunctionsHelper() {
           <p className="break-words">
             Compare against a dynamic value:{" "}
             <PanelTipsCode>{`Expected: {{futureDate(1)}}`}</PanelTipsCode>
+          </p>
+        </PanelTipsSection>
+
+        <PanelTipsSection title="Learn more" icon={BookOpen}>
+          <p className="break-words">
+            <Link
+              to={tutorialHref}
+              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+            >
+              Read the tutorial
+            </Link>
           </p>
         </PanelTipsSection>
       </PanelTipsSheet>

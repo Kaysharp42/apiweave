@@ -64,6 +64,7 @@ Three docs that take a new user from zero to a working workflow. Read in order t
 The feature guides cover everything you can do with APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
 - [Features Index](features/README.md)
+- [In-App Tutorials](features/tutorials.md): the bundled offline learning library, search, progress, and follow-along.
 - [Workflows and Nodes](features/workflows-and-nodes.md): build, edit, and run workflows on the canvas.
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
 - [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.

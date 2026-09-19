@@ -15,6 +15,7 @@ function createActions(overrides: Partial<Parameters<typeof createCanvasCommandR
     openJsonEditor: vi.fn(),
     openImport: vi.fn(),
     openHistory: vi.fn(),
+    openTutorials: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     group: vi.fn(),
@@ -44,5 +45,29 @@ describe("createCanvasCommandRegistry", () => {
     expect(save?.when()).toBe(true);
     save?.run();
     expect(actions.save).toHaveBeenCalledOnce();
+  });
+
+  it("exposes an available Help-group tutorials command", () => {
+    const actions = createActions();
+    const commands = createCanvasCommandRegistry(actions);
+
+    const tutorials = commands.find((command) => command.id === "help.tutorials");
+    expect(tutorials?.group).toBe("Help");
+    expect(tutorials?.keywords).toEqual(
+      expect.arrayContaining(["learn", "guide", "tour", "help"]),
+    );
+    expect(tutorials?.when()).toBe(true);
+    tutorials?.run();
+    expect(actions.openTutorials).toHaveBeenCalledOnce();
+  });
+
+  it("hides the tutorials command until the workflow is hydrated", () => {
+    const commands = createCanvasCommandRegistry(
+      createActions({ isHydrated: false }),
+    );
+
+    expect(
+      commands.find((command) => command.id === "help.tutorials")?.when(),
+    ).toBe(false);
   });
 });

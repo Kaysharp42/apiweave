@@ -1,11 +1,13 @@
 import { useContext } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { AppContext } from "../../App";
-import { Moon, Sun, Save, Menu } from "lucide-react";
+import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
 import Tippy from "@tippyjs/react";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
 import { AccountMenu } from "./AccountMenu";
 import useNavigationStore from "../../stores/NavigationStore";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
 import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
 
@@ -18,6 +20,13 @@ export function MainHeader() {
   // On desktop this header *is* the window chrome: it carries the drag region
   // and the min/max/close buttons, and TitleBar stands down. One bar, not two.
   const ownsChrome = useOwnWindowChrome();
+
+  const navigate = useNavigate();
+  const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
+  const { currentOrg, currentWorkspace } = useWorkspace();
+  const tutorialsPath = `/${currentOrg?.slug ?? params.orgSlug ?? "personal"}/${
+    currentWorkspace?.slug ?? params.workspaceSlug ?? "personal"
+  }/tutorials`;
 
   return (
     <header
@@ -48,7 +57,7 @@ export function MainHeader() {
           alt="APIWeave Logo"
           className="h-7 w-7 rounded object-cover"
         />
-        <h1 className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
+        <h1 className="hidden font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark sm:block">
           APIWeave
         </h1>
       </div>
@@ -61,6 +70,18 @@ export function MainHeader() {
           chrome could only disagree with it. Environments are managed from
           Settings → Environments. */}
       <div className="navbar-end min-w-0 flex-shrink gap-2">
+        <div style={noDragStyle}>
+          <IconButton
+            tooltip="Tutorials"
+            size="md"
+            variant="secondary"
+            onClick={() => navigate(tutorialsPath)}
+            className="w-9 h-9"
+          >
+            <BookOpen className="w-4 h-4" />
+          </IconButton>
+        </div>
+
         <Tippy
           content={autoSaveEnabled ? "Auto-save enabled" : "Auto-save disabled"}
           placement="bottom"

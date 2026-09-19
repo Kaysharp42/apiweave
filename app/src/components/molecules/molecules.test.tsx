@@ -595,6 +595,36 @@ describe("WorkspaceEmptyState", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not claim CI/CD webhooks, which the desktop app does not have", () => {
+    render(<WorkspaceEmptyState />);
+    expect(screen.queryByText(/webhook/i)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/run them against the environment you choose/i),
+    ).toBeInTheDocument();
+  });
+
+  it("invokes onOpenTutorials with the provided label", async () => {
+    const onOpenTutorials = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <WorkspaceEmptyState
+        onOpenTutorials={onOpenTutorials}
+        tutorialsLabel="Continue tutorial"
+      />,
+    );
+    await user.click(
+      screen.getByRole("button", { name: /Continue tutorial/i }),
+    );
+    expect(onOpenTutorials).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the tutorial action when no handler is given", () => {
+    render(<WorkspaceEmptyState />);
+    expect(
+      screen.queryByRole("button", { name: /tutorial/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("invokes onNewWorkflow when the New Workflow button is clicked", async () => {
     const onNewWorkflow = vi.fn();
     const user = userEvent.setup();
