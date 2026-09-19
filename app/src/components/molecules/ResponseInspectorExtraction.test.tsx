@@ -30,7 +30,7 @@ const renderTree = (
 describe("ResponseInspector save-as-variable", () => {
   test("offers a save action on every tree row", () => {
     renderTree();
-    expect(screen.getAllByTitle("Save as variable").length).toBeGreaterThan(0);
+    expect(screen.getAllByTitle("Store this value as {{variables.name}} for later nodes").length).toBeGreaterThan(0);
   });
 
   test("names the variable from the clicked path and stores the full path", async () => {
@@ -39,7 +39,7 @@ describe("ResponseInspector save-as-variable", () => {
     renderTree({ onAddExtractor });
 
     // Row order follows the body: the root object, then its keys.
-    await user.click(screen.getAllByTitle("Save as variable")[1]!);
+    await user.click(screen.getAllByTitle("Store this value as {{variables.name}} for later nodes")[1]!);
 
     const nameInput = await screen.findByLabelText("Variable name");
     expect(nameInput).toHaveValue("id");
@@ -53,7 +53,7 @@ describe("ResponseInspector save-as-variable", () => {
     const onAddExtractor = vi.fn();
     renderTree({ onAddExtractor });
 
-    await user.click(screen.getAllByTitle("Save as variable")[0]!);
+    await user.click(screen.getAllByTitle("Store this value as {{variables.name}} for later nodes")[0]!);
     expect(await screen.findByLabelText("Variable name")).toHaveValue("body");
 
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -66,11 +66,11 @@ describe("ResponseInspector save-as-variable", () => {
     renderTree({ onAddExtractor, filterQuery: "boy" });
 
     await waitFor(() => {
-      expect(screen.getAllByTitle("Save as variable").length).toBeGreaterThan(0);
+      expect(screen.getAllByTitle("Store this value as {{variables.name}} for later nodes").length).toBeGreaterThan(0);
     });
 
     // "boy" is tags[1]; a filter that renumbered the array would yield tags[0].
-    const saveButtons = screen.getAllByTitle("Save as variable");
+    const saveButtons = screen.getAllByTitle("Store this value as {{variables.name}} for later nodes");
     await user.click(saveButtons[saveButtons.length - 1]!);
     await user.click(await screen.findByRole("button", { name: "Save" }));
 
@@ -85,7 +85,7 @@ describe("ResponseInspector save-as-variable", () => {
     const onAddExtractor = vi.fn();
     renderTree({ onAddExtractor });
 
-    await user.click(screen.getAllByTitle("Save as variable")[0]!);
+    await user.click(screen.getAllByTitle("Store this value as {{variables.name}} for later nodes")[0]!);
     const nameInput = await screen.findByLabelText("Variable name");
     await user.clear(nameInput);
     await user.type(nameInput, "dog-id");
@@ -111,7 +111,7 @@ describe("ResponseInspector save-as-variable", () => {
 
   test("stays read-only when no extractor handler is supplied", () => {
     render(<ResponseInspector response={response} />);
-    expect(screen.queryByTitle("Save as variable")).toBeNull();
+    expect(screen.queryByTitle("Store this value as {{variables.name}} for later nodes")).toBeNull();
   });
 
   test("marks the root row when the whole body is stored, without hiding its children", async () => {

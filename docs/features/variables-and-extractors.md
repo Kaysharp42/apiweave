@@ -95,7 +95,7 @@ An extractor pulls a value out of an HTTP response and stores it as a workflow v
 The quickest way is to pick the value straight out of a response you already have:
 
 1. Run the workflow once, so the **Response** pane of the HTTP Request node holds a body from the last run.
-2. Open the node and, on the **Tree** tab, hover the row you want and click the variable icon next to the copy icon.
+2. Open the node and, on the **Tree** tab, hover the row you want. Two buttons appear at the end of it: **Copy** and **Save as variable**. Click **Save as variable**.
 3. Accept or edit the suggested name and press Enter.
 
 The value is now stored. The row keeps a `{{name}}` chip so the mapping stays visible in the response, and clicking that chip removes the variable again. The **Settings** tab counts what the node stores and lists each entry with what it captured from the last response.

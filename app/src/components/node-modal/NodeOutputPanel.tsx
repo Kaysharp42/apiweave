@@ -9,6 +9,10 @@ import type { StatusBadgeProps } from "../../types";
 import type { NodeOutputPanelProps } from "../../types/NodeOutputPanelProps";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { useJsonEditorDarkTheme } from "../../hooks/useJsonEditorDarkTheme";
+import {
+  JSON_TREE_ACTION_RESET,
+  JSON_TREE_ICONS,
+} from "../molecules/JsonTreeActions";
 
 type NodeOutputTab = "tree" | "raw";
 
@@ -115,9 +119,12 @@ export function NodeOutputPanel({
               icon={BracesCardIcon}
               className="flex min-h-0 flex-1 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
             >
-              <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+              <div
+                className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
+              >
                 <JsonEditor
                   data={output}
+                  icons={JSON_TREE_ICONS}
                   restrictEdit={true}
                   restrictAdd={true}
                   restrictDelete={true}

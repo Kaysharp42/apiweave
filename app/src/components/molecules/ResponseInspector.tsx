@@ -46,6 +46,11 @@ import { Card } from "./Card";
 import { EmptyState } from "./EmptyState";
 import { PanelTabs } from "./PanelTabs";
 import { SaveVariablePopover } from "./SaveVariablePopover";
+import {
+  JSON_TREE_ACTION_RESET,
+  JSON_TREE_ICONS,
+  JsonTreeActionPill,
+} from "./JsonTreeActions";
 
 type ResponseInspectorTab =
   | "tree"
@@ -222,18 +227,15 @@ function SaveVariableButton({ nodeData }: { nodeData: NodeData }) {
     <span
       title={
         supported
-          ? "Save as variable"
+          ? "Store this value as {{variables.name}} for later nodes"
           : "This value cannot be addressed by an extractor path"
       }
       className="jer-icon flex items-center"
     >
-      <Variable
-        className={`h-3.5 w-3.5 ${
-          supported
-            ? "text-primary dark:text-primary-light"
-            : "text-text-muted dark:text-text-muted-dark"
-        }`}
-        aria-hidden="true"
+      <JsonTreeActionPill
+        icon={<Variable className="h-3 w-3" aria-hidden="true" />}
+        label={supported ? "Save as variable" : "Not savable"}
+        muted={!supported}
       />
     </span>
   );
@@ -907,16 +909,19 @@ export function ResponseInspector({
                         className="h-3.5 w-3.5 text-primary dark:text-primary-light"
                         aria-hidden="true"
                       />
-                      Hover a value to store it as a variable
+                      Hover any value to copy it or save it as a variable
                     </span>
                   ),
                 }
               : {})}
             className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
           >
-            <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+            <div
+              className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
+            >
               <JsonEditor
                 data={treeData}
+                icons={JSON_TREE_ICONS}
                 restrictEdit={true}
                 restrictAdd={true}
                 restrictDelete={true}
