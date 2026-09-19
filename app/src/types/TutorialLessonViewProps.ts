@@ -21,4 +21,8 @@ export interface TutorialLessonViewProps {
   readonly onSelectLesson: (lessonId: string) => void;
   /** Titles for related ids, so the buttons do not show bare slugs. */
   readonly relatedLessonTitles: Readonly<Record<string, string>>;
+  /** Start (or resume) the follow-along exercise for this lesson. */
+  readonly onFollowAlong: (lessonId: string) => void;
+  /** True when this lesson is the one currently in practice. */
+  readonly isInPractice: boolean;
 }

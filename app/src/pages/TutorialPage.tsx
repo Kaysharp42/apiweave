@@ -18,9 +18,11 @@ import {
   tutorialWorkspaceHref,
 } from "../constants/tutorials/curriculum";
 import useTutorialStore, {
+  tutorialPractice,
   tutorialProgressSummary,
   tutorialResume,
 } from "../stores/TutorialStore";
+import useTutorialCompanionStore from "../stores/TutorialCompanionStore";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 
 /**
@@ -61,10 +63,13 @@ export function TutorialPage() {
 
   const completedLessonIds = useTutorialStore((s) => s.completedLessonIds);
   const lastLessonId = useTutorialStore((s) => s.lastLessonId);
-  const currentStep = useTutorialStore((s) => s.currentStep);
+  const practiceLessonId = useTutorialStore((s) => s.practiceLessonId);
+  const practiceStep = useTutorialStore((s) => s.practiceStep);
   const toggleComplete = useTutorialStore((s) => s.toggleComplete);
   const setLastLesson = useTutorialStore((s) => s.setLastLesson);
+  const startPractice = useTutorialStore((s) => s.startPractice);
   const resetProgress = useTutorialStore((s) => s.resetProgress);
+  const openCompanion = useTutorialCompanionStore((s) => s.openCompanion);
 
   const completedSet = useMemo(
     () => new Set(completedLessonIds),
@@ -75,8 +80,24 @@ export function TutorialPage() {
     [completedLessonIds],
   );
   const resume = useMemo(
-    () => tutorialResume({ completedLessonIds, lastLessonId, currentStep }),
-    [completedLessonIds, lastLessonId, currentStep],
+    () =>
+      tutorialResume({
+        completedLessonIds,
+        lastLessonId,
+        practiceLessonId,
+        practiceStep,
+      }),
+    [completedLessonIds, lastLessonId, practiceLessonId, practiceStep],
+  );
+  const practice = useMemo(
+    () =>
+      tutorialPractice({
+        completedLessonIds,
+        lastLessonId,
+        practiceLessonId,
+        practiceStep,
+      }),
+    [completedLessonIds, practiceLessonId, practiceStep],
   );
 
   const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
@@ -133,6 +154,19 @@ export function TutorialPage() {
   const backToLibrary = useCallback(() => {
     navigate(libraryHref);
   }, [navigate, libraryHref]);
+
+  // Start (or resume) the exercise and go where the work happens: the
+  // companion is suppressed on the tutorial route, so the reader is taken to
+  // the workspace where the instructions float beside the canvas. Nothing is
+  // created, run or mutated here.
+  const handleFollowAlong = useCallback(
+    (targetLessonId: string) => {
+      startPractice(targetLessonId);
+      openCompanion(workspaceHref);
+      navigate(workspaceHref);
+    },
+    [startPractice, openCompanion, navigate, workspaceHref],
+  );
 
   const destinationHref =
     lesson?.destination !== undefined
@@ -227,6 +261,8 @@ export function TutorialPage() {
         onToggleComplete={toggleComplete}
         onSelectLesson={selectLesson}
         relatedLessonTitles={relatedLessonTitles}
+        onFollowAlong={handleFollowAlong}
+        isInPractice={practice?.lesson.id === lesson.id}
       />
     ) : null;
 

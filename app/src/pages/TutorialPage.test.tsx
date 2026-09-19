@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TutorialPage } from "./TutorialPage";
 import useTutorialStore from "../stores/TutorialStore";
+import useTutorialCompanionStore from "../stores/TutorialCompanionStore";
 import { TUTORIAL_LESSONS } from "../constants/tutorials/curriculum";
 import { useElementWidth } from "../hooks/useElementWidth";
 
@@ -63,6 +64,7 @@ function renderTutorialAt(entry: string) {
 
 beforeEach(() => {
   useTutorialStore.getState().resetProgress();
+  useTutorialCompanionStore.getState().closeCompanion();
   localStorage.clear();
   setContainerWidth(1024);
 });
@@ -244,6 +246,40 @@ describe("TutorialPage reader", () => {
   it("records the last lesson for resume", () => {
     renderTutorialAt("/personal/personal/tutorials/sse");
     expect(useTutorialStore.getState().lastLessonId).toBe("sse");
+  });
+
+  it("starts a follow-along exercise and returns to the workspace", async () => {
+    const user = userEvent.setup();
+    renderTutorialAt("/personal/personal/tutorials/first-workflow");
+
+    await user.click(screen.getByRole("button", { name: "Follow along" }));
+
+    // Practice is recorded, the companion is opened, and the reader is taken
+    // to the workspace where the instructions float beside the canvas.
+    expect(useTutorialStore.getState().practiceLessonId).toBe("first-workflow");
+    expect(useTutorialStore.getState().practiceStep).toBe(0);
+    expect(useTutorialCompanionStore.getState().isOpen).toBe(true);
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/workflows",
+    );
+  });
+
+  it("shows Follow along again when this lesson is already in practice", () => {
+    useTutorialStore.getState().startPractice("first-workflow");
+    renderTutorialAt("/personal/personal/tutorials/first-workflow");
+    expect(
+      screen.getByRole("button", { name: "Follow along again" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not mutate practice when only reading a different lesson", () => {
+    useTutorialStore.getState().startPractice("sse");
+    useTutorialStore.getState().setPracticeStep(2);
+    renderTutorialAt("/personal/personal/tutorials/canvas");
+
+    expect(useTutorialStore.getState().practiceLessonId).toBe("sse");
+    expect(useTutorialStore.getState().practiceStep).toBe(2);
+    expect(useTutorialStore.getState().lastLessonId).toBe("canvas");
   });
 });
 

@@ -190,7 +190,7 @@ export function TutorialLibrary({
                 <p className="mt-0.5 text-xs text-text-secondary dark:text-text-secondary-dark">
                   {resume.allComplete
                     ? "Revisit any lesson whenever you like."
-                    : `Step ${resume.stepNumber} of ${resume.stepCount}`}
+                    : "Pick up the lesson and follow along."}
                 </p>
                 <Button
                   variant="primary"

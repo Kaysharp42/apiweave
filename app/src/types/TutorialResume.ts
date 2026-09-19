@@ -9,8 +9,6 @@
 export interface TutorialResume {
   readonly lessonId: string;
   readonly title: string;
-  readonly stepNumber: number;
-  readonly stepCount: number;
   readonly allComplete: boolean;
   readonly started: boolean;
 }

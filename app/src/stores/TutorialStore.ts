@@ -8,6 +8,7 @@ import {
 } from "../constants/tutorials/curriculum";
 import { createGuardedLocalStorage } from "../utils/guardedStorage";
 import type {
+  TutorialPracticeStep,
   TutorialProgress,
   TutorialProgressSummary,
   TutorialResume,
@@ -31,28 +32,49 @@ export function sanitizeCompletedLessonIds(value: unknown): string[] {
   return result;
 }
 
+function asLessonId(value: unknown): string | null {
+  return typeof value === "string" && isTutorialLessonId(value) ? value : null;
+}
+
+function asStep(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : 0;
+}
+
 /**
  * Normalize a stored progress blob. Unknown lesson ids are filtered rather
  * than trusted, so a curriculum change cannot strand progress on a lesson that
- * no longer exists.
+ * no longer exists. `currentStep` from the pre-Phase-2 shape is deliberately
+ * ignored — there is no compatibility path for it.
  */
 export function sanitizeProgress(value: unknown): TutorialProgress {
   if (typeof value !== "object" || value === null) {
-    return { completedLessonIds: [], lastLessonId: null, currentStep: 0 };
+    return {
+      completedLessonIds: [],
+      lastLessonId: null,
+      practiceLessonId: null,
+      practiceStep: 0,
+    };
   }
   const record = value as Record<string, unknown>;
-  const completedLessonIds = sanitizeCompletedLessonIds(
-    record["completedLessonIds"],
-  );
-  const rawLast = record["lastLessonId"];
-  const lastLessonId =
-    typeof rawLast === "string" && isTutorialLessonId(rawLast) ? rawLast : null;
-  const rawStep = record["currentStep"];
-  const currentStep =
-    typeof rawStep === "number" && Number.isFinite(rawStep) && rawStep >= 0
-      ? Math.floor(rawStep)
-      : 0;
-  return { completedLessonIds, lastLessonId, currentStep };
+  return {
+    completedLessonIds: sanitizeCompletedLessonIds(
+      record["completedLessonIds"],
+    ),
+    lastLessonId: asLessonId(record["lastLessonId"]),
+    practiceLessonId: asLessonId(record["practiceLessonId"]),
+    practiceStep: asStep(record["practiceStep"]),
+  };
+}
+
+/** Clamp a step index to the practised lesson's bounds (0 when unpractised). */
+function clampPracticeStep(lessonId: string | null, step: number): number {
+  if (lessonId === null) return 0;
+  const lesson = TUTORIAL_LESSONS.find((entry) => entry.id === lessonId);
+  if (lesson === undefined) return 0;
+  const max = Math.max(lesson.steps.length - 1, 0);
+  return Math.min(Math.max(Math.floor(step), 0), max);
 }
 
 const useTutorialStore = create<TutorialState>()(
@@ -60,7 +82,8 @@ const useTutorialStore = create<TutorialState>()(
     (set, get) => ({
       completedLessonIds: [],
       lastLessonId: null,
-      currentStep: 0,
+      practiceLessonId: null,
+      practiceStep: 0,
 
       markComplete: (lessonId: string) => {
         if (!isTutorialLessonId(lessonId)) return false;
@@ -93,16 +116,37 @@ const useTutorialStore = create<TutorialState>()(
       setLastLesson: (lessonId: string) => {
         if (!isTutorialLessonId(lessonId)) return;
         if (get().lastLessonId === lessonId) return;
-        set({ lastLessonId: lessonId, currentStep: 0 });
+        set({ lastLessonId: lessonId });
       },
 
-      setCurrentStep: (step: number) => {
-        if (!Number.isFinite(step) || step < 0) return;
-        set({ currentStep: Math.floor(step) });
+      startPractice: (lessonId: string) => {
+        if (!isTutorialLessonId(lessonId)) return;
+        if (get().practiceLessonId === lessonId) {
+          // Resuming the same exercise keeps its step, clamped in case the
+          // lesson gained or lost steps since it was stored.
+          set((state) => ({
+            practiceStep: clampPracticeStep(lessonId, state.practiceStep),
+          }));
+          return;
+        }
+        set({ practiceLessonId: lessonId, practiceStep: 0 });
       },
+
+      setPracticeStep: (step: number) => {
+        const { practiceLessonId } = get();
+        if (practiceLessonId === null) return;
+        set({ practiceStep: clampPracticeStep(practiceLessonId, step) });
+      },
+
+      endPractice: () => set({ practiceLessonId: null, practiceStep: 0 }),
 
       resetProgress: () =>
-        set({ completedLessonIds: [], lastLessonId: null, currentStep: 0 }),
+        set({
+          completedLessonIds: [],
+          lastLessonId: null,
+          practiceLessonId: null,
+          practiceStep: 0,
+        }),
     }),
     {
       name: STORAGE_KEY,
@@ -110,7 +154,8 @@ const useTutorialStore = create<TutorialState>()(
       partialize: (state) => ({
         completedLessonIds: state.completedLessonIds,
         lastLessonId: state.lastLessonId,
-        currentStep: state.currentStep,
+        practiceLessonId: state.practiceLessonId,
+        practiceStep: state.practiceStep,
       }),
       // A malformed or older blob must not crash the reader; sanitize on the
       // way in and fall back to empty progress.
@@ -120,7 +165,11 @@ const useTutorialStore = create<TutorialState>()(
           ...current,
           completedLessonIds: [...safe.completedLessonIds],
           lastLessonId: safe.lastLessonId,
-          currentStep: safe.currentStep,
+          practiceLessonId: safe.practiceLessonId,
+          practiceStep: clampPracticeStep(
+            safe.practiceLessonId,
+            safe.practiceStep,
+          ),
         };
       },
     },
@@ -157,20 +206,42 @@ export function tutorialResume(
         ) ?? null)
       : null;
   const lesson =
-    lastLesson ?? (allComplete ? (TUTORIAL_LESSONS[0] ?? null) : firstIncompleteLesson(completed));
+    lastLesson ??
+    (allComplete
+      ? (TUTORIAL_LESSONS[0] ?? null)
+      : firstIncompleteLesson(completed));
   if (lesson === null) return null;
-  const stepCount = lesson.steps.length;
-  const stepNumber = Math.min(
-    Math.max(progress.currentStep + 1, 1),
-    Math.max(stepCount, 1),
-  );
   return {
     lessonId: lesson.id,
     title: lesson.title,
-    stepNumber,
-    stepCount,
     allComplete,
     started: lastLesson !== null,
+  };
+}
+
+/**
+ * Resolve the practised lesson and its clamped step for the companion, or
+ * null when no exercise is active.
+ */
+export function tutorialPractice(
+  progress: TutorialProgress,
+): TutorialPracticeStep | null {
+  if (progress.practiceLessonId === null) return null;
+  const lesson = TUTORIAL_LESSONS.find(
+    (entry) => entry.id === progress.practiceLessonId,
+  );
+  if (lesson === undefined || lesson.steps.length === 0) return null;
+  const stepIndex = clampPracticeStep(lesson.id, progress.practiceStep);
+  const step = lesson.steps[stepIndex];
+  if (step === undefined) return null;
+  return {
+    lesson,
+    stepIndex,
+    stepNumber: stepIndex + 1,
+    stepCount: lesson.steps.length,
+    title: step.title,
+    instruction: step.instruction,
+    ...(step.detail !== undefined ? { detail: step.detail } : {}),
   };
 }
 

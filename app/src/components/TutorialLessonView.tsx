@@ -5,6 +5,7 @@ import {
   Check,
   Circle,
   Clock,
+  PlayCircle,
   Undo2,
   Wifi,
 } from "lucide-react";
@@ -47,6 +48,8 @@ export function TutorialLessonView({
   onToggleComplete,
   onSelectLesson,
   relatedLessonTitles,
+  onFollowAlong,
+  isInPractice,
 }: TutorialLessonViewProps) {
   return (
     <article className="min-w-0" aria-labelledby="tutorial-lesson-heading">
@@ -106,6 +109,17 @@ export function TutorialLessonView({
       <p className="mt-3 text-sm leading-relaxed text-text-secondary dark:text-text-secondary-dark">
         {lesson.summary}
       </p>
+
+      <div className="mt-3">
+        <Button
+          variant={isInPractice ? "outline" : "secondary"}
+          size="sm"
+          onClick={() => onFollowAlong(lesson.id)}
+          icon={<PlayCircle className="h-4 w-4" />}
+        >
+          {isInPractice ? "Follow along again" : "Follow along"}
+        </Button>
+      </div>
 
       <div className="mt-5 space-y-6">
         <Section title="Outcome">
