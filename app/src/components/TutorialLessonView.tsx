@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -51,6 +52,13 @@ export function TutorialLessonView({
   onFollowAlong,
   isInPractice,
 }: TutorialLessonViewProps) {
+  // The live region stays empty until the reader toggles completion *here*.
+  // Rendering the sentence on every pass makes it change with the lesson, and a
+  // live region announces every change — so opening any lesson used to read out
+  // "… marked not complete."
+  const [announcement, setAnnouncement] = useState("");
+  useEffect(() => setAnnouncement(""), [lesson.id]);
+
   return (
     <article className="min-w-0" aria-labelledby="tutorial-lesson-heading">
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -200,7 +208,14 @@ export function TutorialLessonView({
           variant={isComplete ? "outline" : "primary"}
           intent={isComplete ? "default" : "success"}
           size="md"
-          onClick={() => onToggleComplete(lesson.id)}
+          onClick={() => {
+            onToggleComplete(lesson.id);
+            setAnnouncement(
+              isComplete
+                ? `${lesson.title} marked not complete.`
+                : `${lesson.title} marked complete.`,
+            );
+          }}
           icon={
             isComplete ? (
               <Undo2 className="h-4 w-4" />
@@ -218,9 +233,7 @@ export function TutorialLessonView({
         {/* Announced politely so a keyboard or screen-reader user hears the
             completion change without the whole article re-announcing. */}
         <span role="status" aria-live="polite" className="sr-only">
-          {isComplete
-            ? `${lesson.title} marked complete.`
-            : `${lesson.title} marked not complete.`}
+          {announcement}
         </span>
       </div>
     </article>

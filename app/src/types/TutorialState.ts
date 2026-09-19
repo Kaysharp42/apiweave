@@ -11,9 +11,9 @@ export interface TutorialState {
   practiceStep: number;
 
   /** Mark a lesson complete (idempotent). Returns true when it changed. */
-  markComplete: (lessonId: string) => boolean;
+  markComplete: (lessonId: string) => void;
   /** Reverse a completion. Returns true when it changed. */
-  markIncomplete: (lessonId: string) => boolean;
+  markIncomplete: (lessonId: string) => void;
   toggleComplete: (lessonId: string) => void;
   /** Record the lesson the reader is on, for the resume card. */
   setLastLesson: (lessonId: string) => void;

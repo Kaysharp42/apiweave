@@ -86,22 +86,20 @@ const useTutorialStore = create<TutorialState>()(
       practiceStep: 0,
 
       markComplete: (lessonId: string) => {
-        if (!isTutorialLessonId(lessonId)) return false;
-        if (get().completedLessonIds.includes(lessonId)) return false;
+        if (!isTutorialLessonId(lessonId)) return;
+        if (get().completedLessonIds.includes(lessonId)) return;
         set((state) => ({
           completedLessonIds: [...state.completedLessonIds, lessonId],
         }));
-        return true;
       },
 
       markIncomplete: (lessonId: string) => {
-        if (!get().completedLessonIds.includes(lessonId)) return false;
+        if (!get().completedLessonIds.includes(lessonId)) return;
         set((state) => ({
           completedLessonIds: state.completedLessonIds.filter(
             (id) => id !== lessonId,
           ),
         }));
-        return true;
       },
 
       toggleComplete: (lessonId: string) => {

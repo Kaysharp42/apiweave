@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TutorialCompanion } from "./TutorialCompanion";
 import { findTutorialLesson } from "../constants/tutorials/curriculum";
+import { CanvasControlsClearance } from "../constants/CanvasChrome";
 import type { TutorialCompanionProps } from "../types";
 
 const LESSON =
@@ -51,6 +52,19 @@ function renderCompanion(overrides: Partial<TutorialCompanionProps> = {}) {
 }
 
 describe("TutorialCompanion", () => {
+  // The ReactFlow control column (zoom, fit view, auto-layout) owns the
+  // bottom-left corner, and lessons tell the reader to press those buttons
+  // while the companion is open. Both presentations have to clear it.
+  it.each([
+    ["panel", false],
+    ["strip", true],
+  ])("keeps the %s clear of the canvas controls", (_name, isCollapsed) => {
+    renderCompanion({ isCollapsed });
+    const floating = document.querySelector<HTMLElement>(".absolute.z-30");
+    expect(floating).not.toBeNull();
+    expect(floating?.style.left).toBe(`${CanvasControlsClearance}px`);
+  });
+
   it("shows the lesson, step count and instruction", () => {
     renderCompanion();
     expect(

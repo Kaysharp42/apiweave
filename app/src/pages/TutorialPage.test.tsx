@@ -163,6 +163,23 @@ describe("TutorialPage reader", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/httpbin\.org\/get/).length).toBeGreaterThan(0);
   });
+  // A live region announces every change to its text. Rendering the sentence
+  // unconditionally made it change with the lesson, so merely opening one read
+  // out "… marked not complete."
+  it("announces completion only after the reader toggles it", async () => {
+    const user = userEvent.setup();
+    renderTutorialAt("/personal/personal/tutorials/first-workflow");
+
+    const announced = () =>
+      screen.getAllByRole("status").map((region) => region.textContent ?? "");
+    expect(announced().join("")).toBe("");
+
+    await user.click(screen.getByRole("button", { name: "Mark complete" }));
+    await waitFor(() =>
+      expect(announced().join("")).toMatch(/marked complete\./),
+    );
+  });
+
   it("marks a lesson complete and reverses it", async () => {
     const user = userEvent.setup();
     renderTutorialAt("/personal/personal/tutorials/first-workflow");

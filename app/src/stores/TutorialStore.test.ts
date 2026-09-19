@@ -33,15 +33,13 @@ beforeEach(() => {
 describe("TutorialStore completion", () => {
   it("marks a lesson complete once and reverses it", () => {
     const store = useTutorialStore.getState();
-    expect(store.markComplete("first-workflow")).toBe(true);
-    expect(store.markComplete("first-workflow")).toBe(false);
+    store.markComplete("first-workflow");
+    store.markComplete("first-workflow");
     expect(useTutorialStore.getState().completedLessonIds).toEqual([
       "first-workflow",
     ]);
 
-    expect(useTutorialStore.getState().markIncomplete("first-workflow")).toBe(
-      true,
-    );
+    useTutorialStore.getState().markIncomplete("first-workflow");
     expect(useTutorialStore.getState().completedLessonIds).toEqual([]);
   });
 
@@ -55,7 +53,7 @@ describe("TutorialStore completion", () => {
   });
 
   it("ignores an unknown lesson id", () => {
-    expect(useTutorialStore.getState().markComplete("not-a-lesson")).toBe(false);
+    useTutorialStore.getState().markComplete("not-a-lesson");
     expect(useTutorialStore.getState().completedLessonIds).toEqual([]);
   });
 

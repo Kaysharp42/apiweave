@@ -108,11 +108,12 @@ export function TutorialCompanionHost({
   const orgSlug = segments[0] ?? "personal";
   const workspaceSlug = segments[1] ?? "personal";
 
-  const visible = isOpen && !suppressed && practice !== null;
-  if (!visible) {
-    // Still render the measuring node so the width is known before first open.
-    return <div ref={measureRef} className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />;
-  }
+  // A zero-height block in `<main>`'s flow: the only thing here with a box to
+  // measure, since the content region it sits beside is `display: contents`.
+  // Always rendered, so the width is known before the first open.
+  const measure = <div ref={measureRef} className="h-0" aria-hidden="true" />;
+
+  if (!isOpen || suppressed || practice === null) return measure;
 
   const { lesson, stepIndex } = practice;
   const destinationHref =
@@ -122,7 +123,7 @@ export function TutorialCompanionHost({
 
   return (
     <>
-      <div ref={measureRef} className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true" />
+      {measure}
       <div ref={companionRef} className="contents">
         <TutorialCompanion
           lesson={lesson}

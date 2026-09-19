@@ -13,7 +13,22 @@ import {
 import { Link } from "react-router-dom";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
+import {
+  CanvasControlsClearance,
+  CanvasCornerGutter,
+} from "../constants/CanvasChrome";
 import type { TutorialCompanionProps } from "../types";
+
+/**
+ * Where the strip and the floating panel sit: one gutter off the canvas floor,
+ * clear of the ReactFlow control column to its left. The max width is measured
+ * from those same insets so the panel never overhangs the opposite edge.
+ */
+const floatStyle = {
+  left: CanvasControlsClearance,
+  bottom: CanvasCornerGutter,
+  maxWidth: `calc(100% - ${CanvasControlsClearance + CanvasCornerGutter}px)`,
+} as const;
 
 /**
  * The follow-along companion: one nonmodal panel that shows the active lesson
@@ -42,18 +57,16 @@ export function TutorialCompanion({
   onNextLesson,
   onReturnToWorkspace,
 }: TutorialCompanionProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const nextButtonRef = useRef<HTMLButtonElement>(null);
   const previousButtonRef = useRef<HTMLButtonElement>(null);
-  const primaryActionRef = useRef<HTMLButtonElement>(null);
 
   const stepCount = lesson.steps.length;
   const isFirstStep = stepIndex <= 0;
   const isLastStep = stepIndex >= stepCount - 1;
 
-  // Keep focus on the control the user is using when the step changes. If the
-  // control they were on is replaced (the last-step primary action), move
-  // focus to its replacement instead of dropping it to the body.
+  // Keep focus on the control the user is using when the step changes: the
+  // step buttons are re-rendered under them, and a step change that drops
+  // focus to the body strands a keyboard user at the top of the app.
   const lastActionRef = useRef<"previous" | "next" | null>(null);
   useEffect(() => {
     const target =
@@ -79,9 +92,9 @@ export function TutorialCompanion({
   if (isCollapsed) {
     return (
       <div
-        ref={containerRef}
         onKeyDown={handleKeyDown}
-        className="pointer-events-auto absolute bottom-4 left-4 z-30 max-w-[min(24rem,calc(100%-2rem))]"
+        style={{ ...floatStyle, maxWidth: `min(24rem, ${floatStyle.maxWidth})` }}
+        className="pointer-events-auto absolute z-30"
       >
         <div className="flex items-center gap-2 rounded-sm border border-border bg-surface-raised px-2 py-1.5 shadow-node dark:border-border-dark dark:bg-surface-dark-raised">
           <BookOpen
@@ -120,14 +133,14 @@ export function TutorialCompanion({
 
   return (
     <div
-      ref={containerRef}
       onKeyDown={handleKeyDown}
       role="complementary"
       aria-label="Follow along"
+      style={isExpandedOverContent ? undefined : floatStyle}
       className={
         isExpandedOverContent
           ? "absolute inset-0 z-30 flex flex-col bg-surface dark:bg-surface-dark"
-          : "absolute bottom-4 left-4 z-30 flex w-80 max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-sm border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised"
+          : "absolute z-30 flex w-80 flex-col overflow-hidden rounded-sm border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised"
       }
     >
       <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
@@ -217,7 +230,6 @@ export function TutorialCompanion({
         {isLastStep ? (
           isLessonComplete ? (
             <Button
-              ref={primaryActionRef}
               variant="primary"
               size="sm"
               fullWidth
@@ -228,7 +240,6 @@ export function TutorialCompanion({
             </Button>
           ) : (
             <Button
-              ref={primaryActionRef}
               variant="primary"
               intent="success"
               size="sm"
