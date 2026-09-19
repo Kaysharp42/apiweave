@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import {
   findRedactedPlaceholders,
+  isSyncSensitiveKey,
   sanitizeAgentReadValue,
   sanitizeExportValue,
+  sanitizeUrlWithReferences,
   sanitizeVariablesForExport,
 } from "../secret_utils"
 
@@ -217,5 +219,138 @@ describe("sanitizeVariablesForExport", () => {
     expect(sanitized["BASE_URL"]).toBe("https://api.example.com/v1")
     // No credentials/secrets present — must round-trip byte-for-byte, no reformatting.
     expect(sanitized["PLAIN_URL"]).toBe("https://api.example.com")
+  })
+})
+
+describe("reference-aware export sanitization", () => {
+  const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig"
+
+  it("keeps indirection references under sensitive variable keys and in nested structures, while literal secrets stay withheld", () => {
+    const sanitized = sanitizeVariablesForExport({
+      token: "{{variables.token}}",
+      password: "{{secrets.password}}",
+      authorization: "Bearer {{variables.token}}",
+      nested: { token: "{{secrets.token}}" },
+      list: ["{{env.API_KEY}}", "plain"],
+      plain: "password=abc1234",
+    })
+    expect(sanitized["token"]).toBe("{{variables.token}}")
+    expect(sanitized["password"]).toBe("{{secrets.password}}")
+    expect(sanitized["authorization"]).toBe("Bearer {{variables.token}}")
+    expect(sanitized["nested"]).toEqual({ token: "{{secrets.token}}" })
+    expect(sanitized["list"]).toEqual(["{{env.API_KEY}}", "plain"])
+    // A literal under an innocuous key that names a credential is still withheld.
+    expect(sanitized["plain"]).toBe("<SECRET>")
+  })
+
+  it("keeps references in export headers and cookies instead of dropping or flattening them", () => {
+    const config = {
+      headers: [
+        { key: "Authorization", value: "Bearer {{variables.token}}" },
+        { key: "X-Api-Key", value: "{{secrets.API_KEY}}" },
+      ],
+      cookies: [
+        { key: "session", value: "{{env.SESSION}}" },
+        { key: "sid", value: "REAL{{env.SUFFIX}}" },
+      ],
+    }
+    const sanitized = sanitizeExportValue(config) as Record<string, unknown[]>
+    expect(sanitized["headers"]).toEqual([
+      { key: "Authorization", value: "Bearer {{variables.token}}" },
+      { key: "X-Api-Key", value: "{{secrets.API_KEY}}" },
+    ])
+    // A cookie is trusted only when it is nothing but the reference: the mixed
+    // value is still withheld, so a reference cannot smuggle session material.
+    expect(sanitized["cookies"]).toEqual([
+      { key: "session", value: "{{env.SESSION}}" },
+      { key: "sid", value: "<SECRET>" },
+    ])
+  })
+
+  it("still drops a literal secret-named export header and withholds a literal cookie", () => {
+    const config = {
+      headers: [{ key: "Authorization", value: "Bearer abc123" }],
+      cookies: [{ key: "session", value: "opaque-session-value" }],
+    }
+    const sanitized = sanitizeExportValue(config) as Record<string, unknown[]>
+    expect(sanitized["headers"]).toEqual([])
+    expect(sanitized["cookies"]).toEqual([{ key: "session", value: "<SECRET>" }])
+  })
+
+  it("preserves URL query references byte-for-byte and refuses a reference next to credential material", () => {
+    const clean = sanitizeExportValue({ url: "https://api.test/run?token={{variables.token}}&page=2" }) as { url: string }
+    expect(clean.url).toBe("https://api.test/run?token={{variables.token}}&page=2")
+
+    const mixed = sanitizeExportValue({ url: `https://api.test/run?token={{variables.token}}${JWT}` }) as { url: string }
+    expect(mixed.url).not.toContain(JWT)
+    expect(mixed.url).not.toContain("{{variables.token}}")
+
+    const literal = sanitizeExportValue({ url: "https://api.test/run?password=abc1234" }) as { url: string }
+    expect(literal.url).not.toContain("abc1234")
+  })
+
+  it("does not let a reference elsewhere in a URL launder a literal sensitive query value", () => {
+    const sanitized = sanitizeVariablesForExport({
+      CALLBACK: "https://api.test/run?token={{variables.token}}&password=abc1234",
+    })
+    expect(sanitized["CALLBACK"]).not.toContain("abc1234")
+    expect(sanitized["CALLBACK"]).toContain("{{variables.token}}")
+  })
+})
+
+describe("URL redaction regression fixes", () => {
+  it("sanitizes every duplicate query value, not just the first one for a key", () => {
+    const url = "https://api.test/run?password={{variables.p}}&password=abc1234"
+    expect(sanitizeUrlWithReferences(url, "", isSyncSensitiveKey)).toBe(
+      "https://api.test/run?password={{variables.p}}&password=",
+    )
+    expect(sanitizeUrlWithReferences(url, "<SECRET>", isSyncSensitiveKey)).toBe(
+      "https://api.test/run?password={{variables.p}}&password=%3CSECRET%3E",
+    )
+  })
+
+  it("restores more than ten references exactly (no index-1 / index-10 collision)", () => {
+    const params = Array.from({ length: 12 }, (_, index) => `p${index + 1}={{variables.v${index + 1}}}`)
+    const url = `https://api.test/run?${params.join("&")}&password=abc1234`
+    const sanitized = sanitizeUrlWithReferences(url, "", isSyncSensitiveKey)
+    for (let index = 1; index <= 12; index++) {
+      expect(sanitized).toContain(`{{variables.v${index}}}`)
+    }
+    expect(sanitized).not.toContain("abc1234")
+  })
+
+  it("restores a reference in a lowercased host and still blanks a literal query value", () => {
+    expect(
+      sanitizeUrlWithReferences("https://{{env.HOST}}/login?password=abc1234", "", isSyncSensitiveKey),
+    ).toBe("https://{{env.HOST}}/login?password=")
+  })
+
+  it("sanitizes a scheme-less template base while keeping the reference", () => {
+    expect(
+      sanitizeUrlWithReferences("{{env.BASE_URL}}/login?password=abc1234", "", isSyncSensitiveKey),
+    ).toBe("{{env.BASE_URL}}/login?password=")
+  })
+
+  it("sanitizes a template URL in variables export instead of preserving it as a reference", () => {
+    const sanitized = sanitizeVariablesForExport({
+      CALLBACK: "{{env.BASE_URL}}/login?password=abc1234",
+    })
+    expect(sanitized["CALLBACK"]).toContain("{{env.BASE_URL}}")
+    expect(sanitized["CALLBACK"]).not.toContain("abc1234")
+  })
+})
+
+describe("vault storage fields and extractor values", () => {
+  it("drops forbidden vault storage keys instead of keeping them blank", () => {
+    expect(sanitizeExportValue({ ciphertext: "abc", privateKey: "key", body: "ok" })).toEqual({ body: "ok" })
+    expect(sanitizeVariablesForExport({ ciphertext: "abc", token: "{{variables.t}}" })).toEqual({
+      token: "{{variables.t}}",
+    })
+  })
+
+  it("withholds a credential-shaped extractor value but keeps a valid response path", () => {
+    expect(
+      sanitizeExportValue({ extractors: { token: "response.body.token", bad: "Bearer abc.123" } }),
+    ).toEqual({ extractors: { token: "response.body.token", bad: "<SECRET>" } })
   })
 })

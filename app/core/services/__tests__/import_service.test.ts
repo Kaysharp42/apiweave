@@ -117,6 +117,68 @@ describe("ImportService — workflow bundle export/import", () => {
       service.importWorkflow(wsId, bundle as unknown as WorkflowBundle, false, true),
     ).rejects.toThrow()
   })
+
+  it("preserves indirection references through export and re-import", async () => {
+    const created = await service.importWorkflow(wsId, {
+      workflow: {
+        name: "Refs",
+        nodes: [{
+          nodeId: "n1",
+          type: "http-request",
+          label: "req",
+          position: { x: 0, y: 0 },
+          config: {
+            method: "GET",
+            url: "https://api.test/run?token={{variables.token}}&password=abc1234",
+            headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+            body: "{\"password\":\"abc1234\",\"user\":\"{{variables.token}}\"}",
+            extractors: { token: "response.body.token" },
+            timeout: 30,
+            followRedirects: true,
+          },
+        }],
+        edges: [],
+        variables: {
+          token: "{{secrets.password}}",
+          password: "abc1234",
+          nested: { token: "{{env.TOKEN}}" },
+        },
+        selectedEnvironmentId: "env-1",
+      },
+      environments: [{
+        environmentId: "env-1",
+        name: "Env",
+        description: null,
+        variables: { apiKey: "literal-secret", base: "https://api.test" },
+        swaggerDocUrl: null,
+      }],
+      secretReferences: [],
+      metadata: { exportedAt: "", workflowCount: 1, environmentCount: 1, secretReferenceCount: 0 },
+    }, true, false)
+
+    const bundle = await service.exportWorkflow(wsId, created.workflowId, true)
+    const config = (bundle.workflow.nodes[0] as { config: Record<string, unknown> }).config
+    expect(config["url"]).toBe("https://api.test/run?token={{variables.token}}&password=%3CSECRET%3E")
+    expect(config["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
+    expect(JSON.parse(config["body"] as string)).toEqual({ password: "<SECRET>", user: "{{variables.token}}" })
+    expect(config["extractors"]).toEqual({ token: "response.body.token" })
+    expect(bundle.workflow.variables).toEqual({
+      token: "{{secrets.password}}",
+      password: "<SECRET>",
+      nested: { token: "{{env.TOKEN}}" },
+    })
+    expect(bundle.environments?.[0]?.variables).toEqual({ apiKey: "<SECRET>", base: "https://api.test" })
+    expect(JSON.stringify(bundle)).not.toContain("abc1234")
+    expect(JSON.stringify(bundle)).not.toContain("literal-secret")
+
+    const reimported = await service.importWorkflow(wsId, bundle, true, true)
+    const bundle2 = await service.exportWorkflow(wsId, reimported.workflowId, true)
+    expect(bundle2.workflow.variables).toEqual(bundle.workflow.variables)
+    const config2 = (bundle2.workflow.nodes[0] as { config: Record<string, unknown> }).config
+    expect(config2["url"]).toBe("https://api.test/run?token={{variables.token}}&password=%3CSECRET%3E")
+    expect(config2["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
+    expect(config2["extractors"]).toEqual({ token: "response.body.token" })
+  })
 })
 
 describe("ImportService — cURL", () => {

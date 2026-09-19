@@ -420,6 +420,64 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     )
   })
 
+  it("preserves indirection references in node config, templates and environment variables across a project round-trip", async () => {
+    const wsA = seedWorkspace("a")
+    const env = environments.create({
+      workspaceId: wsA,
+      name: "Env",
+      variables: { apiKey: "literal-secret", base: "https://api.test" },
+    })
+    const collection = collections.create({ workspaceId: wsA, name: "Col" })
+    workflows.create({
+      workspaceId: wsA,
+      name: "Refs",
+      collectionId: collection.collectionId,
+      selectedEnvironmentId: env.environmentId,
+      variables: { token: "{{secrets.password}}", password: "abc1234" },
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 }, config: {} },
+        {
+          nodeId: "http-1",
+          type: "http-request",
+          position: { x: 200, y: 0 },
+          config: {
+            method: "GET",
+            url: "https://api.test/run?token={{variables.token}}&password=abc1234",
+            headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+            body: "{\"password\":\"abc1234\",\"user\":\"{{variables.token}}\"}",
+            extractors: { token: "response.body.token" },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 400, y: 0 }, config: {} },
+      ],
+      edges: [],
+      nodeTemplates: [{ name: "Reusable", type: "http-request", config: { token: "{{variables.token}}" } }],
+    })
+
+    const bundle = await exportService().exportProject(wsA, collection.collectionId)
+    const exported = bundle.workflows[0]!
+    const http = exported.nodes.find((node) => (node as { nodeId?: string }).nodeId === "http-1") as { config: Record<string, unknown> }
+    expect(http.config["url"]).toBe("https://api.test/run?token={{variables.token}}&password=%3CSECRET%3E")
+    expect(http.config["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
+    expect(JSON.parse(http.config["body"] as string)).toEqual({ password: "<SECRET>", user: "{{variables.token}}" })
+    expect(http.config["extractors"]).toEqual({ token: "response.body.token" })
+    expect(exported.variables).toEqual({ token: "{{secrets.password}}", password: "<SECRET>" })
+    expect(exported.nodeTemplates).toEqual([{ name: "Reusable", type: "http-request", config: { token: "{{variables.token}}" } }])
+    expect(bundle.environments[0]?.variables).toEqual({ apiKey: "<SECRET>", base: "https://api.test" })
+    expect(JSON.stringify(bundle)).not.toContain("abc1234")
+    expect(JSON.stringify(bundle)).not.toContain("literal-secret")
+
+    const wsB = seedWorkspace("b")
+    const result = await exportService().importProject(wsB, bundle)
+    expect(result.workflowCount).toBe(1)
+    const project2 = collections.listByWorkspace(wsB).items[0]!
+    const imported = workflows.listByCollection(wsB, project2.collectionId).items[0]!
+    const importedHttp = imported.nodes.find((node) => node.nodeId === "http-1")
+    expect(importedHttp?.config.url).toBe("https://api.test/run?token={{variables.token}}&password=%3CSECRET%3E")
+    expect(imported.variables).toEqual({ token: "{{secrets.password}}", password: "<SECRET>" })
+    expect(imported.nodeTemplates).toEqual([{ name: "Reusable", type: "http-request", config: { token: "{{variables.token}}" } }])
+  })
+
   it("can omit environments while retaining a clear unmapped reference warning on import", async () => {
     const wsA = seedWorkspace("a")
     const env = environments.create({ workspaceId: wsA, name: "Env" })
