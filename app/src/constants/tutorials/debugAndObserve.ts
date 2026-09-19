@@ -37,7 +37,7 @@ export const debugAndObserveChapter: TutorialChapter = {
           instruction:
             "Select an environment in the canvas toolbar and click Run (or press Ctrl+R / F5).",
           detail:
-            "Run always executes the full graph from the Start node. Resume-from-failure is not available in this release.",
+            "Run always executes the full graph from the Start node. The Run menu also shows Run from last failed node and Run all failed nodes and continue, but they are not wired to a resume path in this release and start a full run; treat them as unavailable.",
         },
         {
           title: "Cancel a run in flight",
@@ -54,7 +54,7 @@ export const debugAndObserveChapter: TutorialChapter = {
         {
           title: "Inspect one node's result",
           instruction:
-            "Click a node after the run to open its output. Use the Tree tab to browse the response, and the Raw tab to read the exact body.",
+            "Double-click a node after the run to open its editor and output. Use the Tree tab to browse the response, and the Raw tab to read the exact body.",
           detail:
             "The request bar shows the method and URL that ran, and Copy as cURL copies the configured request.",
         },
@@ -174,7 +174,7 @@ export const debugAndObserveChapter: TutorialChapter = {
         {
           title: "Follow the run camera",
           instruction:
-            "While a run executes, the camera smoothly follows the active branch. Zoom, pan or fit-view at any time to take over; the Follow run pill at the top of the canvas hands control back.",
+            "While a run executes, the camera smoothly follows the active branch. Zoom, pan or fit-view at any time to take over; the Resume follow pill at the top of the canvas hands control back.",
         },
         {
           title: "Use the minimap during a run",

@@ -39,7 +39,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Know which node types can be presets",
           instruction:
-            "HTTP Request, Assertion, Delay, Merge and Call Workflow nodes can become presets. Start and End cannot, because they carry no configuration.",
+            "HTTP Request, SSE Stream, Assertion, Delay, Merge and Call Workflow nodes can become presets. Start and End cannot, because they carry no configuration.",
         },
         {
           title: "Drag a preset onto a canvas",
@@ -128,45 +128,45 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Create a project",
           instruction:
-            "Open the projects list from the sidebar and click Create project. Fill in a name, optional description and a colour tag, then save.",
+            "Switch the sidebar to Projects, then click New Project (or Create Project in the empty state). Fill in a name, optional description and a colour tag, then save.",
         },
         {
           title: "Attach workflows from the workflow side",
           instruction:
-            "Open a workflow, switch the right-side panel to Settings, and pick a project in the Project field. Save.",
+            "Open a workflow, switch the right-side panel to Settings, open the Projects section and use Add to Project to pick a project. Save.",
           detail:
             "A workflow belongs to at most one project. Reassigning it to another project removes it from the first.",
         },
         {
-          title: "Or attach from the project settings",
+          title: "Or attach an existing workflow from the sidebar",
           instruction:
-            "Open the project and click Add workflow, then pick from the workflows that are not yet assigned.",
+            "In the sidebar's project list, expand the project and use the Assign control to pick a workflow that is not yet assigned. The Add workflow button instead creates a brand-new workflow in the project.",
           detail:
-            "A workflow added this way joins with continueOnFail set to true by default; adjust the per-row flag afterwards.",
+            "Assigning only sets membership. The per-row enabled and continue-on-failure flags are recorded when you manage workflow order in the project's Manage workflow order view.",
         },
         {
           title: "Reorder the workflows",
           instruction:
-            "In the project settings, grab the drag handle on the left of a row and drop it in the new position, then click Save order to persist.",
+            "Open the Projects dialog (New Project in the Projects section; it lists existing projects too) and click the list icon on the project row to manage workflow order. Drag a row by its grip handle into the new position, then click Save Order to persist.",
           detail:
-            "Order matters: it records the order the workflows are intended to run in.",
+            "Order records the sequence the workflows are intended to run in.",
         },
         {
           title: "Enable and disable rows",
           instruction:
-            "Use each row's Enabled toggle. A disabled workflow stays in the list so the order remains stable, but is skipped when the project is run.",
+            "Use each row's eye control to mark it Enabled or Disabled. A disabled workflow stays in the list so the order remains stable.",
         },
         {
           title: "Set the per-row continue-on-failure intent",
           instruction:
-            "Set the project-level continueOnFail flag per row: true to continue to the next workflow after a failure, false to stop the project.",
+            "Use each row's Continue / Stop button to record intent: Continue means the next workflow should run after a failure, Stop means the sequence should halt.",
           detail:
-            "This is independent of the workflow's own continueOnFail setting, which governs nodes inside that workflow.",
+            "This flag is project metadata, independent of the workflow's own continue-on-failure setting, which governs nodes inside that workflow.",
         },
         {
           title: "Know the current execution limit",
           instruction:
-            "Remember that one-click ordered project runs are not available in this release: there is no runner that executes a whole project in order. Run each workflow from its own canvas, in project order.",
+            "Remember that one-click ordered project runs are not available in this release: there is no runner that executes a whole project in order, so the order, Enabled and Continue flags are recorded intent rather than live execution settings. Run each workflow from its own canvas, in project order.",
           detail:
             "Variable and secret state does not pass between workflows. Promote a value to an environment variable or duplicate it if a downstream workflow needs it.",
         },
@@ -174,7 +174,7 @@ export const organizeChapter: TutorialChapter = {
       example: {
         caption: "A project with order, enabled state and failure intent",
         language: "text",
-        code: "Project: \"Checkout API\"  color: green\n  1. [x] Auth          project continueOnFail: true\n  2. [x] Add to cart   project continueOnFail: true\n  3. [ ] Visual check  (disabled, kept in place)\n  4. [x] Pay           project continueOnFail: false",
+        code: "Project: \"Checkout API\"  color: green\n  1. [x] Auth          continue: true\n  2. [x] Add to cart   continue: true\n  3. [ ] Visual check  (disabled, kept in place)\n  4. [x] Pay           continue: false",
       },
       expectedResult:
         "The project appears in the sidebar with its workflows in the order you saved, each row carrying its enabled state and failure intent.",
@@ -182,12 +182,12 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "A workflow row will not go away",
           instruction:
-            "Click Remove on the row, or set the workflow's Project field back to None in its Settings panel and save.",
+            "Click Remove on the row, or open the workflow's Settings panel, use Remove from project, and save.",
         },
         {
           title: "The order reverted after a drag",
           instruction:
-            "Drag-and-drop updates the list in memory only. Click Save order to persist it.",
+            "Drag-and-drop updates the list in memory only. Click Save Order to persist it.",
         },
         {
           title: "You expected the project to run end to end",
@@ -240,19 +240,19 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Export a project as .awecollection",
           instruction:
-            "Open the project in its settings page and click Export. Save the .awecollection file.",
+            "In the sidebar's project list, use the Download action on the project row (Export project), or the Export… item in its right-click menu. Save the .awecollection file.",
           detail:
             "The bundle carries project metadata and workflow order, every attached workflow with its nodes, edges, variables and settings, and environment references with their plain variables plus the secret references to re-create.",
         },
         {
           title: "Import a project",
           instruction:
-            "From the projects list, click Import project and pick or paste the .awecollection file. Click Validate for the dry-run report, then Import to commit.",
+            "With the Projects section selected, use Import → Collection in the sidebar header, then pick or paste the .awecollection file. Click Validate for the dry-run report, then Import Project to commit.",
         },
         {
           title: "Read the dry-run report",
           instruction:
-            "The validation pass lists the workflows and environments that will be created, counts any secret references that will be unresolved after import, and warns when the bundle's schema is newer than this app understands.",
+            "The validation pass reports counts of the workflows and environments that will be created, counts any secret references that will be unresolved after import, and warns when the bundle's schema version differs from the one this app writes.",
           detail:
             "Imports always create new workflow records; existing workflows are not overwritten. Every referenced environment is created fresh, and an existing environment with the same name is not reused or merged.",
         },
@@ -265,9 +265,9 @@ export const organizeChapter: TutorialChapter = {
         },
       ],
       example: {
-        caption: "The secret side of a bundle",
+        caption: "The secret side of a bundle (trimmed to the relevant fields)",
         language: "json",
-        code: "{\n  \"schemaVersion\": \"2.0\",\n  \"type\": \"awecollection\",\n  \"secretReferences\": [\n    { \"name\": \"API_KEY\", \"scopeType\": \"workspace\" }\n  ]\n}",
+        code: "{\n  \"schemaVersion\": \"2.0\",\n  \"type\": \"awecollection\",\n  \"secretReferences\": [\n    { \"name\": \"API_KEY\", \"scopeType\": \"workspace\", \"scopeId\": \"ws_123\" }\n  ]\n}",
       },
       expectedResult:
         "The JSON editor round-trips a valid workflow, and an exported project imports on another machine with its structure intact and a clear list of secrets to re-enter.",
@@ -285,7 +285,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "An imported workflow reports workflow not found",
           instruction:
-            "A Call Workflow node points at a stale internal id. Re-export from the source and re-import.",
+            "A Call Workflow node points at an id from the source workspace. Import does not remap those targets, so open the node in the imported workflow and pick the target again from the picker, then save.",
         },
       ],
       relatedLessonIds: ["projects", "openapi", "curl-har", "secrets"],
@@ -322,7 +322,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Pin the spec URL on an environment",
           instruction:
-            "Open Settings → Environments, create or open an environment, and paste the spec URL into the OpenAPI/Swagger URL field. Save.",
+            "Open Settings → Environments, create or open an environment, and paste the spec URL into the Swagger Doc URL field. Save.",
           detail:
             "Both a direct spec URL and a Swagger UI landing URL are accepted. Putting the URL on the environment lets you swap specs per stage without touching the canvas.",
         },
@@ -350,7 +350,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Import from a file instead",
           instruction:
-            "Open the Import panel from the canvas toolbar, choose OpenAPI, upload a .json or .yaml spec, click Preview, optionally pick a server URL, filter by tags or enable body sanitization, then click Add to Nodes.",
+            "Open the Import panel from the canvas toolbar, choose OpenAPI, upload a .json or .yaml spec, click Preview, optionally pick a server URL, filter by tags or enable Sanitize sensitive headers, then click Add to Nodes.",
           detail:
             "A file-imported group is local to the workflow, does not depend on an environment, does not refresh, and never produces Check API badges.",
         },
@@ -376,7 +376,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Refresh reports the environment has no Swagger/OpenAPI URL",
           instruction:
-            "Open the Environment editor and paste the spec URL into the OpenAPI/Swagger URL field.",
+            "Open the Environment editor and paste the spec URL into the Swagger Doc URL field.",
         },
         {
           title: "Only some endpoints import from a multi-definition Swagger UI",
@@ -436,14 +436,14 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Add to nodes",
           instruction:
-            "Click to add the parsed requests. They arrive as canvas nodes you can connect and edit like any other HTTP Request node.",
+            "Click Add to Nodes. The parsed requests are saved into a group in the Add Nodes palette; open Add Nodes and drag the ones you want onto the canvas, where they behave like any other HTTP Request node.",
         },
         {
           title: "Scrub captured credentials",
           instruction:
             "Before sharing a workflow or export that came from a HAR or cURL capture, replace literal tokens and cookies with {{secrets.NAME}} references.",
           detail:
-            "The JSON editor's copy-for-AI path redacts credential-shaped values, but a literal token stored in a node is stored in the same database as the workflow — treat it like a workflow node, no better or worse.",
+            "The JSON editor's AI Prompt copy redacts credential-shaped values, but a literal token stored in a node is stored in the same database as the workflow — treat it like a workflow node, no better or worse.",
         },
       ],
       example: {
@@ -452,7 +452,7 @@ export const organizeChapter: TutorialChapter = {
         code: "curl --request POST https://api.example.com/login \\\n  --header 'Content-Type: application/json' \\\n  --data '{\"user\":\"demo\",\"pass\":\"{{secrets.DEMO_PASS}}\"}'",
       },
       expectedResult:
-        "The pasted request becomes a configured HTTP Request node on the canvas, ready to connect and run.",
+        "The pasted requests appear as a group in the Add Nodes palette, ready to drag onto the canvas and connect.",
       troubleshooting: [
         {
           title: "The paste produces no requests",

@@ -86,7 +86,7 @@ export const firstStepsChapter: TutorialChapter = {
         {
           title: "Inspect the result",
           instruction:
-            "When the run finishes, click the GET node and open its Response pane to read the status code and JSON body. The nodes turn green when the run passes.",
+            "When the run finishes, double-click the GET node to open its editor and read the status code and JSON body in the Response pane. A single click only selects the node — it does not open the editor. The nodes turn green when the run passes.",
           detail:
             "The run is written to History, reachable from the toolbar. The Variables panel shows values produced during the run.",
         },
@@ -289,7 +289,7 @@ export const firstStepsChapter: TutorialChapter = {
         {
           title: "Lock the camera and follow a run",
           instruction:
-            "Use the lock icon in the canvas toolbar to freeze the viewport. During a run, the camera can follow the active branch; any manual zoom or pan takes over, and a Follow run pill hands control back.",
+            "Use the lock icon in the canvas toolbar to freeze the viewport. During a run, the camera can follow the active branch; any manual zoom or pan takes over, and a Resume follow pill at the top of the canvas hands control back.",
           detail:
             "The minimap freezes while the camera is moving so the moving viewport does not smear it.",
         },

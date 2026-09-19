@@ -159,7 +159,7 @@ export const appChapter: TutorialChapter = {
         {
           title: "Handle dead letters",
           instruction:
-            "If a record cannot be synced, it lands in the failed-records list with a real rejection reason. Open it to see what was rejected and retry after fixing the cause.",
+            "If a record cannot be synced, it lands in the failed-records list with a real rejection reason. Open it to see what was rejected, fix the cause, then use Retry failed on the workspace row to try again.",
         },
         {
           title: "Handle encryption and unlock where surfaced",
@@ -255,14 +255,14 @@ export const appChapter: TutorialChapter = {
         {
           title: "Read the update log",
           instruction:
-            "If a check or download misbehaves, use Settings → Updates → Show update log to open main.log, which records every check, download and error.",
+            "If a check or download misbehaves, use Settings → Updates → Show update log to reveal main.log in your file manager, which records every check, download and error.",
         },
         {
           title: "Recover from a failed startup",
           instruction:
-            "If the app does not finish starting, the boot screen reports that local services did not become ready and offers Retry. Check the main-process log, then retry.",
+            "If the app cannot bring up its local services, the window can settle on an Auth bootstrap failed screen instead of the workspace. Note the message and any error text it shows, check main.log, then quit and relaunch the app.",
           detail:
-            "The boot screen brings up the local database and services; a first launch can take a few seconds.",
+            "The app brings up the local database and services before the workspace; a first launch can take a few seconds.",
         },
       ],
       example: {
@@ -286,7 +286,7 @@ export const appChapter: TutorialChapter = {
         {
           title: "The app is stuck on Starting APIWeave",
           instruction:
-            "Local services did not become ready. Retry from the boot screen; if it persists, check main.log and disk permissions.",
+            "Local services did not come up. Quit and relaunch; if it persists, check main.log and disk permissions.",
         },
       ],
       relatedLessonIds: ["settings", "cloud"],

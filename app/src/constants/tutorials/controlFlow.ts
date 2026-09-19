@@ -148,9 +148,9 @@ export const controlFlowChapter: TutorialChapter = {
         {
           title: "Add jitter",
           instruction:
-            "On the Random Jitter card, enable jitter and set Min (ms) and Max (ms).",
+            "On the Random Jitter (optional) card, enable jitter and set Min (ms) and Max (ms).",
           detail:
-            "The runner waits the base duration plus a random amount between the two bounds, which spreads retries against a rate-limited API.",
+            "With jitter on, the wait becomes a random duration between Min and Max and the base Delay (ms) value is not added on top, which spreads retries against a rate-limited API.",
         },
         {
           title: "Split into parallel branches",
@@ -198,7 +198,7 @@ export const controlFlowChapter: TutorialChapter = {
         {
           title: "prev.* after a merge is empty",
           instruction:
-            "The index does not match a completed branch. Branch indices start at 0 and follow canvas order.",
+            "The index does not match a completed branch. Branch indices start at 0 and follow the order of the edges arriving at the merge (the same order as the Branch index field in the Conditions tab).",
         },
         {
           title: "A conditional merge behaves unexpectedly",
@@ -241,9 +241,9 @@ export const controlFlowChapter: TutorialChapter = {
         {
           title: "Set the endpoint",
           instruction:
-            "On the Endpoint tab, set the SSE URL, for example {{env.BASE_URL}}/events. It supports environment, variable and secret placeholders.",
+            "On the Endpoint tab, set the SSE URL, for example {{env.BASE_URL}}/events. It supports environment and variable placeholders.",
           detail:
-            "The node always sends Accept: text/event-stream over GET.",
+            "The node always sends Accept: text/event-stream over GET. Secrets are not resolved in the URL; put Authorization: Bearer {{secrets.NAME}} in the headers instead.",
         },
         {
           title: "Add query params and headers",
@@ -295,10 +295,10 @@ export const controlFlowChapter: TutorialChapter = {
       example: {
         caption: "Wait for the handshake, then assert on the final result",
         language: "text",
-        code: "[ Start ] -> [ SSE Stream ] --Ready----> [ HTTP Request: POST /trigger ]\n                              \\--Complete-> [ Assertion: response.body.eventCount >= 1 ]",
+        code: "[ Start ] -> [ SSE Stream ] --Ready----> [ HTTP Request: POST /trigger ]\n                              \\--Complete-> [ Assertion: response.body.eventCount gte 1 ]",
       },
       expectedResult:
-        "The Ready path runs only after the SSE handshake succeeds, so the trigger is not missed. The stream closes on the event cap, a matching finish trigger, timeout, cancellation or workflow failure, and Complete carries the bounded event list.",
+        "The Ready path runs only after the SSE handshake succeeds, so the trigger is not missed. Complete fires only when the event cap or a finish rule ends the collection; a timeout, cancellation, empty stream-end or failure terminates the node without traversing Complete. On success, Complete carries the bounded event list.",
       troubleshooting: [
         {
           title: "The stream never completes",
@@ -376,7 +376,7 @@ export const controlFlowChapter: TutorialChapter = {
         {
           title: "Understand how it runs",
           instruction:
-            "Know that the call runs inline inside the current run with no second history entry. The calling node's result carries a summary: the target, its status, node and failure counts, and which outputs were mapped back.",
+            "Know that the call runs in-process inside the current run. The child is recorded as its own run in the target workflow's history; open that workflow's History, or use the link on the calling node, to inspect it. The calling node's result carries only a summary: the target, its status, node and failure counts, and which outputs were mapped back.",
         },
         {
           title: "Respect the recursion limit",
