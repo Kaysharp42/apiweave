@@ -1,6 +1,8 @@
 import { useReducer, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import {
+  BookOpen,
   GitBranch,
   GitMerge,
   Package,
@@ -21,7 +23,24 @@ import {
 } from "./molecules/PanelTips";
 import { VariableProvenanceModal } from "./molecules/VariableProvenanceModal";
 import { usePanelTips } from "../hooks/usePanelTips";
+import { tutorialLessonHref } from "../constants/tutorials/curriculum";
+import { resolveTutorialScope } from "../utils/tutorialScope";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
+
+/** The header's add/cancel toggle for the new-variable form. */
+function AddVariableToggle({
+  showForm,
+  onToggle,
+}: {
+  showForm: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button onClick={onToggle} size="xs" fullWidth variant={showForm ? "ghost" : "primary"}>
+      {showForm ? "Cancel" : "+ Add Variable"}
+    </Button>
+  );
+}
 
 export default function VariablesPanel() {
   const { variables, updateVariable, deleteVariablesWithCleanup } =
@@ -29,6 +48,13 @@ export default function VariablesPanel() {
   const provenanceMap = useVariableProvenanceStore((s) => s.provenance);
   const [tracingVar, setTracingVar] = useState<string | null>(null);
   const tips = usePanelTips("variables");
+  const location = useLocation();
+  const { orgSlug, workspaceSlug } = resolveTutorialScope(location.pathname);
+  const tutorialHref = tutorialLessonHref(
+    orgSlug,
+    workspaceSlug,
+    "variables-extractors",
+  );
 
   type VariablesPanelState = {
     showForm: boolean;
@@ -156,14 +182,10 @@ export default function VariablesPanel() {
           />
         </div>
 
-        <Button
-          onClick={() => dispatch({ type: "toggle-form" })}
-          size="xs"
-          fullWidth
-          variant={state.showForm ? "ghost" : "primary"}
-        >
-          {state.showForm ? "Cancel" : "+ Add Variable"}
-        </Button>
+        <AddVariableToggle
+          showForm={state.showForm}
+          onToggle={() => dispatch({ type: "toggle-form" })}
+        />
       </div>
 
       {/* Scrollable content */}
@@ -369,6 +391,17 @@ export default function VariablesPanel() {
               <PanelTipsCode>{`{{prev.response}}`}</PanelTipsCode>
             </li>
           </ul>
+        </PanelTipsSection>
+
+        <PanelTipsSection title="Learn more" icon={BookOpen}>
+          <p className="break-words">
+            <Link
+              to={tutorialHref}
+              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+            >
+              Read the tutorial
+            </Link>
+          </p>
         </PanelTipsSection>
       </PanelTipsSheet>
 
