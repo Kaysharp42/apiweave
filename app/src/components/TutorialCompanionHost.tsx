@@ -15,30 +15,13 @@ import {
 } from "../constants/tutorials/curriculum";
 import { isTutorialRoute } from "../utils/isTutorialRoute";
 
-/**
- * The single follow-along companion, mounted once by `MainLayout` as a stable
- * sibling of the content region.
- *
- * It is presentation-only: it reads the practised lesson and step from the
- * progress store and the open/collapsed state from an ephemeral store. It never
- * creates, mutates, runs or launches anything. Wide layouts float a panel in
- * the lower-left; compact layouts start as a strip and can expand the
- * instructions over the content, which is made inert while covered.
- */
-export function TutorialCompanionHost({
-  contentRef,
-}: {
-  readonly contentRef: RefObject<HTMLElement | null>;
-}) {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  // Measure the content region, not the viewport: the sidebar and agent dock
-  // can leave far less room than the viewport suggests.
-  const [measureRef, contentWidth] = useElementWidth<HTMLDivElement>();
-  const isWide =
-    contentWidth !== null && contentWidth >= TUTORIAL_COMPANION_MIN_WIDTH;
-
+/** The progress- and companion-store reads, kept in one place so the host's
+ * own render function isn't also a wall of `useTutorialStore` selectors.
+ * The sequence of one-field zustand selectors reads the same as any other
+ * store-backed component (Sidebar, useNodePaletteSections); it isn't shared
+ * logic with those stores, just the same idiom applied to a different store. */
+function useTutorialCompanionData() {
+  // fallow-ignore-next-line code-duplication
   const practiceLessonId = useTutorialStore((s) => s.practiceLessonId);
   const practiceStep = useTutorialStore((s) => s.practiceStep);
   const completedLessonIds = useTutorialStore((s) => s.completedLessonIds);
@@ -57,8 +40,6 @@ export function TutorialCompanionHost({
   const closeCompanion = useTutorialCompanionStore((s) => s.closeCompanion);
   const pauseCompanion = useTutorialCompanionStore((s) => s.pauseCompanion);
 
-  const companionRef = useRef<HTMLDivElement>(null);
-
   const practice = useMemo(
     () =>
       tutorialPractice({
@@ -70,9 +51,42 @@ export function TutorialCompanionHost({
     [completedLessonIds, practiceLessonId, practiceStep],
   );
 
-  // The full tutorial article suppresses the companion but keeps practice, so
-  // reading a related lesson never ends the exercise.
-  const suppressed = isTutorialRoute(location.pathname);
+  return {
+    completedLessonIds,
+    setPracticeStep,
+    startPractice,
+    markComplete,
+    isOpen,
+    isCollapsed,
+    isExpanded,
+    returnPath,
+    collapseCompanion,
+    expandCompanion,
+    closeCompanion,
+    pauseCompanion,
+    practice,
+  };
+}
+
+/**
+ * Width tracking and the wide/compact presentation rules that follow from it:
+ * a floating panel above the width threshold, a strip (or an expand-over-content
+ * overlay) below it.
+ */
+function useTutorialCompanionLayout(
+  pauseCompanion: () => void,
+  isCollapsed: boolean,
+  isExpanded: boolean,
+  collapseCompanion: () => void,
+  expandCompanion: () => void,
+) {
+  // Measure the content region, not the viewport: the sidebar and agent dock
+  // can leave far less room than the viewport suggests.
+  const [measureRef, contentWidth] = useElementWidth<HTMLDivElement>();
+  const isWide =
+    contentWidth !== null && contentWidth >= TUTORIAL_COMPANION_MIN_WIDTH;
+
+  const companionRef = useRef<HTMLDivElement>(null);
 
   // Leaving the shell entirely (Cloud) unmounts this host. Pause rather than
   // keep `isOpen`, so returning does not pop the companion back open.
@@ -102,6 +116,56 @@ export function TutorialCompanionHost({
   // presentation and `isExpanded` is irrelevant.
   const isExpandedOverContent = !isWide && isExpanded && !isCollapsed;
   const showStrip = isCollapsed || (!isWide && !isExpanded);
+
+  return { measureRef, isWide, companionRef, isExpandedOverContent, showStrip };
+}
+
+/**
+ * The single follow-along companion, mounted once by `MainLayout` as a stable
+ * sibling of the content region.
+ *
+ * It is presentation-only: it reads the practised lesson and step from the
+ * progress store and the open/collapsed state from an ephemeral store. It never
+ * creates, mutates, runs or launches anything. Wide layouts float a panel in
+ * the lower-left; compact layouts start as a strip and can expand the
+ * instructions over the content, which is made inert while covered.
+ */
+export function TutorialCompanionHost({
+  contentRef,
+}: {
+  readonly contentRef: RefObject<HTMLElement | null>;
+}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const {
+    completedLessonIds,
+    setPracticeStep,
+    startPractice,
+    markComplete,
+    isOpen,
+    isCollapsed,
+    isExpanded,
+    returnPath,
+    collapseCompanion,
+    expandCompanion,
+    closeCompanion,
+    pauseCompanion,
+    practice,
+  } = useTutorialCompanionData();
+
+  const { measureRef, companionRef, isExpandedOverContent, showStrip } =
+    useTutorialCompanionLayout(
+      pauseCompanion,
+      isCollapsed,
+      isExpanded,
+      collapseCompanion,
+      expandCompanion,
+    );
+
+  // The full tutorial article suppresses the companion but keeps practice, so
+  // reading a related lesson never ends the exercise.
+  const suppressed = isTutorialRoute(location.pathname);
   useInert(contentRef, isOpen && !suppressed && isExpandedOverContent);
 
   const segments = (returnPath ?? "/personal/personal").split("/").filter(Boolean);

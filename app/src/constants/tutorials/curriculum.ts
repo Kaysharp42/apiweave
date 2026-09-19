@@ -109,6 +109,73 @@ function includes(haystack: string, needle: string): boolean {
  * examples, expected results, troubleshooting and prerequisites. Results keep
  * their chapter context and record which fields matched.
  */
+/**
+ * One entry per searchable field, in the order results should report matches.
+ * Table-driven so `searchTutorialLessons` itself stays a plain nested loop
+ * rather than a nine-branch if-chain.
+ */
+const SEARCH_FIELD_MATCHERS: readonly {
+  field: TutorialSearchField;
+  matches: (lesson: TutorialLesson, needle: string) => boolean;
+}[] = [
+  { field: "title", matches: (lesson, needle) => includes(lesson.title, needle) },
+  {
+    field: "summary",
+    matches: (lesson, needle) => includes(lesson.summary, needle),
+  },
+  {
+    field: "keyword",
+    matches: (lesson, needle) =>
+      lesson.keywords.some((keyword) => includes(keyword, needle)),
+  },
+  {
+    field: "outcome",
+    matches: (lesson, needle) => includes(lesson.outcome, needle),
+  },
+  {
+    field: "prerequisite",
+    matches: (lesson, needle) =>
+      lesson.prerequisites.some((entry) => includes(entry, needle)),
+  },
+  {
+    field: "step",
+    matches: (lesson, needle) =>
+      lesson.steps.some(
+        (step) =>
+          includes(step.title, needle) ||
+          includes(step.instruction, needle) ||
+          (step.detail !== undefined && includes(step.detail, needle)),
+      ),
+  },
+  {
+    field: "example",
+    matches: (lesson, needle) =>
+      includes(lesson.example.caption, needle) ||
+      includes(lesson.example.code, needle),
+  },
+  {
+    field: "expected",
+    matches: (lesson, needle) => includes(lesson.expectedResult, needle),
+  },
+  {
+    field: "troubleshooting",
+    matches: (lesson, needle) =>
+      lesson.troubleshooting.some(
+        (entry) =>
+          includes(entry.title, needle) || includes(entry.instruction, needle),
+      ),
+  },
+];
+
+function matchedSearchFields(
+  lesson: TutorialLesson,
+  needle: string,
+): TutorialSearchField[] {
+  return SEARCH_FIELD_MATCHERS.filter((matcher) =>
+    matcher.matches(lesson, needle),
+  ).map((matcher) => matcher.field);
+}
+
 export function searchTutorialLessons(
   query: string,
 ): readonly TutorialSearchResult[] {
@@ -119,42 +186,7 @@ export function searchTutorialLessons(
 
   for (const chapter of TUTORIAL_CHAPTERS) {
     for (const lesson of chapter.lessons) {
-      const matchedFields: TutorialSearchField[] = [];
-
-      if (includes(lesson.title, needle)) matchedFields.push("title");
-      if (includes(lesson.summary, needle)) matchedFields.push("summary");
-      if (lesson.keywords.some((keyword) => includes(keyword, needle)))
-        matchedFields.push("keyword");
-      if (includes(lesson.outcome, needle)) matchedFields.push("outcome");
-      if (
-        lesson.prerequisites.some((entry) => includes(entry, needle))
-      )
-        matchedFields.push("prerequisite");
-      if (
-        lesson.steps.some(
-          (step) =>
-            includes(step.title, needle) ||
-            includes(step.instruction, needle) ||
-            (step.detail !== undefined && includes(step.detail, needle)),
-        )
-      )
-        matchedFields.push("step");
-      if (
-        includes(lesson.example.caption, needle) ||
-        includes(lesson.example.code, needle)
-      )
-        matchedFields.push("example");
-      if (includes(lesson.expectedResult, needle))
-        matchedFields.push("expected");
-      if (
-        lesson.troubleshooting.some(
-          (entry) =>
-            includes(entry.title, needle) ||
-            includes(entry.instruction, needle),
-        )
-      )
-        matchedFields.push("troubleshooting");
-
+      const matchedFields = matchedSearchFields(lesson, needle);
       if (matchedFields.length > 0) {
         results.push({
           lesson,

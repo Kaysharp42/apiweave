@@ -27,6 +27,21 @@ import { tutorialLessonHref } from "../constants/tutorials/curriculum";
 import { resolveTutorialScope } from "../utils/tutorialScope";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
 
+/** The header's add/cancel toggle for the new-variable form. */
+function AddVariableToggle({
+  showForm,
+  onToggle,
+}: {
+  showForm: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button onClick={onToggle} size="xs" fullWidth variant={showForm ? "ghost" : "primary"}>
+      {showForm ? "Cancel" : "+ Add Variable"}
+    </Button>
+  );
+}
+
 export default function VariablesPanel() {
   const { variables, updateVariable, deleteVariablesWithCleanup } =
     useWorkflow();
@@ -167,14 +182,10 @@ export default function VariablesPanel() {
           />
         </div>
 
-        <Button
-          onClick={() => dispatch({ type: "toggle-form" })}
-          size="xs"
-          fullWidth
-          variant={state.showForm ? "ghost" : "primary"}
-        >
-          {state.showForm ? "Cancel" : "+ Add Variable"}
-        </Button>
+        <AddVariableToggle
+          showForm={state.showForm}
+          onToggle={() => dispatch({ type: "toggle-form" })}
+        />
       </div>
 
       {/* Scrollable content */}
