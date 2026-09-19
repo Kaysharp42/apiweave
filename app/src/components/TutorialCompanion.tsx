@@ -2,12 +2,12 @@ import { useEffect, useRef } from "react";
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUpRight,
   BookOpen,
   Check,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
-  ExternalLink,
   X,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -206,7 +206,7 @@ export function TutorialCompanion({
               to={destinationHref}
               className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
             >
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
               {lesson.destination.label}
             </Link>
           </div>

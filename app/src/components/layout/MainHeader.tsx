@@ -57,7 +57,7 @@ export function MainHeader() {
           alt="APIWeave Logo"
           className="h-7 w-7 rounded object-cover"
         />
-        <h1 className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
+        <h1 className="hidden font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark sm:block">
           APIWeave
         </h1>
       </div>

@@ -153,6 +153,14 @@ export function createCanvasCommandRegistry(
       when: () => actions.isHydrated,
       run: actions.focusMode,
     },
+    {
+      id: "help.tutorials",
+      title: "Open tutorials",
+      group: "Help",
+      keywords: ["learn", "guide", "tour", "help"],
+      when: () => actions.isHydrated,
+      run: actions.openTutorials,
+    },
   ];
 
   return [

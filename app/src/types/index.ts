@@ -383,6 +383,7 @@ export type { TutorialState } from "./TutorialState";
 export type { TutorialSectionProps } from "./TutorialSectionProps";
 export type { LessonRowProps } from "./LessonRowProps";
 export type { GuardedStorage } from "./GuardedStorage";
+export type { TutorialScope } from "./TutorialScope";
 export type { TutorialCompanionState } from "./TutorialCompanionState";
 export type { TutorialCompanionProps } from "./TutorialCompanionProps";
 export type { TutorialPracticeStep } from "./TutorialPracticeStep";
