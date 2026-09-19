@@ -62,6 +62,7 @@ vi.mock("../../../contexts/AgentSessionsContext", () => ({
 
 const CANVAS_PATH = "/ws/workflows";
 const PAGE_PATH = "/ws/settings/environments";
+const TUTORIAL_PATH = "/ws/tutorials";
 
 /** Stands in for `App`'s `CanvasRoute`: a workflows path renders nothing. */
 const CanvasRoute = () => null;
@@ -86,6 +87,9 @@ function Go() {
       </button>
       <button type="button" onClick={() => navigate(PAGE_PATH)}>
         go page
+      </button>
+      <button type="button" onClick={() => navigate(TUTORIAL_PATH)}>
+        go tutorial
       </button>
     </>
   );
@@ -113,6 +117,14 @@ function renderShellAt(initialPath: string) {
             element={
               <PageSurface>
                 <div>Environments</div>
+              </PageSurface>
+            }
+          />
+          <Route
+            path={TUTORIAL_PATH}
+            element={
+              <PageSurface>
+                <div>Tutorials</div>
               </PageSurface>
             }
           />
@@ -186,5 +198,24 @@ describe("MainLayout", () => {
     const canvas = screen.getByTestId("canvas");
     expect(canvas.parentElement).not.toHaveStyle({ display: "none" });
     expect(canvas).toHaveAttribute("data-active", "true");
+  });
+
+  // The tutorial is a page route too: it must cover the canvas without
+  // unmounting it, so a reader can return to their workflow untouched.
+  it("covers the canvas for the tutorial route without rebuilding it", () => {
+    renderShellAt(CANVAS_PATH);
+    expect(canvasMounts).toBe(1);
+
+    click("go tutorial");
+
+    expect(screen.getByText("Tutorials")).toBeInTheDocument();
+    expect(canvasMounts).toBe(1);
+    const canvas = screen.getByTestId("canvas");
+    expect(canvas.parentElement).toHaveStyle({ display: "none" });
+    expect(canvas).toHaveAttribute("data-active", "false");
+
+    click("go canvas");
+    expect(canvasMounts).toBe(1);
+    expect(screen.getByTestId("canvas")).toHaveAttribute("data-active", "true");
   });
 });

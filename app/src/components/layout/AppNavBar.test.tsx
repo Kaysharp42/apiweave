@@ -96,6 +96,30 @@ describe("AppNavBar settings navigation", () => {
       "/personal/personal/settings/environments",
     );
   });
+
+  it("leaves the tutorial route from the Workflows section", async () => {
+    const user = userEvent.setup();
+    workspaceContext.currentWorkspace = { slug: "personal" };
+    renderNavAt("/personal/personal/tutorials");
+
+    await user.click(screen.getByRole("button", { name: "Workflows" }));
+
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/workflows",
+    );
+  });
+
+  it("leaves a tutorial lesson route from the Projects section", async () => {
+    const user = userEvent.setup();
+    workspaceContext.currentWorkspace = { slug: "personal" };
+    renderNavAt("/personal/personal/tutorials/sse");
+
+    await user.click(screen.getByRole("button", { name: "Projects" }));
+
+    expect(screen.getByTestId("location-probe").textContent).toBe(
+      "/personal/personal/workflows",
+    );
+  });
 });
 
 /**

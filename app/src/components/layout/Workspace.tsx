@@ -1,6 +1,7 @@
 import { useReducer, useCallback } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
+import { useNavigate, useParams } from "react-router-dom";
 import WorkflowCanvas from "../WorkflowCanvas";
 import VariablesPanel from "../VariablesPanel";
 import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
@@ -20,6 +21,8 @@ import useSidebarStore from "../../stores/SidebarStore";
 import useNavigationStore from "../../stores/NavigationStore";
 import useKeyboardShortcuts from "../../hooks/useKeyboardShortcuts";
 import { useScopeContext } from "../../hooks/useScopeContext";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
+import useTutorialStore from "../../stores/TutorialStore";
 import type { WorkspaceProps } from "../../types/WorkspaceProps";
 import type { TabItem } from "../../types/TabItem";
 import type { Workflow } from "../../types/Workflow";
@@ -40,6 +43,18 @@ export function Workspace({ active = true }: WorkspaceProps) {
   const { openTab, closeTab, activateNextTab, activatePrevTab } =
     useTabStore();
   const { workspaceId, isReady: isScopeReady } = useScopeContext();
+  const { currentOrg, currentWorkspace } = useWorkspace();
+  const navigate = useNavigate();
+  const routeParams = useParams<{
+    orgSlug?: string;
+    workspaceSlug?: string;
+  }>();
+  const tutorialCompleted = useTutorialStore(
+    (state) => state.completedLessonIds.length,
+  );
+  const tutorialLastLessonId = useTutorialStore((state) => state.lastLessonId);
+  const hasTutorialProgress =
+    tutorialCompleted > 0 || tutorialLastLessonId !== null;
   // This workspace's tabs only. Tabs opened before a workspace switch stay in
   // the store so switching back restores them, and rendering one under the new
   // workspace would pair that workspace's id with the previous workspace's
@@ -126,6 +141,18 @@ export function Workspace({ active = true }: WorkspaceProps) {
     },
     [isScopeReady, openTab, workspaceId],
   );
+
+  const handleOpenTutorials = useCallback(() => {
+    const org = currentOrg?.slug ?? routeParams.orgSlug ?? "personal";
+    const ws = currentWorkspace?.slug ?? routeParams.workspaceSlug ?? "personal";
+    navigate(`/${org}/${ws}/tutorials`);
+  }, [
+    navigate,
+    currentOrg?.slug,
+    currentWorkspace?.slug,
+    routeParams.orgSlug,
+    routeParams.workspaceSlug,
+  ]);
 
   useKeyboardShortcuts({
     enabled: active,
@@ -226,7 +253,13 @@ export function Workspace({ active = true }: WorkspaceProps) {
             </div>
           </WorkflowProvider>
         ) : (
-          <WorkspaceEmptyState onNewWorkflow={handleNewWorkflow} />
+          <WorkspaceEmptyState
+            onNewWorkflow={handleNewWorkflow}
+            onOpenTutorials={handleOpenTutorials}
+            tutorialsLabel={
+              hasTutorialProgress ? "Continue tutorial" : "Start tutorial"
+            }
+          />
         )}
       </div>
 
