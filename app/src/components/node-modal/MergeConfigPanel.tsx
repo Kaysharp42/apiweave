@@ -11,6 +11,7 @@ import {
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
+import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { Toggle } from "../atoms/Toggle";
 import { Tooltip } from "../atoms/Tooltip";
 import { Card } from "../molecules/Card";
@@ -336,11 +337,9 @@ export function MergeConfigPanel({
                   label="Value"
                   hint="Supports literals and template variables."
                 >
-                  <Input
+                  <TemplateInput
                     value={condition.value}
-                    onChange={(event) =>
-                      updateCondition(index, { value: event.target.value })
-                    }
+                    onValueChange={(value) => updateCondition(index, { value })}
                     placeholder="42"
                     className="font-mono"
                   />

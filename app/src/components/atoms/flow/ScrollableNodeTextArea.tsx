@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
 import type { ScrollableNodeTextAreaProps } from "../../../types";
 
 /**
@@ -19,12 +19,15 @@ import type { ScrollableNodeTextAreaProps } from "../../../types";
  * the wheel and the resize grip all work while you are actually editing — by
  * which point you are zoomed in and the layer costs nothing.
  */
-export function ScrollableNodeTextArea({
-  className = "",
-  value,
-  ...rest
-}: ScrollableNodeTextAreaProps) {
+export const ScrollableNodeTextArea = forwardRef<
+  HTMLTextAreaElement,
+  ScrollableNodeTextAreaProps
+>(function ScrollableNodeTextArea({ className = "", value, ...rest }, ref) {
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  // The auto-height measurement needs the element itself, so the forwarded ref
+  // is published from the inner one rather than replacing it.
+  useImperativeHandle(ref, () => textAreaRef.current!, []);
 
   useLayoutEffect(() => {
     const textArea = textAreaRef.current;
@@ -47,4 +50,4 @@ export function ScrollableNodeTextArea({
       />
     </div>
   );
-}
+});

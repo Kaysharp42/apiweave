@@ -408,6 +408,16 @@ export function WorkflowCanvas({
     [workflowId, workflow?.selectedEnvironmentId, selectedEnvMap],
   );
 
+  // Publish the resolved environment back into the store, so anything that
+  // cannot see the workflow row — a node's `{{env.…}}` autocomplete, for one —
+  // resolves the same environment this toolbar shows. Only when nothing is
+  // recorded yet: `null` there means the user explicitly chose no environment.
+  useEffect(() => {
+    if (!workflowId || selectedEnvironment === null) return;
+    if (selectedEnvMap[workflowId] !== undefined) return;
+    useEnvironmentStore.getState().setSelectedEnv(workflowId, selectedEnvironment);
+  }, [workflowId, selectedEnvironment, selectedEnvMap]);
+
   // ── Hooks ──────────────────────────────────────────────────────────
 
   const isEditorOverlayOpen =

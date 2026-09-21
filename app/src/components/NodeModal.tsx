@@ -14,7 +14,7 @@ import {
   Timer,
 } from "lucide-react";
 import { Badge } from "./atoms/Badge";
-import { Input } from "./atoms/Input";
+import { TemplateInput } from "./molecules/TemplateAutocomplete";
 import { Tooltip } from "./atoms/Tooltip";
 import ButtonSelect from "./ButtonSelect";
 import {
@@ -233,9 +233,9 @@ export function NodeModal({
         buttonClass="flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-overlay px-3 font-mono text-xs font-semibold text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-raised"
         containerClass="w-28 flex-shrink-0"
       />
-      <Input
+      <TemplateInput
         value={httpConfig.url || ""}
-        onChange={(event) => patchHttpConfig({ url: event.target.value })}
+        onValueChange={(url) => patchHttpConfig({ url })}
         placeholder="https://api.example.com/{{variables.resourceId}}"
         aria-label="Request URL"
         className="font-mono"

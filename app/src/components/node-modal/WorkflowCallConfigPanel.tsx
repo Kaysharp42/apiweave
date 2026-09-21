@@ -3,6 +3,7 @@ import { Info, X } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
+import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { apiweave } from "../../utils/apiweaveClient";
@@ -203,9 +204,9 @@ export function WorkflowCallConfigPanel({
             className="flex-1"
             placeholder="target variable"
           />
-          <Input
+          <TemplateInput
             value={newInputExpr}
-            onChange={(e) => setNewInputExpr(e.target.value)}
+            onValueChange={setNewInputExpr}
             size="sm"
             className="flex-1 font-mono"
             placeholder="{{variables.userId}}"
