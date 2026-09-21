@@ -14,6 +14,35 @@ import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 
+import { parseKeyValuePairs } from "../components/node-modal/httpRequestConfigCompat";
+
+const KV_CONFIG_FIELDS = [
+  "queryParams",
+  "pathVariables",
+  "headers",
+  "cookies",
+] as const;
+
+/**
+ * The expanded node's inline textareas write these fields as raw `key=value`
+ * text — anything else would rewrite the line under the caret while it is
+ * half-typed. The persisted contract is `KeyValuePair[]` only, so the save
+ * boundary reduces them, exactly as the main process does on write
+ * (`canonicalizeNodeConfig`). Existing arrays pass through untouched so the
+ * optional `active` flag survives.
+ */
+function canonicalizeKvFields(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  let next = config;
+  for (const field of KV_CONFIG_FIELDS) {
+    const value = next[field];
+    if (value === undefined || Array.isArray(value)) continue;
+    next = { ...next, [field]: parseKeyValuePairs(value) };
+  }
+  return next;
+}
+
 export function workflowToCanvas(workflow: Workflow): CanvasWorkflowState {
   const nodes: Node<WorkflowCanvasNodeData>[] = workflow.nodes.map((node) => {
     const config = (node.config ?? {}) as Record<string, unknown>;
@@ -93,7 +122,7 @@ export function canvasToWorkflow(
             width: node.width ?? FRAME_FALLBACK_WIDTH,
             height: node.height ?? FRAME_FALLBACK_HEIGHT,
           }
-        : (node.data.config ?? {}),
+        : canonicalizeKvFields(node.data.config ?? {}),
     }),
   );
 

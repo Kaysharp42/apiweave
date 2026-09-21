@@ -283,6 +283,30 @@ describe("workflow canvas adapters", () => {
     );
   });
 
+  it("reduces key/value fields the inline node textareas write as raw text", () => {
+    const canvas = workflowToCanvas(workflow);
+    const request = canvas.nodes[1];
+    if (!request) throw new Error("representative graph is incomplete");
+    request.data.config = {
+      ...request.data.config,
+      cookies: "session=abc\ntheme=dark",
+      pathVariables: "",
+    };
+
+    const saved = canvasToWorkflow(canvas, workflow);
+    const node = saved.nodes.find((n) => n.nodeId === "request-1");
+
+    expect(node?.config).toMatchObject({
+      cookies: [
+        { key: "session", value: "abc" },
+        { key: "theme", value: "dark" },
+      ],
+      pathVariables: [],
+      // an already-canonical array keeps its optional `active` flag
+      queryParams: [{ key: "dryRun", value: "false", active: true }],
+    });
+  });
+
   it("rejects legacy renderer discriminators at the persistence boundary", () => {
     const canvas = workflowToCanvas(workflow);
     const request = canvas.nodes[1];
