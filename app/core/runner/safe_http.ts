@@ -102,34 +102,34 @@ export class SafeHttp {
     // external cancellation aren't dropped. The timeout signal is never cleared,
     // so it keeps enforcing while the caller reads the body — undici aborts the
     // body stream if the signal fires, closing the "slow/endless body" gap.
-    const timeoutMs = opts.timeoutMs ?? this.timeoutMs
-    const signals: AbortSignal[] = []
-    // SSE listeners with an event finish rule can deliberately wait without a
-    // deadline. Their AbortController still owns cancellation; never create an
-    // AbortSignal.timeout(0), which aborts immediately rather than meaning none.
-    if (timeoutMs > 0) signals.push(AbortSignal.timeout(timeoutMs))
-    if (init.signal) signals.push(init.signal)
-    const signal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
+    const signal = composeAbortSignal(opts.timeoutMs ?? this.timeoutMs, init.signal)
     const followRedirects = opts.followRedirects ?? true
-    // The only reason left to override the dispatcher: the per-node
-    // self-signed certificate opt-out. Everything else rides undici's
-    // default global agent, which pools connections across requests.
-    const dispatcher = opts.rejectUnauthorized === false ? buildInsecureTlsDispatcher() : undefined
     const maxHops = followRedirects ? this.maxRedirectHops : 0
+    const requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
     let currentUrl = url
-    const lastInit: RequestInit = { ...init, redirect: "manual", signal }
     for (let hop = 0; hop <= maxHops; hop++) {
-      const response = await this.fetchImpl(currentUrl, dispatcher ? { ...lastInit, dispatcher } : lastInit)
-      if (response.status < 300 || response.status >= 400) return response
-      if (!followRedirects) return response
-      const location = response.headers.get("location")
-      if (!location) return response
-      if (!this.checkRedirectAllowed(currentUrl, location)) {
-        throw new SafeUrlError(`Redirect to an unrequestable URL after ${hop + 1} hop(s): ${location}`)
-      }
-      currentUrl = new URL(location, currentUrl).toString()
+      const response = await this.fetchImpl(currentUrl, requestInit)
+      const hopResult = this.resolveHop(currentUrl, response, followRedirects, hop)
+      if (hopResult.done) return hopResult.response
+      currentUrl = hopResult.nextUrl
     }
     throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
+  }
+
+  /** One redirect-chain step: either the final response, or the next URL to follow. */
+  private resolveHop(
+    currentUrl: string,
+    response: Response,
+    followRedirects: boolean,
+    hop: number,
+  ): { done: true; response: Response } | { done: false; nextUrl: string } {
+    if (response.status < 300 || response.status >= 400 || !followRedirects) return { done: true, response }
+    const location = response.headers.get("location")
+    if (!location) return { done: true, response }
+    if (!this.checkRedirectAllowed(currentUrl, location)) {
+      throw new SafeUrlError(`Redirect to an unrequestable URL after ${hop + 1} hop(s): ${location}`)
+    }
+    return { done: false, nextUrl: new URL(location, currentUrl).toString() }
   }
 
   /** GET — no redirect following, validates the URL once. */
@@ -192,4 +192,30 @@ function stripIpv6Brackets(hostname: string): string {
 /** Dispatcher for the per-node "accept a self-signed certificate" opt-out. */
 function buildInsecureTlsDispatcher(): Dispatcher {
   return new Agent({ connect: { rejectUnauthorized: false } })
+}
+
+/**
+ * Compose the caller's signal with our own deadline so node-level timeouts and
+ * external cancellation aren't dropped. The timeout signal is never cleared,
+ * so it keeps enforcing while the caller reads the body — undici aborts the
+ * body stream if the signal fires, closing the "slow/endless body" gap.
+ *
+ * SSE listeners with an event finish rule can deliberately wait without a
+ * deadline. Their AbortController still owns cancellation; never create an
+ * `AbortSignal.timeout(0)`, which aborts immediately rather than meaning none.
+ */
+function composeAbortSignal(timeoutMs: number, callerSignal: AbortSignal | null | undefined): AbortSignal {
+  const signals: AbortSignal[] = []
+  if (timeoutMs > 0) signals.push(AbortSignal.timeout(timeoutMs))
+  if (callerSignal) signals.push(callerSignal)
+  return signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
+}
+
+/**
+ * Attach the per-node "accept a self-signed certificate" dispatcher when
+ * requested. Everything else rides undici's default global agent, which
+ * pools connections across requests.
+ */
+function withDispatcher(init: RequestInit, rejectUnauthorized: boolean | undefined): RequestInit {
+  return rejectUnauthorized === false ? { ...init, dispatcher: buildInsecureTlsDispatcher() } : init
 }
