@@ -232,8 +232,6 @@ export function tutorialDestinationHref(
       return `${base}/settings/agents`;
     case "canvas-settings":
       return `${base}/settings/canvas`;
-    case "private-networks":
-      return `${base}/settings/private-networks`;
     case "mcp-server":
       return `${base}/settings/mcp-server`;
     case "updates":

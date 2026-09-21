@@ -14,7 +14,7 @@ export const appChapter: TutorialChapter = {
       chapterId: "app",
       title: "Settings and preferences",
       summary:
-        "Canvas interaction and tips, private-network opt-in, and the split between workspace-scoped and app-scoped settings.",
+        "Canvas interaction and tips, and the split between workspace-scoped and app-scoped settings.",
       outcome:
         "You can find every preference and know which ones are per-machine and which are per-workspace.",
       keywords: [
@@ -22,7 +22,6 @@ export const appChapter: TutorialChapter = {
         "preferences",
         "canvas",
         "tips",
-        "private networks",
         "drag",
         "snap",
         "zoom",
@@ -34,7 +33,7 @@ export const appChapter: TutorialChapter = {
         {
           title: "Find the two settings groups",
           instruction:
-            "Open Settings from the left navigation rail. The sidebar splits into Workspace settings (Projects, Environments, Secrets) and App settings (Agents, Canvas, Private networks, MCP Server, Updates).",
+            "Open Settings from the left navigation rail. The sidebar splits into Workspace settings (Projects, Environments, Secrets) and App settings (Agents, Canvas, MCP Server, Updates).",
           detail:
             "Workspace settings are scoped to the workspace you are in; app settings are per-machine.",
         },
@@ -56,13 +55,6 @@ export const appChapter: TutorialChapter = {
             "Toggle Contextual canvas tips to show or hide the shortcut hints that appear when a selection unlocks an action.",
         },
         {
-          title: "Allow private-network targets",
-          instruction:
-            "Open Settings → Private networks and toggle Allow private network targets to let HTTP request nodes and URL imports reach RFC1918 and unique-local addresses such as 192.168.x.x.",
-          detail:
-            "Off by default and remembered across restarts. Link-local (169.254.x.x), metadata and multicast targets stay blocked even when it is on.",
-        },
-        {
           title: "Use the workspace-scoped settings",
           instruction:
             "Use Settings → Environments and Settings → Secrets for the resources scoped to the current workspace, and the Projects row to switch the sidebar to the projects list.",
@@ -76,20 +68,15 @@ export const appChapter: TutorialChapter = {
       example: {
         caption: "What lives where",
         language: "text",
-        code: "Workspace settings          App settings (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     Private networks\n                              MCP Server\n                              Updates",
+        code: "Workspace settings          App settings (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     MCP Server\n                              Updates",
       },
       expectedResult:
-        "Canvas interaction feels the way you configured it, LAN targets resolve when opted in, and you can tell a per-machine preference from a per-workspace resource at a glance.",
+        "Canvas interaction feels the way you configured it, and you can tell a per-machine preference from a per-workspace resource at a glance.",
       troubleshooting: [
-        {
-          title: "A LAN request is still blocked",
-          instruction:
-            "Confirm Private networks is on, and that the host is not link-local or a metadata endpoint, which stay blocked.",
-        },
         {
           title: "A preference did not stick",
           instruction:
-            "Canvas preferences persist locally; app settings such as the private-networks toggle persist in the local database. Reopen Settings to confirm the current value.",
+            "Canvas preferences persist locally. Reopen Settings to confirm the current value.",
         },
         {
           title: "You cannot find an environment you expected",

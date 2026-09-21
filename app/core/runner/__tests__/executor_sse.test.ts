@@ -7,7 +7,7 @@ import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 function makeExecutor(): WorkflowExecutor {
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
-  return new WorkflowExecutor({ clock, rng, http: new SafeHttp({ allowLoopback: true }), functions: new DynamicFunctions(clock, rng) })
+  return new WorkflowExecutor({ clock, rng, http: new SafeHttp(), functions: new DynamicFunctions(clock, rng) })
 }
 
 function sseWorkflow(url: string, config: Record<string, unknown> = {}): WorkflowGraph {

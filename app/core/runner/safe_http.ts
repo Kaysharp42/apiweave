@@ -1,64 +1,20 @@
-import dns from "node:dns/promises"
-import type { LookupAddress } from "node:dns"
-import { BlockList as NodeBlockList, isIP } from "node:net"
 import { Agent, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
 
-// @types/node dropped the exported `AddressType` alias; net.BlockList's
-// IPVersion parameter is the lowercase pair.
-type AddressType = "ipv4" | "ipv6"
-
 /**
- * Safe HTTP utility for SSRF prevention.
+ * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
  *
- * Ported from `backend/app/services/safe_http.py`. Outbound HTTP from the
- * runner (HTTP request nodes) goes through here. The desktop single-user
- * default sets `allowLoopback = true` so the user's `localhost` dev services
- * are reachable; RFC1918, link-local (cloud metadata at 169.254.169.254),
- * IPv6 unique-local, multicast, and unspecified ranges stay blocked unless
- * the user opts in via `allowPrivateNetworks` (a persisted app setting), which
- * carves out RFC1918 + unique-local only — link-local/metadata and multicast
- * remain blocked regardless.
+ * APIWeave is a desktop user agent: it sends the request the user authored,
+ * wherever they pointed it — localhost, a LAN box, anything. There is no
+ * network policy to configure, the same way there is none in Postman or curl.
+ * A target blocklist belongs to a *server-side* runner, where an attacker
+ * supplies the URL; here the user owns the machine, the workflow and a shell,
+ * so a blocklist only ever blocked the user from their own dev services.
  *
- * Block list via `node:net.BlockList` — stdlib native, no CIDR math to write.
- * Redirects: undici `redirect: 'manual'`, each hop re-validated (no TOCTOU).
- * DNS rebinding: `assertHostResolvesSafe` resolves the hostname and rejects
- * if ANY returned address is in a blocked network. The caller then connects
- * to the pinned IP (via `Host` header preservation), closing the
- * validate-vs-connect gap.
+ * What this class still does is protect the *process* from a remote endpoint:
+ * http(s) only, a deadline that keeps enforcing while the caller reads the
+ * body, a bounded redirect chain, and `readTextCapped` so an unbounded or
+ * slow-trickling body cannot exhaust memory.
  */
-const BLOCKED_IPV4: ReadonlyArray<readonly [string, number]> = [
-  ["0.0.0.0", 8],
-  ["127.0.0.0", 8], // loopback (carved-out when allowLoopback)
-  ["169.254.0.0", 16], // link-local / AWS metadata
-  ["10.0.0.0", 8],
-  ["172.16.0.0", 12],
-  ["192.168.0.0", 16],
-  ["224.0.0.0", 4], // multicast
-]
-const BLOCKED_IPV6: ReadonlyArray<readonly [string, number]> = [
-  // ::/96 covers the unspecified address AND deprecated IPv4-compatible
-  // addresses (::a.b.c.d, e.g. ::169.254.169.254), which node's BlockList does
-  // NOT auto-normalize to IPv4. (IPv4-mapped ::ffff:a.b.c.d IS normalized by
-  // BlockList against the IPv4 subnets, so it needs no separate entry.)
-  ["::", 96],
-  ["::1", 128], // loopback (carved-out when allowLoopback; subsumed by ::/96 otherwise)
-  ["fc00::", 7], // unique-local
-  ["fe80::", 10], // link-local
-  ["ff00::", 8], // multicast
-]
-const LOOPBACK_IPV4: ReadonlyArray<readonly [string, number]> = [["127.0.0.0", 8]]
-const LOOPBACK_IPV6: ReadonlyArray<readonly [string, number]> = [["::1", 128]]
-// RFC1918 + IPv6 unique-local. Carved out of the blocklist when the user opts
-// in via `allowPrivateNetworks` so LAN services (e.g. a dev box on
-// 192.168.x.x) are reachable. Link-local/metadata and multicast stay blocked.
-const PRIVATE_IPV4: ReadonlyArray<readonly [string, number]> = [
-  ["10.0.0.0", 8],
-  ["172.16.0.0", 12],
-  ["192.168.0.0", 16],
-]
-const PRIVATE_IPV6: ReadonlyArray<readonly [string, number]> = [["fc00::", 7]]
-const DEV_ALLOWED_HOSTS = new Set(["host.docker.internal"])
-
 const ALLOWED_SCHEMES = new Set(["http", "https"])
 export const MAX_REDIRECT_HOPS = 5
 
@@ -70,12 +26,8 @@ export class SafeUrlError extends Error {
 }
 
 export type SafeHttpOptions = {
-  readonly allowLoopback?: boolean
-  readonly allowPrivateNetworks?: boolean
-  readonly approvedDomains?: readonly string[]
   readonly maxRedirectHops?: number
   readonly fetchImpl?: typeof fetch
-  readonly dnsLookup?: (host: string) => Promise<readonly LookupAddress[]>
   readonly timeoutMs?: number
 }
 
@@ -89,48 +41,19 @@ export type SafeFetchOptions = {
 }
 
 export class SafeHttp {
-  private readonly blocklist: NodeBlockList
-  private readonly loopbackList: NodeBlockList
-  private readonly privateList: NodeBlockList
-  private readonly allowLoopback: boolean
-  private allowPrivateNetworksEnabled: boolean
-  private readonly approvedDomains: readonly string[]
-  private readonly approvedDomainsEnabled: boolean
   private readonly maxRedirectHops: number
   private readonly fetchImpl: typeof fetch
-  private readonly dnsLookup: SafeHttpOptions["dnsLookup"]
   private readonly timeoutMs: number
 
   public constructor(opts: SafeHttpOptions = {}) {
-    this.allowLoopback = opts.allowLoopback ?? true
-    this.allowPrivateNetworksEnabled = opts.allowPrivateNetworks ?? false
-    this.approvedDomains = opts.approvedDomains ?? []
-    this.approvedDomainsEnabled = this.approvedDomains.length > 0
     this.maxRedirectHops = opts.maxRedirectHops ?? MAX_REDIRECT_HOPS
     this.fetchImpl = opts.fetchImpl ?? fetch
-    this.dnsLookup = opts.dnsLookup ?? ((host: string) => dns.lookup(host, { all: true, verbatim: true }))
     this.timeoutMs = opts.timeoutMs ?? 30_000
-
-    this.blocklist = buildBlocklist(BLOCKED_IPV4, BLOCKED_IPV6)
-    this.loopbackList = buildBlocklist(LOOPBACK_IPV4, LOOPBACK_IPV6)
-    this.privateList = buildBlocklist(PRIVATE_IPV4, PRIVATE_IPV6)
-  }
-
-  /** Whether RFC1918/unique-local targets are currently allowed (opt-in). */
-  public get allowPrivateNetworks(): boolean {
-    return this.allowPrivateNetworksEnabled
-  }
-
-  /** Flip the private-networks opt-in at runtime; the persisted setting lives
-   * with the composition root. Takes effect for every consumer of this
-   * instance (runner, imports) without a restart. */
-  public setAllowPrivateNetworks(enabled: boolean): void {
-    this.allowPrivateNetworksEnabled = enabled
   }
 
   // -------------------- Pure validation (no I/O) --------------------
 
-  /** Pure check — scheme + hostname + (optional) domain allowlist + IP-literal block. */
+  /** Pure check — parses as a URL, http(s) scheme, non-empty host. */
   public isSafeUrl(url: string): boolean {
     let parsed: URL
     try {
@@ -139,21 +62,13 @@ export class SafeHttp {
       return false
     }
     if (!ALLOWED_SCHEMES.has(parsed.protocol.replace(":", "").toLowerCase())) return false
-    const hostname = stripIpv6Brackets(parsed.hostname)
-    if (!hostname) return false
-    if (this.approvedDomainsEnabled && !this.hostInApprovedDomains(hostname)) return false
-    if (this.isDevAllowedHost(hostname)) return true
-    const family = isIP(hostname)
-    if (family === 4 || family === 6) {
-      if (this.isBlockedIp(hostname, family)) return false
-    }
-    return true
+    return stripIpv6Brackets(parsed.hostname).length > 0
   }
 
-  /** Throw `SafeUrlError` if `url` is unsafe. */
+  /** Throw `SafeUrlError` if `url` is not a requestable http(s) URL. */
   public validateUrl(url: string): void {
     if (!this.isSafeUrl(url)) {
-      throw new SafeUrlError(`URL blocked by safety policy: ${url}`)
+      throw new SafeUrlError(`Not a requestable http(s) URL: ${url}`)
     }
   }
 
@@ -178,40 +93,9 @@ export class SafeHttp {
     return this.isSafeUrl(target)
   }
 
-  // -------------------- Resolve-then-check (DNS rebinding guard) --------------------
+  // -------------------- HTTP wrappers (undici-based) --------------------
 
-  /** Resolve `host` and throw `SafeUrlError` if any resolved address is blocked. */
-  public async assertHostResolvesSafe(host: string): Promise<void> {
-    await this.resolveAndPinIp(host)
-  }
-
-  /**
-   * Resolve `host`; reject if any resolved address is blocked; return one
-   * safe address to pin the connection to (or `null` for dev-allowed hosts).
-   * Fails closed on DNS lookup errors — an unresolvable/erroring name must
-   * not fall through to an unpinned, unvalidated fetch-level resolution.
-   */
-  public async resolveAndPinIp(host: string): Promise<string | null> {
-    if (!host) throw new SafeUrlError("Missing host")
-    if (this.isDevAllowedHost(host)) return null
-    let infos: LookupAddress[]
-    try {
-      infos = [...(await this.dnsLookup!.call(null, host))]
-    } catch (err) {
-      throw new SafeUrlError(`DNS resolution failed for host ${host}: ${(err as Error).message}`)
-    }
-    for (const info of infos) {
-      const family = info.family === 6 ? 6 : 4
-      if (this.isBlockedIp(info.address, family)) {
-        throw new SafeUrlError(`Host ${host} resolves to blocked address ${info.address}`)
-      }
-    }
-    return infos[0]?.address ?? null
-  }
-
-  // -------------------- HTTP wrappers (undici-based, fail-closed) --------------------
-
-  /** Execute an HTTP request with SSRF protection + per-hop redirect validation. */
+  /** Execute an HTTP request with a deadline and a bounded redirect chain. */
   public async safeFetch(url: string, init: RequestInit = {}, opts: SafeFetchOptions = {}): Promise<Response> {
     this.validateUrl(url)
     // Compose our timeout with the caller's signal so node-level timeouts and
@@ -227,36 +111,33 @@ export class SafeHttp {
     if (init.signal) signals.push(init.signal)
     const signal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
     const followRedirects = opts.followRedirects ?? true
-    const rejectUnauthorized = opts.rejectUnauthorized ?? true
+    // The only reason left to override the dispatcher: the per-node
+    // self-signed certificate opt-out. Everything else rides undici's
+    // default global agent, which pools connections across requests.
+    const dispatcher = opts.rejectUnauthorized === false ? buildInsecureTlsDispatcher() : undefined
     const maxHops = followRedirects ? this.maxRedirectHops : 0
     let currentUrl = url
     const lastInit: RequestInit = { ...init, redirect: "manual", signal }
     for (let hop = 0; hop <= maxHops; hop++) {
-      const pinnedIp = await this.resolveAndPinIp(hostOf(currentUrl))
-      // Pin the TCP/TLS connection to the resolved+validated IP via a custom
-      // dispatcher `lookup`, without touching the request URL — for HTTPS,
-      // SNI and certificate hostname verification must stay on the original
-      // hostname or normal public certs fail to validate against the IP.
-      const dispatcher = pinnedIp ? buildPinnedDispatcher(pinnedIp, rejectUnauthorized) : undefined
       const response = await this.fetchImpl(currentUrl, dispatcher ? { ...lastInit, dispatcher } : lastInit)
       if (response.status < 300 || response.status >= 400) return response
       if (!followRedirects) return response
       const location = response.headers.get("location")
       if (!location) return response
       if (!this.checkRedirectAllowed(currentUrl, location)) {
-        throw new SafeUrlError(`Redirect to blocked URL denied after ${hop + 1} hop(s): ${location}`)
+        throw new SafeUrlError(`Redirect to an unrequestable URL after ${hop + 1} hop(s): ${location}`)
       }
       currentUrl = new URL(location, currentUrl).toString()
     }
     throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
   }
 
-  /** Safe GET — no redirect following, validates the URL once. */
+  /** GET — no redirect following, validates the URL once. */
   public async safeGet(url: string, init: RequestInit = {}): Promise<Response> {
     return this.safeFetch(url, { ...init, method: "GET", redirect: "manual" })
   }
 
-  /** Safe POST — no redirect following. */
+  /** POST — no redirect following. */
   public async safePost(url: string, init: RequestInit = {}): Promise<Response> {
     return this.safeFetch(url, { ...init, method: "POST", redirect: "manual" })
   }
@@ -299,40 +180,6 @@ export class SafeHttp {
     }
     return { text: Buffer.concat(chunks).toString("utf-8"), truncated }
   }
-
-  // -------------------- Internals --------------------
-
-  private isBlockedIp(address: string, family: 4 | 6): boolean {
-    const type: AddressType = family === 6 ? "ipv6" : "ipv4"
-    if (this.allowLoopback && this.loopbackList.check(address, type)) return false
-    if (this.allowPrivateNetworksEnabled && this.privateList.check(address, type)) return false
-    return this.blocklist.check(address, type)
-  }
-
-  private isDevAllowedHost(host: string): boolean {
-    return this.allowLoopback && DEV_ALLOWED_HOSTS.has(host.toLowerCase())
-  }
-
-  private hostInApprovedDomains(host: string): boolean {
-    if (this.approvedDomains.length === 0) return false
-    const lower = host.toLowerCase()
-    return this.approvedDomains.some((d) => d.toLowerCase() === lower)
-  }
-}
-
-function buildBlocklist(v4: readonly (readonly [string, number])[], v6: readonly (readonly [string, number])[]): NodeBlockList {
-  const list = new NodeBlockList()
-  for (const [addr, prefix] of v4) list.addSubnet(addr, prefix, "ipv4")
-  for (const [addr, prefix] of v6) list.addSubnet(addr, prefix, "ipv6")
-  return list
-}
-
-function hostOf(url: string): string {
-  try {
-    return stripIpv6Brackets(new URL(url).hostname)
-  } catch {
-    return ""
-  }
 }
 
 function stripIpv6Brackets(hostname: string): string {
@@ -342,24 +189,7 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname
 }
 
-/**
- * Build a one-shot undici dispatcher whose connector resolves every hostname
- * to the given (already-validated) IP, closing the DNS-rebinding TOCTOU gap
- * without rewriting the request URL — so TLS SNI/cert checks and the Host
- * header stay on the original hostname.
- */
-function buildPinnedDispatcher(ip: string, rejectUnauthorized: boolean): Dispatcher {
-  const family = isIP(ip) === 6 ? 6 : 4
-  const lookup = (
-    _hostname: string,
-    options: { all?: boolean },
-    callback: (err: null, address: string | LookupAddress[], family?: number) => void,
-  ): void => {
-    if (options?.all) {
-      callback(null, [{ address: ip, family }])
-      return
-    }
-    callback(null, ip, family)
-  }
-  return new Agent({ connect: { lookup: lookup as never, rejectUnauthorized } })
+/** Dispatcher for the per-node "accept a self-signed certificate" opt-out. */
+function buildInsecureTlsDispatcher(): Dispatcher {
+  return new Agent({ connect: { rejectUnauthorized: false } })
 }

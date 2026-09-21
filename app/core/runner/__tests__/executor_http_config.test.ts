@@ -26,7 +26,7 @@ function makeExecutorWithCapture(response: () => Response) {
 
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
-  const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never })
+  const http = new SafeHttp({ fetchImpl: fetchImpl as never })
   const functions = new DynamicFunctions(clock, rng)
   const executor = new WorkflowExecutor({ clock, rng, http, functions })
   return { executor, captured }
@@ -169,7 +169,7 @@ describe("WorkflowExecutor — HTTP request config panel contract", () => {
       calls++
       return new Response("", { status: 302, headers: { location: "http://localhost/other" } })
     }
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never })
+    const http = new SafeHttp({ fetchImpl: fetchImpl as never })
     const functions = new DynamicFunctions(clock, rng)
     const executor = new WorkflowExecutor({ clock, rng, http, functions })
 

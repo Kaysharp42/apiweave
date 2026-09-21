@@ -66,7 +66,6 @@ describe("SettingsContent workspace routes", () => {
   // "agents", so an unanchored /Agents/i matches two rows.
   it.each([
     [/^Agents/, "/personal/personal/settings/agents"],
-    [/^Private networks/, "/personal/personal/settings/private-networks"],
     [/^MCP Server/, "/personal/personal/settings/mcp-server"],
     [/^Updates/, "/personal/personal/settings/updates"],
   ])("navigates to %s", async (name, path) => {

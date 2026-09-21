@@ -37,7 +37,7 @@ afterEach(async () => {
 function makeScheduler(overrides: Partial<SchedulerDeps> = {}): RunScheduler {
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
-  const http = new SafeHttp({ allowLoopback: true })
+  const http = new SafeHttp()
   const functions = new DynamicFunctions(clock, rng)
   const s = new RunScheduler({ runs, workflows, environments, http, functions, clock, rng, ...overrides })
   activeScheduler = s
@@ -162,7 +162,7 @@ describe("RunScheduler", () => {
       const env = environments.create({
         workspaceId: ws,
         name: "dev",
-        variables: { BASE_URL: "http://169.254.169.254/auth?token=opaque-credential" },
+        variables: { BASE_URL: "ftp://169.254.169.254/auth?token=opaque-credential" },
       })
       const workflowId = workflows.create({
         workspaceId: ws,
@@ -192,13 +192,13 @@ describe("RunScheduler", () => {
       )
       expect(failed).toBeDefined()
       expect(failed?.error).not.toContain("{{env.BASE_URL}}")
-      expect(failed?.error).toBe("SSRF blocked")
+      expect(failed?.error).toBe("Request configuration invalid")
       const persistedRun = runs.getById(runId)
       expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
         status: "failed",
-        error: "SSRF blocked",
-        request: { url: "http://169.254.169.254/auth?<REDACTED>" },
+        error: "Request configuration invalid",
+        request: { url: "ftp://169.254.169.254/auth?<REDACTED>" },
       })
       expect(JSON.stringify(persistedRun)).not.toContain("opaque-credential")
     })
@@ -214,7 +214,7 @@ describe("RunScheduler", () => {
             nodeId: "blocked-request",
             type: "http-request",
             position: { x: 1, y: 0 },
-            config: { method: "GET", url: "http://169.254.169.254", continueOnFail: true },
+            config: { method: "GET", url: "ftp://169.254.169.254", continueOnFail: true },
           },
           { nodeId: "wait", type: "delay", position: { x: 2, y: 0 }, config: { duration: 1_000 } as never },
           { nodeId: "end", type: "end", position: { x: 3, y: 0 } },
@@ -235,7 +235,7 @@ describe("RunScheduler", () => {
       expect(liveRun?.results).toContainEqual(expect.objectContaining({
         nodeId: "blocked-request",
         status: "failed",
-        error: "SSRF blocked",
+        error: "Request configuration invalid",
       }))
     })
 
@@ -244,13 +244,13 @@ describe("RunScheduler", () => {
       const base = environments.create({
         workspaceId: ws,
         name: "base",
-        variables: { BASE_URL: "http://169.254.169.254/base-only", REGION: "eu" },
+        variables: { BASE_URL: "ftp://169.254.169.254/base-only", REGION: "eu" },
       })
       const child = environments.create({
         workspaceId: ws,
         name: "staging",
         baseEnvironmentId: base.environmentId,
-        variables: { BASE_URL: "http://169.254.169.254/child-override" },
+        variables: { BASE_URL: "ftp://169.254.169.254/child-override" },
       })
       const workflowId = workflows.create({
         workspaceId: ws,
@@ -274,11 +274,11 @@ describe("RunScheduler", () => {
 
       const persistedRun = runs.getById(runId)
       // BASE_URL comes from the child (override wins); REGION is inherited from the base
-      // untouched. The query string is redacted (SSRF-blocked target), same as the sibling
+      // untouched. The query string is redacted, same as the sibling
       // test above — assert on the path, which still proves both resolutions happened.
       expect(persistedRun?.results[0]).toMatchObject({
         nodeId: "http_1",
-        request: { url: "http://169.254.169.254/child-override?<REDACTED>" },
+        request: { url: "ftp://169.254.169.254/child-override?<REDACTED>" },
       })
     })
 
@@ -343,7 +343,7 @@ describe("RunScheduler", () => {
             nodeId: "sub_http",
             type: "http-request",
             position: { x: 1, y: 0 },
-            config: { method: "GET", url: "http://169.254.169.254/blocked" },
+            config: { method: "GET", url: "ftp://169.254.169.254/blocked" },
           },
         ],
         edges: [{ edgeId: "e1", source: "start", target: "sub_http" }],
@@ -377,7 +377,7 @@ describe("RunScheduler", () => {
       expect(childRun.results).toContainEqual(expect.objectContaining({
         nodeId: "sub_http",
         status: "failed",
-        error: "SSRF blocked",
+        error: "Request configuration invalid",
       }))
 
       // ...and the caller points at it, without absorbing the child's nodes.

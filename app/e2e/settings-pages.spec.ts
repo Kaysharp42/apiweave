@@ -9,8 +9,7 @@ import {
  * Every Settings row opens a page, not a dialog.
  *
  * The app-scoped rows used to open modals over whatever page was already
- * showing — clicking Private networks while on Secrets left the Secrets page
- * dimmed underneath. Nothing in Settings renders a dialog now, which is what
+ * showing. Nothing in Settings renders a dialog now, which is what
  * the `role=dialog` assertion is here to keep true.
  */
 
@@ -20,7 +19,6 @@ import {
  */
 const ROWS = [
   ["Launch a coding agent", "Agents"],
-  ["Allow requests to LAN devices", "Private networks"],
   ["Let agents drive your workflows", "MCP Server"],
   ["Check for and install new versions", "Updates"],
 ] as const;

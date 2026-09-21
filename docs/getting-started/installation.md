@@ -100,15 +100,6 @@ The local MCP bridge is opt-in. To enable it for a local AI agent:
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
 
-## Private Networks (HTTP Safety)
-
-Outbound requests from workflow runs and URL imports pass through an SSRF guard: loopback is always allowed, but hosts on private networks (RFC1918/unique-local, such as `192.168.x.x`) are blocked, and link-local and metadata endpoints are always blocked. To call services on your LAN:
-
-1. Open **Settings → Private networks**.
-2. Toggle **Allow private network targets**.
-
-The setting takes effect immediately for HTTP request nodes and URL imports, is persisted across restarts, and governs the whole app (the same guard backs Swagger/OpenAPI URL imports). See [Workflows and Nodes](../features/workflows-and-nodes.md) and [Swagger and OpenAPI Import](../features/swagger-import.md).
-
 ## Updates
 
 APIWeave checks GitHub Releases for a newer version shortly after launch, then every six hours for as long as the window stays open, and any time you open **Settings → Updates** and click **Check for updates**.

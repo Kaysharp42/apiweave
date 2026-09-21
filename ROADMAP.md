@@ -24,8 +24,7 @@ not yet part of the Cloud payload.
 Testing and observability (v0.7.x): **expected status** on HTTP Request nodes
 for negative tests, the **visualization and debugging** surface (run timeline,
 variable provenance, secret resolution confidence), the **run camera** that
-follows the active branch during runs, the **Private networks** opt-in for
-LAN targets behind the SSRF guard, and sync **failure visibility** (dead-letter
+follows the active branch during runs, and sync **failure visibility** (dead-letter
 records and real rejection reasons).
 
 ## Next

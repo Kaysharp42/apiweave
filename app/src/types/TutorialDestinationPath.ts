@@ -9,7 +9,6 @@ export type TutorialDestinationPath =
   | "secrets"
   | "agents"
   | "canvas-settings"
-  | "private-networks"
   | "mcp-server"
   | "updates"
   | "cloud-sync";
