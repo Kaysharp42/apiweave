@@ -17,6 +17,97 @@ function InfoCardIcon({ className }: { className?: string }) {
   return <Info className={className} />;
 }
 
+function MappingCard({
+  title,
+  description,
+  mapping,
+  onRemove,
+  newKey,
+  onNewKeyChange,
+  keyPlaceholder,
+  newExpr,
+  onNewExprChange,
+  exprPlaceholder,
+  exprUsesTemplate,
+  onAdd,
+}: {
+  title: string;
+  description: string;
+  mapping: Record<string, string>;
+  onRemove: (key: string) => void;
+  newKey: string;
+  onNewKeyChange: (value: string) => void;
+  keyPlaceholder: string;
+  newExpr: string;
+  onNewExprChange: (value: string) => void;
+  exprPlaceholder: string;
+  exprUsesTemplate: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <Card title={title} icon={InfoCardIcon}>
+      <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-3">
+        {description}
+      </p>
+      <div className="space-y-2 mb-3">
+        {Object.entries(mapping).map(([key, expr]) => (
+          <div
+            key={key}
+            className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
+          >
+            <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+              {key}
+            </span>
+            <span className="text-text-muted dark:text-text-muted-dark">
+              =
+            </span>
+            <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
+              {expr}
+            </span>
+            <IconButton
+              onClick={() => onRemove(key)}
+              variant="error"
+              size="xs"
+              tooltip="Remove mapping"
+            >
+              <X className="w-4 h-4" />
+            </IconButton>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Input
+          value={newKey}
+          onChange={(e) => onNewKeyChange(e.target.value)}
+          size="sm"
+          className="flex-1"
+          placeholder={keyPlaceholder}
+        />
+        {exprUsesTemplate ? (
+          <TemplateInput
+            value={newExpr}
+            onValueChange={onNewExprChange}
+            size="sm"
+            className="flex-1 font-mono"
+            placeholder={exprPlaceholder}
+          />
+        ) : (
+          <Input
+            value={newExpr}
+            onChange={(e) => onNewExprChange(e.target.value)}
+            size="sm"
+            className="flex-1 font-mono"
+            placeholder={exprPlaceholder}
+          />
+        )}
+        <Button variant="ghost" size="sm" onClick={onAdd}>
+          Add
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function WorkflowCallConfigPanel({
   initialConfig,
   workingDataRef,
@@ -165,109 +256,35 @@ export function WorkflowCallConfigPanel({
         </FormField>
       </Card>
 
-      <Card title="Input mapping" icon={InfoCardIcon}>
-        <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-3">
-          Resolved in this workflow&apos;s context, then written into the
-          target workflow&apos;s variables before it runs.
-        </p>
-        <div className="space-y-2 mb-3">
-          {Object.entries(inputMapping).map(([key, expr]) => (
-            <div
-              key={key}
-              className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
-            >
-              <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
-                {key}
-              </span>
-              <span className="text-text-muted dark:text-text-muted-dark">
-                =
-              </span>
-              <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
-                {expr}
-              </span>
-              <IconButton
-                onClick={() => removeInputMapping(key)}
-                variant="error"
-                size="xs"
-                tooltip="Remove mapping"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={newInputKey}
-            onChange={(e) => setNewInputKey(e.target.value)}
-            size="sm"
-            className="flex-1"
-            placeholder="target variable"
-          />
-          <TemplateInput
-            value={newInputExpr}
-            onValueChange={setNewInputExpr}
-            size="sm"
-            className="flex-1 font-mono"
-            placeholder="{{variables.userId}}"
-          />
-          <Button variant="ghost" size="sm" onClick={addInputMapping}>
-            Add
-          </Button>
-        </div>
-      </Card>
+      <MappingCard
+        title="Input mapping"
+        description="Resolved in this workflow's context, then written into the target workflow's variables before it runs."
+        mapping={inputMapping}
+        onRemove={removeInputMapping}
+        newKey={newInputKey}
+        onNewKeyChange={setNewInputKey}
+        keyPlaceholder="target variable"
+        newExpr={newInputExpr}
+        onNewExprChange={setNewInputExpr}
+        exprPlaceholder="{{variables.userId}}"
+        exprUsesTemplate
+        onAdd={addInputMapping}
+      />
 
-      <Card title="Output mapping" icon={InfoCardIcon}>
-        <p className="text-xs text-text-secondary dark:text-text-secondary-dark mb-3">
-          Read from the target workflow&apos;s variables once it completes,
-          then written into this workflow&apos;s variables.
-        </p>
-        <div className="space-y-2 mb-3">
-          {Object.entries(outputMapping).map(([key, subVar]) => (
-            <div
-              key={key}
-              className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
-            >
-              <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
-                {key}
-              </span>
-              <span className="text-text-muted dark:text-text-muted-dark">
-                =
-              </span>
-              <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark flex-1 truncate">
-                {subVar}
-              </span>
-              <IconButton
-                onClick={() => removeOutputMapping(key)}
-                variant="error"
-                size="xs"
-                tooltip="Remove mapping"
-              >
-                <X className="w-4 h-4" />
-              </IconButton>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={newOutputKey}
-            onChange={(e) => setNewOutputKey(e.target.value)}
-            size="sm"
-            className="flex-1"
-            placeholder="caller variable"
-          />
-          <Input
-            value={newOutputExpr}
-            onChange={(e) => setNewOutputExpr(e.target.value)}
-            size="sm"
-            className="flex-1 font-mono"
-            placeholder="target's variable name"
-          />
-          <Button variant="ghost" size="sm" onClick={addOutputMapping}>
-            Add
-          </Button>
-        </div>
-      </Card>
+      <MappingCard
+        title="Output mapping"
+        description="Read from the target workflow's variables once it completes, then written into this workflow's variables."
+        mapping={outputMapping}
+        onRemove={removeOutputMapping}
+        newKey={newOutputKey}
+        onNewKeyChange={setNewOutputKey}
+        keyPlaceholder="caller variable"
+        newExpr={newOutputExpr}
+        onNewExprChange={setNewOutputExpr}
+        exprPlaceholder="target's variable name"
+        exprUsesTemplate={false}
+        onAdd={addOutputMapping}
+      />
     </div>
   );
 }

@@ -113,6 +113,7 @@ export function useTemplateSuggestions(): readonly TemplateSuggestion[] {
   const workspace = useContext(WorkspaceContext);
   const workflowId = workflow?.workflowId;
   const variables = workflow?.variables;
+  // fallow-ignore-next-line code-duplication
   const workspaceId = workspace?.currentWorkspace?.workspaceId ?? null;
   const environments = useEnvironmentStore((state) => state.environments);
   const selectedEnvMap = useEnvironmentStore(
