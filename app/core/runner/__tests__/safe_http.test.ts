@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { SafeHttp, SafeUrlError, MAX_REDIRECT_HOPS } from "../safe_http"
-import type { LookupAddress } from "node:dns"
+import type { RequestInit, Response } from "undici"
 
-const allowLoopback = new SafeHttp({ allowLoopback: true })
-const strictHttp = new SafeHttp({ allowLoopback: false })
+const http = new SafeHttp()
 
 describe("SafeHttp.isSafeUrl / validateUrl (pure)", () => {
   it("allows http and https", () => {
-    expect(allowLoopback.isSafeUrl("http://example.com")).toBe(true)
-    expect(allowLoopback.isSafeUrl("https://example.com/path?q=1")).toBe(true)
+    expect(http.isSafeUrl("http://example.com")).toBe(true)
+    expect(http.isSafeUrl("https://example.com/path?q=1")).toBe(true)
   })
 
   it.each([
@@ -19,238 +18,109 @@ describe("SafeHttp.isSafeUrl / validateUrl (pure)", () => {
     "://missing-scheme",
     "",
   ])("rejects unsupported/broken schemes: %s", (url) => {
-    expect(allowLoopback.isSafeUrl(url)).toBe(false)
+    expect(http.isSafeUrl(url)).toBe(false)
   })
 
-  it("loopback allowed when allowLoopback=true", () => {
-    expect(allowLoopback.isSafeUrl("http://127.0.0.1:9999/x")).toBe(true)
-    expect(allowLoopback.isSafeUrl("http://[::1]:9999/x")).toBe(true)
-  })
-
-  it("loopback blocked when allowLoopback=false", () => {
-    expect(strictHttp.isSafeUrl("http://127.0.0.1:9999/x")).toBe(false)
-    expect(strictHttp.isSafeUrl("http://[::1]:9999/x")).toBe(false)
-  })
-
+  // A desktop user agent sends what the user authored. Every address below is
+  // an ordinary target here; none of them is the client's business to refuse.
   it.each([
+    "http://127.0.0.1:9999/x",
+    "http://[::1]:9999/x",
+    "http://localhost:8080/api",
+    "http://host.docker.internal:5000/api",
     "http://10.0.0.1",
     "http://172.16.0.1",
-    "http://172.31.255.255",
     "http://192.168.1.1",
-    "http://169.254.169.254/latest/meta-data", // AWS metadata
-    "http://0.0.0.0",
-    "http://224.0.0.1", // multicast
-    "http://[fc00::1]", // IPv6 unique-local
-    "http://[fe80::1]", // IPv6 link-local
-    "http://[ff00::1]", // IPv6 multicast
-    "http://[::]", // IPv6 unspecified
-    // IPv4-mapped IPv6 (node's BlockList normalizes these to the IPv4 subnets)
-    "http://[::ffff:169.254.169.254]/latest/meta-data", // mapped AWS metadata
-    "http://[::ffff:10.0.0.5]", // mapped RFC1918
-    "http://[::ffff:a9fe:a9fe]", // mapped metadata, hex form
-    // IPv4-compatible IPv6 (deprecated; not normalized — must be blocked by ::/96)
-    "http://[::169.254.169.254]", // compat metadata, dotted
-    "http://[::a9fe:a9fe]", // compat metadata, hex
-    "http://[::7f00:1]", // compat 127.0.0.1
-  ])("blocks the blocked address: %s", (url) => {
-    expect(allowLoopback.isSafeUrl(url)).toBe(false)
-  })
-
-  it("mapped/compat public IPv4-in-IPv6 not over-blocked", () => {
-    // ::ffff:8.8.8.8 normalizes to public 8.8.8.8; ::/96 must not touch ::ffff:*
-    expect(allowLoopback.isSafeUrl("http://[::ffff:8.8.8.8]")).toBe(true)
-  })
-
-  it("public IP literal allowed (loopback mode)", () => {
-    expect(allowLoopback.isSafeUrl("http://8.8.8.8")).toBe(true)
-  })
-
-  it("validateUrl throws SafeUrlError for blocked, returns void for allowed", () => {
-    expect(() => allowLoopback.validateUrl("http://10.0.0.1")).toThrow(SafeUrlError)
-    expect(() => allowLoopback.validateUrl("http://example.com")).not.toThrow()
-  })
-})
-
-describe("SafeHttp allowPrivateNetworks (opt-in RFC1918/ULA carve-out)", () => {
-  const privateOk = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true })
-
-  it("defaults to off: private targets stay blocked", () => {
-    expect(allowLoopback.allowPrivateNetworks).toBe(false)
-    expect(allowLoopback.isSafeUrl("http://192.168.0.231:8800/api/v1")).toBe(false)
-  })
-
-  it.each([
-    "http://10.0.0.1",
-    "http://172.16.0.1",
-    "http://172.31.255.255",
-    "http://192.168.0.231:8800/api/v1",
     "http://[fc00::1]",
-    "http://[::ffff:192.168.0.5]", // IPv4-mapped RFC1918 (BlockList normalizes to the IPv4 subnets)
-  ])("allows private target when opted in: %s", (url) => {
-    expect(privateOk.isSafeUrl(url)).toBe(true)
+    "http://169.254.169.254/latest/meta-data",
+    "http://8.8.8.8",
+  ])("allows any host the user pointed at: %s", (url) => {
+    expect(http.isSafeUrl(url)).toBe(true)
   })
 
-  it.each([
-    "http://169.254.169.254/latest/meta-data", // AWS metadata — link-local stays blocked
-    "http://[fe80::1]", // IPv6 link-local
-    "http://224.0.0.1", // multicast
-    "http://[ff00::1]",
-    "http://0.0.0.0",
-    "http://[::]",
-  ])("still blocks non-private blocked target when opted in: %s", (url) => {
-    expect(privateOk.isSafeUrl(url)).toBe(false)
-  })
-
-  it("setAllowPrivateNetworks flips the carve-out at runtime", () => {
-    const http = new SafeHttp({ allowLoopback: true })
-    expect(http.isSafeUrl("http://192.168.0.231")).toBe(false)
-    http.setAllowPrivateNetworks(true)
-    expect(http.allowPrivateNetworks).toBe(true)
-    expect(http.isSafeUrl("http://192.168.0.231")).toBe(true)
-    http.setAllowPrivateNetworks(false)
-    expect(http.isSafeUrl("http://192.168.0.231")).toBe(false)
-  })
-
-  it("resolveAndPinIp accepts private addresses when opted in", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "192.168.0.231", family: 4 }]
-    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true, dnsLookup })
-    await expect(http.resolveAndPinIp("lan-box")).resolves.toBe("192.168.0.231")
-  })
-
-  it("resolveAndPinIp still rejects a mixed private + metadata answer when opted in", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [
-      { address: "192.168.0.231", family: 4 },
-      { address: "169.254.169.254", family: 4 },
-    ]
-    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: true, dnsLookup })
-    await expect(http.resolveAndPinIp("rebind.test")).rejects.toBeInstanceOf(SafeUrlError)
+  it("validateUrl throws SafeUrlError for a non-http(s) URL, returns void for allowed", () => {
+    expect(() => http.validateUrl("file:///etc/passwd")).toThrow(SafeUrlError)
+    expect(() => http.validateUrl("http://example.com")).not.toThrow()
   })
 })
 
 describe("SafeHttp.checkRedirectAllowed", () => {
-  it("absolute next URL re-validated against pure rules", () => {
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "http://example.com/b")).toBe(true)
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "http://169.254.169.254/m")).toBe(false)
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "")).toBe(false)
+  it("absolute next URL re-validated against the scheme rule", () => {
+    expect(http.checkRedirectAllowed("http://example.com/a", "http://example.com/b")).toBe(true)
+    expect(http.checkRedirectAllowed("http://example.com/a", "file:///etc/passwd")).toBe(false)
+    expect(http.checkRedirectAllowed("http://example.com/a", "")).toBe(false)
   })
 
   it("relative redirect resolved against current URL inherits the current host", () => {
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "/b")).toBe(true)
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "//other.com/path")).toBe(true)
-    expect(allowLoopback.checkRedirectAllowed("http://example.com/a", "//10.0.0.1/path")).toBe(false)
-  })
-})
-
-describe("SafeHttp.resolveAndPinIp (DNS rebinding guard)", () => {
-  it("throws when any resolved address is blocked", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [
-      { address: "8.8.8.8", family: 4 },
-      { address: "10.0.0.1", family: 4 },
-    ]
-    const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.resolveAndPinIp("evil.test")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("returns the first resolved address when all are public", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [
-      { address: "8.8.8.8", family: 4 },
-      { address: "1.1.1.1", family: 4 },
-    ]
-    const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.resolveAndPinIp("good.test")).resolves.toBe("8.8.8.8")
-  })
-
-  it("allows loopback IP only when allowLoopback=true", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "127.0.0.1", family: 4 }]
-    await expect(new SafeHttp({ allowLoopback: true, dnsLookup }).resolveAndPinIp("localhost-relay")).resolves.toBe("127.0.0.1")
-    await expect(new SafeHttp({ allowLoopback: false, dnsLookup }).resolveAndPinIp("localhost-relay")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("rejects AAAA records that embed a private IPv4 (mapped or compat)", async () => {
-    for (const address of ["::ffff:169.254.169.254", "::a9fe:a9fe"]) {
-      const dnsLookup = async (): Promise<LookupAddress[]> => [{ address, family: 6 }]
-      await expect(new SafeHttp({ allowLoopback: false, dnsLookup }).resolveAndPinIp("rebind.test")).rejects.toBeInstanceOf(SafeUrlError)
-    }
-  })
-
-  it("host.docker.internal skips pinning under allowLoopback", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "10.0.0.1", family: 4 }]
-    const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.resolveAndPinIp("host.docker.internal")).resolves.toBeNull()
-  })
-
-  it("host.docker.internal not honored when allowLoopback=false", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "10.0.0.1", family: 4 }]
-    const http = new SafeHttp({ allowLoopback: false, dnsLookup })
-    await expect(http.resolveAndPinIp("host.docker.internal")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("fails closed (does not fall through to an unpinned fetch) when DNS lookup throws", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => {
-      throw new Error("ENOTFOUND")
-    }
-    const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.resolveAndPinIp("nonexistent.test")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("throws when host is empty", async () => {
-    const http = new SafeHttp({ allowLoopback: true })
-    await expect(http.resolveAndPinIp("")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("assertHostResolvesSafe delegates to resolveAndPinIp", async () => {
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "169.254.169.254", family: 4 }]
-    const http = new SafeHttp({ allowLoopback: true, dnsLookup })
-    await expect(http.assertHostResolvesSafe("metadata.test")).rejects.toBeInstanceOf(SafeUrlError)
+    expect(http.checkRedirectAllowed("http://example.com/a", "/b")).toBe(true)
+    expect(http.checkRedirectAllowed("http://example.com/a", "//other.com/path")).toBe(true)
+    expect(http.checkRedirectAllowed("http://example.com/a", "//10.0.0.1/path")).toBe(true)
   })
 })
 
 describe("SafeHttp.safeFetch (no real network)", () => {
-  it("rejects unsafe URL before touching fetch impl", async () => {
-    const fetchImpl = async (): Promise<Response> => {
-      throw new Error("fetch should not be called for blocked URL")
-    }
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never })
-    await expect(http.safeFetch("http://10.0.0.1/secret")).rejects.toBeInstanceOf(SafeUrlError)
-  })
-
-  it("happy path: original URL/hostname preserved (pin applied via dispatcher, not URL rewrite)", async () => {
+  it("happy path: original URL/hostname reaches the fetch impl untouched", async () => {
     let capturedInit: RequestInit | undefined
     let capturedUrl: string | undefined
     const fetchImpl = async (url: string, init: RequestInit): Promise<Response> => {
       capturedUrl = url
       capturedInit = init
-      return new Response("ok", { status: 200 })
+      return new Response("ok", { status: 200 }) as unknown as Response
     }
-    const dnsLookup = async (): Promise<LookupAddress[]> => [{ address: "93.184.216.34", family: 4 }]
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never, dnsLookup })
-    const res = await http.safeFetch("https://example.com/")
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    const res = await client.safeFetch("https://example.com/")
     expect(res.status).toBe(200)
     expect(await res.text()).toBe("ok")
-    // The request URL/hostname must stay untouched so TLS SNI and certificate
-    // hostname verification run against "example.com", not the pinned IP.
     expect(capturedUrl).toBe("https://example.com/")
+    // No dispatcher override unless the caller opted out of TLS verification,
+    // so requests ride undici's pooled global agent.
+    expect(capturedInit!.dispatcher).toBeUndefined()
+  })
+
+  it("rejectUnauthorized=false installs a dispatcher for the self-signed opt-out", async () => {
+    let capturedInit: RequestInit | undefined
+    const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
+      capturedInit = init
+      return new Response("ok", { status: 200 }) as unknown as Response
+    }
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    await client.safeFetch("https://self-signed.test/", {}, { rejectUnauthorized: false })
     expect(capturedInit!.dispatcher).toBeDefined()
   })
 
-  it("redirect to blocked target is refused mid-chain", async () => {
+  it("redirect to a non-http(s) target is refused mid-chain", async () => {
     let calls = 0
     const fetchImpl = async (): Promise<Response> => {
       calls += 1
-      if (calls === 1) return new Response("", { status: 302, headers: { location: "http://169.254.169.254/m" } })
-      return new Response("ok", { status: 200 })
+      if (calls === 1) {
+        return new Response("", { status: 302, headers: { location: "file:///etc/passwd" } }) as unknown as Response
+      }
+      return new Response("ok", { status: 200 }) as unknown as Response
     }
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never,
-      dnsLookup: async (host: string) => [{ address: host === "169.254.169.254" ? "169.254.169.254" : "93.184.216.34", family: 4 }] })
-    await expect(http.safeFetch("https://example.com/")).rejects.toBeInstanceOf(SafeUrlError)
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    await expect(client.safeFetch("https://example.com/")).rejects.toBeInstanceOf(SafeUrlError)
     expect(calls).toBe(1)
   })
 
+  it("follows a redirect to a LAN host", async () => {
+    const seen: string[] = []
+    const fetchImpl = async (url: string): Promise<Response> => {
+      seen.push(url)
+      if (seen.length === 1) {
+        return new Response("", { status: 302, headers: { location: "http://192.168.1.10/api" } }) as unknown as Response
+      }
+      return new Response("ok", { status: 200 }) as unknown as Response
+    }
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    await expect(client.safeFetch("https://example.com/")).resolves.toMatchObject({ status: 200 })
+    expect(seen).toEqual(["https://example.com/", "http://192.168.1.10/api"])
+  })
+
   it("too many redirects raises SafeUrlError", async () => {
-    const fetchImpl = async (): Promise<Response> => new Response("", { status: 302, headers: { location: "https://example.com/loop" } })
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never, maxRedirectHops: 2,
-      dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }] })
-    await expect(http.safeFetch("https://example.com/")).rejects.toThrow(/Too many redirects/)
+    const fetchImpl = async (): Promise<Response> =>
+      new Response("", { status: 302, headers: { location: "https://example.com/loop" } }) as unknown as Response
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never, maxRedirectHops: 2 })
+    await expect(client.safeFetch("https://example.com/")).rejects.toThrow(/Too many redirects/)
   })
 
   it("honors the caller's abort signal instead of discarding it", async () => {
@@ -260,11 +130,10 @@ describe("SafeHttp.safeFetch (no real network)", () => {
     const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
       seenSignal = init.signal ?? undefined
       if (init.signal?.aborted) throw new DOMException("aborted", "AbortError")
-      return new Response("ok", { status: 200 })
+      return new Response("ok", { status: 200 }) as unknown as Response
     }
-    const http = new SafeHttp({ allowLoopback: true, fetchImpl: fetchImpl as never,
-      dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }] })
-    await expect(http.safeFetch("https://example.com/", { signal: controller.signal })).rejects.toThrow(/abort/i)
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    await expect(client.safeFetch("https://example.com/", { signal: controller.signal })).rejects.toThrow(/abort/i)
     expect(seenSignal?.aborted).toBe(true)
   })
 
@@ -272,11 +141,10 @@ describe("SafeHttp.safeFetch (no real network)", () => {
     let captured: AbortSignal | undefined
     const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
       captured = init.signal ?? undefined
-      return new Response("ok", { status: 200 })
+      return new Response("ok", { status: 200 }) as unknown as Response
     }
-    const http = new SafeHttp({ allowLoopback: true, timeoutMs: 50, fetchImpl: fetchImpl as never,
-      dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }] })
-    await http.safeFetch("https://example.com/")
+    const client = new SafeHttp({ timeoutMs: 50, fetchImpl: fetchImpl as never })
+    await client.safeFetch("https://example.com/")
     // The old code cleared the timer on return, leaving no way to abort a slow
     // body. The composed timeout signal must still be un-aborted-but-armed here.
     expect(captured).toBeDefined()
@@ -287,11 +155,5 @@ describe("SafeHttp.safeFetch (no real network)", () => {
 
   it("exports MAX_REDIRECT_HOPS default 5", () => {
     expect(MAX_REDIRECT_HOPS).toBe(5)
-  })
-
-  it("approved-domains allowlist narrows the accepted hosts", () => {
-    const http = new SafeHttp({ allowLoopback: true, approvedDomains: ["api.github.com"] })
-    expect(http.isSafeUrl("https://api.github.com/users/octocat")).toBe(true)
-    expect(http.isSafeUrl("https://api.gitlab.com/users/octocat")).toBe(false)
   })
 })

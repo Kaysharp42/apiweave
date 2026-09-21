@@ -114,7 +114,7 @@ export const firstStepsChapter: TutorialChapter = {
         {
           title: "The HTTP node turns red with a connection error",
           instruction:
-            "Your network blocked the outbound call, httpbin.org is temporarily unavailable, or the target is on a private network. Try another public endpoint, or enable Settings → Private networks for LAN hosts.",
+            "Your network blocked the outbound call or httpbin.org is temporarily unavailable. Check the endpoint and your proxy settings, then try again.",
         },
         {
           title: "The Assertion node turns red",

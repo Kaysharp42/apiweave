@@ -144,7 +144,6 @@ export type { WorkflowListProps } from "./WorkflowListProps";
 export type { ProjectItemProps } from "./ProjectItemProps";
 export type { ProjectListProps } from "./ProjectListProps";
 export type { SettingsContentProps } from "./SettingsContentProps";
-export type { HttpSafetySettings } from "./HttpSafetySettings";
 export type { SidebarItemProps } from "./SidebarItemProps";
 export type { SidebarActionProps } from "./SidebarActionProps";
 export type { AppContextType } from "./AppContextType";

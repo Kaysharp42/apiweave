@@ -422,11 +422,15 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
 
 function safeErrorClass(error: string): string {
   const normalized = error.toLowerCase()
-  if (normalized.includes("ssrf blocked")) return "SSRF blocked"
+  if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("timeout") || normalized.includes("timed out") || normalized.includes("aborted")) {
     return "Request timed out"
   }
-  if (normalized.includes("url is required") || normalized.includes("failed to build request")) {
+  if (
+    normalized.includes("url is required") ||
+    normalized.includes("failed to build request") ||
+    normalized.includes("not a requestable")
+  ) {
     return "Request configuration invalid"
   }
   return "Node execution failed"

@@ -331,7 +331,7 @@ export const organizeChapter: TutorialChapter = {
           instruction:
             "Open the workflow, select that environment in the toolbar, and click Refresh. The importer fetches the document and adds a group labelled Swagger: <Environment Name> to Add Nodes.",
           detail:
-            "The group also refreshes automatically when you open a workflow against that environment, except for loopback and private-network hosts, which always require an explicit Refresh.",
+            "The group also refreshes automatically when you open a workflow against that environment.",
         },
         {
           title: "Drag a template onto the canvas",
@@ -357,7 +357,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Know the supported versions and limits",
           instruction:
-            "OpenAPI 3.0 and newer and Swagger 2.0 are supported; Swagger 1.0 is not. The spec must be reachable from the app's main process, and private-network hosts require Settings → Private networks.",
+            "OpenAPI 3.0 and newer and Swagger 2.0 are supported; Swagger 1.0 is not. The spec must be reachable from the app's main process.",
         },
       ],
       example: {

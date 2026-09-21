@@ -129,11 +129,6 @@ export const requestsAndDataChapter: TutorialChapter = {
             "A placeholder inside JSON often leaves invalid JSON when unresolved. Resolve the variable first, or add a fallback value.",
         },
         {
-          title: "A private LAN host is blocked",
-          instruction:
-            "Enable Settings → Private networks. Link-local and metadata addresses stay blocked even then.",
-        },
-        {
           title: "Expected status passes a code you did not intend",
           instruction:
             "Expected status replaces the 2xx default, so an empty or malformed value behaves differently. Enter codes between 100 and 599.",

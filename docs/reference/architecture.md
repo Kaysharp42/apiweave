@@ -38,7 +38,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Repositories** are the only place that touches better-sqlite3. Every consumer (handlers, services, runner) goes through repository methods. The schema lives in `app/core/db/migrations/`.
 
-**Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls with SSRF guards (loopback always allowed; RFC1918/unique-local opt-in via **Settings → Private networks**; link-local/metadata and multicast always blocked), and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
+**Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls, and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
 
 **Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path and stores the sealed ciphertext verbatim. At run time it opens the boxes with the key derived from the per-install keyfile, resolves the local scope chain (selected environment, then the workspace store), and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values never sync, even when workflow structure does.
 
@@ -55,8 +55,6 @@ The diagram shows the components that make up APIWeave and the paths a request c
 **Auto-update manager** runs in the main process, checks the GitHub release channel in the background (per the update policy in Settings), and drives self-install where the platform supports it.
 
 **Cloud sync control** is an optional main-process component that talks to APIWeave Cloud over a durable outbox: pull and push of structure-only payloads, conflict detection and resolution, and surfaced dead-letter records. It is dormant until you sign in with a Cloud account.
-
-**Settings domain and HTTP-safety opt-in** persist app preferences (such as the private-networks toggle) in the local store and expose them over a dedicated settings handler.
 
 **`app://` protocol handler** serves the renderer from the packaged bundle under a locked-down CSP instead of a plain file URL.
 
@@ -112,7 +110,7 @@ The SQLite database holds everything APIWeave needs to keep working across page 
 - **Environments**: variable maps, scope, and any pinned OpenAPI/Swagger URL.
 - **Node presets**: workspace-scoped saved node configurations.
 - **Secrets**: scope, metadata, key id, and sealed ciphertext. No plaintext, no read API.
-- **App settings**: persisted preferences such as the private-networks toggle.
+- **App settings**: persisted preferences such as update and MCP bridge policies.
 
 Large response payloads live in a separate blob table so they don't bloat the main records. The renderer reads them on demand.
 

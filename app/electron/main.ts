@@ -360,14 +360,7 @@ if (!hasSingleInstanceLock) {
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
-    // SSRF policy: loopback always on (local dev services); private-network
-    // (RFC1918/ULA) targets are an opt-in persisted in app_settings and
-    // flipped live on the shared instance below.
-    const readAllowPrivateNetworks = (): boolean => {
-      if (database === null) return false
-      return appSettings.getBoolean("http.allow_private_networks")
-    }
-    const http = new SafeHttp({ allowLoopback: true, allowPrivateNetworks: readAllowPrivateNetworks() })
+    const http = new SafeHttp()
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -435,16 +428,6 @@ if (!hasSingleInstanceLock) {
         () => clock.isoNow(),
       ),
       imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver, http),
-      httpSafety: {
-        get allowPrivateNetworks(): boolean {
-          return http.allowPrivateNetworks
-        },
-        setAllowPrivateNetworks: (enabled) => {
-          http.setAllowPrivateNetworks(enabled)
-          if (database === null) return
-          appSettings.setBoolean("http.allow_private_networks", enabled)
-        },
-      },
       cloud,
     }
     registerAllHandlers(ipcRouter, deps)

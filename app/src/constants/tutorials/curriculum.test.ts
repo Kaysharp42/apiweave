@@ -110,7 +110,6 @@ describe("tutorial curriculum", () => {
       "provenance",
       "briefing",
       "references only",
-      "private networks",
     ]) {
       expect(keywords.has(term)).toBe(true);
     }

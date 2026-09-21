@@ -7,10 +7,8 @@ interface CanvasPrefsState extends CanvasPrefs {
 }
 
 /**
- * Canvas interaction preferences. localStorage rather than the IPC settings
- * handler: that one carries the http-safety opt-in, which is a security
- * decision the main process has to enforce — these are UI taste, and the
- * renderer is the only thing that ever reads them.
+ * Canvas interaction preferences are UI taste, so the renderer owns them in
+ * localStorage rather than routing them through the main process.
  */
 const useCanvasPrefsStore = create<CanvasPrefsState>()(
   persist(
