@@ -490,6 +490,8 @@ export const requestsAndDataChapter: TutorialChapter = {
           title: "Reference it in a request",
           instruction:
             "Add a header such as Authorization: Bearer {{secrets.HTTPBIN_AUTH}} and run the workflow.",
+          detail:
+            "Type {{ in any field that accepts placeholders and an autocomplete list opens with your variables, environment values, and secret names — secret values are never shown. Pick HTTPBIN_AUTH from the list instead of typing the full path by hand.",
         },
         {
           title: "Understand the scope chain",
