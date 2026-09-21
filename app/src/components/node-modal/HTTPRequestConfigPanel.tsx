@@ -258,15 +258,15 @@ const BODY_TYPES: SelectOption[] = [
 ];
 
 function JsonBodyEditor({
-  body,
+  draftConfig,
   error,
   isDarkMode,
-  onChange,
+  updateConfig,
 }: {
-  body: string;
+  draftConfig: NodeModalHTTPRequestConfig;
   error: string | undefined;
   isDarkMode: boolean;
-  onChange: (body: string) => void;
+  updateConfig: (patch: Partial<NodeModalHTTPRequestConfig>) => void;
 }) {
   return (
     <FormField label="JSON body" {...(error ? { error } : {})}>
@@ -279,7 +279,10 @@ function JsonBodyEditor({
         ].join(" ")}
       >
         <div className="flex items-center justify-end border-b border-border bg-surface-overlay px-2 py-1 dark:border-border-dark dark:bg-surface-dark-overlay">
-          <BeautifyButton value={body} onChange={onChange} />
+          <BeautifyButton
+            value={draftConfig.body || ""}
+            onChange={(body) => updateConfig({ body })}
+          />
         </div>
         <Suspense
           fallback={
@@ -292,8 +295,8 @@ function JsonBodyEditor({
             height="384px"
             language="json"
             theme={isDarkMode ? "vs-dark" : "light"}
-            value={body}
-            onChange={(next) => onChange(next || "")}
+            value={draftConfig.body || ""}
+            onChange={(body) => updateConfig({ body: body || "" })}
             beforeMount={registerTemplateCompletion}
             options={{
               minimap: { enabled: false },
@@ -675,10 +678,10 @@ export function HTTPRequestConfigPanel({
 
         {draftConfig.bodyType === "json" && (
           <JsonBodyEditor
-            body={draftConfig.body || ""}
+            draftConfig={draftConfig}
             error={jsonError}
             isDarkMode={isDarkMode}
-            onChange={(body) => updateConfig({ body })}
+            updateConfig={updateConfig}
           />
         )}
 
