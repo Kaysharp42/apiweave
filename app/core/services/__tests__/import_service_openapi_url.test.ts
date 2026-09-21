@@ -84,7 +84,6 @@ const noRepo = {} as WorkflowRepository & EnvironmentRepository & CollectionRepo
 beforeEach(() => {
   requested.length = 0
   const safeHttp = new SafeHttp({
-    dnsLookup: async () => [{ address: "93.184.216.34", family: 4 }],
     fetchImpl: (async (input: string | URL) => {
       const url = typeof input === "string" ? input : input.toString()
       requested.push(url)

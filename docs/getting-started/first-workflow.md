@@ -44,7 +44,7 @@ The full secret model lives in [Environments and Secrets](../features/environmen
 
 - **If the workflows list is empty and you expected to see existing work**, you have not created any workflows yet. Click **New Workflow** to get started.
 - **If Run does nothing**, the main process is not responsive. Quit the app and relaunch. If the issue persists, check the main process log (the terminal that launched Electron, or your OS console) for stack traces.
-- **If the HTTP node turns red with a connection error**, your local network blocked the outbound call, or the runner's SSRF guard rejected the target (link-local and metadata addresses such as `169.254.x.x` are always blocked). Try a different endpoint or check your proxy.
+- **If the HTTP node turns red with a connection error**, your local network may have blocked the outbound call, or the endpoint may be unavailable. Check the URL and your proxy, then try again.
 - **If the Assertion node turns red**, the status code did not match. Click the node to see the actual status, then update the assertion or use a different endpoint.
 - **If the environment selector shows "no environment available"**, you have not created an environment. Open **Environments**, create one, then re-run. You can also pick a default in the header so it is preselected for new workflows.
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in any scope visible to the selected environment. Open **Secrets** and add the key on the right scope.

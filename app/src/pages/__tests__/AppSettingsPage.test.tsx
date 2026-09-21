@@ -10,9 +10,6 @@ vi.mock("../../components/organisms/AgentsSettingsPanel", () => ({
 vi.mock("../../components/organisms/McpSetupPanel", () => ({
   McpSetupPanel: () => <div>mcp panel</div>,
 }));
-vi.mock("../../components/organisms/PrivateNetworksPanel", () => ({
-  PrivateNetworksPanel: () => <div>private networks panel</div>,
-}));
 vi.mock("../../components/organisms/UpdateSettingsPanel", () => ({
   UpdateSettingsPanel: () => <div>updates panel</div>,
 }));
@@ -37,7 +34,6 @@ function renderAt(path: string) {
 describe("AppSettingsPage", () => {
   it.each([
     ["agents", "Agents", "agents panel"],
-    ["private-networks", "Private networks", "private networks panel"],
     ["mcp-server", "MCP Server", "mcp panel"],
     ["updates", "Updates", "updates panel"],
   ])("renders %s as a page", (section, heading, panel) => {
@@ -47,9 +43,12 @@ describe("AppSettingsPage", () => {
     expect(screen.getByText(panel)).toBeInTheDocument();
   });
 
-  it("sends an unknown section to Environments", () => {
-    renderAt("/personal/personal/settings/nope");
+  it.each(["nope", "private-networks"])(
+    "sends the removed or unknown %s section to Environments",
+    (section) => {
+      renderAt(`/personal/personal/settings/${section}`);
 
-    expect(screen.getByText("environments page")).toBeInTheDocument();
-  });
+      expect(screen.getByText("environments page")).toBeInTheDocument();
+    },
+  );
 });

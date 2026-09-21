@@ -6,6 +6,12 @@
 
 - [Concepts](../getting-started/concepts.md) for the vocabulary of projects, workflows, variables, environments, secrets, and runs used throughout the feature guides.
 
+## Learning
+
+The in-app guide to the rest of the product, readable offline and independent of any workflow.
+
+- [In-App Tutorials](tutorials.md): open the bundled library, search lessons, track completion, and follow along while you build.
+
 ## Execution
 
 The two guides in this section cover the canvas itself and the data that flows between steps on a single run.

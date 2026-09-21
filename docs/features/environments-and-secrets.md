@@ -146,7 +146,7 @@ Workflows that still have the deleted environment selected fall back to the head
 
 Each environment can pin an OpenAPI or Swagger document URL. The URL is a convenience for the **Import** flow on the canvas: when this environment is active, **Refresh** in the canvas toolbar re-fetches the document and updates the available endpoint templates.
 
-Set the URL during environment creation or edit it later. The URL must be reachable from the APIWeave main process through the same HTTP-safety guard that the runner uses, and the OpenAPI or Swagger import guide covers which document formats are accepted. Hosts on private networks are blocked by default; enable **Settings → Private networks** to allow them (see [Swagger and OpenAPI Import](swagger-import.md) for the full importer behavior and reachability rules).
+Set the URL during environment creation or edit it later. The URL must be reachable from the APIWeave main process, and the OpenAPI or Swagger import guide covers which document formats are accepted (see [Swagger and OpenAPI Import](swagger-import.md) for the full importer behavior and reachability rules).
 
 ## Troubleshooting
 

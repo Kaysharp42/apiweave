@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml"
 import type { KeyValuePair } from "@shared/zod-schemas/KeyValuePairSchema"
-import { detectSecretsInValue } from "./secret_utils"
+import { detectSecretsInValue, isCredentialFreeReference, isReferenceOnlyValue, redactBodyLeaves } from "./secret_utils"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
 
@@ -292,6 +292,37 @@ function normalizeCurl(cmd: string): string {
   return cmd.replace(/\\\s*\n\s*/g, " ").trim()
 }
 
+/**
+ * Import sanitizers withhold a detected secret, but a `{{...}}` indirection is
+ * wiring, not a credential: keep it so an imported workflow's
+ * `{{variables.token}}`/`{{secrets.TOKEN}}` slot survives. `looksSecret` is the
+ * caller's detection result (key-aware for headers/cookies, value-only for a
+ * body), and a reference carrying credential material outside its `{{...}}`
+ * span is still withheld.
+ */
+function redactImportedValue(value: string, looksSecret: boolean): string {
+  return looksSecret && !isCredentialFreeReference(value) ? "[FILTERED]" : value
+}
+
+/**
+ * Sanitize an imported request body. A JSON body is walked leaf-by-leaf with
+ * the same shared redactor the export bundler uses: sensitive key names and
+ * credential-shaped leaves become `[FILTERED]` while `{{...}}` references
+ * survive, so a reference next to a literal password does not launder it. A
+ * non-JSON body keeps a value that is nothing but references, and is withheld
+ * whole when the broad import heuristic detects a secret — a reference anywhere
+ * must not smuggle a literal `password=...`.
+ */
+function sanitizeImportedBody(body: string): string {
+  try {
+    JSON.parse(body)
+  } catch {
+    if (isReferenceOnlyValue(body)) return body
+    return detectSecretsInValue(body) ? "[FILTERED]" : body
+  }
+  return redactBodyLeaves(body, "[FILTERED]")
+}
+
 function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestNode | null {
   try {
     let cmd = raw
@@ -319,7 +350,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
           if (colonIdx > 0) {
             const k = h.slice(0, colonIdx).trim()
             const v = h.slice(colonIdx + 1).trim()
-            headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
+            headers[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}:${v}`)) : v
           }
           i += 2; continue
         }
@@ -330,7 +361,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
             if (eq > 0) {
               const k = part.trim().slice(0, eq)
               const v = part.trim().slice(eq + 1)
-              cookies[k] = sanitize && (detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) ? "[FILTERED]" : v
+              cookies[k] = sanitize ? redactImportedValue(v, detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) : v
             }
           }
           i += 2; continue
@@ -338,7 +369,7 @@ function parseOneCurl(raw: string, sanitize: boolean, idx: number): HttpRequestN
       } else if (token === "-d" || token === "--data" || token === "--data-raw") {
         if (i + 1 < tokens.length) {
           const raw = tokens[i + 1] ?? ""
-          body = sanitize && detectSecretsInValue(raw) ? "[FILTERED]" : raw
+          body = sanitize ? sanitizeImportedBody(raw) : raw
           if (method === "GET") method = "POST"
           i += 2; continue
         }
@@ -404,6 +435,87 @@ function shellSplit(cmd: string): string[] {
 
 // ── HAR ───────────────────────────────────────────────────────────────────────
 
+function extractHarPairs(
+  items: { name?: string; value?: string }[] | undefined,
+  sanitize: boolean,
+  detect: (key: string, value: string) => boolean,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const item of items ?? []) {
+    const k = item.name ?? ""
+    const v = item.value ?? ""
+    out[k] = sanitize ? redactImportedValue(v, detect(k, v)) : v
+  }
+  return out
+}
+
+function extractHarHeaders(request: Record<string, unknown>, sanitize: boolean): Record<string, string> {
+  return extractHarPairs(
+    request["headers"] as { name?: string; value?: string }[] | undefined,
+    sanitize,
+    (k, v) => detectSecretsInValue(`${k}:${v}`),
+  )
+}
+
+function extractHarCookies(request: Record<string, unknown>, sanitize: boolean): Record<string, string> {
+  return extractHarPairs(
+    request["cookies"] as { name?: string; value?: string }[] | undefined,
+    sanitize,
+    (k, v) => detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v),
+  )
+}
+
+function extractHarBody(request: Record<string, unknown>, sanitize: boolean): string {
+  const postData = (request["postData"] ?? {}) as Record<string, unknown>
+  const rawBody = (postData["text"] as string) ?? ""
+  return sanitize && rawBody ? sanitizeImportedBody(rawBody) : rawBody
+}
+
+function harEntryQueryParams(
+  request: Record<string, unknown>,
+  parsed: URL | null,
+): Record<string, string> {
+  const queryParams: Record<string, string> = {}
+  const harQs = (request["queryString"] as { name?: string; value?: string }[]) ?? []
+  if (harQs.length > 0) {
+    for (const qp of harQs) queryParams[qp.name ?? ""] = qp.value ?? ""
+  } else if (parsed?.search) {
+    parsed.searchParams.forEach((v, k) => { queryParams[k] = v })
+  }
+  return queryParams
+}
+
+function harEntryToHttpNode(entry: Record<string, unknown>, idx: number, sanitize: boolean): HttpRequestNode {
+  const request = (entry["request"] ?? {}) as Record<string, unknown>
+  const method = normalizeMethod(request["method"] as string | undefined)
+  const url = (request["url"] as string) ?? ""
+
+  const parsed = safeUrl(url)
+  const host = parsed?.host ?? ""
+  const path = parsed?.pathname ?? "/"
+  const body = extractHarBody(request, sanitize)
+
+  const config: HttpRequestNode["config"] = {
+    method,
+    url,
+    headers: kvToPairs(extractHarHeaders(request, sanitize)),
+    queryParams: kvToPairs(harEntryQueryParams(request, parsed)),
+    cookies: kvToPairs(extractHarCookies(request, sanitize)),
+    timeout: 30,
+    followRedirects: true,
+    extractors: {},
+    ...(body ? { body } : {}),
+  }
+
+  return {
+    nodeId: newId(),
+    type: "http-request",
+    label: `[${method}] ${host}${truncate(path, 40)}`,
+    position: positionForIndex(idx),
+    config,
+  }
+}
+
 export function parseHarData(data: Record<string, unknown>, opts: HarParseOptions = {}): ParsedWorkflow {
   const sanitize = opts.sanitize ?? true
   const log = data["log"] as Record<string, unknown> | undefined
@@ -411,70 +523,7 @@ export function parseHarData(data: Record<string, unknown>, opts: HarParseOption
   if (entries.length === 0) throw new Error("HAR file contains no entries")
 
   const start = makeStartNode()
-  const httpNodes: HttpRequestNode[] = []
-
-  for (let idx = 0; idx < entries.length; idx++) {
-    const entry = entries[idx]!
-    const request = (entry["request"] ?? {}) as Record<string, unknown>
-    const response = (entry["response"] ?? {}) as Record<string, unknown>
-    const method = normalizeMethod(request["method"] as string | undefined)
-    const url = (request["url"] as string) ?? ""
-
-    const parsed = safeUrl(url)
-    const host = parsed?.host ?? ""
-    const path = parsed?.pathname ?? "/"
-    const queryParams: Record<string, string> = {}
-
-    const harQs = (request["queryString"] as { name?: string; value?: string }[]) ?? []
-    if (harQs.length > 0) {
-      for (const qp of harQs) queryParams[qp.name ?? ""] = qp.value ?? ""
-    } else if (parsed?.search) {
-      parsed.searchParams.forEach((v, k) => { queryParams[k] = v })
-    }
-
-    const headers: Record<string, string> = {}
-    for (const h of ((request["headers"] as { name?: string; value?: string }[]) ?? [])) {
-      const k = h.name ?? ""
-      const v = h.value ?? ""
-      headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
-    }
-
-    const cookies: Record<string, string> = {}
-    for (const ck of ((request["cookies"] as { name?: string; value?: string }[]) ?? [])) {
-      const k = ck.name ?? ""
-      const v = ck.value ?? ""
-      cookies[k] = sanitize && (detectSecretsInValue(`${k}=${v}`) || detectSecretsInValue(v)) ? "[FILTERED]" : v
-    }
-
-    const postData = (request["postData"] ?? {}) as Record<string, unknown>
-    const rawBody = (postData["text"] as string) ?? ""
-    const body = sanitize && rawBody && detectSecretsInValue(rawBody) ? "[FILTERED]" : rawBody
-
-    void response
-
-    const label = `[${method}] ${host}${truncate(path, 40)}`
-    const pos = positionForIndex(idx)
-
-    const config: HttpRequestNode["config"] = {
-      method,
-      url,
-      headers: kvToPairs(headers),
-      queryParams: kvToPairs(queryParams),
-      cookies: kvToPairs(cookies),
-      timeout: 30,
-      followRedirects: true,
-      extractors: {},
-      ...(body ? { body } : {}),
-    }
-
-    httpNodes.push({
-      nodeId: newId(),
-      type: "http-request",
-      label,
-      position: pos,
-      config,
-    })
-  }
+  const httpNodes = entries.map((entry, idx) => harEntryToHttpNode(entry, idx, sanitize))
 
   const end = makeEndNode(httpNodes.length)
   const allNodes: ImportedNode[] = [start, ...httpNodes, end]
@@ -502,16 +551,8 @@ export function harDryRun(data: Record<string, unknown>, opts: HarParseOptions =
     const method = (request["method"] as string) ?? "GET"
     const url = (request["url"] as string) ?? ""
 
-    const headers: Record<string, string> = {}
-    for (const h of ((request["headers"] as { name?: string; value?: string }[]) ?? [])) {
-      const k = h.name ?? ""
-      const v = h.value ?? ""
-      headers[k] = sanitize && detectSecretsInValue(`${k}:${v}`) ? "[FILTERED]" : v
-    }
-
-    const postData = (request["postData"] ?? {}) as Record<string, unknown>
-    const rawBody = (postData["text"] as string) ?? ""
-    const body = sanitize && rawBody && detectSecretsInValue(rawBody) ? "[FILTERED]" : rawBody
+    const headers = extractHarHeaders(request, sanitize)
+    const body = extractHarBody(request, sanitize)
 
     return {
       method,
@@ -584,7 +625,7 @@ export function parseOpenApiSpec(
         const example = schema["example"] !== undefined ? String(schema["example"]) : ""
         if (paramIn === "query") queryParams[name] = example
         else if (paramIn === "header") {
-          headers[name] = sanitize && detectSecretsInValue(`${name}:${example}`) ? "[FILTERED]" : example
+          headers[name] = sanitize ? redactImportedValue(example, detectSecretsInValue(`${name}:${example}`)) : example
         }
       }
 

@@ -17,6 +17,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { AppNavBarItems } from "../../constants/AppNavBar";
 import type { NavSection } from "../../types/NavSection";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
+import { isTutorialRoute } from "../../utils/isTutorialRoute";
 import { useUpdateStatus } from "../../contexts/UpdateStatusContext";
 
 type LucideIcon = React.ComponentType<React.SVGProps<SVGSVGElement>>;
@@ -71,11 +72,17 @@ export function AppNavBar() {
   const { isNavBarCollapsed, toggleNavBarCollapse } = useNavBarCollapse();
   const { currentOrg, currentWorkspace } = useWorkspace();
   const isOnSettingsRoute = isSettingsRoute(location.pathname);
+  const isOnTutorialRoute = isTutorialRoute(location.pathname);
   const resolvedOrgSlug = currentOrg?.slug ?? orgSlug ?? "personal";
   const resolvedWorkspaceSlug =
     currentWorkspace?.slug ?? workspaceSlug ?? "personal";
   const wsSettingsPath = `/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/settings/environments`;
   const settingsPath = wsSettingsPath;
+  // A page route (settings, project, tutorial) covers the persistent canvas, so
+  // any nav-rail section has to navigate back to the shell's own path to reveal
+  // it again — not only Settings.
+  const shellPath = `/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/workflows`;
+  const isOnPageRoute = isOnSettingsRoute || isOnTutorialRoute;
   // Settings > Updates is the only place the update flow lives, so without a
   // marker here nobody on the platforms that can't self-install would ever
   // learn a release exists.
@@ -118,8 +125,8 @@ export function AppNavBar() {
                 setNavState(id as NavSection);
                 if (id === "settings") {
                   if (!isOnSettingsRoute) navigate(settingsPath);
-                } else if (isOnSettingsRoute) {
-                  navigate(`/${resolvedOrgSlug}/${resolvedWorkspaceSlug}/workflows`);
+                } else if (isOnPageRoute) {
+                  navigate(shellPath);
                 }
               }}
               disabled={disabled}

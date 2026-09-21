@@ -4,9 +4,9 @@ export { Panel } from "./Panel";
 export { PanelTabs } from "./PanelTabs";
 export {
   PanelTipsButton,
-  PanelTipsSheet,
-  PanelTipsSection,
   PanelTipsCode,
+  PanelTipsSection,
+  PanelTipsSheet,
 } from "./PanelTips";
 export { FormField } from "./FormField";
 export { Card } from "./Card";
@@ -28,4 +28,6 @@ export {
 } from "./TemplateAutocomplete";
 export { StatusBadge } from "./StatusBadge";
 export { ToggleSetting } from "./ToggleSetting";
+export { TutorialCodeBlock } from "./TutorialCodeBlock";
+export { TutorialStepList } from "./TutorialStepList";
 export { WorkspaceEmptyState } from "./WorkspaceEmptyState";

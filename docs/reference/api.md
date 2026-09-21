@@ -26,7 +26,6 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 | Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
 | Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
 | Assertions | `assertions.*` | Suggest, validate, and apply assertion rules |
-| Settings | `settings.*` | App settings reads and the private-networks opt-in |
 | Cloud | `cloud.*` | Optional Cloud sync: status, link, bind, pull, push, conflict and dead-letter handling |
 
 The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
@@ -43,7 +42,6 @@ The renderer never calls services directly. Every renderer call routes through a
 | Node presets | `app/core/ipc/handlers/node-presets.ts` | Create, list, update, delete; config canonicalised and validated per node type |
 | Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |
 | Assertions | `app/core/ipc/handlers/assertions.ts` | Suggest, validate, and apply assertion rules |
-| Settings | `app/core/ipc/handlers/settings.ts` | Settings reads and the private-networks opt-in |
 | Cloud | `app/core/ipc/handlers/cloud.ts` | Status, link/cancel/unlink, workspace binding, push/pull, conflicts, dead letters |
 | Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, create, update, delete |
 | Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
@@ -63,7 +61,7 @@ The same run transitions also reach MCP through a shared event broker: a session
 
 ## Rate Limits
 
-None at the IPC layer. The runner's outbound HTTP path enforces SSRF guards and per-host limits. The local MCP bridge has no call-rate limit, but it requires bearer authentication, validates browser origins, and rejects request bodies above 10 MB.
+None at the IPC layer. The local MCP bridge has no call-rate limit, but it requires bearer authentication, validates browser origins, and rejects request bodies above 10 MB.
 
 ## Versioning
 

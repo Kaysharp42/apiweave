@@ -848,7 +848,7 @@ export class WorkflowExecutor {
       if (error instanceof SafeUrlError) {
         return withExtractorOutcomes({
           status: "error",
-          error: `SSRF blocked: ${error.message}`,
+          error: error.message,
           method,
           url,
           duration: 0,
@@ -958,7 +958,7 @@ export class WorkflowExecutor {
       return true
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? `SSRF blocked: ${error.message}` : String(error), method: "GET", url,
+        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs)
@@ -1018,7 +1018,7 @@ export class WorkflowExecutor {
       }
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? `SSRF blocked: ${error.message}` : String(error), method: "GET", url,
+        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs, extractors)
@@ -2029,8 +2029,8 @@ export class WorkflowExecutor {
         return Buffer.from(upload.value, "base64")
       case "path":
         // ponytail: desktop single-user trust model — the path comes from the
-        // user's own saved workflow config, same trust boundary safe_http.ts
-        // documents for allowLoopback.
+        // user's own saved workflow config, the same trust boundary safe_http.ts
+        // documents for outbound requests.
         return fs.readFile(upload.value)
       case "variable":
       default:

@@ -1805,7 +1805,10 @@ describe("CloudSyncProvider", () => {
         variables?: Record<string, unknown>
         graph?: { nodes?: Array<{ config?: { body?: string } }> }
       }
-      expect(localSnapshot.variables).toEqual({})
+      // A sensitive-named local variable keeps its key with the literal
+      // withheld (it is the slot a `{{variables.API_TOKEN}}` reference names),
+      // rather than being dropped from the sanitized conflict snapshot.
+      expect(localSnapshot.variables).toEqual({ API_TOKEN: "" })
       expect(localSnapshot.graph?.nodes?.[0]?.config?.headers).toEqual([{ key: "Authorization", value: "" }])
       expect(cloudSnapshot.variables).toEqual({})
       expect(cloudSnapshot.graph?.nodes?.[0]?.config?.body).toBe("")

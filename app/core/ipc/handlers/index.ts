@@ -11,7 +11,6 @@ import { registerImportHandlers } from "./imports"
 import { registerCloudHandlers } from "./cloud"
 import { registerAssertionHandlers } from "./assertions"
 import { registerGuideHandlers } from "./guides"
-import { registerSettingsHandlers } from "./settings"
 
 export type { HandlerDeps } from "./common"
 
@@ -33,5 +32,4 @@ export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void 
   registerProjectHandlers(router, deps)
   registerImportHandlers(router, deps)
   registerCloudHandlers(router, deps)
-  registerSettingsHandlers(router, deps)
 }

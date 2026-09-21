@@ -7,7 +7,7 @@ import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 function makeDeps(overrides: { baseUrl?: string; secrets?: Record<string, string> } = {}) {
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
-  const http = new SafeHttp({ allowLoopback: true })
+  const http = new SafeHttp()
   const functions = new DynamicFunctions(clock, rng)
   return {
     clock,

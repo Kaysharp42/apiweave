@@ -187,7 +187,7 @@ function normalizeWorkflow(raw: JsonValue): WorkflowGraph {
 async function runRealExecutor(fixture: CaseFixture, baseUrl: string): Promise<JsonValue> {
   const clock = new FixedClockProvider(fixture.clock);
   const rng = new SeededRandomProvider(fixture.seed);
-  const http = new SafeHttp({ allowLoopback: true });
+  const http = new SafeHttp();
   const functions = new DynamicFunctions(clock, rng);
 
   const executor = new WorkflowExecutor({

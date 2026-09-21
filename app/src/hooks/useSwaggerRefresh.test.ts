@@ -4,34 +4,9 @@ import {
   MAX_SWAGGER_CACHE_ENTRIES,
   SWAGGER_CACHE_TTL_MS,
   fetchSwaggerNodes,
-  isSensitiveAutoRefreshTarget,
   swaggerCacheKey,
 } from "./useSwaggerRefresh";
 import * as apiweaveClient from "../utils/apiweaveClient";
-
-describe("isSensitiveAutoRefreshTarget", () => {
-  it.each([
-    "http://localhost:8080/swagger.json",
-    "http://127.0.0.1/swagger.json",
-    "http://[::1]/swagger.json",
-    "http://host.docker.internal/swagger.json",
-    "http://10.0.0.5/swagger.json",
-    "http://172.20.0.1/swagger.json",
-    "http://192.168.1.1/swagger.json",
-    "http://169.254.169.254/latest/meta-data",
-  ])("flags loopback/private target: %s", (url) => {
-    expect(isSensitiveAutoRefreshTarget(url)).toBe(true);
-  });
-
-  it.each([
-    "https://api.example.com/swagger.json",
-    "https://petstore.swagger.io/v2/swagger.json",
-    "not a url",
-    "",
-  ])("allows public/invalid target: %s", (url) => {
-    expect(isSensitiveAutoRefreshTarget(url)).toBe(false);
-  });
-});
 
 describe("fetchSwaggerNodes caching", () => {
   afterEach(() => {

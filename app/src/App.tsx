@@ -21,6 +21,7 @@ import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
+import TutorialPage from "./pages/TutorialPage";
 import { ConflictDetailPage } from "./pages/cloud/ConflictDetailPage";
 import { ConflictsPage } from "./pages/cloud/ConflictsPage";
 import { CloudSyncPage } from "./pages/cloud/CloudSyncPage";
@@ -457,8 +458,40 @@ function App() {
                     element={<CanvasRoute />}
                   />
                   <Route
+                    path="/:workspaceSlug/tutorials"
+                    element={
+                      <WorkspacePageRoute navState="workflows">
+                        <TutorialPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  <Route
+                    path="/:workspaceSlug/tutorials/:lessonId"
+                    element={
+                      <WorkspacePageRoute navState="workflows">
+                        <TutorialPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  <Route
                     path="/:orgSlug/:workspaceSlug/workflows"
                     element={<CanvasRoute />}
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/tutorials"
+                    element={
+                      <WorkspacePageRoute navState="workflows">
+                        <TutorialPage />
+                      </WorkspacePageRoute>
+                    }
+                  />
+                  <Route
+                    path="/:orgSlug/:workspaceSlug/tutorials/:lessonId"
+                    element={
+                      <WorkspacePageRoute navState="workflows">
+                        <TutorialPage />
+                      </WorkspacePageRoute>
+                    }
                   />
                   <Route
                     path="/:orgSlug/:workspaceSlug/workflows/:workflowId"

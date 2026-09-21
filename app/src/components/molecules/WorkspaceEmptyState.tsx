@@ -1,4 +1,11 @@
-import { LayoutGrid, Plus, Upload, FolderOpen, ArrowRight } from "lucide-react";
+import {
+  LayoutGrid,
+  Plus,
+  Upload,
+  FolderOpen,
+  ArrowRight,
+  BookOpen,
+} from "lucide-react";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEmptyStateProps } from "../../types";
 
@@ -6,6 +13,8 @@ export function WorkspaceEmptyState({
   onNewWorkflow,
   onImport,
   onOpenCollection,
+  onOpenTutorials,
+  tutorialsLabel = "Start tutorial",
 }: WorkspaceEmptyStateProps) {
   return (
     <div className="flex h-full select-none flex-col items-center justify-center gap-8 px-6 py-12 motion-reduce:animate-none">
@@ -24,7 +33,7 @@ export function WorkspaceEmptyState({
         </h2>
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark leading-relaxed">
           Build visual API test flows, chain requests with variables, and run
-          them on demand or via CI/CD webhooks.
+          them against the environment you choose.
         </p>
       </div>
 
@@ -41,6 +50,18 @@ export function WorkspaceEmptyState({
             <Plus className="w-4 h-4" />
             New Workflow
             <ArrowRight className="w-3.5 h-3.5 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 motion-reduce:transition-none" />
+          </Button>
+        )}
+
+        {onOpenTutorials && (
+          <Button
+            variant="secondary"
+            size="sm"
+            fullWidth
+            onClick={onOpenTutorials}
+            icon={<BookOpen className="w-4 h-4" />}
+          >
+            {tutorialsLabel}
           </Button>
         )}
 

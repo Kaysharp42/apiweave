@@ -4,14 +4,12 @@ import {
   MousePointer2,
   Plug,
   RefreshCw,
-  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { Navigate, useParams } from "react-router-dom";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
 import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
 import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
-import { PrivateNetworksPanel } from "../components/organisms/PrivateNetworksPanel";
 import { UpdateSettingsPanel } from "../components/organisms/UpdateSettingsPanel";
 
 interface SettingsSection {
@@ -42,13 +40,6 @@ export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
     subtitle: "Drag, zoom and snap behaviour",
     width: "max-w-2xl",
     Panel: CanvasSettingsPanel,
-  },
-  "private-networks": {
-    icon: Shield,
-    title: "Private networks",
-    subtitle: "Allow requests to LAN devices (e.g. 192.168.x.x)",
-    width: "max-w-2xl",
-    Panel: PrivateNetworksPanel,
   },
   "mcp-server": {
     icon: Plug,

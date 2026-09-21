@@ -1,13 +1,62 @@
-import { useContext } from "react";
+import { useContext, type ReactNode } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { AppContext } from "../../App";
-import { Moon, Sun, Save, Menu } from "lucide-react";
+import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
 import Tippy from "@tippyjs/react";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
 import { AccountMenu } from "./AccountMenu";
 import useNavigationStore from "../../stores/NavigationStore";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
 import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
+
+/** A tooltip-and-icon toggle button in the drag-region header. Shared by the
+ * auto-save and dark-mode toggles, which differ only in copy, styling and icon. */
+function HeaderToggleButton({
+  enabled,
+  onToggle,
+  enabledTooltip,
+  disabledTooltip,
+  enabledAriaLabel,
+  disabledAriaLabel,
+  className,
+  icon,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+  enabledTooltip: string;
+  disabledTooltip: string;
+  enabledAriaLabel: string;
+  disabledAriaLabel: string;
+  className: string;
+  icon: ReactNode;
+}) {
+  return (
+    <Tippy content={enabled ? enabledTooltip : disabledTooltip} placement="bottom">
+      <button
+        type="button"
+        onClick={onToggle}
+        style={noDragStyle}
+        aria-label={enabled ? enabledAriaLabel : disabledAriaLabel}
+        className={className}
+      >
+        {icon}
+      </button>
+    </Tippy>
+  );
+}
+
+/** The tutorials link's destination, from the current org/workspace or the
+ * route params, falling back to "personal" for either. */
+function useTutorialsPath() {
+  const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
+  const { currentOrg, currentWorkspace } = useWorkspace();
+  const orgSlug = currentOrg?.slug ?? params.orgSlug ?? "personal";
+  const workspaceSlug =
+    currentWorkspace?.slug ?? params.workspaceSlug ?? "personal";
+  return `/${orgSlug}/${workspaceSlug}/tutorials`;
+}
 
 export function MainHeader() {
   const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } =
@@ -18,6 +67,9 @@ export function MainHeader() {
   // On desktop this header *is* the window chrome: it carries the drag region
   // and the min/max/close buttons, and TitleBar stands down. One bar, not two.
   const ownsChrome = useOwnWindowChrome();
+
+  const navigate = useNavigate();
+  const tutorialsPath = useTutorialsPath();
 
   return (
     <header
@@ -48,7 +100,7 @@ export function MainHeader() {
           alt="APIWeave Logo"
           className="h-7 w-7 rounded object-cover"
         />
-        <h1 className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
+        <h1 className="hidden font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark sm:block">
           APIWeave
         </h1>
       </div>
@@ -61,47 +113,43 @@ export function MainHeader() {
           chrome could only disagree with it. Environments are managed from
           Settings → Environments. */}
       <div className="navbar-end min-w-0 flex-shrink gap-2">
-        <Tippy
-          content={autoSaveEnabled ? "Auto-save enabled" : "Auto-save disabled"}
-          placement="bottom"
-        >
-          <button
-            type="button"
-            onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-            style={noDragStyle}
-            aria-label={
-              autoSaveEnabled ? "Disable auto-save" : "Enable auto-save"
-            }
-            className={`inline-flex items-center justify-center w-9 h-9 rounded-sm border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2 ${
-              autoSaveEnabled
-                ? "border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
-                : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
-            }`}
+        <div style={noDragStyle}>
+          <IconButton
+            tooltip="Tutorials"
+            size="md"
+            variant="secondary"
+            onClick={() => navigate(tutorialsPath)}
+            className="w-9 h-9"
           >
-            <Save className="w-4 h-4" />
-          </button>
-        </Tippy>
+            <BookOpen className="w-4 h-4" />
+          </IconButton>
+        </div>
 
-        <Tippy
-          content={darkMode ? "Switch to Light mode" : "Switch to Dark mode"}
-          placement="bottom"
-        >
-          <button
-            type="button"
-            onClick={() => setDarkMode(!darkMode)}
-            style={noDragStyle}
-            aria-label={
-              darkMode ? "Switch to light mode" : "Switch to dark mode"
-            }
-            className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
-          >
-            {darkMode ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
-          </button>
-        </Tippy>
+        <HeaderToggleButton
+          enabled={autoSaveEnabled}
+          onToggle={() => setAutoSaveEnabled(!autoSaveEnabled)}
+          enabledTooltip="Auto-save enabled"
+          disabledTooltip="Auto-save disabled"
+          enabledAriaLabel="Disable auto-save"
+          disabledAriaLabel="Enable auto-save"
+          className={`inline-flex items-center justify-center w-9 h-9 rounded-sm border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2 ${
+            autoSaveEnabled
+              ? "border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
+              : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
+          }`}
+          icon={<Save className="w-4 h-4" />}
+        />
+
+        <HeaderToggleButton
+          enabled={darkMode}
+          onToggle={() => setDarkMode(!darkMode)}
+          enabledTooltip="Switch to Light mode"
+          disabledTooltip="Switch to Dark mode"
+          enabledAriaLabel="Switch to light mode"
+          disabledAriaLabel="Switch to dark mode"
+          className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+          icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+        />
 
         <div className="flex items-center" style={noDragStyle}>
           <AccountMenu />

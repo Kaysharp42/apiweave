@@ -134,6 +134,9 @@ import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "../stores/EnvironmentStore";
 import { createCanvasCommandRegistry } from "../commands/registry";
+import { tutorialLibraryHref } from "../constants/tutorials/curriculum";
+import { resolveTutorialScope } from "../utils/tutorialScope";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
 
@@ -239,6 +242,8 @@ export function WorkflowCanvas({
     autoSaveEnabled: true,
   };
   const scope = useScopeContext();
+  const location = useLocation();
+  const navigate = useNavigate();
 
   const darkModeRef = useRef(darkMode);
   useEffect(() => {
@@ -1556,6 +1561,12 @@ export function WorkflowCanvas({
         openJsonEditor: () => setShowJsonEditor(true),
         openImport: () => setShowImportToNodes(true),
         openHistory: () => setShowHistory(true),
+        openTutorials: () => {
+          const { orgSlug, workspaceSlug } = resolveTutorialScope(
+            location.pathname,
+          );
+          navigate(tutorialLibraryHref(orgSlug, workspaceSlug));
+        },
         undo,
         redo,
         group: groupSelected,
@@ -1581,6 +1592,8 @@ export function WorkflowCanvas({
       handleAutoLayout,
       isHydrated,
       isRunning,
+      location.pathname,
+      navigate,
       redo,
       runWorkflow,
       saveWorkflow,

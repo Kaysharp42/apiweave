@@ -33,3 +33,16 @@ export const CanvasActionsBottom = CanvasCornerGutter * 2 + MiniMapSize.height;
  * size. A wrapping toolbar would silently make the camera aim too high.
  */
 export const CanvasToolbarBand = 56;
+
+/**
+ * Left inset for anything floating in the bottom-left corner beside the
+ * ReactFlow control column — currently the tutorial follow-along companion.
+ *
+ * Clearing the controls sideways rather than upwards is deliberate: the column
+ * is one button wide (28px measured in the renderer, borders included) and only
+ * ever grows *downwards* as buttons are added, so a horizontal clearance stays
+ * true and a vertical one would not. Without it the companion covers zoom,
+ * fit-view and auto-layout — the controls several lessons tell the reader to
+ * press while the companion is open.
+ */
+export const CanvasControlsClearance = CanvasCornerGutter * 2 + 28;
