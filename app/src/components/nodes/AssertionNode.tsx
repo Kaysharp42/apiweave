@@ -7,6 +7,7 @@ import { Info, ListChecks, Pencil, Trash2 } from "lucide-react";
 import { NodeField } from "../atoms/flow/NodeField";
 import { NodeSelectField } from "../atoms/flow/NodeSelectField";
 import { nodeInputClass } from "../atoms/flow/nodeControlClasses";
+import { useTemplateAutocomplete } from "../molecules/TemplateAutocomplete";
 import type {
   AssertionNodeProps,
   AssertionItem,
@@ -108,6 +109,12 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
   const [path, setPath] = useState("");
   const [operator, setOperator] = useState<AssertionOperator>("equals");
   const [expectedValue, setExpectedValue] = useState("");
+  // The expected value goes through the same substitution the request does, so
+  // `{{variables.orderId}}` is an ordinary thing to assert against.
+  const expectedAutocomplete = useTemplateAutocomplete<HTMLInputElement>(
+    expectedValue,
+    setExpectedValue,
+  );
   const [errors, setErrors] = useState<FormErrors>({
     path: "",
     expectedValue: "",
@@ -222,13 +229,13 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
             id="assertion-expected-value"
             type="text"
             placeholder={operator === "count" ? "5" : "200"}
-            value={expectedValue}
-            onChange={(e) => setExpectedValue(e.target.value)}
             className={nodeInputClass({
               invalid: Boolean(errors.expectedValue),
               mono: true,
             })}
+            {...expectedAutocomplete.props}
           />
+          {expectedAutocomplete.list}
         </NodeField>
       )}
 

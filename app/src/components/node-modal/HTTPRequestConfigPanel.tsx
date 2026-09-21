@@ -31,6 +31,10 @@ import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { IconSwitch } from "../atoms/IconSwitch";
 import { Input } from "../atoms/Input";
+import {
+  TemplateInput,
+  useTemplateAutocomplete,
+} from "../molecules/TemplateAutocomplete";
 import { TextArea } from "../atoms/TextArea";
 import { Toggle } from "../atoms/Toggle";
 import { BeautifyButton } from "../molecules/BeautifyButton";
@@ -40,6 +44,11 @@ import { ExtractorForm } from "../molecules/ExtractorForm";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
 import { useDarkMode } from "../../hooks/useDarkMode";
+import { useTemplateSuggestions } from "../../hooks/useTemplateSuggestions";
+import {
+  registerTemplateCompletion,
+  setTemplateCompletionSuggestions,
+} from "../../utils/monacoTemplateCompletion";
 import { previewValue } from "../../utils/previewValue";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
@@ -77,6 +86,168 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "API Key", value: "apiKey" },
 ];
 
+function SecretRevealInput({
+  value,
+  onValueChange,
+  placeholder,
+  className,
+  label,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  placeholder?: string;
+  className?: string;
+  label: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div className="flex gap-2">
+      <TemplateInput
+        type={revealed ? "text" : "password"}
+        value={value}
+        onValueChange={onValueChange}
+        placeholder={placeholder}
+        className={className}
+      />
+      <IconButton
+        tooltip={`${revealed ? "Hide" : "Show"} ${label}`}
+        variant="secondary"
+        onClick={() => setRevealed((shown) => !shown)}
+      >
+        {revealed ? (
+          <EyeOff className="h-4 w-4" />
+        ) : (
+          <Eye className="h-4 w-4" />
+        )}
+      </IconButton>
+    </div>
+  );
+}
+
+function BearerAuthFields({
+  auth,
+  updateAuth,
+}: {
+  auth: AuthConfig;
+  updateAuth: (patch: Partial<AuthConfig>) => void;
+}) {
+  return (
+    <FormField label="Bearer token">
+      <SecretRevealInput
+        label="token"
+        value={auth.bearer?.token || ""}
+        onValueChange={(token) => updateAuth({ bearer: { token } })}
+        placeholder="{{secrets.API_TOKEN}}"
+        className="font-mono"
+      />
+    </FormField>
+  );
+}
+
+function BasicAuthFields({
+  auth,
+  updateAuth,
+}: {
+  auth: AuthConfig;
+  updateAuth: (patch: Partial<AuthConfig>) => void;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <FormField label="Username">
+        <TemplateInput
+          value={auth.basic?.username || ""}
+          onValueChange={(username) =>
+            updateAuth({
+              basic: { username, password: auth.basic?.password || "" },
+            })
+          }
+        />
+      </FormField>
+      <FormField label="Password">
+        <SecretRevealInput
+          label="password"
+          value={auth.basic?.password || ""}
+          onValueChange={(password) =>
+            updateAuth({
+              basic: { username: auth.basic?.username || "", password },
+            })
+          }
+        />
+      </FormField>
+    </div>
+  );
+}
+
+function ApiKeyAuthFields({
+  auth,
+  updateAuth,
+}: {
+  auth: AuthConfig;
+  updateAuth: (patch: Partial<AuthConfig>) => void;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
+      <FormField label="Key name">
+        <Input
+          value={auth.apiKey?.key || ""}
+          onChange={(event) =>
+            updateAuth({
+              apiKey: {
+                key: event.target.value,
+                value: auth.apiKey?.value || "",
+                addTo: auth.apiKey?.addTo || "header",
+              },
+            })
+          }
+          placeholder="X-API-Key"
+        />
+      </FormField>
+      <FormField label="Value">
+        <TemplateInput
+          value={auth.apiKey?.value || ""}
+          onValueChange={(value) =>
+            updateAuth({
+              apiKey: {
+                key: auth.apiKey?.key || "",
+                value,
+                addTo: auth.apiKey?.addTo || "header",
+              },
+            })
+          }
+          placeholder="{{secrets.API_KEY}}"
+          className="font-mono"
+        />
+      </FormField>
+      <FormField label="Add to">
+        <div className="flex h-10 items-center gap-2">
+          <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Query
+          </span>
+          <IconSwitch
+            checked={(auth.apiKey?.addTo || "header") === "header"}
+            onCheckedChange={(checked) =>
+              updateAuth({
+                apiKey: {
+                  key: auth.apiKey?.key || "",
+                  value: auth.apiKey?.value || "",
+                  addTo: checked ? "header" : "query",
+                },
+              })
+            }
+            checkedIcon={<KeyRound className="h-3 w-3" />}
+            uncheckedIcon={<Link2 className="h-3 w-3" />}
+            checkedLabel="Header"
+            uncheckedLabel="Query"
+          />
+          <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            Header
+          </span>
+        </div>
+      </FormField>
+    </div>
+  );
+}
+
 const BODY_TYPES: SelectOption[] = [
   { label: "None", value: "none" },
   { label: "JSON", value: "json" },
@@ -85,6 +256,71 @@ const BODY_TYPES: SelectOption[] = [
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
 ];
+
+function JsonBodyEditor({
+  draftConfig,
+  error,
+  isDarkMode,
+  updateConfig,
+}: {
+  draftConfig: NodeModalHTTPRequestConfig;
+  error: string | undefined;
+  isDarkMode: boolean;
+  updateConfig: (patch: Partial<NodeModalHTTPRequestConfig>) => void;
+}) {
+  return (
+    <FormField label="JSON body" {...(error ? { error } : {})}>
+      <div
+        className={[
+          "overflow-hidden rounded-sm border",
+          error
+            ? "border-status-error dark:border-[var(--aw-status-error)]"
+            : "border-border dark:border-border-dark",
+        ].join(" ")}
+      >
+        <div className="flex items-center justify-end border-b border-border bg-surface-overlay px-2 py-1 dark:border-border-dark dark:bg-surface-dark-overlay">
+          <BeautifyButton
+            value={draftConfig.body || ""}
+            onChange={(body) => updateConfig({ body })}
+          />
+        </div>
+        <Suspense
+          fallback={
+            <div className="flex h-96 items-center justify-center text-sm text-text-secondary dark:text-text-secondary-dark">
+              Loading editor…
+            </div>
+          }
+        >
+          <MonacoEditor
+            height="384px"
+            language="json"
+            theme={isDarkMode ? "vs-dark" : "light"}
+            value={draftConfig.body || ""}
+            onChange={(body) => updateConfig({ body: body || "" })}
+            beforeMount={registerTemplateCompletion}
+            options={{
+              minimap: { enabled: false },
+              fontFamily: "JetBrains Mono",
+              scrollBeyondLastLine: false,
+              // A body's references are typed inside strings, where
+              // Monaco offers nothing unless asked.
+              quickSuggestions: {
+                other: true,
+                comments: false,
+                strings: true,
+              },
+              // The editor sits in an `overflow-hidden` box, so the
+              // suggest widget is cut off at the last line — exactly
+              // where a body's references get typed. This moves it to a
+              // fixed container on the body, out of that box.
+              fixedOverflowWidgets: true,
+            }}
+          />
+        </Suspense>
+      </div>
+    </FormField>
+  );
+}
 
 const SELECT_BUTTON_CLASS =
   "flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay";
@@ -235,13 +471,16 @@ function formatExpectedStatus(value: number | number[] | undefined): string {
  * `null` = does not parse yet (still being typed, or out of 100-599) — the
  * caller leaves the config untouched rather than clobbering it mid-keystroke.
  */
-function parseExpectedStatusInput(text: string): number | number[] | undefined | null {
+function parseExpectedStatusInput(
+  text: string,
+): number | number[] | undefined | null {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
   if (tokens.some((token) => !/^\d+$/.test(token))) return null;
   const codes = tokens.map(Number);
-  if (codes.some((code) => !Number.isInteger(code) || code < 100 || code > 599)) return null;
+  if (codes.some((code) => !Number.isInteger(code) || code < 100 || code > 599))
+    return null;
   return codes.length === 1 ? codes[0]! : codes;
 }
 
@@ -257,13 +496,13 @@ export function HTTPRequestConfigPanel({
   const [draftConfig, setDraftConfig] = useState<NodeModalHTTPRequestConfig>(
     () => normalizeHttpRequestConfig(config ?? initialConfig),
   );
-  const [showBearerToken, setShowBearerToken] = useState(false);
-  const [showBasicPassword, setShowBasicPassword] = useState(false);
   const [showManualExtractorForm, setShowManualExtractorForm] = useState(
     () => Object.keys((config ?? initialConfig).extractors ?? {}).length === 0,
   );
   const [expectedStatusText, setExpectedStatusText] = useState(() =>
-    formatExpectedStatus(normalizeHttpRequestConfig(config ?? initialConfig).expectedStatus),
+    formatExpectedStatus(
+      normalizeHttpRequestConfig(config ?? initialConfig).expectedStatus,
+    ),
   );
 
   useEffect(() => {
@@ -275,6 +514,13 @@ export function HTTPRequestConfigPanel({
   useEffect(() => {
     void loadMonaco();
   }, []);
+
+  // Monaco's completion providers live on a global registry, not on an editor,
+  // so the JSON body's `{{…}}` list is handed over rather than passed down.
+  const templateSuggestions = useTemplateSuggestions();
+  useEffect(() => {
+    setTemplateCompletionSuggestions(templateSuggestions);
+  }, [templateSuggestions]);
 
   // Present the JSON body formatted however it got here — hand-typed, imported
   // from cURL/HAR/Postman, or written by an agent over MCP — so it stops
@@ -318,6 +564,11 @@ export function HTTPRequestConfigPanel({
     };
     onConfigChange?.(newConfig);
   };
+
+  const rawBodyAutocomplete = useTemplateAutocomplete<HTMLTextAreaElement>(
+    draftConfig.body || "",
+    (body) => updateConfig({ body }),
+  );
 
   const updateAuth = (authPatch: Partial<AuthConfig>) => {
     updateConfig({
@@ -386,139 +637,13 @@ export function HTTPRequestConfigPanel({
           </FormField>
 
           {auth.type === "bearer" && (
-            <FormField label="Bearer token">
-              <div className="flex gap-2">
-                <Input
-                  type={showBearerToken ? "text" : "password"}
-                  value={auth.bearer?.token || ""}
-                  onChange={(event) =>
-                    updateAuth({ bearer: { token: event.target.value } })
-                  }
-                  placeholder="{{secrets.API_TOKEN}}"
-                  className="font-mono"
-                />
-                <IconButton
-                  tooltip={showBearerToken ? "Hide token" : "Show token"}
-                  variant="secondary"
-                  onClick={() => setShowBearerToken((shown) => !shown)}
-                >
-                  {showBearerToken ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </IconButton>
-              </div>
-            </FormField>
+            <BearerAuthFields auth={auth} updateAuth={updateAuth} />
           )}
-
           {auth.type === "basic" && (
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField label="Username">
-                <Input
-                  value={auth.basic?.username || ""}
-                  onChange={(event) =>
-                    updateAuth({
-                      basic: {
-                        username: event.target.value,
-                        password: auth.basic?.password || "",
-                      },
-                    })
-                  }
-                />
-              </FormField>
-              <FormField label="Password">
-                <div className="flex gap-2">
-                  <Input
-                    type={showBasicPassword ? "text" : "password"}
-                    value={auth.basic?.password || ""}
-                    onChange={(event) =>
-                      updateAuth({
-                        basic: {
-                          username: auth.basic?.username || "",
-                          password: event.target.value,
-                        },
-                      })
-                    }
-                  />
-                  <IconButton
-                    tooltip={
-                      showBasicPassword ? "Hide password" : "Show password"
-                    }
-                    variant="secondary"
-                    onClick={() => setShowBasicPassword((shown) => !shown)}
-                  >
-                    {showBasicPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </IconButton>
-                </div>
-              </FormField>
-            </div>
+            <BasicAuthFields auth={auth} updateAuth={updateAuth} />
           )}
-
           {auth.type === "apiKey" && (
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-              <FormField label="Key name">
-                <Input
-                  value={auth.apiKey?.key || ""}
-                  onChange={(event) =>
-                    updateAuth({
-                      apiKey: {
-                        key: event.target.value,
-                        value: auth.apiKey?.value || "",
-                        addTo: auth.apiKey?.addTo || "header",
-                      },
-                    })
-                  }
-                  placeholder="X-API-Key"
-                />
-              </FormField>
-              <FormField label="Value">
-                <Input
-                  value={auth.apiKey?.value || ""}
-                  onChange={(event) =>
-                    updateAuth({
-                      apiKey: {
-                        key: auth.apiKey?.key || "",
-                        value: event.target.value,
-                        addTo: auth.apiKey?.addTo || "header",
-                      },
-                    })
-                  }
-                  placeholder="{{secrets.API_KEY}}"
-                  className="font-mono"
-                />
-              </FormField>
-              <FormField label="Add to">
-                <div className="flex h-10 items-center gap-2">
-                  <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                    Query
-                  </span>
-                  <IconSwitch
-                    checked={(auth.apiKey?.addTo || "header") === "header"}
-                    onCheckedChange={(checked) =>
-                      updateAuth({
-                        apiKey: {
-                          key: auth.apiKey?.key || "",
-                          value: auth.apiKey?.value || "",
-                          addTo: checked ? "header" : "query",
-                        },
-                      })
-                    }
-                    checkedIcon={<KeyRound className="h-3 w-3" />}
-                    uncheckedIcon={<Link2 className="h-3 w-3" />}
-                    checkedLabel="Header"
-                    uncheckedLabel="Query"
-                  />
-                  <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
-                    Header
-                  </span>
-                </div>
-              </FormField>
-            </div>
+            <ApiKeyAuthFields auth={auth} updateAuth={updateAuth} />
           )}
         </div>
       </Card>
@@ -552,58 +677,22 @@ export function HTTPRequestConfigPanel({
         )}
 
         {draftConfig.bodyType === "json" && (
-          <FormField
-            label="JSON body"
-            {...(jsonError ? { error: jsonError } : {})}
-          >
-            <div
-              className={[
-                "overflow-hidden rounded-sm border",
-                jsonError
-                  ? "border-status-error dark:border-[var(--aw-status-error)]"
-                  : "border-border dark:border-border-dark",
-              ].join(" ")}
-            >
-              <div className="flex items-center justify-end border-b border-border bg-surface-overlay px-2 py-1 dark:border-border-dark dark:bg-surface-dark-overlay">
-                <BeautifyButton
-                  value={draftConfig.body || ""}
-                  onChange={(body) => updateConfig({ body })}
-                />
-              </div>
-              <Suspense
-                fallback={
-                  <div className="flex h-96 items-center justify-center text-sm text-text-secondary dark:text-text-secondary-dark">
-                    Loading editor…
-                  </div>
-                }
-              >
-                <MonacoEditor
-                  height="384px"
-                  language="json"
-                  theme={isDarkMode ? "vs-dark" : "light"}
-                  value={draftConfig.body || ""}
-                  onChange={(body) => updateConfig({ body: body || "" })}
-                  options={{
-                    minimap: { enabled: false },
-                    fontFamily: "JetBrains Mono",
-                    scrollBeyondLastLine: false,
-                  }}
-                />
-              </Suspense>
-            </div>
-          </FormField>
+          <JsonBodyEditor
+            draftConfig={draftConfig}
+            error={jsonError}
+            isDarkMode={isDarkMode}
+            updateConfig={updateConfig}
+          />
         )}
 
         {draftConfig.bodyType === "raw" && (
           <FormField label="Raw body">
             <TextArea
-              value={draftConfig.body || ""}
-              onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                updateConfig({ body: event.target.value })
-              }
+              {...rawBodyAutocomplete.props}
               rows={16}
               className="h-96 resize-none font-mono"
             />
+            {rawBodyAutocomplete.list}
           </FormField>
         )}
 
@@ -621,9 +710,10 @@ export function HTTPRequestConfigPanel({
                 pairs={draftConfig.urlEncodedEntries || []}
                 onChange={(pairs) =>
                   updateConfig({
-                    urlEncodedEntries: pairs.map(
-                      (pair): UrlEncodedEntry => ({ ...pair, active: true }),
-                    ),
+                    urlEncodedEntries: pairs.map((pair): UrlEncodedEntry => ({
+                      ...pair,
+                      active: true,
+                    })),
                   })
                 }
               />
@@ -876,7 +966,9 @@ function FormDataRows({
               size="xs"
               variant="ghost"
               onClick={() =>
-                onChange(entries.filter((_, entryIndex) => entryIndex !== index))
+                onChange(
+                  entries.filter((_, entryIndex) => entryIndex !== index),
+                )
               }
             >
               <Trash2 className="h-4 w-4" />

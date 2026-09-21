@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Cable, Settings, SlidersHorizontal } from "lucide-react";
 import { Input } from "../atoms/Input";
+import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { Button } from "../atoms/Button";
 import { Toggle } from "../atoms/Toggle";
 import { Card } from "../molecules/Card";
@@ -103,7 +104,7 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
         <Card title="Stream endpoint" icon={CableCardIcon}>
           <div className="space-y-4">
             <FormField label="SSE URL" hint="Uses GET with Accept: text/event-stream. Supports variables and secrets.">
-              <Input value={config.url} onChange={(event) => updateConfig({ url: event.target.value })} placeholder="{{env.BASE_URL}}/events" className="font-mono" />
+              <TemplateInput value={config.url} onValueChange={(url) => updateConfig({ url })} placeholder="{{env.BASE_URL}}/events" className="font-mono" />
             </FormField>
             <FormField label="Event type" hint="Optional exact filter for the SSE event field. Other events are ignored.">
               <Input value={config.eventType ?? ""} onChange={(event) => updateEventType(event.target.value)} placeholder="order.updated" className="font-mono" />

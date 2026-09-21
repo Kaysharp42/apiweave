@@ -18,6 +18,7 @@ import {
 import { formatDuration, formatSize } from "../../utils/formatNodeMetrics";
 import { httpStatusText } from "../../utils/httpStatusText";
 import { BeautifyButton } from "../molecules/BeautifyButton";
+import { TemplateTextArea } from "../molecules/TemplateAutocomplete";
 import {
   ExtractorForm,
   normalizeExtractorPath,
@@ -29,7 +30,6 @@ import {
   stringifyKeyValuePairs,
 } from "../node-modal/httpRequestConfigCompat";
 import { NodeField } from "../atoms/flow/NodeField";
-import { ScrollableNodeTextArea } from "../atoms/flow/ScrollableNodeTextArea";
 import {
   NODE_TEXTAREA_CLASS,
   nodeInputClass,
@@ -75,19 +75,11 @@ const KEY_VALUE_FIELDS = [
     label: "Cookies",
     hint: "(key=value)",
     ariaLabel: "Cookies",
-    placeholder: "session={{prev.response.cookies.session}}",
+    // Not `{{prev.response.cookies.…}}`: the executor's result object carries
+    // no cookies, so that reference goes out as literal text. Only an
+    // assertion (source: "cookies") can read one back.
+    placeholder: "session={{variables.sessionId}}",
   },
-] as const;
-
-const VARIABLE_CODE_CLASS =
-  "px-1 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay";
-
-/** The cheat sheet under the expanded body: what a reference looks like. */
-const VARIABLE_REFERENCE_EXAMPLES = [
-  { label: "Body", expression: "{{prev.response.body.token}}" },
-  { label: "Array", expression: "{{prev.response.body.data[0].city}}" },
-  { label: "Header", expression: "{{prev.response.headers.content-type}}" },
-  { label: "Cookie", expression: "{{prev.response.cookies.session}}" },
 ] as const;
 
 const HTTP_METHODS: HttpMethod[] = [
@@ -505,13 +497,13 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               ))}
             </select>
 
-            <textarea
+            <TemplateTextArea
               aria-label="Request URL"
               placeholder="Enter URL..."
               rows={2}
               className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] resize-y min-h-[58px]"
               value={url}
-              onChange={(e) => updateNodeData("url", e.target.value)}
+              onValueChange={(next) => updateNodeData("url", next)}
             />
           </div>
 
@@ -545,15 +537,15 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                   label={field.label}
                   hint={field.hint}
                 >
-                  <textarea
+                  <TemplateTextArea
                     id={`http-request-${field.configKey}`}
                     aria-label={field.ariaLabel}
                     className={NODE_TEXTAREA_CLASS}
                     rows={2}
                     placeholder={field.placeholder}
                     value={stringifyKeyValuePairs(data.config?.[field.configKey])}
-                    onChange={(e) =>
-                      updateNodeData(field.configKey, e.target.value)
+                    onValueChange={(next) =>
+                      updateNodeData(field.configKey, next)
                     }
                   />
                 </NodeField>
@@ -562,12 +554,13 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               {method !== "GET" && (
                 <NodeField htmlFor="http-request-body" label="Body">
                   <div className="relative">
-                    <ScrollableNodeTextArea
+                    <TemplateTextArea
+                      scrollable
                       id="http-request-body"
                       aria-label="Request body"
                       placeholder={'{\n  "key": "value"\n}'}
                       value={stringifyBody(data.config?.body)}
-                      onChange={(e) => updateNodeData("body", e.target.value)}
+                      onValueChange={(next) => updateNodeData("body", next)}
                     />
                     <div className="absolute top-1 right-1">
                       <BeautifyButton
@@ -663,41 +656,6 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                 }
                 variables={variables}
               />
-
-              <div className="text-xs p-1.5 rounded-node-ctl space-y-0.5 bg-[var(--aw-status-info)]/5 text-[var(--aw-node-text-muted)]">
-                <div>
-                  <strong className="text-text-primary dark:text-text-primary-dark">
-                    Variable Reference:
-                  </strong>
-                </div>
-                <div className="pl-2 space-y-0.5">
-                  {VARIABLE_REFERENCE_EXAMPLES.map((example) => (
-                    <div key={example.label}>
-                      &bull; {example.label}:{" "}
-                      <code className={VARIABLE_CODE_CLASS}>
-                        {example.expression}
-                      </code>
-                    </div>
-                  ))}
-                  {variables && Object.keys(variables).length > 0 && (
-                    <div className="mt-1 space-y-0.5">
-                      <div
-                        className="font-semibold text-[var(--aw-status-success)]"
-                      >
-                        Workflow Variables:
-                      </div>
-                      {Object.keys(variables).map((v) => (
-                        <div key={v}>
-                          &bull;{" "}
-                          <code
-                            className={VARIABLE_CODE_CLASS}
-                          >{`{{variables.${v}}}`}</code>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           )}
 

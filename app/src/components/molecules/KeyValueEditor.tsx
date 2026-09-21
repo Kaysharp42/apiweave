@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
+import { TemplateInput } from "./TemplateAutocomplete";
 import type { KeyValueEditorProps, KeyValuePair } from "../../types";
 
 const EMPTY_PAIRS: KeyValuePair[] = [];
@@ -63,10 +64,10 @@ export function KeyValueEditor({
             size="sm"
             className="truncate font-mono text-xs"
           />
-          <Input
+          <TemplateInput
             type="text"
             value={pair.value}
-            onChange={(e) => updatePair(index, "value", e.target.value)}
+            onValueChange={(next) => updatePair(index, "value", next)}
             placeholder={valuePlaceholder}
             readOnly={readOnly}
             aria-label={`${valuePlaceholder} ${index + 1}`}

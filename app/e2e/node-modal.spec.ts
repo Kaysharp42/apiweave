@@ -293,3 +293,49 @@ for (const viewport of [
     });
   });
 }
+
+test.describe("JSON body completion", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  // The provider's own tests own the matching and the ranges. What only a real
+  // editor can show is that Monaco asks it at all: completions inside a JSON
+  // string are off by default, so this is the check that the trigger survives.
+  test("completes a {{…}} reference in the JSON editor", async ({ page }) => {
+    await openNodeModal(page);
+    const dialog = page.getByRole("dialog");
+
+    await dialog.getByRole("tab", { name: "Body" }).click();
+    await expect(dialog.locator(".monaco-editor")).toBeVisible();
+
+    // Monaco owns its input; a click on a line is the only way to a caret.
+    await dialog.locator(".view-lines .view-line").nth(1).click();
+    await page.keyboard.press("Control+End");
+    // Down to the bottom of the editor's box, which is where the widget was
+    // being cut in half: the editor sits in an `overflow-hidden` border, and
+    // Monaco renders the widget inside its own DOM unless told otherwise.
+    for (let line = 0; line < 25; line += 1) await page.keyboard.press("Enter");
+    await page.keyboard.type("{{uuid");
+
+    const suggest = page.locator(".suggest-widget");
+    await expect(suggest).toBeVisible();
+    await expect(suggest.getByText("uuid()").first()).toBeVisible();
+
+    // The invariant: the widget is laid out against the viewport, not against
+    // the editor. `overflow-hidden` on an ancestor cannot clip a fixed box —
+    // an absolutely-positioned one it cuts in half at the last line.
+    expect(
+      await suggest.evaluate((element) => getComputedStyle(element).position),
+    ).toBe("fixed");
+    const box = (await suggest.boundingBox())!;
+    const editorBox = (await dialog.locator(".monaco-editor").boundingBox())!;
+    expect(box.y + box.height).toBeGreaterThan(editorBox.y + editorBox.height);
+    expect(box.height).toBeGreaterThan(20);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height + 1,
+    );
+
+    await page.keyboard.press("Enter");
+    await expect(dialog.locator(".view-lines")).toContainText("{{uuid()}}");
+  });
+});

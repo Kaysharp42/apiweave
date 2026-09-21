@@ -21,6 +21,11 @@ export { RunFollowPill } from "./RunFollowPill";
 export { SaveVariablePopover } from "./SaveVariablePopover";
 export { SearchInput } from "./SearchInput";
 export { SlidePanel } from "./SlidePanel";
+export {
+  TemplateInput,
+  TemplateTextArea,
+  useTemplateAutocomplete,
+} from "./TemplateAutocomplete";
 export { StatusBadge } from "./StatusBadge";
 export { ToggleSetting } from "./ToggleSetting";
 export { TutorialCodeBlock } from "./TutorialCodeBlock";

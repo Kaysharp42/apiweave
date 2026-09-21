@@ -36,7 +36,7 @@ Once you have the happy path running, store a real API key in the local encrypte
 2. Click **Add secret**, pick the **Workspace** scope, and enter a name like `HTTPBIN_AUTH`.
 3. The renderer encrypts the value against the install's public key with a Libsodium sealed box before the write request leaves.
 4. Submit. The page now shows metadata only (name, scope, key id, last update), never the value or ciphertext.
-5. Drop a second HTTP Request node on the canvas, point it at `https://httpbin.org/headers`, and add a header `Authorization: Bearer {{secrets.HTTPBIN_AUTH}}`. Run it. The header reaches the upstream service with the decrypted value, and the value never appears in the run history because the masking layer scrubs it before persistence.
+5. Drop a second HTTP Request node on the canvas, point it at `https://httpbin.org/headers`, and add a header `Authorization: Bearer {{secrets.HTTPBIN_AUTH}}`. Type `{{` in the value field and an autocomplete list pops up with your variables, environment values, and secret names (secret values are never shown) — pick `secrets.HTTPBIN_AUTH` from it instead of typing the full path by hand. Run it. The header reaches the upstream service with the decrypted value, and the value never appears in the run history because the masking layer scrubs it before persistence.
 
 The full secret model lives in [Environments and Secrets](../features/environments-and-secrets.md).
 
