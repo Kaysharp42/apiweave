@@ -9,6 +9,15 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] — 2026-09-16
+
+### Added
+
+- **Windows MSI installer.** The `msi` target was configured but the release
+  workflow overrode it with an explicit `nsis`-only build, so no `.msi` ever
+  shipped. The Windows build now produces both installers and the release
+  checklist requires the `.msi` asset.
+
 ## [0.10.1] — 2026-09-14
 
 ### Fixed

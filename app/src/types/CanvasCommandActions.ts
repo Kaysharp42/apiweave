@@ -13,6 +13,7 @@ export interface CanvasCommandActions {
   openJsonEditor: () => void;
   openImport: () => void;
   openHistory: () => void;
+  openTutorials: () => void;
   undo: () => void;
   redo: () => void;
   group: () => void;

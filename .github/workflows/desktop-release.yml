@@ -103,7 +103,7 @@ jobs:
           - name: Windows x64
             id: windows-x64
             os: windows-latest
-            command: npx electron-builder --win nsis --x64 --publish always
+            command: npx electron-builder --win nsis msi --x64 --publish always
           - name: macOS Intel
             id: macos-x64
             os: macos-15-intel
@@ -190,6 +190,7 @@ jobs:
           name: apiweave-${{ matrix.id }}
           path: |
             app/release/*.exe
+            app/release/*.msi
             app/release/*-win-x64.zip
             app/release/*.dmg
             app/release/*.AppImage
@@ -244,6 +245,7 @@ jobs:
 
           expected=(
             'assets/*-win-x64.exe'
+            'assets/*-win-x64.msi'
             'assets/*-win-x64.zip'
             'assets/*-mac-x64.dmg'
             'assets/*-mac-arm64.dmg'
@@ -373,7 +375,7 @@ jobs:
 
           ## Downloads
 
-          - **Windows:** x64 NSIS installer shipped as a `.zip` — extract it and run the `.exe` inside; installed copies update in place. The bare `.exe` asset beside it is the in-app updater's download; the `.zip` is the one to grab by hand.
+          - **Windows:** x64 NSIS installer shipped as a `.zip` — extract it and run the `.exe` inside; installed copies update in place. The bare `.exe` asset beside it is the in-app updater's download; the `.zip` is the one to grab by hand. An `.msi` installer is also available for managed / per-machine deployment.
           - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`)
           - **Linux:** portable AppImage (can install updates in place), Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), and Arch/Manjaro (`.pacman`)
 

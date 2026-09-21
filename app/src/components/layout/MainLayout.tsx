@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router-dom";
@@ -24,6 +24,7 @@ import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
 import { CloudAttentionBanner } from "./CloudAttentionBanner";
+import { TutorialCompanionHost } from "../TutorialCompanionHost";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
@@ -101,33 +102,45 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [isCanvasCovered, setCanvasCovered] = useState(false);
   const canvasSurface = useMemo(() => ({ setCovered: setCanvasCovered }), []);
 
+  // The content region the companion measures and can make inert. Held here so
+  // the host and the inert helper operate on the same element.
+  const contentRegionRef = useRef<HTMLDivElement>(null);
+
   // One `<main>`, built once and handed to whichever branch renders.
   const content = (
     <main
       id="main-content"
       className="relative h-full min-w-0 flex-1 overflow-hidden"
     >
-      {/* The canvas outlives the route. It used to be the route element for
-          the workflows paths, so opening Settings unmounted it and coming back
-          built a new ReactFlow from scratch — which reset the viewport and threw
-          away unsaved node and edge edits, the same loss `DesktopSplit` describes
-          for a pane that appears and disappears.
+      {/* The tutorial companion's inert wrapper: the companion makes this
+          subtree inert when its instructions cover the content on a compact
+          layout. It wraps only the canvas + route children, so the companion
+          itself (a sibling) stays interactive. */}
+      <div ref={contentRegionRef} className="contents">
+        {/* The canvas outlives the route. It used to be the route element for
+            the workflows paths, so opening Settings unmounted it and coming back
+            built a new ReactFlow from scratch — which reset the viewport and threw
+            away unsaved node and edge edits, the same loss `DesktopSplit` describes
+            for a pane that appears and disappears.
 
-          `display` rather than `visibility`: ReactFlow's stylesheet sets
-          `visibility: visible` on `.react-flow__node`, and the descendant wins
-          that declaration — so under a hidden ancestor the nodes and their
-          buttons stayed painted, focusable and announced behind the page.
-          `display: none` cannot be overridden from below, and ReactFlow holds its
-          transform across the round trip, so the viewport comes back exactly
-          where it was left rather than refitting. */}
-      <div
-        className="absolute inset-0"
-        style={isCanvasCovered ? { display: "none" } : undefined}
-      >
-        <Workspace active={!isCanvasCovered} />
+            `display` rather than `visibility`: ReactFlow's stylesheet sets
+            `visibility: visible` on `.react-flow__node`, and the descendant wins
+            that declaration — so under a hidden ancestor the nodes and their
+            buttons stayed painted, focusable and announced behind the page.
+            `display: none` cannot be overridden from below, and ReactFlow holds its
+            transform across the round trip, so the viewport comes back exactly
+            where it was left rather than refitting. */}
+        <div
+          className="absolute inset-0"
+          style={isCanvasCovered ? { display: "none" } : undefined}
+        >
+          <Workspace active={!isCanvasCovered} />
+        </div>
+
+        {children}
       </div>
 
-      {children}
+      <TutorialCompanionHost contentRef={contentRegionRef} />
     </main>
   );
 

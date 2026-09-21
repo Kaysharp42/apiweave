@@ -4,8 +4,8 @@ import { deleteSetting, getSetting, setSetting } from "./helpers"
 /**
  * The `app_settings` key/value table, as a repository.
  *
- * Scalar preferences owned by the main process (`http.allow_private_networks`,
- * `mcp.enabled`, `updates.policy`) used to be six inline SQL statements in
+ * Scalar preferences owned by the main process (`mcp.enabled`, `updates.policy`)
+ * used to be inline SQL statements in
  * `electron/main.ts`. Repositories are the only place that speaks SQL, so they
  * live here instead. Keys are namespaced by their owner; `AgentRepository` and
  * `CloudSyncRepository` reach the same table through their own domain methods.

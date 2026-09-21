@@ -171,6 +171,67 @@ const fixtures: Record<string, Fixture> = {
     expected: { body: "{\n  \"password\": \"\"\n}", headers: [{ key: "otp", value: "" }] },
     withheld: ["1234"],
   },
+  // A config field whose *key name* is sensitive keeps a reference (the slot's
+  // wiring) instead of dropping the field; the receiving machine still sees
+  // which slot to fill.
+  sensitiveConfigReferencesSurvive: {
+    config: {
+      token: "{{variables.token}}",
+      apiKey: "{{secrets.API_KEY}}",
+      clientSecret: "{{env.CLIENT_SECRET}}",
+    },
+    expected: {
+      token: "{{variables.token}}",
+      apiKey: "{{secrets.API_KEY}}",
+      clientSecret: "{{env.CLIENT_SECRET}}",
+    },
+  },
+  sensitiveConfigLiteralsWithheld: {
+    config: { token: "literal-token", password: "hunter2", apiKey: "opaque" },
+    expected: { token: "", password: "", apiKey: "" },
+    withheld: ["literal-token", "hunter2", "opaque"],
+  },
+  // A sensitive leaf nested under an innocuous container keeps its key (so its
+  // `{{...}}` reference cannot dangle) and withholds its literal.
+  nestedSensitiveReferencesSurvive: {
+    config: { options: { token: "{{variables.token}}", password: "hunter2" } },
+    expected: { options: { token: "{{variables.token}}", password: "" } },
+    withheld: ["hunter2"],
+  },
+  // Extractor values are response paths (wiring), even though their variable
+  // names look sensitive; the pull validator exempts them from the key-name
+  // rule, so the two sides agree.
+  extractorPathsSurvive: {
+    config: { extractors: { token: "response.body.token", api_key: "body.api_key" } },
+    expected: { extractors: { token: "response.body.token", api_key: "body.api_key" } },
+  },
+  // A URL query value that is a reference survives byte-for-byte (braces are
+  // not percent-encoded); a literal under a sensitive query name is blanked.
+  urlQueryReferencesSurvive: {
+    config: { url: "https://api.test/run?token={{variables.token}}&password=abc1234" },
+    expected: { url: "https://api.test/run?token={{variables.token}}&password=" },
+    withheld: ["abc1234"],
+  },
+  // Duplicate parameters must each be judged: the reference survives, the
+  // literal behind it is blanked (not hidden by `get`/`set` collapsing to one).
+  urlDuplicateQueryReferencesSurvive: {
+    config: { url: "https://api.test/run?password={{variables.p}}&password=abc1234" },
+    expected: { url: "https://api.test/run?password={{variables.p}}&password=" },
+    withheld: ["abc1234"],
+  },
+  // A base-reference template is a URL too: the reference survives and the
+  // literal query value is blanked.
+  templatedUrlQueryReferencesSurvive: {
+    config: { url: "{{env.BASE_URL}}/login?password=abc1234" },
+    expected: { url: "{{env.BASE_URL}}/login?password=" },
+    withheld: ["abc1234"],
+  },
+  // Vault/storage field names are dropped from config, not kept blanked.
+  vaultFieldNameInConfigDropped: {
+    config: { ciphertext: "abc", note: "hello" },
+    expected: { note: "hello" },
+    withheld: ["abc"],
+  },
 }
 
 describe("cloud-sync redaction contract", () => {

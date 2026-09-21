@@ -3,7 +3,8 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import type { Collection } from "@shared/types/Collection"
 import type { Workflow } from "@shared/types/Workflow"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
-import { recordCollectionUpsert, recordWorkflowUpsert } from "../cloud-mutations"
+import { forbiddenCloudPayloadField } from "../../repositories/CloudSyncRepository"
+import { recordCollectionUpsert, recordWorkflowUpsert, sanitizeCloudSnapshotPayload } from "../cloud-mutations"
 import type { SyncMutation, SyncProvider } from "../SyncProvider"
 
 describe("cloud mutation payloads", () => {
@@ -173,6 +174,249 @@ describe("cloud mutation payloads", () => {
     const payload = decodePayload(provider.mutations[0]?.payload ?? null)
     expect(payload["workflowOrder"]).toEqual(["workflow-1"])
     expect(payload["workflowOrderItems"]).toEqual(collection.workflowOrder)
+  })
+
+  it("preserves references in sensitive config keys, extractors, nested variables and templates", () => {
+    const provider = new CapturingSyncProvider()
+    const workflow: Workflow = {
+      workflowId: "workflow-refs",
+      workspaceId: "workspace-1",
+      name: "Reference-preserving workflow",
+      description: null,
+      nodes: [{
+        nodeId: "http-1",
+        type: "http-request",
+        label: null,
+        position: { x: 0, y: 0 },
+        config: {
+          method: "GET",
+          url: "https://api.test/run?token={{variables.token}}&password=abc1234",
+          token: "{{variables.token}}",
+          password: "literal-password",
+          apiKey: { key: "X-Api-Key", value: "{{secrets.API_KEY}}", in: "header" },
+          extractors: { token: "response.body.token", api_key: "body.api_key" },
+          headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+          cookies: [
+            { key: "session", value: "{{env.SESSION}}" },
+            { key: "sid", value: "REAL{{env.SUFFIX}}" },
+          ],
+        },
+      }],
+      edges: [],
+      variables: {
+        token: "{{secrets.PW}}",
+        password: "abc1234",
+        nested: { password: "{{variables.password}}" },
+      },
+      tags: [],
+      collectionId: null,
+      selectedEnvironmentId: null,
+      nodeTemplates: [{
+        config: {
+          token: "{{variables.token}}",
+          headers: [{ key: "Authorization", value: "{{secrets.TOKEN}}" }],
+        },
+      }],
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    recordWorkflowUpsert(provider, workflow)
+
+    const payload = decodePayload(provider.mutations[0]?.payload ?? null)
+    const nodes = payload["nodes"] as Array<Record<string, JsonValue>>
+    const config = nodes[0]?.["config"] as Record<string, JsonValue>
+    expect(config["token"]).toBe("{{variables.token}}")
+    expect(config["password"]).toBe("")
+    expect(config["apiKey"]).toEqual({ key: "X-Api-Key", value: "{{secrets.API_KEY}}", in: "header" })
+    expect(config["extractors"]).toEqual({ token: "response.body.token", api_key: "body.api_key" })
+    expect(config["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
+    expect(config["cookies"]).toEqual([
+      { key: "session", value: "{{env.SESSION}}" },
+      { key: "sid", value: "" },
+    ])
+    expect(config["url"]).toBe("https://api.test/run?token={{variables.token}}&password=")
+    expect(payload["variables"]).toEqual({
+      token: "{{secrets.PW}}",
+      password: "",
+      nested: { password: "{{variables.password}}" },
+    })
+    expect(payload["nodeTemplates"]).toEqual([{
+      config: {
+        token: "{{variables.token}}",
+        headers: [{ key: "Authorization", value: "{{secrets.TOKEN}}" }],
+      },
+    }])
+    expect(JSON.stringify(payload)).not.toContain("abc1234")
+    expect(JSON.stringify(payload)).not.toContain("literal-password")
+    expect(forbiddenCloudPayloadField(payload)).toBeUndefined()
+  })
+
+  it("keeps references when a pulled payload is re-sanitized into a snapshot", () => {
+    const input = {
+      workflowId: "workflow-1",
+      variables: { token: "{{variables.token}}", password: "abc1234" },
+      nodes: [{
+        nodeId: "http-1",
+        config: {
+          token: "{{variables.token}}",
+          extractors: { token: "response.body.token" },
+          headers: [{ key: "Authorization", value: "Bearer {{variables.token}}" }],
+        },
+      }],
+      nodeTemplates: [{ config: { token: "{{secrets.T}}" } }],
+    }
+    const sanitized = JSON.parse(
+      new TextDecoder().decode(sanitizeCloudSnapshotPayload(new TextEncoder().encode(JSON.stringify(input)))),
+    ) as Record<string, unknown>
+
+    expect(sanitized["variables"]).toEqual({ token: "{{variables.token}}", password: "" })
+    const node = (sanitized["nodes"] as Array<Record<string, unknown>>)[0]!
+    const config = node["config"] as Record<string, unknown>
+    expect(config["token"]).toBe("{{variables.token}}")
+    expect(config["extractors"]).toEqual({ token: "response.body.token" })
+    expect(config["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
+    expect(sanitized["nodeTemplates"]).toEqual([{ config: { token: "{{secrets.T}}" } }])
+    expect(JSON.stringify(sanitized)).not.toContain("abc1234")
+  })
+
+  it("drops forbidden vault storage fields from a push so the fail-closed guard passes", () => {
+    const provider = new CapturingSyncProvider()
+    const workflow: Workflow = {
+      workflowId: "workflow-vault",
+      workspaceId: "workspace-1",
+      name: "Vault fields",
+      description: null,
+      nodes: [{
+        nodeId: "http-1",
+        type: "http-request",
+        label: null,
+        position: { x: 0, y: 0 },
+        config: {
+          method: "GET",
+          ciphertext: "vault-blob",
+          private_key: "vault-key",
+          token: "{{variables.token}}",
+        },
+      }],
+      edges: [],
+      variables: {
+        ciphertext: "vault-blob",
+        plaintext: "vault-plain",
+        password: "{{variables.password}}",
+      },
+      tags: [],
+      collectionId: null,
+      selectedEnvironmentId: null,
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    // The old walker kept the vault field blanked and `assertNoSecretValues`
+    // threw inside recordWorkflowUpsert; these keys must be gone entirely.
+    recordWorkflowUpsert(provider, workflow)
+
+    const payload = decodePayload(provider.mutations[0]?.payload ?? null)
+    expect(payload["variables"]).toEqual({ password: "{{variables.password}}" })
+    const config = (payload["nodes"] as Array<Record<string, JsonValue>>)[0]?.["config"] as Record<string, JsonValue>
+    expect(config["ciphertext"]).toBeUndefined()
+    expect(config["private_key"]).toBeUndefined()
+    expect(config["token"]).toBe("{{variables.token}}")
+    expect(JSON.stringify(payload)).not.toContain("vault-blob")
+    expect(JSON.stringify(payload)).not.toContain("vault-plain")
+    expect(forbiddenCloudPayloadField(payload)).toBeUndefined()
+  })
+
+  it("withholds a credential-shaped extractor value while keeping valid response paths", () => {
+    const provider = new CapturingSyncProvider()
+    const workflow: Workflow = {
+      workflowId: "workflow-extractors",
+      workspaceId: "workspace-1",
+      name: "Extractors",
+      description: null,
+      nodes: [{
+        nodeId: "http-1",
+        type: "http-request",
+        label: null,
+        position: { x: 0, y: 0 },
+        config: {
+          method: "GET",
+          extractors: { token: "response.body.token", bad: "Bearer abc.123" },
+        },
+      }],
+      edges: [],
+      variables: {},
+      tags: [],
+      collectionId: null,
+      selectedEnvironmentId: null,
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    recordWorkflowUpsert(provider, workflow)
+
+    const payload = decodePayload(provider.mutations[0]?.payload ?? null)
+    const config = (payload["nodes"] as Array<Record<string, JsonValue>>)[0]?.["config"] as Record<string, JsonValue>
+    expect(config["extractors"]).toEqual({ token: "response.body.token", bad: "" })
+    expect(JSON.stringify(payload)).not.toContain("Bearer abc.123")
+    expect(forbiddenCloudPayloadField(payload)).toBeUndefined()
+  })
+
+  it("redacts a literal in a templated base URL and a duplicate query parameter", () => {
+    const provider = new CapturingSyncProvider()
+    const workflow: Workflow = {
+      workflowId: "workflow-template-url",
+      workspaceId: "workspace-1",
+      name: "Template URL",
+      description: null,
+      nodes: [{
+        nodeId: "http-1",
+        type: "http-request",
+        label: null,
+        position: { x: 0, y: 0 },
+        config: {
+          method: "GET",
+          url: "{{env.BASE_URL}}/login?password={{variables.p}}&password=abc1234",
+        },
+      }],
+      edges: [],
+      variables: {},
+      tags: [],
+      collectionId: null,
+      selectedEnvironmentId: null,
+      nodeTemplates: [],
+      rev: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }
+
+    recordWorkflowUpsert(provider, workflow)
+
+    const payload = decodePayload(provider.mutations[0]?.payload ?? null)
+    const config = (payload["nodes"] as Array<Record<string, JsonValue>>)[0]?.["config"] as Record<string, JsonValue>
+    expect(config["url"]).toBe("{{env.BASE_URL}}/login?password={{variables.p}}&password=")
+    expect(JSON.stringify(payload)).not.toContain("abc1234")
+    expect(forbiddenCloudPayloadField(payload)).toBeUndefined()
+  })
+
+  it("drops vault fields when a pulled payload is re-sanitized into a snapshot", () => {
+    const input = {
+      variables: { ciphertext: "vault-blob", token: "{{variables.t}}" },
+      nodes: [{ config: { plaintext: "vault-plain", url: "https://api.test/x" } }],
+    }
+    const sanitized = JSON.parse(
+      new TextDecoder().decode(sanitizeCloudSnapshotPayload(new TextEncoder().encode(JSON.stringify(input)))),
+    ) as Record<string, unknown>
+
+    expect(sanitized["variables"]).toEqual({ token: "{{variables.t}}" })
+    const config = (sanitized["nodes"] as Array<Record<string, unknown>>)[0]?.["config"] as Record<string, unknown>
+    expect(config["plaintext"]).toBeUndefined()
+    expect(JSON.stringify(sanitized)).not.toContain("vault-")
   })
 })
 

@@ -336,3 +336,96 @@ describe("definitionsFromSwaggerConfig", () => {
     ])
   })
 })
+
+describe("reference-aware import sanitization", () => {
+  function harWithRequest(request: Record<string, unknown>): Record<string, unknown> {
+    return { log: { entries: [{ request, response: { status: 200 }, time: 1 }] } }
+  }
+
+  function bodyOf(result: ReturnType<typeof parseHarData>): string | undefined {
+    const http = result.nodes.find((node) => node.type === "http-request")
+    return http && http.type === "http-request" ? http.config.body : undefined
+  }
+
+  it("redacts a mixed JSON body leaf while keeping references (curl)", () => {
+    const result = parseCurlCommands(
+      `curl --data '{"password":"abc1234","user":"{{variables.token}}"}' "https://api.example.com"`,
+      { sanitize: true },
+    )
+    const http = result.nodes.find((node) => node.type === "http-request")
+    const body = http && http.type === "http-request" ? http.config.body : undefined
+    expect(body).toBeDefined()
+    expect(body).not.toContain("abc1234")
+    expect(body).toContain("{{variables.token}}")
+    expect(body).toContain("[FILTERED]")
+  })
+
+  it("redacts a mixed JSON body leaf while keeping references (HAR)", () => {
+    const result = parseHarData(
+      harWithRequest({
+        method: "POST",
+        url: "https://a.com",
+        headers: [],
+        cookies: [],
+        queryString: [],
+        postData: { text: '{"password":"abc1234","user":"{{variables.token}}"}' },
+      }),
+      { sanitize: true },
+    )
+    const body = bodyOf(result)
+    expect(body).not.toContain("abc1234")
+    expect(body).toContain("{{variables.token}}")
+    expect(body).toContain("[FILTERED]")
+  })
+
+  it("withholds a non-JSON body that mixes a reference with a literal password", () => {
+    const result = parseHarData(
+      harWithRequest({
+        method: "POST",
+        url: "https://a.com",
+        headers: [],
+        cookies: [],
+        queryString: [],
+        postData: { text: "password=abc1234&x={{variables.token}}" },
+      }),
+      { sanitize: true },
+    )
+    expect(bodyOf(result)).toBe("[FILTERED]")
+  })
+
+  it("keeps a reference-only body intact", () => {
+    const result = parseHarData(
+      harWithRequest({
+        method: "POST",
+        url: "https://a.com",
+        headers: [],
+        cookies: [],
+        queryString: [],
+        postData: { text: "{{variables.payload}}" },
+      }),
+      { sanitize: true },
+    )
+    expect(bodyOf(result)).toBe("{{variables.payload}}")
+  })
+
+  it("preserves a reference header and filters a literal credential header", () => {
+    const result = parseHarData(
+      harWithRequest({
+        method: "GET",
+        url: "https://a.com",
+        headers: [
+          { name: "Authorization", value: "Bearer {{secrets.TOKEN}}" },
+          { name: "X-Api-Key", value: "Bearer abc.123" },
+        ],
+        cookies: [],
+        queryString: [],
+      }),
+      { sanitize: true },
+    )
+    const http = result.nodes.find((node) => node.type === "http-request")
+    expect(http && http.type === "http-request" ? http.config.headers : undefined).toEqual([
+      { key: "Authorization", value: "Bearer {{secrets.TOKEN}}" },
+      { key: "X-Api-Key", value: "[FILTERED]" },
+    ])
+  })
+})

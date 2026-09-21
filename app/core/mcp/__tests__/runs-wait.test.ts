@@ -97,7 +97,7 @@ beforeEach(() => {
   broker = new RunEventBroker({ now: () => new Date().toISOString() })
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xABCD1234")
-  const http = new SafeHttp({ allowLoopback: true })
+  const http = new SafeHttp()
   const functions = new DynamicFunctions(clock, rng)
   scheduler = new RunScheduler({
     runs,
@@ -131,10 +131,6 @@ beforeEach(() => {
       secretStore,
       () => "2026-01-01T00:00:00.000Z",
     ),
-    httpSafety: {
-      allowPrivateNetworks: false,
-      setAllowPrivateNetworks: () => undefined,
-    },
   }
   router = new IpcRouter()
   registerAllHandlers(router, deps)

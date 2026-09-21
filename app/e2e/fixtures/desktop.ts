@@ -119,10 +119,6 @@ export async function installDesktopIpc(
             data = null;
             handled = true;
           }
-          if (domain === "settings" && action === "get") {
-            data = { allowPrivateNetworks: false };
-            handled = true;
-          }
           if (domain === "secrets" && action === "list") {
             data = [];
             handled = true;

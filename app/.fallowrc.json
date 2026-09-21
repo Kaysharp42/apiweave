@@ -31,7 +31,8 @@
       "src/types/**",
       "shared/zod-schemas/**",
       "core/ipc/handlers/**",
-      "core/mcp/tools.ts"
+      "core/mcp/tools.ts",
+      "src/constants/tutorials/**"
     ]
   },
   "health": {

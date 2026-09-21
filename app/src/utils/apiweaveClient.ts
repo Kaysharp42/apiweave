@@ -39,7 +39,6 @@ import type { AssertionValidationResult } from "@shared/types/AssertionValidatio
 import type { AuthenticatedRequestInit } from "../types";
 import type { NodePreset } from "../types/NodePreset";
 import type { NodePresetNodeType } from "../types/NodePresetNodeType";
-import type { HttpSafetySettings } from "../types/HttpSafetySettings";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
 import type { ImportResult } from "../types/ImportResult";
@@ -369,11 +368,6 @@ export const apiweave = {
       mode,
       rules,
     }),
-  },
-  settings: {
-    get: () => invoke<HttpSafetySettings>("settings", "get", {}),
-    setPrivateNetworks: (enabled: boolean) =>
-      invoke<HttpSafetySettings>("settings", "setPrivateNetworks", { enabled }),
   },
   environments: {
     create: (

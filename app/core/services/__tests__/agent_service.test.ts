@@ -258,7 +258,9 @@ describe("AgentService — roster", () => {
     const claude = roster.find((entry) => entry.definition.agentKey === "claude")
     expect(claude?.definition.detectCmd).toBe(shipped)
     expect(claude?.isOverridden).toBe(false)
-  })
+    // `listRoster` probes installed CLIs; the spawn sits near the 5s default and
+    // tips over it under the full-suite load.
+  }, 15_000)
 
   /**
    * The default is cleared when the key it names leaves the roster — which a
