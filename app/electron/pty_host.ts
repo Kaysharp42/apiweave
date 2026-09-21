@@ -32,7 +32,7 @@ const log = getLogger("pty-host")
  * - Sessions survive a renderer reload, because the process holding the child's
  *   file descriptors is not the one being reloaded.
  * - The addon never has to load in a renderer, which runs with
- *   `contextIsolation: true`, `nodeIntegration: false` and Electron 33's default
+ *   `contextIsolation: true`, `nodeIntegration: false` and Electron 44's default
  *   `sandbox: true` — where it could not load at all.
  *
  * Output does not go back through main. Each session hands the renderer a
