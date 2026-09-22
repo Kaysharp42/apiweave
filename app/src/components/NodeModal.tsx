@@ -50,6 +50,11 @@ import type {
   SelectOption,
 } from "../types";
 
+// `node.data.config || {}` would otherwise mint a new object every render for
+// a config-less node, which HTTPRequestConfigPanel's initialConfig-keyed sync
+// effect reads as "a different node opened" on every keystroke.
+const EMPTY_CONFIG: Record<string, never> = {};
+
 const NO_CONFIG_TYPES: NodeModalNodeType[] = ["start", "end"];
 const HTTP_METHODS: HttpMethod[] = [
   "GET",
@@ -305,7 +310,9 @@ export function NodeModal({
     if (node.type === "http-request") {
       return (
         <HTTPRequestConfigPanel
-          initialConfig={(node.data.config || {}) as NodeModalHTTPRequestConfig}
+          initialConfig={
+            (node.data.config || EMPTY_CONFIG) as NodeModalHTTPRequestConfig
+          }
           workingDataRef={workingDataRef}
           activeTab={activeTab}
           config={httpConfig}
