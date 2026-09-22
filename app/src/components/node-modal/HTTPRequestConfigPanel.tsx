@@ -314,6 +314,11 @@ function JsonBodyEditor({
               // where a body's references get typed. This moves it to a
               // fixed container on the body, out of that box.
               fixedOverflowWidgets: true,
+              // Monaco 0.55's default text input path (Chromium's
+              // EditContext API) drops keystrokes — reliably the space bar —
+              // in this Electron build. Falls back to the older hidden-
+              // textarea input path, which doesn't have that bug.
+              editContext: false,
             }}
           />
         </Suspense>
@@ -505,11 +510,16 @@ export function HTTPRequestConfigPanel({
     ),
   );
 
+  // Only `initialConfig` (the node's saved config) means "a different node is
+  // now open, reset the draft." `config` is this panel's own edits echoed
+  // back down through NodeModal's mirrored state — reacting to it too re-syncs
+  // the draft from a round-tripped copy of itself on every keystroke, fighting
+  // the controlled Monaco editor for the body field (dropped/laggy typing).
   useEffect(() => {
-    const normalized = normalizeHttpRequestConfig(config ?? initialConfig);
+    const normalized = normalizeHttpRequestConfig(initialConfig);
     setDraftConfig(normalized);
     setExpectedStatusText(formatExpectedStatus(normalized.expectedStatus));
-  }, [config, initialConfig]);
+  }, [initialConfig]);
 
   useEffect(() => {
     void loadMonaco();
