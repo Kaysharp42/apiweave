@@ -9,6 +9,79 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] — 2026-09-23
+
+### Added
+
+- **In-app tutorial library.** A bundled, offline learning library — 24 lessons
+  across seven chapters (First steps, Requests and data, Control flow, Debug and
+  observe, Organize and reuse, Agents, App) — reachable from the header book
+  icon, the workspace empty state, and the command palette (`learn`, `guide`,
+  `tour`, `help`). Lessons open as a route in the same shell as the canvas, so
+  opening one never closes a workflow tab, and each carries its outcome,
+  prerequisites, numbered steps, an example, the expected result,
+  troubleshooting, and related lessons. Progress and the last-read position are
+  kept locally, and lessons that call a public endpoint say so.
+- **Follow-along practice.** **Follow along** starts a practice session for a
+  lesson and returns to the workspace, where the instructions float beside the
+  canvas — a lower-left panel on a wide region, a resume strip on a narrow one.
+  The practised lesson and step persist across restarts, and opening another
+  lesson to consult it neither changes nor ends the session.
+- **`{{...}}` autocomplete where references are typed.** The HTTP node's
+  variable cheat sheet — which grew with the workflow until the node was mostly
+  documentation — is gone; names now complete in the fields themselves. One
+  matcher (prefix, then substring, then subsequence, so `{{variable.` still
+  finds `variables.token`) drives a popover for plain inputs and textareas and a
+  Monaco provider for the JSON body. Suggestions come from the workflow's
+  variables, the active environment's, the reachable secret *names* (never
+  values), the dynamic functions, and the response paths, and are wired into the
+  node's URL, query, path, headers, cookies and body, the modal URL and
+  JSON/raw bodies, every key/value row, the auth fields, the SSE URL, merge
+  conditions, call-workflow mappings, and assertion values. The same pass
+  corrects `{{prev.response.cookies.session}}`, an example that went out as
+  literal text because the executor's result carries no cookies — only an
+  assertion reads one.
+- **Labelled JSON tree actions.** The response and node-output JSON trees show
+  copy and save-as-variable as labelled pill buttons instead of unlabelled
+  glyphs.
+
+### Changed
+
+- **Private-network targets are no longer blocked.** `SafeHttp` stopped
+  blocklisting loopback, RFC1918, link-local, and IPv6 ULA addresses, so a node
+  reaches a dev service on the machine that authored it, the way Postman or curl
+  would. The **Settings → Private networks** opt-in added in 0.7.8 is removed
+  end to end, with its IPC handlers and the `http.allow_private_networks`
+  setting.
+- **Electron 33 → 44** (Chromium 130 → 144). This fixes a GPU process
+  segfault against Mesa 26.2 — on both the Wayland GBM scanout path and
+  `EGL_CreateWindowSurface` under X11 — where Chromium silently demoted itself
+  to SwiftShader for the rest of the session. better-sqlite3 12 → 13 (N-API) and
+  electron-builder 25 → 26 come with it, and the now-unnecessary native-rebuild
+  machinery is deleted.
+
+### Fixed
+
+- **Secret references survive sync and export.** A config field whose *key*
+  looked sensitive (`token`, `apiKey`, …) dropped the whole field rather than
+  keeping the key with a blanked value, so a `{{variables.token}}` /
+  `{{secrets.*}}` / `{{env.*}}` wiring vanished from the cloud payload and the
+  `.awecollection` bundle and dangled on the next pull. Sensitive leaves now
+  keep their key and preserve a reference verbatim while blanking literals —
+  including nested leaves, URL query values (duplicate parameters judged one by
+  one, and base-reference templates), and extractor paths, which are response
+  paths rather than credentials.
+- **JSON body editor typing lag and dropped spaces.** The Body tab's Monaco
+  editor fought a self-feedback loop: every keystroke normalized the whole HTTP
+  config three times and echoed it back through a prop-synced effect, re-setting
+  the editor's draft on every character. The panel now resyncs only from the
+  node's saved config.
+- **Expanded-node query, path, header and cookie fields save the shape they
+  claim to.** Those textareas hold raw `key=value` text while the persisted
+  contract is `KeyValuePair[]`; the save boundary now reduces them, the way the
+  main process does on write, and existing arrays pass through so the optional
+  `active` flag survives.
+
 ## [0.10.2] — 2026-09-16
 
 ### Added
