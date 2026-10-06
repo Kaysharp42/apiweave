@@ -124,7 +124,7 @@ The renderer encrypts the new value against the install's public key with a Libs
 4. Main process stores the sealed ciphertext verbatim. No plaintext reaches it.
 ```
 
-After the write, the UI clears the in-memory value state, the modal closes, and the metadata list updates. At run time, the main process opens the sealed box with the key derived from the per-install keyfile and substitutes the plaintext into the request field, header, or body. The masking layer scrubs the plaintext before the result is written to the database, so the run history holds the request shape with the secret replaced by a `<SECRET>` placeholder.
+After the write, the UI clears the in-memory value state, the modal closes, and the metadata list updates. At run time, the main process opens the sealed box with the key derived from the per-install keyfile and substitutes the plaintext into the request field, header, or body. The masking layer scrubs the plaintext before the result is written to the database, so the run history holds the request shape with the secret replaced by a `<SECRET>` placeholder. That covers every place the value can surface: the request URL, the response headers and body (an API that echoes your `Authorization` header back), extracted variables, and error and assertion messages, plus the value's URL-encoded and JSON-escaped forms and a `Basic` credential built from it. A secret shorter than four characters is not masked, because masking it would rewrite unrelated text throughout the run history.
 
 ## Selecting an Environment for a Run
 

@@ -4,8 +4,8 @@
  *
  * Only what export/import needs lives here: key-name secret detection, variable
  * sanitization (`<SECRET>` placeholder), `{{secrets.NAME}}` reference extraction,
- * and the fail-closed forbidden-key guard. Log/structural masking (`SecretMasker`,
- * `mask_secrets_structural`) is an executor concern (Task 14), not this task.
+ * and the fail-closed forbidden-key guard. Masking resolved secret *values* out
+ * of run results is the runner's job: see `core/runner/secret_masker.ts`.
  */
 
 import type { JsonValue } from "@shared/types/JsonValue"

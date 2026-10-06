@@ -13,6 +13,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Secret values no longer reach the run history.** Every secret a run
+  resolves is now replaced with `<SECRET>` in what the run stores and streams:
+  request URLs, response headers and bodies (including an API that echoes your
+  `Authorization` header), extracted variables and messages, in Call Workflow
+  sub-runs too. URL-encoded and JSON-escaped forms and `Basic` credentials are
+  caught as well. Previously only the URL query string was hidden, so a secret
+  echoed in a response was stored in plain text. Secrets shorter than four
+  characters are not masked.
 - **A failed start no longer leaves a dead process behind.** When startup fails
   before the window opens (a database from a newer build, a failed migration, an
   unreadable keyfile), APIWeave shows an error naming the cause, the log file and
