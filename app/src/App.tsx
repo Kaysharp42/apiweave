@@ -34,6 +34,7 @@ import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
+import { UnsavedChangesDialog } from "./components/organisms/UnsavedChangesDialog";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { apiweave } from "./utils/apiweaveClient";
@@ -403,6 +404,9 @@ function App() {
         <AuthProvider>
           <RouterComponent>
             <AccountSessionReset />
+            {/* App-wide, not in the canvas workspace: quitting or signing out
+                asks about unsaved tabs from any route, Cloud Sync included. */}
+            <UnsavedChangesDialog />
             <Routes>
               {/* Desktop skips the marketing landing page — no login needed
                   (single-user backend), so go straight to the workspace. */}

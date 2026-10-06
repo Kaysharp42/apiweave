@@ -32,6 +32,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   instead of being dropped. Closing a tab or quitting with changes that are still
   unsaved (auto-save off, or a failed save) now asks **Save**, **Discard** or
   **Cancel** instead of discarding them silently.
+- **Switching tabs no longer discards unsaved edits.** With auto-save off (or
+  after a failed save), a tab you switch away from keeps its unsaved changes,
+  shows the unsaved dot, and brings them back when you return to it. Closing
+  that tab, quitting, or disconnecting the cloud account asks **Save**,
+  **Discard** or **Cancel** about it, and **Cancel** keeps the account linked.
 - **The node editor no longer throws away edits.** Escape, a click outside the
   editor and its close button now keep the edits, as Previous and Next already
   did; only **Cancel** discards them. `Ctrl+S` (`Cmd+S` on macOS) inside the

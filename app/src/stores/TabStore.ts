@@ -19,7 +19,13 @@ interface TabStoreState {
   /** Scoped to one workspace, or every workspace when the id is omitted. */
   closeAll: (workspaceId?: string) => void;
   markDirty: (id: string) => void;
+  /** Clears the unsaved flag and any draft: the tab now matches its workflow. */
   markClean: (id: string) => void;
+  /**
+   * Keeps (or, with null, drops) the content a canvas leaves unsaved as it
+   * unmounts. A kept draft marks the tab dirty; dropping one marks it clean.
+   */
+  stashDraft: (id: string, draft: Workflow | null) => void;
   renameTab: (id: string, name: string) => void;
   updateTabWorkflow: (workflowId: string, workflow: Workflow | null) => void;
   activateNextTab: (workspaceId: string) => void;
@@ -151,11 +157,28 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
   markClean: (id: string) =>
     set((s) => {
       const target = s.tabs.find((t) => t.id === id);
-      if (!target || !target.isDirty) return s;
+      if (!target || (!target.isDirty && !target.draft)) return s;
       return {
-        tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: false } : t)),
+        tabs: s.tabs.map((t) => {
+          if (t.id !== id) return t;
+          const clean: WorkspaceTab = { ...t, isDirty: false };
+          delete clean.draft;
+          return clean;
+        }),
       };
     }),
+
+  stashDraft: (id: string, draft: Workflow | null) => {
+    if (draft === null) {
+      get().markClean(id);
+      return;
+    }
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.id === id ? { ...t, draft, isDirty: true } : t,
+      ),
+    }));
+  },
 
   renameTab: (id: string, name: string) =>
     set((s) => ({

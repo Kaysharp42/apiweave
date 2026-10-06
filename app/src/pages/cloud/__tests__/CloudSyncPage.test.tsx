@@ -4,6 +4,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudSyncPage } from "../CloudSyncPage";
+import useTabStore from "../../../stores/TabStore";
+import usePendingEditsStore from "../../../stores/PendingEditsStore";
+import type { Workflow } from "../../../types/Workflow";
 import type { CloudFailedRecord, CloudSyncStatus } from "../../../types/cloud";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -181,8 +184,36 @@ describe("CloudSyncPage", () => {
     fireEvent.click(disconnect);
 
     expect(
-      screen.getByText(/Workspaces downloaded from Cloud or a shared Team are removed/),
+      await screen.findByText(/Workspaces downloaded from Cloud or a shared Team are removed/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Workspaces created locally are kept/)).toBeInTheDocument();
+  });
+
+  it("asks about unsaved tabs before disconnecting, and Cancel keeps the account", async () => {
+    setStatus({ ...base, bindings: [binding()] });
+    const workflow = {
+      workflowId: "wf1",
+      workspaceId: "local-1",
+      name: "Orders",
+      nodes: [],
+      edges: [],
+      variables: {},
+    } as unknown as Workflow;
+    useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
+    useTabStore.getState().openTab(workflow);
+    useTabStore.getState().stashDraft("wf1", workflow);
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    await waitFor(() =>
+      expect(usePendingEditsStore.getState().promptFor).toBe("Orders"),
+    );
+    usePendingEditsStore.getState().answer("cancel");
+
+    await waitFor(() =>
+      expect(usePendingEditsStore.getState().promptFor).toBeNull(),
+    );
+    expect(screen.queryByText(/Disconnect cloud account\?/)).toBeNull();
+    useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
   });
 });

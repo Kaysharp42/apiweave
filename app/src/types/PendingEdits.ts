@@ -1,5 +1,6 @@
 /**
- * What a mounted canvas offers the code that is about to close it: a way to
+ * What a tab with possibly-unsaved work offers the code about to close it
+ * (its mounted canvas, or the draft it left behind): a way to
  * send its pending auto-save, to tell whether anything is still unsaved, and
  * to save explicitly when the user asks to.
  */

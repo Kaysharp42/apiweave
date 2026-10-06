@@ -11,6 +11,7 @@ export interface TabState {
   closeAll: (workspaceId?: string) => void;
   markDirty: (id: string) => void;
   markClean: (id: string) => void;
+  stashDraft: (id: string, draft: Workflow | null) => void;
   renameTab: (id: string, name: string) => void;
   updateTabWorkflow: (workflowId: string, workflow: Workflow | null) => void;
   activateNextTab: (workspaceId: string) => void;

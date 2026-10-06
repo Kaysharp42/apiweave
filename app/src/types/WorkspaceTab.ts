@@ -11,6 +11,14 @@ export interface WorkspaceTab {
    */
   workspaceId: string;
   name: string;
+  /** The last workflow the server accepted. */
   workflow?: Workflow;
+  /**
+   * Unsaved canvas content, kept while the tab is not shown. Only the active
+   * tab mounts a canvas, so switching away would otherwise drop it; the canvas
+   * hydrates from this when the tab is shown again. Absent when the canvas
+   * matched `workflow` as it left, and cleared by every save.
+   */
+  draft?: Workflow;
   isDirty: boolean;
 }

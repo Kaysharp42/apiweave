@@ -232,7 +232,7 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 ### Unsaved changes
 
-A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — closing its tab or quitting asks whether to **Save**, **Discard**, or **Cancel**. Only the tab whose canvas is open can hold unsaved changes, so it is the only one asked about. With auto-save off, switching to another tab still discards the open tab's unsaved edits; save before switching.
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
