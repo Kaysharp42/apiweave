@@ -33,6 +33,7 @@ describe("database migrations", () => {
         "cloud_record_state",
         "cloud_workspace_accounts",
         "cloud_workspace_bindings",
+        "cloud_workspace_tombstones",
         "collections",
         "environments",
         "node_presets",

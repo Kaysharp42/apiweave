@@ -83,7 +83,16 @@ export class WorkspaceService {
     await this.mustResolve(workspaceId)
     const existing = this.workspaces.getById(workspaceId)
     if (existing === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
-    recordWorkspaceTombstone(this.syncProvider, existing)
+    // One transaction: the tombstone is queued exactly when the workspace is
+    // really gone, never for a delete that rolled back.
+    this.workspaces.transaction(() => {
+      recordWorkspaceTombstone(this.syncProvider, existing)
+      this.deleteLocally(workspaceId)
+    })
+    await this.syncProvider.push()
+  }
+
+  private deleteLocally(workspaceId: string): void {
     // Delete the workflows explicitly, before the workspace row. They would go
     // anyway by FK cascade, but a cascade fires no change events — so an open
     // canvas never hears that its workflow is gone and keeps autosaving into a
@@ -98,7 +107,6 @@ export class WorkspaceService {
       this.workflows.delete(workflow.workflowId)
     }
     this.workspaces.delete(workspaceId)
-    await this.syncProvider.push()
   }
 
   private async mustResolve(workspaceId: string): Promise<void> {

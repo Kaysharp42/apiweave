@@ -13,6 +13,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Deleting a synced workspace now deletes it in Cloud.** The deletion was
+  queued in a table that the local delete emptied, so it never reached the
+  server. It is now kept in its own queue, survives restarts and network
+  failures, and is pushed even after the workspace's sync binding is gone.
+
 - **Redirects no longer leak credentials or resend a POST.** A followed
   redirect to another origin drops `Authorization`, `Cookie` and
   `Proxy-Authorization`; a redirect from HTTPS to HTTP is refused; a 303, or a

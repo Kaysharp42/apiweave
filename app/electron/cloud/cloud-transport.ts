@@ -148,7 +148,13 @@ export class CloudSyncProvider implements SyncProvider {
   }
 
   public recordMutation(mutation: SyncMutation): void {
-    if (!this.outbox || !this.repository || !this.bindingForLocalWorkspace(mutation.workspaceId)) {
+    const binding = this.bindingForLocalWorkspace(mutation.workspaceId)
+    if (!this.outbox || !this.repository || !binding) {
+      return
+    }
+    if (mutation.kind === RecordKind.WORKSPACE && mutation.op === ChangeOp.TOMBSTONE) {
+      // Not an outbox row: those cascade away with the workspace this deletes.
+      this.repository.enqueueWorkspaceTombstone(mutation.workspaceId, binding.cloudWorkspaceId)
       return
     }
     const kind = recordKindToOutboxKind(mutation.kind)
@@ -381,14 +387,15 @@ export class CloudSyncProvider implements SyncProvider {
       throw new Error("CloudSyncProvider not initialized with store")
     }
     try {
+      let firstError = await this.pushWorkspaceTombstones()
       const configuredWorkspaceIds = this.syncConfig?.workspaceBindings.map((binding) => binding.workspaceId) ?? []
       const orphanedCount = this.repository?.deadLetterOutboxOutsideWorkspaces(
         configuredWorkspaceIds,
         "cloud workspace binding is unavailable",
       ) ?? 0
-      let firstError: unknown = orphanedCount > 0
-        ? new Error(`${orphanedCount} cloud outbox row(s) have no workspace binding`)
-        : undefined
+      if (orphanedCount > 0) {
+        firstError ??= new Error(`${orphanedCount} cloud outbox row(s) have no workspace binding`)
+      }
       for (const configuredBinding of this.syncConfig?.workspaceBindings ?? []) {
         const binding = this.currentBinding(configuredBinding)
         try {
@@ -416,6 +423,47 @@ export class CloudSyncProvider implements SyncProvider {
       this.onStateChange?.(stateForError(err))
       throw err
     }
+  }
+
+  /**
+   * Push the tombstones of locally deleted workspaces. They need no binding and
+   * no workspace key — the row carries the cloud id and a tombstone has no
+   * payload to seal — which is what lets them outlive both.
+   *
+   * Only a transport failure keeps a row: it is retried with backoff and
+   * returned as the error. Any answer from the server ends it. A refusal (a
+   * conflict, no permission) leaves the workspace in the cloud, where the next
+   * catalog refresh finds it and downloads it again — the delete did not
+   * happen, and the workspace coming back is how the user learns that.
+   */
+  private async pushWorkspaceTombstones(): Promise<unknown> {
+    if (!this.repository) return undefined
+    for (const tombstone of this.repository.listWorkspaceTombstones(Date.now())) {
+      let response
+      try {
+        response = await this.client.pushDeltas(tombstone.id, [{
+          workspaceId: tombstone.cloudWorkspaceId,
+          kind: RecordKind.WORKSPACE,
+          recordId: tombstone.cloudWorkspaceId,
+          expectedRev: BigInt(tombstone.expectedRev),
+          payload: new Uint8Array(),
+          op: ChangeOp.TOMBSTONE,
+        }])
+      } catch (error) {
+        if (this.stopped) return undefined
+        this.repository.deferWorkspaceTombstone(tombstone.id)
+        return error
+      }
+      if (this.stopped) return undefined
+      const outcome = response.outcomes.find((candidate) => candidate.deltaIndex === 0)
+      if (outcome?.status !== PushOutcome_Status.APPLIED && outcome?.status !== PushOutcome_Status.DUPLICATE) {
+        cloudSyncLog.warn("cloud refused a workspace deletion; the workspace stays in the cloud", JSON.stringify({
+          debug: outcome === undefined ? "missing outcome" : pushOutcomeDebug(outcome),
+        }))
+      }
+      this.repository.settleWorkspaceTombstone(tombstone.id)
+    }
+    return undefined
   }
 
   private async pushWorkspace(binding: CloudWorkspaceBindingRef, rows: OutboxRow[]): Promise<void> {

@@ -51,6 +51,19 @@ export interface CloudFailedRecord {
   readonly queuedAt: string
 }
 
+/**
+ * The cloud tombstone of a deleted workspace. It lives outside `cloud_outbox`
+ * (see migration 018) because outbox rows cascade away with their workspace,
+ * so it carries the cloud workspace id itself rather than reading a binding
+ * that no longer exists.
+ */
+export interface CloudWorkspaceTombstone {
+  readonly id: string
+  readonly workspaceId: string
+  readonly cloudWorkspaceId: string
+  readonly expectedRev: number
+}
+
 export interface CloudDeviceUpsert {
   readonly deviceId: string
   readonly label: string
@@ -449,10 +462,59 @@ export class CloudSyncRepository {
   public markOutboxFailed(id: string, reason: string, nowMs = Date.now()): void {
     const row = this.store.get<{ retry_count: number } & SqliteRow>("SELECT retry_count FROM cloud_outbox WHERE id = ?", [id])
     const retryCount = Math.min((row?.retry_count ?? 0) + 1, CLOUD_OUTBOX_MAX_RETRIES)
-    const backoffMs = Math.min(5 * 60 * 1000, 1000 * 2 ** Math.min(retryCount - 1, 8))
     this.store.set(
       "UPDATE cloud_outbox SET retry_count = ?, next_retry_at = ?, failure_reason = ? WHERE id = ?",
-      [retryCount, nowMs + backoffMs, reason.slice(0, 1000), id],
+      [retryCount, nowMs + retryBackoffMs(retryCount), reason.slice(0, 1000), id],
+    )
+  }
+
+  /**
+   * Queue the cloud tombstone of a workspace that is about to be deleted
+   * locally. It asserts the revision the cloud last acknowledged, not the
+   * local one: every queued change to the workspace cascades away with it, so
+   * the cloud will never see the revisions those would have produced.
+   */
+  public enqueueWorkspaceTombstone(workspaceId: string, cloudWorkspaceId: string, nowMs = Date.now()): void {
+    const expectedRev = this.getRecordState(workspaceId, "workspace", workspaceId)?.server_rev ?? 0
+    this.store.set(
+      `INSERT INTO cloud_workspace_tombstones (id, workspace_id, cloud_workspace_id, expected_rev, created_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (workspace_id) DO UPDATE SET cloud_workspace_id = excluded.cloud_workspace_id,
+         expected_rev = excluded.expected_rev`,
+      [generateId(), workspaceId, cloudWorkspaceId, expectedRev, nowMs],
+    )
+  }
+
+  /** Queued workspace tombstones, oldest first; only those due by `dueBy` when given. */
+  public listWorkspaceTombstones(dueBy?: number): readonly CloudWorkspaceTombstone[] {
+    return this.store.query<{
+      id: string, workspace_id: string, cloud_workspace_id: string, expected_rev: number,
+    } & SqliteRow>(
+      `SELECT id, workspace_id, cloud_workspace_id, expected_rev FROM cloud_workspace_tombstones
+       ${dueBy === undefined ? "" : "WHERE next_retry_at <= ?"} ORDER BY created_at ASC`,
+      dueBy === undefined ? [] : [dueBy],
+    ).map((row) => ({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      cloudWorkspaceId: row.cloud_workspace_id,
+      expectedRev: row.expected_rev,
+    }))
+  }
+
+  public settleWorkspaceTombstone(id: string): void {
+    this.store.delete("DELETE FROM cloud_workspace_tombstones WHERE id = ?", [id])
+  }
+
+  /** Back a tombstone off after a transport failure. It never dead-letters: an offline device retries until it is back. */
+  public deferWorkspaceTombstone(id: string, nowMs = Date.now()): void {
+    const row = this.store.get<{ retry_count: number } & SqliteRow>(
+      "SELECT retry_count FROM cloud_workspace_tombstones WHERE id = ?",
+      [id],
+    )
+    const retryCount = (row?.retry_count ?? 0) + 1
+    this.store.set(
+      "UPDATE cloud_workspace_tombstones SET retry_count = ?, next_retry_at = ? WHERE id = ?",
+      [retryCount, nowMs + retryBackoffMs(retryCount), id],
     )
   }
 
@@ -588,11 +650,21 @@ export class CloudSyncRepository {
     return this.store.get<{ total: number } & SqliteRow>("SELECT COUNT(*) as total FROM cloud_outbox")?.total ?? 0
   }
 
+  /**
+   * Changes not yet accepted by the cloud. The device-wide total includes the
+   * tombstones of deleted workspaces, which belong to no workspace any more.
+   */
   public countPendingOutbox(workspaceId?: string): number {
-    const workspaceClause = workspaceId === undefined ? "" : " AND workspace_id = ?"
+    if (workspaceId !== undefined) {
+      return this.store.get<{ total: number } & SqliteRow>(
+        "SELECT COUNT(*) AS total FROM cloud_outbox WHERE retry_count < ? AND workspace_id = ?",
+        [CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
+      )?.total ?? 0
+    }
     return this.store.get<{ total: number } & SqliteRow>(
-      `SELECT COUNT(*) AS total FROM cloud_outbox WHERE retry_count < ?${workspaceClause}`,
-      workspaceId === undefined ? [CLOUD_OUTBOX_MAX_RETRIES] : [CLOUD_OUTBOX_MAX_RETRIES, workspaceId],
+      `SELECT (SELECT COUNT(*) FROM cloud_outbox WHERE retry_count < ?)
+            + (SELECT COUNT(*) FROM cloud_workspace_tombstones) AS total`,
+      [CLOUD_OUTBOX_MAX_RETRIES],
     )?.total ?? 0
   }
 
@@ -1197,6 +1269,7 @@ export class CloudSyncRepository {
          )`,
       )
       store.delete("DELETE FROM cloud_outbox")
+      store.delete("DELETE FROM cloud_workspace_tombstones")
       store.delete("DELETE FROM cloud_record_state")
       store.delete("DELETE FROM cloud_conflicts")
       if (tableExists(store, "conflict_snapshots")) {
@@ -1640,6 +1713,11 @@ export class CloudSyncRepository {
     return this.store.get<{ rev: number } & SqliteRow>(`SELECT rev FROM ${table} WHERE id = ?`, [recordId])?.rev
   }
 
+}
+
+/** Exponential backoff from one second, capped at five minutes. */
+function retryBackoffMs(retryCount: number): number {
+  return Math.min(5 * 60 * 1000, 1000 * 2 ** Math.min(retryCount - 1, 8))
 }
 
 function parsePayload(data: Uint8Array): Record<string, unknown> {

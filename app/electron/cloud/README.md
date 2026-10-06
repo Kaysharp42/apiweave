@@ -25,6 +25,16 @@ Writes are enqueued BEFORE the network call (durable enqueue pattern):
 
 Re-application is idempotent because the server uses `expected_rev` precondition.
 
+### Workspace tombstones
+
+`cloud_outbox` rows cascade away with their workspace, so deleting a workspace
+cannot queue its own tombstone there. It goes to `cloud_workspace_tombstones`
+instead: no foreign key, and the row carries the cloud workspace id because the
+binding cascades away too. `push()` sends these first, needing no binding and
+no workspace key (a tombstone has no payload). A network failure backs the row
+off and keeps it; any answer from the server ends it. A refused delete leaves
+the workspace in the cloud, and the next catalog refresh downloads it again.
+
 ## Cursor Semantics
 
 The cursor is the server's ordering authority — NEVER derived from `updatedAt`.
