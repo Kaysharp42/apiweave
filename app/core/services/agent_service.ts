@@ -15,7 +15,7 @@ import type { McpClientConfig } from "@shared/types/McpClientConfig"
 import { BUILTIN_AGENTS, DEFAULT_AGENT_KEY } from "@shared/agents/builtin-agents"
 import { AgentDefinitionSchema } from "@shared/zod-schemas/AgentDefinitionSchema"
 import { detectAgents } from "../agents/agent_detection"
-import { resolveExecutable, spawnCommandFor } from "../agents/executable"
+import { ptyArgs, resolveExecutable, spawnCommandFor } from "../agents/executable"
 import {
   LAUNCHER_SCRATCH,
   launchInExternalTerminal,
@@ -322,19 +322,20 @@ export class AgentService {
     // conversation it was for, which is exactly the row a user retries from.
     const session = this.createSessionRow(request, prepared, "embedded", identity)
     // `.cmd`/`.bat` shims cannot be executed directly on Windows, in a PTY any
-    // more than anywhere else. The same composition the external path uses.
+    // more than anywhere else — see `spawnCommandFor` for how they are escaped.
     // Built after the row exists because the MCP config file is named for the
     // session, which is what gives it an owner that can delete it.
-    const command = spawnCommandFor(
-      prepared.executablePath,
-      this.argsFor(prepared, session.sessionId, identity.args),
-    )
-
     try {
+      // Inside the try: composing a shim's cmd.exe line can refuse a prompt
+      // (a line break cannot cross cmd), and that refusal must settle the row.
+      const command = spawnCommandFor(
+        prepared.executablePath,
+        this.argsFor(prepared, session.sessionId, identity.args),
+      )
       const pid = await pty.start({
         sessionId: session.sessionId,
         file: command.file,
-        args: command.args,
+        args: ptyArgs(command),
         cwd: prepared.cwd,
         env: this.envFor(prepared, session.sessionId),
         cols: clampDimension(request.cols, MIN_TERMINAL_COLS),
@@ -423,7 +424,7 @@ export class AgentService {
       const pid = await pty.start({
         sessionId,
         file: command.file,
-        args: command.args,
+        args: ptyArgs(command),
         cwd: prepared.cwd,
         env: this.envFor(prepared, sessionId),
         cols: clampDimension(cols, MIN_TERMINAL_COLS),

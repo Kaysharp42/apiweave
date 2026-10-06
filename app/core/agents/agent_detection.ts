@@ -84,7 +84,7 @@ function probeVersion(executablePath: string, env: NodeJS.ProcessEnv): Promise<P
     execFile(
       command.file,
       [...command.args],
-      { timeout: PROBE_TIMEOUT_MS, windowsHide: true, env },
+      { timeout: PROBE_TIMEOUT_MS, windowsHide: true, windowsVerbatimArguments: command.verbatim, env },
       (error, stdout, stderr) => {
         if (error === null) {
           resolve({ ok: true, detail: firstLine(stdout) || firstLine(stderr) || "installed" })

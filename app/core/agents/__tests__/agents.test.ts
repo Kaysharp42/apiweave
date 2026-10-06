@@ -4,7 +4,7 @@ import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import { detectAgent } from "../agent_detection"
-import { resolveExecutable, spawnCommandFor } from "../executable"
+import { assertNoCmdMetacharacters, cmdCommandLine, resolveExecutable, spawnCommandFor } from "../executable"
 import {
   MCP_CONFIG_SCRATCH,
   renderMcpConfigArgs,
@@ -108,10 +108,91 @@ describe("spawnCommandFor", () => {
    * EINVAL since the CVE-2024-27980 fix. `cmd.exe /c` is the only way to run
    * one — and it stays an argv, never a concatenated string.
    */
-  it.runIf(isWindows)("routes a .cmd shim through cmd.exe", () => {
+  it.runIf(isWindows)("routes a .cmd shim through cmd.exe as one verbatim line", () => {
     const command = spawnCommandFor("C:\\npm\\opencode.cmd", ["--version"], { COMSPEC: "C:\\Windows\\cmd.exe" })
     expect(command.file).toBe("C:\\Windows\\cmd.exe")
-    expect(command.args).toEqual(["/c", "C:\\npm\\opencode.cmd", "--version"])
+    expect(command.verbatim).toBe(true)
+    expect(command.args).toEqual(["/d", "/s", "/c", `"${cmdCommandLine("C:\\npm\\opencode.cmd", ["--version"])}"`])
+  })
+})
+
+/**
+ * A prompt reaches a `.cmd` shim through cmd.exe twice: once for the line that
+ * runs the shim, once when the shim's `%*` is expanded. Undo exactly those two
+ * caret levels and the C-runtime-quoted argument must come back whole — and at
+ * neither level may a metacharacter be left unescaped, or cmd acts on it.
+ */
+describe("cmdCommandLine", () => {
+  const meta = /[()[\]%!^"`<>&|;, *?]/
+  const unescapeOnce = (text: string): string => text.replace(/\^(.)/g, "$1")
+  /** One quoted argument read back with the Microsoft C runtime's rules. */
+  const parseCRuntimeArg = (text: string): string => {
+    expect(text.startsWith('"')).toBe(true)
+    let out = ""
+    let i = 1
+    while (i < text.length) {
+      let slashes = 0
+      while (text[i] === "\\") {
+        slashes += 1
+        i += 1
+      }
+      if (text[i] === '"') {
+        out += "\\".repeat(Math.floor(slashes / 2))
+        if (slashes % 2 === 0) {
+          expect(i).toBe(text.length - 1)
+          return out
+        }
+        out += '"'
+        i += 1
+        continue
+      }
+      out += "\\".repeat(slashes)
+      if (i < text.length) out += text[i]
+      i += 1
+    }
+    throw new Error(`unterminated quote in ${text}`)
+  }
+  const allEscaped = (text: string): boolean => {
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] === "^") {
+        i += 1
+        continue
+      }
+      if (meta.test(text[i]!)) return false
+    }
+    return true
+  }
+
+  it.each([
+    ["a & calc"],
+    ["safe&calc"],
+    ['say "hi" | more'],
+    ["%PATH% and !PATH!"],
+    ["trailing backslash\\"],
+    ['quote after backslash\\"&calc'],
+    ["<in >out ^caret (paren)"],
+  ])("escapes %j so cmd.exe passes it through literally", (prompt) => {
+    const line = cmdCommandLine("C:\\npm\\opencode.cmd", ["--prompt", prompt])
+    const escapedArg = line.split(" ").slice(2).join(" ")
+    expect(allEscaped(escapedArg)).toBe(true)
+    expect(allEscaped(unescapeOnce(escapedArg))).toBe(true)
+    expect(parseCRuntimeArg(unescapeOnce(unescapeOnce(escapedArg)))).toBe(prompt)
+  })
+
+  it("matches cross-spawn's escaping for a known case", () => {
+    expect(cmdCommandLine("C:\\npm\\x.cmd", ["a&calc"])).toBe('C:\\npm\\x.cmd ^^^"a^^^&calc^^^"')
+  })
+
+  it("refuses a line break, which no escaping carries through cmd.exe", () => {
+    expect(() => cmdCommandLine("C:\\npm\\x.cmd", ["line one\nline two"])).toThrow(/line break/)
+  })
+})
+
+describe("assertNoCmdMetacharacters", () => {
+  it("refuses an argument cmd.exe would interpret, and allows plain text", () => {
+    expect(() => assertNoCmdMetacharacters("x.cmd", ["fix it & calc"])).toThrow(/cmd\.exe/)
+    expect(() => assertNoCmdMetacharacters("x.cmd", ["%USERPROFILE%"])).toThrow(/cmd\.exe/)
+    expect(() => assertNoCmdMetacharacters("x.cmd", ["fix the login test, please"])).not.toThrow()
   })
 })
 

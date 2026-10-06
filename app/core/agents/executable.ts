@@ -88,6 +88,18 @@ function isExecutableFile(candidate: string): boolean {
 export interface SpawnCommand {
   readonly file: string
   readonly args: readonly string[]
+  /**
+   * True when `args` is already a cmd.exe command line, escaped here, that must
+   * reach the process untouched — `windowsVerbatimArguments` for
+   * `child_process`, {@link ptyArgs} for node-pty. Either one's own quoting
+   * on top would re-quote the carets and quotes and undo the escaping.
+   */
+  readonly verbatim: boolean
+}
+
+/** A Windows batch file, which can only run through `cmd.exe`. */
+export function isBatchShim(executablePath: string): boolean {
+  return process.platform === "win32" && /\.(cmd|bat)$/i.test(executablePath)
 }
 
 /**
@@ -95,17 +107,78 @@ export interface SpawnCommand {
  *
  * On Windows a `.cmd` or `.bat` is not a real executable: spawning it bare
  * gives ENOENT, and spawning it explicitly gives EINVAL ever since the
- * CVE-2024-27980 fix. It has to be run through `cmd.exe /c`. Everything else,
- * on every platform, is spawned directly with its arguments untouched.
+ * CVE-2024-27980 fix. It has to be run through `cmd.exe`, which parses the
+ * command line for `&`, `|`, `<`, `>`, `^`, `%` and `!` — so every argument, a
+ * user's prompt included, is escaped for it by {@link cmdCommandLine} and the
+ * whole line is passed verbatim. Everything else, on every platform, is
+ * spawned directly with its arguments untouched.
  */
 export function spawnCommandFor(
   executablePath: string,
   args: readonly string[],
   env: NodeJS.ProcessEnv = process.env,
 ): SpawnCommand {
-  const isBatchShim = process.platform === "win32" && /\.(cmd|bat)$/i.test(executablePath)
-  if (!isBatchShim) {
-    return { file: executablePath, args }
+  if (!isBatchShim(executablePath)) {
+    return { file: executablePath, args, verbatim: false }
   }
-  return { file: env["COMSPEC"] ?? "cmd.exe", args: ["/c", executablePath, ...args] }
+  // `/d` skips AutoRun commands; `/s` with the outer quotes makes cmd strip
+  // exactly those two and leave the escaped line inside alone.
+  return {
+    file: env["COMSPEC"] ?? "cmd.exe",
+    args: ["/d", "/s", "/c", `"${cmdCommandLine(executablePath, args)}"`],
+    verbatim: true,
+  }
+}
+
+/** The args in the form node-pty wants: a verbatim command line is passed as one string, which it does not re-quote. */
+export function ptyArgs(command: SpawnCommand): readonly string[] | string {
+  return command.verbatim ? command.args.join(" ") : command.args
+}
+
+/** Every character cmd.exe gives a meaning to, caret-escaped below. Same set as cross-spawn. */
+const CMD_METACHARACTERS = /([()\][%!^"`<>&|;, *?])/g
+
+/**
+ * A batch file's command line, escaped for cmd.exe the way cross-spawn does it
+ * (itself after https://qntm.org/cmd) — ported rather than imported, because
+ * cross-spawn's escaping is an internal module, not its API.
+ *
+ * Each argument is quoted for the C runtime that eventually parses it, then
+ * every metacharacter is caret-escaped twice: once for the `cmd.exe` that runs
+ * the shim, and once for the shim's own `%*`, which cmd re-parses when it
+ * expands it — and agent CLIs installed with npm are exactly such shims. A line
+ * break cannot be escaped at all — cmd ends the command there — so it is
+ * refused rather than silently cut.
+ */
+export function cmdCommandLine(executablePath: string, args: readonly string[]): string {
+  for (const arg of args) {
+    if (/[\r\n]/.test(arg)) {
+      throw new Error(
+        `${path.basename(executablePath)} runs through cmd.exe, which cannot pass a line break in an argument — put the prompt on one line`,
+      )
+    }
+  }
+  return [executablePath.replace(CMD_METACHARACTERS, "^$1"), ...args.map(escapeCmdArgument)].join(" ")
+}
+
+function escapeCmdArgument(arg: string): string {
+  // Backslashes before a quote, and before the closing quote added below, are
+  // doubled; the quote itself is backslash-escaped.
+  const quoted = `"${arg.replace(/(?=(\\+?)?)\1"/g, '$1$1\\"').replace(/(?=(\\+?)?)\1$/, "$1$1")}"`
+  return quoted.replace(CMD_METACHARACTERS, "^$1").replace(CMD_METACHARACTERS, "^$1")
+}
+
+/**
+ * For a launch that hands an argv to another program which then runs it
+ * through cmd.exe — `start`, or a terminal emulator starting a `.cmd` shim.
+ * There is no single escaping that survives an unknown number of re-parses, so
+ * an argument cmd.exe would interpret is refused instead.
+ */
+export function assertNoCmdMetacharacters(executablePath: string, args: readonly string[]): void {
+  const unsafe = args.find((arg) => /[&|<>^%!"\r\n]/.test(arg))
+  if (unsafe !== undefined) {
+    throw new Error(
+      `${path.basename(executablePath)} would be started through cmd.exe, which interprets & | < > ^ % ! " and line breaks — remove them from the prompt, or launch in the embedded terminal`,
+    )
+  }
 }

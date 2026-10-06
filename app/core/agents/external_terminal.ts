@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { resolveExecutable, spawnCommandFor, type SpawnCommand } from "./executable"
+import { assertNoCmdMetacharacters, isBatchShim, resolveExecutable, type SpawnCommand } from "./executable"
 import { scratchFileKind } from "./scratch_files"
 
 export interface ExternalLaunch {
@@ -141,7 +141,7 @@ function declaredTerminal(env: NodeJS.ProcessEnv): string | undefined {
 interface WindowsTerminal {
   readonly id: string
   readonly command: string
-  readonly argsFor: (cwd: string, command: SpawnCommand) => readonly string[]
+  readonly argsFor: (cwd: string, command: Pick<SpawnCommand, "file" | "args">) => readonly string[]
 }
 
 /**
@@ -182,7 +182,16 @@ const WINDOWS_TERMINALS: readonly WindowsTerminal[] = [
 
 async function launchWindows(launch: ExternalLaunch): Promise<void> {
   const env = { ...process.env, ...launch.env }
-  const command = spawnCommandFor(launch.executablePath, launch.args, env)
+  const comspec = env["COMSPEC"] ?? "cmd.exe"
+  // A `.cmd` shim runs through cmd.exe inside whichever emulator opens it, and
+  // that emulator builds its own command line from this argv — the verbatim
+  // escaping the embedded path uses would be re-quoted on the way. So the
+  // characters cmd.exe interprets are refused instead of escaped.
+  const shim = isBatchShim(launch.executablePath)
+  if (shim) assertNoCmdMetacharacters(launch.executablePath, launch.args)
+  const command = shim
+    ? { file: comspec, args: ["/c", launch.executablePath, ...launch.args] }
+    : { file: launch.executablePath, args: launch.args }
 
   for (const terminal of preferFirst(WINDOWS_TERMINALS, preferredTerminalId(env), (entry) => entry.id)) {
     const resolved = resolveExecutable(terminal.command, env)
@@ -194,9 +203,11 @@ async function launchWindows(launch: ExternalLaunch): Promise<void> {
   }
 
   // `start` needs an explicit empty title, or it consumes the first quoted
-  // argument as the window title and the agent never runs.
+  // argument as the window title and the agent never runs. It is a cmd.exe
+  // built-in, so this line is parsed by cmd whatever the agent is.
+  assertNoCmdMetacharacters(launch.executablePath, launch.args)
   await spawnDetached(
-    env["COMSPEC"] ?? "cmd.exe",
+    comspec,
     ["/c", "start", "", command.file, ...command.args],
     { cwd: launch.cwd, env },
   )
