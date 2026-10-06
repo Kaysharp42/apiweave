@@ -17,7 +17,9 @@
  *   )
  *
  * Lifecycle:
- *   1. Enqueue(row) — writes to outbox (synchronous, in the same transaction as the local write)
+ *   1. Enqueue(row) — writes to outbox (synchronous). Services run the local
+ *      write and the `record*` call that reaches here inside one repository
+ *      `transaction`, so the edit and its outbox row commit together or not at all.
  *   2. push() reads pending rows, sends them to the server
  *   3. MarkApplied(id) — deletes the row on success
  *   4. MarkFailed(id, reason) — leaves the row; retries up to the dead-letter ceiling
@@ -43,10 +45,6 @@ export class Outbox {
 
   public constructor(store: KVStore | CloudSyncRepository) {
     this.repository = store instanceof CloudSyncRepository ? store : new CloudSyncRepository(store)
-  }
-
-  public ensureTable(): void {
-    // Created by 005_cloud_sync.sql. Kept for compatibility with older callers.
   }
 
   public enqueue(row: OutboxInput): string {

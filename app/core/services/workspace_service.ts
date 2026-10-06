@@ -48,13 +48,16 @@ export class WorkspaceService {
       if (existing !== undefined) return existing
     }
 
-    const created = this.workspaces.create({
-      name: input.name,
-      slug: this.uniqueSlug(input.slug ?? input.name),
-      description: input.description ?? null,
-      isPersonal: wantPersonal,
+    const created = this.workspaces.transaction(() => {
+      const workspace = this.workspaces.create({
+        name: input.name,
+        slug: this.uniqueSlug(input.slug ?? input.name),
+        description: input.description ?? null,
+        isPersonal: wantPersonal,
+      })
+      recordWorkspaceUpsert(this.syncProvider, workspace)
+      return workspace
     })
-    recordWorkspaceUpsert(this.syncProvider, created)
     await this.syncProvider.push()
     // When cloud is linked this local-only push is a no-op (no binding yet);
     // the hook provisions + binds + pushes the baseline in the background.
@@ -72,9 +75,12 @@ export class WorkspaceService {
     await this.mustResolve(workspaceId)
     if (patch.isPersonal !== undefined) this.assertPersonalInvariant(workspaceId, patch.isPersonal)
     const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
-    const updated = this.workspaces.update(workspaceId, next)
+    const updated = this.workspaces.transaction(() => {
+      const workspace = this.workspaces.update(workspaceId, next)
+      if (workspace !== undefined) recordWorkspaceUpsert(this.syncProvider, workspace)
+      return workspace
+    })
     if (updated === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
-    recordWorkspaceUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }

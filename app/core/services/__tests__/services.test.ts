@@ -11,6 +11,7 @@ import {
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
+import type { SyncProvider } from "../../sync/SyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { EnvironmentService } from "../environment_service"
@@ -555,5 +556,39 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(result.valid).toBe(false)
     expect(result.errors.some((e) => e.includes("nodeId"))).toBe(true)
     expect(result.warnings.some((w) => w.includes("schema version"))).toBe(true)
+  })
+})
+
+describe("local write and cloud outbox entry commit together", () => {
+  // Stands in for an enqueue that fails (disk full, a constraint): the local
+  // write it belongs to must roll back rather than land with no outbox row.
+  const failingSync: SyncProvider = {
+    recordMutation: () => {
+      throw new Error("outbox write failed")
+    },
+    pull: async () => undefined,
+    push: async () => undefined,
+  }
+
+  it("rolls back a workflow edit whose enqueue fails", async () => {
+    const ws = seedWorkspace("a")
+    const created = await new WorkflowService(workflows, sync, permissions, scopeResolver).create(ws, { name: "before" })
+    const service = new WorkflowService(workflows, failingSync, permissions, scopeResolver)
+
+    await expect(service.update(ws, created.workflowId, { name: "after" })).rejects.toThrow("outbox write failed")
+    await expect(service.delete(ws, created.workflowId)).rejects.toThrow("outbox write failed")
+
+    expect(workflows.getById(created.workflowId)).toMatchObject({ name: "before", rev: created.rev })
+  })
+
+  it("rolls back environment and project writes whose enqueue fails", async () => {
+    const ws = seedWorkspace("a")
+    await expect(new EnvironmentService(environments, failingSync, permissions, scopeResolver).create(ws, { name: "Dev" }))
+      .rejects.toThrow("outbox write failed")
+    await expect(new CollectionService(collections, workflows, failingSync, permissions, scopeResolver).create(ws, { name: "P" }))
+      .rejects.toThrow("outbox write failed")
+
+    expect(environments.listByWorkspace(ws).items).toEqual([])
+    expect(collections.listByWorkspace(ws).items).toEqual([])
   })
 })

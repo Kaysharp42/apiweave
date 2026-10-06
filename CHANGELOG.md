@@ -17,6 +17,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   queued in a table that the local delete emptied, so it never reached the
   server. It is now kept in its own queue, survives restarts and network
   failures, and is pushed even after the workspace's sync binding is gone.
+- **A local edit and its queued cloud change are saved together.** They were
+  two separate writes, so a failure between them could keep an edit that never
+  synced. Now both are saved, or neither is.
 
 - **Redirects no longer leak credentials or resend a POST.** A followed
   redirect to another origin drops `Authorization`, `Cookie` and

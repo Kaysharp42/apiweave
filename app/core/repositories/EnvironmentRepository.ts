@@ -3,6 +3,7 @@ import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
 import { mustExist, parseJson, slugify, toJson } from "./helpers"
+import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type EnvironmentCreate = Pick<Environment, "workspaceId" | "name"> &
   Partial<
@@ -134,8 +135,9 @@ export class EnvironmentRepository {
     return this.getById(environmentId)
   }
 
+  /** Same contract as `WorkflowRepository.transaction`. */
   public transaction<T>(fn: () => T): T {
-    return this.store.transaction(fn)
+    return holdNotificationsUntilCommit(this.store, () => this.store.transaction(fn))
   }
 
   public delete(environmentId: string): boolean {
