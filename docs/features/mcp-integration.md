@@ -66,7 +66,10 @@ The bridge speaks MCP protocol version `2025-06-18` (negotiated by the SDK).
 
 The token is generated on first enable and stored with the selected port in the
 app's user-data directory as `mcp-token`. Re-enabling the bridge reuses that
-token. Automatic and in-app token rotation are not currently implemented.
+token. If it may have leaked, choose **Regenerate token** in the MCP settings:
+the old token stops working at once, open MCP sessions are closed, and every
+client — including agents launched from APIWeave before the change — has to be
+given the new one.
 
 ## Authoring Guides
 

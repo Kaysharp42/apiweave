@@ -562,6 +562,14 @@ if (!hasSingleInstanceLock) {
       }),
     )
     ipcMain.handle(
+      "mcp:regenerateToken",
+      requireTrustedSender(async () => {
+        if (mcpHost === null) throw new Error("The MCP server is not running")
+        await mcpHost.regenerateToken()
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
       "mcp:listTools",
       requireTrustedSender(
         (): readonly MCPTool[] => [

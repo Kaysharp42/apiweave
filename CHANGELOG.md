@@ -13,6 +13,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **The MCP token can be regenerated.** MCP settings have a **Regenerate
+  token** action that replaces the access token and closes the sessions opened
+  with the old one.
 - **The MCP server only answers to its own address.** Requests whose `Host`
   header is not `127.0.0.1:<port>` or `localhost:<port>` are refused, so a web
   page that rebinds its domain to the loopback address cannot reach it.

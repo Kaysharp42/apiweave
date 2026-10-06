@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, RefreshCw } from "lucide-react";
 import { Button } from "../atoms/Button";
+import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { mcp } from "../../utils/apiweaveClient";
 import type { McpStatus } from "@shared/types/McpStatus";
@@ -40,6 +41,7 @@ export function McpSetupPanel() {
     config: null,
   });
   const [busy, setBusy] = useState(false);
+  const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
   const [copied, copy] = useCopy();
 
   useEffect(() => {
@@ -50,6 +52,15 @@ export function McpSetupPanel() {
     setBusy(true);
     const next = status.running ? mcp.disable() : mcp.enable();
     void next.then(setStatus).finally(() => setBusy(false));
+  };
+
+  const onRegenerate = (): void => {
+    setConfirmingRegenerate(false);
+    setBusy(true);
+    void mcp
+      .regenerateToken()
+      .then(setStatus)
+      .finally(() => setBusy(false));
   };
 
   const config = status.config;
@@ -123,8 +134,34 @@ export function McpSetupPanel() {
               {bridgeCommand}
             </pre>
           </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              Think the token has leaked? Replace it. Every client has to be
+              given the new one.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<RefreshCw className="h-3.5 w-3.5" />}
+              disabled={busy}
+              onClick={() => setConfirmingRegenerate(true)}
+            >
+              Regenerate token
+            </Button>
+          </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmingRegenerate}
+        onClose={() => setConfirmingRegenerate(false)}
+        onConfirm={onRegenerate}
+        title="Regenerate the MCP token?"
+        message="The current token stops working immediately and open MCP sessions are closed. Paste the new client config into each MCP client, and relaunch any agent you started from APIWeave."
+        confirmLabel="Regenerate"
+        intent="warning"
+      />
     </div>
   );
 }

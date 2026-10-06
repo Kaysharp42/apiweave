@@ -46,7 +46,8 @@ export interface McpHostOptions {
 
 /**
  * The opt-in loopback MCP server. Off until `start()`. Binds `127.0.0.1` only,
- * requires a static per-install bearer token on every request.
+ * requires the per-install bearer token on every request (rotated on demand by
+ * {@link McpHost.regenerateToken}).
  *
  * Two transport modes coexist (Phase 6):
  * - Stateless one-shot: a sessionless, non-initialize POST gets a fresh MCP
@@ -113,6 +114,27 @@ export class McpHost {
 
   async stop(): Promise<void> {
     return this.runExclusive(() => this.stopLocked())
+  }
+
+  /**
+   * Replace the bearer token, for when the old one may have leaked. The new
+   * one is persisted before it takes effect, and every open session — each
+   * authenticated with the old token — is closed, so an SSE stream opened
+   * with the leaked token stops too. Clients reconnect with the new token;
+   * an embedded agent launched before this keeps the old one in its config and
+   * has to be relaunched.
+   */
+  async regenerateToken(): Promise<McpTokenInfo> {
+    return this.runExclusive(async () => {
+      if (this.info === null) throw new Error("The MCP server is not running")
+      this.token = generateToken()
+      this.info = { token: this.token, port: this.info.port }
+      saveTokenInfo(this.tokenFilePath, this.info)
+      for (const session of [...this.sessions.values()]) {
+        await this.closeSession(session)
+      }
+      return this.info
+    })
   }
 
   /** Run `fn` after every previously-queued start/stop has settled, never overlapping. */
