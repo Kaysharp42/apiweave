@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "../../../__tests__/setup";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CloudSyncPage } from "../CloudSyncPage";
@@ -187,6 +187,22 @@ describe("CloudSyncPage", () => {
       await screen.findByText(/Workspaces downloaded from Cloud or a shared Team are removed/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Workspaces created locally are kept/)).toBeInTheDocument();
+  });
+
+  it("counts the changes Disconnect discards and offers to sync them first", async () => {
+    setStatus({ ...base, pendingCount: 12, deadLetterCount: 3, bindings: [binding()] });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+
+    expect(
+      await screen.findByText(/12 changes not yet synced and 3 failed changes will be discarded\./),
+    ).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Sync now" }));
+    const bridge = window.__APIWEAVE_IPC__ as unknown as { invoke: ReturnType<typeof vi.fn> };
+    await waitFor(() =>
+      expect(bridge.invoke).toHaveBeenCalledWith("cloud", "push", {}),
+    );
   });
 
   it("asks about unsaved tabs before disconnecting, and Cancel keeps the account", async () => {

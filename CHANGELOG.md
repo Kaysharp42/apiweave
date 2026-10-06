@@ -20,6 +20,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **A local edit and its queued cloud change are saved together.** They were
   two separate writes, so a failure between them could keep an edit that never
   synced. Now both are saved, or neither is.
+- **Disconnect says what it throws away.** The confirmation now counts the
+  changes not yet synced and the failed changes that disconnecting discards,
+  and offers **Sync now** first while anything is unsynced.
 
 - **Redirects no longer leak credentials or resend a POST.** A followed
   redirect to another origin drops `Authorization`, `Cookie` and
