@@ -1,26 +1,59 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { RunSummary } from "@shared/types/RunSummary";
 import HistoryModal from "./HistoryModal";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 
 vi.mock("../utils/apiweaveClient", () => ({
-  authenticatedFetch: vi.fn(),
-  workflowRunsListUrl: () => "/runs",
+  apiweave: {
+    runs: {
+      history: vi.fn(),
+      delete: vi.fn(),
+      clearHistory: vi.fn(),
+    },
+  },
 }));
 
+function summary(runId: string, status: RunSummary["status"], createdAt: string): RunSummary {
+  return {
+    runId,
+    workspaceId: "ws-1",
+    workflowId: "wf-1",
+    status,
+    trigger: "manual",
+    startedAt: null,
+    completedAt: null,
+    duration: null,
+    failedNodes: [],
+    failedNodeCount: 0,
+    nodeCount: 0,
+    runRev: 1,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
 const runs = [
-  { runId: "run-newer", status: "completed", createdAt: "2026-09-16T10:00:00Z" },
-  { runId: "run-from-call", status: "failed", createdAt: "2026-09-16T09:00:00Z" },
+  summary("run-newer", "completed", "2026-09-16T10:00:00.000Z"),
+  summary("run-from-call", "failed", "2026-09-16T09:00:00.000Z"),
 ];
 
 describe("HistoryModal", () => {
   beforeEach(() => {
     // jsdom has no layout, so it implements no scrollIntoView.
     Element.prototype.scrollIntoView = vi.fn();
-    vi.mocked(authenticatedFetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ runs, total: runs.length }),
-    } as Response);
+    vi.mocked(apiweave.runs.history).mockReset();
+    vi.mocked(apiweave.runs.history).mockResolvedValue({ items: runs, nextCursor: null });
+    vi.mocked(apiweave.runs.delete).mockResolvedValue(null);
+  });
+
+  it("lists run summaries for the workflow", async () => {
+    render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={() => {}} onSelectRun={() => {}} />);
+
+    await screen.findByText("completed");
+    expect(apiweave.runs.history).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "ws-1", workflowId: "wf-1" }),
+    );
   });
 
   it("marks and scrolls to the run a Call Workflow node jumped here for", async () => {
@@ -42,16 +75,22 @@ describe("HistoryModal", () => {
   });
 
   it("marks nothing when opened by hand", async () => {
-    render(
-      <HistoryModal
-        workflowId="wf-1"
-        workspaceId="ws-1"
-        onClose={() => {}}
-        onSelectRun={() => {}}
-      />,
-    );
+    render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={() => {}} onSelectRun={() => {}} />);
 
     await screen.findByText("completed");
     expect(document.querySelectorAll("[data-highlighted]")).toHaveLength(0);
+  });
+
+  it("deletes a run after confirmation and reloads the list", async () => {
+    const onSelectRun = vi.fn();
+    render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={() => {}} onSelectRun={onSelectRun} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete run run-newer" }));
+    vi.mocked(apiweave.runs.history).mockResolvedValue({ items: [runs[1]!], nextCursor: null });
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(apiweave.runs.delete).toHaveBeenCalledWith("ws-1", "run-newer"));
+    await waitFor(() => expect(screen.queryByText("completed")).toBeNull());
+    expect(onSelectRun).not.toHaveBeenCalled();
   });
 });

@@ -85,8 +85,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the close button used to discard unapplied JSON. With changed text they now
   ask **Apply**, **Discard** or **Keep editing**.
 
+- **Run history no longer grows without limit or slows down long runs.** Each
+  workflow keeps its newest 100 runs; older finished runs are deleted, with
+  their node results and response bodies, whenever a run finishes. The History
+  panel loads compact run summaries a page at a time and fetches a run's full
+  results only when you open it. Storing each node's result no longer rewrites
+  every earlier result of the run, so a run with many nodes no longer gets
+  slower with every node that completes.
+
 ### Added
 
+- **Delete runs from History.** Each finished run in the History panel has a
+  delete button, and **Clear history** deletes every finished run of the
+  workflow. Runs still in progress are kept. Agents connected through MCP
+  cannot delete run history.
 - **Crash capture in the log.** Uncaught exceptions and unhandled rejections in
   the main process, renderer and child-process crashes (including the agent PTY
   host), failed loads and unresponsive windows are recorded in the daily log

@@ -36,6 +36,7 @@ describe("database migrations", () => {
         "collections",
         "environments",
         "node_presets",
+        "run_node_results",
         "run_responses",
         "runs",
         "scoped_keys",
@@ -210,6 +211,42 @@ describe("database migrations", () => {
       })
       expect(upgraded.kvStore.get("SELECT value FROM app_settings WHERE key = 'cloud.binding_migration_warning'"))
         .toEqual({ value: "1 duplicate cloud workspace binding(s) were disconnected" })
+    } finally {
+      upgraded.close()
+    }
+  })
+
+  it("moves each run's results out of the metadata blob into one row per node, in order", () => {
+    const tempRoot = makeTempRoot()
+    const oldMigrationsPath = path.join(tempRoot, "migrations-v16")
+    fs.mkdirSync(oldMigrationsPath)
+    for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
+      if (/^(00\d|01[0-6])_.*\.sql$/.test(fileName)) {
+        fs.copyFileSync(path.join(__dirname, "..", "migrations", fileName), path.join(oldMigrationsPath, fileName))
+      }
+    }
+    const databasePath = path.join(tempRoot, "results-upgrade.db")
+    const old = initDatabase({ databasePath, migrationsPath: oldMigrationsPath })
+    seedRunParentRows(old)
+    old.kvStore.set(
+      "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, response_metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+      [
+        "run-1",
+        "workspace-1",
+        "workflow-1",
+        "workspace-1",
+        "completed",
+        JSON.stringify({ trigger: "schedule", results: [{ nodeId: "b", status: "passed" }, { nodeId: "a", status: "failed" }] }),
+      ],
+    )
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.kvStore.query("SELECT node_id FROM run_node_results WHERE run_id = 'run-1' ORDER BY rowid"))
+        .toEqual([{ node_id: "b" }, { node_id: "a" }])
+      expect(JSON.parse(upgraded.kvStore.get<{ m: string }>("SELECT response_metadata_json AS m FROM runs")!.m))
+        .toEqual({ trigger: "schedule" })
     } finally {
       upgraded.close()
     }

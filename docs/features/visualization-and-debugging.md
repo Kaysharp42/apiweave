@@ -26,6 +26,13 @@ secret-safe contract, and no secret value is ever shown.*
 Open **Run history** (the history button on the canvas toolbar) and click the
 **activity** icon on any run row. The timeline opens as a modal over the canvas.
 
+Run history lists the newest runs first, 20 at a time (**Load more** fetches
+the next page). Each workflow keeps its newest 100 runs; when a run finishes,
+older finished runs are deleted. The trash icon on a row deletes that run, and
+**Clear history** deletes every finished run of the workflow. Runs still in
+progress are never deleted. Agents connected through MCP can read run history
+but cannot delete it.
+
 ### What it shows
 
 - A summary header: run status, total duration, and a count of secret references.

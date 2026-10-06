@@ -92,6 +92,7 @@ export const PERMISSIONS_BY_RESOURCE: Readonly<Record<Resource, readonly string[
   runs: [
     permission(RESOURCE_RUNS, ACTION_READ),
     permission(RESOURCE_RUNS, ACTION_CANCEL),
+    permission(RESOURCE_RUNS, ACTION_DELETE),
   ],
   secrets: [
     permission(RESOURCE_SECRETS, ACTION_READ),
@@ -184,6 +185,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_CREATE),
     permission(RESOURCE_ENVIRONMENTS, ACTION_UPDATE),
     permission(RESOURCE_RUNS, ACTION_READ),
+    permission(RESOURCE_RUNS, ACTION_DELETE),
     permission(RESOURCE_SECRETS, ACTION_READ),
     ...PERMISSIONS_BY_RESOURCE.node_presets,
     ...PERMISSIONS_BY_RESOURCE.agents,
@@ -207,6 +209,7 @@ export const WORKSPACE_ROLE_PERMISSIONS: Readonly<Record<WorkspaceRole, readonly
     permission(RESOURCE_ENVIRONMENTS, ACTION_CREATE),
     permission(RESOURCE_ENVIRONMENTS, ACTION_UPDATE),
     permission(RESOURCE_RUNS, ACTION_READ),
+    permission(RESOURCE_RUNS, ACTION_DELETE),
     permission(RESOURCE_SECRETS, ACTION_READ),
     ...PERMISSIONS_BY_RESOURCE.node_presets,
     ...PERMISSIONS_BY_RESOURCE.agents,

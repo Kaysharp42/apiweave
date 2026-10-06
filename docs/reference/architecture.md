@@ -106,7 +106,7 @@ The SQLite database holds everything APIWeave needs to keep working across page 
 
 - **Projects**: ordered groups of workflows.
 - **Workflows**: node graphs, edges, variables, and per-workflow settings.
-- **Runs**: execution history, per-node results, and overall status.
+- **Runs**: execution history and overall status, with one row per node result. Each workflow keeps its newest 100 runs; older finished runs are pruned when a run finishes.
 - **Environments**: variable maps, scope, and any pinned OpenAPI/Swagger URL.
 - **Node presets**: workspace-scoped saved node configurations.
 - **Secrets**: scope, metadata, key id, and sealed ciphertext. No plaintext, no read API.

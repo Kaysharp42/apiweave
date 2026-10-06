@@ -5,6 +5,7 @@ import type {
   ContractResult,
 } from "@shared/contract/errors";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
@@ -494,6 +495,16 @@ export const apiweave = {
       }),
     cancel: (workspaceId: string, runId: string) =>
       invoke<IpcRun>("runs", "cancel", { workspaceId, runId }),
+    history: (input: {
+      readonly workspaceId: string;
+      readonly workflowId?: string;
+      readonly limit?: number;
+      readonly cursor?: string;
+    }) => invoke<RunHistoryPage>("runs", "history", input),
+    delete: (workspaceId: string, runId: string) =>
+      invoke<null>("runs", "delete", { workspaceId, runId }),
+    clearHistory: (workspaceId: string, workflowId: string) =>
+      invoke<{ deleted: number }>("runs", "clearHistory", { workspaceId, workflowId }),
     getArtifacts: (workspaceId: string, runId: string) =>
       invoke<unknown>("runs", "getArtifacts", { workspaceId, runId }),
     openArtifact: (
@@ -1311,13 +1322,6 @@ export async function authenticatedFetch(
             { status: 202 },
           );
         }
-        if (parts[5] === "runs" && parts.length === 6 && method === "GET") {
-          const data = await apiweave.runs.listByWorkflow(
-            workspaceId,
-            workflowId,
-          );
-          return ok({ runs: data.items, total: data.total });
-        }
         if (
           parts[5] === "runs" &&
           parts[6] === "latest-failed" &&
@@ -1615,13 +1619,6 @@ export const workflowRunUrl = (
   environmentId?: string | null,
 ): string =>
   `${workflowUrl(workspaceId, workflowId)}/run${environmentId ? `?environmentId=${encodeURIComponent(environmentId)}` : ""}`;
-export const workflowRunsListUrl = (
-  workspaceId: string,
-  workflowId: string,
-  page = 1,
-  limit = 10,
-): string =>
-  `${workflowUrl(workspaceId, workflowId)}/runs?page=${page}&limit=${limit}`;
 export const workflowLatestFailedUrl = (
   workspaceId: string,
   workflowId: string,
