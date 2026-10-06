@@ -4,6 +4,7 @@ import {
   IpcError,
   onCloudStatusChanged,
 } from "../utils/apiweaveClient";
+import { confirmCloseAll } from "../stores/PendingEditsStore";
 import type { CloudSyncStatus } from "../types/cloud";
 import type { UseCloudSync } from "../types/UseCloudSync";
 
@@ -93,7 +94,16 @@ export function useCloudSync(): UseCloudSync {
     unavailable,
     busy,
     refresh,
-    link: (deviceLabel) => run(() => apiweave.cloud.link(deviceLabel)),
+    link: async (deviceLabel) => {
+      // Linking from signed out changes the account, and useAccountSessionReset
+      // then closes every tab — after the fact, when nothing can be saved or
+      // kept. So unsaved work is settled first, and Cancel there cancels the
+      // link. A relink keeps the account, and the tabs with it.
+      if (status?.linked !== true && !(await confirmCloseAll())) {
+        return apply(await apiweave.cloud.status());
+      }
+      return run(() => apiweave.cloud.link(deviceLabel));
+    },
     cancelLink: () => run(() => apiweave.cloud.cancelLink()),
     // Every action below follows the same run(() => apiweave.cloud.X(...))
     // wrapper shape — the hook's established idiom, not new repetition.

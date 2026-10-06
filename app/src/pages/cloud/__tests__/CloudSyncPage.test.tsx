@@ -11,10 +11,10 @@ import type { CloudFailedRecord, CloudSyncStatus } from "../../../types/cloud";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-const base: CloudSyncStatus = {
-  linked: true,
-  active: true,
-  linkState: "linked",
+const signedOut: CloudSyncStatus = {
+  linked: false,
+  active: false,
+  linkState: "unlinked",
   syncState: "idle",
   state: "idle",
   pendingCount: 0,
@@ -25,6 +25,13 @@ const base: CloudSyncStatus = {
   workspaceCatalog: [],
   teamCatalog: [],
   encryptionDecisionPending: [],
+};
+
+const base: CloudSyncStatus = {
+  ...signedOut,
+  linked: true,
+  active: true,
+  linkState: "linked",
   account: { accountId: "acc-1", email: "user@example.com" },
 };
 
@@ -203,6 +210,39 @@ describe("CloudSyncPage", () => {
     await waitFor(() =>
       expect(bridge.invoke).toHaveBeenCalledWith("cloud", "push", {}),
     );
+  });
+
+  it("asks about unsaved tabs before linking from signed out, and Cancel stops the link", async () => {
+    setStatus(signedOut);
+    const workflow = {
+      workflowId: "wf1",
+      workspaceId: "local-1",
+      name: "Orders",
+      nodes: [],
+      edges: [],
+      variables: {},
+    } as unknown as Workflow;
+    useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
+    useTabStore.getState().openTab(workflow);
+    useTabStore.getState().stashDraft("wf1", workflow);
+    renderPage();
+    const bridge = window.__APIWEAVE_IPC__ as unknown as { invoke: ReturnType<typeof vi.fn> };
+
+    fireEvent.click(await screen.findByRole("button", { name: "Link cloud account" }));
+    await waitFor(() =>
+      expect(usePendingEditsStore.getState().promptFor).toBe("Orders"),
+    );
+    // Nothing is linked while the question is open...
+    expect(bridge.invoke).not.toHaveBeenCalledWith("cloud", "link", expect.anything());
+    usePendingEditsStore.getState().answer("cancel");
+
+    await waitFor(() =>
+      expect(usePendingEditsStore.getState().promptFor).toBeNull(),
+    );
+    // ...and Cancel leaves it unlinked, with the unsaved tab still open.
+    expect(bridge.invoke).not.toHaveBeenCalledWith("cloud", "link", expect.anything());
+    expect(useTabStore.getState().tabs.map((tab) => tab.id)).toEqual(["wf1"]);
+    useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
   });
 
   it("asks about unsaved tabs before disconnecting, and Cancel keeps the account", async () => {

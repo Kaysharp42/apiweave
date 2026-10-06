@@ -23,6 +23,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **Disconnect says what it throws away.** The confirmation now counts the
   changes not yet synced and the failed changes that disconnecting discards,
   and offers **Sync now** first while anything is unsynced.
+- **Linking a cloud account asks about unsaved tabs first.** Linking from the
+  signed-out state closes every tab, and it did so after the account changed,
+  losing unsaved edits. It now asks **Save**, **Discard**, or **Cancel** for
+  each such tab before signing in, and **Cancel** stops the link.
 
 - **Redirects no longer leak credentials or resend a POST.** A followed
   redirect to another origin drops `Authorization`, `Cookie` and
