@@ -539,9 +539,9 @@ export const requestsAndDataChapter: TutorialChapter = {
             "No scope in the chain declares that key. Add it on the right scope through the write flow.",
         },
         {
-          title: "A secret looks unreadable after copying the database",
+          title: "Secrets cannot be decrypted after restoring or moving the database",
           instruction:
-            "The keyfile did not travel with it. Copy keyfile.json from the source user-data directory, or re-enter the secret.",
+            "Restore keyfile.json from the same backup as the database. It is sealed by your OS keychain, so on another machine re-enter the secrets instead.",
         },
         {
           title: "You want to paste an existing value into the UI",

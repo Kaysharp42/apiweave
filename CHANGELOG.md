@@ -13,6 +13,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **The secrets key is sealed by the OS keychain.** `keyfile.json` held the
+  master key in plaintext beside the database. It is now sealed with the
+  operating system keychain (Keychain, DPAPI, GNOME Keyring or KWallet), and an
+  existing plaintext keyfile is sealed in place on first launch. On Linux
+  without a keyring it stays unsealed and the log warns. A sealed keyfile opens
+  only for the same user on the same machine, so secrets no longer move with a
+  copied data folder.
+- **A missing keyfile no longer orphans your secrets silently.** If
+  `keyfile.json` is missing or cannot be opened while the database holds
+  secrets, APIWeave asks whether to quit, so the keyfile can be restored, or to
+  delete the secrets it cannot open and continue. It used to create a new
+  keyfile without a word.
 - **The MCP token can be regenerated.** MCP settings have a **Regenerate
   token** action that replaces the access token and closes the sessions opened
   with the old one.

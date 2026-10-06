@@ -14,7 +14,6 @@
  * fetch() to call the Connect endpoints. No external dependencies.
  */
 
-import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, decrypt, generateDek, wrapDek, unwrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
 import type { KVStore } from "../../core/db"
 import { CloudSyncRepository } from "../../core/repositories"
@@ -94,7 +93,7 @@ export class DeviceTokenStore {
 
   public constructor(
     store: KVStore | CloudSyncRepository,
-    private readonly keyfilePath: string,
+    private readonly masterKek: Uint8Array,
   ) {
     this.repository = store instanceof CloudSyncRepository ? store : new CloudSyncRepository(store)
     // App sessions were persisted by pre-production builds. They are opaque
@@ -125,11 +124,11 @@ export class DeviceTokenStore {
       return undefined
     }
 
-    const keyfile = readKeyfile(this.keyfilePath)
+    const masterKek = this.masterKek
     const generation = this.generation
     const deviceId = this.getDeviceId()
     const wrappedDek = Buffer.from(wrappedDekValue, "base64")
-    const dek = unwrapDek(new Uint8Array(wrappedDek), keyfile.masterKek)
+    const dek = unwrapDek(new Uint8Array(wrappedDek), masterKek)
 
     const blobJson = JSON.parse(encryptedRefresh) as {
       ciphertext: number[]
@@ -147,7 +146,7 @@ export class DeviceTokenStore {
       value: decrypt(blob, dek),
       rotate: (refreshToken) => {
         if (this.generation === generation && this.getDeviceId() === deviceId) {
-          this.setRefreshTokenWithKek(refreshToken, keyfile.masterKek)
+          this.setRefreshTokenWithKek(refreshToken, masterKek)
         }
       },
       setAccessToken: (accessToken) => {
@@ -185,7 +184,7 @@ export class DeviceTokenStore {
   }
 
   public setRefreshToken(refreshToken: string): void {
-    this.setRefreshTokenWithKek(refreshToken, readKeyfile(this.keyfilePath).masterKek)
+    this.setRefreshTokenWithKek(refreshToken, this.masterKek)
   }
 
   private setRefreshTokenWithKek(refreshToken: string, masterKek: Uint8Array): void {
@@ -208,7 +207,7 @@ export class DeviceTokenStore {
 
   private encryptRefreshToken(
     refreshToken: string,
-    masterKek = readKeyfile(this.keyfilePath).masterKek,
+    masterKek = this.masterKek,
   ): { blob: EncryptedBlob; wrappedDek: Uint8Array } {
     const dek = generateDek()
     return {

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -14,8 +14,11 @@ import { openSealedBox, publicKeyFromSeed, seal, sodiumReady } from "../sealed_b
 import {
   KeyfileCorrupted,
   KeyfileMissing,
+  KeyfileLocked,
   createKeyfile,
+  openKeyfile,
   readKeyfile,
+  type KeyProtector,
 } from "../keyfile"
 import {
   ScopedSecretResolver,
@@ -117,26 +120,26 @@ describe("keyfile — no regeneration on corrupt (security-critical)", () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
   it("createKeyfile bootstraps a valid 32-byte master KEK, readable afterward", () => {
-    const created = createKeyfile(path)
+    const created = createKeyfile(path, null)
     expect(created.masterKek.length).toBe(DEK_SIZE)
-    const read = readKeyfile(path)
+    const read = readKeyfile(path, null)
     expect(Buffer.from(read.masterKek).equals(Buffer.from(created.masterKek))).toBe(true)
   })
 
   it("readKeyfile throws KeyfileMissing when absent — never writes", () => {
-    expect(() => readKeyfile(path)).toThrow(KeyfileMissing)
+    expect(() => readKeyfile(path, null)).toThrow(KeyfileMissing)
   })
 
   it("corrupt keyfile throws KeyfileCorrupted and is NOT silently regenerated", () => {
     // First-run: seal-and-store a secret (wrap a DEK under the KEK) and remember its wrap.
-    const kf = createKeyfile(path)
+    const kf = createKeyfile(path, null)
     const storedWrap = Buffer.from(wrapDek(generateDek(), kf.masterKek))
 
     // An attacker/disk-fault corrupts the keyfile on disk.
     writeFileSync(path, "}{ not json at all", "utf-8")
 
     // Attempting to seal another secret must load the keyfile → loud throw.
-    expect(() => readKeyfile(path)).toThrow(KeyfileCorrupted)
+    expect(() => readKeyfile(path, null)).toThrow(KeyfileCorrupted)
 
     // The keyfile on disk is UNCHANGED (no auto-recover wrote a fresh KEK)...
     expect(readFileSync(path, "utf-8")).toBe("}{ not json at all")
@@ -145,13 +148,65 @@ describe("keyfile — no regeneration on corrupt (security-critical)", () => {
   })
 
   it("createKeyfile refuses to overwrite an existing keyfile", () => {
-    createKeyfile(path)
-    expect(() => createKeyfile(path)).toThrow(KeyfileCorrupted)
+    createKeyfile(path, null)
+    expect(() => createKeyfile(path, null)).toThrow(KeyfileCorrupted)
+  })
+
+  /** Stands in for `safeStorage`: reversible, and visibly not the plaintext. */
+  const protector: KeyProtector = {
+    encrypt: (plain) => Buffer.concat([Buffer.from("sealed:"), Buffer.from(plain.map((b) => b ^ 0x5a))]),
+    decrypt: (sealed) => {
+      if (!sealed.subarray(0, 7).equals(Buffer.from("sealed:"))) throw new Error("not sealed by this keychain")
+      return Buffer.from(sealed.subarray(7).map((b) => b ^ 0x5a))
+    },
+  }
+
+  it("seals the KEK with the OS keychain when one is available", () => {
+    const created = createKeyfile(path, protector)
+    const onDisk = readFileSync(path, "utf-8")
+    expect(onDisk).not.toContain(Buffer.from(created.masterKek).toString("base64"))
+    expect(JSON.parse(onDisk)).toMatchObject({ version: 2 })
+    expect(Buffer.from(readKeyfile(path, protector).masterKek).equals(Buffer.from(created.masterKek))).toBe(true)
+  })
+
+  it("seals an existing plaintext keyfile in place, keeping the same KEK", () => {
+    const created = createKeyfile(path, null)
+    const plaintextBase64 = Buffer.from(created.masterKek).toString("base64")
+    expect(readFileSync(path, "utf-8")).toContain(plaintextBase64)
+
+    const read = readKeyfile(path, protector)
+
+    expect(Buffer.from(read.masterKek).equals(Buffer.from(created.masterKek))).toBe(true)
+    const onDisk = readFileSync(path, "utf-8")
+    expect(onDisk).not.toContain(plaintextBase64)
+    expect(JSON.parse(onDisk)).toMatchObject({ version: 2 })
+    expect(Buffer.from(readKeyfile(path, protector).masterKek).equals(Buffer.from(created.masterKek))).toBe(true)
+  })
+
+  it("a sealed keyfile the keychain cannot open is locked, not corrupt, and never rewritten", () => {
+    createKeyfile(path, protector)
+    const before = readFileSync(path, "utf-8")
+    const otherKeychain: KeyProtector = { encrypt: (b) => b, decrypt: () => { throw new Error("wrong user") } }
+
+    expect(() => readKeyfile(path, null)).toThrow(KeyfileLocked)
+    expect(() => readKeyfile(path, otherKeychain)).toThrow(KeyfileLocked)
+    expect(readFileSync(path, "utf-8")).toBe(before)
+  })
+
+  it("openKeyfile creates a keyfile only when no sealed secret would be orphaned", () => {
+    expect(() => openKeyfile(path, null, 3)).toThrow(KeyfileMissing)
+    expect(() => openKeyfile(path, null, 3)).toThrow(/3 encrypted secret/)
+    expect(existsSync(path)).toBe(false)
+
+    const created = openKeyfile(path, null, 0)
+    expect(existsSync(path)).toBe(true)
+    // Present from here on: read, never re-created, whatever the database holds.
+    expect(Buffer.from(openKeyfile(path, null, 3).masterKek).equals(Buffer.from(created.masterKek))).toBe(true)
   })
 
   it("rejects a wrong-length master KEK as corrupt", () => {
     writeFileSync(path, JSON.stringify({ version: 1, masterKekBase64: "AAAA" }), "utf-8")
-    expect(() => readKeyfile(path)).toThrow(KeyfileCorrupted)
+    expect(() => readKeyfile(path, null)).toThrow(KeyfileCorrupted)
   })
 })
 

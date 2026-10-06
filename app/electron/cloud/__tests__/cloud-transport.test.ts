@@ -7,7 +7,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import { initDatabase, type KVStore, type Database } from "../../../core/db"
 import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, type CloudOutboxRow } from "../../../core/repositories"
 import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
-import { createKeyfile, readKeyfile } from "../../../core/secrets/keyfile"
+import { createKeyfile } from "../../../core/secrets/keyfile"
 import {
   EnvelopeAuthFailed,
   WorkspaceKeyMismatch,
@@ -38,7 +38,7 @@ const SECOND_CLOUD_WORKSPACE_ID = "01CLOUDWORKSPACE00000000001"
 describe("CloudSyncProvider", () => {
   let db: Database
   let store: KVStore
-  let keyfilePath: string
+  let masterKek: Uint8Array
   let tempDir: string
   let tokenStore: DeviceTokenStore
   let client: CloudClient
@@ -46,8 +46,7 @@ describe("CloudSyncProvider", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "cloud-transport-test-"))
-    keyfilePath = join(tempDir, "keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "keyfile.json"), null).masterKek
 
     const dbPath = join(tempDir, "test.db")
     const initialized = initDatabase({ databasePath: dbPath })
@@ -60,7 +59,7 @@ describe("CloudSyncProvider", () => {
       [WORKSPACE_ID, "Test Workspace", "test-workspace", "cloud", "bi-directional", "{}"],
     )
 
-    tokenStore = new DeviceTokenStore(store, keyfilePath)
+    tokenStore = new DeviceTokenStore(store, masterKek)
     tokenStore.setTokens("device-123", "access-token-xyz", "refresh-token-abc")
     new CloudSyncRepository(store).upsertDevice({
       deviceId: "device-123",
@@ -149,7 +148,7 @@ describe("CloudSyncProvider", () => {
         ["cloud.access_token", "legacy-session-canary"],
       )
 
-      const restartedStore = new DeviceTokenStore(store, keyfilePath)
+      const restartedStore = new DeviceTokenStore(store, masterKek)
 
       expect(restartedStore.getAccessToken()).toBeUndefined()
       expect(store.get("SELECT value FROM app_settings WHERE key = 'cloud.access_token'")).toBeUndefined()
@@ -170,10 +169,9 @@ describe("CloudSyncProvider", () => {
 
     it("installs encrypted device credentials atomically inside an outer transaction", () => {
       const repository = new CloudSyncRepository(store)
-      const atomicTokenStore = new DeviceTokenStore(repository, keyfilePath)
+      const atomicTokenStore = new DeviceTokenStore(repository, masterKek)
       const transactionSpy = vi.spyOn(repository, "transaction")
       const dek = generateDek()
-      const masterKek = readKeyfile(keyfilePath).masterKek
       const encryptedRefresh = encrypt("atomic-refresh", dek, "kek-desktop-link")
       const wrappedDek = wrapDek(dek, masterKek)
 
@@ -1020,7 +1018,7 @@ describe("CloudSyncProvider", () => {
     })
 
     it("reacquires an app session from encrypted refresh material after restart", async () => {
-      const restartedTokenStore = new DeviceTokenStore(store, keyfilePath)
+      const restartedTokenStore = new DeviceTokenStore(store, masterKek)
       const restartedClient = new CloudClient({
         baseUrl: API_BASE,
         clientVersion: "1.0.0",

@@ -1,6 +1,7 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
+import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
 import { emitRunProgress, isTrustedSender } from "../core/ipc/register"
@@ -18,7 +19,8 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../core/repositories"
-import { createKeyfile, readKeyfile, keyfileExists } from "../core/secrets/keyfile"
+import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
+import { osKeyProtector } from "./key_protector"
 import {
   AgentService,
   ScopeResolver,
@@ -324,6 +326,44 @@ async function createWindow(): Promise<void> {
   }
 }
 
+/**
+ * Open the secrets keyfile, or ask the user what to do when the secrets in the
+ * database cannot be opened: the keyfile is missing (a database restored
+ * without it), or the OS keychain that seals it will not open it (locked, or a
+ * data folder copied from another machine or user). Quitting (the default)
+ * changes nothing, so the keyfile can still be put back or the keychain
+ * unlocked; the other choice deletes the secrets that can no longer be opened
+ * and starts with a new keyfile — an unopenable one is set aside, never
+ * deleted. Returns `null` when the user chose to quit.
+ */
+function openKeyfileAtStartup(keyfilePath: string, secrets: SecretRepository): Keyfile | null {
+  const os = osKeyProtector()
+  if (os.protector === null) {
+    bootstrapLog.warn(`secrets keyfile is stored unencrypted: ${os.reason}`)
+  }
+  try {
+    return openKeyfile(keyfilePath, os.protector, secrets.countSealed())
+  } catch (error) {
+    if (!(error instanceof KeyfileMissing || error instanceof KeyfileLocked)) throw error
+    const choice = dialog.showMessageBoxSync({
+      type: "error",
+      title: "APIWeave secrets key is missing",
+      message: "Your stored secrets cannot be decrypted",
+      detail: `${error.message}\n\nData folder: ${app.getPath("userData")}`,
+      buttons: ["Quit", "Delete stored secrets and continue"],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    if (choice !== 1) return null
+    const deleted = secrets.deleteAll()
+    if (error instanceof KeyfileLocked) {
+      renameSync(keyfilePath, `${keyfilePath}.unopenable-${Date.now()}`)
+    }
+    bootstrapLog.warn(`${error.name}: deleted ${deleted} undecryptable secret(s) at the user's request`)
+    return openKeyfile(keyfilePath, os.protector, 0)
+  }
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 bootstrapLog.info(`single-instance-lock=${hasSingleInstanceLock}`)
 
@@ -403,14 +443,22 @@ if (!hasSingleInstanceLock) {
     const sync = new SwitchableSyncProvider(new LocalOnlySyncProvider())
 
     // Keyfile: the persisted master KEK that deterministically derives the
-    // sealed-box private seed. Seeded once on first run; read thereafter. Lose
-    // it and every stored secret is orphaned (intentional — never auto-regenerate).
+    // sealed-box private seed. Seeded once on first run; read thereafter, and
+    // sealed by the OS keychain where there is one. Lose it and every stored
+    // secret is orphaned (intentional — never auto-regenerate).
     const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
-    const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
+    const keyfile = openKeyfileAtStartup(keyfilePath, secretStore)
+    if (keyfile === null) {
+      bootstrapLog.info("keyfile missing with stored secrets; user chose to quit")
+      database.close()
+      database = null
+      app.exit(1)
+      return
+    }
     const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, environments, keyfile.masterKek)
     const cloud = new DesktopCloudSyncControl({
       store: database.kvStore,
-      keyfilePath,
+      masterKek: keyfile.masterKek,
       defaults: cloudDefaults(app.getVersion()),
       setSyncProviderTarget: (provider) => sync.setTarget(provider),
       onWorkflowChanged: onRawWorkflowWrite,

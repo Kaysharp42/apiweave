@@ -50,14 +50,14 @@ Set only the cloud entry URL. The desktop fetches the environment configuration 
 
 ### Mistake 2: Copying only the database to a new machine
 
-The keyfile and the database must travel together. If you copy `apiweave.db` to a new machine and forget `keyfile.json`, the secret store is unreadable. Copy the whole user data directory, or re-enter the secrets through the write flow.
+Secrets do not move between machines. `keyfile.json` is sealed by the operating system keychain of the user who created it, so on another machine (or another OS user) it cannot be opened even when copied, and APIWeave asks at startup whether to quit or to delete the secrets it cannot open. Copy the user data directory, then re-enter the secrets through the write flow. Restoring a backup on the same machine works only when `keyfile.json` comes from the same backup as `apiweave.db`.
 
 ## Troubleshooting
 
 - **If development changes do not appear**, stop and restart `npm run dev`. The Vite renderer reloads browser changes, while Electron main-process changes require a restart.
 - **If the main process refuses to start with a database error**, the user data directory is not writable. Check permissions and free disk space.
 - **If an MCP client cannot connect**, enable the bridge in **Settings** and copy the live loopback URL from the **MCP** panel. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
-- **If a stored secret value seems unreadable after moving the database to a new machine**, the keyfile (`keyfile.json`) from the source machine is not on the destination. Copy the keyfile too, or re-enter the secrets through the write flow.
+- **If APIWeave says your stored secrets cannot be decrypted at startup**, `keyfile.json` is missing or the operating system keychain will not open it. Quit, then restore `keyfile.json` from the same backup as the database, or unlock the keychain (on Linux, start GNOME Keyring or KWallet). After moving to a new machine, choose to delete the stored secrets and re-enter them.
 
 ## Related
 

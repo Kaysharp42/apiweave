@@ -20,12 +20,14 @@ export {
 } from "./sealed_box"
 export {
   KeyfileCorrupted,
+  KeyfileLocked,
   KeyfileMissing,
   createKeyfile,
   keyfileExists,
+  openKeyfile,
   readKeyfile,
 } from "./keyfile"
-export type { Keyfile } from "./keyfile"
+export type { Keyfile, KeyProtector } from "./keyfile"
 export { ScopedSecretResolver } from "./scoped_secret_resolver"
 export type {
   ResolvedSecret,

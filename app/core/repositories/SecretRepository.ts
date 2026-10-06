@@ -111,6 +111,21 @@ export class SecretRepository implements SecretWriteStore {
     return new Uint8Array(row.sealed)
   }
 
+  /** How many secrets hold sealed values — what a lost keyfile would orphan. */
+  public countSealed(): number {
+    return this.store.get<{ n: number }>("SELECT COUNT(*) AS n FROM secrets_metadata WHERE sealed IS NOT NULL")?.n ?? 0
+  }
+
+  /**
+   * Delete every secret, in every scope. Only for the startup path where the
+   * keyfile that opens them is gone and the user chose to start over: the
+   * values are unrecoverable by then, and names that still resolve would look
+   * like secrets that are set.
+   */
+  public deleteAll(): number {
+    return this.store.delete("DELETE FROM secrets_metadata").changes
+  }
+
   private getById(id: string): SecretMetadata | undefined {
     const row = this.store.get<SecretRow>(`SELECT ${COLUMNS} FROM secrets_metadata WHERE id = ?`, [id])
     return row === undefined ? undefined : rowToMetadata(row)

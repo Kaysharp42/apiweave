@@ -155,7 +155,7 @@ Set the URL during environment creation or edit it later. The URL must be reacha
 - **If an inherited variable does not reach the run**, check the chain in the environment editor: only variables shown in the muted **Inherited Variables** rows are in the effective set, and a name you also define locally is overridden by your own value.
 - **If a base environment is missing from the picker**, it is either this environment itself or an environment whose own chain leads back here. Both would form a cycle and are excluded on purpose.
 - **If an inherited variable resolves on one machine but not another**, the second machine received the environment through Cloud sync without the base link, which does not sync. Define the value on the environment directly.
-- **If a stored secret value seems unreadable after copying the database to a new machine**, the keyfile from the source machine is not on the destination. Copy `keyfile.json` from the source's user data directory too, or re-enter the secrets through the write flow.
+- **If APIWeave says your stored secrets cannot be decrypted at startup**, `keyfile.json` is missing or the operating system keychain that seals it will not open it. Restore `keyfile.json` from the same backup as the database, or unlock the keychain. Secrets do not move to another machine: there, choose to delete them and re-enter them through the write flow.
 
 ## Related
 
