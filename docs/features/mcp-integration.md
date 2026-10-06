@@ -19,6 +19,16 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
   It is intentionally smaller than the renderer's complete IPC surface.
 - Secret tools expose names, scopes, and resolution metadata only. They never
   return plaintext or ciphertext and do not allow secret mutation over MCP.
+- A run an agent starts that would send stored secrets does not proceed until
+  you approve it. APIWeave shows a native dialog naming the agent (as it
+  reports itself), the workflow, each secret, and where the requests go —
+  the host when the URL is known before the run, the URL as written when it is
+  built during the run. **Allow once** lets that one run continue; **Deny**, or
+  no answer within two minutes, fails it before any request is sent, and the
+  agent sees `deniedByUser: true`. The run executes the workflows as they were
+  when you were asked: an edit made while the dialog is open does not change
+  where an approved secret goes. Runs you start yourself, and agent runs that
+  use no secret, are not affected.
 - Run tools return metadata-only projections: request and response bodies,
   headers, cookies, URLs, variable values, and assertion actual values stay in
   the local desktop UI. The one exception is `runs_getNodeResult`, which returns

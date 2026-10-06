@@ -78,6 +78,7 @@ import { UpdateManager } from "./updater"
 import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
+import { AGENT_RUN_APPROVAL_TIMEOUT_MS, agentRunApprovalText } from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
@@ -506,6 +507,27 @@ if (!hasSingleInstanceLock) {
       resolveSecret: (name, chain) =>
         secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
       emitProgress: (runId, event) => runEvents.publish(runId, event),
+      approveAgentRun: async (request, signal) => {
+        const win = mainWindow
+        if (win === null || win.isDestroyed()) return false
+        if (!win.isFocused()) win.flashFrame(true)
+        const { message, detail } = agentRunApprovalText(request)
+        const { response } = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: "Allow an agent to use your secrets?",
+          message,
+          detail,
+          buttons: ["Deny", "Allow once"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+          // Closed as cancelled — a deny — on timeout or when the run is cancelled.
+          signal: AbortSignal.any([signal, AbortSignal.timeout(AGENT_RUN_APPROVAL_TIMEOUT_MS)]),
+        })
+        if (!win.isDestroyed()) win.flashFrame(false)
+        mcpLog.info(`agent run ${request.runId}: secrets ${response === 1 ? "allowed" : "denied"} by the user`)
+        return response === 1
+      },
     })
 
     const interrupted = scheduler.reconcileOnStartup()

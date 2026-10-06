@@ -2,6 +2,7 @@ import { RunSchema } from "@shared/zod-schemas"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
+import { AGENT_RUN_DENIED_ERROR } from "../runner/scheduler"
 
 /**
  * MCP run reads intentionally expose operational metadata only. The desktop UI
@@ -62,6 +63,10 @@ function projectRunHistoryRow(run: Run): Record<string, JsonValue> {
     completedAt: run.completedAt ?? null,
     duration: run.duration ?? null,
     hasError: Boolean(run.error || run.failureMessage),
+    // The one run-level outcome named outright: errors stay out of this
+    // projection, but an agent whose run was refused must be able to tell
+    // that from a run that failed on its own.
+    deniedByUser: run.error === AGENT_RUN_DENIED_ERROR,
     failedNodes,
     failedNodeCount: failedNodes.length,
     nodeCount: run.results.length,

@@ -91,6 +91,7 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
           // transport in `mcp/bridge.ts`, not by this shared registry.
           ...(waitMs !== undefined ? { waitMs } : {}),
           ...(operationId !== undefined ? { operationId } : {}),
+          ...(context?.agent !== undefined ? { agent: context.agent } : {}),
         },
         context?.signal !== undefined ? { signal: context.signal } : {},
       ),

@@ -57,7 +57,9 @@ node and follows edges. Nothing runs unless an edge leads to it.
    and edges by id; update replaces the whole graph and makes you re-send every
    node to change one field.
 6. **Only then \`runs_create\`.** A run sends real HTTP requests to a real
-   service. Everything above is free; a run is not.
+   service. Everything above is free; a run is not. A run that uses stored
+   secrets waits for the user to approve it in APIWeave; \`deniedByUser: true\`
+   means they refused — say so rather than retrying.
 7. **After a successful run, use \`assertion_suggest\`.** It reads a response
    that actually happened and returns rules with verified paths. That is a
    better starting point for assertions than writing them by hand — and the

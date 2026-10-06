@@ -44,9 +44,15 @@ export type HandlerRegistration<I extends z.ZodType, O extends z.ZodType> = {
   ) => Promise<ReadonlyResult<z.infer<O>>> | ReadonlyResult<z.infer<O>>
 }
 
-/** Per-request context threaded through dispatch — currently only cancellation. */
+/** Per-request context threaded through dispatch. */
 export type HandlerContext = {
   readonly signal?: AbortSignal
+  /**
+   * Set only by the MCP transport: the calling client's self-reported name.
+   * Its presence is what marks a call as agent-initiated — the renderer never
+   * sets it.
+   */
+  readonly agent?: string
 }
 
 /** A registered handler, read-only. Lets a second transport (MCP) reuse the same input schema + handler. */
@@ -200,7 +206,7 @@ export class IpcRouter {
    */
   async dispatch(
     request: InvokeRequest,
-    opts?: { readonly redactSecrets?: boolean; readonly signal?: AbortSignal },
+    opts?: { readonly redactSecrets?: boolean; readonly signal?: AbortSignal; readonly agent?: string },
   ): Promise<ContractResult<unknown>> {
     const handler = this.handlers.get(key(request.domain, request.action))
     if (handler === undefined) {
@@ -232,10 +238,10 @@ export class IpcRouter {
 
     let output: unknown
     try {
-      output = await handler.handle(
-        parsed.data,
-        opts?.signal !== undefined ? { signal: opts.signal } : undefined,
-      )
+      output = await handler.handle(parsed.data, {
+        ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
+        ...(opts?.agent !== undefined ? { agent: opts.agent } : {}),
+      })
     } catch (error) {
       // An aborted wait is client cancellation, not a server bug: unwind without
       // the internal-error log line. The run itself keeps going — cancel-wait

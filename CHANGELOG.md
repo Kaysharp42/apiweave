@@ -13,6 +13,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **An agent can no longer send your secrets anywhere without asking.** A
+  local agent could write a workflow that sends any stored secret to a host it
+  controls, then run it over MCP. A run an agent starts that would send secrets
+  now waits for you to approve it in a native dialog that names the agent, the
+  workflow, the secrets and the destinations. Deny, or no answer within two
+  minutes, fails the run before any request, and the agent sees
+  `deniedByUser: true`. A run also now executes the Call Workflow targets as
+  they were when it started.
 - **The secrets key is sealed by the OS keychain.** `keyfile.json` held the
   master key in plaintext beside the database. It is now sealed with the
   operating system keychain (Keychain, DPAPI, GNOME Keyring or KWallet), and an

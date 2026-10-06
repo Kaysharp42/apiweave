@@ -31,7 +31,7 @@ import type { SecretMetadata } from "../../secrets/scoped_secret_resolver"
 import { IpcRouter } from "../../ipc/router"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { RunEventBroker } from "../../runner/run_event_broker"
-import { RunScheduler } from "../../runner/scheduler"
+import { RunScheduler, type AgentRunApprovalRequest } from "../../runner/scheduler"
 import { SafeHttp } from "../../runner/safe_http"
 import { DynamicFunctions } from "../../runner/dynamic_functions"
 import { FixedClockProvider, SeededRandomProvider } from "../../runner/harness/providers"
@@ -76,6 +76,7 @@ let workflowRepository: WorkflowRepository
 let runService: RunService
 let broker: RunEventBroker
 let scheduler: RunScheduler | null = null
+let approvals: AgentRunApprovalRequest[] = []
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -108,7 +109,14 @@ beforeEach(() => {
     clock,
     rng,
     emitProgress: (runId, event) => broker.publish(runId, event),
+    resolveSecret: async (name) =>
+      name === "API_KEY" ? { plaintext: "s3cr3t", scopeType: "workspace" } : { plaintext: null, scopeType: null },
+    approveAgentRun: async (request) => {
+      approvals.push(request)
+      return false
+    },
   })
+  approvals = []
   const workflowService = new WorkflowService(workflowRepository, sync, permissions, scopeResolver, collections, environments)
   runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, broker)
   const deps: HandlerDeps = {
@@ -667,4 +675,50 @@ describe("Phase 4 — host keeps in-flight waits past idle expiry", () => {
     }
     expect(host.getSessionCount()).toBe(0)
   }, 20_000)
+})
+
+describe("H10 — an agent's run that would send secrets needs the user's approval", () => {
+  function seedSecretWorkflow(workspaceId: string): string {
+    return workflowRepository.create({
+      workspaceId,
+      name: "uses-secret",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "http_1", type: "http-request", position: { x: 1, y: 0 }, config: { method: "GET", url: "http://127.0.0.1:9/x", headers: [{ key: "X-Key", value: "{{secrets.API_KEY}}" }] } },
+      ] as never,
+      edges: [{ edgeId: "e1", source: "start", target: "http_1" }] as never,
+    }).workflowId
+  }
+
+  it("names the MCP client in the prompt and reports a denial as deniedByUser", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const workflowId = seedSecretWorkflow(workspace.workspaceId)
+    const client = await connectClient()
+
+    const result = await client.callTool({
+      name: "runs_create",
+      arguments: { workspaceId: workspace.workspaceId, workflowId, waitMs: 5000 },
+    })
+    const run = JSON.parse(textOf(result as { content: Array<{ type: string; text?: string }> })) as Record<string, unknown>
+
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0]).toMatchObject({ agent: "test-client", workflowName: "uses-secret", secretNames: ["API_KEY"], destinations: ["127.0.0.1:9"] })
+    expect(run).toMatchObject({ status: "failed", terminal: true, deniedByUser: true })
+    await client.close()
+  })
+
+  it("never asks about a run the user started from the app", async () => {
+    const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme", isPersonal: false })
+    const workflowId = seedSecretWorkflow(workspace.workspaceId)
+
+    const run = await dispatchOk<{ status: string; error?: string | null }>("runs", "create", {
+      workspaceId: workspace.workspaceId,
+      workflowId,
+      waitMs: 5000,
+    })
+
+    expect(approvals).toEqual([])
+    expect(run.status).toBe("failed") // port 9 refuses: the request was attempted
+    expect(run.error).not.toContain("not allowed to send secrets")
+  })
 })
