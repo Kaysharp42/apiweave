@@ -31,6 +31,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the workflow, and the editor stays open.
 - **A crashed window can be recovered.** If the renderer process dies, a dialog
   offers **Reload** or **Quit** instead of leaving a blank window.
+- **A render error no longer blanks the window.** A view that fails to draw
+  (a page, the canvas, or the response inspector in the node editor) is replaced
+  by a message with the error and **Try again**, **Reload** and **Copy error
+  details**; the rest of the app keeps working, and the error is written to the
+  log.
+- **The JSON editor no longer throws away edits.** Escape, a click outside and
+  the close button used to discard unapplied JSON. With changed text they now
+  ask **Apply**, **Discard** or **Keep editing**.
 
 ### Added
 

@@ -4,12 +4,14 @@ import {
   useCallback,
   useRef,
   useMemo,
+  useState,
   Fragment,
 } from "react";
 import { X, Copy, Check, AlertTriangle, Sparkles, Pencil } from "lucide-react";
 import { Dialog, Transition, TransitionChild } from "@headlessui/react";
 import { Button } from "./atoms/Button";
 import { BeautifyButton } from "./molecules/BeautifyButton";
+import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import type { WorkflowJsonEditorProps } from "../types";
 
 // Mirrors the key-name/structural-auth redaction rules in
@@ -701,11 +703,19 @@ export function WorkflowJsonEditor({
     }
   }, [value, onApply]);
 
+  // Escape, an outside click and the close button all land here. Unlike the
+  // node editor, a raw JSON draft cannot simply be applied on the way out —
+  // it may not parse — so changed text asks first instead of vanishing.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const requestClose = useCallback(() => {
+    if (value === initialValue) onClose();
+    else setConfirmingClose(true);
+  }, [value, initialValue, onClose]);
+
+  // Escape is left to the Dialog, which routes it through `requestClose` and
+  // lets the nested confirmation take it first while that is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         handleApply();
@@ -713,13 +723,13 @@ export function WorkflowJsonEditor({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, handleApply]);
+  }, [handleApply]);
 
   const lineCount = value.split("\n").length;
 
   return (
     <Transition key={initialValue} show={open} as={Fragment}>
-      <Dialog onClose={onClose} className="relative z-50">
+      <Dialog onClose={requestClose} className="relative z-50">
         <TransitionChild
           enter="ease-out duration-200"
           enterFrom="opacity-0"
@@ -816,7 +826,7 @@ export function WorkflowJsonEditor({
                     </Button>
                   )}
                   <Button
-                    onClick={onClose}
+                    onClick={requestClose}
                     variant="ghost"
                     size="sm"
                     className="!p-2 !min-w-0"
@@ -933,6 +943,19 @@ export function WorkflowJsonEditor({
                   </>
                 )}
               </div>
+
+              <ConfirmDialog
+                open={confirmingClose}
+                onClose={() => setConfirmingClose(false)}
+                onConfirm={handleApply}
+                onSecondary={onClose}
+                title="Apply your JSON changes?"
+                message="The workflow JSON has changes that have not been applied. Invalid JSON stays open with the error shown."
+                confirmLabel="Apply"
+                secondaryLabel="Discard"
+                cancelLabel="Keep editing"
+                intent="warning"
+              />
             </Dialog.Panel>
           </TransitionChild>
         </div>
