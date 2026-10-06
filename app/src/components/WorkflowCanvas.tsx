@@ -1052,9 +1052,12 @@ export function WorkflowCanvas({
 
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
-      setNodes((nds) =>
-        nds.map((n) => (n.id === updatedNode.id ? updatedNode : n)),
-      );
+      const replace = (nds: CanvasNode[]) =>
+        nds.map((n) => (n.id === updatedNode.id ? updatedNode : n));
+      // Ctrl+S in the node editor saves right after applying, before the
+      // re-render that refreshes `nodesRef` — which is what the save reads.
+      nodesRef.current = replace(nodesRef.current);
+      setNodes(replace);
     },
     [setNodes],
   );
@@ -1927,6 +1930,7 @@ export function WorkflowCanvas({
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
+          onSaveWorkflow={() => void saveWorkflow(false)}
           workspaceId={scope.workspaceId ?? ""}
           currentWorkflowId={workflowId ?? ""}
         />

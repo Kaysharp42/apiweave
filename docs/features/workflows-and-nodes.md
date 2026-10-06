@@ -234,6 +234,8 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — closing its tab or quitting asks whether to **Save**, **Discard**, or **Cancel**. Only the tab whose canvas is open can hold unsaved changes, so it is the only one asked about. With auto-save off, switching to another tab still discards the open tab's unsaved edits; save before switching.
 
+The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
+
 Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
 
 `continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going. Individual HTTP Request and Assertion nodes can override the workflow setting.
@@ -243,7 +245,7 @@ Resume-after-failure (run from failed node, rerun failed branches) is planned bu
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | New workflow |
-| `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms) |
+| `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms). Inside the node editor, applies its edits first |
 | `Ctrl+R` or `F5` | Run the active workflow |
 | `Ctrl+J` | Open the JSON editor |
 | `Ctrl+C` | Copy the selected node (canvas context only) |

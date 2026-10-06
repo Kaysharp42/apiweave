@@ -124,12 +124,16 @@ export function NodeModal({
   node,
   onClose,
   onSave,
+  onSaveWorkflow,
   onPrevious,
   onNext,
   workspaceId,
   currentWorkflowId,
 }: NodeModalProps) {
   const workingDataRef = useRef<Record<string, unknown>>({ ...node.data });
+  // The draft as last applied to the node. Every edit replaces
+  // `workingDataRef.current`, so a different object means unapplied edits.
+  const appliedDataRef = useRef(workingDataRef.current);
   const nameLabelRef = useRef<HTMLElement | null>(null);
   const [activeTab, setActiveTab] = useState<NodeModalHttpTabKey>("params");
   const [sseActiveTab, setSseActiveTab] = useState<NodeModalSseTabKey>("endpoint");
@@ -148,6 +152,7 @@ export function NodeModal({
   useEffect(() => {
     if (!open) return;
     workingDataRef.current = { ...node.data };
+    appliedDataRef.current = workingDataRef.current;
     setActiveTab("params");
     setSseActiveTab("endpoint");
     setAssertionActiveTab("rules");
@@ -160,16 +165,24 @@ export function NodeModal({
     );
   }, [node.id, open]);
 
-  const handleClose = () => {
-    onClose();
-  };
-
-  const handleSave = () => {
+  const applyDraft = () => {
+    if (workingDataRef.current === appliedDataRef.current) return;
+    appliedDataRef.current = workingDataRef.current;
     onSave({
       ...node,
       data: workingDataRef.current as unknown as typeof node.data,
     });
-    handleClose();
+  };
+
+  // Escape, an outside click and the close button keep the draft, the way
+  // Previous/Next already do; only Cancel throws it away.
+  const handleClose = () => {
+    applyDraft();
+    onClose();
+  };
+
+  const handleCancel = () => {
+    onClose();
   };
 
   const handleLabelChange = (newLabel: string) => {
@@ -178,12 +191,25 @@ export function NodeModal({
 
   const navigate = (callback: (() => void) | undefined) => {
     if (!callback) return;
-    onSave({
-      ...node,
-      data: workingDataRef.current as unknown as typeof node.data,
-    });
+    applyDraft();
     callback();
   };
+
+  // Ctrl+S / Cmd+S works inside the editor too, including in its text
+  // fields: apply the draft, then run the canvas's normal explicit save.
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
+      if (event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      applyDraft();
+      onSaveWorkflow();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   useEffect(() => {
     if (!open || (!onPrevious && !onNext)) return;
@@ -468,8 +494,8 @@ export function NodeModal({
       }}
       onLabelChange={handleLabelChange}
       onClose={handleClose}
-      onCancel={handleClose}
-      onSave={handleSave}
+      onCancel={handleCancel}
+      onSave={handleClose}
       {...(onPrevious ? { onPrevious: () => navigate(onPrevious) } : {})}
       {...(onNext ? { onNext: () => navigate(onNext) } : {})}
       initialFocus={nameLabelRef}

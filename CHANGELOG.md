@@ -24,6 +24,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   instead of being dropped. Closing a tab or quitting with changes that are still
   unsaved (auto-save off, or a failed save) now asks **Save**, **Discard** or
   **Cancel** instead of discarding them silently.
+- **The node editor no longer throws away edits.** Escape, a click outside the
+  editor and its close button now keep the edits, as Previous and Next already
+  did; only **Cancel** discards them. `Ctrl+S` (`Cmd+S` on macOS) inside the
+  editor, including in its text fields, applies the edits to the node and saves
+  the workflow, and the editor stays open.
 - **A crashed window can be recovered.** If the renderer process dies, a dialog
   offers **Reload** or **Quit** instead of leaving a blank window.
 
