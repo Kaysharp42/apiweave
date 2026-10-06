@@ -9,6 +9,31 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **A failed start no longer leaves a dead process behind.** When startup fails
+  before the window opens (a database from a newer build, a failed migration, an
+  unreadable keyfile), APIWeave shows an error naming the cause, the log file and
+  the data folder, then exits. Previously the process stayed running without a
+  window and held the single-instance lock, so every relaunch silently did
+  nothing.
+- **A crashed window can be recovered.** If the renderer process dies, a dialog
+  offers **Reload** or **Quit** instead of leaving a blank window.
+
+### Added
+
+- **Crash capture in the log.** Uncaught exceptions and unhandled rejections in
+  the main process, renderer and child-process crashes (including the agent PTY
+  host), failed loads and unresponsive windows are recorded in the daily log
+  file, and each session's log opens with the app, Electron and OS versions.
+
+### Removed
+
+- The renderer's startup gate, left over from the retired HTTP backend. Its
+  spinner never showed and its error screen was unreachable.
+
 ## [0.11.0] — 2026-09-23
 
 ### Added

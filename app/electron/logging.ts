@@ -1,5 +1,6 @@
 import { app, shell } from "electron"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import log from "electron-log/main"
 import type { Logger } from "@shared/types/Logger"
@@ -171,6 +172,18 @@ export function initLogging(): void {
       log.scope(name)[level](message, ...data)
     },
   })
+
+  // Crash capture, from electron-log rather than hand-rolled listeners:
+  // uncaughtException / unhandledRejection in main (an uncaught exception
+  // still gets Electron's usual error box), plus render-process-gone,
+  // child-process-gone (the PTY host is a utility process), did-fail-load and
+  // unresponsive for every window.
+  log.errorHandler.startCatching()
+  log.eventLogger.startLogging({ scope: "events" })
+  // Every session opens with the facts a crash report is useless without.
+  log.scope("bootstrap").info(
+    `APIWeave ${app.getVersion()} electron=${process.versions.electron} os=${process.platform} ${os.release()} ${process.arch}`,
+  )
 
   void app.whenReady().then(() => {
     sweepExpiredLogs()

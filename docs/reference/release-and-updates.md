@@ -64,7 +64,7 @@ cd app
 $env:APIWEAVE_DEV_UPDATES = "1"; npm run dev
 ```
 
-Then open **Settings → Updates** and use **Check for updates**. Watch `main.log` (the **Show update log** link in that panel reveals it) for the provider request, the resolved file and the sha512 result.
+Then open **Settings → Updates** and use **Check for updates**. Watch the day's log file (the **Show update log** link in that panel reveals it) for the provider request, the resolved file and the sha512 result.
 
 Two things to know before you read the result:
 
@@ -123,13 +123,13 @@ Neither lever repairs an install that already updated. Bump the patch version, t
 
 ## Reading the log
 
-`autoUpdater.logger` is electron-log, scoped `[updater]`. The file rotates at 1 MiB into `main.old.log`.
+`autoUpdater.logger` is electron-log, scoped `[updater]`. There is one file per day; a day past 10 MiB splits into timestamped chunks, and files older than 14 days are deleted.
 
 | OS | Path |
 | --- | --- |
-| Windows | `%APPDATA%\APIWeave\logs\main.log` |
-| macOS | `~/Library/Logs/APIWeave/main.log` |
-| Linux | `~/.config/APIWeave/logs/main.log` |
+| Windows | `%APPDATA%\APIWeave\logs\apiweave-main-YYYY-MM-DD.log` |
+| macOS | `~/Library/Logs/APIWeave/apiweave-main-YYYY-MM-DD.log` |
+| Linux | `~/.config/APIWeave/logs/apiweave-main-YYYY-MM-DD.log` |
 
 **Settings → Updates → Show update log** reveals the file in the OS file manager. The file transport is pinned to `info`, which keeps electron-updater's per-byte-range debug chatter out while still recording every check, resolution, download and error.
 

@@ -123,7 +123,7 @@ Which of those the app can actually carry out depends on the platform:
 
 When there is something to act on — a release to download, or a downloaded update waiting on a restart — a dot appears on the **Settings** icon in the left navigation bar. A downloaded update also raises a banner across the top of the window with **Restart now** and **Later**.
 
-If an update does not behave, **Settings → Updates → Show update log** opens the file manager with `main.log` selected — every check, download and error the updater recorded. Attach it to a bug report.
+If an update does not behave, **Settings → Updates → Show update log** opens the file manager with today's log file (`apiweave-main-YYYY-MM-DD.log`) selected — every check, download and error the updater recorded. Attach it to a bug report.
 
 ## Build from Source (Contributors)
 
@@ -168,8 +168,7 @@ A quick checklist after first launch:
 | Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
 | Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
-| Main-process log (incl. updates) | `<logs>/main.log`, rotating into `main.old.log` at 1 MB |
-| Renderer log | The terminal that launched Electron, or the OS console |
+| Log (main, renderer, updates, crashes) | `<logs>/apiweave-main-YYYY-MM-DD.log`, one file per day, kept 14 days |
 
 `<userData>` is the OS-standard user data path for the app:
 
@@ -193,6 +192,8 @@ Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the c
 - **If macOS Gatekeeper blocks the first launch**, right-click the app in **Applications** and choose **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 - **If the Linux AppImage fails with a FUSE error** (common on Arch), install FUSE 2 (`sudo pacman -S fuse2`) or run with `--appimage-extract-and-run`. The `.pacman` package has no such requirement.
 - **If the app opens to a blank window**, your GPU driver may not be compatible with the renderer's WebGL canvas. Launch with `apiweave --disable-gpu` to use the software rasterizer.
+- **If the app shows "APIWeave could not start"**, startup failed before a window could open — for example the database was written by a newer APIWeave build, or the keyfile is unreadable. The dialog names the error, the log file, and the data folder; the app then exits, so it can be relaunched once the cause is fixed. Attach the log file to a bug report.
+- **If the window crashes**, a dialog offers **Reload** or **Quit**. The crash reason is recorded in the log, along with any uncaught error in the main process; each session's log opens with the app version, Electron version, and OS.
 - **If the data directory is read-only**, the OS user account does not have write permission to the user data path. Check the OS-level permission on the path and the disk's free space.
 - **If the MCP bridge refuses to start**, another process is already bound to the preferred loopback port. APIWeave automatically selects a free fallback port; check the live URL in the **MCP** panel, or stop the conflicting process to reclaim `47271`.
 

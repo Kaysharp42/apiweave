@@ -1,5 +1,5 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
@@ -71,7 +71,8 @@ import {
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { getLogger } from "../core/logging/logger"
-import { initLogging, ipcLog, revealLogFile } from "./logging"
+import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
+import { startupFailureMessage } from "./startup_failure"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
@@ -222,11 +223,26 @@ async function createWindow(): Promise<void> {
     mainWindow = null
   })
 
-  win.webContents.on("did-fail-load", (_event, code, description, url) => {
-    rendererLog.error(`did-fail-load ${code} ${description} ${url}`)
-  })
+  // The crash itself is logged by electron-log's event logger (initLogging).
+  // Without this the window stays open on a blank page with nothing to click.
   win.webContents.on("render-process-gone", (_event, details) => {
-    rendererLog.error("render-process-gone", details)
+    if (details.reason === "clean-exit" || isQuitting || win.isDestroyed()) return
+    void dialog
+      .showMessageBox(win, {
+        type: "error",
+        message: "The APIWeave window crashed",
+        detail: `Reason: ${details.reason}. Changes made in the last moment before the crash may not have been saved.`,
+        buttons: ["Reload", "Quit"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0 && !win.isDestroyed()) {
+          win.reload()
+          return
+        }
+        app.quit()
+      })
   })
 
   // Never let the privileged app:// document navigate to attacker-controlled
@@ -833,6 +849,18 @@ if (!hasSingleInstanceLock) {
         void createWindow()
       }
     })
+  }).catch((error: unknown) => {
+    // Without this a throw above leaves a windowless process holding the
+    // single-instance lock, so every relaunch is silently rejected.
+    bootstrapLog.error("startup failed", error)
+    dialog.showErrorBox(
+      "APIWeave could not start",
+      startupFailureMessage(error, { logFile: logFilePath(), userData: app.getPath("userData") }),
+    )
+    database?.close()
+    database = null
+    // exit, not quit: no run or agent session can exist yet for before-quit to drain.
+    app.exit(1)
   })
 }
 
