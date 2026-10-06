@@ -8,12 +8,18 @@ import "./index.css";
 // @ts-expect-error - CSS module type declaration handled by Vite
 import "tippy.js/dist/tippy.css";
 import { isDesktopShell } from "./utils/isDesktopShell";
+import { desktop } from "./utils/apiweaveClient";
+import { confirmCloseAll } from "./stores/PendingEditsStore";
 
 // The desktop shell (frameless window) draws its own title bar and reserves
 // its height from the viewport via the .desktop-shell CSS in index.css. Web/
 // Docker builds have no injected runtime, so this is a no-op there.
 const isDesktop = isDesktopShell();
 if (isDesktop) document.documentElement.classList.add("desktop-shell");
+
+// Main asks before the window closes or the app quits. Registered here, outside
+// React, so it answers even when the tree failed to render.
+desktop.onCloseRequested(confirmCloseAll);
 
 // UpdateStatusProvider sits above the router and outside App so the one IPC
 // subscription survives navigation — the nav-bar dot, the ready-to-install

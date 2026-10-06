@@ -111,3 +111,14 @@ export const AGENT_WRITE_CHANNEL = "apiweave:agent-write"
  * and a promise resolving after mount would mean rebuilding the terminal.
  */
 export const SCREEN_READER_ARG = "--apiweave-screen-reader"
+
+/**
+ * The quit handshake, on the window bridge rather than the router so no local
+ * agent can drive it. Main asks the renderer before the window closes or the
+ * app quits; the renderer acks at once (so main can tell a live page from a
+ * hung one), settles its unsaved canvas — possibly by asking the user — and
+ * replies whether the close may go ahead.
+ */
+export const WINDOW_CLOSE_REQUEST_CHANNEL = "window:closeRequest"
+export const WINDOW_CLOSE_ACK_CHANNEL = "window:closeAck"
+export const WINDOW_CLOSE_REPLY_CHANNEL = "window:closeReply"

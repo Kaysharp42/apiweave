@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import useTabStore from "../stores/TabStore";
 
 interface UseAutoSaveParams {
@@ -10,7 +10,7 @@ interface UseAutoSaveParams {
   nodes: unknown[];
   edges: unknown[];
   workflowVariables: Record<string, unknown>;
-  saveWorkflow: (silent: boolean) => void;
+  saveWorkflow: (silent: boolean) => Promise<void>;
 }
 
 interface Snapshot {
@@ -34,8 +34,15 @@ export default function useAutoSave({
   edges,
   workflowVariables,
   saveWorkflow,
-}: UseAutoSaveParams): void {
+}: UseAutoSaveParams): () => Promise<void> {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // What the scheduled save will write, so a flush can advance the baseline.
+  const pendingSnapshotRef = useRef<Snapshot | null>(null);
+  const inFlightRef = useRef<Promise<void>>(Promise.resolve());
+  // Latest closure: a flush on unmount must save the latest canvas, not the
+  // one captured when the timer was scheduled.
+  const saveRef = useRef(saveWorkflow);
+  saveRef.current = saveWorkflow;
   const lastSnapshotRef = useRef<Snapshot>({
     nodes: null,
     edges: null,
@@ -117,7 +124,34 @@ export default function useAutoSave({
     lastSnapshotRef.current = currentSnapshotRef.current;
   }, [resetSnapshotKey]);
 
+  /**
+   * Sends the debounced save now instead of when its timer fires, and resolves
+   * once the latest auto-save (this one or one already in flight) settles. A
+   * no-op when nothing is pending, so it never adds a save of its own.
+   */
+  const flush = useCallback((): Promise<void> => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      if (pendingSnapshotRef.current) {
+        lastSnapshotRef.current = pendingSnapshotRef.current;
+      }
+      inFlightRef.current = saveRef.current(true);
+    }
+    return inFlightRef.current;
+  }, []);
+
   useEffect(() => {
+    // A dependency changed: drop the scheduled save without sending it. It is
+    // rescheduled below if the canvas is still ahead of the last save; if
+    // auto-save was just disabled (e.g. a run started) it stays dropped, and
+    // the snapshot stays at the last-saved state so re-enabling reschedules
+    // it instead of short-circuiting on the equality check.
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
     if (!autoSaveEnabled || !workflowId || !isHydrated) return;
 
     const lastSnapshot = lastSnapshotRef.current;
@@ -143,31 +177,14 @@ export default function useAutoSave({
       return;
     }
 
-    if (timerRef.current) clearTimeout(timerRef.current);
-
     useTabStore.getState().markDirty(workflowId);
 
-    // Only advance the persisted snapshot once the save actually fires. If the
-    // timer is cleared first (e.g. autosave disabled when a run starts), the
-    // snapshot stays at the last-saved state so re-enabling reschedules the
-    // save instead of short-circuiting on the equality check above.
-    const pending: Snapshot = {
+    pendingSnapshotRef.current = {
       nodes: nodesSig,
       edges: edgesSig,
       vars: workflowVariables,
     };
-    timerRef.current = setTimeout(() => {
-      saveWorkflow(true);
-      lastSnapshotRef.current = pending;
-      timerRef.current = null;
-    }, 700);
-
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
+    timerRef.current = setTimeout(() => void flush(), 700);
   }, [
     nodesSig,
     edgesSig,
@@ -175,6 +192,13 @@ export default function useAutoSave({
     autoSaveEnabled,
     workflowId,
     isHydrated,
-    saveWorkflow,
+    flush,
   ]);
+
+  // Unmount (tab switch, tab close, workspace switch) sends a pending save
+  // rather than dropping it — the canvas state it would have written is gone
+  // with the component.
+  useEffect(() => () => void flush(), [flush]);
+
+  return flush;
 }

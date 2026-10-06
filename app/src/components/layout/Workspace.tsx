@@ -16,6 +16,8 @@ import { Panel } from "../molecules/Panel";
 import { PanelTabs } from "../molecules/PanelTabs";
 import { IconButton } from "../atoms/IconButton";
 import useTabStore from "../../stores/TabStore";
+import { confirmCloseTabs } from "../../stores/PendingEditsStore";
+import { UnsavedChangesDialog } from "../organisms/UnsavedChangesDialog";
 import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import useSidebarStore from "../../stores/SidebarStore";
 import useNavigationStore from "../../stores/NavigationStore";
@@ -158,7 +160,10 @@ export function Workspace({ active = true }: WorkspaceProps) {
     enabled: active,
     onNewWorkflow: handleNewWorkflow,
     onCloseTab: () => {
-      if (activeTabId) closeTab(activeTabId);
+      if (!activeTabId) return;
+      void confirmCloseTabs([activeTabId]).then((ok) => {
+        if (ok) closeTab(activeTabId);
+      });
     },
     onNextTab: () => {
       if (workspaceId) activateNextTab(workspaceId);
@@ -262,6 +267,8 @@ export function Workspace({ active = true }: WorkspaceProps) {
           />
         )}
       </div>
+
+      <UnsavedChangesDialog />
 
       <KeyboardShortcutsHelp
         open={state.showShortcutsHelp}

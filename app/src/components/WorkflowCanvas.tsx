@@ -71,7 +71,10 @@ import useCanvasHistory from "../hooks/useCanvasHistory";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
-import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
+import useWorkflowLiveUpdates, {
+  canvasDiffersFromWorkflow,
+} from "../hooks/useWorkflowLiveUpdates";
+import { registerPendingEdits } from "../stores/PendingEditsStore";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
 import {
@@ -1431,7 +1434,7 @@ export function WorkflowCanvas({
 
   // ── Auto-save ────────────────────────────────────────────────────────
 
-  useAutoSave({
+  const flushAutoSave = useAutoSave({
     workflowId,
     autoSaveEnabled: autoSaveEnabled && !isRunning && !isSwaggerRefreshing,
     isHydrated,
@@ -1441,6 +1444,31 @@ export function WorkflowCanvas({
     resetSnapshotKey: hydrationVersionRef.current,
     saveWorkflow,
   });
+
+  // Closing this tab or quitting asks here first: a pending auto-save goes out,
+  // and anything still unsaved is put to the user. Compared against the tab's
+  // copy, which every successful save and applied snapshot refreshes.
+  useEffect(() => {
+    if (!workflowId) return;
+    return registerPendingEdits(workflowId, {
+      flush: flushAutoSave,
+      save: () => saveWorkflowRef.current?.(false) ?? Promise.resolve(),
+      isUnsaved: () => {
+        if (!isHydrated) return false;
+        const saved = useTabStore
+          .getState()
+          .tabs.find((t) => t.id === workflowId)?.workflow;
+        return saved
+          ? canvasDiffersFromWorkflow(
+              nodesRef.current,
+              edgesRef.current,
+              workflowVariablesRef.current,
+              saved,
+            )
+          : false;
+      },
+    });
+  }, [workflowId, isHydrated, flushAutoSave]);
 
   // ── Minimap & visual config ─────────────────────────────────────────
 

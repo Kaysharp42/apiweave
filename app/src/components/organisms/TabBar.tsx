@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { X, ChevronLeft, ChevronRight, Circle } from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
 import useTabStore from "../../stores/TabStore";
+import { confirmCloseTabs } from "../../stores/PendingEditsStore";
 import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { ContextMenuState } from "../../types/ContextMenuState";
@@ -43,6 +44,14 @@ export function TabBar() {
     scrollRef.current?.scrollBy({ left: dir * 160, behavior: "smooth" });
   };
 
+  // Every close goes through the unsaved-changes guard; only the canvas being
+  // closed is ever asked about, and Cancel leaves every tab open.
+  const requestClose = (ids: readonly string[], close: () => void) => {
+    void confirmCloseTabs(ids).then((ok) => {
+      if (ok) close();
+    });
+  };
+
   const handleContextMenu = (e: React.MouseEvent, tabId: string) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
@@ -58,7 +67,7 @@ export function TabBar() {
   const handleMouseDown = (e: React.MouseEvent, tabId: string) => {
     if (e.button === 1) {
       e.preventDefault();
-      closeTab(tabId);
+      requestClose([tabId], () => closeTab(tabId));
     }
   };
 
@@ -121,7 +130,7 @@ export function TabBar() {
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(tab.id);
+                  requestClose([tab.id], () => closeTab(tab.id));
                 }}
                 className={[
                   "px-1.5 rounded transition-colors self-center cursor-pointer flex-shrink-0",
@@ -158,7 +167,8 @@ export function TabBar() {
             type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
             onClick={() => {
-              closeTab(contextMenu.tabId);
+              const { tabId } = contextMenu;
+              requestClose([tabId], () => closeTab(tabId));
               setContextMenu(null);
             }}
           >
@@ -168,7 +178,11 @@ export function TabBar() {
             type="button"
             className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
             onClick={() => {
-              closeOthers(contextMenu.tabId);
+              const { tabId } = contextMenu;
+              requestClose(
+                tabs.filter((t) => t.id !== tabId).map((t) => t.id),
+                () => closeOthers(tabId),
+              );
               setContextMenu(null);
             }}
           >
@@ -181,7 +195,12 @@ export function TabBar() {
             onClick={() => {
               // Scoped: "Close All" closes this workspace's tabs, and leaves
               // the ones waiting in the other workspaces alone.
-              if (workspaceId !== null) closeAll(workspaceId);
+              if (workspaceId !== null) {
+                requestClose(
+                  tabs.map((t) => t.id),
+                  () => closeAll(workspaceId),
+                );
+              }
               setContextMenu(null);
             }}
           >

@@ -19,6 +19,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the data folder, then exits. Previously the process stayed running without a
   window and held the single-instance lock, so every relaunch silently did
   nothing.
+- **Recent edits are no longer lost on tab close or quit.** The pending 700 ms
+  auto-save is sent when a tab is switched or closed and before the app quits,
+  instead of being dropped. Closing a tab or quitting with changes that are still
+  unsaved (auto-save off, or a failed save) now asks **Save**, **Discard** or
+  **Cancel** instead of discarding them silently.
 - **A crashed window can be recovered.** If the renderer process dies, a dialog
   offers **Reload** or **Quit** instead of leaving a blank window.
 

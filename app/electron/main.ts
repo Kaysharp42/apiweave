@@ -67,12 +67,16 @@ import {
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
+  WINDOW_CLOSE_ACK_CHANNEL,
+  WINDOW_CLOSE_REPLY_CHANNEL,
+  WINDOW_CLOSE_REQUEST_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
+import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
@@ -128,6 +132,47 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * The window's side of the quit handshake. A direct `webContents` channel, not
+ * the router: only this window's own document may answer, and no MCP client can.
+ */
+function closeRequestTarget(win: BrowserWindow): CloseRequestTarget {
+  const contents = win.webContents
+  return {
+    alive: () => !win.isDestroyed() && !contents.isCrashed(),
+    request: () => contents.send(WINDOW_CLOSE_REQUEST_CHANNEL),
+    listen: ({ ack, reply, gone }) => {
+      const onAck = (event: Electron.IpcMainEvent): void => {
+        if (isTrustedSender(event)) ack()
+      }
+      const onReply = (event: Electron.IpcMainEvent, proceed: unknown): void => {
+        if (isTrustedSender(event)) reply(proceed === true)
+      }
+      contents.ipc.on(WINDOW_CLOSE_ACK_CHANNEL, onAck)
+      contents.ipc.on(WINDOW_CLOSE_REPLY_CHANNEL, onReply)
+      contents.on("render-process-gone", gone)
+      contents.on("destroyed", gone)
+      return () => {
+        contents.ipc.removeListener(WINDOW_CLOSE_ACK_CHANNEL, onAck)
+        contents.ipc.removeListener(WINDOW_CLOSE_REPLY_CHANNEL, onReply)
+        if (contents.isDestroyed()) return
+        contents.removeListener("render-process-gone", gone)
+        contents.removeListener("destroyed", gone)
+      }
+    },
+  }
+}
+
+// Closing the window quits the app (`window-all-closed`), so both routes share
+// one gate: the renderer flushes pending saves and settles unsaved work first.
+const mayQuit = createQuitGate(
+  () =>
+    mainWindow === null
+      ? Promise.resolve(true)
+      : askRendererToClose(closeRequestTarget(mainWindow)),
+  () => app.quit(),
+)
 
 const APP_ORIGIN = "app://local"
 
@@ -216,6 +261,9 @@ async function createWindow(): Promise<void> {
     win.maximize()
   })
   ipcMain.on("window:close", () => win.close())
+  win.on("close", (event) => {
+    if (!mayQuit()) event.preventDefault()
+  })
 
   win.on("maximize", () => win.webContents.send("window:maximizeChanged", true))
   win.on("unmaximize", () => win.webContents.send("window:maximizeChanged", false))
@@ -870,6 +918,12 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   if (isQuitting) return
+  // Nothing below may start — the database closes at the end of it — until
+  // the renderer has saved, or the user has chosen to discard or cancel.
+  if (!mayQuit()) {
+    event.preventDefault()
+    return
+  }
   isQuitting = true
 
   void mcpHost?.stop()

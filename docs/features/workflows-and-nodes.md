@@ -230,6 +230,10 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
 
+### Unsaved changes
+
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — closing its tab or quitting asks whether to **Save**, **Discard**, or **Cancel**. Only the tab whose canvas is open can hold unsaved changes, so it is the only one asked about. With auto-save off, switching to another tab still discards the open tab's unsaved edits; save before switching.
+
 Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
 
 `continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going. Individual HTTP Request and Assertion nodes can override the workflow setting.
