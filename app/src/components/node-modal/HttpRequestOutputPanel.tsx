@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Code2, Copy, FileText, Timer } from "lucide-react";
 import { Badge } from "../atoms/Badge";
 import { IconButton } from "../atoms/IconButton";
+import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import { ResponseInspector } from "../molecules/ResponseInspector";
 import { SearchInput } from "../molecules/SearchInput";
 import { SecretResolutionIndicator } from "../molecules/SecretResolutionIndicator";
@@ -159,15 +160,19 @@ export function HttpRequestOutputPanel({
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
-        <ResponseInspector
-          response={response}
-          filterQuery={filterQuery}
-          {...(metadata ? { metadata } : {})}
-          {...(rawBody !== undefined ? { rawBody } : {})}
-          {...(extractors ? { extractors } : {})}
-          {...(onAddExtractor ? { onAddExtractor } : {})}
-          {...(onRemoveExtractor ? { onRemoveExtractor } : {})}
-        />
+        {/* A response the inspector cannot draw must not close the node
+            editor and its unapplied draft. */}
+        <ErrorBoundary name="response inspector">
+          <ResponseInspector
+            response={response}
+            filterQuery={filterQuery}
+            {...(metadata ? { metadata } : {})}
+            {...(rawBody !== undefined ? { rawBody } : {})}
+            {...(extractors ? { extractors } : {})}
+            {...(onAddExtractor ? { onAddExtractor } : {})}
+            {...(onRemoveExtractor ? { onRemoveExtractor } : {})}
+          />
+        </ErrorBoundary>
       </div>
     </div>
   );

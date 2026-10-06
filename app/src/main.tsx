@@ -10,6 +10,7 @@ import "tippy.js/dist/tippy.css";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import { desktop } from "./utils/apiweaveClient";
 import { confirmCloseAll } from "./stores/PendingEditsStore";
+import { ErrorBoundary } from "./components/molecules/ErrorBoundary";
 
 // The desktop shell (frameless window) draws its own title bar and reserves
 // its height from the viewport via the .desktop-shell CSS in index.css. Web/
@@ -26,10 +27,14 @@ desktop.onCloseRequested(confirmCloseAll);
 // banner and the Updates panel all read from it. Main creates the window only
 // after its services are up (a failed start ends in a native error box), so
 // there is no "still booting" state for the renderer to wait out.
+// The boundary keeps one render error from blanking the window; the title bar
+// stays outside it so the window can still be moved and closed.
 const tree = (
-  <UpdateStatusProvider>
-    <App />
-  </UpdateStatusProvider>
+  <ErrorBoundary name="app">
+    <UpdateStatusProvider>
+      <App />
+    </UpdateStatusProvider>
+  </ErrorBoundary>
 );
 
 createRoot(document.getElementById("root") as HTMLElement).render(

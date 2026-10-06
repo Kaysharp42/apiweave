@@ -394,3 +394,4 @@ export type { TutorialScope } from "./TutorialScope";
 export type { TutorialCompanionState } from "./TutorialCompanionState";
 export type { TutorialCompanionProps } from "./TutorialCompanionProps";
 export type { TutorialPracticeStep } from "./TutorialPracticeStep";
+export type { ErrorBoundaryProps } from "./ErrorBoundaryProps";
