@@ -2292,6 +2292,18 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
     expect((await post(port, { authorization }, listBody)).status).toBe(200)
   })
 
+  it("rejects a Host that is not this loopback listener (DNS rebinding)", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const { token, port } = await host.start()
+    const authorization = `Bearer ${token}`
+
+    expect((await post(port, { authorization, host: `attacker.example:${port}` }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: "127.0.0.1" }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: `127.0.0.1:${port + 1}` }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: `localhost:${port}` }, listBody)).status).toBe(200)
+    expect((await post(port, { authorization, host: `127.0.0.1:${port}` }, listBody)).status).toBe(200)
+  })
+
   it("returns bounded errors for wrong paths, methods and declared oversized bodies", async () => {
     host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, maxBodyBytes: 32 })
     const { token, port } = await host.start()

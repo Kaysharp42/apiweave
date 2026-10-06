@@ -11,8 +11,10 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
 - The bridge is disabled until you enable it in the desktop app.
 - It binds only to `127.0.0.1`; it is never exposed on a LAN or public address.
 - Every request requires the per-install MCP access token.
-- Browser-originated requests are accepted only from APIWeave or a loopback
-  origin, protecting the local endpoint against DNS rebinding.
+- Requests must name the server by its own address: a `Host` header other than
+  `127.0.0.1:<port>` or `localhost:<port>` is refused, and browser-originated
+  requests are accepted only from APIWeave or a loopback origin. Together these
+  protect the local endpoint against DNS rebinding.
 - The MCP surface is an explicit whitelist over the shared IPC handler registry.
   It is intentionally smaller than the renderer's complete IPC surface.
 - Secret tools expose names, scopes, and resolution metadata only. They never

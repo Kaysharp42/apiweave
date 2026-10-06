@@ -170,6 +170,13 @@ export class McpHost {
     if (url.pathname !== MCP_PATH) {
       return json(res, 404, { error: "not_found" })
     }
+    // DNS rebinding: a hostile page can point its own name at 127.0.0.1, and
+    // the browser then sends that name — not ours — as Host. Origin alone does
+    // not cover it, because a same-origin request from the rebound page needs
+    // none. Only the two names this server is actually reachable by pass.
+    if (!this.isAllowedHost(req.headers.host)) {
+      return json(res, 403, { error: "forbidden_host" })
+    }
     if (!isAllowedOrigin(req.headers["origin"])) {
       return json(res, 403, { error: "forbidden_origin" })
     }
@@ -320,6 +327,12 @@ export class McpHost {
     }
     await session.transport.close()
     await session.server.close()
+  }
+
+  private isAllowedHost(host: string | undefined): boolean {
+    if (host === undefined || this.info === null) return false
+    const port = this.info.port
+    return host === `${LOOPBACK_HOST}:${port}` || host === `localhost:${port}`
   }
 
   private authorized(req: http.IncomingMessage): boolean {

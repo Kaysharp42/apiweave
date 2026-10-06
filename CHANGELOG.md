@@ -11,6 +11,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **The MCP server only answers to its own address.** Requests whose `Host`
+  header is not `127.0.0.1:<port>` or `localhost:<port>` are refused, so a web
+  page that rebinds its domain to the loopback address cannot reach it.
+
 ### Fixed
 
 - **Deleting a synced workspace now deletes it in Cloud.** The deletion was
