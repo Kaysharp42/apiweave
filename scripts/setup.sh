@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Setup APIWeave (single-process Electron desktop app).
-# Installs the single app dependency graph and rebuilds native Electron modules.
+# Installs the single app dependency graph. Native addons are N-API and are
+# never rebuilt for Electron's ABI, so installation is all that is needed.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,10 +56,6 @@ if [ -f "$ELECTRON_DIR/package.json" ] && [ ! -f "$ELECTRON_BIN" ] && [ -f "$ELE
   printf "%s" "electron" > "$ELECTRON_DIR/path.txt"
   echo "  Done."
 fi
-
-echo
-echo "Rebuilding native modules for Electron..."
-npm run rebuild:electron
 
 echo
 echo "========================================"
