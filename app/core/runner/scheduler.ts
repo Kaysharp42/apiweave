@@ -9,7 +9,7 @@ import type { EnvironmentRepository } from "../repositories/EnvironmentRepositor
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
-import { SafeHttp } from "./safe_http"
+import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
 import { SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
@@ -449,6 +449,10 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
 }
 
 function safeErrorClass(error: string): string {
+  // The runner's own network diagnosis names only the host, the system error
+  // and its code; resolved secret values are masked before this point.
+  if (error.startsWith(NETWORK_ERROR_PREFIX)) return error
+  if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"

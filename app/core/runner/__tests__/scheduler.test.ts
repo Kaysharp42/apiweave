@@ -649,6 +649,38 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("http-request network errors", () => {
+    it("persists the real cause of a refused connection, not a generic failure", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer()
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "refused-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: `http://127.0.0.1:${port}/x` },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const runId = makeScheduler().enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(runs.getById(runId)?.results.find((r) => r.nodeId === "http_1")?.error).toBe(
+        `Network error: connection refused by 127.0.0.1:${port} (ECONNREFUSED)`,
+      )
+    })
+  })
+
   describe("workspace ownership", () => {
     it("rejects enqueue of a workflow from another workspace and creates no run", async () => {
       const wsA = seedWorkspace()

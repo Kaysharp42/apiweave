@@ -273,10 +273,50 @@ describe("WorkflowExecutor", () => {
       const executor = new WorkflowExecutor(makeDeps())
       ;(executor as unknown as { results: Map<string, unknown> }).results.set("prev_node", {
         type: "http-request",
-        headers: { "set-cookie": "session=abc; Path=/; HttpOnly, theme=dark; Path=/" },
+        headers: { "set-cookie": "session=abc; Path=/; HttpOnly\ntheme=dark; Path=/" },
       })
       const output = await executor.executeWorkflow(workflow)
       expect(output.nodeStatuses["assert1"]).toBe("passed")
+    })
+
+    it("keeps every Set-Cookie header of a real response, so any cookie can be asserted", async () => {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => {
+        response.setHeader("Set-Cookie", [
+          "session=abc; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/; HttpOnly",
+          "theme=dark; Path=/",
+          "csrf=xyz",
+        ])
+        response.end("{}")
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const cookieAssertion = (path: string, expectedValue: string) => ({ source: "cookies", path, operator: "equals", expectedValue })
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "http_1", type: "http-request", config: { url: `http://127.0.0.1:${port}/login` } },
+            {
+              nodeId: "assert1",
+              type: "assertion",
+              config: {
+                assertions: [cookieAssertion("session", "abc"), cookieAssertion("theme", "dark"), cookieAssertion("csrf", "xyz")],
+              },
+            },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "assert1" },
+          ],
+        }
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+        expect(output.nodeStatuses["assert1"]).toBe("passed")
+        const headers = (output.results.find((r) => r.nodeId === "http_1")?.response as { headers: Record<string, string> }).headers
+        expect(headers["set-cookie"]?.split("\n")).toHaveLength(3)
+      } finally {
+        server.close()
+      }
     })
 
     it("resolves each branched assertion from its own HTTP predecessor", async () => {
@@ -1136,6 +1176,50 @@ describe("WorkflowExecutor", () => {
       const output = await executor.executeWorkflow(callerWorkflow({ targetWorkflowId: "self" }))
       expect(output.status).toBe("failed")
       expect(output.failedNodes).toContain("call1")
+    })
+  })
+
+  describe("http-request response bodies", () => {
+    async function fetchOnce(handler: (response: import("node:http").ServerResponse) => void) {
+      const { createServer } = await import("node:http")
+      const server = createServer((_request, response) => handler(response))
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const output = await new WorkflowExecutor(makeDeps()).executeWorkflow({
+          nodes: [
+            { nodeId: "start", type: "start" },
+            { nodeId: "http_1", type: "http-request", config: { url: `http://127.0.0.1:${port}/x` } },
+          ],
+          edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+        })
+        return output.results.find((r) => r.nodeId === "http_1")?.response as Record<string, unknown>
+      } finally {
+        server.closeAllConnections()
+        server.close()
+      }
+    }
+
+    it("marks a body over 1 MiB as truncated, keeps its first 1 MiB and records the full size", async () => {
+      const size = 1024 * 1024 + 10
+      const response = await fetchOnce((res) => {
+        res.setHeader("Content-Type", "text/plain")
+        res.end("a".repeat(size))
+      })
+      expect(response["truncated"]).toBe(true)
+      expect(response["responseSizeBytes"]).toBe(size)
+      expect((response["body"] as string).length).toBe(1024 * 1024)
+    })
+
+    it("stores a binary body as base64 instead of mangled UTF-8", async () => {
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00])
+      const response = await fetchOnce((res) => {
+        res.setHeader("Content-Type", "image/png")
+        res.end(png)
+      })
+      expect(response["bodyEncoding"]).toBe("base64")
+      expect(response["body"]).toBe(png.toString("base64"))
+      expect(response["responseSizeBytes"]).toBe(png.byteLength)
     })
   })
 

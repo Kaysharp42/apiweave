@@ -1,4 +1,4 @@
-import { Agent, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
+import { Agent, Headers, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
 
 /**
  * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
@@ -12,7 +12,8 @@ import { Agent, fetch, type Dispatcher, type RequestInit, type Response } from "
  *
  * What this class still does is protect the *process* from a remote endpoint:
  * http(s) only, a deadline that keeps enforcing while the caller reads the
- * body, a bounded redirect chain, and `readTextCapped` so an unbounded or
+ * body, a bounded redirect chain that never carries credentials to another
+ * origin or downgrades HTTPS, and `readBodyCapped` so an unbounded or
  * slow-trickling body cannot exhaust memory.
  */
 const ALLOWED_SCHEMES = new Set(["http", "https"])
@@ -95,7 +96,12 @@ export class SafeHttp {
 
   // -------------------- HTTP wrappers (undici-based) --------------------
 
-  /** Execute an HTTP request with a deadline and a bounded redirect chain. */
+  /**
+   * Execute an HTTP request with a deadline and a bounded redirect chain.
+   * Redirects follow the fetch spec: a 303 (or a 301/302 answering a POST)
+   * becomes a bodiless GET, credentials never cross to another origin, and an
+   * HTTPS request is never downgraded to HTTP.
+   */
   public async safeFetch(url: string, init: RequestInit = {}, opts: SafeFetchOptions = {}): Promise<Response> {
     this.validateUrl(url)
     // Compose our timeout with the caller's signal so node-level timeouts and
@@ -105,12 +111,14 @@ export class SafeHttp {
     const signal = composeAbortSignal(opts.timeoutMs ?? this.timeoutMs, init.signal)
     const followRedirects = opts.followRedirects ?? true
     const maxHops = followRedirects ? this.maxRedirectHops : 0
-    const requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
+    let requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
       const response = await this.fetchImpl(currentUrl, requestInit)
       const hopResult = this.resolveHop(currentUrl, response, followRedirects, hop)
       if (hopResult.done) return hopResult.response
+      await response.body?.cancel()
+      requestInit = redirectInit(requestInit, response.status, currentUrl, hopResult.nextUrl)
       currentUrl = hopResult.nextUrl
     }
     throw new SafeUrlError(`Too many redirects (>${this.maxRedirectHops}) — last URL: ${currentUrl}`)
@@ -129,7 +137,11 @@ export class SafeHttp {
     if (!this.checkRedirectAllowed(currentUrl, location)) {
       throw new SafeUrlError(`Redirect to an unrequestable URL after ${hop + 1} hop(s): ${location}`)
     }
-    return { done: false, nextUrl: new URL(location, currentUrl).toString() }
+    const nextUrl = new URL(location, currentUrl).toString()
+    if (new URL(currentUrl).protocol === "https:" && new URL(nextUrl).protocol === "http:") {
+      throw new SafeUrlError(`${HTTPS_DOWNGRADE_MESSAGE}: ${nextUrl}`)
+    }
+    return { done: false, nextUrl }
   }
 
   /** GET — no redirect following, validates the URL once. */
@@ -143,23 +155,17 @@ export class SafeHttp {
   }
 
   /**
-   * Read a response body as text, capped at `maxBytes`. A malicious or
-   * compromised endpoint can otherwise return an unbounded or slow-trickling
-   * body and exhaust memory/CPU; this stops pulling bytes off the stream (and
-   * cancels the underlying connection) the moment the cap is hit instead of
-   * buffering the whole thing via `response.text()`.
+   * Read a response body, capped at `maxBytes`. A malicious or compromised
+   * endpoint can otherwise return an unbounded or slow-trickling body and
+   * exhaust memory/CPU; this stops pulling bytes off the stream (and cancels
+   * the underlying connection) the moment the cap is hit instead of buffering
+   * the whole thing. A truncated read keeps the first `maxBytes` bytes.
    */
-  public async readTextCapped(response: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
-    const contentLength = Number(response.headers.get("content-length") ?? "")
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-      await response.body?.cancel()
-      return { text: "", truncated: true }
-    }
-
+  public async readBodyCapped(response: Response, maxBytes: number): Promise<{ bytes: Buffer; truncated: boolean }> {
     const reader = response.body?.getReader()
     if (!reader) {
-      const text = await response.text()
-      return text.length > maxBytes ? { text: text.slice(0, maxBytes), truncated: true } : { text, truncated: false }
+      const bytes = Buffer.from(await response.arrayBuffer())
+      return bytes.byteLength > maxBytes ? { bytes: bytes.subarray(0, maxBytes), truncated: true } : { bytes, truncated: false }
     }
 
     const chunks: Buffer[] = []
@@ -178,7 +184,64 @@ export class SafeHttp {
       }
       chunks.push(Buffer.from(value.buffer, value.byteOffset, value.byteLength))
     }
-    return { text: Buffer.concat(chunks).toString("utf-8"), truncated }
+    return { bytes: Buffer.concat(chunks), truncated }
+  }
+
+  /** `readBodyCapped`, decoded as UTF-8. */
+  public async readTextCapped(response: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
+    const { bytes, truncated } = await this.readBodyCapped(response, maxBytes)
+    return { text: bytes.toString("utf-8"), truncated }
+  }
+}
+
+export const HTTPS_DOWNGRADE_MESSAGE = "Refused redirect from HTTPS to HTTP"
+
+/** Every message `describeNetworkError` returns starts with this. */
+export const NETWORK_ERROR_PREFIX = "Network error: "
+
+const TLS_ERROR_CODE = /CERT|SELF_SIGNED|ERR_TLS|ERR_SSL|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER/
+
+/**
+ * A readable cause for a failed request, or null when `error` is not a
+ * network failure. undici reports every connection failure as `TypeError:
+ * fetch failed` and puts the system error (with its `code`) in `cause`, so the
+ * chain is walked to the first error that carries one.
+ */
+export function describeNetworkError(error: unknown, url: string): string | null {
+  let host: string
+  try {
+    host = new URL(url).host
+  } catch {
+    host = url
+  }
+  for (let current: unknown = error, depth = 0; current instanceof Error && depth < 8; current = current.cause, depth++) {
+    const code = (current as { code?: unknown }).code
+    if (typeof code !== "string") continue
+    const detail = describeErrorCode(code, host, current.message)
+    return `${NETWORK_ERROR_PREFIX}${detail} (${code})`
+  }
+  return null
+}
+
+function describeErrorCode(code: string, host: string, message: string): string {
+  switch (code) {
+    case "ENOTFOUND":
+    case "EAI_AGAIN":
+      return `could not resolve host ${host}`
+    case "ECONNREFUSED":
+      return `connection refused by ${host}`
+    case "ECONNRESET":
+    case "EPIPE":
+    case "UND_ERR_SOCKET":
+      return `connection to ${host} was closed unexpectedly`
+    case "ETIMEDOUT":
+    case "UND_ERR_CONNECT_TIMEOUT":
+      return `connecting to ${host} timed out`
+    case "EHOSTUNREACH":
+    case "ENETUNREACH":
+      return `${host} is unreachable`
+    default:
+      return TLS_ERROR_CODE.test(code) ? `TLS handshake with ${host} failed: ${message}` : message
   }
 }
 
@@ -189,9 +252,41 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname
 }
 
-/** Dispatcher for the per-node "accept a self-signed certificate" opt-out. */
-function buildInsecureTlsDispatcher(): Dispatcher {
-  return new Agent({ connect: { rejectUnauthorized: false } })
+let insecureTlsDispatcher: Dispatcher | undefined
+
+/**
+ * Dispatcher for the per-node "accept a self-signed certificate" opt-out. One
+ * shared pool, like undici's global agent: a fresh Agent per request would
+ * leak its sockets.
+ */
+function getInsecureTlsDispatcher(): Dispatcher {
+  insecureTlsDispatcher ??= new Agent({ connect: { rejectUnauthorized: false } })
+  return insecureTlsDispatcher
+}
+
+const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"]
+const BODY_HEADERS = ["content-type", "content-length", "content-encoding", "content-language", "content-location"]
+
+/**
+ * The request to send to `nextUrl` after a `status` redirect, per the fetch
+ * spec's HTTP-redirect fetch: 303 turns anything but GET/HEAD into a bodiless
+ * GET, and so does 301/302 for a POST; 307/308 resend the method and body.
+ * Credentials the user attached (Authorization, Cookie, Proxy-Authorization)
+ * are for the origin they named and are dropped when the redirect leaves it.
+ */
+function redirectInit(init: RequestInit, status: number, currentUrl: string, nextUrl: string): RequestInit {
+  const method = (init.method ?? "GET").toUpperCase()
+  const headers = new Headers(init.headers)
+  const next: RequestInit = { ...init, headers }
+  if ((status === 303 && method !== "GET" && method !== "HEAD") || ((status === 301 || status === 302) && method === "POST")) {
+    next.method = "GET"
+    delete next.body
+    for (const name of BODY_HEADERS) headers.delete(name)
+  }
+  if (new URL(currentUrl).origin !== new URL(nextUrl).origin) {
+    for (const name of CREDENTIAL_HEADERS) headers.delete(name)
+  }
+  return next
 }
 
 /**
@@ -217,5 +312,5 @@ function composeAbortSignal(timeoutMs: number, callerSignal: AbortSignal | null 
  * pools connections across requests.
  */
 function withDispatcher(init: RequestInit, rejectUnauthorized: boolean | undefined): RequestInit {
-  return rejectUnauthorized === false ? { ...init, dispatcher: buildInsecureTlsDispatcher() } : init
+  return rejectUnauthorized === false ? { ...init, dispatcher: getInsecureTlsDispatcher() } : init
 }

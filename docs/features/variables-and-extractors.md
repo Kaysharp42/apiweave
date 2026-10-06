@@ -129,7 +129,7 @@ Paths are written in dot notation with `[index]` for arrays. They start with `re
 ```text
 response.statusCode                 # integer status code
 response.headers.content-type       # response header
-response.headers.set-cookie         # response cookie (raw Set-Cookie header)
+response.headers.set-cookie         # every Set-Cookie header, one per line
 response.body.id                    # top-level field
 response.body.user.id               # nested object
 response.body.items[0].id           # first element of an array

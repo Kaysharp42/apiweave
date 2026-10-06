@@ -61,6 +61,10 @@ export function HttpRequestOutputPanel({
     metadata?.responseTimeMs ?? getNumberValue(output ?? undefined, "duration"),
   );
   const responseSize = formatBytes(metadata?.responseSizeBytes);
+  // The runner stores at most the first 1 MiB of a body, and a body that is
+  // not UTF-8 text as base64.
+  const truncated = output?.truncated === true;
+  const base64Body = output?.bodyEncoding === "base64";
   const requestLabel = `${initialConfig.method || "GET"} ${initialConfig.url || "Untitled request"}`;
   const outputRecord = output as Record<string, unknown> | null;
   const secretRefs = Array.isArray(outputRecord?.secretRefs)
@@ -112,6 +116,16 @@ export function HttpRequestOutputPanel({
             <Badge variant="outline" size="sm">
               {responseSize}
             </Badge>
+            {truncated && (
+              <Badge variant="warning" size="sm">
+                Body truncated to first 1 MB
+              </Badge>
+            )}
+            {base64Body && (
+              <Badge variant="outline" size="sm">
+                Binary body (base64)
+              </Badge>
+            )}
             <span className="min-w-0 truncate font-mono text-xs text-text-secondary dark:text-text-secondary-dark">
               {requestLabel}
             </span>

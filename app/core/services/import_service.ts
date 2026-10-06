@@ -25,7 +25,7 @@ import {
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
-import { SafeHttp } from "../runner/safe_http"
+import { SafeHttp, describeNetworkError } from "../runner/safe_http"
 
 // ponytail: fixed 10 MiB knob for remote OpenAPI/Swagger doc fetches — large
 // enough for real specs, small enough that a malicious/slow URL can't exhaust
@@ -599,7 +599,7 @@ export class ImportService {
       return { ok: true, text, contentType: response.headers.get("content-type")?.toLowerCase() ?? "" }
     } catch (e) {
       if (e instanceof ValidationError) throw e
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      return { ok: false, error: describeNetworkError(e, url) ?? (e instanceof Error ? e.message : String(e)) }
     }
   }
 

@@ -364,14 +364,12 @@ function getStructuredCookieRows(response: ApiResponse | null): CookieRow[] {
   });
 }
 
+/** The runner keeps every Set-Cookie header, one per line. */
 function splitSetCookieHeader(value: string): string[] {
-  return value.split(/,(?=\s*[^;,=]+=[^;,]+)/).flatMap((candidate) =>
-    candidate.split(/\r?\n/).reduce<string[]>((entries, entry) => {
-      const trimmed = entry.trim();
-      if (trimmed) entries.push(trimmed);
-      return entries;
-    }, []),
-  );
+  return value
+    .split("\n")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function parseCookie(value: string): CookieRow | null {

@@ -91,11 +91,13 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
-| `follow redirects` | Whether redirect responses are followed (on by default) |
+| `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Per-node override of the workflow's `continueOnFail` setting |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
+
+A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
 **Handles:** one input, one output.
 

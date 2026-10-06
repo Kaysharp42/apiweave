@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
-import { SafeHttp, SafeUrlError } from "./safe_http"
+import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
@@ -113,6 +113,31 @@ interface SseFinishCondition {
   readonly expectedValue?: unknown
 }
 
+/**
+ * Response headers as a name → value record. Set-Cookie is the one header that
+ * cannot be comma-joined (an Expires date contains a comma), and `forEach`
+ * would keep only the last one, so every Set-Cookie is kept, one per line —
+ * a header value can never contain a newline itself.
+ */
+function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
+  const record: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    record[key] = value
+  })
+  const setCookies = headers.getSetCookie()
+  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
+  return record
+}
+
+/** The bytes as UTF-8 text, or null when they are not valid UTF-8 (a binary body). A sequence cut off by truncation is fine. */
+function decodeUtf8(bytes: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: true })
+  } catch {
+    return null
+  }
+}
+
 function appendQueryParams(url: string, queryParams: Readonly<Record<string, string>>): string {
   if (Object.keys(queryParams).length === 0) return url
   const [base = url, existingQuery] = url.split("?")
@@ -153,7 +178,12 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    /** The body is the first SIDE_TABLE_THRESHOLD_BYTES bytes only. */
     readonly truncated?: boolean
+    /** The body is not UTF-8 text and is stored base64-encoded. */
+    readonly bodyEncoding?: "base64"
+    /** Full body size, when known (always, unless truncated without a Content-Length). */
+    readonly responseSizeBytes?: number
   }
   readonly mergedByOther?: boolean
   readonly startedAt?: string
@@ -823,12 +853,17 @@ export class WorkflowExecutor {
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
       })
-      const { text: responseText, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
+      const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
+      const responseText = decodeUtf8(bytes)
+      const declaredSize = Number(response.headers.get("content-length") ?? "")
+      const responseSizeBytes = !truncated ? bytes.byteLength : Number.isFinite(declaredSize) && declaredSize > 0 ? declaredSize : undefined
 
       let responseBody: unknown
-      if (truncated) {
+      if (responseText === null) {
+        responseBody = bytes.toString("base64")
+      } else if (truncated) {
         responseBody = responseText
       } else {
         try {
@@ -853,10 +888,7 @@ export class WorkflowExecutor {
         status = expectedList.includes(statusCode) ? "success" : "error"
       }
 
-      const responseHeaders: Record<string, string> = {}
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value
-      })
+      const responseHeaders = toHeaderRecord(response.headers)
 
       const result: NodeResult = {
         status,
@@ -872,6 +904,8 @@ export class WorkflowExecutor {
           headers: responseHeaders,
           statusCode,
           ...(truncated ? { truncated: true } : {}),
+          ...(responseText === null ? { bodyEncoding: "base64" as const } : {}),
+          ...(responseSizeBytes !== undefined ? { responseSizeBytes } : {}),
         },
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
@@ -895,7 +929,7 @@ export class WorkflowExecutor {
           ? "Request cancelled"
           : error instanceof Error && error.name === "TimeoutError"
             ? `Request timed out after ${timeout}s`
-            : String(error),
+            : (describeNetworkError(error, url) ?? String(error)),
         method,
         url,
         duration: Date.now() - startTime,
@@ -957,8 +991,7 @@ export class WorkflowExecutor {
         { method: "GET", headers, signal },
         { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000 },
       )
-      const responseHeaders: Record<string, string> = {}
-      response.headers.forEach((value, key) => { responseHeaders[key] = value })
+      const responseHeaders = toHeaderRecord(response.headers)
       const statusCode = response.status
       if (statusCode < 200 || statusCode >= 300) {
         const { text, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
@@ -995,7 +1028,9 @@ export class WorkflowExecutor {
       return true
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
+        status: "error",
+        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
+        method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs)
@@ -1055,7 +1090,9 @@ export class WorkflowExecutor {
       }
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
+        status: "error",
+        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
+        method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs, extractors)
@@ -1427,15 +1464,12 @@ export class WorkflowExecutor {
     return undefined
   }
 
-  /** Value of a Set-Cookie cookie by name, from the last response. */
+  /** Value of a Set-Cookie cookie by name, from the last response (one Set-Cookie per line, see `toHeaderRecord`). */
   private getResponseCookie(result: NodeResult, name: string): string | undefined {
     const raw = this.getResponseHeader(result, "set-cookie")
     if (!raw) return undefined
     const target = name.trim()
-    // ponytail: split multiple cookies on the comma that precedes the next
-    // `name=` pair; good enough for typical Set-Cookie. Swap for a real
-    // set-cookie parser if Expires/edge attributes ever misparse.
-    for (const part of raw.split(/,(?=\s*[^=;,\s]+=)/)) {
+    for (const part of raw.split("\n")) {
       const pair = part.split(";")[0] ?? ""
       const eq = pair.indexOf("=")
       if (eq === -1) continue

@@ -13,6 +13,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Redirects no longer leak credentials or resend a POST.** A followed
+  redirect to another origin drops `Authorization`, `Cookie` and
+  `Proxy-Authorization`; a redirect from HTTPS to HTTP is refused; a 303, or a
+  301/302 answering a POST, is followed with a GET and no body. Previously every
+  hop resent the headers, method and body to wherever the server pointed.
+- **Every Set-Cookie header is kept.** A response setting several cookies kept
+  only the last one, so assertions and extractors on the others failed. The
+  `set-cookie` header now holds every cookie, one per line.
+- **A failed request says why.** DNS failures, refused or reset connections and
+  TLS errors (expired, self-signed or mismatched certificates) are now reported
+  with their cause and code, such as "Network error: connection refused by
+  localhost:8080 (ECONNREFUSED)", instead of "Node execution failed".
+- **Large and binary response bodies are kept honestly.** A body over 1 MiB is
+  stored up to 1 MiB and marked truncated with its full size, instead of being
+  left empty when the server sent a `Content-Length`. A body that is not UTF-8
+  text is stored as base64 instead of corrupted text.
+- Turning off TLS verification on a node no longer opens a new connection pool
+  for every request.
 - **A cancelled run is recorded as cancelled.** Cancelling a run, including one
   waiting in a Delay or a Merge, now saves it as `cancelled` in History and in
   Call Workflow sub-runs, with the interrupted node shown as skipped.
