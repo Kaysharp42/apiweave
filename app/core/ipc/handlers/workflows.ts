@@ -86,7 +86,14 @@ const mutableFields = {
 
 const createInput = z.object({ workspaceId: ws, ...mutableFields }).strict()
 const updateInput = z
-  .object({ workspaceId: ws, workflowId: z.string().min(1), ...mutableFields })
+  .object({
+    workspaceId: ws,
+    workflowId: z.string().min(1),
+    expectedRevision: RevisionSchema.optional().describe(
+      "The `rev` this update was computed against. When set, the write is rejected with a conflict if the workflow changed meanwhile. Omit to apply unconditionally.",
+    ),
+    ...mutableFields,
+  })
   .partial({ name: true })
   .strict()
 
@@ -275,11 +282,14 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   router.register("workflows", "update", {
     input: updateInput.extend({ layout: layoutFlag }).strict(),
     output: WorkflowSchema,
-    handle: ({ workspaceId, workflowId, layout, ...patch }) => workflows.update(
+    handle: ({ workspaceId, workflowId, layout, expectedRevision, ...patch }) => workflows.update(
       workspaceId,
       workflowId,
       patch,
-      layout === true ? { layout: true } : layout === false ? { layout: false } : {},
+      {
+        ...(layout === undefined ? {} : { layout }),
+        ...(expectedRevision === undefined ? {} : { expectedRevision }),
+      },
     ),
   })
 

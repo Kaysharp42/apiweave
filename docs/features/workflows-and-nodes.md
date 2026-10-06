@@ -236,6 +236,8 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and linking or disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, the link, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
 
+Every save is checked against the revision the canvas loaded. If the workflow changed elsewhere in the meantime — an agent over MCP, cloud sync, another window — the save is refused instead of overwriting that change, your edits stay on the canvas unsaved, and a notice offers **Load latest** (discard your edits and show the newer version) or **Overwrite** (save yours over it).
+
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
 Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.

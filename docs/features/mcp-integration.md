@@ -130,10 +130,12 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 `workflows_patch` changes a subset instead: `upsertNodes` and `upsertEdges`
 replace matching entries by id and append the rest, `removeNodeIds` and
 `removeEdgeIds` delete by id (edges attached to a removed node go with it), and
-`setVariables`/`unsetVariables` merge into the stored map. Passing
-`expectedRevision` makes the write a compare-and-swap against the revision the
-caller last read, so a concurrent desktop edit produces a conflict rather than
-being overwritten.
+`setVariables`/`unsetVariables` merge into the stored map. Both accept
+`expectedRevision`, which makes the write a compare-and-swap against the
+revision the caller last read, so a concurrent desktop edit produces a conflict
+rather than being overwritten. The desktop canvas saves the same way: an agent's
+edit that lands while the canvas has unsaved changes is never overwritten by the
+canvas's next save.
 
 `workflows_create`, `workflows_update` and `workflows_patch` each return
 `{ result, diagnosis }`, where `diagnosis` is the same report `workflow_diagnose`

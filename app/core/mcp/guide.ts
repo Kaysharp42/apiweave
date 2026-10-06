@@ -291,8 +291,8 @@ removes by id:
 }
 \`\`\`
 
-\`expectedRevision\` (the workflow's current \`rev\`) makes the write a
-compare-and-swap: if someone edited the workflow meanwhile you get a conflict
+\`expectedRevision\` (the workflow's current \`rev\`, accepted by
+\`workflows_update\` too) makes the write a compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
 

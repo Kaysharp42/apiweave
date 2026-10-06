@@ -27,6 +27,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   signed-out state closes every tab, and it did so after the account changed,
   losing unsaved edits. It now asks **Save**, **Discard**, or **Cancel** for
   each such tab before signing in, and **Cancel** stops the link.
+- **A canvas save no longer overwrites an agent's edit.** Saves now carry the
+  revision the canvas loaded, and a workflow changed elsewhere since (over MCP,
+  cloud sync, another window) refuses the save instead of being silently
+  replaced. Your edits stay on the canvas, and a notice offers **Load latest**
+  or **Overwrite**. `workflows_update` accepts `expectedRevision` as well.
 
 - **Redirects no longer leak credentials or resend a POST.** A followed
   redirect to another origin drops `Authorization`, `Cookie` and

@@ -97,13 +97,18 @@ async function saveDraft(id: string): Promise<void> {
           edges: draft.edges,
           variables: draft.variables,
           selectedEnvironmentId: draft.selectedEnvironmentId ?? null,
+          // The draft was cut from the tab's workflow at this revision; a
+          // newer one on the server is someone else's edit, not ours to replace.
+          expectedRevision: draft.rev,
         }),
       },
     );
     if (!response.ok) {
-      const { detail, issues } = await readSaveFailureEnvelope(response);
+      const { detail, code, issues } = await readSaveFailureEnvelope(response);
       throw new Error(
-        detail ?? issues[0] ?? `the request was rejected (${response.status})`,
+        code === "conflict"
+          ? "it was changed elsewhere since you edited it. Open it to choose which version to keep."
+          : (detail ?? issues[0] ?? `the request was rejected (${response.status})`),
       );
     }
     const saved = WorkflowSchema.parse(await response.json());
