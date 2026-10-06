@@ -167,7 +167,7 @@ export interface NodeResult {
     readonly workflowId: string
     /** The sub-execution's own run row, when one was persisted — the callee's History entry for this call. */
     readonly runId?: string
-    readonly status: "passed" | "failed"
+    readonly status: ExecutorOutput["status"]
     readonly nodeCount: number
     readonly failedNodeCount: number
     readonly outputVariableNames: readonly string[]
@@ -177,7 +177,8 @@ export interface NodeResult {
 
 export interface ExecutorOutput {
   readonly caseName?: string
-  readonly status: "passed" | "failed"
+  /** `cancelled` whenever the run's cancel signal fired, whatever the nodes did before it. */
+  readonly status: "passed" | "failed" | "cancelled"
   readonly startedAt: string
   readonly seed?: string
   readonly nodeStatuses: Readonly<Record<string, RunnerNodeStatus>>
@@ -224,6 +225,7 @@ export class WorkflowExecutor {
   private readonly sseTasks = new Set<Promise<void>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
+  private cancelSignal: AbortSignal | undefined
   private stepCount = 0
   private maxSteps = 0
   // Set by a parent executor on a child it creates for a Call Workflow node.
@@ -245,6 +247,7 @@ export class WorkflowExecutor {
   ): Promise<ExecutorOutput> {
     const startedAt = this.deps.clock.isoNow()
     this.activeRunId = options.runId ?? "harness"
+    this.cancelSignal = options.cancelSignal
 
     if (workflow.variables) {
       for (const [key, value] of Object.entries(workflow.variables)) {
@@ -489,6 +492,7 @@ export class WorkflowExecutor {
     } else {
       this.updateNodeStatus(nodeId, "passed")
     }
+    if (cancelSignal?.aborted) return
 
     // Find next nodes
     let nextEdges = edges.filter((e) => e.source === nodeId)
@@ -638,11 +642,18 @@ export class WorkflowExecutor {
       } else if (nodeType === "assertion") {
         result = await this.executeAssertion(node, edges)
       } else if (nodeType === "merge") {
-        result = await this.executeMerge(node, edges)
+        result = await this.executeMerge(node, edges, cancelSignal)
       } else if (nodeType === "workflow") {
         result = await this.executeCallWorkflow(node, cancelSignal)
       } else {
         result = { status: "skipped", message: `Unknown node type: ${nodeType}` }
+      }
+
+      // A node the cancel cut short is neither passed nor failed: it never got
+      // to finish. One that finished before the cancel landed keeps its result.
+      if (cancelSignal?.aborted && result.status !== "success" && result.status !== "redirect") {
+        this.recordCancelledNode(nodeId, { ...result, type: nodeType, startedAt: nodeStartedAt, secretRefs })
+        return { shouldContinue: false }
       }
 
       // Determine execution status
@@ -684,6 +695,10 @@ export class WorkflowExecutor {
       return { shouldContinue: true }
     } catch (error) {
       if (error instanceof StopBranch) throw error
+      if (cancelSignal?.aborted) {
+        this.recordCancelledNode(nodeId, { status: "cancelled", type: nodeType, startedAt: nodeStartedAt, secretRefs })
+        return { shouldContinue: false }
+      }
       const errorResult: NodeResult = {
         status: "error",
         error: String(error),
@@ -699,6 +714,18 @@ export class WorkflowExecutor {
       if (!effectiveContinueOnFail) throw new StopBranch(errorResult.error ?? `Node ${nodeId} failed`)
       throw error
     }
+  }
+
+  /**
+   * Record a node the run's cancel cut short. `skipped` is the node vocabulary
+   * for "did not run to completion, and is not a failure" — the run itself is
+   * what carries `cancelled`. The caller stops the branch without failing it.
+   */
+  private recordCancelledNode(nodeId: string, result: NodeResult): NodeResult {
+    const cancelled: NodeResult = { ...result, status: "cancelled", completedAt: this.deps.clock.isoNow() }
+    this.results.set(nodeId, cancelled)
+    this.updateNodeStatus(nodeId, "skipped", cancelled)
+    return cancelled
   }
 
   // -------------------- HTTP request --------------------
@@ -780,16 +807,22 @@ export class WorkflowExecutor {
     try {
       this.deps.http.validateUrl(url)
 
+      // The node's timeout is the only deadline: SafeHttp composes it with the
+      // cancel signal, and its own default applies to callers that set none.
       const fetchInit: UndiciRequestInit = {
         method,
         headers,
-        signal: cancelSignal ? AbortSignal.any([AbortSignal.timeout(timeout * 1000), cancelSignal]) : AbortSignal.timeout(timeout * 1000),
+        ...(cancelSignal ? { signal: cancelSignal } : {}),
       }
       if (fetchBody !== undefined && method !== "GET") {
         fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit, { followRedirects, rejectUnauthorized: sslVerify })
+      const response = await this.deps.http.safeFetch(url, fetchInit, {
+        followRedirects,
+        rejectUnauthorized: sslVerify,
+        timeoutMs: timeout * 1000,
+      })
       const { text: responseText, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
@@ -858,7 +891,11 @@ export class WorkflowExecutor {
       }
       return withExtractorOutcomes({
         status: "error",
-        error: String(error),
+        error: cancelSignal?.aborted
+          ? "Request cancelled"
+          : error instanceof Error && error.name === "TimeoutError"
+            ? `Request timed out after ${timeout}s`
+            : String(error),
         method,
         url,
         duration: Date.now() - startTime,
@@ -1032,6 +1069,9 @@ export class WorkflowExecutor {
     secretRefs: readonly string[],
     extractors?: Record<string, string>,
   ): NodeResult {
+    if (this.cancelSignal?.aborted && result.status !== "success") {
+      return this.recordCancelledNode(node.nodeId, { ...result, type: "sse", startedAt, secretRefs })
+    }
     const withExtractors = extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
@@ -1474,7 +1514,7 @@ export class WorkflowExecutor {
 
   // -------------------- Merge --------------------
 
-  private async executeMerge(node: WorkflowNode, edges: readonly WorkflowEdge[]): Promise<NodeResult> {
+  private async executeMerge(node: WorkflowNode, edges: readonly WorkflowEdge[], cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = node.config ?? {}
     const mergeStrategy = (config["mergeStrategy"] as string | undefined) ?? "all"
     const nodeId = node.nodeId
@@ -1492,11 +1532,12 @@ export class WorkflowExecutor {
         const maxWait = 30000
         const waitInterval = 100
         let elapsed = 0
-        while (missing.length > 0 && elapsed < maxWait) {
+        while (missing.length > 0 && elapsed < maxWait && !cancelSignal?.aborted) {
           await new Promise((resolve) => setTimeout(resolve, waitInterval))
           elapsed += waitInterval
           missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
         }
+        if (cancelSignal?.aborted) throw new Error("Merge cancelled")
         if (missing.length > 0) {
           throw new Error(`Timeout waiting for predecessors: ${missing.join(", ")}`)
         }
@@ -2077,7 +2118,7 @@ export class WorkflowExecutor {
     status: "passed" | "failed",
   ): ExecutorOutput {
     const result: ExecutorOutput = {
-      status,
+      status: this.cancelSignal?.aborted ? "cancelled" : status,
       startedAt,
       nodeStatuses: Object.fromEntries(this.nodeStatuses),
       extractedVariables: { ...this.workflowVariables },

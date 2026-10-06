@@ -559,7 +559,103 @@ describe("WorkflowExecutor", () => {
       controller.abort()
       const executor = new WorkflowExecutor(makeDeps())
       const output = await executor.executeWorkflow(workflow, { cancelSignal: controller.signal })
+      expect(output.status).toBe("cancelled")
+    })
+
+    it("reports a cancel during a delay as a cancelled run, the delay as cut short and nothing after it", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "delay1", type: "delay", config: { duration: 5000 } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "delay1" },
+          { edgeId: "e2", source: "delay1", target: "end" },
+        ],
+      }
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(), 50)
+      const started = Date.now()
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { cancelSignal: controller.signal })
+      expect(Date.now() - started).toBeLessThan(1000)
+      expect(output.status).toBe("cancelled")
+      expect(output.nodeStatuses["delay1"]).toBe("skipped")
+      expect(output.nodeStatuses["end"]).toBeUndefined()
+      expect(output.failedNodes).toEqual([])
+      expect(output.results.find((r) => r.nodeId === "delay1")).toMatchObject({ status: "skipped" })
+    })
+
+    it("stops a merge waiting on a predecessor that will never land", async () => {
+      // `orphan` is never reached, so the merge would wait out its full 30 s window.
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "orphan", type: "delay", config: { duration: 1 } },
+          { nodeId: "merge1", type: "merge", config: { mergeStrategy: "all" } },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "merge1" },
+          { edgeId: "e2", source: "orphan", target: "merge1" },
+        ],
+      }
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(), 50)
+      const started = Date.now()
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { cancelSignal: controller.signal })
+      expect(Date.now() - started).toBeLessThan(1000)
+      expect(output.status).toBe("cancelled")
+      expect(output.nodeStatuses["merge1"]).toBe("skipped")
+    })
+  })
+
+  describe("http-request timeout", () => {
+    // Answers after `delayMs`, or rejects with the signal's reason the way undici does.
+    function slowHttp(delayMs: number, defaultTimeoutMs: number): SafeHttp {
+      const fetchImpl = (_url: string, init: { signal?: AbortSignal | null }): Promise<Response> =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(new Response("{}", { status: 200 })), delayMs)
+          init.signal?.addEventListener("abort", () => {
+            clearTimeout(timer)
+            reject(init.signal?.reason)
+          })
+        })
+      return new SafeHttp({ fetchImpl: fetchImpl as never, timeoutMs: defaultTimeoutMs })
+    }
+
+    const workflow = (timeout: number): WorkflowGraph => ({
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "http_1", type: "http-request", config: { method: "GET", url: "http://localhost/slow", timeout } },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+    })
+
+    it("uses the node's timeout, not SafeHttp's default, as the deadline", async () => {
+      // SafeHttp's default (standing in for its 30 s) is shorter than the
+      // response; the node allows 5 s, so the request must succeed.
+      const executor = new WorkflowExecutor({ ...makeDeps(), http: slowHttp(150, 50) })
+      const output = await executor.executeWorkflow(workflow(5))
+      expect(output.status).toBe("passed")
+    })
+
+    it("says how long it waited when the node's timeout fires", async () => {
+      const executor = new WorkflowExecutor({ ...makeDeps(), http: slowHttp(1000, 30_000) })
+      const output = await executor.executeWorkflow(workflow(0.05))
       expect(output.status).toBe("failed")
+      expect(output.results.find((r) => r.nodeId === "http_1")?.error).toBe("Request timed out after 0.05s")
+    })
+
+    it("reports a cancel during the request as cancelled, not as a timeout", async () => {
+      const executor = new WorkflowExecutor({ ...makeDeps(), http: slowHttp(1000, 30_000) })
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(), 50)
+      const output = await executor.executeWorkflow(workflow(5), { cancelSignal: controller.signal })
+      expect(output.status).toBe("cancelled")
+      expect(output.results.find((r) => r.nodeId === "http_1")).toMatchObject({
+        status: "skipped",
+        error: "Request cancelled",
+      })
     })
   })
 

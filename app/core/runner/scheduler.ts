@@ -202,7 +202,7 @@ export class RunScheduler {
         throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
       }
 
-      const secretResolution = await this.resolveRunSecrets(graph, selectedEnvironmentId, run.workspaceId)
+      const secretResolution = await this.resolveRunSecrets(graph, run.workflowId, selectedEnvironmentId, run.workspaceId)
       if (secretResolution.resolvedSecrets.length > 0) {
         void this.deps.runs.setResolvedSecrets(runId, secretResolution.resolvedSecrets)
       }
@@ -258,6 +258,7 @@ export class RunScheduler {
           },
           finish: (childRunId, childOutput) => {
             if (childOutput) this.recordOutcome(childRunId, mask(childOutput))
+            else if (controller.signal.aborted) this.deps.runs.updateStatus(childRunId, "cancelled")
             else this.deps.runs.updateStatus(childRunId, "failed", "Workflow execution failed")
           },
         },
@@ -298,7 +299,7 @@ export class RunScheduler {
    * Persist an executor output as a run's terminal evidence + status. Shared by
    * top-level runs and Call Workflow sub-runs. `output` must already be masked.
    */
-  private recordOutcome(runId: string, output: ExecutorOutput): "completed" | "failed" {
+  private recordOutcome(runId: string, output: ExecutorOutput): RunTerminalStatus {
     const failureMessage = safeFailureMessage(output.failedNodes)
     this.deps.runs.updateExecutionEvidence(runId, {
       results: sanitizeRunResults(output.results),
@@ -306,9 +307,13 @@ export class RunScheduler {
       failedNodes: output.failedNodes,
       failureMessage,
     })
-    const status = output.status === "passed" ? "completed" : "failed"
-    this.deps.runs.updateStatus(runId, status, status === "failed" ? failureMessage ?? "Workflow execution failed" : undefined)
-    return status
+    if (output.status !== "failed") {
+      const status = output.status === "passed" ? "completed" : "cancelled"
+      this.deps.runs.updateStatus(runId, status)
+      return status
+    }
+    this.deps.runs.updateStatus(runId, "failed", failureMessage ?? "Workflow execution failed")
+    return "failed"
   }
 
   private emitFinished(runId: string, status: RunTerminalStatus): void {
@@ -316,14 +321,17 @@ export class RunScheduler {
   }
 
   /**
-   * Scan the workflow graph for `{{secrets.NAME}}` references, resolve each down
-   * the env > workspace chain, and return a name -> plaintext map for the executor.
+   * Scan the workflow graph — and every workflow its Call Workflow nodes reach,
+   * since a sub-execution shares this run's secret map — for `{{secrets.NAME}}`
+   * references, resolve each down the env > workspace chain, and return a
+   * name -> plaintext map for the executor.
    * Also records safe resolution metadata (name/scope/resolved) on
    * {@link lastResolvedSecrets} for masked-secret debugging — never values.
    * Returns nothing when no resolver is wired or no references exist.
    */
   private async resolveRunSecrets(
     graph: WorkflowGraph,
+    workflowId: string,
     environmentId: string | null,
     workspaceId: string,
   ): Promise<{ secrets?: Record<string, string>; resolvedSecrets: ResolvedSecretInfo[] }> {
@@ -332,14 +340,22 @@ export class RunScheduler {
 
     const names = new Set<string>()
     const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
-    for (const node of graph.nodes) {
-      const config = node.config
-      if (!config) continue
-      for (const value of collectStrings(config)) {
-        let m: RegExpExecArray | null
-        while ((m = pattern.exec(value)) !== null) {
-          names.add(m[1]!)
+    const visited = new Set<string>([workflowId])
+    const pending: Array<WorkflowGraph["nodes"]> = [graph.nodes]
+    for (let nodes = pending.pop(); nodes; nodes = pending.pop()) {
+      for (const node of nodes) {
+        const config = node.config
+        if (!config) continue
+        for (const value of collectStrings(config)) {
+          for (const m of value.matchAll(pattern)) names.add(m[1]!)
         }
+        // Same lookup the executor's `resolveWorkflow` does, so a target it
+        // could not reach contributes nothing here either.
+        const target = node.type === "workflow" ? config["targetWorkflowId"] : undefined
+        if (typeof target !== "string" || visited.has(target)) continue
+        visited.add(target)
+        const child = this.deps.workflows.getByIdInWorkspace(target, workspaceId)
+        if (child) pending.push(withoutCanvasOnlyNodes(child.nodes) as unknown as WorkflowGraph["nodes"])
       }
     }
     if (names.size === 0) return { resolvedSecrets: [] }
@@ -435,6 +451,9 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
 function safeErrorClass(error: string): string {
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
+  if (normalized.includes("cancelled")) return "Cancelled"
+  // The executor's own timeout message carries no input, only the node's deadline.
+  if (/^Request timed out after \d+(\.\d+)?s$/.test(error)) return error
   if (normalized.includes("timeout") || normalized.includes("timed out") || normalized.includes("aborted")) {
     return "Request timed out"
   }

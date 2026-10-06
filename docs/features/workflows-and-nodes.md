@@ -90,7 +90,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `cookies` | Structured key/value rows, each with an active toggle |
 | `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field |
-| `timeout` | Request timeout in seconds |
+| `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default) |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
@@ -225,7 +225,7 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | --- | --- |
 | **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
 | **History** | Opens run history for the workflow, with per-run timeline and detail views. |
-| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it. |
+| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it: the run is recorded as `cancelled`, the node it interrupted (a request, a delay, a merge still waiting) shows as skipped, and nothing after it runs. |
 | **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. **Apply** (`Ctrl+S`) applies and saves them. Closing with unapplied changes (Escape, a click outside, or the close button) asks **Apply**, **Discard** or **Keep editing**; invalid JSON stays open with the error shown. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |

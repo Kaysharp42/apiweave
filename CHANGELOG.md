@@ -13,6 +13,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A cancelled run is recorded as cancelled.** Cancelling a run, including one
+  waiting in a Delay or a Merge, now saves it as `cancelled` in History and in
+  Call Workflow sub-runs, with the interrupted node shown as skipped.
+  Previously it was saved as completed or failed, and a cancel during a Delay
+  showed the run as passed. A Merge waiting on its branches now stops on cancel
+  instead of waiting out its 30 s window.
+- **An HTTP request node's timeout is honoured above 30 s.** The node's timeout
+  is now the request's only deadline; a hidden 30 s cap cut longer timeouts
+  short. A timed-out request now says "Request timed out after Ns", and a
+  cancelled one is no longer reported as a timeout.
+- **Secrets used only inside a called workflow are resolved.** A
+  `{{secrets.*}}` placeholder that appears only in a Call Workflow target (at
+  any depth) was sent as literal text; secrets for the whole call tree are now
+  resolved when the run starts, and masked in its history like any other.
 - **Secret values no longer reach the run history.** Every secret a run
   resolves is now replaced with `<SECRET>` in what the run stores and streams:
   request URLs, response headers and bodies (including an API that echoes your
