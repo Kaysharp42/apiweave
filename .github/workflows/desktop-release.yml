@@ -13,6 +13,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The same gate every PR runs. Builds wait on it, so a tag can never publish
+  # installers from a commit whose tests, typecheck or lint fail.
+  quality:
+    name: Quality gate
+    uses: ./.github/workflows/quality.yml
+
   validate:
     name: Validate release tag
     runs-on: ubuntu-22.04
@@ -93,7 +99,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.name }}
-    needs: validate
+    needs: [quality, validate]
     permissions:
       contents: write
     strategy:
@@ -408,7 +414,7 @@ jobs:
 
   cleanup:
     name: Discard incomplete draft
-    needs: [validate, build, publish]
+    needs: [quality, validate, build, publish]
     # Runs when anything upstream failed, and on cancellation — a build killed
     # halfway through still leaves the draft the validate job created.
     if: ${{ failure() || cancelled() }}
