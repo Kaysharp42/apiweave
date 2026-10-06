@@ -16,6 +16,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **The MCP server only answers to its own address.** Requests whose `Host`
   header is not `127.0.0.1:<port>` or `localhost:<port>` are refused, so a web
   page that rebinds its domain to the loopback address cannot reach it.
+- **A workflow name cannot pose as agent instructions.** The session briefing
+  quotes the workflow or project name as a JSON string, so a name containing
+  line breaks or Markdown cannot add headings or instructions of its own.
+- **Prompts are escaped for `cmd.exe` on Windows.** An agent installed as a
+  `.cmd` shim (most npm-installed CLIs) runs through `cmd.exe`, which acted on
+  `&`, `|`, `%` and similar characters in the prompt. The embedded terminal now
+  escapes them; a prompt with a line break is refused there, since `cmd.exe`
+  cannot carry one. Launching such an agent in an external terminal refuses
+  those characters instead.
 
 ### Fixed
 
