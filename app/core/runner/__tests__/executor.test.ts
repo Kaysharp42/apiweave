@@ -1051,6 +1051,30 @@ describe("WorkflowExecutor", () => {
     })
   })
 
+  describe("delay cancellation", () => {
+    it("stops a delay whose run was cancelled before the delay node started", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "wait", type: "delay", config: { duration: 5000 } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "wait" },
+          { edgeId: "e2", source: "wait", target: "end" },
+        ],
+      }
+      const controller = new AbortController()
+      const started = Date.now()
+      const pending = new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { cancelSignal: controller.signal })
+      // Past the executor's up-front abort check, before the delay registers its listener.
+      controller.abort()
+      const output = await pending
+      expect(Date.now() - started).toBeLessThan(1000)
+      expect(output.results.find((result) => result.nodeId === "wait")?.status).not.toBe("passed")
+    })
+  })
+
   describe("cycle protection", () => {
     it("fails a cyclic graph before sending any request, naming the cycle", async () => {
       let requests = 0

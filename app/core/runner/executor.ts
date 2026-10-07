@@ -1220,6 +1220,9 @@ export class WorkflowExecutor {
       return { status: "success", duration: 0, message: "Delayed for 0 ms (harness mode)" }
     }
 
+    // An abort that landed before this node started never fires the listener below.
+    if (cancelSignal?.aborted) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
+
     return new Promise<NodeResult>((resolve) => {
       const timer = setTimeout(() => {
         resolve({ status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` })
