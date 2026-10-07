@@ -64,6 +64,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Cancelling a run during a Delay node stops it.** A cancel that landed just
+  before a Delay node began was missed, and the run waited out the whole delay
+  while still showing as running.
+
 - **Importing cURL commands as nodes no longer creates a workflow.** Adding
   pasted cURL commands to the **Add Nodes** panel also created a stray workflow
   in the sidebar. The commands are now only parsed, as HAR and OpenAPI
@@ -252,6 +256,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Run a whole project.** The project page has a **Run project** button: pick
+  an environment and every enabled workflow runs in the project's order, each
+  as an ordinary run with its own History entry. A failed workflow stops the
+  project unless its row says **Continue**; the workflows after a stop are
+  skipped. The card follows the run live, opens any workflow's run, cancels,
+  and lists earlier project runs (the newest 50 per project are kept). Agents
+  can do the same over MCP with `projects_run`, `projects_getRun`,
+  `projects_listRuns` and `projects_cancelRun`; an agent's project run still
+  asks before any workflow sends secrets.
 - **Delete runs from History.** Each finished run in the History panel has a
   delete button, and **Clear history** deletes every finished run of the
   workflow. Runs still in progress are kept. Agents connected through MCP
@@ -270,6 +283,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **The project-wide Continue on Failure toggle** in Manage Workflows. Project
+  runs follow each workflow row's own Continue/Stop flag, so the project-wide
+  switch had nothing to decide.
 - **The workflow-level Continue on Fail toggle.** It was never saved and the
   runner never read it, so it had no effect. Failure handling is per node:
   each node's **Continue on failure** toggle in its Settings tab.
