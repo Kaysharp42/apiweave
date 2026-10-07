@@ -253,6 +253,7 @@ export type { CopySuccessState } from "./CopySuccessState";
 export type { EnvironmentFormData } from "./EnvironmentFormData";
 export type { DryRunStats } from "./DryRunStats";
 export type { DryRunResult } from "./DryRunResult";
+export type { ProjectImportDryRunResult } from "./ProjectImportDryRunResult";
 export type { ImportResult } from "./ImportResult";
 export type { WorkflowExportImportTab } from "./WorkflowExportImportTab";
 export type { WorkflowExportImportProps } from "./WorkflowExportImportProps";

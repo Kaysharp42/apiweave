@@ -17,12 +17,8 @@ import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { TextArea } from "./atoms/TextArea";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
-import {
-  workflowTemplatesUrl,
-  workflowImportFormatUrl,
-} from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 
 const importPanelLog = getLogger("ImportToNodesPanel");
@@ -277,21 +273,11 @@ export function ImportToNodesPanel({
     _sourceType: string,
   ): Promise<void> => {
     try {
-      const response = await authenticatedFetch(
-        workflowTemplatesUrl(workspaceId || "", workflowId),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(templates),
-        },
+      await apiweave.workflows.saveTemplates(
+        workspaceId || "",
+        workflowId,
+        templates,
       );
-
-      if (!response.ok) {
-        const error = (await response.json()) as { detail?: string };
-        throw new Error(error.detail || "Failed to save templates");
-      }
-
-      await response.json();
     } catch (error) {
       importPanelLog.error("Error saving templates to workflow:", error);
       throw error;
@@ -333,56 +319,40 @@ export function ImportToNodesPanel({
         return;
       }
 
-      const formData = new FormData();
-      const blob = new Blob([fileContent], { type: "application/json" });
-      formData.append("file", blob, "openapi.json");
+      const result = (await apiweave.workflows.importOpenapi({
+        workspaceId: workspaceId || "",
+        spec: fileContent,
+        sanitize,
+      })) as { nodes?: Node[] };
 
-      const response = await authenticatedFetch(
-        `${workflowImportFormatUrl(workspaceId || "", "openapi")}?sanitize=${sanitize}&parse_only=true`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const nodes = result.nodes || [];
 
-      if (response.ok) {
-        const result = (await response.json()) as { nodes?: Node[] };
-        const nodes = result.nodes || [];
+      if (nodes.length > 0) {
+        await saveTemplatesToWorkflow(nodes, "openapi");
 
-        if (nodes.length > 0) {
-          await saveTemplatesToWorkflow(nodes, "openapi");
+        const items = nodesToPaletteItems(nodes);
+        addImportedGroup({
+          title: "OpenAPI Requests",
+          id: `openapi-${workflowId}`,
+          items: items,
+        } as ImportedGroupPayload);
 
-          const items = nodesToPaletteItems(nodes);
-          addImportedGroup({
-            title: "OpenAPI Requests",
-            id: `openapi-${workflowId}`,
-            items: items,
-          } as ImportedGroupPayload);
+        setMessage({
+          type: "success",
+          title: "Import Successful",
+          text: `${items.length} request(s) saved and added to Add Nodes panel`,
+        });
 
-          setMessage({
-            type: "success",
-            title: "Import Successful",
-            text: `${items.length} request(s) saved and added to Add Nodes panel`,
-          });
-
-          setTimeout(() => {
-            onClose();
-            setUploadedFile(null);
-            setPastedText("");
-          }, 2000);
-        } else {
-          setMessage({
-            type: "error",
-            title: "No Requests Found",
-            text: "Could not parse any requests from the OpenAPI file",
-          });
-        }
+        setTimeout(() => {
+          onClose();
+          setUploadedFile(null);
+          setPastedText("");
+        }, 2000);
       } else {
-        const error = (await response.json()) as { detail?: string };
         setMessage({
           type: "error",
-          title: "Import Failed",
-          text: error.detail || "Failed to import OpenAPI",
+          title: "No Requests Found",
+          text: "Could not parse any requests from the OpenAPI file",
         });
       }
     } catch (error) {
@@ -416,56 +386,41 @@ export function ImportToNodesPanel({
         return;
       }
 
-      const formData = new FormData();
-      const blob = new Blob([fileContent], { type: "application/json" });
-      formData.append("file", blob, "har.json");
+      const result = (await apiweave.workflows.importHar({
+        workspaceId: workspaceId || "",
+        data: JSON.parse(fileContent) as Record<string, unknown>,
+        importMode,
+        sanitize,
+      })) as { nodes?: Node[] };
 
-      const response = await authenticatedFetch(
-        `${workflowImportFormatUrl(workspaceId || "", "har")}?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+      const nodes = result.nodes || [];
 
-      if (response.ok) {
-        const result = (await response.json()) as { nodes?: Node[] };
-        const nodes = result.nodes || [];
+      if (nodes.length > 0) {
+        await saveTemplatesToWorkflow(nodes, "har");
 
-        if (nodes.length > 0) {
-          await saveTemplatesToWorkflow(nodes, "har");
+        const items = nodesToPaletteItems(nodes);
+        addImportedGroup({
+          title: "HAR Requests",
+          id: `har-${workflowId}`,
+          items: items,
+        } as ImportedGroupPayload);
 
-          const items = nodesToPaletteItems(nodes);
-          addImportedGroup({
-            title: "HAR Requests",
-            id: `har-${workflowId}`,
-            items: items,
-          } as ImportedGroupPayload);
+        setMessage({
+          type: "success",
+          title: "Import Successful",
+          text: `${items.length} request(s) saved and added to Add Nodes panel`,
+        });
 
-          setMessage({
-            type: "success",
-            title: "Import Successful",
-            text: `${items.length} request(s) saved and added to Add Nodes panel`,
-          });
-
-          setTimeout(() => {
-            onClose();
-            setUploadedFile(null);
-            setPastedText("");
-          }, 2000);
-        } else {
-          setMessage({
-            type: "error",
-            title: "No Requests Found",
-            text: "Could not parse any requests from the HAR file",
-          });
-        }
+        setTimeout(() => {
+          onClose();
+          setUploadedFile(null);
+          setPastedText("");
+        }, 2000);
       } else {
-        const error = (await response.json()) as { detail?: string };
         setMessage({
           type: "error",
-          title: "Import Failed",
-          text: error.detail || "Failed to import HAR",
+          title: "No Requests Found",
+          text: "Could not parse any requests from the HAR file",
         });
       }
     } catch (error) {
@@ -494,50 +449,42 @@ export function ImportToNodesPanel({
         return;
       }
 
-      const response = await authenticatedFetch(
-        `${workflowImportFormatUrl(workspaceId || "", "curl")}?sanitize=${sanitize}&parse_only=true&curl_command=${encodeURIComponent(pastedText)}`,
-        {
-          method: "POST",
-        },
-      );
+      // ponytail: there is no parse-only curl handler, so this creates a
+      // workflow from the command just to read its nodes back. Add a parse
+      // action to the importCurl handler if that stray workflow matters.
+      const result = (await apiweave.workflows.importCurl({
+        workspaceId: workspaceId || "",
+        curlCommand: pastedText,
+        sanitize,
+      })) as { nodes?: Node[] };
 
-      if (response.ok) {
-        const result = (await response.json()) as { nodes?: Node[] };
-        const nodes = result.nodes || [];
+      const nodes = result.nodes || [];
 
-        if (nodes.length > 0) {
-          await saveTemplatesToWorkflow(nodes, "curl");
+      if (nodes.length > 0) {
+        await saveTemplatesToWorkflow(nodes, "curl");
 
-          const items = nodesToPaletteItems(nodes);
-          addImportedGroup({
-            title: "Curl Requests",
-            id: `curl-${workflowId}`,
-            items: items,
-          } as ImportedGroupPayload);
+        const items = nodesToPaletteItems(nodes);
+        addImportedGroup({
+          title: "Curl Requests",
+          id: `curl-${workflowId}`,
+          items: items,
+        } as ImportedGroupPayload);
 
-          setMessage({
-            type: "success",
-            title: "Import Successful",
-            text: `${items.length} request(s) saved and added to Add Nodes panel`,
-          });
+        setMessage({
+          type: "success",
+          title: "Import Successful",
+          text: `${items.length} request(s) saved and added to Add Nodes panel`,
+        });
 
-          setTimeout(() => {
-            onClose();
-            setPastedText("");
-          }, 2000);
-        } else {
-          setMessage({
-            type: "error",
-            title: "No Requests Found",
-            text: "Could not parse any requests from the curl command(s)",
-          });
-        }
+        setTimeout(() => {
+          onClose();
+          setPastedText("");
+        }, 2000);
       } else {
-        const error = (await response.json()) as { detail?: string };
         setMessage({
           type: "error",
-          title: "Import Failed",
-          text: error.detail || "Failed to import curl",
+          title: "No Requests Found",
+          text: "Could not parse any requests from the curl command(s)",
         });
       }
     } catch (error) {

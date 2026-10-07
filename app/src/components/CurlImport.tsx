@@ -12,9 +12,8 @@ import useCanvasStore from "../stores/CanvasStore";
 import { Button } from "./atoms/Button";
 import { TextArea } from "./atoms/TextArea";
 import { IconButton } from "./atoms/IconButton";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { workflowsUrl, workflowImportCurlUrl } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 
 const curlImportLog = getLogger("CurlImport");
@@ -64,13 +63,8 @@ export function CurlImport({
   useEffect(() => {
     (async () => {
       try {
-        const response = await authenticatedFetch(
-          workflowsUrl(workspaceId || "", { limit: 100 }),
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setWorkflows(data.workflows || []);
-        }
+        const data = await apiweave.workflows.list(workspaceId || "");
+        setWorkflows([...data.items]);
       } catch (err) {
         curlImportLog.error("Error fetching workflows:", err);
       } finally {
@@ -148,23 +142,12 @@ export function CurlImport({
     setIsLoading(true);
 
     try {
-      const params = new URLSearchParams();
-      params.append("curl_command", curlInput);
-      params.append("sanitize", String(sanitize));
-
-      const response = await authenticatedFetch(
-        `${workflowImportCurlUrl(workspaceId || "", true)}?${params}`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Preview failed");
-      }
-
-      const result = await response.json();
+      const result = (await apiweave.workflows.importCurl({
+        workspaceId: workspaceId || "",
+        curlCommand: curlInput,
+        sanitize,
+        dryRun: true,
+      })) as DryRunResult;
       setDryRunResult(result);
     } catch (err) {
       curlImportLog.error("Preview error:", err);
@@ -186,26 +169,12 @@ export function CurlImport({
     setImporting(true);
 
     try {
-      const params = new URLSearchParams();
-      params.append("curl_command", curlInput);
-      params.append("sanitize", String(sanitize));
-      if (selectedWorkflowId) {
-        params.append("workflowId", selectedWorkflowId);
-      }
-
-      const response = await authenticatedFetch(
-        `${workflowImportCurlUrl(workspaceId || "")}?${params}`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Import failed");
-      }
-
-      const data = await response.json();
+      const data = (await apiweave.workflows.importCurl({
+        workspaceId: workspaceId || "",
+        curlCommand: curlInput,
+        sanitize,
+        ...(selectedWorkflowId ? { workflowId: selectedWorkflowId } : {}),
+      })) as { readonly workflowId: string };
 
       if (selectedWorkflowId) {
         useCanvasStore.getState().signalWorkflowReload(data.workflowId);

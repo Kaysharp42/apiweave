@@ -42,6 +42,7 @@ import type { NodePreset } from "../types/NodePreset";
 import type { NodePresetNodeType } from "../types/NodePresetNodeType";
 import type { Project } from "../types/Project";
 import type { DryRunResult } from "../types/DryRunResult";
+import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
 import type { ImportResult } from "../types/ImportResult";
 import type { Run } from "../types/Run";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
@@ -56,7 +57,6 @@ import type {
 } from "../types/cloud";
 
 type Environment = ScopedEnvironment;
-type ImportDryRunResult = DryRunResult;
 type JsonValue = unknown;
 type IpcRun = Run & {
   readonly workspaceId?: string;
@@ -335,18 +335,68 @@ export const apiweave = {
         targetWorkspaceId,
         targetCollectionId,
       }),
-    import: (
-      workspaceId: string,
-      bundle: unknown,
-      createMissingEnvironments?: boolean,
-    ) =>
-      invoke<ImportResult>("workflows", "import", {
-        workspaceId,
-        bundle,
-        createMissingEnvironments,
-      }),
+    import: (input: {
+      readonly workspaceId: string;
+      readonly bundle: unknown;
+      readonly createMissingEnvironments?: boolean;
+      readonly sanitize?: boolean;
+    }) => invoke<ImportResult>("workflows", "import", input),
     dryRun: (workspaceId: string, bundle: unknown) =>
       invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),
+    /** An `.aweflow` bundle; secrets travel as references only. */
+    export: (
+      workspaceId: string,
+      workflowId: string,
+      includeEnvironment = true,
+    ) =>
+      invoke<unknown>("workflows", "export", {
+        workspaceId,
+        workflowId,
+        includeEnvironment,
+      }),
+    // The parsers below answer a preview with `dryRun`, and parsed nodes
+    // otherwise; both shapes belong to the importer UI that asked.
+    importOpenapi: (input: {
+      readonly workspaceId: string;
+      readonly spec: string;
+      readonly baseUrl?: string;
+      readonly tagFilter?: readonly string[];
+      readonly sanitize?: boolean;
+      readonly dryRun?: boolean;
+    }) => invoke<unknown>("workflows", "importOpenapi", input),
+    importOpenapiUrl: (input: {
+      readonly workspaceId: string;
+      readonly url: string;
+      readonly baseUrl?: string;
+      readonly tagFilter?: readonly string[];
+      readonly sanitize?: boolean;
+      readonly dryRun?: boolean;
+    }) => invoke<unknown>("workflows", "importOpenapiUrl", input),
+    importHar: (input: {
+      readonly workspaceId: string;
+      readonly data: Record<string, unknown>;
+      readonly importMode?: "linear" | "grouped";
+      readonly sanitize?: boolean;
+      readonly dryRun?: boolean;
+    }) => invoke<unknown>("workflows", "importHar", input),
+    importCurl: (input: {
+      readonly workspaceId: string;
+      readonly curlCommand: string;
+      readonly sanitize?: boolean;
+      readonly dryRun?: boolean;
+      readonly workflowId?: string;
+      readonly collectionId?: string;
+    }) => invoke<unknown>("workflows", "importCurl", input),
+    saveTemplates: (
+      workspaceId: string,
+      workflowId: string,
+      templates: readonly unknown[],
+    ) =>
+      invoke<Workflow>("workflows", "saveTemplates", {
+        workspaceId,
+        workflowId,
+        templates,
+      }),
   },
   assertions: {
     suggest: (
@@ -689,7 +739,10 @@ export const apiweave = {
     ) =>
       invoke<unknown>("projects", "import", { workspaceId, bundle, ...options }),
     dryRun: (workspaceId: string, bundle: ProjectBundle) =>
-      invoke<ImportDryRunResult>("projects", "dryRun", { workspaceId, bundle }),
+      invoke<ProjectImportDryRunResult>("projects", "dryRun", {
+        workspaceId,
+        bundle,
+      }),
   },
   cloud: {
     status: () => invoke<CloudSyncStatus>("cloud", "status", {}),

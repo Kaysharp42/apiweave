@@ -1,10 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { usePalette } from "../contexts/PaletteContext";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { buildSwaggerRefreshSummary } from "../utils/swaggerRefreshSummary";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { workflowImportOpenapiRemoteUrl } from "../utils/apiweaveClient";
 import type { Node } from "@xyflow/react";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
@@ -89,10 +88,11 @@ export function __clearSwaggerCacheForTests() {
 }
 
 export async function fetchSwaggerNodes(
-  requestUrl: string,
-  cacheKey: string,
+  workspaceId: string,
+  swaggerDocUrl: string,
   force: boolean,
 ): Promise<SwaggerImportPayload> {
+  const cacheKey = swaggerCacheKey(workspaceId, swaggerDocUrl);
   if (!force) {
     const cached = swaggerResultCache.get(cacheKey);
     if (cached) {
@@ -106,18 +106,11 @@ export async function fetchSwaggerNodes(
   }
 
   const promise = (async () => {
-    const response = await authenticatedFetch(requestUrl);
-    if (!response.ok) {
-      let detail = "Failed to load Swagger/OpenAPI URL";
-      try {
-        const errorBody = (await response.json()) as { detail?: string };
-        detail = errorBody.detail || detail;
-      } catch {
-        // Keep default error detail if response body is not JSON
-      }
-      throw new Error(detail);
-    }
-    const parsed = (await response.json()) as SwaggerImportPayload;
+    const parsed = (await apiweave.workflows.importOpenapiUrl({
+      workspaceId,
+      url: swaggerDocUrl,
+      sanitize: true,
+    })) as SwaggerImportPayload;
     storeSwaggerResult(cacheKey, parsed);
     return parsed;
   })();
@@ -239,8 +232,8 @@ export function useSwaggerRefresh({
 
       try {
         const result = await fetchSwaggerNodes(
-          workflowImportOpenapiRemoteUrl(workspaceId, swaggerDocUrl, true),
-          swaggerCacheKey(workspaceId, swaggerDocUrl),
+          workspaceId,
+          swaggerDocUrl,
           force,
         );
 

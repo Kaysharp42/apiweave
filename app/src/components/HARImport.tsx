@@ -12,8 +12,7 @@ import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import { workflowImportHarUrl } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 
 const harImportLog = getLogger("HARImport");
@@ -112,7 +111,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   };
 
   const handlePreview = async () => {
-    if (!harFile) {
+    if (!harJson) {
       setError("Please select a HAR file first");
       return;
     }
@@ -121,25 +120,13 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
     setDryRunResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", harFile);
-      formData.append("import_mode", importMode);
-      formData.append("sanitize", String(sanitize));
-
-      const response = await authenticatedFetch(
-        workflowImportHarUrl(workspaceId || "", true),
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = (await response.json()) as { detail?: string };
-        throw new Error(errorData.detail || "Preview failed");
-      }
-
-      const result = (await response.json()) as HARImportDryRunResult;
+      const result = (await apiweave.workflows.importHar({
+        workspaceId: workspaceId || "",
+        data: harJson,
+        importMode,
+        sanitize,
+        dryRun: true,
+      })) as HARImportDryRunResult;
       setDryRunResult(result);
     } catch (err) {
       harImportLog.error("Preview error:", err);
