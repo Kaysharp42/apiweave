@@ -162,6 +162,7 @@ Returns one item picked at random from a comma-separated list of options. Use it
 
 - **If a function output looks like the raw call text** (you see `{{uuid()}}` in the response), the placeholder was not evaluated. Check that the field supports template substitution and that the function name is spelled correctly.
 - **If a function returns the same value across runs**, it is not being re-evaluated. Placeholders are resolved at run time, so the value changes only when the workflow actually runs. Re-run the workflow to get a fresh value.
+- **If a node fails with "exceeds the maximum length of 10000"**, a generator (`randomString`, `randomAlpha`, `randomNumeric`, `randomHex`, `randomNumber`) was asked for more than 10,000 characters. Use a smaller length.
 - **If `randomChoice` returns an empty string**, the `options` argument was empty. Pass a non-empty comma-separated list, for example `red,green,blue`.
 - **If a date format string is ignored**, verify the format uses `strftime` directives (`%Y`, `%m`, `%d`, `%H`, `%M`, `%S`). Literal characters outside those directives are passed through.
 

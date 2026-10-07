@@ -64,6 +64,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A huge generated length fails the node instead of the app.**
+  `randomString`, `randomAlpha`, `randomNumeric`, `randomHex` and
+  `randomNumber` refuse a length above 10,000 and fail the node with that
+  message; `{{randomString(1000000000)}}` could exhaust memory. A dynamic
+  function that rejects its input now always fails the node instead of
+  sending the placeholder text verbatim.
 - **`{{randomChoice(a,b,c)}}` picks from every option.** It always returned
   the first one, because the options arrived as separate arguments and only
   the first was read.

@@ -100,6 +100,15 @@ describe("DynamicFunctions (seeded)", () => {
     expect(pick(0.99)).toBe("c")
   })
 
+  it("refuses a generated length above the maximum instead of exhausting memory", () => {
+    expect(fn.randomString(10_000)).toHaveLength(10_000)
+    expect(() => fn.randomString(1e9)).toThrow("randomString(1000000000) exceeds the maximum length of 10000")
+    expect(() => fn.randomAlpha("10001")).toThrow("exceeds the maximum length")
+    expect(() => fn.randomNumeric(10_001)).toThrow("exceeds the maximum length")
+    expect(() => fn.randomHex(10_001)).toThrow("exceeds the maximum length")
+    expect(() => fn.randomNumber(10_001)).toThrow("exceeds the maximum length")
+  })
+
   it("getFunction('uuid') returns the function and roundtrips", () => {
     const f = fn.getFunction("uuid")
     expect(f).toBeDefined()

@@ -1785,14 +1785,12 @@ export class WorkflowExecutor {
         const params = funcMatch[2]!.trim()
         const func = this.deps.functions.getFunction(funcName)
         if (func) {
-          try {
-            const paramList = params
-              ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
-              : []
-            return String(func(...paramList))
-          } catch {
-            return match
-          }
+          // A function that rejects its arguments fails the node with its own
+          // message rather than sending the placeholder text verbatim.
+          const paramList = params
+            ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
+            : []
+          return String(func(...paramList))
         }
       }
 

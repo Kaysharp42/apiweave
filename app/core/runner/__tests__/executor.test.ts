@@ -141,6 +141,26 @@ describe("WorkflowExecutor", () => {
       expect(result?.unresolvedPlaceholders).toEqual(["env.BASE_URL"])
     })
 
+    it("fails the node with the function's own error when a dynamic function rejects its argument", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            config: { method: "GET", url: "http://127.0.0.1:1/{{randomString(1000000000)}}" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }
+
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      expect(output.status).toBe("failed")
+      expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain(
+        "randomString(1000000000) exceeds the maximum length of 10000",
+      )
+    })
+
     // `prev` (unlike env./variables./secrets.) has no trailing dot of its own — the
     // dot lives in the reference body, e.g. `{{prev.response.body.id}}`. It must be
     // kept as the join separator, not stripped as if it belonged to `env.`/etc.
