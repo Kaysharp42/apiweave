@@ -1,7 +1,9 @@
 import { z } from "zod"
-import { CollectionSchema, JsonValueSchema, WorkflowSchema, WorkflowOrderItemSchema } from "@shared/zod-schemas"
+import { CollectionSchema, JsonValueSchema, ProjectRunSchema, WorkflowSchema, WorkflowOrderItemSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { ProjectBundle } from "../../services/project_export_service"
+import type { ProjectRunService } from "../../services/project_run_service"
+import { NotFoundError } from "../errors"
 import type { HandlerDeps } from "./common"
 import { listResult } from "./common"
 
@@ -142,8 +144,14 @@ const BundleInputSchema = z
   })
   .passthrough()
 
+const projectRunIdInput = z.object({ workspaceId: ws, projectRunId: z.string().min(1) }).strict()
+
 export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { collections, projects } = deps
+  const projectRuns = (): ProjectRunService => {
+    if (deps.projectRuns === undefined) throw new NotFoundError("Project runs are not available in this process")
+    return deps.projectRuns
+  }
 
   router.register("projects", "create", {
     input: createInput,
@@ -203,6 +211,38 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
     input: idInput,
     output: z.array(WorkflowSchema),
     handle: (i) => collections.listWorkflows(i.workspaceId, i.collectionId),
+  })
+
+  // --- Project runs: the enabled workflows, in order, against one environment ---
+
+  router.register("projects", "run", {
+    input: z
+      .object({
+        workspaceId: ws,
+        projectId: z.string().min(1),
+        environmentId: z.string().min(1).nullable().describe("Every workflow runs against this environment; null runs them with none."),
+      })
+      .strict(),
+    output: ProjectRunSchema,
+    handle: (i, context) => projectRuns().start(i.workspaceId, i.projectId, i.environmentId, context?.agent),
+  })
+
+  router.register("projects", "getRun", {
+    input: projectRunIdInput,
+    output: ProjectRunSchema,
+    handle: (i) => projectRuns().get(i.workspaceId, i.projectRunId),
+  })
+
+  router.register("projects", "listRuns", {
+    input: z.object({ workspaceId: ws, projectId: z.string().min(1) }).strict(),
+    output: listResult(ProjectRunSchema),
+    handle: (i) => projectRuns().list(i.workspaceId, i.projectId),
+  })
+
+  router.register("projects", "cancelRun", {
+    input: projectRunIdInput,
+    output: ProjectRunSchema,
+    handle: (i) => projectRuns().cancel(i.workspaceId, i.projectRunId),
   })
 
   router.register("projects", "export", {

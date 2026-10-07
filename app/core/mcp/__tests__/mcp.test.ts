@@ -183,6 +183,17 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  it("publishes project runs: start and cancel as writes, reads as reads, and the agent approval stated", () => {
+    const byName = new Map(MCP_TOOLS.map((spec) => [toolName(spec), spec]))
+    // Starting one sends real requests, like runs_create; it never deletes anything.
+    expect(byName.get("projects_run")).toMatchObject({ domain: "projects", action: "run", intent: "write", openWorld: true })
+    expect(byName.get("projects_run")?.destructive).toBeUndefined()
+    expect(byName.get("projects_run")?.description).toMatch(/approve/)
+    expect(byName.get("projects_getRun")).toMatchObject({ intent: "read" })
+    expect(byName.get("projects_listRuns")).toMatchObject({ intent: "read" })
+    expect(byName.get("projects_cancelRun")).toMatchObject({ intent: "write", destructive: true })
+  })
+
   it("uses unique public names and maps explicit diagnostic and assertion names", () => {
     const names = MCP_TOOLS.map(toolName)
     expect(new Set(names).size).toBe(names.length)

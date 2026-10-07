@@ -5,6 +5,7 @@ import type { WorkflowService } from "../../services/workflow_service"
 import type { EnvironmentService } from "../../services/environment_service"
 import type { NodePresetService } from "../../services/node_preset_service"
 import type { RunService } from "../../services/run_service"
+import type { ProjectRunService } from "../../services/project_run_service"
 import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
 import type { ImportService } from "../../services/import_service"
@@ -31,6 +32,8 @@ export interface HandlerDeps {
   readonly projects: ProjectExportService
   readonly imports: ImportService
   readonly cloud?: CloudSyncControl
+  /** Absent where nothing executes runs (a test router without a scheduler). */
+  readonly projectRuns?: ProjectRunService
 }
 
 /** A method taking no payload — the renderer sends `undefined`, so accept it. */
