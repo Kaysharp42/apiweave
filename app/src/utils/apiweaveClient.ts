@@ -7,6 +7,7 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
 import type { AgentScope } from "@shared/types/AgentScope";
@@ -82,6 +83,9 @@ type IpcBridge = {
   ) => () => void;
   readonly onRunStarted?: (
     callback: (event: RunStartedEvent) => void,
+  ) => () => void;
+  readonly onProjectRunChanged?: (
+    callback: (projectRun: ProjectRun) => void,
   ) => () => void;
   readonly onAgentWrite?: (
     callback: (event: AgentWriteEvent) => void,
@@ -717,6 +721,25 @@ export const apiweave = {
         workspaceId,
         collectionId,
       }),
+    /** Run the project's enabled workflows in order against one environment (null for none). */
+    run: (workspaceId: string, projectId: string, environmentId: string | null) =>
+      invoke<ProjectRun>("projects", "run", {
+        workspaceId,
+        projectId,
+        environmentId,
+      }),
+    getRun: (workspaceId: string, projectRunId: string) =>
+      invoke<ProjectRun>("projects", "getRun", { workspaceId, projectRunId }),
+    listRuns: (workspaceId: string, projectId: string) =>
+      invoke<ListResult<ProjectRun>>("projects", "listRuns", {
+        workspaceId,
+        projectId,
+      }),
+    cancelRun: (workspaceId: string, projectRunId: string) =>
+      invoke<ProjectRun>("projects", "cancelRun", {
+        workspaceId,
+        projectRunId,
+      }),
     export: (
       workspaceId: string,
       projectId: string,
@@ -810,6 +833,16 @@ export function onRunStarted(
   callback: (event: RunStartedEvent) => void,
 ): () => void {
   return getIpcBridge().onRunStarted?.(callback) ?? (() => undefined);
+}
+
+/**
+ * Subscribe to every change to any project run, whoever started it. Each event
+ * carries the whole record; see `PROJECT_RUN_CHANGED_CHANNEL`.
+ */
+export function onProjectRunChanged(
+  callback: (projectRun: ProjectRun) => void,
+): () => void {
+  return getIpcBridge().onProjectRunChanged?.(callback) ?? (() => undefined);
 }
 
 /**

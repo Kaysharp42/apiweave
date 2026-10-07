@@ -25,7 +25,6 @@ import { IconButton } from "./atoms/IconButton";
 import { AgentLaunchButton } from "./organisms/AgentLaunchButton";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
-import { Toggle } from "./atoms/Toggle";
 import useSidebarStore from "../stores/SidebarStore";
 import {
   DefaultCollectionColor,
@@ -47,7 +46,6 @@ interface ExtendedProject extends Project {
     enabled: boolean;
     continueOnFail: boolean;
   }>;
-  continueOnFail?: boolean;
   workflowCount: number;
 }
 
@@ -73,7 +71,6 @@ interface ProjectManagerState {
   isManagingWorkflows: boolean;
   workflowOrder: WorkflowOrderItem[];
   draggedIndex: number | null;
-  continueOnFail: boolean;
   formData: ProjectFormData;
   error: string;
   deleteTarget: string | null;
@@ -87,7 +84,6 @@ const createInitialState = (): ProjectManagerState => ({
   isManagingWorkflows: false,
   workflowOrder: [],
   draggedIndex: null,
-  continueOnFail: true,
   formData: { name: "", description: "", color: DefaultCollectionColor },
   error: "",
   deleteTarget: null,
@@ -114,7 +110,6 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
     isManagingWorkflows,
     workflowOrder,
     draggedIndex,
-    continueOnFail,
     formData,
     error,
     deleteTarget,
@@ -291,8 +286,6 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       ...prev,
       selectedProject: project,
       isManagingWorkflows: true,
-      continueOnFail:
-        project.continueOnFail !== undefined ? project.continueOnFail : true,
     }));
     const projectWorkflows = workflows.filter(
       (w) => w.collectionId === projectId,
@@ -351,7 +344,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       await apiweave.projects.update(
         workspaceId,
         getProjectId(selectedProject),
-        { workflowOrder: orderData, continueOnFail },
+        { workflowOrder: orderData },
       );
       toast.success("Workflow order saved");
       const nextProjects = await fetchProjects();
@@ -513,28 +506,6 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                 <ArrowLeft className="w-4 h-4" /> Back to projects
               </Button>
 
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded">
-                <div className="flex items-center gap-2 cursor-pointer">
-                  <Toggle
-                    checked={continueOnFail}
-                    onChange={(e) =>
-                      setState((prev) => ({
-                        ...prev,
-                        continueOnFail: e.target.checked,
-                      }))
-                    }
-                    variant="primary"
-                    size="sm"
-                  />
-                  <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-                    Continue on Failure (Project-wide)
-                  </span>
-                </div>
-                <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
-                  When enabled, execution continues even if a workflow fails
-                </p>
-              </div>
-
               <div>
                 <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">
                   Execution Order (drag to reorder)
@@ -600,8 +571,8 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                           }
                           title={
                             wo.continueOnFail
-                              ? "Continue on fail"
-                              : "Stop on fail"
+                              ? "If this workflow fails, the project run goes on to the next one"
+                              : "If this workflow fails, the project run stops here"
                           }
                         >
                           {wo.continueOnFail ? "Continue" : "Stop"}
