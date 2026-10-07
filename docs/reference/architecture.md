@@ -121,6 +121,8 @@ APIWeave exposes two surfaces, both local:
 - **Typed IPC channel** between the renderer and the main process. The channel is exposed to the renderer through the preload script and is the single point of contact for every server-side operation.
 - **Local MCP bridge** at `http://127.0.0.1:<port>/mcp` for AI agents on the same machine. The bridge is opt-in, uses a regenerable per-install bearer token, and is the only network surface the app exposes. There is no remote trigger, no webhook, no public port.
 
+Outside the app, the headless CLI (`apiweave run`, `app/core/cli/`) reuses the importers, repositories, scheduler, project runner and reporters under plain Node, with an in-memory SQLite database and secrets from its environment. It never imports Electron, the keychain or the MCP bridge; its build fails if anything on its import graph does. See [Run Tests in CI](../guides/ci.md).
+
 One outbound-only connection exists beyond those: the auto-update manager polls the GitHub release channel for updates (and, when Cloud sync is enabled, the sync client talks to APIWeave Cloud). Neither accepts inbound connections.
 
 ## Related

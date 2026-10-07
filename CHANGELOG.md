@@ -256,6 +256,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Run tests in CI with `apiweave run`.** A headless command runs an exported
+  workflow or `.awecollection` project under plain Node, with no Electron and
+  no window, and exits 0 when every run passes, 1 when a test fails and 2 on a
+  usage or configuration error. Pick an environment from the file with
+  `--env`, layer values on it with `--env-file` and `--var`, and supply
+  secrets as `APIWEAVE_SECRET_<NAME>` variables, `--secret` or
+  `--secrets-file`; a missing secret stops the run before any request, and
+  secret values are masked in all output. It prints a per-step console report
+  and writes the JUnit and HTML reports (`--reporter cli,junit,html`), with
+  `--bail`, `--timeout-request` and `--insecure`. Build it from `app/` with
+  `npm run build:cli`; see the new CI guide for a GitHub Actions job.
 - **Run a whole project.** The project page has a **Run project** button: pick
   an environment and every enabled workflow runs in the project's order, each
   as an ordinary run with its own History entry. A failed workflow stops the

@@ -141,6 +141,8 @@ The card also lists the project's earlier runs; click one to see its workflows. 
 
 Variable and secret state does not pass between workflows: each workflow starts from its own variables and the chosen environment, as it would from the canvas. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
 
+A CI pipeline can run an exported `.awecollection` the same way, without the app: `apiweave run project.awecollection --env Staging`. See [Run Tests in CI](../guides/ci.md).
+
 An agent connected over MCP can start a project run with `projects_run` and follow it with `projects_getRun`. A workflow in an agent's project run that would send stored secrets waits for your approval first, as any agent-started run does. See [MCP Integration](mcp-integration.md).
 
 ## Export and Import (.awecollection)

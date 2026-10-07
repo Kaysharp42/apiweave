@@ -192,6 +192,9 @@ single **HTML** page to share.
 Either way, APIWeave asks where to save the file. Reports are built when you
 export them and are not kept anywhere else.
 
+In CI, `apiweave run --reporter junit,html` writes the same reports from the
+command line; see [Run Tests in CI](../guides/ci.md).
+
 ### What it contains
 
 - One `<testsuite>` per workflow run: a single run gives one, a project run one
