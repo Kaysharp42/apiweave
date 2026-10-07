@@ -64,6 +64,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Ctrl+R during a run no longer reloads the window.** Electron's default
+  menu was still installed behind the frameless window, and its Reload
+  (Ctrl+R) and Close (Ctrl+W) accelerators answered any keystroke the app did
+  not claim, so Ctrl+R while a run was going reloaded the window. Windows and
+  Linux now have no application menu; macOS has only the App, Edit and Window
+  menus, so Cmd+C, Cmd+V and Cmd+Q keep working.
 - **Deleting a synced workspace now deletes it in Cloud.** The deletion was
   queued in a table that the local delete emptied, so it never reached the
   server. It is now kept in its own queue, survives restarts and network
