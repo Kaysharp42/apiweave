@@ -211,6 +211,41 @@ describe("project migration UI", () => {
     });
   });
 
+  it("imports a workflow bundle into a project in one call", async () => {
+    const user = userEvent.setup();
+    const invoke = installBridge((key) =>
+      key === "workflows.import"
+        ? { workflowId: "wf-new", name: "WF", nodeCount: 0, edgeCount: 0, secretReferences: [], warnings: [] }
+        : { items: [], total: 0 },
+    );
+    const bundle = { workflow: { name: "WF", nodes: [], edges: [], variables: {} } };
+
+    render(
+      <CollectionExportImport
+        isOpen={true}
+        onClose={vi.fn()}
+        mode="import-workflows"
+        projectId="proj-1"
+      />,
+    );
+
+    await user.upload(
+      screen.getByLabelText(/project workflow or har file upload/i),
+      new File([JSON.stringify(bundle)], "wf.json", { type: "application/json" }),
+    );
+    await screen.findByText(/file loaded successfully/i);
+    await user.click(screen.getByRole("button", { name: /import to project/i }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("workflows", "import", {
+        workspaceId: "ws-1",
+        bundle,
+        collectionId: "proj-1",
+      });
+    });
+    expect(invoke.mock.calls.some(([, action]) => action === "addWorkflow")).toBe(false);
+  });
+
   it("imports an OpenAPI file into a project as a workflow with node templates", async () => {
     const user = userEvent.setup();
     const parsedNode = {

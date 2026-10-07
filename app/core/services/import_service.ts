@@ -16,7 +16,7 @@ import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_WORKFLOWS } from "../auth/permissions"
+import { RESOURCE_COLLECTIONS, RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
@@ -254,8 +254,13 @@ export class ImportService {
     bundle: WorkflowBundle,
     createMissingEnvironments: boolean,
     sanitize: boolean,
+    collectionId?: string,
   ): Promise<WorkflowImportResult> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_WORKFLOWS)
+    if (collectionId !== undefined) {
+      await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "update", RESOURCE_COLLECTIONS)
+      this.assertCollectionInWorkspace(collectionId, targetWorkspaceId)
+    }
     validateWorkflowBundle(bundle)
 
     const warnings: string[] = []
@@ -303,9 +308,10 @@ export class ImportService {
       variables: wfVars as Record<string, JsonValue>,
       tags: [...(bundle.workflow.tags ?? [])],
       selectedEnvironmentId: null,
+      ...(collectionId !== undefined ? { collectionId } : {}),
     }
 
-    // One transaction: the bundled environment and the workflow land together or not at all.
+    // One transaction: the bundled environment and the workflow, with its project membership, land together or not at all.
     const created = this.workflows.transaction(() => {
       if (bundledEnv !== undefined) {
         const environment = this.environments.create({
@@ -724,12 +730,7 @@ export class ImportService {
       return updated
     }
 
-    if (opts.collectionId) {
-      const collection = this.collections.getById(opts.collectionId)
-      if (!collection || collection.workspaceId !== workspaceId) {
-        throw new NotFoundError(`collection ${opts.collectionId} not found`)
-      }
-    }
+    if (opts.collectionId) this.assertCollectionInWorkspace(opts.collectionId, workspaceId)
 
     const create: WorkflowCreate = {
       workspaceId,
@@ -763,6 +764,14 @@ export class ImportService {
     if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
     await this.syncProvider.push()
     return updated
+  }
+
+  /** Reject a collection that does not belong to `workspaceId`: project membership never crosses workspaces. */
+  private assertCollectionInWorkspace(collectionId: string, workspaceId: string): void {
+    const collection = this.collections.getById(collectionId)
+    if (!collection || collection.workspaceId !== workspaceId) {
+      throw new NotFoundError(`collection ${collectionId} not found`)
+    }
   }
 
   /** Queue the cloud upsert for a row written in the caller's transaction, so the two commit together. */

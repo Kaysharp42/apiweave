@@ -339,6 +339,7 @@ export const apiweave = {
       readonly bundle: unknown;
       readonly createMissingEnvironments?: boolean;
       readonly sanitize?: boolean;
+      readonly collectionId?: string;
     }) => invoke<ImportResult>("workflows", "import", input),
     dryRun: (workspaceId: string, bundle: unknown) =>
       invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),

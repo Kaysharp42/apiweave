@@ -20,14 +20,16 @@ let service: ImportService
 let wsId: string
 let environments: EnvironmentRepository
 let workflows: WorkflowRepository
+let collections: CollectionRepository
+let workspaces: WorkspaceRepository
 let rebuild: (sync: SyncProvider) => ImportService
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
-  const workspaces = new WorkspaceRepository(db.kvStore)
+  workspaces = new WorkspaceRepository(db.kvStore)
   workflows = new WorkflowRepository(db.kvStore)
   environments = new EnvironmentRepository(db.kvStore)
-  const collections = new CollectionRepository(db.kvStore)
+  collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
@@ -206,6 +208,18 @@ describe("ImportService — workflow bundle export/import", () => {
     expect(config2["url"]).toBe("https://api.test/run?token={{variables.token}}&password=%3CSECRET%3E")
     expect(config2["headers"]).toEqual([{ key: "Authorization", value: "Bearer {{variables.token}}" }])
     expect(config2["extractors"]).toEqual({ token: "response.body.token" })
+  })
+
+  it("imports a workflow straight into a project, and never into another workspace's project", async () => {
+    const bundle: WorkflowBundle = { workflow: { name: "Member", nodes: [], edges: [], variables: {} } }
+    const project = collections.create({ workspaceId: wsId, name: "Project" })
+    const result = await service.importWorkflow(wsId, bundle, false, true, project.collectionId)
+    expect(workflows.getById(result.workflowId)?.collectionId).toBe(project.collectionId)
+
+    const otherWorkspace = workspaces.create({ name: "other", slug: "other" }).workspaceId
+    const foreign = collections.create({ workspaceId: otherWorkspace, name: "Foreign" })
+    await expect(service.importWorkflow(wsId, bundle, false, true, foreign.collectionId)).rejects.toThrow("not found")
+    expect(workflows.listByWorkspace(wsId, true).items.map((workflow) => workflow.workflowId)).toEqual([result.workflowId])
   })
 
   it("keeps a Call Workflow target that exists in the workspace and clears one that does not", async () => {

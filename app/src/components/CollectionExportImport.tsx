@@ -360,15 +360,11 @@ export function CollectionExportImport({
       }
 
       if (detectedType === "workflow") {
-        const imported = await apiweave.workflows.import({
+        await apiweave.workflows.import({
           workspaceId,
           bundle: bundleData,
+          collectionId: selectedTargetProject,
         });
-        await apiweave.projects.addWorkflow(
-          workspaceId,
-          selectedTargetProject,
-          imported.workflowId,
-        );
         setMessage({
           type: "success",
           title: "Import Successful",

@@ -72,6 +72,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   cleared target. A failing Call Workflow node now says why, such as
   `Called workflow <id> not found`, instead of `Node execution failed`.
 
+- **A workflow imported into a project lands in it, or not at all.** The
+  project's **Import Workflows** tab imported the workflow and then added it to
+  the project in a second step; if that step failed, the workflow was left
+  outside the project. Both now happen in one write.
+
 - **Cancelling a run during a Delay node stops it.** A cancel that landed just
   before a Delay node began was missed, and the run waited out the whole delay
   while still showing as running.

@@ -123,6 +123,8 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       bundle: WorkflowBundleSchema,
       createMissingEnvironments: z.boolean().optional(),
       sanitize: z.boolean().optional(),
+      /** The project the imported workflow joins, in the same write. */
+      collectionId: z.string().min(1).optional(),
     }).strict(),
     output: WorkflowImportResultSchema,
     handle: (i) => imports.importWorkflow(
@@ -130,6 +132,7 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       i.bundle,
       i.createMissingEnvironments ?? false,
       i.sanitize ?? true,
+      i.collectionId,
     ),
   })
 
