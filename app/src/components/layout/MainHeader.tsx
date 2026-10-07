@@ -2,7 +2,7 @@ import { useContext, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AppContext } from "../../App";
 import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
-import Tippy from "@tippyjs/react";
+import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
 import { AccountMenu } from "./AccountMenu";
@@ -33,7 +33,7 @@ function HeaderToggleButton({
   icon: ReactNode;
 }) {
   return (
-    <Tippy content={enabled ? enabledTooltip : disabledTooltip} placement="bottom">
+    <Tooltip delay={0} content={enabled ? enabledTooltip : disabledTooltip} placement="bottom">
       <button
         type="button"
         onClick={onToggle}
@@ -43,7 +43,7 @@ function HeaderToggleButton({
       >
         {icon}
       </button>
-    </Tippy>
+    </Tooltip>
   );
 }
 

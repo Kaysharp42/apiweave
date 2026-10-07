@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import Tippy from "@tippyjs/react";
+import { Tooltip } from "../atoms/Tooltip";
 import {
   ChevronLeft,
   ChevronRight,
@@ -198,7 +198,7 @@ export function NodeModalShell({
               )}
             </Allotment>
             {responseCollapsed && (
-              <Tippy content="Show response" placement="left" delay={[300, 0]}>
+              <Tooltip content="Show response" placement="left">
                 <button
                   type="button"
                   onClick={() => setResponseCollapsed(false)}
@@ -213,7 +213,7 @@ export function NodeModalShell({
                     Response
                   </span>
                 </button>
-              </Tippy>
+              </Tooltip>
             )}
           </div>
         </div>

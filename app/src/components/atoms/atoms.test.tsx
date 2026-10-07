@@ -310,17 +310,49 @@ describe("Tooltip", () => {
         <button>Trigger</button>
       </Tooltip>,
     );
-    // When disabled, no Tippy wrapper — children render as-is
+    // When disabled, no tooltip — children render as-is
     expect(screen.getByRole("button", { name: "Trigger" })).toBeInTheDocument();
   });
 
-  it("renders children without a Tippy wrapper when no content is provided", () => {
+  it("renders children without a tooltip when no content is provided", () => {
     render(
       <Tooltip>
         <button>No hint</button>
       </Tooltip>,
     );
     expect(screen.getByRole("button", { name: "No hint" })).toBeInTheDocument();
+  });
+
+  it("shows on hover and hides when the pointer leaves", async () => {
+    const user = userEvent.setup();
+    render(
+      <Tooltip content="Run the workflow" delay={0}>
+        <button>Run</button>
+      </Tooltip>,
+    );
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByRole("button", { name: "Run" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Run the workflow");
+
+    await user.unhover(screen.getByRole("button", { name: "Run" }));
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("shows on keyboard focus and keeps the child's own handlers", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    render(
+      <Tooltip content="Save now">
+        <button onClick={onClick}>Save</button>
+      </Tooltip>,
+    );
+
+    await user.tab();
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Save now");
+
+    await user.keyboard("{Enter}");
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,5 +1,5 @@
 import { Github, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import Tippy from "@tippyjs/react";
+import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
 import useNavigationStore from "../../stores/NavigationStore";
 
@@ -36,7 +36,7 @@ export function MainFooter() {
             <PanelLeftClose className="w-3.5 h-3.5" />
           )}
         </IconButton>
-        <Tippy content="View on GitHub" placement="top">
+        <Tooltip delay={0} content="View on GitHub" placement="top">
           <a
             href="https://github.com/Kaysharp42/apiweave"
             target="_blank"
@@ -46,7 +46,7 @@ export function MainFooter() {
           >
             <Github className="w-3.5 h-3.5" />
           </a>
-        </Tippy>
+        </Tooltip>
       </div>
     </footer>
   );

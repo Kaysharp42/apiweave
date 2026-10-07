@@ -314,7 +314,7 @@ After MCP changes:
 - **Sonner** — toast notifications
 - **Allotment** — split pane layout
 - **Monaco Editor** — JSON/code editor
-- **Tippy.js** — tooltips
+- **Floating UI** — tooltip positioning (the `Tooltip` atom)
 - **Electron** 33 — desktop shell
 - **better-sqlite3** 12 — embedded local store
 - **libsodium-wrappers** — sealed-box secret encryption
