@@ -4,6 +4,7 @@ import { WorkflowExecutor, type WorkflowGraph } from "../executor"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
+import { createSecretMasker } from "../secret_masker"
 
 /**
  * Regression coverage for the HTTPRequestConfigPanel/executor contract mismatch:
@@ -17,7 +18,7 @@ interface CapturedRequest {
   init: UndiciRequestInit
 }
 
-function makeExecutorWithCapture(response: () => Response) {
+function makeExecutorWithCapture(response: () => Response, secrets?: Record<string, string>) {
   const captured: CapturedRequest[] = []
   const fetchImpl = async (url: string, init: UndiciRequestInit): Promise<Response> => {
     captured.push({ url, init })
@@ -28,7 +29,7 @@ function makeExecutorWithCapture(response: () => Response) {
   const rng = new SeededRandomProvider("0xDEADBEEF")
   const http = new SafeHttp({ fetchImpl: fetchImpl as never })
   const functions = new DynamicFunctions(clock, rng)
-  const executor = new WorkflowExecutor({ clock, rng, http, functions })
+  const executor = new WorkflowExecutor({ clock, rng, http, functions, secrets })
   return { executor, captured }
 }
 
@@ -179,5 +180,77 @@ describe("WorkflowExecutor — HTTP request config panel contract", () => {
     expect(calls).toBe(1)
     const response = output.results[0]!.response as Record<string, unknown>
     expect(response["statusCode"]).toBe(302)
+  })
+})
+
+describe("WorkflowExecutor — placeholders in JSON bodies", () => {
+  const awkward = 'say "hi"\\ to\nyou'
+
+  async function sentBody(
+    config: Record<string, unknown>,
+    variables: Record<string, unknown>,
+    secrets?: Record<string, string>,
+  ): Promise<string> {
+    const { executor, captured } = makeExecutorWithCapture(() => new Response("{}", { status: 200 }), secrets)
+    await executor.executeWorkflow({ ...singleHttpNodeWorkflow({ method: "POST", url: "http://localhost/x", ...config }), variables })
+    return captured[0]!.init.body as string
+  }
+
+  it("escapes a value inside a string literal and keeps a standalone one raw", async () => {
+    const body = await sentBody(
+      { bodyType: "json", body: '{"name": "{{variables.name}}", "id": {{variables.id}}, "ok": {{variables.ok}}}' },
+      { name: awkward, id: 42, ok: true },
+    )
+    expect(JSON.parse(body)).toEqual({ name: awkward, id: 42, ok: true })
+  })
+
+  it("tracks escaped quotes in the template and escapes placeholders used as keys", async () => {
+    const body = await sentBody(
+      { bodyType: "json", body: '{"note": "she said \\"{{variables.name}}\\"", "{{variables.name}}": {{variables.id}}}' },
+      { name: awkward, id: 7 },
+    )
+    expect(JSON.parse(body)).toEqual({ note: `she said "${awkward}"`, [awkward]: 7 })
+  })
+
+  it("is not thrown off by quotes inside a placeholder's own text", async () => {
+    const body = await sentBody(
+      { bodyType: "json", body: '{"env": "{{randomChoice("prod)}}", "name": "{{variables.name}}"}' },
+      { name: awkward },
+    )
+    expect(JSON.parse(body)).toEqual({ env: "prod", name: awkward })
+  })
+
+  it("escapes a secret, and the run-history masker still hides the escaped form", async () => {
+    const secret = 'pa"ss\\word'
+    const body = await sentBody(
+      { bodyType: "json", body: '{"password": "{{secrets.pw}}"}' },
+      {},
+      { pw: secret },
+    )
+    expect(JSON.parse(body)).toEqual({ password: secret })
+    expect(createSecretMasker([secret])(body)).toBe('{"password": "<SECRET>"}')
+  })
+
+  it("escapes placeholders in an object body", async () => {
+    const body = await sentBody({ bodyType: "json", body: { name: "{{variables.name}}" } }, { name: awkward })
+    expect(JSON.parse(body)).toEqual({ name: awkward })
+  })
+
+  it("escapes a raw body only when its Content-Type is JSON", async () => {
+    const asJson = await sentBody(
+      {
+        bodyType: "raw",
+        body: '{"name": "{{variables.name}}"}',
+        headers: [{ key: "Content-Type", value: "application/vnd.api+json; charset=utf-8" }],
+      },
+      { name: awkward },
+    )
+    expect(JSON.parse(asJson)).toEqual({ name: awkward })
+
+    const asText = await sentBody(
+      { bodyType: "raw", body: 'name="{{variables.name}}"', headers: [{ key: "Content-Type", value: "text/plain" }] },
+      { name: awkward },
+    )
+    expect(asText).toBe(`name="${awkward}"`)
   })
 })

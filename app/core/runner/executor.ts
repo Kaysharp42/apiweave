@@ -107,6 +107,42 @@ export interface ExecutorDeps {
   }
 }
 
+const PLACEHOLDER_RE = /\{\{([^}]+)\}\}/g
+
+/**
+ * Substitute placeholders in a JSON template. A placeholder inside a string
+ * literal (`"name": "{{variables.name}}"`) has its value JSON-string-escaped,
+ * so a `"`, `\` or newline in a variable or secret cannot break the body. One
+ * standing alone as a value (`"id": {{variables.id}}`) is inserted raw, so it
+ * can supply a number or a boolean.
+ *
+ * Only the literal text between placeholders moves the in-string state: a
+ * placeholder's own text (`{{randomChoice("a,b")}}`) never toggles it.
+ */
+function substituteJsonTemplate(text: string, resolve: (match: string, rawPath: string) => string): string {
+  let out = ""
+  let inString = false
+  let escaped = false
+  let last = 0
+  for (const placeholder of text.matchAll(PLACEHOLDER_RE)) {
+    const literal = text.slice(last, placeholder.index)
+    for (const ch of literal) {
+      if (escaped) escaped = false
+      else if (ch === "\\") escaped = inString
+      else if (ch === '"') inString = !inString
+    }
+    escaped = false
+    const value = resolve(placeholder[0], placeholder[1]!)
+    out += literal + (inString ? JSON.stringify(value).slice(1, -1) : value)
+    last = placeholder.index + placeholder[0].length
+  }
+  return out + text.slice(last)
+}
+
+function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean {
+  return Object.entries(headers).some(([name, value]) => name.toLowerCase() === "content-type" && /\bjson\b/i.test(value))
+}
+
 interface SseFinishCondition {
   readonly path: string
   readonly operator: string
@@ -1772,10 +1808,15 @@ export class WorkflowExecutor {
 
   // -------------------- Template substitution --------------------
 
-  private substituteVariables(text: string, options: { allowSecrets?: boolean } = {}): string {
+  /**
+   * Resolve every `{{...}}` placeholder in `text`. With `json`, `text` is a JSON
+   * template and a placeholder inside a string literal is JSON-escaped (see
+   * `substituteJsonTemplate`).
+   */
+  private substituteVariables(text: string, options: { allowSecrets?: boolean; json?: boolean } = {}): string {
     const allowSecrets = options.allowSecrets ?? true
 
-    return text.replace(/\{\{([^}]+)\}\}/g, (match, rawPath: string) => {
+    const resolve = (match: string, rawPath: string): string => {
       const varPath = rawPath.trim()
 
       // Function call
@@ -1875,7 +1916,9 @@ export class WorkflowExecutor {
       }
 
       return match
-    })
+    }
+
+    return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
   }
 
   private resolveDottedPath(value: unknown, pathParts: string[], fallback: string): string {
@@ -2079,14 +2122,16 @@ export class WorkflowExecutor {
       }
 
       case "raw":
-        return typeof body === "string" ? this.substituteVariables(body) : undefined
+        return typeof body === "string"
+          ? this.substituteVariables(body, { json: hasJsonContentType(headers) })
+          : undefined
 
       case "json":
       default: {
         // Back-compat default for nodes saved before `bodyType` existed.
         if (body === undefined || body === null) return undefined
-        if (typeof body === "string") return this.substituteVariables(body)
-        const json = this.substituteVariables(JSON.stringify(body))
+        if (typeof body === "string") return this.substituteVariables(body, { json: true })
+        const json = this.substituteVariables(JSON.stringify(body), { json: true })
         if (!headers["Content-Type"] && !headers["content-type"]) {
           headers["Content-Type"] = "application/json"
         }

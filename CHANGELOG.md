@@ -64,6 +64,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A `"` in a variable or secret no longer breaks a JSON body.** A
+  placeholder inside a JSON string is now JSON-escaped, so quotes,
+  backslashes and line breaks in its value stay inside the string. A
+  placeholder standing alone as a value (`"id": {{variables.id}}`) is still
+  inserted as is. This applies to JSON bodies and to raw bodies with a JSON
+  `Content-Type`.
 - **A huge generated length fails the node instead of the app.**
   `randomString`, `randomAlpha`, `randomNumeric`, `randomHex` and
   `randomNumber` refuse a length above 10,000 and fail the node with that

@@ -149,13 +149,21 @@ A practical consequence: if you have a workflow variable named `token` and a sec
 
 Substitution happens per field as the request is assembled or the assertion is evaluated. Extractors from a node are not available to the node itself, but they are available to every later node.
 
+### In JSON bodies
+
+In a JSON body (body type **JSON**, or **Raw** with a JSON `Content-Type`), a placeholder inside a string literal has its value JSON-escaped, so a `"`, `\` or line break in a variable or secret stays inside the string. A placeholder standing alone as a value is inserted as is, so it can supply a number or a boolean:
+
+```text
+{ "name": "{{variables.name}}", "id": {{variables.id}} }
+```
+
 ## Missing Values
 
 When the runner cannot resolve a placeholder, the reference is left in place as literal text — the field is sent with `{{variables.token}}` in it rather than a substituted value. The run records unresolved references per node (`unresolvedPlaceholders`), so the exact misspelled or missing key is visible in run results.
 
 - **In a request field** (URL, header, body, query, cookie): the literal `{{...}}` text goes out in the request. A server that echoes it back, or a test assertion on that field, is how the miss surfaces.
 - **In an assertion's `expectedValue`**: the assertion does not compare anything. It fails with reason code `template-unresolved`, flagged as a template problem rather than a value mismatch.
-- **In a body field used as JSON**: the surrounding JSON often becomes invalid, and the request is rejected before it is sent.
+- **In a body field used as JSON**: a missing value standing alone as a value (`"id": {{variables.id}}`) leaves the JSON invalid, and the server rejects it. Inside a string it is sent as literal text.
 - **In a dynamic function with bad arguments**: a missing or non-numeric length falls back to the function's default, and `randomChoice` with no options returns an empty string. A length above 10,000 fails the node with the function's own message.
 - **In a `{{secrets.NAME}}` placeholder**: the scope chain did not declare the key, or the stored ciphertext could not be decrypted. The reference stays as literal text. The runner does not block the run on a missing secret.
 
