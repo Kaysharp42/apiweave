@@ -1039,7 +1039,6 @@ describe("WorkflowExecutor", () => {
           { edgeId: "e1", source: "start", target: "http_1" },
           { edgeId: "e2", source: "http_1", target: "end" },
         ],
-        settings: { continueOnFail: true },
       }
       const executor = new WorkflowExecutor(makeDeps({ secrets: { API_KEY: "secret-value" } }))
       const output = await executor.executeWorkflow(workflow)
