@@ -1,3 +1,5 @@
+import { matchShortcut } from "../constants/keyboardShortcuts";
+
 const EDITABLE_SELECTOR = [
   "input",
   "textarea",
@@ -63,11 +65,8 @@ export const getCanvasClipboardShortcutAction = ({
     return null;
   }
 
-  const key = event.key?.toLowerCase?.();
-  const isClipboardCombo =
-    (event.ctrlKey || event.metaKey) &&
-    (key === "c" || key === "v" || key === "d");
-  if (!isClipboardCombo) {
+  const action = matchShortcut(event);
+  if (action !== "copy" && action !== "paste" && action !== "duplicate") {
     return null;
   }
 
@@ -81,13 +80,6 @@ export const getCanvasClipboardShortcutAction = ({
     return null;
   }
 
-  if (key === "c") {
-    return hasSelectedNode ? "copy" : null;
-  }
-
-  if (key === "d") {
-    return hasSelectedNode ? "duplicate" : null;
-  }
-
-  return "paste";
+  if (action === "paste") return action;
+  return hasSelectedNode ? action : null;
 };

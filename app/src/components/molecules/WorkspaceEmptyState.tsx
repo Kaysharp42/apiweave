@@ -6,8 +6,17 @@ import {
   ArrowRight,
   BookOpen,
 } from "lucide-react";
+import { Fragment } from "react";
 import { Button } from "../atoms/Button";
-import type { WorkspaceEmptyStateProps } from "../../types";
+import { shortcutKeys } from "../../constants/keyboardShortcuts";
+import type { ShortcutAction, WorkspaceEmptyStateProps } from "../../types";
+
+const EMPTY_STATE_SHORTCUTS: ReadonlyArray<[ShortcutAction, string]> = [
+  ["newWorkflow", "New"],
+  ["nextTab", "Cycle"],
+  ["closeTab", "Close"],
+  ["showShortcutsHelp", "Shortcuts"],
+];
 
 export function WorkspaceEmptyState({
   onNewWorkflow,
@@ -93,42 +102,19 @@ export function WorkspaceEmptyState({
 
       {/* Shortcuts */}
       <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[11px] text-text-muted dark:text-text-muted-dark">
-        <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            Ctrl
-          </kbd>
-          <span>+</span>
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            N
-          </kbd>
-          <span className="ml-0.5">New</span>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            Ctrl
-          </kbd>
-          <span>+</span>
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            Tab
-          </kbd>
-          <span className="ml-0.5">Cycle</span>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            Ctrl
-          </kbd>
-          <span>+</span>
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            W
-          </kbd>
-          <span className="ml-0.5">Close</span>
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
-            ?
-          </kbd>
-          <span className="ml-0.5">Shortcuts</span>
-        </span>
+        {EMPTY_STATE_SHORTCUTS.map(([action, label]) => (
+          <span key={action} className="inline-flex items-center gap-1">
+            {shortcutKeys(action).map((key, index) => (
+              <Fragment key={key}>
+                {index > 0 && <span>+</span>}
+                <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+                  {key}
+                </kbd>
+              </Fragment>
+            ))}
+            <span className="ml-0.5">{label}</span>
+          </span>
+        ))}
       </div>
     </div>
   );

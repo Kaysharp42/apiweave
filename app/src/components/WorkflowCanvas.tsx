@@ -76,10 +76,8 @@ import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useCanvasPendingEdits from "../hooks/useCanvasPendingEdits";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
-import {
-  canvasShortcutLabel,
-  useCanvasKeyboardShortcuts,
-} from "../hooks/useCanvasKeyboardShortcuts";
+import { useCanvasKeyboardShortcuts } from "../hooks/useCanvasKeyboardShortcuts";
+import { shortcutLabel } from "../constants/keyboardShortcuts";
 import { useCanvasTip } from "../hooks/useCanvasTip";
 import { useSpacePan } from "../hooks/useSpacePan";
 import {
@@ -210,6 +208,8 @@ const controlsStyle = { margin: CanvasCornerGutter };
 // adds to a selection is muscle memory from another app, and there is no cost
 // to honouring all three.
 const multiSelectionKeyCode = ["Shift", "Meta", "Control"];
+// The Mac delete key sends Backspace; see the "delete" keyboard shortcut.
+const deleteKeyCode = ["Delete", "Backspace"];
 
 // Framing one node through the full-graph options would zoom to 2.5x on it.
 const focusViewOptions = { ...fitViewOptions, maxZoom: 1 };
@@ -1741,7 +1741,7 @@ export function WorkflowCanvas({
         fitViewOptions={fitViewOptions}
         minZoom={0.02}
         maxZoom={2.5}
-        deleteKeyCode="Delete"
+        deleteKeyCode={deleteKeyCode}
         multiSelectionKeyCode={multiSelectionKeyCode}
         // While the run camera moves, only the slice of the graph it frames is
         // mounted — a 130-node workflow keeps about a dozen nodes in the DOM
@@ -1896,7 +1896,7 @@ export function WorkflowCanvas({
         <CanvasTip
           tip={canvasTip}
           shortcut={
-            canvasTip.chord ? canvasShortcutLabel(canvasTip.chord) : null
+            canvasTip.chord ? shortcutLabel(canvasTip.chord) : null
           }
           onDismiss={() => dismissCanvasTip(canvasTip.id)}
         />

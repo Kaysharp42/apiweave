@@ -1,4 +1,4 @@
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import assert from "node:assert/strict";
 import {
   getCanvasClipboardShortcutAction,
@@ -141,18 +141,27 @@ test("getCanvasClipboardShortcutAction handles canvas copy/paste intent", () => 
   });
   assert.equal(copyWithoutSelection, null);
 
-  const pasteAction = getCanvasClipboardShortcutAction({
-    event: asKeyboardEvent({
-      key: "v",
-      metaKey: true,
-      target: {
-        ownerDocument: createSelectionDoc({ text: "", isCollapsed: true }),
-      },
-    }),
-    hasSelectedNode: false,
-    isEditorOverlayOpen: false,
-  });
-  assert.equal(pasteAction, "paste");
+  const pasteWith = (modifier: "ctrlKey" | "metaKey") =>
+    getCanvasClipboardShortcutAction({
+      event: asKeyboardEvent({
+        key: "v",
+        [modifier]: true,
+        target: {
+          ownerDocument: createSelectionDoc({ text: "", isCollapsed: true }),
+        },
+      }),
+      hasSelectedNode: false,
+      isEditorOverlayOpen: false,
+    });
+  assert.equal(pasteWith("ctrlKey"), "paste");
+  // ⌘ is the primary modifier on macOS only, and then Ctrl is not.
+  assert.equal(pasteWith("metaKey"), null);
+  const platform = vi
+    .spyOn(navigator, "platform", "get")
+    .mockReturnValue("MacIntel");
+  assert.equal(pasteWith("metaKey"), "paste");
+  assert.equal(pasteWith("ctrlKey"), null);
+  platform.mockRestore();
 });
 
 test("getCanvasClipboardShortcutAction handles duplicate intent", () => {

@@ -246,15 +246,28 @@ Failure handling is per node. By default a failed node stops the run along its p
 
 ## Keyboard Shortcuts
 
+On macOS every `Ctrl` shortcut below uses `⌘` instead, except `Ctrl+Tab` and `Ctrl+Shift+Tab`, which stay on Control because `⌘Tab` switches apps. Press `?` on the canvas for the same list, with the keys your platform uses.
+
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | New workflow |
 | `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms). Inside the node editor, applies its edits first |
 | `Ctrl+R` or `F5` | Run the active workflow |
+| `Ctrl+K` | Open the command palette |
+| `?` | Show the keyboard shortcuts |
+| `Ctrl+W` | Close the active tab |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous tab |
+| `Ctrl+B` | Toggle the sidebar |
 | `Ctrl+J` | Open the JSON editor |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Shift+Z` or `Ctrl+Y` | Redo |
 | `Ctrl+C` | Copy the selected node (canvas context only) |
 | `Ctrl+V` | Paste a copied node (canvas context only) |
 | `Ctrl+D` | Duplicate the selected node |
+| `Delete` or `Backspace` | Delete the selected nodes |
+| `Ctrl+G` | Group the selected nodes in a frame |
+| `Ctrl+Shift+G` | Ungroup the selected frame |
+| `Ctrl+Shift+Arrow` | Select the nearest node in that direction |
 
 The copy and paste shortcuts are context-aware. When the cursor is inside a text editor (request body, response view, or any field in a node modal), normal text copy and paste take precedence.
 

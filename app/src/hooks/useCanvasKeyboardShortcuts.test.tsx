@@ -1,5 +1,5 @@
 import { renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useCanvasKeyboardShortcuts } from "./useCanvasKeyboardShortcuts";
 
 function setup(overrides: Record<string, unknown> = {}) {
@@ -37,6 +37,28 @@ function press(
 }
 
 describe("useCanvasKeyboardShortcuts", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("answers ⌘ on macOS for undo, redo, group and save", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const h = setup();
+
+    press("z", { metaKey: true });
+    press("z", { metaKey: true, shiftKey: true });
+    press("g", { metaKey: true });
+    press("s", { metaKey: true });
+    expect(h.onUndo).toHaveBeenCalledTimes(1);
+    expect(h.onRedo).toHaveBeenCalledTimes(1);
+    expect(h.onGroup).toHaveBeenCalledTimes(1);
+    expect(h.onSave).toHaveBeenCalledTimes(1);
+
+    // Control is not the Mac's command key.
+    expect(press("z", { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(h.onUndo).toHaveBeenCalledTimes(1);
+  });
+
   it("maps the undo chord and its two redo spellings", () => {
     const h = setup();
 

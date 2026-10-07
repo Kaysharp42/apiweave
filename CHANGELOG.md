@@ -207,6 +207,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   their title, keep focus inside while open and close on Escape. The workflow
   tab bar and every panel tab strip are tab lists: the arrow keys, Home and End
   move between tabs.
+- **Keyboard shortcuts use ⌘ on macOS.** Every Ctrl shortcut now answers ⌘
+  on a Mac (Ctrl+Tab stays on Control, since ⌘Tab switches apps), the labels
+  in the help, command palette and hints show ⌘, and Backspace deletes the
+  selected nodes, since a Mac keyboard has no Delete key. The shortcuts help
+  now lists every shortcut, undo, redo and grouping included: it reads the
+  same table the key handlers match against.
 
 ### Added
 
