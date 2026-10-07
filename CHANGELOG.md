@@ -64,6 +64,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A loop in a workflow no longer sends thousands of requests.** A cycle
+  drawn on the canvas ran until a 10,000-step budget gave out, sending a real
+  request each time round. The canvas now refuses a connection that leads back
+  to an earlier node and says why, and a run of a graph that has a cycle
+  anyway fails before any request with `Workflow contains a cycle: A → B → A`.
 - **A `"` in a variable or secret no longer breaks a JSON body.** A
   placeholder inside a JSON string is now JSON-escaped, so quotes,
   backslashes and line breaks in its value stay inside the string. A

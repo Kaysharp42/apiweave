@@ -16,6 +16,7 @@ import type { AssertionSource } from "@shared/types/AssertionSource"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
+import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
 
 /**
@@ -266,8 +267,6 @@ class StopBranch extends Error {
 
 // -------------------- Executor --------------------
 
-/** The traversal path into an entry node: nothing above it. */
-const EMPTY_PATH: ReadonlySet<string> = new Set<string>()
 
 export class WorkflowExecutor {
   private readonly results = new Map<string, NodeResult>()
@@ -292,8 +291,6 @@ export class WorkflowExecutor {
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
   private cancelSignal: AbortSignal | undefined
-  private stepCount = 0
-  private maxSteps = 0
   // Set by a parent executor on a child it creates for a Call Workflow node.
   // Bounds recursion regardless of write-time cycle validation — a cycle
   // introduced by editing the target workflow after the caller was saved
@@ -332,17 +329,27 @@ export class WorkflowExecutor {
     this.workflowNodes = nodes
     const edges = workflow.edges
 
-    // ponytail: global step budget guards against cyclic graphs (start->delay->start)
-    // recursing forever — schemas/renderer don't enforce acyclicity. Generous cap so
-    // any legit acyclic run finishes well under it; a cycle blows past and fails clean.
-    // Upgrade path: real cycle/topological validation before execution if false trips appear.
-    this.stepCount = 0
-    this.maxSteps = Math.max(10000, (nodes.size + edges.length) * 100)
-    // Per-run, like the step budget above it: a handle left over from a previous
-    // run would make every node on that path look already-executed.
+    // Per-run: a handle left over from a previous run would make every node on
+    // that path look already-executed.
     this.nodeRuns.clear()
     this.sseListeners.clear()
     this.sseTasks.clear()
+
+    // Workflows have no loops: a cycle would send its requests until something
+    // gave out. The canvas refuses to draw one, and a graph that has one anyway
+    // (edited over MCP or in the JSON editor) fails here before any request.
+    const cycle = findCycles(successorMap(edges))[0]
+    if (cycle) {
+      const names = [...cycle, cycle[0]!].map((id) => nodes.get(id)?.label || id)
+      const message = `Workflow contains a cycle: ${names.join(" → ")}`
+      this.hasFailures = true
+      this.firstErrorMessage = message
+      for (const id of cycle) {
+        this.failedNodes.add(id)
+        this.updateNodeStatus(id, "failed", { status: "error", error: message })
+      }
+      return this.buildOutput(caseName, startedAt, seed, "failed")
+    }
 
     let entryNodeIds: string[] = []
     if (options.startNodeIds && options.startNodeIds.length > 0) {
@@ -457,12 +464,6 @@ export class WorkflowExecutor {
    *
    * `merge` keeps its own guard rather than this one — it has to be entered by
    * each branch in order to know its predecessors have landed.
-   *
-   * `ancestors` is what separates a join from a cycle. Both re-enter a node
-   * that is still in flight, but a cycle re-enters one the current path is
-   * *standing inside*, and waiting for that is waiting for yourself. On a cycle
-   * the guard steps aside and lets the step budget below trip, which is the
-   * behaviour that was there before and the one `cycle protection` asserts.
    */
   private async executeFromNode(
     nodeId: string,
@@ -470,14 +471,13 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
-    ancestors: ReadonlySet<string> = EMPTY_PATH,
   ): Promise<void> {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
 
-    if (node.type === "merge" || node.type === "start" || ancestors.has(nodeId)) {
-      return this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail, ancestors)
+    if (node.type === "merge" || node.type === "start") {
+      return this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail)
     }
 
     if (await this.joinInFlightRun(nodeId)) return
@@ -490,7 +490,7 @@ export class WorkflowExecutor {
 
     let outcome: unknown = null
     try {
-      await this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail, ancestors)
+      await this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail)
     } catch (error) {
       outcome = error
       throw error
@@ -508,19 +508,8 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
-    ancestors: ReadonlySet<string>,
   ): Promise<void> {
     const nodeId = node.nodeId
-    const path = new Set(ancestors).add(nodeId)
-
-    if (++this.stepCount > this.maxSteps) {
-      const message = `Workflow graph cycle detected at node ${nodeId}`
-      this.hasFailures = true
-      this.failedNodes.add(nodeId)
-      if (!this.firstErrorMessage) this.firstErrorMessage = message
-      this.updateNodeStatus(nodeId, "failed", { status: "error", error: message })
-      throw new StopBranch(message)
-    }
 
     // Set branch context if predecessor is a merge
     const incomingEdges = edges.filter((e) => e.target === nodeId)
@@ -543,7 +532,7 @@ export class WorkflowExecutor {
     // SSE has two phases. The Ready path continues after its handshake; its
     // Complete path is scheduled by the background consumer when it closes.
     if (node.type === "sse") {
-      const ready = await this.startSseListener(node, nodes, edges, cancelSignal, continueOnFail, path)
+      const ready = await this.startSseListener(node, nodes, edges, cancelSignal, continueOnFail)
       if (!ready) return
     // Execute node (skip start)
     } else if (node.type !== "start") {
@@ -617,7 +606,7 @@ export class WorkflowExecutor {
           if (nextNode.type === "end") {
             this.updateNodeStatus(nextNodeId, "passed")
           } else {
-            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal, continueOnFail, path))
+            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal, continueOnFail))
           }
         }
       }
@@ -655,7 +644,7 @@ export class WorkflowExecutor {
           this.updateNodeStatus(nextNodeId, "passed")
         } else {
           try {
-            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail, path)
+            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail)
           } catch (error) {
             this.recordNodeFailure(nextNodeId, error, continueOnFail)
           }
@@ -670,9 +659,8 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
-    ancestors: ReadonlySet<string>,
   ): Promise<void> {
-    await this.executeFromNode(nodeId, nodes, edges, cancelSignal, continueOnFail, ancestors)
+    await this.executeFromNode(nodeId, nodes, edges, cancelSignal, continueOnFail)
   }
 
   private async executeNode(
@@ -984,7 +972,6 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
-    ancestors: ReadonlySet<string>,
   ): Promise<boolean> {
     const config = node.config ?? {}
     const timeout = (config["timeout"] as number | undefined) ?? 30
@@ -1054,7 +1041,7 @@ export class WorkflowExecutor {
       this.sseListeners.set(node.nodeId, abortController)
       let task: Promise<void>
       task = this.consumeSseListener({
-        node, nodes, edges, cancelSignal, continueOnFail, ancestors, response, statusCode, responseHeaders, url, startedAt,
+        node, nodes, edges, cancelSignal, continueOnFail, response, statusCode, responseHeaders, url, startedAt,
         secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders,
       }).finally(() => {
         this.sseListeners.delete(node.nodeId)
@@ -1081,7 +1068,6 @@ export class WorkflowExecutor {
     readonly edges: readonly WorkflowEdge[]
     readonly cancelSignal: AbortSignal | undefined
     readonly continueOnFail: boolean
-    readonly ancestors: ReadonlySet<string>
     readonly response: import("undici").Response
     readonly statusCode: number
     readonly responseHeaders: Record<string, string>
@@ -1122,7 +1108,7 @@ export class WorkflowExecutor {
           }
       const completed = this.completeSseNode(node, result, startedAt, secretRefs, extractors)
       if (completed.status === "success") {
-        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal, input.continueOnFail, input.ancestors)
+        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal, input.continueOnFail)
       }
     } catch (error) {
       this.completeSseNode(node, {
@@ -1185,7 +1171,6 @@ export class WorkflowExecutor {
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
     continueOnFail: boolean,
-    ancestors: ReadonlySet<string>,
   ): Promise<void> {
     const completeEdges = edges.filter((edge) => edge.source === node.nodeId && edge.sourceHandle === "complete")
     const tasks = completeEdges.map(async (edge) => {
@@ -1195,7 +1180,7 @@ export class WorkflowExecutor {
         this.updateNodeStatus(target.nodeId, "passed")
         return
       }
-      await this.executeFromNode(target.nodeId, nodes, edges, cancelSignal, continueOnFail, ancestors)
+      await this.executeFromNode(target.nodeId, nodes, edges, cancelSignal, continueOnFail)
     })
     await Promise.allSettled(tasks)
   }

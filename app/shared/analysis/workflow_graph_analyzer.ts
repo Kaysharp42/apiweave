@@ -125,6 +125,66 @@ export function traverse(startIds: readonly string[], adjacency: ReadonlyMap<str
   return visited
 }
 
+/** Successor sets keyed by source node id, for `traverse` and `findCycles`. */
+export function successorMap(edges: readonly { readonly source: string; readonly target: string }[]): Map<string, Set<string>> {
+  const successors = new Map<string, Set<string>>()
+  for (const edge of edges) {
+    const targets = successors.get(edge.source) ?? new Set<string>()
+    targets.add(edge.target)
+    successors.set(edge.source, targets)
+  }
+  return successors
+}
+
+/** Whether adding `source → target` to `edges` would close a cycle, a self-loop included. */
+export function wouldCreateCycle(
+  edges: readonly { readonly source: string; readonly target: string }[],
+  source: string,
+  target: string,
+): boolean {
+  return traverse([target], successorMap(edges)).has(source)
+}
+
+/**
+ * The cycles a depth-first search closes, each as the node ids around it in
+ * edge order (`["a", "b"]` for `a → b → a`). Every node on a cycle appears in
+ * at least one of them.
+ */
+export function findCycles(successors: ReadonlyMap<string, ReadonlySet<string>>): string[][] {
+  const cycles: string[][] = []
+  const states = new Map<string, "active" | "complete">()
+  const stack: string[] = []
+  for (const rootNodeId of successors.keys()) {
+    if (states.has(rootNodeId)) continue
+    const frames: Array<{ readonly nodeId: string; readonly targets: readonly string[]; index: number }> = [{
+      nodeId: rootNodeId,
+      targets: [...(successors.get(rootNodeId) ?? [])],
+      index: 0,
+    }]
+    states.set(rootNodeId, "active")
+    stack.push(rootNodeId)
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1]!
+      const target = frame.targets[frame.index]
+      if (target !== undefined) {
+        frame.index += 1
+        if (states.get(target) === "active") {
+          cycles.push(stack.slice(stack.lastIndexOf(target)))
+        } else if (!states.has(target)) {
+          states.set(target, "active")
+          stack.push(target)
+          frames.push({ nodeId: target, targets: [...(successors.get(target) ?? [])], index: 0 })
+        }
+      } else {
+        frames.pop()
+        stack.pop()
+        states.set(frame.nodeId, "complete")
+      }
+    }
+  }
+  return cycles
+}
+
 // fallow-ignore-next-line complexity -- this traversal deliberately stops at response-producing nodes while retaining every non-response predecessor for diagnostics.
 function upstreamResponseSources(
   nodeId: string,
@@ -313,38 +373,7 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
     }
   }
 
-  const states = new Map<string, "active" | "complete">()
-  const stack: string[] = []
-  const cycleNodeIds = new Set<string>()
-  for (const rootNodeId of nodesById.keys()) {
-    if (states.has(rootNodeId)) continue
-    const frames: Array<{ readonly nodeId: string; readonly targets: readonly string[]; index: number }> = [{
-      nodeId: rootNodeId,
-      targets: [...(successors.get(rootNodeId) ?? [])],
-      index: 0,
-    }]
-    states.set(rootNodeId, "active")
-    stack.push(rootNodeId)
-    while (frames.length > 0) {
-      const frame = frames[frames.length - 1]!
-      const target = frame.targets[frame.index]
-      if (target !== undefined) {
-        frame.index += 1
-        if (states.get(target) === "active") {
-          const cycleStart = stack.lastIndexOf(target)
-          for (const cycleNodeId of stack.slice(cycleStart)) cycleNodeIds.add(cycleNodeId)
-        } else if (!states.has(target)) {
-          states.set(target, "active")
-          stack.push(target)
-          frames.push({ nodeId: target, targets: [...(successors.get(target) ?? [])], index: 0 })
-        }
-      } else {
-        frames.pop()
-        stack.pop()
-        states.set(frame.nodeId, "complete")
-      }
-    }
-  }
+  const cycleNodeIds = new Set(findCycles(successors).flat())
   if (cycleNodeIds.size > 0) {
     const cycleNodes = [...cycleNodeIds].sort()
     diagnostics.push(diagnostic(

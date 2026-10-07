@@ -37,7 +37,7 @@ Workflows are members of a project. A workflow can be inside one project at a ti
 1. Open the workflows list from the sidebar.
 2. Click **New Workflow**. A Start node is placed for you.
 3. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas) and drag nodes onto the canvas.
-4. Connect nodes by dragging from the output handle of one node to the input handle of the next.
+4. Connect nodes by dragging from the output handle of one node to the input handle of the next. A connection that leads back to an earlier node is refused: workflows have no loops.
 5. Double-click any node to open its editor, or use the inline body for quick edits. Changes auto-save after 700ms.
 6. Pick the environment for the run from the canvas toolbar.
 7. Click **Run** to execute the full graph.
@@ -270,6 +270,7 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 ## Troubleshooting
 
 - **If a node never runs**, the canvas has no edge from an upstream node into its input handle. Drag a connection from the previous node's output handle to this node's input handle.
+- **If a run fails with "Workflow contains a cycle: A → B → A"**, the graph loops back on itself, usually from an edit in the JSON editor or by an agent. Remove one of the edges it names.
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in the selected environment or the workspace scope. Open **Secrets**, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 - **If a Call Workflow node fails with "no target workflow configured"**, the node was dropped but never pointed at a workflow. Open it and pick a target from the picker.

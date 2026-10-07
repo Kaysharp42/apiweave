@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { RunSchema } from "../../zod-schemas/RunSchema"
 import { WorkflowSchema } from "../../zod-schemas/WorkflowSchema"
 import type { Workflow } from "../../types/Workflow"
-import { analyzeVariableProvenance, analyzeWorkflowGraph } from "../workflow_graph_analyzer"
+import { analyzeVariableProvenance, analyzeWorkflowGraph, findCycles, successorMap, wouldCreateCycle } from "../workflow_graph_analyzer"
 
 const timestamp = "2026-07-27T12:00:00.000Z"
 
@@ -681,5 +681,25 @@ describe("workflow graph analyzer", () => {
     expect(failure?.evidence["blockedNodeIds"]).toEqual(["assert-login", "profile"])
     expect(failure?.nodeIds).toContain("login")
     expect(failure?.nodeIds).not.toContain("end")
+  })
+})
+
+describe("cycle helpers", () => {
+  const chain = [
+    { source: "a", target: "b" },
+    { source: "b", target: "c" },
+  ]
+
+  it("finds each cycle in edge order and none in a DAG", () => {
+    expect(findCycles(successorMap(chain))).toEqual([])
+    expect(findCycles(successorMap([...chain, { source: "c", target: "b" }]))).toEqual([["b", "c"]])
+    expect(findCycles(successorMap([{ source: "a", target: "a" }]))).toEqual([["a"]])
+  })
+
+  it("says whether a new edge would close a cycle", () => {
+    expect(wouldCreateCycle(chain, "c", "a")).toBe(true)
+    expect(wouldCreateCycle(chain, "b", "b")).toBe(true)
+    expect(wouldCreateCycle(chain, "a", "c")).toBe(false)
+    expect(wouldCreateCycle(chain, "c", "d")).toBe(false)
   })
 })
