@@ -20,7 +20,7 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 |-------|---------------|----------------|
 | Workspaces | `workspaces.*` | CRUD for local workspaces |
 | Workflows | `workflows.*` | CRUD, project attachment, selected environment, plus OpenAPI/HAR/cURL import and `.awecollection` export/import/dry-run |
-| Runs | `runs.*` | Create, metadata/results, per-node result, lists, latest, cancel, renderer artifact actions |
+| Runs | `runs.*` | Create, wait, metadata/results, per-node result, paged history, lists, latest, cancel, delete and clear history (renderer only), renderer artifact actions |
 | Projects | `projects.*` | CRUD, workflow membership, `.awecollection` export/import/dry-run |
 | Environments | `environments.*` | CRUD and variable mutation, including the `baseEnvironmentId` inheritance link |
 | Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
@@ -36,7 +36,7 @@ The renderer never calls services directly. Every renderer call routes through a
 |-------|------|----------------|
 | Workflows | `app/core/ipc/handlers/workflows.ts` | List, get, create, update, patch, delete, diagnose, project attachment, selected environment |
 | Imports | `app/core/ipc/handlers/imports.ts` | OpenAPI/Swagger/HAR/cURL import, `.awecollection` export/import/dry-run, template saving |
-| Runs | `app/core/ipc/handlers/runs.ts` | Create, get, getNodeResult, list, latest, latest failed, cancel, renderer artifact actions |
+| Runs | `app/core/ipc/handlers/runs.ts` | Create, wait, get, getNodeResult, history, list, latest, latest failed, cancel, delete, clearHistory, renderer artifact actions |
 | Projects | `app/core/ipc/handlers/projects.ts` | CRUD, workflow membership, export, import, import dry-run |
 | Environments | `app/core/ipc/handlers/environments.ts` | List, get, create, update, delete, setVariable, deleteVariable |
 | Node presets | `app/core/ipc/handlers/node-presets.ts` | Create, list, update, delete; config canonicalised and validated per node type |
@@ -49,7 +49,7 @@ The renderer never calls services directly. Every renderer call routes through a
 
 ## Common Patterns
 
-**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; work is organized into local workspaces, and cross-machine collaboration is handled by an optional APIWeave Cloud account, not by the local IPC surface. The MCP bridge uses a static per-install token; see [MCP Integration](../features/mcp-integration.md).
+**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; work is organized into local workspaces, and cross-machine collaboration is handled by an optional APIWeave Cloud account, not by the local IPC surface. The MCP bridge uses a per-install bearer token that can be regenerated from Settings; see [MCP Integration](../features/mcp-integration.md).
 
 **Error format.** Every error returns a JSON shape: `{"error": {"code": "string", "message": "string", "details": {...}}}`. The IPC contract has four codes: `not_found`, `validation`, `conflict`, and `denied`. HTTP status codes appear only at the MCP transport boundary, where the HTTP server maps failures onto statuses such as 400, 401, 403, 404, 405, 413, and 503.
 

@@ -11,9 +11,9 @@ None. This is a reference doc for users who want to understand the moving parts 
 ```mermaid
 graph LR
     User[User in the app] --> Renderer
-    Agent[Local AI agent] -->|loopback HTTP, static token| McpBridge
+    Agent[Local AI agent] -->|loopback HTTP, bearer token| McpBridge
     McpBridge -->|IPC handler invocation| MainProcess
-    Renderer[Renderer<br/>React + ReactFlow] -->|typed IPC channel| MainProcess
+    Renderer[Renderer<br/>React + React Flow] -->|typed IPC channel| MainProcess
     MainProcess[Electron main process<br/>Node.js] --> Repositories
     Repositories --> SQLite[(better-sqlite3<br/>single file)]
     MainProcess --> Runner
@@ -28,7 +28,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 ## Components
 
-**Renderer** is a React single-page app built on the ReactFlow canvas library. It hosts the visual workflow editor, the variables and environments panels, the secrets page, and the project list. The renderer never talks to the database directly; everything flows through the main process over a typed IPC channel exposed by the preload script.
+**Renderer** is a React single-page app built on the React Flow canvas library (`@xyflow/react`). It hosts the visual workflow editor, the variables and environments panels, the secrets page, and the project list. The renderer never talks to the database directly; everything flows through the main process over a typed IPC channel exposed by the preload script.
 
 **Main process** is the Electron main process: a single Node.js process that owns the BrowserWindow, the IPC handler registry, the services, the repositories, the runner, the encrypted secret store, and the local MCP bridge. The main process is the only component that touches the database.
 
@@ -40,9 +40,9 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Runner** is the in-process execution engine. The `RunScheduler` claims pending runs, the `WorkflowExecutor` walks the node graph, `safe_http` makes the outbound HTTP calls, and `dynamic_functions` evaluates the placeholder functions. Progress is streamed back to the renderer over IPC as the run advances.
 
-**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path and stores the sealed ciphertext verbatim. At run time it opens the boxes with the key derived from the per-install keyfile, resolves the local scope chain (selected environment, then the workspace store), and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values never sync, even when workflow structure does.
+**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path and stores the sealed ciphertext verbatim. At run time it opens the boxes with the key held in the per-install keyfile, which is itself sealed by the OS keychain (Keychain, DPAPI, GNOME Keyring or KWallet) where one is available, resolves the local scope chain (selected environment, then the workspace store), and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values never sync, even when workflow structure does.
 
-**Local MCP bridge** is an opt-in loopback HTTP server bound to `127.0.0.1`. It exposes the IPC handler registry as a second transport, so local AI agents on the same machine can drive the app. The bridge uses a static per-install token for auth. The bridge is off by default; until you enable it, nothing is listening on any port.
+**Local MCP bridge** is an opt-in loopback HTTP server bound to `127.0.0.1`. It exposes the IPC handler registry as a second transport, so local AI agents on the same machine can drive the app. The bridge authenticates with a per-install bearer token that you can regenerate from Settings, and refuses any request whose `Host` is not its own loopback address. A run an agent starts that would send stored secrets waits for your approval in a native dialog. The bridge is off by default; until you enable it, nothing is listening on any port.
 
 **Workflow analysis service** powers `workflow_diagnose`: a deterministic, value-free pass over the node graph that reports topology, reachability, assertion wiring, and extractor findings, and correlates run evidence when a run id is supplied.
 
@@ -52,7 +52,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Run camera** is renderer-side. While a run executes, it follows the active branch with a damped-spring tracker; any manual zoom or pan suspends the follow, the minimap freezes during camera motion, and a follow pill lets you hand control back.
 
-**Auto-update manager** runs in the main process, checks the GitHub release channel in the background (per the update policy in Settings), and drives self-install where the platform supports it.
+**Auto-update manager** runs in the main process, checks the GitHub release channel in the background (per the update policy in Settings), and drives self-install where the platform supports it. It installs only an update whose signature matches the public key built into the app.
 
 **Cloud sync control** is an optional main-process component that talks to APIWeave Cloud over a durable outbox: pull and push of structure-only payloads, conflict detection and resolution, and surfaced dead-letter records. It is dormant until you sign in with a Cloud account.
 
@@ -119,7 +119,7 @@ Large response payloads live in a separate blob table so they don't bloat the ma
 APIWeave exposes two surfaces, both local:
 
 - **Typed IPC channel** between the renderer and the main process. The channel is exposed to the renderer through the preload script and is the single point of contact for every server-side operation.
-- **Local MCP bridge** at `http://127.0.0.1:<port>/mcp` for AI agents on the same machine. The bridge is opt-in, uses a static per-install token, and is the only network surface the app exposes. There is no remote trigger, no webhook, no public port.
+- **Local MCP bridge** at `http://127.0.0.1:<port>/mcp` for AI agents on the same machine. The bridge is opt-in, uses a regenerable per-install bearer token, and is the only network surface the app exposes. There is no remote trigger, no webhook, no public port.
 
 One outbound-only connection exists beyond those: the auto-update manager polls the GitHub release channel for updates (and, when Cloud sync is enabled, the sync client talks to APIWeave Cloud). Neither accepts inbound connections.
 

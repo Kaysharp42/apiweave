@@ -40,7 +40,7 @@ const ASSERTION_OPERATORS = [
 
 /** What the path field is called, and shows, per assertion source. */
 const PATH_LABELS: Record<AssertionSource, string> = {
-  prev: "JSONPath (e.g., body.status)",
+  prev: "Path (e.g., body.status)",
   variables: "Variable name",
   cookies: "Cookie name",
   headers: "Header name",
@@ -514,7 +514,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                   for workflow variables.
                 </p>
                 <p className="text-xs">
-                  <strong>JSONPath examples:</strong>{" "}
+                  <strong>Path examples:</strong>{" "}
                   <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-[var(--aw-status-info)]">
                     body.data[0].id
                   </code>

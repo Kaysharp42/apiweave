@@ -74,7 +74,7 @@ export interface IpcRouterOptions {
    * Observes every rejected dispatch — unregistered actions, request
    * validation failures, `AppError`s, and internal handler failures alike.
    * The composition root wires this to electron-log's file transport so a
-   * refused save leaves a line in `logs/main.log` that names the cause,
+   * refused save leaves a line in the daily log file that names the cause,
    * rather than dying silently in a toast. Never invoked for `ok` results.
    */
   readonly reportError?: (report: IpcErrorReport) => void

@@ -29,7 +29,7 @@ Every placeholder in APIWeave uses double curly braces. The runner substitutes t
 {{namespace.name}}
 ```
 
-The segment before the first dot is the **namespace**. The segment after the dot is the **key** (or, for `prev.*`, a JSONPath into the previous node's response object). There are four namespaces, plus dynamic functions, plus direct node-ID access (see below).
+The segment before the first dot is the **namespace**. The segment after the dot is the **key** (or, for `prev.*`, a dot path into the previous node's response object). There are four namespaces, plus dynamic functions, plus direct node-ID access (see below).
 
 Placeholders work in request URLs, query parameters, headers, cookies, bodies, and assertion `expectedValue` fields. Two kinds of field are **not** interpolated: the HTTP method and the timeout are taken literally, and an assertion's `path` is not templated either.
 
@@ -170,7 +170,7 @@ These are the patterns that show up most often in failing runs. Each one is a co
 - **Typo in the namespace.** `{{variable.token}}` (singular) does not match the `variables.*` namespace and comes back unresolved. Fix: use the plural form, `{{variables.token}}`, and confirm the key matches the row in the Variables panel exactly.
 - **Wrong namespace for the source.** Reading an environment variable as `{{variables.BASE_URL}}` returns nothing because workflow variables do not include environment values. Fix: use `{{env.BASE_URL}}` for environment entries and `{{variables.X}}` for workflow entries.
 - **Missing extractor on the previous node.** `{{variables.token}}` is empty because no extractor wrote to `token`. Fix: open the upstream HTTP Request node, add an extractor with name `token` and a path that matches the real response shape (for example `response.body.access_token`), and re-run.
-- **Wrong JSONPath on an extractor or `prev.*` reference.** A field name with a typo, a case mismatch, or a missing `[0]` on an array returns nothing. Fix: inspect the actual response body, copy the exact key, and remember that arrays are zero-based.
+- **Wrong path on an extractor or `prev.*` reference.** A field name with a typo, a case mismatch, or a missing `[0]` on an array returns nothing. Fix: inspect the actual response body, copy the exact key, and remember that arrays are zero-based.
 - **Using `prev.*` across a Merge without an index.** After a Merge, `{{prev.response.body.id}}` is ambiguous because there are multiple branches. Fix: use `{{prev[0].response.body.id}}` or `{{prev[1].response.body.id}}` and confirm the index from the run results.
 - **Referencing a variable before it is defined.** A node uses `{{variables.userId}}` before any earlier node extracted `userId`. Fix: move the dependent node downstream of the extractor, or define the variable in the Variables panel before the run starts.
 - **Using a secret that is not declared in any scope.** `{{secrets.API_KEY}}` stays as literal text when no scope in the chain has the key. Fix: open **Secrets** for the right scope (environment or workspace), add the key through the Libsodium write flow, and re-run. Plaintext values cannot be added by paste, prompt, or import.

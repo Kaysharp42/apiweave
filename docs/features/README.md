@@ -32,7 +32,7 @@ These pages cover the per-environment values a workflow reads at run time, the p
 
 The two guides in this section cover the surfaces APIWeave exposes to other tools on your machine, whether that is a local AI agent or an upstream API definition.
 
-- [MCP Integration](mcp-integration.md): drive APIWeave from AI agents through the Model Context Protocol. Covers the local loopback HTTP bridge, the per-install static token, and setup recipes for five major agents.
+- [MCP Integration](mcp-integration.md): drive APIWeave from AI agents through the Model Context Protocol. Covers the local loopback HTTP bridge, the per-install bearer token (regenerable from Settings), and setup recipes for five major agents.
 - [Swagger and OpenAPI Import](swagger-import.md): turn an OpenAPI or Swagger document into reusable request templates, with environment-linked sync, one-time file import, and the `Check API` warning badge.
 
 ## Related

@@ -344,7 +344,7 @@ The node layer is governed by its own doctrine — see §7, "The Node Layer: The
 - **Don't** use glassmorphism (backdrop-filter blur) as a decorative default.
 - **Don't** use hero-metric templates (big number + small label + gradient accent).
 - **Don't** use identical card grids with icon + heading + text repeated endlessly.
-- **Don't** use manual save buttons — 700ms debounced auto-save only.
+- **Don't** add save buttons — 700ms debounced auto-save, plus the one toolbar Save button and Ctrl+S that flush it immediately.
 - **Don't** bypass WorkflowContext for canvas state — all state flows through it.
 - **Don't** use `any` types — TypeScript strict mode is enforced project-wide.
 - **Don't** hardcode hex/rgb values in components — reference design tokens only.

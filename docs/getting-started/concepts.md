@@ -30,9 +30,9 @@ A workflow is a graph of connected nodes that you build on the canvas. Workflows
 
 ## Node
 
-A node is a single-purpose step inside a workflow. Each node type does one job: call an API, assert a value, wait, merge parallel branches, run another workflow, or mark a flow boundary. You drag nodes from the palette onto the canvas and configure them in their own panel or modal.
+A node is a single-purpose step inside a workflow. Each node type does one job: call an API, listen to a Server-Sent Events stream, assert a value, wait, merge parallel branches, run another workflow, or mark a flow boundary. You drag nodes from the palette onto the canvas and configure them in their own panel or modal.
 
-APIWeave ships seven node types: **HTTP Request**, **Assertion**, **Delay**, **Merge**, **Call Workflow**, **Start**, and **End**.
+APIWeave ships eight node types: **HTTP Request**, **SSE Stream**, **Assertion**, **Delay**, **Merge**, **Call Workflow**, **Start**, and **End**. Notes and group frames annotate the canvas but do not run.
 
 ## Node Preset
 
@@ -112,7 +112,7 @@ Dynamic functions are also available: `{{uuid()}}`, `{{randomString(12)}}`, `{{t
 
 ## Extractor
 
-An extractor is a rule on an HTTP Request node that pulls a value out of the response and stores it in a workflow variable. You give it a name and a JSONPath; after the node runs, the value is available as `{{variables.name}}` in any later node. Extractors are how you chain requests, pass tokens between steps, and feed data into assertions.
+An extractor is a rule on an HTTP Request node that pulls a value out of the response and stores it in a workflow variable. You give it a name and a dot path such as `response.body.token`; after the node runs, the value is available as `{{variables.name}}` in any later node. Extractors are how you chain requests, pass tokens between steps, and feed data into assertions.
 
 ## Troubleshooting
 

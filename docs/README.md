@@ -34,7 +34,7 @@ Start with installation, build your first workflow, then read the concepts gloss
 
 Jump straight to the feature guide. Each one is self-contained: concepts, prerequisites, worked examples, and troubleshooting for that feature.
 
-- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, keyboard shortcuts.
+- [Workflows and Nodes](features/workflows-and-nodes.md): canvas, the eight node types, toolbar actions, keyboard shortcuts.
 - [Variables and Extractors](features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Node Presets](features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](features/visualization-and-debugging.md): the run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.

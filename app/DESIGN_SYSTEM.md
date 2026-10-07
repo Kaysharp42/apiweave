@@ -647,7 +647,7 @@ The following patterns are **explicitly forbidden** in the redesign and in all f
 
 1. **No hardcoded hex/rgb in components** — all colors MUST reference design tokens (`colors.primary`, `var(--aw-*)`, Tailwind semantic classes). Token-definition files (`base.css`, `tailwind.config.js`) are the only exceptions.
 2. **No `any` type** — TypeScript strict mode is non-negotiable. Every variable, prop, hook, and API response must have an explicit type.
-3. **No manual save buttons** — all state changes trigger the 700ms debounced auto-save via `useAutoSave`. Manual "Save" or "Apply" buttons are forbidden.
+3. **No extra save buttons** — all state changes trigger the 700ms debounced auto-save via `useAutoSave`. The one toolbar **Save** button and `Ctrl+S` flush it immediately; any other "Save" or "Apply" button is forbidden.
 4. **No WorkflowContext bypass** — all canvas state (nodes, edges, variables, settings, extractors) MUST flow through `WorkflowContext`. Direct mutation of ReactFlow internals or local state that shadows workflow state is forbidden.
 5. **No emoji UI icons** — see Icon Rules above. Emojis are not accessible, not scalable, and not theme-aware.
 6. **No color-only status** — status indicators MUST stay legible without hue, via a distinct glyph and (where space permits) a text label. Equally: **no motion-only status** — a state that reads only while animating is invisible in a still frame and under `prefers-reduced-motion`.

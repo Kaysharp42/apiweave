@@ -242,14 +242,14 @@ export const appChapter: TutorialChapter = {
         {
           title: "Read the update log",
           instruction:
-            "If a check or download misbehaves, use Settings → Updates → Show update log to reveal main.log in your file manager, which records every check, download and error.",
+            "If a check or download misbehaves, use Settings → Updates → Show update log to reveal today's log file (apiweave-main-YYYY-MM-DD.log) in your file manager. It records every check, download and error.",
         },
         {
           title: "Recover from a failed startup",
           instruction:
-            "If the app cannot bring up its local services, the window can settle on an Auth bootstrap failed screen instead of the workspace. Note the message and any error text it shows, check main.log, then quit and relaunch the app.",
+            "If startup fails, for example because the database was written by a newer APIWeave build, the app shows an APIWeave could not start dialog that names the error, the log file and the data folder, then exits. Fix the cause it names, then relaunch the app.",
           detail:
-            "The app brings up the local database and services before the workspace; a first launch can take a few seconds.",
+            "The app opens the local database and secrets keyfile before any window appears, so a startup failure never leaves a blank window behind.",
         },
       ],
       example: {
@@ -271,9 +271,9 @@ export const appChapter: TutorialChapter = {
             "Self-initiated checks stay quiet unless they find something; a check that failed because the machine was briefly offline is written to the log rather than shown.",
         },
         {
-          title: "The app is stuck on Starting APIWeave",
+          title: "APIWeave could not start",
           instruction:
-            "Local services did not come up. Quit and relaunch; if it persists, check main.log and disk permissions.",
+            "Startup failed before a window opened. Read the error in the dialog, check the log file it names and the data folder's disk permissions, then relaunch.",
         },
       ],
       relatedLessonIds: ["settings", "cloud"],

@@ -106,7 +106,7 @@ if (hydratedPath !== null) {
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
 // exposes the same router as a second transport. Every rejected dispatch is
-// reported to the main.log file transport, so a refused workflow save leaves a
+// reported to the daily log file, so a refused workflow save leaves a
 // line that names the domain, action, error code and message.
 const ipcRouter = new IpcRouter({
   reportError: ({ domain, action, code, message, details }) => {
