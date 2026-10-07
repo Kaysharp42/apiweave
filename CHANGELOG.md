@@ -64,6 +64,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`{{randomChoice(a,b,c)}}` picks from every option.** It always returned
+  the first one, because the options arrived as separate arguments and only
+  the first was read.
 - **Ctrl+R during a run no longer reloads the window.** Electron's default
   menu was still installed behind the frameless window, and its Reload
   (Ctrl+R) and Close (Ctrl+W) accelerators answered any keystroke the app did

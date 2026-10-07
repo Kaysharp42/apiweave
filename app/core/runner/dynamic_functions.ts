@@ -118,7 +118,9 @@ export class DynamicFunctions {
       date: (a) => this.date(a),
       futureDate: (a, b) => this.futureDate(a, b),
       pastDate: (a, b) => this.pastDate(a, b),
-      randomChoice: (a) => this.randomChoice(a),
+      // The template parser splits call arguments on commas, so
+      // `randomChoice(a,b,c)` arrives as three arguments: rejoin them.
+      randomChoice: (...options) => this.randomChoice(options.join(",")),
       randomAlpha: (a) => this.randomAlpha(a),
       randomNumeric: (a) => this.randomNumeric(a),
       randomHex: (a) => this.randomHex(a),

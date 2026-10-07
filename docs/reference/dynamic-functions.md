@@ -154,7 +154,7 @@ Returns the date `days` days before today, formatted with the given `strftime` p
 Returns one item picked at random from a comma-separated list of options. Use it to vary input data across runs (test accounts, regions, sort orders).
 
 ```text
-{{randomChoice("staging,production,local")}}
+{{randomChoice(staging,production,local)}}
 # Example output: production
 ```
 

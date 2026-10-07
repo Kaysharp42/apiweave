@@ -90,6 +90,16 @@ describe("DynamicFunctions (seeded)", () => {
     expect(["x", "y"]).toContain(out)
   })
 
+  it("getFunction('randomChoice') picks across every comma-split argument", () => {
+    const pick = (value: number): string => {
+      const rng = { next: (): number => value, bytes: (size: number): Uint8Array => new Uint8Array(size) }
+      return new DynamicFunctions(clock, rng).getFunction("randomChoice")!("a", "b", "c")
+    }
+    expect(pick(0)).toBe("a")
+    expect(pick(0.5)).toBe("b")
+    expect(pick(0.99)).toBe("c")
+  })
+
   it("getFunction('uuid') returns the function and roundtrips", () => {
     const f = fn.getFunction("uuid")
     expect(f).toBeDefined()
