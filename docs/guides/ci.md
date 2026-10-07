@@ -129,7 +129,7 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 - **If a variable shows `<SECRET>` in the request**, the export replaced a secret-looking environment value with a placeholder. Supply the real value with `--var`, or move it to a secret.
 - **If the CLI exits `2` with `Unknown option`**, check the spelling against `apiweave --help`.
 - **If `npm ci` fails on `@apiweave/proto` with npm 12 or later**, allow the remote tarball: `npm config set allow-remote all` (what `scripts/setup.sh` does).
-- **If a Call Workflow node in a project bundle fails with `Node execution failed`**, that is a known gap: importing a bundle does not yet re-point Call Workflow nodes at the imported copies of their targets, in the CLI or in the app.
+- **If a Call Workflow node fails with `Call Workflow node has no target workflow configured`**, its target was not in the file. A workflow export carries none of its Call Workflow targets: export the project that holds both workflows instead, and run the caller with `--workflow`.
 
 ## Related
 

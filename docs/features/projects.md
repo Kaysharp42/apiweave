@@ -168,6 +168,8 @@ To import:
 
 Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
 
+A Call Workflow node follows its target into the import: when the target is in the same bundle, the node points at the imported copy. A target outside the bundle is kept when it exists in the destination workspace, and cleared otherwise; the import result lists every cleared target so you can pick a new one. A single workflow export carries none of its targets, so the same rule applies to each of its Call Workflow nodes.
+
 ## Dry-Run Validation
 
 Before committing an import, run the validation pass. It reports what the import will create without writing anything to the database: it validates the bundle schema, lists the workflows and environments that will be created, counts any secret references that will be unresolved after import, and warns when the bundle's schema version is newer than this app understands.
@@ -217,7 +219,7 @@ This is intentional. Each instance has its own Libsodium keypair and its own enc
 - **If a workflow row in the project will not go away**, click **Remove** on the row, or open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
 - **If the project runs in the wrong order after a drag-and-drop edit**, click **Save order** in the project settings. Drag-and-drop updates the list in memory but does not persist until you save. Reload the page to confirm the new order.
 - **If secrets are missing after import**, open **Secrets** for the destination environment or workspace and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
-- **If an imported workflow fails with `workflow not found` errors when another workflow references it**, the bundle exported with a stale internal ID. Re-export the project from the source instance, then re-import.
+- **If a Call Workflow node fails with `no target workflow configured` after an import**, its target was neither in the bundle nor in the destination workspace, so the import cleared it. Import the target too, or pick another target.
 
 ## Related
 

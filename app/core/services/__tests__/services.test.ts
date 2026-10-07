@@ -535,6 +535,48 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(workflows.listByCollection(targetWorkspace, targetProject.collectionId).total).toBe(2)
   })
 
+  it("re-points Call Workflow nodes at the imported copies, keeps local targets and clears the rest", async () => {
+    const wsA = seedWorkspace("a")
+    const project = collections.create({ workspaceId: wsA, name: "Calls" })
+    const outside = workflows.create({ workspaceId: wsA, name: "Outside" })
+    const login = workflows.create({ workspaceId: wsA, name: "Login", collectionId: project.collectionId })
+    const call = (nodeId: string, targetWorkflowId: string) => ({
+      nodeId,
+      type: "workflow" as const,
+      label: nodeId,
+      position: { x: 0, y: 0 },
+      config: { targetWorkflowId, targetWorkflowName: "x" },
+    })
+    workflows.create({
+      workspaceId: wsA,
+      name: "Checkout",
+      collectionId: project.collectionId,
+      nodes: [call("inBundle", login.workflowId), call("outside", outside.workflowId)],
+    })
+    const bundle = await exportService().exportProject(wsA, project.collectionId)
+
+    const importedNodes = async (workspaceId: string) => {
+      const result = await exportService().importProject(workspaceId, bundle)
+      const members = workflows.listByCollection(workspaceId, result.projectId).items
+      const checkout = members.find((workflow) => workflow.name === "Checkout")!
+      const importedLogin = members.find((workflow) => workflow.name === "Login")!
+      return { result, checkout, importedLogin, node: (id: string) => checkout.nodes.find((node) => node.nodeId === id)!.config }
+    }
+
+    // Another workspace: the bundled target follows its copy; the outside one is gone, so it is cleared with a warning.
+    const elsewhere = await importedNodes(seedWorkspace("b"))
+    expect(elsewhere.importedLogin.workflowId).not.toBe(login.workflowId)
+    expect(elsewhere.node("inBundle")).toMatchObject({ targetWorkflowId: elsewhere.importedLogin.workflowId, targetWorkflowName: "x" })
+    expect(elsewhere.node("outside")).toMatchObject({ targetWorkflowId: null, targetWorkflowName: null })
+    expect(elsewhere.result.warnings).toContainEqual(expect.stringContaining(`targeted workflow '${outside.workflowId}'`))
+
+    // The same workspace: the outside target still exists there, so it is kept.
+    const sameWorkspace = await importedNodes(wsA)
+    expect(sameWorkspace.node("inBundle")).toMatchObject({ targetWorkflowId: sameWorkspace.importedLogin.workflowId })
+    expect(sameWorkspace.node("outside")).toMatchObject({ targetWorkflowId: outside.workflowId })
+    expect(sameWorkspace.result.warnings).toEqual([])
+  })
+
   it("dry-run flags a bad node and warns on schema drift", async () => {
     const ws = seedWorkspace("a")
     const bundle = {

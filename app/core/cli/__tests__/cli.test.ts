@@ -115,6 +115,37 @@ describe("apiweave run", () => {
     expect(received).toHaveLength(requests)
   })
 
+  it("runs a Call Workflow node against the imported copy of its target", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: object[] }
+    project.workflows.push({
+      workflowId: "wf_caller",
+      name: "Caller",
+      description: "",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call", type: "workflow", label: "Call health", position: { x: 240, y: 0 }, config: { targetWorkflowId: "wf_health" } },
+        { nodeId: "end", type: "end", position: { x: 480, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "call" },
+        { edgeId: "e2", source: "call", target: "end" },
+      ],
+      variables: {},
+      tags: [],
+      selectedEnvironmentId: "env_ci",
+    })
+    fs.writeFileSync(path.join(dir, "calls.awecollection"), JSON.stringify(project))
+
+    const result = await run(
+      ["run", "calls.awecollection", "--workflow", "Caller", "--var", `baseUrl=${baseUrl}`],
+      { APIWEAVE_SECRET_API_TOKEN: TOKEN },
+    )
+
+    expect(result.stderr).toBe("")
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(received).toEqual([`Bearer ${TOKEN}`])
+  })
+
   it("applies --timeout-request to every request", async () => {
     const result = await run(
       ["run", FIXTURE, "--env", "CI", "--var", `baseUrl=${baseUrl}/slow`, "--timeout-request", "50"],

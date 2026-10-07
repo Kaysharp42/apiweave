@@ -64,6 +64,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Imported Call Workflow nodes call the imported workflows.** Importing a
+  project, in the app or with `apiweave run`, left each Call Workflow node
+  pointing at the original workflow, so it failed. It now points at the
+  imported copy. A target outside the bundle is kept when it exists in the
+  destination workspace and cleared otherwise, and the import lists each
+  cleared target. A failing Call Workflow node now says why, such as
+  `Called workflow <id> not found`, instead of `Node execution failed`.
+
 - **Cancelling a run during a Delay node stops it.** A cancel that landed just
   before a Delay node began was missed, and the run waited out the whole delay
   while still showing as running.

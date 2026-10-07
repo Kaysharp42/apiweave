@@ -1,4 +1,5 @@
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -16,6 +17,7 @@ import { recordCollectionUpsert, recordEnvironmentUpsert, recordWorkflowUpsert }
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
+import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import {
   assertNoSecretValues,
@@ -290,6 +292,7 @@ export class ProjectExportService {
       }
 
       const workflowMapping = new Map<string, string>()
+      const createdWorkflows: Workflow[] = []
       for (const workflow of bundle.workflows ?? []) {
         const oldEnvId = workflow.selectedEnvironmentId
         const mappedEnvId = oldEnvId ? envMapping.get(oldEnvId) : undefined
@@ -306,11 +309,28 @@ export class ProjectExportService {
           nodeTemplates: [...(workflow.nodeTemplates ?? [])],
         }
         const created = this.workflows.create(create)
-        recordWorkflowUpsert(this.syncProvider, created)
+        createdWorkflows.push(created)
         workflowMapping.set(workflow.workflowId, created.workflowId)
         if (oldEnvId && !mappedEnvId) {
           warnings.push(`Environment reference '${oldEnvId}' in workflow '${create.name}' could not be mapped`)
         }
+      }
+
+      // Second pass, once every imported id is known: a Call Workflow node
+      // follows its target to the imported copy; a target outside the bundle
+      // stays only if it exists in this workspace, and is cleared otherwise —
+      // a dangling id would make the workflow unsaveable and fail the node.
+      for (const created of createdWorkflows) {
+        const nodes = retargetCallWorkflows(created.nodes, (targetWorkflowId, node) => {
+          const mapped = workflowMapping.get(targetWorkflowId)
+          if (mapped !== undefined) return mapped
+          if (this.workflows.getByIdInWorkspace(targetWorkflowId, targetWorkspaceId)) return targetWorkflowId
+          warnings.push(callTargetClearedWarning(node.label ?? node.nodeId, created.name, targetWorkflowId))
+          return null
+        })
+        const changed = nodes.some((node, index) => node !== created.nodes[index])
+        const final = !changed ? created : this.workflows.update(created.workflowId, { nodes }) ?? created
+        recordWorkflowUpsert(this.syncProvider, final)
       }
 
       const importedOrder = buildImportedWorkflowOrder(bundle, workflowMapping)

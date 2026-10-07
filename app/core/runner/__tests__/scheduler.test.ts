@@ -687,6 +687,31 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("Call Workflow errors", () => {
+    it("names a missing or unset target instead of a generic failure", async () => {
+      const ws = seedWorkspace()
+      const call = (nodeId: string, targetWorkflowId: string | null) =>
+        ({ nodeId, type: "workflow" as const, position: { x: 1, y: 0 }, config: { targetWorkflowId } })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [{ nodeId: "start", type: "start", position: { x: 0, y: 0 } }, call("missing", "wf_gone"), call("unset", null)],
+        edges: [
+          { edgeId: "e1", source: "start", target: "missing" },
+          { edgeId: "e2", source: "start", target: "unset" },
+        ],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await scheduler.whenFinished(runId)
+
+      const error = (nodeId: string) => runs.getById(runId)?.results.find((r) => r.nodeId === nodeId)?.error
+      expect(error("missing")).toBe("Called workflow wf_gone not found")
+      expect(error("unset")).toBe("Call Workflow node has no target workflow configured")
+    })
+  })
+
   describe("workspace ownership", () => {
     it("rejects enqueue of a workflow from another workspace and creates no run", async () => {
       const wsA = seedWorkspace()

@@ -592,11 +592,19 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
   }
 }
 
+const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
+  /^Called workflow [\w-]+ not found$/,
+  /^Call Workflow node has no target workflow configured$/,
+  /^Call Workflow recursion depth exceeded$/,
+]
+
 function safeErrorClass(error: string): string {
   // The runner's own network diagnosis names only the host, the system error
   // and its code; resolved secret values are masked before this point.
   if (error.startsWith(NETWORK_ERROR_PREFIX)) return error
   if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
+  // The executor's own Call Workflow diagnoses carry at most the target's id.
+  if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"

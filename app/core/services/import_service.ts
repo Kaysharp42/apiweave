@@ -18,6 +18,7 @@ import { recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mut
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
+import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import {
   assertNoSecretValues,
@@ -291,7 +292,13 @@ export class ImportService {
       workspaceId: targetWorkspaceId,
       name: bundle.workflow.name || "Imported Workflow",
       description: bundle.workflow.description ?? null,
-      nodes: parseWorkflowNodes(rawNodes),
+      // A workflow export carries none of its Call Workflow targets: a target
+      // stays only if it exists in this workspace, and is cleared otherwise.
+      nodes: retargetCallWorkflows(parseWorkflowNodes(rawNodes), (targetWorkflowId, node) => {
+        if (this.workflows.getByIdInWorkspace(targetWorkflowId, targetWorkspaceId)) return targetWorkflowId
+        warnings.push(callTargetClearedWarning(node.label ?? node.nodeId, bundle.workflow.name, targetWorkflowId))
+        return null
+      }),
       edges: parseWorkflowEdges(bundle.workflow.edges ?? []),
       variables: wfVars as Record<string, JsonValue>,
       tags: [...(bundle.workflow.tags ?? [])],
