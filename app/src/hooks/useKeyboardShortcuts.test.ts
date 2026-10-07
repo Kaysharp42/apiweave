@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
-import Mousetrap from "mousetrap";
 import useKeyboardShortcuts from "./useKeyboardShortcuts";
 
 function press(combo: { key: string; ctrlKey?: boolean; shiftKey?: boolean }) {
@@ -16,10 +15,6 @@ function press(combo: { key: string; ctrlKey?: boolean; shiftKey?: boolean }) {
   Object.defineProperty(event, "which", { value: keyCode });
   document.dispatchEvent(event);
 }
-
-afterEach(() => {
-  Mousetrap.reset();
-});
 
 describe("useKeyboardShortcuts", () => {
   it("fires onNewWorkflow for ctrl+n", () => {
@@ -93,5 +88,43 @@ describe("useKeyboardShortcuts", () => {
 
     expect(onNewWorkflow).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it("does not fire ctrl+n with another modifier held", () => {
+    const onNewWorkflow = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onNewWorkflow }));
+
+    press({ key: "N", ctrlKey: true, shiftKey: true });
+
+    expect(onNewWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("opens the shortcuts help for ? outside a field only", () => {
+    const onShowShortcutsHelp = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onShowShortcutsHelp }));
+
+    press({ key: "?", shiftKey: true });
+    expect(onShowShortcutsHelp).toHaveBeenCalledTimes(1);
+
+    const textarea = document.createElement("textarea");
+    document.body.appendChild(textarea);
+    textarea.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "?", shiftKey: true, bubbles: true }),
+    );
+    expect(onShowShortcutsHelp).toHaveBeenCalledTimes(1);
+    textarea.remove();
+  });
+
+  it("stops listening once disabled", () => {
+    const onCloseTab = vi.fn();
+    const { rerender } = renderHook(
+      ({ enabled }) => useKeyboardShortcuts({ enabled, onCloseTab }),
+      { initialProps: { enabled: true } },
+    );
+
+    rerender({ enabled: false });
+    press({ key: "w", ctrlKey: true });
+
+    expect(onCloseTab).not.toHaveBeenCalled();
   });
 });

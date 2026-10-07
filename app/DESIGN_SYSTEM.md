@@ -302,7 +302,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 
 | Hook                   | File                            | Purpose                                          |
 | ---------------------- | ------------------------------- | ------------------------------------------------ |
-| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Global keyboard shortcut bindings via Mousetrap. |
+| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Global keyboard shortcut bindings (one document `keydown` listener). |
 | `useWorkflowPolling`   | `hooks/useWorkflowPolling.ts`   | Workflow run polling with adaptive intervals.    |
 | `useCanvasDrop`        | `hooks/useCanvasDrop.ts`        | Canvas drag-and-drop handling.                   |
 | `useAutoSave`          | `hooks/useAutoSave.ts`          | Auto-save behavior with debounce.                |

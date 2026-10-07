@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import Mousetrap from "mousetrap";
+import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
 
 interface UseKeyboardShortcutsParams {
   /**
@@ -23,6 +23,24 @@ interface ShortcutCallbacks {
   onPrevTab?: (() => void) | undefined;
   onToggleSidebar?: (() => void) | undefined;
   onShowShortcutsHelp?: (() => void) | undefined;
+}
+
+/** Ctrl, not Cmd, on every OS, and no other modifier unless the combo names it. */
+function shortcutFor(e: KeyboardEvent): keyof ShortcutCallbacks | null {
+  if (e.altKey || e.metaKey) return null;
+  if (!e.ctrlKey) return e.key === "?" ? "onShowShortcutsHelp" : null;
+  if (e.key === "Tab") return e.shiftKey ? "onPrevTab" : "onNextTab";
+  if (e.shiftKey) return null;
+  switch (e.key.toLowerCase()) {
+    case "n":
+      return "onNewWorkflow";
+    case "w":
+      return "onCloseTab";
+    case "b":
+      return "onToggleSidebar";
+    default:
+      return null;
+  }
 }
 
 export default function useKeyboardShortcuts({
@@ -50,34 +68,21 @@ export default function useKeyboardShortcuts({
   useEffect(() => {
     if (!enabled) return;
 
-    const call =
-      (name: keyof ShortcutCallbacks) =>
-      (e: Mousetrap.ExtendedKeyboardEvent) => {
-        e.preventDefault();
-        callbacks.current[name]?.();
-      };
-
-    Mousetrap.bind("ctrl+n", call("onNewWorkflow"));
-    Mousetrap.bind("ctrl+w", call("onCloseTab"));
-    Mousetrap.bind("ctrl+tab", call("onNextTab"));
-    Mousetrap.bind("ctrl+shift+tab", call("onPrevTab"));
-    Mousetrap.bind("ctrl+b", call("onToggleSidebar"));
-    Mousetrap.bind("?", (e: Mousetrap.ExtendedKeyboardEvent) => {
-      const tag = e.target
-        ? (e.target as HTMLElement).tagName.toLowerCase()
-        : "";
-      if (tag === "input" || tag === "textarea" || tag === "select") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Typing belongs to the field, shortcuts included.
+      if (
+        isEditableKeyboardTarget(e.target) ||
+        (e.target as Element | null)?.tagName === "SELECT"
+      ) {
+        return;
+      }
+      const name = shortcutFor(e);
+      if (name === null) return;
       e.preventDefault();
-      callbacks.current.onShowShortcutsHelp?.();
-    });
-
-    return () => {
-      Mousetrap.unbind("ctrl+n");
-      Mousetrap.unbind("ctrl+w");
-      Mousetrap.unbind("ctrl+tab");
-      Mousetrap.unbind("ctrl+shift+tab");
-      Mousetrap.unbind("ctrl+b");
-      Mousetrap.unbind("?");
+      callbacks.current[name]?.();
     };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [enabled]);
 }
