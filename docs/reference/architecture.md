@@ -98,7 +98,7 @@ A single node execution follows a predictable lifecycle inside the engine:
 - **Extract**: capture values from the response into workflow variables for downstream nodes.
 - **Mask and persist**: replace every resolved secret value (four characters or longer) in the result with `<SECRET>`, then store and emit only the masked copy.
 
-If a node fails, the engine records the failure and consults the workflow's `continueOnFail` setting to decide whether to stop or move on to the next branch.
+If a node fails, the engine records the failure and consults that node's own `continueOnFail` setting to decide whether to stop that path or carry on past it.
 
 ## Storage
 

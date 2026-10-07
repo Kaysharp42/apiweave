@@ -210,6 +210,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **The workflow-level Continue on Fail toggle.** It was never saved and the
+  runner never read it, so it had no effect. Failure handling is per node:
+  each node's **Continue on failure** toggle in its Settings tab.
 - The renderer's startup gate, left over from the retired HTTP backend. Its
   spinner never showed and its error screen was unreachable.
 - Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that

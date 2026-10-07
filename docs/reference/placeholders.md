@@ -167,7 +167,7 @@ When the runner cannot resolve a placeholder, the reference is left in place as 
 - **In a dynamic function with bad arguments**: a missing or non-numeric length falls back to the function's default, and `randomChoice` with no options returns an empty string. A length above 10,000 fails the node with the function's own message.
 - **In a `{{secrets.NAME}}` placeholder**: the scope chain did not declare the key, or the stored ciphertext could not be decrypted. The reference stays as literal text. The runner does not block the run on a missing secret.
 
-The runner does not raise a hard error for a single missing placeholder by default. The workflow keeps going, and the missing value surfaces as a downstream test failure or a malformed request. Set `continueOnFail` on the workflow to control whether the run stops at the first failure or continues through every node.
+The runner does not raise a hard error for a single missing placeholder by default. The workflow keeps going, and the missing value surfaces as a downstream test failure or a malformed request. Turn on a node's **Continue on failure** to let the run carry on past that node when it fails.
 
 If you need a hard error for a specific missing placeholder, add an assertion on the resolved value rather than relying on the substitution layer.
 

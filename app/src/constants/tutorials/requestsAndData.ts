@@ -102,7 +102,7 @@ export const requestsAndDataChapter: TutorialChapter = {
         {
           title: "Override failure behaviour for this node",
           instruction:
-            "Toggle Continue on failure in the Settings tab to let this node's failure not stop the workflow, regardless of the workflow-level setting.",
+            "Toggle Continue on failure in the Settings tab to let this node's failure not stop the workflow.",
         },
         {
           title: "Copy the request as cURL",
