@@ -32,14 +32,9 @@ import {
   PresetCollectionColors,
 } from "../constants/CollectionColors";
 import { useScopeContext } from "../hooks/useScopeContext";
-import {
-  projectsUrl,
-  workflowsUrl,
-  workflowsCreateInProjectUrl,
-} from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 
 const collectionLog = getLogger("CollectionManager");
@@ -54,11 +49,6 @@ interface ExtendedProject extends Project {
   }>;
   continueOnFail?: boolean;
   workflowCount: number;
-}
-
-interface ProjectListResponse {
-  projects: ExtendedProject[];
-  total: number;
 }
 
 interface WorkflowOrderItem {
@@ -141,20 +131,8 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       return [];
     }
     try {
-      const response = await authenticatedFetch(
-        workflowsUrl(workspaceId, {
-          skip: 0,
-          limit: 100,
-          includeAttached: true,
-        }),
-      );
-      if (response.ok) {
-        const data: unknown = await response.json();
-        const workflowArray: Workflow[] = Array.isArray(data)
-          ? data
-          : (data as { workflows: Workflow[] }).workflows || [];
-        return workflowArray;
-      }
+      const data = await apiweave.workflows.list(workspaceId, true);
+      return [...data.items];
     } catch (err: unknown) {
       collectionLog.error("Error fetching workflows:", err);
     }
@@ -166,11 +144,8 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       return [];
     }
     try {
-      const response = await authenticatedFetch(projectsUrl(workspaceId));
-      if (response.ok) {
-        const data: ProjectListResponse = await response.json();
-        return data.projects;
-      }
+      const data = await apiweave.projects.list(workspaceId);
+      return data.items as ExtendedProject[];
     } catch (err: unknown) {
       collectionLog.error("Error fetching projects:", err);
     }
@@ -251,38 +226,31 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       return;
     }
     try {
-      const url = selectedProject
-        ? projectsUrl(workspaceId, getProjectId(selectedProject))
-        : projectsUrl(workspaceId);
-      const method = selectedProject ? "PATCH" : "POST";
-
-      const response = await authenticatedFetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
-        toast.success(selectedProject ? "Project updated" : "Project created");
-        const nextProjects = await fetchProjects();
-        setState((prev) => ({
-          ...prev,
-          projects: nextProjects,
-          isEditing: false,
-          selectedProject: null,
-          error: "",
-        }));
-        useSidebarStore.getState().signalProjectsRefresh();
+      if (selectedProject) {
+        await apiweave.projects.update(
+          workspaceId,
+          getProjectId(selectedProject),
+          formData,
+        );
       } else {
-        const errorData: { detail?: string } = await response.json();
-        setState((prev) => ({
-          ...prev,
-          error: errorData.detail || "Failed to save project",
-        }));
+        await apiweave.projects.create({ workspaceId, ...formData });
       }
+      toast.success(selectedProject ? "Project updated" : "Project created");
+      const nextProjects = await fetchProjects();
+      setState((prev) => ({
+        ...prev,
+        projects: nextProjects,
+        isEditing: false,
+        selectedProject: null,
+        error: "",
+      }));
+      useSidebarStore.getState().signalProjectsRefresh();
     } catch (err: unknown) {
       collectionLog.error("Error saving project:", err);
-      setState((prev) => ({ ...prev, error: "Error saving project" }));
+      setState((prev) => ({
+        ...prev,
+        error: err instanceof Error && err.message ? err.message : "Error saving project",
+      }));
     }
   };
 
@@ -293,31 +261,21 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
       return;
     }
     try {
-      const response = await authenticatedFetch(
-        projectsUrl(workspaceId, deleteTarget),
-        {
-          method: "DELETE",
-        },
-      );
-      if (response.ok) {
-        toast.success("Project deleted");
-        const nextProjects = await fetchProjects();
-        if (selectedProject && getProjectId(selectedProject) === deleteTarget) {
-          setState((prev) => ({
-            ...prev,
-            selectedProject: null,
-            isEditing: false,
-          }));
-        }
-        setState((prev) => ({ ...prev, projects: nextProjects }));
-        useSidebarStore.getState().signalProjectsRefresh();
-      } else {
-        const errorData: { detail?: string } = await response.json();
-        toast.error(errorData.detail || "Failed to delete project");
+      await apiweave.projects.delete(workspaceId, deleteTarget);
+      toast.success("Project deleted");
+      const nextProjects = await fetchProjects();
+      if (selectedProject && getProjectId(selectedProject) === deleteTarget) {
+        setState((prev) => ({
+          ...prev,
+          selectedProject: null,
+          isEditing: false,
+        }));
       }
+      setState((prev) => ({ ...prev, projects: nextProjects }));
+      useSidebarStore.getState().signalProjectsRefresh();
     } catch (err: unknown) {
       collectionLog.error("Error deleting project:", err);
-      toast.error("Error deleting project");
+      toast.error(err instanceof Error && err.message ? err.message : "Error deleting project");
     } finally {
       setState((prev) => ({ ...prev, deleteTarget: null }));
     }
@@ -390,32 +348,24 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
         enabled: wo.enabled,
         continueOnFail: wo.continueOnFail,
       }));
-      const response = await authenticatedFetch(
-        projectsUrl(workspaceId, getProjectId(selectedProject)),
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workflowOrder: orderData, continueOnFail }),
-        },
+      await apiweave.projects.update(
+        workspaceId,
+        getProjectId(selectedProject),
+        { workflowOrder: orderData, continueOnFail },
       );
-      if (response.ok) {
-        toast.success("Workflow order saved");
-        const nextProjects = await fetchProjects();
-        setState((prev) => ({
-          ...prev,
-          projects: nextProjects,
-          isManagingWorkflows: false,
-          selectedProject: null,
-          workflowOrder: [],
-        }));
-        useSidebarStore.getState().signalProjectsRefresh();
-      } else {
-        const errorData: { detail?: string } = await response.json();
-        toast.error(errorData.detail || "Failed to save workflow order");
-      }
+      toast.success("Workflow order saved");
+      const nextProjects = await fetchProjects();
+      setState((prev) => ({
+        ...prev,
+        projects: nextProjects,
+        isManagingWorkflows: false,
+        selectedProject: null,
+        workflowOrder: [],
+      }));
+      useSidebarStore.getState().signalProjectsRefresh();
     } catch (err: unknown) {
       collectionLog.error("Error saving workflow order:", err);
-      toast.error("Error saving workflow order");
+      toast.error(err instanceof Error && err.message ? err.message : "Error saving workflow order");
     }
   };
 
@@ -506,39 +456,28 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
     if (!workspaceId || !selectedProject) return;
     const projectId = getProjectId(selectedProject);
     try {
-      const response = await authenticatedFetch(
-        workflowsCreateInProjectUrl(workspaceId, projectId),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            description: "",
-            nodes: [
-              {
-                nodeId: "start-1",
-                type: "start",
-                label: "Start",
-                position: { x: 100, y: 100 },
-                config: {},
-              },
-            ],
-            edges: [],
-            variables: {},
-          }),
-        },
-      );
-      if (response.ok) {
-        const workflow = (await response.json()) as Workflow;
-        addWorkflowToOrder(workflow.workflowId);
-        useSidebarStore.getState().signalWorkflowsRefresh();
-        toast.success(`Workflow "${name}" created and added to project`);
-      } else {
-        const errBody = (await response.json()) as { detail?: string };
-        toast.error(errBody.detail ?? "Failed to create workflow");
-      }
-    } catch {
-      toast.error("Failed to create workflow in project");
+      const workflow = await apiweave.workflows.create({
+        workspaceId,
+        collectionId: projectId,
+        name,
+        description: "",
+        nodes: [
+          {
+            nodeId: "start-1",
+            type: "start",
+            label: "Start",
+            position: { x: 100, y: 100 },
+            config: {},
+          },
+        ],
+        edges: [],
+        variables: {},
+      });
+      addWorkflowToOrder(workflow.workflowId);
+      useSidebarStore.getState().signalWorkflowsRefresh();
+      toast.success(`Workflow "${name}" created and added to project`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error && err.message ? err.message : "Failed to create workflow in project");
     } finally {
       setShowCreateWorkflowPrompt(false);
     }

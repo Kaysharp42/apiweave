@@ -1,11 +1,8 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 import useTabStore from "./TabStore";
-import { authenticatedFetch, workflowDetailUrl } from "../utils/apiweaveClient";
-import {
-  describeThrownSaveError,
-  readSaveFailureEnvelope,
-} from "../utils/workflowSaveFailure";
+import { apiweave, IpcError } from "../utils/apiweaveClient";
+import { describeThrownSaveError } from "../utils/workflowSaveFailure";
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema";
 import type { PendingEdits } from "../types/PendingEdits";
 import type { UnsavedChangesChoice } from "../types/UnsavedChangesChoice";
@@ -78,7 +75,7 @@ const findTab = (id: string) =>
   useTabStore.getState().tabs.find((t) => t.id === id);
 
 /**
- * Saves a tab's draft without a canvas — the same PATCH the canvas's explicit
+ * Saves a tab's draft without a canvas — the same update the canvas's explicit
  * save sends. A failure is reported and leaves the draft, and so the tab, as
  * they were.
  */
@@ -87,35 +84,24 @@ async function saveDraft(id: string): Promise<void> {
   if (!tab?.draft) return;
   const { draft } = tab;
   try {
-    const response = await authenticatedFetch(
-      workflowDetailUrl(tab.workspaceId, tab.workflowId),
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nodes: draft.nodes,
-          edges: draft.edges,
-          variables: draft.variables,
-          selectedEnvironmentId: draft.selectedEnvironmentId ?? null,
-          // The draft was cut from the tab's workflow at this revision; a
-          // newer one on the server is someone else's edit, not ours to replace.
-          expectedRevision: draft.rev,
-        }),
-      },
+    const saved = WorkflowSchema.parse(
+      await apiweave.workflows.update(tab.workspaceId, tab.workflowId, {
+        nodes: draft.nodes,
+        edges: draft.edges,
+        variables: draft.variables,
+        selectedEnvironmentId: draft.selectedEnvironmentId ?? null,
+        // The draft was cut from the tab's workflow at this revision; a
+        // newer one on the server is someone else's edit, not ours to replace.
+        expectedRevision: draft.rev,
+      }),
     );
-    if (!response.ok) {
-      const { detail, code, issues } = await readSaveFailureEnvelope(response);
-      throw new Error(
-        code === "conflict"
-          ? "it was changed elsewhere since you edited it. Open it to choose which version to keep."
-          : (detail ?? issues[0] ?? `the request was rejected (${response.status})`),
-      );
-    }
-    const saved = WorkflowSchema.parse(await response.json());
     useTabStore.getState().updateTabWorkflow(id, saved);
     useTabStore.getState().markClean(id);
   } catch (error) {
-    const cause = describeThrownSaveError(error);
+    const cause =
+      error instanceof IpcError && error.code === "conflict"
+        ? "it was changed elsewhere since you edited it. Open it to choose which version to keep."
+        : describeThrownSaveError(error);
     toast.error(
       `Failed to save "${tab.name}" — ${cause ?? "your changes are not saved"}`,
       { id: `workflow-save-error-${id}` },

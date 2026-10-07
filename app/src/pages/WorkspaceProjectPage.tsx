@@ -8,16 +8,7 @@ import { Spinner } from "../components/atoms/Spinner";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { PromptDialog } from "../components/molecules/PromptDialog";
 import { useWorkspace } from "../contexts/WorkspaceContext";
-import {
-  authenticatedJson,
-  authenticatedFetch,
-  apiweave,
-} from "../utils/apiweaveClient";
-import {
-  workflowsCreateInProjectUrl,
-  projectWorkflowAssignUrl,
-} from "../utils/apiweaveClient";
-import API_BASE_URL from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import useAgentWriteRefresh from "../hooks/useAgentWriteRefresh";
 import { toast } from "sonner";
 import type { Project } from "../types/Project";
@@ -62,19 +53,15 @@ export function WorkspaceProjectPage() {
     try {
       const [projectRes, projectWorkflows, allWorkflowsRes] =
         await Promise.all([
-          authenticatedJson<Project>(
-            `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/projects/${projectId}`,
-          ),
+          apiweave.projects.get(currentWorkspace.workspaceId, projectId),
           apiweave.projects.listWorkflows(
             currentWorkspace.workspaceId,
             projectId,
           ),
-          authenticatedJson<{ workflows: Workflow[]; total: number }>(
-            `${API_BASE_URL}/api/workspaces/${currentWorkspace.workspaceId}/workflows?skip=0&limit=100`,
-          ),
+          apiweave.workflows.list(currentWorkspace.workspaceId),
         ]);
       setData({ project: projectRes, workflows: [...projectWorkflows] });
-      setAllWorkflows(allWorkflowsRes.workflows);
+      setAllWorkflows([...allWorkflowsRes.items]);
     } catch {
       setError(
         "Failed to load project. You may not have access to this workspace.",
@@ -162,40 +149,33 @@ export function WorkspaceProjectPage() {
   const handleCreateWorkflowInProject = async (name: string): Promise<void> => {
     if (!wsId || !projectId) return;
     try {
-      const response = await authenticatedFetch(
-        workflowsCreateInProjectUrl(wsId, projectId),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            description: "",
-            nodes: [
-              {
-                nodeId: "start-1",
-                type: "start",
-                label: "Start",
-                position: { x: 100, y: 100 },
-                config: {},
-              },
-            ],
-            edges: [],
-            variables: {},
-          }),
-        },
+      const workflow = await apiweave.workflows.create({
+        workspaceId: wsId,
+        collectionId: projectId,
+        name,
+        description: "",
+        nodes: [
+          {
+            nodeId: "start-1",
+            type: "start",
+            label: "Start",
+            position: { x: 100, y: 100 },
+            config: {},
+          },
+        ],
+        edges: [],
+        variables: {},
+      });
+      toast.success(`Workflow "${name}" created and added to project`);
+      navigate(
+        `/${orgSlugValue}/${wsSlugValue}/workflows/${workflow.workflowId}`,
       );
-      if (response.ok) {
-        const workflow = (await response.json()) as Workflow;
-        toast.success(`Workflow "${name}" created and added to project`);
-        navigate(
-          `/${orgSlugValue}/${wsSlugValue}/workflows/${workflow.workflowId}`,
-        );
-      } else {
-        const errBody = (await response.json()) as { detail?: string };
-        toast.error(errBody.detail ?? "Failed to create workflow");
-      }
-    } catch {
-      toast.error("Failed to create workflow in project");
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to create workflow in project",
+      );
     } finally {
       setShowCreatePrompt(false);
     }
@@ -204,19 +184,15 @@ export function WorkspaceProjectPage() {
   const handleAssignWorkflow = async (workflowId: string): Promise<void> => {
     if (!wsId || !projectId) return;
     try {
-      const response = await authenticatedFetch(
-        projectWorkflowAssignUrl(wsId, projectId, workflowId),
-        { method: "POST" },
+      await apiweave.projects.addWorkflow(wsId, projectId, workflowId);
+      toast.success("Workflow assigned to project");
+      void loadData();
+    } catch (err: unknown) {
+      toast.error(
+        err instanceof Error && err.message
+          ? err.message
+          : "Failed to assign workflow to project",
       );
-      if (response.ok) {
-        toast.success("Workflow assigned to project");
-        void loadData();
-      } else {
-        const errBody = (await response.json()) as { detail?: string };
-        toast.error(errBody.detail ?? "Failed to assign workflow");
-      }
-    } catch {
-      toast.error("Failed to assign workflow to project");
     } finally {
       setShowAssignDropdown(false);
     }

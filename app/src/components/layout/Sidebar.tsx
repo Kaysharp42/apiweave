@@ -16,26 +16,14 @@ import { SidebarRowDialogs } from "./sidebar/SidebarRowDialogs";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import useTabStore from "../../stores/TabStore";
-import {
-  requestProjectDeletion,
-  requestWorkflowDeletion,
-} from "../../utils/apiweaveClient";
+import { apiweave } from "../../utils/apiweaveClient";
 import type { Workflow } from "../../types/Workflow";
 import type { Project } from "../../types/Project";
-import { authenticatedFetch } from "../../utils/apiweaveClient";
 import { noteLocalWorkflowRemoval } from "../../utils/localWorkflowRemovals";
-import { confirmPermanentDeletion } from "../../utils/confirmPermanentDeletion";
 import useNavigationStore from "../../stores/NavigationStore";
-import API_BASE_URL from "../../utils/apiweaveClient";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import { useNavigationSelection } from "../../hooks/useNavigationControls";
 import { useSidebarRowActions } from "../../hooks/useSidebarRowActions";
-import {
-  workflowUrl,
-  workflowsUrl,
-  workflowsCreateInProjectUrl,
-  projectWorkflowAssignUrl,
-} from "../../utils/apiweaveClient";
 import { getLogger } from "../../utils/logger";
 
 const sidebarLog = getLogger("Sidebar");
@@ -183,31 +171,24 @@ export function Sidebar() {
     }
 
     try {
-      const response = await authenticatedFetch(workflowsUrl(workspaceId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          description: "",
-          nodes: [
-            {
-              nodeId: "start-1",
-              type: "start",
-              label: "Start",
-              position: { x: 100, y: 100 },
-              config: {},
-            },
-          ],
-          edges: [],
-          variables: {},
-        }),
+      const workflow = await apiweave.workflows.create({
+        workspaceId,
+        name,
+        description: "",
+        nodes: [
+          {
+            nodeId: "start-1",
+            type: "start",
+            label: "Start",
+            position: { x: 100, y: 100 },
+            config: {},
+          },
+        ],
+        edges: [],
+        variables: {},
       });
-
-      if (response.ok) {
-        const workflow = (await response.json()) as Workflow;
-        void refreshAll(selectedNav);
-        useTabStore.getState().openTab(workflow);
-      }
+      void refreshAll(selectedNav);
+      useTabStore.getState().openTab(workflow);
     } catch (error) {
       sidebarLog.error("Error creating workflow:", error);
     }
@@ -220,41 +201,33 @@ export function Sidebar() {
     }
 
     try {
-      const response = await authenticatedFetch(
-        workflowsCreateInProjectUrl(workspaceId, addWorkflowToProjectTarget),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            description: "",
-            nodes: [
-              {
-                nodeId: "start-1",
-                type: "start",
-                label: "Start",
-                position: { x: 100, y: 100 },
-                config: {},
-              },
-            ],
-            edges: [],
-            variables: {},
-          }),
-        },
-      );
-
-      if (response.ok) {
-        const workflow = (await response.json()) as Workflow;
-        void refreshAll("projects");
-        useTabStore.getState().openTab(workflow);
-        toast.success(`Workflow "${name}" created and added to project`);
-      } else {
-        const errBody = (await response.json()) as { detail?: string };
-        toast.error(errBody.detail ?? "Failed to create workflow in project");
-      }
+      const workflow = await apiweave.workflows.create({
+        workspaceId,
+        collectionId: addWorkflowToProjectTarget,
+        name,
+        description: "",
+        nodes: [
+          {
+            nodeId: "start-1",
+            type: "start",
+            label: "Start",
+            position: { x: 100, y: 100 },
+            config: {},
+          },
+        ],
+        edges: [],
+        variables: {},
+      });
+      void refreshAll("projects");
+      useTabStore.getState().openTab(workflow);
+      toast.success(`Workflow "${name}" created and added to project`);
     } catch (error) {
       sidebarLog.error("Error creating workflow in project:", error);
-      toast.error("Failed to create workflow in project");
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to create workflow in project",
+      );
     } finally {
       setAddWorkflowToProjectTarget(null);
     }
@@ -272,21 +245,16 @@ export function Sidebar() {
     }
 
     try {
-      const response = await authenticatedFetch(
-        projectWorkflowAssignUrl(workspaceId, projectId, workflowId),
-        { method: "POST" },
-      );
-
-      if (response.ok) {
-        toast.success("Workflow assigned to project");
-        void refreshAll("projects");
-      } else {
-        const errBody = (await response.json()) as { detail?: string };
-        toast.error(errBody.detail ?? "Failed to assign workflow to project");
-      }
+      await apiweave.projects.addWorkflow(workspaceId, projectId, workflowId);
+      toast.success("Workflow assigned to project");
+      void refreshAll("projects");
     } catch (error) {
       sidebarLog.error("Error assigning workflow to project:", error);
-      toast.error("Failed to assign workflow to project");
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to assign workflow to project",
+      );
     }
   };
 
@@ -299,24 +267,17 @@ export function Sidebar() {
     setSelectedWorkflowId(workflow.workflowId);
 
     try {
-      const response = await authenticatedFetch(
-        workflowUrl(workspaceId, workflow.workflowId),
+      const fullWorkflow = await apiweave.workflows.get(
+        workspaceId,
+        workflow.workflowId,
       );
-      if (response.ok) {
-        const fullWorkflow: Workflow = await response.json();
-        if (selectedNav === "settings") {
-          setNavState("workflows");
-          navigate("/");
-        }
-        useTabStore.getState().openTab(fullWorkflow);
-        return;
+      if (selectedNav === "settings") {
+        setNavState("workflows");
+        navigate("/");
       }
-      toast.error(
-        `Unable to open workflow (${response.status}). Please retry.`,
-      );
-      sidebarLog.error(`Failed to fetch full workflow payload (${response.status})`);
+      useTabStore.getState().openTab(fullWorkflow);
     } catch (error) {
-      toast.error("Unable to open workflow. Check your connection and retry.");
+      toast.error("Unable to open workflow. Please retry.");
       sidebarLog.error("Error fetching full workflow payload:", error);
     }
   };
@@ -347,22 +308,14 @@ export function Sidebar() {
     }
 
     try {
+      const workflowId = deleteWorkflowTarget?.workflowId;
+      if (!workflowId) return;
       // Marked before the request: the deletion is broadcast after commit and
       // can reach the open canvas before this await resolves, which would toast
       // a second time and blame an agent for what the user just did.
-      if (deleteWorkflowTarget?.workflowId) {
-        noteLocalWorkflowRemoval(deleteWorkflowTarget.workflowId);
-      }
-      const workflowId = await confirmPermanentDeletion(
-        requestWorkflowDeletion({
-          target: deleteWorkflowTarget,
-          apiBaseUrl: API_BASE_URL,
-          workspaceId,
-          fetchImpl: authenticatedFetch,
-        }),
-        "Workflow",
-      );
-      if (!workflowId) return;
+      noteLocalWorkflowRemoval(workflowId);
+      await apiweave.workflows.delete(workspaceId, workflowId);
+      toast.success("Workflow deleted permanently");
 
       setSelectedWorkflowId((prev) => (prev === workflowId ? null : prev));
       closeTab(workflowId);
@@ -383,16 +336,10 @@ export function Sidebar() {
     }
 
     try {
-      const projectId = await confirmPermanentDeletion(
-        requestProjectDeletion({
-          target: deleteProjectTarget,
-          apiBaseUrl: API_BASE_URL,
-          workspaceId,
-          fetchImpl: authenticatedFetch,
-        }),
-        "Project",
-      );
+      const projectId = deleteProjectTarget?.projectId;
       if (!projectId) return;
+      await apiweave.projects.delete(workspaceId, projectId);
+      toast.success("Project deleted permanently");
 
       setExpandedProjects((prev) => {
         const next = new Set(prev);

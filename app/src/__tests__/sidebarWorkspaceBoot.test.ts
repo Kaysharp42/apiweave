@@ -1,23 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import useSidebarStore from "../stores/SidebarStore";
-import API_BASE_URL from "../utils/apiweaveClient";
-
-function responseJson(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function inputUrl(input: RequestInfo | URL): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
-}
-
-function methodFrom(init: RequestInit | undefined): string {
-  return (init?.method ?? "GET").toUpperCase();
-}
 
 function resetStores(): void {
   useSidebarStore.setState({
@@ -51,31 +33,21 @@ function makeWorkflow(id: string, name: string) {
   };
 }
 
-function installFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
-  const fetchMock = vi.fn<typeof fetch>(async (input) => {
-    const url = inputUrl(input);
+type TestIpcBridge = NonNullable<Window["__APIWEAVE_IPC__"]>;
 
-    if (url.includes("/projects")) {
-      return responseJson({
-        projects: [{ id: "p-1", name: "Proj A" }],
-        total: 1,
-      });
-    }
-    if (url.includes("/environments")) {
-      return responseJson([{ environmentId: "env-1", name: "Env A" }]);
-    }
-    if (url.includes("/workflows")) {
-      return responseJson({
-        workflows: [makeWorkflow("wf-1", "WF A")],
-        total: 1,
-      });
-    }
-
-    return responseJson({}, 404);
+function installBridge(): ReturnType<typeof vi.fn<TestIpcBridge["invoke"]>> {
+  const invoke = vi.fn<TestIpcBridge["invoke"]>(async (domain) => ({
+    ok: true,
+    data:
+      domain === "projects"
+        ? { items: [{ id: "p-1", name: "Proj A" }], total: 1 }
+        : { items: [makeWorkflow("wf-1", "WF A")], total: 1 },
+  }));
+  vi.stubGlobal("__APIWEAVE_IPC__", {
+    invoke,
+    onRunProgress: () => () => undefined,
   });
-
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+  return invoke;
 }
 
 describe("sidebar workspace boot", () => {
@@ -89,7 +61,7 @@ describe("sidebar workspace boot", () => {
   });
 
   it('setActiveWorkspaceId("ws-A") from null triggers fetchProjects and fetchWorkflows(0)', async () => {
-    const fetchMock = installFetchMock();
+    const invoke = installBridge();
 
     useSidebarStore.getState().setActiveWorkspaceId("ws-A");
 
@@ -98,21 +70,13 @@ describe("sidebar workspace boot", () => {
 
     // Wait for async fetches to complete
     await vi.waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
-    });
-
-    const calls = fetchMock.mock.calls.map(([input, init]) => ({
-      url: inputUrl(input),
-      method: methodFrom(init),
-    }));
-
-    expect(calls).toContainEqual({
-      url: `${API_BASE_URL}/api/workspaces/ws-A/projects`,
-      method: "GET",
-    });
-    expect(calls).toContainEqual({
-      url: `${API_BASE_URL}/api/workspaces/ws-A/workflows?skip=0&limit=20`,
-      method: "GET",
+      expect(invoke).toHaveBeenCalledWith("projects", "list", {
+        workspaceId: "ws-A",
+      });
+      expect(invoke).toHaveBeenCalledWith("workflows", "list", {
+        workspaceId: "ws-A",
+        includeAttached: false,
+      });
     });
   });
 
@@ -134,7 +98,7 @@ describe("sidebar workspace boot", () => {
       pagination: { skip: 20, limit: 20, total: 100, hasMore: true },
     });
 
-    const fetchMock = installFetchMock();
+    const invoke = installBridge();
 
     useSidebarStore.getState().setActiveWorkspaceId("ws-B");
 
@@ -151,17 +115,17 @@ describe("sidebar workspace boot", () => {
 
     // Wait for async fetches on ws-B
     await vi.waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(invoke).toHaveBeenCalledWith("projects", "list", {
+        workspaceId: "ws-B",
+      });
+      expect(invoke).toHaveBeenCalledWith("workflows", "list", {
+        workspaceId: "ws-B",
+        includeAttached: false,
+      });
     });
 
-    const urls = fetchMock.mock.calls.map(([input]) => inputUrl(input));
-    expect(urls).toContain(`${API_BASE_URL}/api/workspaces/ws-B/projects`);
-    expect(urls).toContain(
-      `${API_BASE_URL}/api/workspaces/ws-B/workflows?skip=0&limit=20`,
-    );
-
     // No requests to the old workspace
-    expect(urls.some((u) => u.includes("ws-A"))).toBe(false);
+    expect(JSON.stringify(invoke.mock.calls)).not.toContain("ws-A");
   });
 
   it("setActiveWorkspaceId(null) clears data and does not fetch", async () => {
@@ -181,7 +145,7 @@ describe("sidebar workspace boot", () => {
       ],
     });
 
-    const fetchMock = installFetchMock();
+    const invoke = installBridge();
 
     useSidebarStore.getState().setActiveWorkspaceId(null);
 
@@ -191,6 +155,6 @@ describe("sidebar workspace boot", () => {
     expect(useSidebarStore.getState().projects).toEqual([]);
 
     // No fetches triggered when setting to null
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

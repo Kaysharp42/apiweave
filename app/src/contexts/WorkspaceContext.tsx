@@ -13,11 +13,7 @@ import type {
   WorkspaceContextValue,
   WorkspaceEntry,
 } from "../types/WorkspaceContextValue";
-import {
-  authenticatedJson,
-  onCloudStatusChanged,
-} from "../utils/apiweaveClient";
-import API_BASE_URL from "../utils/apiweaveClient";
+import { apiweave, onCloudStatusChanged } from "../utils/apiweaveClient";
 import { setLastWorkspaceSlug } from "../utils/workspacePreference";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -37,18 +33,16 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   const loadWorkspaceData = useCallback(async () => {
-    const workspacesRes = await authenticatedJson<{ workspaces: Workspace[]; total: number }>(
-      `${API_BASE_URL}/api/workspaces`,
-    );
+    const workspaces = [...(await apiweave.workspaces.list())];
 
     // Local-owner mode: the desktop app's single user owns every workspace
     // it can list, and access is enforced in the Electron main process.
     const roleMap = new Map<string, string>();
-    for (const ws of workspacesRes.workspaces) {
+    for (const ws of workspaces) {
       roleMap.set(ws.workspaceId, "owner");
     }
 
-    return { workspaces: workspacesRes.workspaces, roleMap };
+    return { workspaces, roleMap };
   }, []);
 
   const refresh = useCallback(async () => {

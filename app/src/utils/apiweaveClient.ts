@@ -272,7 +272,12 @@ export const apiweave = {
         workspaceId,
         includeAttached,
       }),
-    update: (workspaceId: string, workflowId: string, patch: WorkflowPatch) =>
+    /** `expectedRevision` makes the save fail with `conflict` if someone else's edit landed first. */
+    update: (
+      workspaceId: string,
+      workflowId: string,
+      patch: WorkflowPatch & { readonly expectedRevision?: number },
+    ) =>
       invoke<Workflow>("workflows", "update", {
         workspaceId,
         workflowId,

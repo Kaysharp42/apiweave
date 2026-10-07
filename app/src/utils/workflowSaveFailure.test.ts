@@ -1,21 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import {
-  describeThrownSaveError,
-  readSaveFailureEnvelope,
-} from "./workflowSaveFailure";
+import { describeThrownSaveError, readSaveFailure } from "./workflowSaveFailure";
+import { IpcError } from "./apiweaveClient";
 
-function jsonResponse(body: unknown, status = 400): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-describe("readSaveFailureEnvelope", () => {
-  it("reads detail and code from a rejected save response", async () => {
-    const envelope = await readSaveFailureEnvelope(
-      jsonResponse({ detail: "environment not found", code: "not_found" }, 404),
+describe("readSaveFailure", () => {
+  it("reads the message and code of a rejected save", () => {
+    const envelope = readSaveFailure(
+      new IpcError("not_found", "environment not found"),
     );
     expect(envelope).toEqual({
       detail: "environment not found",
@@ -24,17 +15,13 @@ describe("readSaveFailureEnvelope", () => {
     });
   });
 
-  it("flattens zod issues into path: message lines", async () => {
-    const envelope = await readSaveFailureEnvelope(
-      jsonResponse({
-        detail: "request validation failed",
-        code: "validation",
-        details: [
-          { path: ["nodes", 2, "config", "url"], message: "Invalid url" },
-          { message: "a global failure" },
-          "not an issue",
-        ],
-      }),
+  it("flattens zod issues into path: message lines", () => {
+    const envelope = readSaveFailure(
+      new IpcError("validation", "request validation failed", [
+        { path: ["nodes", 2, "config", "url"], message: "Invalid url" },
+        { message: "a global failure" },
+        "not an issue",
+      ]),
     );
     expect(envelope.issues).toEqual([
       "nodes.2.config.url: Invalid url",
@@ -42,18 +29,11 @@ describe("readSaveFailureEnvelope", () => {
     ]);
   });
 
-  it("returns an empty envelope when the body is not json", async () => {
-    const envelope = await readSaveFailureEnvelope(
-      new Response("gateway exploded", { status: 500 }),
+  it("ignores details that are not an issue list", () => {
+    const envelope = readSaveFailure(
+      new IpcError("validation", "", { paths: ["x"] }),
     );
-    expect(envelope).toEqual({ issues: [] });
-  });
-
-  it("ignores malformed detail, code and details fields", async () => {
-    const envelope = await readSaveFailureEnvelope(
-      jsonResponse({ detail: 42, code: { nested: true }, details: "nope" }),
-    );
-    expect(envelope).toEqual({ issues: [] });
+    expect(envelope).toEqual({ code: "validation", issues: [] });
   });
 });
 

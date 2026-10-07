@@ -30,22 +30,8 @@ vi.mock("../hooks/useScopeContext", () => ({
   useScopeContext: () => mockScope,
 }));
 
-vi.mock("../utils/apiweaveClient", () => ({
-  default: "ipc://apiweave",
-  projectsUrl: (workspaceId: string, projectId?: string) =>
-    `ipc://apiweave/api/workspaces/${workspaceId}/projects${projectId ? `/${projectId}` : ""}`,
-  projectExportUrl: (
-    workspaceId: string,
-    projectId: string,
-    includeEnvironment = true,
-  ) =>
-    `ipc://apiweave/api/workspaces/${workspaceId}/projects/${projectId}/export?include_environment=${includeEnvironment}`,
-  projectImportUrl: (workspaceId: string, dryRun = false) =>
-    `ipc://apiweave/api/workspaces/${workspaceId}/projects/import${dryRun ? "/dry-run" : ""}`,
-  workflowsUrl: (workspaceId: string) =>
-    `ipc://apiweave/api/workspaces/${workspaceId}/workflows?skip=0&limit=20`,
-  workflowsCreateInProjectUrl: (workspaceId: string, projectId: string) =>
-    `ipc://apiweave/api/workspaces/${workspaceId}/workflows?skip=0&limit=20&project_id=${projectId}`,
+vi.mock("../utils/apiweaveClient", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../utils/apiweaveClient")>()),
   authenticatedFetch: authenticatedFetchMock,
 }));
 
@@ -65,24 +51,18 @@ describe("project migration UI", () => {
     vi.unstubAllGlobals();
   });
 
-  it("creates a project through the workspace-scoped route", async () => {
+  it("creates a project in the scoped workspace", async () => {
     const user = userEvent.setup();
-    authenticatedFetchMock.mockImplementation(async (input, init) => {
-      const url = String(input);
-      if (init?.method === "POST") {
-        return new Response(
-          JSON.stringify({ projectId: "proj-1", collectionId: "proj-1" }),
-          { status: 201 },
-        );
-      }
-      if (url.includes("/projects")) {
-        return new Response(JSON.stringify({ projects: [], total: 0 }), {
-          status: 200,
-        });
-      }
-      return new Response(JSON.stringify({ workflows: [], total: 0 }), {
-        status: 200,
-      });
+    const invoke = vi.fn(async (_domain: string, action: string) => ({
+      ok: true as const,
+      data:
+        action === "create"
+          ? { projectId: "proj-1", collectionId: "proj-1" }
+          : { items: [], total: 0 },
+    }));
+    vi.stubGlobal("__APIWEAVE_IPC__", {
+      invoke,
+      onRunProgress: () => () => undefined,
     });
 
     render(<CollectionManager open={true} onClose={vi.fn()} />);
@@ -94,17 +74,12 @@ describe("project migration UI", () => {
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
-      expect(authenticatedFetchMock).toHaveBeenCalledWith(
-        `${API_BASE_URL}/api/workspaces/ws-1/projects`,
-        expect.objectContaining({
-          method: "POST",
-          body: JSON.stringify({
-            name: "Smoke Project",
-            description: "",
-            color: "var(--aw-status-info)",
-          }),
-        }),
-      );
+      expect(invoke).toHaveBeenCalledWith("projects", "create", {
+        workspaceId: "ws-1",
+        name: "Smoke Project",
+        description: "",
+        color: "var(--aw-status-info)",
+      });
     });
   });
 

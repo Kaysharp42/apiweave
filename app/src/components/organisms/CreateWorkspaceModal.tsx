@@ -10,9 +10,7 @@ import {
   PassphraseFields,
   passphraseFieldsReady,
 } from "../molecules/PassphraseFields";
-import { apiweave, authenticatedJson } from "../../utils/apiweaveClient";
-import API_BASE_URL from "../../utils/apiweaveClient";
-import { isDesktopShell } from "../../utils/isDesktopShell";
+import { apiweave } from "../../utils/apiweaveClient";
 import type {
   CreateWorkspaceModalProps,
   PassphraseDraft,
@@ -33,8 +31,8 @@ function isValidWorkspaceSlug(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value);
 }
 
-// Which endpoint creates the workspace: desktop personal, desktop team
-// (existing or new, optionally encrypted), or the web API. Split out of
+// Which call creates the workspace: personal, or team (existing or new,
+// optionally encrypted). Split out of
 // handleSubmit so that branch lives on its own, away from the submit
 // lifecycle (busy state, error toast, close-on-success).
 async function submitCreateWorkspace(params: {
@@ -46,19 +44,6 @@ async function submitCreateWorkspace(params: {
   readonly newTeamName: string;
   readonly encryptionPassphrase: string | null;
 }): Promise<Workspace> {
-  if (!isDesktopShell()) {
-    return authenticatedJson<Workspace>(`${API_BASE_URL}/api/workspaces`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: params.name,
-        slug: params.slug,
-        ownerType: "user",
-        orgId: null,
-        description: params.description || null,
-      }),
-    });
-  }
   if (params.owner === "personal") {
     return apiweave.workspaces.create({
       name: params.name,

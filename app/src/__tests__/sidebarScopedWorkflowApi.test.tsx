@@ -6,11 +6,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import API_BASE_URL from "../utils/apiweaveClient";
 import { Sidebar } from "../components/layout/Sidebar";
 import useSidebarStore from "../stores/SidebarStore";
 import useTabStore from "../stores/TabStore";
-import { requestWorkflowDeletion } from "../utils/apiweaveClient";
 import type {
   ConfirmDialogProps,
   PromptDialogProps,
@@ -152,23 +150,6 @@ function scopeContext(
   };
 }
 
-function responseJson(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function inputUrl(input: RequestInfo | URL): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.toString();
-  return input.url;
-}
-
-function methodFrom(init: RequestInit | undefined): string {
-  return (init?.method ?? "GET").toUpperCase();
-}
-
 function resetStores(): void {
   useSidebarStore.setState({
     workflows: [],
@@ -186,32 +167,26 @@ function resetStores(): void {
   useTabStore.setState({ tabs: [], activeTabIdByWorkspace: {} });
 }
 
-function installFetchMock(): ReturnType<typeof vi.fn<typeof fetch>> {
+function installBridge(): ReturnType<typeof vi.fn<TestIpcBridge["invoke"]>> {
   const workflow = makeWorkflow("wf-created", "Scoped Smoke");
-  const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-    const url = inputUrl(input);
-    const method = methodFrom(init);
-
-    if (url.endsWith("/projects"))
-      return responseJson({ projects: [], total: 0 });
-    if (url.includes("/environments")) return responseJson([]);
-    if (url.includes("/workflows/wf-open") && method === "GET")
-      return responseJson(makeWorkflow("wf-open", "Open Me"));
-    if (url.includes("/workflows") && method === "POST")
-      return responseJson(workflow, 201);
-    if (url.includes("/workflows") && method === "GET")
-      return responseJson({ workflows: [workflow], total: 1 });
-    if (url.includes("/workflows") && method === "DELETE")
-      return responseJson({ deleted: true });
-
-    return responseJson({}, 404);
+  const invoke = vi.fn<TestIpcBridge["invoke"]>(async (domain, action) => {
+    const key = `${domain}.${action}`;
+    if (key === "workflows.get")
+      return { ok: true, data: makeWorkflow("wf-open", "Open Me") };
+    if (key === "workflows.create") return { ok: true, data: workflow };
+    if (key === "workflows.list")
+      return { ok: true, data: { items: [workflow], total: 1 } };
+    if (key === "workflows.delete") return { ok: true, data: null };
+    return { ok: true, data: { items: [], total: 0 } };
   });
-
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
+  vi.stubGlobal("__APIWEAVE_IPC__", {
+    invoke,
+    onRunProgress: () => () => undefined,
+  });
+  return invoke;
 }
 
-describe("sidebar scoped workflow API migration", () => {
+describe("sidebar workflow IPC calls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
@@ -223,24 +198,24 @@ describe("sidebar scoped workflow API migration", () => {
     vi.unstubAllGlobals();
   });
 
-  it("fetches workflow lists from the scoped workspace route only", async () => {
-    const fetchMock = installFetchMock();
+  it("lists the active workspace's workflows", async () => {
+    const invoke = installBridge();
     useSidebarStore.setState({ activeWorkspaceId: "ws-1" });
 
     await useSidebarStore.getState().fetchWorkflows(0);
 
-    const urls = fetchMock.mock.calls.map(([input]) => inputUrl(input));
-    expect(urls).toContain(
-      `${API_BASE_URL}/api/workspaces/ws-1/workflows?skip=0&limit=20`,
-    );
-    expect(
-      urls.some((url) => url.startsWith(`${API_BASE_URL}/api/workflows`)),
-    ).toBe(false);
+    expect(invoke).toHaveBeenCalledWith("workflows", "list", {
+      workspaceId: "ws-1",
+      includeAttached: false,
+    });
+    expect(useSidebarStore.getState().workflows.map((w) => w.workflowId)).toEqual([
+      "wf-created",
+    ]);
   });
 
-  it("does not fetch workflows when workspace context is missing", async () => {
+  it("does not create workflows when workspace context is missing", async () => {
     mocks.useScopeContext.mockReturnValue(scopeContext(null, false));
-    const fetchMock = installFetchMock();
+    const invoke = installBridge();
 
     await useSidebarStore.getState().fetchWorkflows(0);
 
@@ -248,15 +223,19 @@ describe("sidebar scoped workflow API migration", () => {
     fireEvent.click(screen.getByText("show create workflow"));
     fireEvent.click(screen.getByText("submit workflow prompt"));
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith(
+      "workflows",
+      "create",
+      expect.anything(),
+    );
     expect(mocks.toastError).toHaveBeenCalledWith(
       "Workspace context is still loading. Please retry once a workspace is selected.",
     );
     expect(mocks.navigate).not.toHaveBeenCalledWith("/");
   });
 
-  it("creates and opens workflows through scoped workspace routes", async () => {
-    const fetchMock = installFetchMock();
+  it("creates and opens workflows in the scoped workspace", async () => {
+    const invoke = installBridge();
 
     render(<Sidebar />);
     fireEvent.click(screen.getByText("show create workflow"));
@@ -264,40 +243,33 @@ describe("sidebar scoped workflow API migration", () => {
     fireEvent.click(screen.getByText("open workflow"));
 
     await waitFor(() => {
-      const calls = fetchMock.mock.calls.map(([input, init]) => ({
-        url: inputUrl(input),
-        method: methodFrom(init),
-      }));
-      expect(calls).toContainEqual({
-        url: `${API_BASE_URL}/api/workspaces/ws-1/workflows?skip=0&limit=20`,
-        method: "POST",
-      });
-      expect(calls).toContainEqual({
-        url: `${API_BASE_URL}/api/workspaces/ws-1/workflows/wf-open`,
-        method: "GET",
+      expect(invoke).toHaveBeenCalledWith(
+        "workflows",
+        "create",
+        expect.objectContaining({ workspaceId: "ws-1", name: "Scoped Smoke" }),
+      );
+      expect(invoke).toHaveBeenCalledWith("workflows", "get", {
+        workspaceId: "ws-1",
+        workflowId: "wf-open",
       });
     });
   });
 
-  it("deletes workflows through scoped workspace routes", async () => {
-    const invoke = vi.fn<TestIpcBridge["invoke"]>().mockResolvedValue({
-      ok: true,
-      data: null,
-    });
-    window.__APIWEAVE_IPC__ = {
-      invoke,
-      onRunProgress: () => () => undefined,
-    };
+  it("deletes workflows in the scoped workspace", async () => {
+    const invoke = installBridge();
 
-    const result = await requestWorkflowDeletion({
-      target: { workflowId: "wf-delete" },
-      workspaceId: "ws-1",
-    });
+    render(<Sidebar />);
+    fireEvent.click(screen.getByText("queue delete workflow"));
+    fireEvent.click(await screen.findByText(/^confirm/));
 
-    expect(result).toEqual({ deleted: true, workflowId: "wf-delete" });
-    expect(invoke).toHaveBeenCalledWith("workflows", "delete", {
-      workspaceId: "ws-1",
-      workflowId: "wf-delete",
-    });
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("workflows", "delete", {
+        workspaceId: "ws-1",
+        workflowId: "wf-delete",
+      }),
+    );
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      "Workflow deleted permanently",
+    );
   });
 });
