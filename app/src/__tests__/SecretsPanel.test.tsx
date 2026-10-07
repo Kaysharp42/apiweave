@@ -21,20 +21,10 @@ vi.mock("../hooks/useSecretValues", () => ({
     updatedAt: "2026-01-01T00:00:00Z",
   }),
   listScopedSecrets: vi.fn().mockResolvedValue([]),
-  useSecretValues: vi.fn(() => ({
-    setSecretValue: vi.fn().mockResolvedValue(undefined),
-    removeSecretValue: vi.fn().mockResolvedValue(undefined),
-    getPublicKey: vi.fn().mockResolvedValue({
-      keyId: "test-key-id",
-      publicKey: "dGVzdC1wdWJsaWMta2V5",
-      algorithm: "libsodium-sealed-box",
-    }),
-    listSecrets: vi.fn().mockResolvedValue([]),
-  })),
 }));
 
 vi.mock("../utils/encryptSecretValue", () => ({
-  encryptSecretValue: vi.fn().mockResolvedValue("ZW5jcnlwdGVkLXZhbHVl"),
+  encryptSecretValue: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 }));
 
 const makeEnv = (secrets?: Record<string, string>): ScopedEnvironment => ({

@@ -5,16 +5,13 @@ import { EmptyState } from "./molecules/EmptyState";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { ScopeBadge } from "./ScopeBadge";
 import { SecretOverrideIndicator } from "./SecretOverrideIndicator";
-import { authenticatedJson } from "../utils/apiweaveClient";
-import API_BASE_URL from "../utils/apiweaveClient";
+import {
+  deleteScopedSecret,
+  listScopedSecrets,
+} from "../hooks/useSecretValues";
 import { formatTimestamp } from "../utils/formatTimestamp";
 import type { Secret } from "../types";
 import type { ScopedSecretListProps } from "../types/ScopedSecretListProps";
-
-interface SecretListResponse {
-  secrets: Secret[];
-  total: number;
-}
 
 interface SecretRowProps {
   readonly secret: Secret;
@@ -154,11 +151,9 @@ function useScopedSecrets(
     setLoading(true);
     setError(null);
     try {
-      const data = await authenticatedJson<SecretListResponse>(
-        `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets`,
-      );
+      const data = await listScopedSecrets(scopeType, scopeId);
       if (inFlight.current !== scopeKey) return;
-      setSecrets(data.secrets);
+      setSecrets(data);
     } catch (err) {
       if (inFlight.current !== scopeKey) return;
       const message =
@@ -177,10 +172,7 @@ function useScopedSecrets(
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await authenticatedJson(
-        `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets/${encodeURIComponent(deleteTarget.name)}`,
-        { method: "DELETE" },
-      );
+      await deleteScopedSecret(scopeType, scopeId, deleteTarget.name);
       setDeleteTarget(null);
       onChanged();
       await fetchSecrets();

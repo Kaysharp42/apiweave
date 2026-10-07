@@ -161,9 +161,19 @@ type CollectionPatch = Partial<
 type EnvironmentPatch = Partial<
   Omit<
     Environment,
-    "workspaceId" | "environmentId" | "rev" | "createdAt" | "updatedAt"
+    | "workspaceId"
+    | "environmentId"
+    | "rev"
+    | "createdAt"
+    | "updatedAt"
+    | "description"
+    | "swaggerDocUrl"
   >
->;
+> & {
+  /** null clears the field. */
+  readonly description?: string | null;
+  readonly swaggerDocUrl?: string | null;
+};
 type ProjectBundle = Record<
   string,
   JsonValue | readonly JsonValue[] | undefined
@@ -176,6 +186,8 @@ type SecretMetadata = {
   readonly scopeId: string;
   readonly keyId: string;
   readonly label?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 };
 type ResolvedSecret = {
   readonly metadata: SecretMetadata;

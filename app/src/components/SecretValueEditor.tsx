@@ -38,7 +38,7 @@ export default function SecretValueEditor({
       );
       setFetchingKey(false);
 
-      const ciphertext = await encryptSecretValue(value, {
+      const sealed = await encryptSecretValue(value, {
         keyId: publicKeyInfo.keyId,
         publicKey: publicKeyInfo.publicKey,
         algorithm: "libsodium-sealed-box",
@@ -52,7 +52,7 @@ export default function SecretValueEditor({
         scopeId,
         ...(workspaceId ? { workspaceId } : {}),
         name: secretName,
-        ciphertext,
+        sealed,
         keyId: publicKeyInfo.keyId,
       });
 

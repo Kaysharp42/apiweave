@@ -7,15 +7,17 @@ import { SecretForm } from "../SecretForm";
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockAuthenticatedJson = vi.fn();
+const mockPublicKey = vi.fn();
+const mockStoreSecret = vi.fn();
+const sealed = new Uint8Array([1, 2, 3]);
 
-vi.mock("../../utils/apiweaveClient", () => ({
-  default: "ipc://apiweave",
-  authenticatedJson: (...args: unknown[]) => mockAuthenticatedJson(...args),
+vi.mock("../../hooks/useSecretValues", () => ({
+  fetchScopedPublicKey: (...args: unknown[]) => mockPublicKey(...args),
+  postScopedEncryptedSecret: (...args: unknown[]) => mockStoreSecret(...args),
 }));
 
 vi.mock("../../utils/encryptSecretValue", () => ({
-  encryptSecretValue: vi.fn().mockResolvedValue("ZW5jcnlwdGVkLXZhbHVl"),
+  encryptSecretValue: vi.fn(() => Promise.resolve(sealed)),
 }));
 
 // ---------------------------------------------------------------------------
@@ -27,11 +29,12 @@ describe("SecretForm", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAuthenticatedJson.mockResolvedValue({
+    mockPublicKey.mockResolvedValue({
       keyId: "key-1",
       publicKey: "dGVzdC1wdWJsaWMta2V5",
       algorithm: "libsodium-sealed-box",
     });
+    mockStoreSecret.mockResolvedValue({ secretId: "sec-1" });
   });
 
   function renderForm(
@@ -109,15 +112,8 @@ describe("SecretForm", () => {
     });
   });
 
-  it("fetches public key, encrypts, and POSTs ciphertext on valid submit", async () => {
+  it("fetches public key, encrypts, and stores only the sealed bytes on valid submit", async () => {
     const user = userEvent.setup();
-    mockAuthenticatedJson
-      .mockResolvedValueOnce({
-        keyId: "key-1",
-        publicKey: "dGVzdC1wdWJsaWMta2V5",
-        algorithm: "libsodium-sealed-box",
-      }) // public key
-      .mockResolvedValueOnce({ secretId: "sec-1" }); // create secret
 
     renderForm();
 
@@ -129,22 +125,21 @@ describe("SecretForm", () => {
     await user.click(screen.getByText("Add secret"));
 
     await waitFor(() => {
-      expect(mockAuthenticatedJson).toHaveBeenCalledTimes(2);
       expect(mockOnCreated).toHaveBeenCalled();
+    });
+    expect(mockPublicKey).toHaveBeenCalledWith("workspace", "ws-1");
+    expect(mockStoreSecret).toHaveBeenCalledWith({
+      scopeType: "workspace",
+      scopeId: "ws-1",
+      name: "MY_SECRET",
+      sealed,
+      keyId: "key-1",
     });
   });
 
   it("CRITICAL: secret value is NOT in DOM after successful save", async () => {
     const user = userEvent.setup();
     const secretPlaintext = "ultra-secret-value-xyz-789";
-
-    mockAuthenticatedJson
-      .mockResolvedValueOnce({
-        keyId: "key-1",
-        publicKey: "dGVzdC1wdWJsaWMta2V5",
-        algorithm: "libsodium-sealed-box",
-      })
-      .mockResolvedValueOnce({ secretId: "sec-1" });
 
     renderForm();
 
@@ -171,7 +166,7 @@ describe("SecretForm", () => {
 
   it("shows error message when API call fails", async () => {
     const user = userEvent.setup();
-    mockAuthenticatedJson.mockRejectedValueOnce(new Error("Network error"));
+    mockPublicKey.mockRejectedValueOnce(new Error("Network error"));
 
     renderForm();
 
@@ -190,7 +185,7 @@ describe("SecretForm", () => {
   it("disables inputs while submitting", async () => {
     const user = userEvent.setup();
     // Make the API call hang
-    mockAuthenticatedJson.mockReturnValue(new Promise(() => {}));
+    mockPublicKey.mockReturnValue(new Promise(() => {}));
 
     renderForm();
 

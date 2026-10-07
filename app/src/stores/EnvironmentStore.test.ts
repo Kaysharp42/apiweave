@@ -1,24 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 
+const listMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../utils/apiweaveClient", () => ({
-  authenticatedFetch: vi.fn(),
-  environmentsUrl: vi.fn(),
-  default: "http://localhost",
+  apiweave: { environments: { list: listMock } },
 }));
 
-import { authenticatedFetch } from "../utils/apiweaveClient";
 import useEnvironmentStore, {
   getSelectedEnvironment,
 } from "./EnvironmentStore";
 
-const fetchMock = vi.mocked(authenticatedFetch);
+type EnvironmentList = { items: ScopedEnvironment[]; total: number };
 
-function jsonResponse(environments: ScopedEnvironment[]): Response {
-  return {
-    ok: true,
-    json: () => Promise.resolve({ environments, total: environments.length }),
-  } as unknown as Response;
+function listOf(environments: ScopedEnvironment[]): EnvironmentList {
+  return { items: environments, total: environments.length };
 }
 
 function makeEnv(overrides: Partial<ScopedEnvironment> = {}): ScopedEnvironment {
@@ -88,7 +84,7 @@ describe("getSelectedEnvironment", () => {
  */
 describe("fetchEnvironments — one workspace at a time", () => {
   beforeEach(() => {
-    fetchMock.mockReset();
+    listMock.mockReset();
     useEnvironmentStore.setState({
       environments: [],
       loadedWorkspaceId: null,
@@ -98,16 +94,16 @@ describe("fetchEnvironments — one workspace at a time", () => {
   });
 
   it("replaces the previous workspace's environments", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([makeEnv({ environmentId: "a-1" })]),
+    listMock.mockResolvedValueOnce(
+      listOf([makeEnv({ environmentId: "a-1" })]),
     );
     await useEnvironmentStore.getState().fetchEnvironments("ws-a");
     expect(
       useEnvironmentStore.getState().environments.map((e) => e.environmentId),
     ).toEqual(["a-1"]);
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([makeEnv({ environmentId: "b-1" })]),
+    listMock.mockResolvedValueOnce(
+      listOf([makeEnv({ environmentId: "b-1" })]),
     );
     await useEnvironmentStore.getState().fetchEnvironments("ws-b");
     expect(
@@ -116,12 +112,12 @@ describe("fetchEnvironments — one workspace at a time", () => {
   });
 
   it("empties the list when the fetch fails rather than keeping the old workspace's", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([makeEnv({ environmentId: "a-1" })]),
+    listMock.mockResolvedValueOnce(
+      listOf([makeEnv({ environmentId: "a-1" })]),
     );
     await useEnvironmentStore.getState().fetchEnvironments("ws-a");
 
-    fetchMock.mockRejectedValueOnce(new Error("offline"));
+    listMock.mockRejectedValueOnce(new Error("offline"));
     await useEnvironmentStore.getState().fetchEnvironments("ws-b");
 
     expect(useEnvironmentStore.getState().environments).toEqual([]);
@@ -129,8 +125,8 @@ describe("fetchEnvironments — one workspace at a time", () => {
   });
 
   it("clears the list for an empty workspace id", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([makeEnv({ environmentId: "a-1" })]),
+    listMock.mockResolvedValueOnce(
+      listOf([makeEnv({ environmentId: "a-1" })]),
     );
     await useEnvironmentStore.getState().fetchEnvironments("ws-a");
 
@@ -141,20 +137,20 @@ describe("fetchEnvironments — one workspace at a time", () => {
   });
 
   it("drops a slow response for a workspace the user has already left", async () => {
-    let releaseSlow: (value: Response) => void = () => {};
-    fetchMock.mockReturnValueOnce(
-      new Promise<Response>((resolve) => {
+    let releaseSlow: (value: EnvironmentList) => void = () => {};
+    listMock.mockReturnValueOnce(
+      new Promise<EnvironmentList>((resolve) => {
         releaseSlow = resolve;
       }),
     );
     const slow = useEnvironmentStore.getState().fetchEnvironments("ws-a");
 
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse([makeEnv({ environmentId: "b-1" })]),
+    listMock.mockResolvedValueOnce(
+      listOf([makeEnv({ environmentId: "b-1" })]),
     );
     await useEnvironmentStore.getState().fetchEnvironments("ws-b");
 
-    releaseSlow(jsonResponse([makeEnv({ environmentId: "a-1" })]));
+    releaseSlow(listOf([makeEnv({ environmentId: "a-1" })]));
     await slow;
 
     expect(
