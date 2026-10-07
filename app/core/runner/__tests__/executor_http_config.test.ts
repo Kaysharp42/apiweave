@@ -231,6 +231,21 @@ describe("WorkflowExecutor — placeholders in JSON bodies", () => {
     expect(createSecretMasker([secret])(body)).toBe('{"password": "<SECRET>"}')
   })
 
+  it("writes an object or array value as JSON, never [object Object]", async () => {
+    const user = { name: awkward, tags: ["a", "b"] }
+    const body = await sentBody(
+      { bodyType: "json", body: '{"user": {{variables.user}}, "tags": {{variables.user.tags}}, "note": "{{variables.user}}"}' },
+      { user },
+    )
+    expect(JSON.parse(body)).toEqual({ user, tags: ["a", "b"], note: JSON.stringify(user) })
+
+    const text = await sentBody(
+      { bodyType: "raw", body: "user={{variables.user}}", headers: [{ key: "Content-Type", value: "text/plain" }] },
+      { user },
+    )
+    expect(text).toBe(`user=${JSON.stringify(user)}`)
+  })
+
   it("escapes placeholders in an object body", async () => {
     const body = await sentBody({ bodyType: "json", body: { name: "{{variables.name}}" } }, { name: awkward })
     expect(JSON.parse(body)).toEqual({ name: awkward })

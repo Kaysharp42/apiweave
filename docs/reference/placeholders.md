@@ -157,6 +157,8 @@ In a JSON body (body type **JSON**, or **Raw** with a JSON `Content-Type`), a pl
 { "name": "{{variables.name}}", "id": {{variables.id}} }
 ```
 
+A value that is an object or an array (an extracted response body, say) becomes its JSON text, in any field. Standing alone in a JSON body it is inserted as a nested value; inside a string it arrives as that JSON text, escaped.
+
 ## Missing Values
 
 When the runner cannot resolve a placeholder, the reference is left in place as literal text — the field is sent with `{{variables.token}}` in it rather than a substituted value. The run records unresolved references per node (`unresolvedPlaceholders`), so the exact misspelled or missing key is visible in run results.

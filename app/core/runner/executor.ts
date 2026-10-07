@@ -140,6 +140,16 @@ function substituteJsonTemplate(text: string, resolve: (match: string, rawPath: 
   return out + text.slice(last)
 }
 
+/**
+ * The text a resolved placeholder becomes. An object or array is written as
+ * JSON — in a JSON template a standalone placeholder then inserts it as a
+ * value, and one inside a string literal gets the JSON text escaped — never
+ * as `[object Object]`.
+ */
+function placeholderText(value: unknown): string {
+  return typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)
+}
+
 function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean {
   return Object.entries(headers).some(([name, value]) => name.toLowerCase() === "content-type" && /\bjson\b/i.test(value))
 }
@@ -1841,7 +1851,7 @@ export class WorkflowExecutor {
             return match
           }
         }
-        return value !== undefined && value !== null ? String(value) : match
+        return value !== undefined && value !== null ? placeholderText(value) : match
       }
 
       // Workflow variables
@@ -1855,7 +1865,7 @@ export class WorkflowExecutor {
             return match
           }
         }
-        return value !== undefined && value !== null ? String(value) : match
+        return value !== undefined && value !== null ? placeholderText(value) : match
       }
 
       // Previous results
@@ -1929,7 +1939,7 @@ export class WorkflowExecutor {
         return fallback
       }
     }
-    return current !== undefined && current !== null ? String(current) : fallback
+    return current !== undefined && current !== null ? placeholderText(current) : fallback
   }
 
   // -------------------- Extraction --------------------

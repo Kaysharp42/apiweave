@@ -64,6 +64,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **An object or array placeholder value is sent as JSON.** A placeholder
+  whose value was an object or array, such as an extracted response body, was
+  sent as `[object Object]`. It now becomes its JSON text, inserted as a
+  nested value when it stands alone in a JSON body.
+
 - **Deleting an environment deletes its secrets.** Environment-scoped secrets
   used to stay in the database, unreachable, after their environment was
   deleted, whether locally or by a cloud sync. They now go with it, and the
