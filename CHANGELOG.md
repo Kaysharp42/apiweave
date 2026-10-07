@@ -64,6 +64,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A JSON body is always labelled JSON.** A JSON body typed as text went out
+  without a `Content-Type`, so servers read it as plain text. It now carries
+  `application/json` unless the request sets its own `Content-Type`.
+
 - **An object or array placeholder value is sent as JSON.** A placeholder
   whose value was an object or array, such as an extracted response body, was
   sent as `[object Object]`. It now becomes its JSON text, inserted as a

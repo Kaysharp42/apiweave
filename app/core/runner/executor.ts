@@ -2125,9 +2125,9 @@ export class WorkflowExecutor {
       default: {
         // Back-compat default for nodes saved before `bodyType` existed.
         if (body === undefined || body === null) return undefined
-        if (typeof body === "string") return this.substituteVariables(body, { json: true })
-        const json = this.substituteVariables(JSON.stringify(body), { json: true })
-        if (!headers["Content-Type"] && !headers["content-type"]) {
+        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: true })
+        // An empty field is no body at all, and claims no type.
+        if (json.trim() !== "" && !Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
           headers["Content-Type"] = "application/json"
         }
         return json
