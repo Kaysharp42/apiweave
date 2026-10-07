@@ -436,7 +436,9 @@ export function WorkflowCanvas({
 
   const { selectedNodeRef, newDuplicateNodeRef } = useClipboardActions({
     nodes,
+    edges,
     setNodes,
+    setEdges,
     isEditorOverlayOpen,
   });
 

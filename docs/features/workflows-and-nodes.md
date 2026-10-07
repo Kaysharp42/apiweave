@@ -261,9 +261,9 @@ On macOS every `Ctrl` shortcut below uses `⌘` instead, except `Ctrl+Tab` and `
 | `Ctrl+J` | Open the JSON editor |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` or `Ctrl+Y` | Redo |
-| `Ctrl+C` | Copy the selected node (canvas context only) |
-| `Ctrl+V` | Paste a copied node (canvas context only) |
-| `Ctrl+D` | Duplicate the selected node |
+| `Ctrl+C` | Copy the selected nodes and the edges between them (canvas context only). Copying a frame copies what it holds |
+| `Ctrl+V` | Paste the copied nodes and edges, offset from the originals and selected (canvas context only) |
+| `Ctrl+D` | Duplicate the selected nodes and the edges between them |
 | `Delete` or `Backspace` | Delete the selected nodes |
 | `Ctrl+G` | Group the selected nodes in a frame |
 | `Ctrl+Shift+G` | Ungroup the selected frame |

@@ -213,6 +213,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   selected nodes, since a Mac keyboard has no Delete key. The shortcuts help
   now lists every shortcut, undo, redo and grouping included: it reads the
   same table the key handlers match against.
+- **Copy, paste and duplicate act on the whole selection.** They used to take
+  one node and drop its connections. They now take every selected node, the
+  nodes inside a selected frame, and the edges between them; the paste gets
+  new ids, lands offset from the originals and is selected.
 
 ### Added
 

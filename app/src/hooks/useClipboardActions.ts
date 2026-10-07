@@ -1,103 +1,90 @@
 import { useEffect, useCallback, useRef } from "react";
-import type { Node } from "@xyflow/react";
 import { toast } from "sonner";
 import useCanvasStore from "../stores/CanvasStore";
 import { getCanvasClipboardShortcutAction } from "../utils/shortcutGuards";
+import { copyNodes, pasteNodes } from "../utils/canvasClipboard";
+import { selectedIds, sortFramesFirst } from "../utils/canvasGroups";
 import type { CanvasActionType } from "../types/CanvasActionType";
-import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
+import type { CanvasClipboard } from "../types/CanvasClipboard";
+import type { CanvasEdge } from "../types/CanvasEdge";
+import type { CanvasNode } from "../types/CanvasNode";
 
 interface UseClipboardActionsParams {
-  nodes: Node<WorkflowCanvasNodeData>[];
-  setNodes: React.Dispatch<
-    React.SetStateAction<Node<WorkflowCanvasNodeData>[]>
-  >;
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+  setNodes: React.Dispatch<React.SetStateAction<CanvasNode[]>>;
+  setEdges: React.Dispatch<React.SetStateAction<CanvasEdge[]>>;
   isEditorOverlayOpen: boolean;
 }
 
+/**
+ * Copy, paste and duplicate act on the selection: every selected node, the
+ * children of a selected frame, and the edges between them. A node's own menu
+ * acts on the selection when that node is part of it, and on the node alone
+ * otherwise.
+ */
 export function useClipboardActions({
   nodes,
+  edges,
   setNodes,
+  setEdges,
   isEditorOverlayOpen,
 }: UseClipboardActionsParams) {
-  const selectedNodeRef = useRef<Node<WorkflowCanvasNodeData> | null>(null);
+  const selectedNodeRef = useRef<CanvasNode | null>(null);
   const newDuplicateNodeRef = useRef<string | null>(null);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+
+  const insert = useCallback(
+    (clipboard: CanvasClipboard, stamp: number) => {
+      const pasted = pasteNodes(clipboard, stamp);
+      setNodes((current) =>
+        sortFramesFirst([
+          ...current.map((node) =>
+            node.selected ? { ...node, selected: false } : node,
+          ),
+          ...pasted.nodes,
+        ]),
+      );
+      setEdges((current) => [...current, ...pasted.edges]);
+    },
+    [setNodes, setEdges],
+  );
 
   const handlePendingAction = useCallback(
-    (action: {
-      type: CanvasActionType;
-      nodeId?: string;
-      timestamp: number;
-    }) => {
+    (action: { type: CanvasActionType; nodeId?: string; timestamp: number }) => {
       const { type, nodeId } = action;
+      const targetIds = (): Set<string> => {
+        const selection = selectedIds(nodes);
+        return nodeId === undefined || selection.has(nodeId)
+          ? selection
+          : new Set([nodeId]);
+      };
 
-      if (type === "duplicate" && nodeId) {
-        const nodeToClone = nodes.find((n) => n.id === nodeId);
-        if (nodeToClone) {
-          const newNode: Node<WorkflowCanvasNodeData> = {
-            ...nodeToClone,
-            id: `${nodeToClone.id}-${action.timestamp}`,
-            position: {
-              x: nodeToClone.position.x + 150,
-              y: nodeToClone.position.y + 150,
-            },
-            data: {
-              ...nodeToClone.data,
-              config: nodeToClone.data.config
-                ? JSON.parse(JSON.stringify(nodeToClone.data.config))
-                : {},
-            },
-          };
-          setNodes((nds) => [...nds, newNode]);
-        }
-      } else if (type === "copy" && nodeId) {
-        const nodeToClone = nodes.find((n) => n.id === nodeId);
-        if (nodeToClone && nodeToClone.type) {
-          useCanvasStore.getState().setClipboardNode({
-            type: nodeToClone.type,
-            data: JSON.parse(JSON.stringify(nodeToClone.data)),
-          });
+      if (type === "duplicate") {
+        insert(copyNodes(nodes, edges, targetIds()), action.timestamp);
+      } else if (type === "copy") {
+        const clipboard = copyNodes(nodes, edges, targetIds());
+        if (clipboard.nodes.length > 0) {
+          useCanvasStore.getState().setClipboard(clipboard);
+          toast.success(
+            clipboard.nodes.length === 1
+              ? "Node copied"
+              : `${clipboard.nodes.length} nodes copied`,
+          );
         }
       } else if (type === "paste") {
         useCanvasStore.getState().hydrateClipboard();
-        const cloneData = useCanvasStore.getState().clipboardNode;
-        if (!cloneData) {
-          toast.error("No node in clipboard");
+        const clipboard = useCanvasStore.getState().clipboard;
+        if (!clipboard || clipboard.nodes.length === 0) {
+          toast.error("Nothing to paste");
         } else {
-          try {
-            const { type: nodeType, data } = cloneData;
-            let newPosition = { x: 400, y: 300 };
-            if (selectedNodeRef.current) {
-              newPosition = {
-                x: selectedNodeRef.current.position.x + 200,
-                y: selectedNodeRef.current.position.y + 150,
-              };
-            } else if (nodes.length > 0) {
-              const lastNode = nodes[nodes.length - 1]!;
-              newPosition = {
-                x: lastNode.position.x + 150,
-                y: lastNode.position.y + 150,
-              };
-            }
-            setNodes((nds) => [
-              ...nds,
-              {
-                id: `node-${action.timestamp}`,
-                type: nodeType,
-                position: newPosition,
-                data,
-              },
-            ]);
-            toast.success("Node pasted successfully");
-          } catch (err) {
-            const errorMessage =
-              err instanceof Error ? err.message : "Unknown error";
-            toast.error("Error pasting node: " + errorMessage);
-          }
+          insert(clipboard, action.timestamp);
         }
       }
       useCanvasStore.getState().clearPendingAction();
     },
-    [nodes, setNodes],
+    [nodes, edges, insert],
   );
 
   useEffect(() => {
@@ -108,28 +95,18 @@ export function useClipboardActions({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const selected = nodesRef.current.find((node) => node.selected);
       const action = getCanvasClipboardShortcutAction({
         event: e,
-        hasSelectedNode: !!selectedNodeRef.current,
+        hasSelectedNode: selected !== undefined,
         isEditorOverlayOpen,
       });
       if (!action) return;
-
-      if (action === "copy" && selectedNodeRef.current) {
-        e.preventDefault();
-        useCanvasStore.getState().copyNode(selectedNodeRef.current.id);
-        toast.success("Node copied to clipboard");
-      }
-
-      if (action === "duplicate" && selectedNodeRef.current) {
-        e.preventDefault();
-        useCanvasStore.getState().duplicateNode(selectedNodeRef.current.id);
-      }
-
-      if (action === "paste") {
-        e.preventDefault();
-        useCanvasStore.getState().pasteNode();
-      }
+      e.preventDefault();
+      const store = useCanvasStore.getState();
+      if (action === "paste") store.pasteNode();
+      else if (selected && action === "copy") store.copyNode(selected.id);
+      else if (selected) store.duplicateNode(selected.id);
     };
 
     window.addEventListener("keydown", handleKeyDown);

@@ -1,5 +1,5 @@
 import type { CanvasActionType } from "./CanvasActionType";
-import type { ClipboardNodeData } from "./ClipboardNodeData";
+import type { CanvasClipboard } from "./CanvasClipboard";
 
 export interface CanvasState {
   pendingAction: {
@@ -7,7 +7,7 @@ export interface CanvasState {
     nodeId?: string;
     timestamp: number;
   } | null;
-  clipboardNode: ClipboardNodeData | null;
+  clipboard: CanvasClipboard | null;
   reloadWorkflowId: string | null;
   reloadVersion: number;
   /**
@@ -22,7 +22,7 @@ export interface CanvasState {
   pasteNode: () => void;
   savePresetFromNode: (nodeId: string) => void;
   clearPendingAction: () => void;
-  setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
+  setClipboard: (clipboard: CanvasClipboard) => void;
   hydrateClipboard: () => void;
   openWorkflowHistory: (workflowId: string, runId: string) => void;
   clearPendingHistory: () => void;

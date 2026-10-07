@@ -62,7 +62,7 @@ export function absoluteNodePosition(
  * `delete` on a copy rather than rest-destructuring: this repo's lint has no
  * rest-sibling exemption, and the two read the same.
  */
-function freedFromFrame(
+export function freedFromFrame(
   node: CanvasNode,
   position: { x: number; y: number },
 ): CanvasNode {

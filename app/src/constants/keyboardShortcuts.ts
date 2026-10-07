@@ -86,19 +86,19 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   {
     action: "copy",
     group: "Canvas",
-    description: "Copy selected node",
+    description: "Copy selected nodes",
     chords: [{ key: "c", modifier: "mod" }],
   },
   {
     action: "paste",
     group: "Canvas",
-    description: "Paste node",
+    description: "Paste nodes",
     chords: [{ key: "v", modifier: "mod" }],
   },
   {
     action: "duplicate",
     group: "Canvas",
-    description: "Duplicate node",
+    description: "Duplicate selected nodes",
     chords: [{ key: "d", modifier: "mod" }],
   },
   // Handled by React Flow (`deleteKeyCode`); the Mac delete key sends Backspace.

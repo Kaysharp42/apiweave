@@ -72,7 +72,7 @@ export type { PaginationState } from "./PaginationState";
 export type { NavSection } from "./NavSection";
 export type { CanvasActionType } from "./CanvasActionType";
 export type { CanvasAction } from "./CanvasAction";
-export type { ClipboardNodeData } from "./ClipboardNodeData";
+export type { CanvasClipboard } from "./CanvasClipboard";
 export type { ApiResponseEnvelope } from "./ApiResponseEnvelope";
 export type { ApiError } from "./ApiError";
 export type { PaginatedResponse } from "./PaginatedResponse";

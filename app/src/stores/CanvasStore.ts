@@ -1,45 +1,9 @@
 import { create } from "zustand";
 import type { CanvasActionType } from "../types/CanvasActionType";
-import type { ClipboardNodeData } from "../types/ClipboardNodeData";
+import type { CanvasClipboard } from "../types/CanvasClipboard";
+import type { CanvasState } from "../types/CanvasState";
 
-interface CanvasState {
-  pendingAction: {
-    type: CanvasActionType;
-    nodeId?: string;
-    timestamp: number;
-  } | null;
-  clipboardNode: ClipboardNodeData | null;
-  reloadWorkflowId: string | null;
-  reloadVersion: number;
-  /**
-   * A Call Workflow node asking for the callee's History, opened on the run
-   * that call produced. Held as state rather than fired as an event because
-   * the target canvas usually isn't mounted yet when the jump starts — it
-   * reads this on mount and clears it.
-   */
-  pendingHistory: { workflowId: string; runId: string } | null;
-  duplicateNode: (nodeId: string) => void;
-  copyNode: (nodeId: string) => void;
-  pasteNode: () => void;
-  savePresetFromNode: (nodeId: string) => void;
-  clearPendingAction: () => void;
-  setClipboardNode: (nodeData: ClipboardNodeData | null) => void;
-  hydrateClipboard: () => void;
-  openWorkflowHistory: (workflowId: string, runId: string) => void;
-  clearPendingHistory: () => void;
-  signalWorkflowReload: (workflowId: string) => void;
-  registerWorkflowReloadHandler: (
-    workflowId: string,
-    handler: () => void,
-  ) => () => void;
-  registerPendingActionHandler: (
-    handler: (action: {
-      type: CanvasActionType;
-      nodeId?: string;
-      timestamp: number;
-    }) => void,
-  ) => () => void;
-}
+const CLIPBOARD_KEY = "canvasClipboard:v2";
 
 const workflowReloadHandlers = new Map<string, Set<() => void>>();
 const pendingActionHandlers = new Set<
@@ -60,7 +24,7 @@ function notifyPendingActionHandlers(action: {
 
 const useCanvasStore = create<CanvasState>()((set) => ({
   pendingAction: null,
-  clipboardNode: null,
+  clipboard: null,
   reloadWorkflowId: null,
   reloadVersion: 0,
   pendingHistory: null,
@@ -103,17 +67,20 @@ const useCanvasStore = create<CanvasState>()((set) => ({
 
   clearPendingAction: () => set({ pendingAction: null }),
 
-  setClipboardNode: (nodeData: ClipboardNodeData | null) => {
-    if (nodeData) {
-      sessionStorage.setItem("copiedNode:v1", JSON.stringify(nodeData));
+  // sessionStorage carries the clipboard across the tabs of this window.
+  setClipboard: (clipboard: CanvasClipboard) => {
+    try {
+      sessionStorage.setItem(CLIPBOARD_KEY, JSON.stringify(clipboard));
+    } catch {
+      /* the in-memory copy still works */
     }
-    set({ clipboardNode: nodeData });
+    set({ clipboard });
   },
 
   hydrateClipboard: () => {
     try {
-      const raw = sessionStorage.getItem("copiedNode:v1");
-      if (raw) set({ clipboardNode: JSON.parse(raw) as ClipboardNodeData });
+      const raw = sessionStorage.getItem(CLIPBOARD_KEY);
+      if (raw) set({ clipboard: JSON.parse(raw) as CanvasClipboard });
     } catch {
       /* ignore */
     }
