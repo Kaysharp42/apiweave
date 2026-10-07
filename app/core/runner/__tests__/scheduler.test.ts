@@ -5,6 +5,7 @@ import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepo
 import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
+import { buildHtmlReport, buildJUnitReport } from "../reporters"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
@@ -555,6 +556,11 @@ describe("RunScheduler", () => {
         url: `http://127.0.0.1:${echo.port}/users/<SECRET>`,
       })
       expect(run?.variables).toMatchObject({ ref: "<SECRET>" })
+
+      // Reports are built from this stored run, so they carry no secret either.
+      const workflow = workflows.getById(workflowId) ?? null
+      expectNoSecret(buildJUnitReport({ kind: "run", run: run!, workflow }))
+      expectNoSecret(buildHtmlReport({ kind: "run", run: run!, workflow }))
     })
 
     it("resolves and masks a secret used only inside a Call Workflow callee", async () => {

@@ -1,9 +1,8 @@
-import fs from "node:fs"
 import { z } from "zod"
 import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { listResult } from "./common"
+import { ifFound, listResult } from "./common"
 import { ValidationError } from "../errors"
 import {
   EVIDENCE_PREVIEW_MAX_BYTES,
@@ -14,7 +13,7 @@ import {
   RUN_WAIT_MAX_MS,
 } from "../../services/read_budgets"
 import type { EvidenceSection } from "../../services/run_evidence"
-import { readReportArtifacts, resolveArtifactPath } from "../../runner/reporters"
+import { buildReport } from "../../runner/reporters"
 
 const ws = z.string().min(1)
 
@@ -189,73 +188,16 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     handle: (i) => runs.clearHistory(i.workspaceId, i.workflowId),
   })
 
-  // --- Artifact IPC handlers (Task 16) ---
-  //
-  // Security: every artifact handler requires workspaceId and authorizes the run
-  // through RunService.get (scope + permission check, workspace ownership). The
-  // runId is renderer-controlled, so all derived paths are resolved under the
-  // runs root and checked for traversal before any filesystem or shell call.
-  // No raw renderer path is ever passed to shell.openPath or fs.
-  // See: unsafe-electron-shell + path-traversal findings.
-
-  const artifactListInput = z.object({ workspaceId: ws, runId: z.string().min(1) }).strict()
-
-  router.register("runs", "getArtifacts", {
-    input: artifactListInput,
-    output: z.unknown(),
-    handle: async ({ workspaceId, runId }) => {
-      await runs.get(workspaceId, runId)
-      const { app } = await import("electron")
-      const baseDir = app.getPath("temp")
-      return readReportArtifacts(runId, baseDir)
-    },
-  })
-
-  // Never accept a raw path from the renderer: derive the artifact path in the
-  // main process from runId + a fixed artifact enum, resolved under the runs
-  // root (resolveArtifactPath guards traversal). See path-traversal finding.
-  const artifactAccessInput = z
-    .object({
-      workspaceId: ws,
-      runId: z.string().min(1),
-      artifactName: z.enum(["junit.xml", "report.html"]),
-    })
-    .strict()
-
-  router.register("runs", "openArtifact", {
-    input: artifactAccessInput,
+  // Renderer only (not on the MCP whitelist): the whole report as one string,
+  // which the renderer saves where the user picks. Built from the stored,
+  // masked run — see core/runner/reporters.ts.
+  router.register("runs", "report", {
+    input: runIdInput.extend({ format: z.enum(["junit", "html"]) }).strict(),
     output: z.string(),
-    handle: async ({ workspaceId, runId, artifactName }) => {
-      await runs.get(workspaceId, runId)
-      const { app, shell } = await import("electron")
-      const baseDir = app.getPath("temp")
-      const artifactPath = resolveArtifactPath(baseDir, runId, artifactName)
-      return shell.openPath(artifactPath)
-    },
-  })
-
-  router.register("runs", "saveArtifactAs", {
-    input: artifactAccessInput,
-    output: z.string().nullable(),
-    handle: async ({ workspaceId, runId, artifactName }) => {
-      await runs.get(workspaceId, runId)
-      const { app, dialog } = await import("electron")
-      const baseDir = app.getPath("temp")
-      const srcPath = resolveArtifactPath(baseDir, runId, artifactName)
-
-      const result = await dialog.showSaveDialog({
-        defaultPath: artifactName,
-        filters: [
-          { name: artifactName.endsWith(".xml") ? "XML Files" : "HTML Files", extensions: [artifactName.split(".").pop() ?? ""] },
-        ],
-      })
-
-      if (result.canceled || !result.filePath) {
-        return null
-      }
-
-      await fs.promises.copyFile(srcPath, result.filePath)
-      return result.filePath
+    handle: async ({ workspaceId, runId, format }) => {
+      const run = await runs.get(workspaceId, runId)
+      const workflow = await ifFound(deps.workflows.get(workspaceId, run.workflowId))
+      return buildReport(format, { kind: "run", run, workflow })
     },
   })
 }

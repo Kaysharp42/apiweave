@@ -13,6 +13,7 @@ const { apiMock, listeners } = vi.hoisted(() => ({
       listRuns: vi.fn(),
       run: vi.fn(),
       cancelRun: vi.fn(),
+      runReport: vi.fn(),
     },
     environments: { list: vi.fn() },
   },
@@ -20,6 +21,7 @@ const { apiMock, listeners } = vi.hoisted(() => ({
 }));
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("../../../utils/downloadFile", () => ({ downloadReport: vi.fn() }));
 vi.mock("../../../utils/apiweaveClient", () => ({
   apiweave: apiMock,
   onProjectRunChanged: (callback: Listener) => {
@@ -29,6 +31,7 @@ vi.mock("../../../utils/apiweaveClient", () => ({
 }));
 
 import { ProjectRunPanel } from "../ProjectRunPanel";
+import { downloadReport } from "../../../utils/downloadFile";
 import useEnvironmentStore from "../../../stores/EnvironmentStore";
 
 function projectRun(overrides: Partial<ProjectRun> = {}): ProjectRun {
@@ -68,6 +71,22 @@ afterEach(() => {
 });
 
 describe("ProjectRunPanel", () => {
+  it("exports a finished project run's report, and offers none while it runs", async () => {
+    apiMock.projects.listRuns.mockResolvedValue({ items: [projectRun({ status: "failed" })], total: 1 });
+    apiMock.projects.runReport.mockResolvedValue("<testsuites/>");
+    render(<ProjectRunPanel workspaceId="ws-1" projectId="p-1" onOpenRun={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /JUnit XML/ }));
+    expect(apiMock.projects.runReport).toHaveBeenCalledWith("ws-1", "pr-1", "junit");
+    await waitFor(() =>
+      expect(downloadReport).toHaveBeenCalledWith("apiweave-project-run-pr-1", "junit", "<testsuites/>"),
+    );
+
+    act(() => listeners.forEach((listener) => listener(projectRun({ status: "running" }))));
+    expect(screen.queryByRole("button", { name: /JUnit XML/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /HTML report/ })).toBeNull();
+  });
+
   it("runs against the workspace default environment, follows progress live, and opens a workflow's run", async () => {
     const onOpenRun = vi.fn();
     render(<ProjectRunPanel workspaceId="ws-1" projectId="p-1" onOpenRun={onOpenRun} />);

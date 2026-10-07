@@ -13,8 +13,9 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  *    mutations; MCP secret surface is read-only metadata (`list`, `resolve`), matching the
  *    Python "metadata-only" posture. Duplicate/move carry sealed BYTES between scopes, so
  *    exposing them would let an agent re-home a credential it is not allowed to read.
- *  - `runs.getArtifacts`, `runs.openArtifact`, `runs.saveArtifactAs` — Electron
- *    shell/dialog operations, not agent tools.
+ *  - `runs.report`, `projects.runReport` — a whole JUnit or HTML report as one
+ *    unbounded string for the renderer to save; an agent reads the same facts,
+ *    bounded, through `runs_get`, `runs_getNodeResult` and `projects_getRun`.
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,

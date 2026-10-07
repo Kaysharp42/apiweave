@@ -221,9 +221,8 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       // the whole posture the metadata-only surface exists to hold.
       "secrets.duplicate",
       "secrets.moveToScope",
-      "runs.getArtifacts",
-      "runs.openArtifact",
-      "runs.saveArtifactAs",
+      "runs.report",
+      "projects.runReport",
       // Deleting run history is irreversible and the user's call alone.
       "runs.delete",
       "runs.clearHistory",
@@ -303,7 +302,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     expect(names).toContain("server_info")
     expect(names).not.toContain("secrets_set")
     expect(names).not.toContain("workflows_list")
-    expect(names).not.toContain("runs_openArtifact")
+    expect(names).not.toContain("runs_report")
     const workflowSearch = tools.find((tool) => tool.name === "workflows_search")
     const workspaceDelete = tools.find((tool) => tool.name === "workspaces_delete")
     const runCreate = tools.find((tool) => tool.name === "runs_create")

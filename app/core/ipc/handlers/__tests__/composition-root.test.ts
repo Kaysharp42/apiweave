@@ -287,5 +287,20 @@ describe("composition root — the wiring main.ts performs", () => {
     })
     expect(missingEnvironment.ok ? null : missingEnvironment.error.code).toBe("validation")
     expect(projectRuns.listByProject(project.collectionId)).toHaveLength(1)
+
+    // Reports: one testsuite per workflow of the project run, in run order.
+    const junit = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "junit" })
+    expect([...junit.matchAll(/<testsuite name="wf" id="(\d)"/g)].map((match) => match[1])).toEqual(["0", "1"])
+    const html = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "html" })
+    expect(html).toContain("<h1>Checkout</h1>")
+    const runReport = await ok<string>("runs", "report", { workspaceId: ws.workspaceId, runId: current.items[0]!.runId, format: "junit" })
+    expect(runReport).toContain('<testsuites name="wf" tests="0" failures="0"')
+    // Deleting a workflow deletes its runs; the project report still has its suite.
+    await ok("workflows", "delete", { workspaceId: ws.workspaceId, workflowId: second })
+    const afterDelete = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "junit" })
+    expect(afterDelete.match(/<testsuite /g)).toHaveLength(2)
+    expect(afterDelete).toContain('<skipped message="Its run was deleted from history"/>')
+    const foreignReport = await router.dispatch({ domain: "projects", action: "runReport", payload: { workspaceId: other.workspaceId, projectRunId, format: "junit" } })
+    expect(foreignReport.ok ? null : foreignReport.error.code).toBe("not_found")
   })
 })

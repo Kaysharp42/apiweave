@@ -1033,9 +1033,8 @@ describe("Phase 2 — whitelist publishes the focused reads and nothing else", (
       "secrets.delete",
       "secrets.duplicate",
       "secrets.moveToScope",
-      "runs.getArtifacts",
-      "runs.openArtifact",
-      "runs.saveArtifactAs",
+      "runs.report",
+      "projects.runReport",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }

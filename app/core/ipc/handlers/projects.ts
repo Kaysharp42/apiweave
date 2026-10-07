@@ -4,8 +4,9 @@ import type { IpcRouter } from "../router"
 import type { ProjectBundle } from "../../services/project_export_service"
 import type { ProjectRunService } from "../../services/project_run_service"
 import { NotFoundError } from "../errors"
+import { buildReport } from "../../runner/reporters"
 import type { HandlerDeps } from "./common"
-import { listResult } from "./common"
+import { ifFound, listResult } from "./common"
 
 const ws = z.string().min(1)
 
@@ -237,6 +238,30 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
     input: z.object({ workspaceId: ws, projectId: z.string().min(1) }).strict(),
     output: listResult(ProjectRunSchema),
     handle: (i) => projectRuns().list(i.workspaceId, i.projectId),
+  })
+
+  // Renderer only (not on the MCP whitelist): the whole report as one string,
+  // which the renderer saves where the user picks.
+  router.register("projects", "runReport", {
+    input: projectRunIdInput.extend({ format: z.enum(["junit", "html"]) }).strict(),
+    output: z.string(),
+    handle: async ({ workspaceId, projectRunId, format }) => {
+      const projectRun = await projectRuns().get(workspaceId, projectRunId)
+      const project = await collections.get(workspaceId, projectRun.projectId)
+      const runIds = projectRun.items.flatMap((item) => (item.runId === null ? [] : [item.runId]))
+      const workflowIds = [...new Set(projectRun.items.map((item) => item.workflowId))]
+      const [runs, workflows] = await Promise.all([
+        Promise.all(runIds.map((runId) => ifFound(deps.runs.get(workspaceId, runId)))),
+        Promise.all(workflowIds.map((workflowId) => ifFound(deps.workflows.get(workspaceId, workflowId)))),
+      ])
+      return buildReport(format, {
+        kind: "project",
+        projectName: project.name,
+        projectRun,
+        runs: runs.filter((run) => run !== null),
+        workflows: workflows.filter((workflow) => workflow !== null),
+      })
+    },
   })
 
   router.register("projects", "cancelRun", {

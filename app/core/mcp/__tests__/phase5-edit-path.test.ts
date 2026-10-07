@@ -583,7 +583,7 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     expect(names.has("guides_list")).toBe(true)
     expect(names.has("guides_get")).toBe(true)
     expect(names.has("assertion_apply")).toBe(true)
-    for (const excluded of ["secrets.set", "secrets.delete", "agents.launchExternal", "runs.openArtifact"]) {
+    for (const excluded of ["secrets.set", "secrets.delete", "agents.launchExternal", "runs.report"]) {
       expect(names.has(excluded)).toBe(false)
     }
   })

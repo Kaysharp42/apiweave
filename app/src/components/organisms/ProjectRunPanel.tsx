@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { History, Play, Square } from "lucide-react";
+import { Download, History, Play, Square } from "lucide-react";
 import { toast } from "sonner";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { ProjectRunItem } from "@shared/types/ProjectRunItem";
+import type { ReportFormat } from "@shared/types/ReportFormat";
 import { Button } from "../atoms/Button";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { StatusBadge } from "../molecules/StatusBadge";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import { apiweave, onProjectRunChanged } from "../../utils/apiweaveClient";
+import { downloadReport } from "../../utils/downloadFile";
 import { formatDuration } from "../../utils/formatNodeMetrics";
 import { formatTimestamp } from "../../utils/formatTimestamp";
 import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
@@ -131,6 +133,22 @@ export function ProjectRunPanel({
     }
   };
 
+  const exportReport = async (
+    projectRunId: string,
+    format: ReportFormat,
+  ): Promise<void> => {
+    try {
+      const report = await apiweave.projects.runReport(
+        workspaceId,
+        projectRunId,
+        format,
+      );
+      downloadReport(`apiweave-project-run-${projectRunId}`, format, report);
+    } catch (error: unknown) {
+      toast.error(errorMessage(error, "Failed to export the report"));
+    }
+  };
+
   const environmentName = (id: string | null): string =>
     id === null
       ? "No environment"
@@ -191,6 +209,31 @@ export function ProjectRunPanel({
                 {formatTimestamp(selected.startedAt)} ·{" "}
                 {environmentName(selected.environmentId)}
               </span>
+              {selected.status !== "running" &&
+                selected.status !== "pending" && (
+                <span className="ml-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    icon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() =>
+                      void exportReport(selected.projectRunId, "junit")
+                    }
+                  >
+                    JUnit XML
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    icon={<Download className="w-3.5 h-3.5" />}
+                    onClick={() =>
+                      void exportReport(selected.projectRunId, "html")
+                    }
+                  >
+                    HTML report
+                  </Button>
+                </span>
+              )}
             </div>
             <ol className="space-y-1">
               {selected.items.map((item, index) => {
