@@ -64,6 +64,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Importing cURL commands as nodes no longer creates a workflow.** Adding
+  pasted cURL commands to the **Add Nodes** panel also created a stray workflow
+  in the sidebar. The commands are now only parsed, as HAR and OpenAPI
+  imports already were.
+
 - **A JSON body is always labelled JSON.** A JSON body typed as text went out
   without a `Content-Type`, so servers read it as plain text. It now carries
   `application/json` unless the request sets its own `Content-Type`.

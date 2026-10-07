@@ -378,6 +378,7 @@ export const apiweave = {
       readonly curlCommand: string;
       readonly sanitize?: boolean;
       readonly dryRun?: boolean;
+      readonly parseOnly?: boolean;
       readonly workflowId?: string;
       readonly collectionId?: string;
     }) => invoke<unknown>("workflows", "importCurl", input),

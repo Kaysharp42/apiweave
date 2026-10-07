@@ -234,6 +234,8 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       curlCommand: z.string().min(1),
       sanitize: z.boolean().optional(),
       dryRun: z.boolean().optional(),
+      // Return the parsed nodes without writing anything, like importHar/importOpenapi.
+      parseOnly: z.boolean().optional(),
       workflowId: z.string().optional(),
       collectionId: z.string().optional(),
     }).strict(),
@@ -242,6 +244,10 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       const sanitizeOpts = buildCurlOpts(i)
       if (i.dryRun) {
         return imports.dryRunCurl(i.curlCommand, sanitizeOpts)
+      }
+      if (i.parseOnly) {
+        await deps.workspaces.get(i.workspaceId)
+        return imports.parseCurl(i.curlCommand, sanitizeOpts)
       }
       return await imports.importCurlAsWorkflow(i.workspaceId, i.curlCommand, sanitizeOpts)
     },
