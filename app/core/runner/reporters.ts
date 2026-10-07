@@ -392,6 +392,56 @@ ${report.suites.map(htmlSuite).join("\n")}
 `
 }
 
+// -------------------- Console --------------------
+
+const ANSI = { green: "\u001b[32m", red: "\u001b[31m", yellow: "\u001b[33m", dim: "\u001b[2m", bold: "\u001b[1m", reset: "\u001b[0m" }
+const CONSOLE_MARK: Record<Outcome, { mark: string; color: string }> = {
+  passed: { mark: "✔", color: ANSI.green },
+  failed: { mark: "✖", color: ANSI.red },
+  skipped: { mark: "○", color: ANSI.yellow },
+}
+
+/**
+ * Plain text for a terminal or a CI log: one block per workflow run with a
+ * line per step, failure messages and details under failed steps, then a
+ * summary table. `color` adds ANSI colours; leave it off for NO_COLOR or a
+ * non-TTY stream.
+ */
+export function buildConsoleReport(input: ReportInput, color: boolean): string {
+  const paint = (style: string, text: string): string => (color ? `${style}${text}${ANSI.reset}` : text)
+  const report = toReport(input)
+  const lines: string[] = [paint(ANSI.bold, report.title) + paint(ANSI.dim, ` · ${report.status}`), ""]
+  for (const suite of report.suites) {
+    const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : suite.runId === null ? "skipped" : "failed"
+    lines.push(
+      `${paint(CONSOLE_MARK[suiteOutcome].color, suite.name)}${paint(ANSI.dim, ` · ${suite.status} · ${seconds(suite.durationMs)}s`)}`,
+    )
+    const width = Math.max(0, ...suite.cases.map((testCase) => testCase.name.length))
+    for (const testCase of suite.cases) {
+      const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
+      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s`)}`)
+      if (testCase.outcome === "passed") continue
+      if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
+      if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
+    }
+    lines.push("")
+  }
+  const cases = counts(report.suites.flatMap((suite) => suite.cases))
+  const passedSuites = report.suites.filter((suite) => suite.status === "completed").length
+  const skippedSuites = report.suites.filter((suite) => suite.runId === null).length
+  const rows: (string | number)[][] = [
+    ["", "total", "passed", "failed", "skipped"],
+    ["Workflows", report.suites.length, passedSuites, report.suites.length - passedSuites - skippedSuites, skippedSuites],
+    ["Steps", cases.tests, cases.tests - cases.failures - cases.skipped, cases.failures, cases.skipped],
+  ]
+  const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => String(row[column]).length)))
+  for (const row of rows) {
+    lines.push(row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))
+  }
+  lines.push(`Duration ${seconds(report.suites.reduce((sum, suite) => sum + suite.durationMs, 0))}s`, "")
+  return lines.join("\n")
+}
+
 // -------------------- Entry points --------------------
 
 export function buildReport(format: ReportFormat, input: ReportInput): string {

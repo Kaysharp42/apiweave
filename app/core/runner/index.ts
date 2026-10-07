@@ -6,7 +6,7 @@ export { ProjectRunner, planProjectRun } from "./project_runner"
 export type { ProjectRunHandle, ProjectRunRequest, ProjectRunScheduler, ProjectRunnerDeps } from "./project_runner"
 export { RunEventBroker } from "./run_event_broker"
 export type { RunEventBrokerOptions } from "./run_event_broker"
-export { buildJUnitReport, buildHtmlReport, buildReport, writeReport } from "./reporters"
+export { buildConsoleReport, buildJUnitReport, buildHtmlReport, buildReport, writeReport } from "./reporters"
 export type {
   WorkflowGraph,
   WorkflowNode,

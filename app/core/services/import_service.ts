@@ -1,7 +1,9 @@
+import { z } from "zod"
 import type { Workflow } from "@shared/types/Workflow"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { JsonValueSchema } from "@shared/zod-schemas/JsonValueSchema"
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
 import type {
@@ -90,6 +92,40 @@ export interface WorkflowBundle {
     readonly secretReferenceCount?: number | undefined
   } | undefined
 }
+
+/** A workflow export file as read from disk or IPC: the shape checked before {@link ImportService.importWorkflow} runs. */
+export const WorkflowBundleSchema: z.ZodType<WorkflowBundle> = z
+  .object({
+    workflow: z.object({
+      workflowId: z.string().optional(),
+      name: z.string(),
+      description: z.string().optional(),
+      nodes: z.array(JsonValueSchema),
+      edges: z.array(JsonValueSchema),
+      variables: z.record(z.string(), JsonValueSchema),
+      tags: z.array(z.string()).optional(),
+      environmentId: z.string().nullable().optional(),
+      selectedEnvironmentId: z.string().nullable().optional(),
+    }).passthrough(),
+    environments: z.array(z.object({
+      environmentId: z.string(),
+      name: z.string(),
+      description: z.string().nullable().optional(),
+      variables: z.record(z.string(), JsonValueSchema),
+      swaggerDocUrl: z.string().nullable().optional(),
+    }).passthrough()).optional(),
+    secretReferences: z.array(z.union([
+      z.object({ name: z.string(), scopeType: z.string(), scopeId: z.string() }).strict(),
+      z.string(), // ponytail: backward compat with old exports that stored secret names as strings
+    ])).optional(),
+    metadata: z.object({
+      exportedAt: z.string(),
+      workflowCount: z.number().optional(),
+      environmentCount: z.number().optional(),
+      secretReferenceCount: z.number().optional(),
+    }).optional(),
+  })
+  .passthrough()
 
 export interface WorkflowImportResult {
   readonly workflowId: string

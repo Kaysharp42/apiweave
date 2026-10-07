@@ -6,9 +6,9 @@ const path = require("node:path")
 // core/db/migrations.ts#defaultMigrationsPath). esbuild only bundles JS, so copy
 // the SQL next to the bundled main.cjs - `__dirname` is dist/desktop there (and in
 // the packaged app), and electron-builder's `files: dist/desktop/**` ships them.
-function copyMigrations() {
+function copyMigrations(outDir = "desktop") {
   const src = path.join(__dirname, "core", "db", "migrations")
-  const dest = path.join(__dirname, "dist", "desktop", "migrations")
+  const dest = path.join(__dirname, "dist", outDir, "migrations")
   // Windows file locking: try to remove, but if locked just overwrite contents
   if (fs.existsSync(dest)) {
     try {
@@ -64,7 +64,20 @@ const common = {
   target: "node20",
 }
 
-Promise.all([
+// The headless runner (`apiweave run`, core/cli) runs under plain Node in CI,
+// where there is no Electron: the plugin fails the build if anything on its
+// import graph reaches for it. Built on its own with `--cli` so `npm run cli`
+// does not rebuild the desktop bundles.
+const noElectron = {
+  name: "no-electron",
+  setup(build) {
+    build.onResolve({ filter: /^electron$/ }, (args) => ({
+      errors: [{ text: `the CLI must not import electron (imported by ${args.importer})` }],
+    }))
+  },
+}
+
+const buildDesktop = () => Promise.all([
   esbuild.build({
     ...common,
     entryPoints: ["electron/main.ts"],
@@ -85,9 +98,22 @@ Promise.all([
     entryPoints: ["electron/pty_host.ts"],
     outfile: "dist/desktop/pty-host.cjs",
   }),
-])
-  .then(copyMigrations)
-  .then(copyIcon)
+]).then(() => copyMigrations()).then(copyIcon)
+
+const buildCli = () =>
+  esbuild
+    .build({
+      ...common,
+      external: Object.keys(dependencies),
+      plugins: [noElectron],
+      logLevel: "warning",
+      banner: { js: "#!/usr/bin/env node" },
+      entryPoints: ["core/cli/bin.ts"],
+      outfile: "dist/cli/apiweave.cjs",
+    })
+    .then(() => copyMigrations("cli"))
+
+;(process.argv.includes("--cli") ? buildCli() : buildDesktop())
   .catch((error) => {
     console.error(error)
     process.exit(1)
