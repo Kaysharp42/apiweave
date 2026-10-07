@@ -1,5 +1,10 @@
 import { loader } from "@monaco-editor/react";
-import * as monaco from "monaco-editor";
+// The editor API plus JSON, the only language any editor in the app uses (the
+// contribution brings the editor's own features with it). `import
+// "monaco-editor"` is editor.main, which adds ~80 grammars and the TypeScript,
+// CSS and HTML language services, a 7 MB TypeScript worker among them.
+import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
+import "monaco-editor/esm/vs/language/json/monaco.contribution.js";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 
