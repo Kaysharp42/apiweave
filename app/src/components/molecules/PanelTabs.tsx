@@ -1,4 +1,5 @@
 import type { PanelTabsProps } from "../../types";
+import { handleTablistKeyDown } from "../../utils/tablistKeyboard";
 
 /**
  * PanelTabs — Reusable tab bar for panels.
@@ -16,6 +17,7 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
       className="flex items-center gap-0 overflow-x-auto overflow-y-hidden border-b border-border bg-surface-overlay px-2 dark:border-border-dark dark:bg-surface-dark-overlay"
       role="tablist"
       aria-label="Panel tabs"
+      onKeyDown={handleTablistKeyDown}
     >
       {tabs.map((tab) => {
         const isActive = tab.key === activeTab;

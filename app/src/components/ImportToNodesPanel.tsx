@@ -5,17 +5,12 @@ import {
   type DragEvent,
   type RefObject,
 } from "react";
-import {
-  X,
-  Upload,
-  AlertCircle,
-  CheckCircle,
-  Info,
-  Terminal,
-} from "lucide-react";
+import { Upload, AlertCircle, CheckCircle, Info, Terminal } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
-import { IconButton } from "./atoms/IconButton";
+import { Modal } from "./molecules/Modal";
+import { PanelTabs } from "./molecules/PanelTabs";
+import type { TabItem } from "../types";
 import { TextArea } from "./atoms/TextArea";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -72,6 +67,12 @@ interface ImportToNodesPanelProps {
 }
 
 type ActiveTab = "openapi" | "har" | "curl";
+
+const IMPORT_TABS: TabItem[] = [
+  { key: "openapi", icon: Upload, label: "OpenAPI" },
+  { key: "har", icon: Upload, label: "HAR" },
+  { key: "curl", icon: Terminal, label: "Curl" },
+];
 type ImportMode = "linear" | "grouped";
 
 interface FileUploadDropzoneProps {
@@ -516,234 +517,179 @@ export function ImportToNodesPanel({
   };
 
   return (
-    <div className="fixed inset-0 bg-surface/80 dark:bg-surface-dark/80 flex items-center justify-center z-50">
-      <div className="bg-surface-raised dark:bg-surface-dark-raised rounded-sm shadow-node border border-border dark:border-border-dark w-full max-w-2xl max-h-screen overflow-y-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-border dark:border-border-dark">
-          <h2 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary dark:text-text-primary-dark">
-            Import to Add Nodes
-          </h2>
-          <IconButton
-            onClick={onClose}
-            tooltip="Close"
-            size="sm"
-            variant="ghost"
-          >
-            <X className="w-6 h-6" />
-          </IconButton>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          <Button
-            onClick={() => handleTabChange("openapi")}
-            variant="ghost"
-            className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
-              activeTab === "openapi"
-                ? "border-b-2 border-[var(--aw-primary)] text-primary dark:text-primary-light"
-                : "text-text-secondary dark:text-text-secondary-dark"
+    <Modal isOpen onClose={onClose} title="Import to Add Nodes">
+      <PanelTabs
+        tabs={IMPORT_TABS}
+        activeTab={activeTab}
+        onTabChange={(key) => handleTabChange(key as ActiveTab)}
+      />
+      <div id={`panel-tab-${activeTab}`} role="tabpanel" className="p-6">
+        {/* Messages */}
+        {message && (
+          <div
+            className={`mb-4 p-4 rounded-sm border flex gap-3 ${
+              message.type === "success"
+                ? "bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark border-status-success/30"
+                : "bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-status-error-dark border-status-error/30"
             }`}
-            icon={<Upload className="w-4 h-4" />}
           >
-            OpenAPI
-          </Button>
-          <Button
-            onClick={() => handleTabChange("har")}
-            variant="ghost"
-            className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
-              activeTab === "har"
-                ? "border-b-2 border-[var(--aw-primary)] text-primary dark:text-primary-light"
-                : "text-text-secondary dark:text-text-secondary-dark"
-            }`}
-            icon={<Upload className="w-4 h-4" />}
-          >
-            HAR
-          </Button>
-          <Button
-            onClick={() => handleTabChange("curl")}
-            variant="ghost"
-            className={`flex-1 px-4 py-3 font-medium text-center rounded-none ${
-              activeTab === "curl"
-                ? "border-b-2 border-[var(--aw-primary)] text-primary dark:text-primary-light"
-                : "text-text-secondary dark:text-text-secondary-dark"
-            }`}
-            icon={<Terminal className="w-4 h-4" />}
-          >
-            Curl
-          </Button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6">
-          {/* Messages */}
-          {message && (
-            <div
-              className={`mb-4 p-4 rounded-sm border flex gap-3 ${
-                message.type === "success"
-                  ? "bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark border-status-success/30"
-                  : "bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-status-error-dark border-status-error/30"
-              }`}
-            >
-              {message.type === "success" ? (
-                <CheckCircle className="w-5 h-5 flex-shrink-0" />
-              ) : (
-                <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              )}
-              <div>
-                <div className="font-medium">{message.title}</div>
-                <div className="text-sm">{message.text}</div>
-              </div>
+            {message.type === "success" ? (
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+            ) : (
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            )}
+            <div>
+              <div className="font-medium">{message.title}</div>
+              <div className="text-sm">{message.text}</div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* OpenAPI Tab */}
-          {activeTab === "openapi" && (
-            <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-                <Info size={18} className="flex-shrink-0 mt-0.5" />
-                <span>
-                  Upload or paste an OpenAPI specification. Requests will be
-                  added to your Add Nodes panel.
-                </span>
-              </div>
-
-              <FileUploadDropzone
-                accept=".json,.yaml,.yml"
-                description="JSON or YAML OpenAPI files"
-                fileInputRef={fileInputRef}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onFileInputChange={handleFileInputChange}
-              />
-
-              <PasteAreaField
-                label="Or paste OpenAPI spec"
-                placeholder="Paste OpenAPI JSON/YAML here..."
-                value={pastedText}
-                onChange={(val) => {
-                  setPastedText(val);
-                  setUploadedFile(null);
-                }}
-              />
-
-              <div className="flex items-center gap-4">
-                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
-              </div>
-
-              <ImportActionButton
-                disabled={isLoading || (!uploadedFile && !pastedText)}
-                loading={isLoading}
-                onClick={handleImport}
-              />
+        {/* OpenAPI Tab */}
+        {activeTab === "openapi" && (
+          <div className="space-y-4">
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Upload or paste an OpenAPI specification. Requests will be added
+                to your Add Nodes panel.
+              </span>
             </div>
-          )}
 
-          {/* HAR Tab */}
-          {activeTab === "har" && (
-            <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-                <Info size={18} className="flex-shrink-0 mt-0.5" />
-                <span>
-                  Upload or paste a HAR (HTTP Archive) file. Requests will be
-                  added to your Add Nodes panel.
-                </span>
-              </div>
+            <FileUploadDropzone
+              accept=".json,.yaml,.yml"
+              description="JSON or YAML OpenAPI files"
+              fileInputRef={fileInputRef}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onFileInputChange={handleFileInputChange}
+            />
 
-              <FileUploadDropzone
-                accept=".json,.har"
-                description="JSON or HAR files"
-                fileInputRef={fileInputRef}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onFileInputChange={handleFileInputChange}
-              />
+            <PasteAreaField
+              label="Or paste OpenAPI spec"
+              placeholder="Paste OpenAPI JSON/YAML here..."
+              value={pastedText}
+              onChange={(val) => {
+                setPastedText(val);
+                setUploadedFile(null);
+              }}
+            />
 
-              <PasteAreaField
-                label="Or paste HAR content"
-                placeholder="Paste HAR JSON here..."
-                value={pastedText}
-                onChange={(val) => {
-                  setPastedText(val);
-                  setUploadedFile(null);
-                }}
-              />
-
-              <div className="space-y-3">
-                <div>
-                  <label
-                    htmlFor="import-to-nodes-import-mode"
-                    className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
-                  >
-                    Import mode
-                  </label>
-                  <select
-                    id="import-to-nodes-import-mode"
-                    value={importMode}
-                    onChange={(e) =>
-                      setImportMode(e.target.value as ImportMode)
-                    }
-                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="linear">Linear (sequential)</option>
-                    <option value="grouped">Parallel</option>
-                  </select>
-                </div>
-                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
-              </div>
-
-              <ImportActionButton
-                disabled={isLoading || (!uploadedFile && !pastedText)}
-                loading={isLoading}
-                onClick={handleImport}
-              />
+            <div className="flex items-center gap-4">
+              <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
             </div>
-          )}
 
-          {/* Curl Tab */}
-          {activeTab === "curl" && (
-            <div className="space-y-4">
-              <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-                <Info size={18} className="flex-shrink-0 mt-0.5" />
-                <span>
-                  Paste one or more curl commands. They will be parsed and added
-                  to your Add Nodes panel.
-                </span>
-              </div>
+            <ImportActionButton
+              disabled={isLoading || (!uploadedFile && !pastedText)}
+              loading={isLoading}
+              onClick={handleImport}
+            />
+          </div>
+        )}
 
+        {/* HAR Tab */}
+        {activeTab === "har" && (
+          <div className="space-y-4">
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Upload or paste a HAR (HTTP Archive) file. Requests will be
+                added to your Add Nodes panel.
+              </span>
+            </div>
+
+            <FileUploadDropzone
+              accept=".json,.har"
+              description="JSON or HAR files"
+              fileInputRef={fileInputRef}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onFileInputChange={handleFileInputChange}
+            />
+
+            <PasteAreaField
+              label="Or paste HAR content"
+              placeholder="Paste HAR JSON here..."
+              value={pastedText}
+              onChange={(val) => {
+                setPastedText(val);
+                setUploadedFile(null);
+              }}
+            />
+
+            <div className="space-y-3">
               <div>
                 <label
-                  htmlFor="import-to-nodes-curl-commands"
+                  htmlFor="import-to-nodes-import-mode"
                   className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
                 >
-                  Curl Commands
+                  Import mode
                 </label>
-                <TextArea
-                  id="import-to-nodes-curl-commands"
-                  value={pastedText}
-                  onChange={(e) => setPastedText(e.target.value)}
-                  placeholder={
-                    'Paste curl command(s) here. Example:\ncurl -X GET "https://api.example.com/users"\ncurl -X POST "https://api.example.com/users" -H "Content-Type: application/json" -d \'{"name": "John"}\'\n\nOr multiple commands separated by && or on separate lines'
-                  }
-                  className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-sm"
-                />
+                <select
+                  id="import-to-nodes-import-mode"
+                  value={importMode}
+                  onChange={(e) => setImportMode(e.target.value as ImportMode)}
+                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="linear">Linear (sequential)</option>
+                  <option value="grouped">Parallel</option>
+                </select>
               </div>
+              <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
+            </div>
 
-              <div>
-                <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
-              </div>
+            <ImportActionButton
+              disabled={isLoading || (!uploadedFile && !pastedText)}
+              loading={isLoading}
+              onClick={handleImport}
+            />
+          </div>
+        )}
 
-              <ImportActionButton
-                disabled={isLoading || !pastedText.trim()}
-                loading={isLoading}
-                onClick={handleImport}
+        {/* Curl Tab */}
+        {activeTab === "curl" && (
+          <div className="space-y-4">
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Paste one or more curl commands. They will be parsed and added
+                to your Add Nodes panel.
+              </span>
+            </div>
+
+            <div>
+              <label
+                htmlFor="import-to-nodes-curl-commands"
+                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
+              >
+                Curl Commands
+              </label>
+              <TextArea
+                id="import-to-nodes-curl-commands"
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+                placeholder={
+                  'Paste curl command(s) here. Example:\ncurl -X GET "https://api.example.com/users"\ncurl -X POST "https://api.example.com/users" -H "Content-Type: application/json" -d \'{"name": "John"}\'\n\nOr multiple commands separated by && or on separate lines'
+                }
+                className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-sm"
               />
             </div>
-          )}
-        </div>
+
+            <div>
+              <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
+            </div>
+
+            <ImportActionButton
+              disabled={isLoading || !pastedText.trim()}
+              loading={isLoading}
+              onClick={handleImport}
+            />
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

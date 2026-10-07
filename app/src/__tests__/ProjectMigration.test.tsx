@@ -193,9 +193,10 @@ describe("project migration UI", () => {
     );
     await screen.findByText(/file loaded successfully/i);
     expect(screen.getByPlaceholderText(/project name/i)).toHaveValue("Imported Project");
-    const importAction = screen.getAllByRole("button", { name: /^import project$/i })[1]!;
+    const importAction = screen.getByRole("button", { name: /^import project$/i });
     expect(importAction).toBeEnabled();
-    expect(screen.getByRole("dialog", { name: /project export import/i })).toHaveClass("z-[100]");
+    expect(screen.getByRole("dialog", { name: "Import Project" })).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByRole("tab", { name: /import project/i })).toHaveAttribute("aria-selected", "true");
 
     await user.click(screen.getByRole("button", { name: /^validate$/i }));
     await screen.findByText(/valid project bundle/i);

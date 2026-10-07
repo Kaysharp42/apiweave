@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   CheckCircle,
   XCircle,
   RefreshCw,
   Clock,
   Circle,
-  History,
-  X,
   ClipboardList,
   ChevronRight,
   Timer,
@@ -19,6 +17,7 @@ import { apiweave } from "../utils/apiweaveClient";
 import { IconButton } from "./atoms/IconButton";
 import { Button } from "./atoms/Button";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import { Modal } from "./molecules/Modal";
 import type { HistoryModalProps } from "../types";
 
 const PAGE_SIZE = 20;
@@ -44,12 +43,6 @@ export default function HistoryModal({
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
     null,
   );
-  const [isAnimating, setIsAnimating] = useState(true);
-  const modalRef = useRef<HTMLDivElement>(null);
-  const handleClose = useCallback(() => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  }, [onClose]);
 
   // History rows are summaries — status, timing, failure counts. The full run,
   // node results and bodies included, is fetched only when one is opened.
@@ -81,27 +74,9 @@ export default function HistoryModal({
     void fetchRunHistory();
   }, [fetchRunHistory]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      // The confirm dialog renders in a portal outside this panel.
-      if (pendingDelete !== null) return;
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
-        handleClose();
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [handleClose, pendingDelete]);
-
   const handleRunClick = (run: RunSummary) => {
     onSelectRun(run);
-    handleClose();
+    onClose();
   };
 
   const confirmDelete = async () => {
@@ -178,216 +153,174 @@ export default function HistoryModal({
   };
 
   return (
-    <div
-      className={`fixed inset-0 z-50 flex items-start justify-end pt-40 pr-4 transition-opacity duration-300 bg-[var(--aw-surface)]/30 ${
-        isAnimating ? "opacity-100" : "opacity-0 pointer-events-none"
-      }`}
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="Run History"
+      headerExtra={
+        runs.length > 0 && (
+          <Button
+            variant="ghost"
+            intent="error"
+            size="xs"
+            icon={<Trash2 className="w-3.5 h-3.5" />}
+            onClick={() => setPendingDelete({ kind: "clear" })}
+          >
+            Clear history
+          </Button>
+        )
+      }
+      footer={
+        nextCursor !== null && (
+          <Button
+            variant="outline"
+            size="sm"
+            fullWidth
+            loading={isLoading}
+            onClick={() => void fetchRunHistory(nextCursor)}
+          >
+            Load more
+          </Button>
+        )
+      }
     >
-      <button
-        type="button"
-        aria-label="Close run history"
-        className="absolute inset-0 cursor-pointer"
-        onClick={handleClose}
-      />
-
-      <div
-        ref={modalRef}
-        className="relative z-10 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark overflow-hidden transition-transform duration-300 flex flex-col"
-        style={{
-          width: "500px",
-          maxHeight: "600px",
-          transform: isAnimating ? "translateY(0)" : "translateY(-20px)",
-        }}
-      >
-        <div className="flex-shrink-0 px-5 py-4 border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded">
-                <History className="w-5 h-5 text-primary dark:text-primary-light" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark">
-                  Run History
-                </h2>
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                  {runs.length}
-                  {nextCursor !== null ? "+" : ""} run
-                  {runs.length !== 1 || nextCursor !== null ? "s" : ""}, newest
-                  first
-                </p>
-              </div>
-            </div>
-            {runs.length > 0 && (
-              <Button
-                variant="ghost"
-                intent="error"
-                size="xs"
-                icon={<Trash2 className="w-3.5 h-3.5" />}
-                onClick={() => setPendingDelete({ kind: "clear" })}
-              >
-                Clear history
-              </Button>
-            )}
-            <button
-              type="button"
-              onClick={handleClose}
-              className="p-2 text-text-muted hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors rounded"
-              title="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      <p className="px-5 pt-3 text-xs text-text-muted dark:text-text-muted-dark">
+        {runs.length}
+        {nextCursor !== null ? "+" : ""} run
+        {runs.length !== 1 || nextCursor !== null ? "s" : ""}, newest first
+      </p>
+      {error !== null && (
+        <p
+          role="alert"
+          className="px-5 py-2 text-xs text-status-error dark:text-status-error"
+        >
+          {error}
+        </p>
+      )}
+      {isLoading && runs.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+            <p className="text-sm text-text-muted dark:text-text-muted-dark">
+              Loading history…
+            </p>
           </div>
         </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {error !== null && (
-            <p
-              role="alert"
-              className="px-5 py-2 text-xs text-status-error dark:text-status-error"
+      ) : runs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-6">
+          <ClipboardList className="w-16 h-16 text-text-muted dark:text-text-muted-dark/50 mb-4" />
+          <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">
+            No runs yet
+          </p>
+          <p className="text-xs text-text-muted dark:text-text-muted-dark text-center">
+            Click the Run button to execute this workflow
+          </p>
+        </div>
+      ) : (
+        <div
+          className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? "opacity-50" : "opacity-100"}`}
+        >
+          {runs.map((run) => (
+            <div
+              key={run.runId}
+              role="button"
+              tabIndex={0}
+              // Bring the jumped-to run into view. Rows render once per
+              // page load, so this runs on the row that appears, not on
+              // every render.
+              ref={
+                run.runId === highlightRunId
+                  ? (el) => el?.scrollIntoView({ block: "center" })
+                  : null
+              }
+              {...(run.runId === highlightRunId && {
+                "data-highlighted": "true",
+              })}
+              onClick={() => handleRunClick(run)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleRunClick(run);
+                }
+              }}
+              className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
+                run.runId === highlightRunId
+                  ? " bg-primary/5 dark:bg-primary/10 ring-2 ring-inset ring-primary dark:ring-primary-light"
+                  : ""
+              }`}
             >
-              {error}
-            </p>
-          )}
-          {isLoading && runs.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="flex flex-col items-center gap-3">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-                <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                  Loading history…
-                </p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${getStatusColor(run.status)}`}
+                    >
+                      <span>{getStatusIcon(run.status)}</span>
+                      <span className="uppercase">{run.status}</span>
+                    </span>
+                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      {formatDate(run.createdAt)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-4 text-xs text-text-secondary dark:text-text-primary-dark">
+                    <div className="flex items-center gap-1">
+                      <Timer className="w-3.5 h-3.5" />
+                      <span>{formatDuration(run.duration)}</span>
+                    </div>
+                    {run.trigger && (
+                      <div className="flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5" />
+                        <span className="capitalize">{run.trigger}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {run.status === "failed" && run.failedNodeCount > 0 && (
+                    <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
+                      {run.failedNodeCount} node
+                      {run.failedNodeCount > 1 ? "s" : ""} failed
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex-shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
+                  {onShowTimeline && (
+                    <IconButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onShowTimeline(run.runId);
+                      }}
+                      variant="ghost"
+                      size="xs"
+                      tooltip="View run timeline"
+                      aria-label={`View timeline for run ${run.runId}`}
+                    >
+                      <Activity className="w-4 h-4" />
+                    </IconButton>
+                  )}
+                  {!LIVE_STATUSES.has(run.status) && (
+                    <IconButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingDelete({ kind: "run", runId: run.runId });
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      variant="ghost"
+                      size="xs"
+                      tooltip="Delete run"
+                      aria-label={`Delete run ${run.runId}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </IconButton>
+                  )}
+                  <ChevronRight className="w-5 h-5" />
+                </div>
               </div>
             </div>
-          ) : runs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 px-6">
-              <ClipboardList className="w-16 h-16 text-text-muted dark:text-text-muted-dark/50 mb-4" />
-              <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">
-                No runs yet
-              </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark text-center">
-                Click the Run button to execute this workflow
-              </p>
-            </div>
-          ) : (
-            <div
-              className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? "opacity-50" : "opacity-100"}`}
-            >
-              {runs.map((run) => (
-                <div
-                  key={run.runId}
-                  role="button"
-                  tabIndex={0}
-                  // Bring the jumped-to run into view. Rows render once per
-                  // page load, so this runs on the row that appears, not on
-                  // every render.
-                  ref={
-                    run.runId === highlightRunId
-                      ? (el) => el?.scrollIntoView({ block: "center" })
-                      : null
-                  }
-                  {...(run.runId === highlightRunId && {
-                    "data-highlighted": "true",
-                  })}
-                  onClick={() => handleRunClick(run)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      handleRunClick(run);
-                    }
-                  }}
-                  className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
-                    run.runId === highlightRunId
-                      ? " bg-primary/5 dark:bg-primary/10 ring-2 ring-inset ring-primary dark:ring-primary-light"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${getStatusColor(run.status)}`}
-                        >
-                          <span>{getStatusIcon(run.status)}</span>
-                          <span className="uppercase">{run.status}</span>
-                        </span>
-                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
-                          {formatDate(run.createdAt)}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-4 text-xs text-text-secondary dark:text-text-primary-dark">
-                        <div className="flex items-center gap-1">
-                          <Timer className="w-3.5 h-3.5" />
-                          <span>{formatDuration(run.duration)}</span>
-                        </div>
-                        {run.trigger && (
-                          <div className="flex items-center gap-1">
-                            <Zap className="w-3.5 h-3.5" />
-                            <span className="capitalize">{run.trigger}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {run.status === "failed" && run.failedNodeCount > 0 && (
-                        <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
-                          {run.failedNodeCount} node
-                          {run.failedNodeCount > 1 ? "s" : ""} failed
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex-shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
-                      {onShowTimeline && (
-                        <IconButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onShowTimeline(run.runId);
-                          }}
-                          variant="ghost"
-                          size="xs"
-                          tooltip="View run timeline"
-                          aria-label={`View timeline for run ${run.runId}`}
-                        >
-                          <Activity className="w-4 h-4" />
-                        </IconButton>
-                      )}
-                      {!LIVE_STATUSES.has(run.status) && (
-                        <IconButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPendingDelete({ kind: "run", runId: run.runId });
-                          }}
-                          onKeyDown={(e) => e.stopPropagation()}
-                          variant="ghost"
-                          size="xs"
-                          tooltip="Delete run"
-                          aria-label={`Delete run ${run.runId}`}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </IconButton>
-                      )}
-                      <ChevronRight className="w-5 h-5" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          ))}
         </div>
-
-        <div className="flex-shrink-0 px-5 py-3 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          {nextCursor !== null && (
-            <Button
-              variant="outline"
-              size="sm"
-              fullWidth
-              loading={isLoading}
-              onClick={() => void fetchRunHistory(nextCursor)}
-            >
-              Load more
-            </Button>
-          )}
-        </div>
-      </div>
+      )}
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -404,6 +337,6 @@ export default function HistoryModal({
         confirmLabel="Delete"
         intent="error"
       />
-    </div>
+    </Modal>
   );
 }

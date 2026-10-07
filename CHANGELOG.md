@@ -201,6 +201,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - **The node editor's header badges show their tooltips.** The rule count,
   delay, merge strategy and called-workflow badges had tooltips that never
   appeared.
+- **The import dialogs, Run History and the tab bar work from the keyboard
+  and with a screen reader.** The curl, HAR, OpenAPI, project and Import to
+  Add Nodes dialogs and Run History are modal dialogs: they are announced with
+  their title, keep focus inside while open and close on Escape. The workflow
+  tab bar and every panel tab strip are tab lists: the arrow keys, Home and End
+  move between tabs.
 
 ### Added
 
