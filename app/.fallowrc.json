@@ -8,7 +8,6 @@
   ],
   "ignorePatterns": ["**/*.generated.ts", "**/*.d.ts"],
   "ignoreDependencies": [
-    "@fallow-cli/beacon",
     "autoprefixer",
     "postcss",
     "tailwindcss",

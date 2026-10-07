@@ -179,6 +179,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - The renderer's startup gate, left over from the retired HTTP backend. Its
   spinner never showed and its error screen was unreachable.
+- Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that
+  nothing imported, and `axios`. Neither ran, but both shipped inside the app.
 
 ## [0.11.0] — 2026-09-23
 
