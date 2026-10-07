@@ -79,12 +79,14 @@ import { CONTENT_SECURITY_POLICY, isAppUrl, restrictPermissions } from "./web_se
 import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
+import { runSmokeTest, SMOKE_TEST_SWITCH } from "./smoke_test"
 import { AGENT_RUN_APPROVAL_TIMEOUT_MS, agentRunApprovalText } from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
 const bootstrapLog = getLogger("bootstrap")
+const isSmokeTest = app.commandLine.hasSwitch(SMOKE_TEST_SWITCH)
 const rendererLog = getLogger("renderer")
 const mcpLog = getLogger("mcp")
 const agentsLog = getLogger("agents")
@@ -213,7 +215,8 @@ function screenReaderArgs(): string[] {
   return present ? [SCREEN_READER_ARG] : []
 }
 
-async function createWindow(): Promise<void> {
+/** Resolves whether the window loaded app://local/. */
+async function createWindow(): Promise<boolean> {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -306,10 +309,11 @@ async function createWindow(): Promise<void> {
     const rendererUrl = "app://local/"
     await win.loadURL(rendererUrl)
     rendererLog.info(`loaded ${rendererUrl}`)
+    return true
   } catch (error) {
     if (error instanceof Error) {
       rendererLog.error(`load failed: ${error.message}`)
-      return
+      return false
     }
 
     throw error
@@ -949,7 +953,30 @@ if (!hasSingleInstanceLock) {
       })
     })
 
-    void createWindow()
+    const windowLoaded = createWindow()
+    if (isSmokeTest) {
+      void runSmokeTest(
+        {
+          windowLoaded,
+          spawnPty: () =>
+            agentPtyHost.start({
+              sessionId: "smoke-test",
+              file: process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "/bin/sh",
+              args: process.platform === "win32" ? ["/c", "exit"] : ["-c", "exit 0"],
+              cwd: app.getPath("temp"),
+              env: {},
+              cols: 80,
+              rows: 24,
+              sessionIdPattern: null,
+            }),
+        },
+        (message) => bootstrapLog.info(message),
+      ).then((code) => {
+        database?.close()
+        database = null
+        app.exit(code)
+      })
+    }
 
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -960,10 +987,13 @@ if (!hasSingleInstanceLock) {
     // Without this a throw above leaves a windowless process holding the
     // single-instance lock, so every relaunch is silently rejected.
     bootstrapLog.error("startup failed", error)
-    dialog.showErrorBox(
-      "APIWeave could not start",
-      startupFailureMessage(error, { logFile: logFilePath(), userData: app.getPath("userData") }),
-    )
+    // A modal nobody can dismiss would hang CI instead of failing it.
+    if (!isSmokeTest) {
+      dialog.showErrorBox(
+        "APIWeave could not start",
+        startupFailureMessage(error, { logFile: logFilePath(), userData: app.getPath("userData") }),
+      )
+    }
     database?.close()
     database = null
     // exit, not quit: no run or agent session can exist yet for before-quit to drain.

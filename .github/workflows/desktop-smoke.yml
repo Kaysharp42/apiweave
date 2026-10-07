@@ -1,8 +1,12 @@
-# Render smoke test for the Electron desktop shell. Builds the renderer, then
-# launches the shell headless under Xvfb (no sidecars) and asserts the renderer
-# loads the embedded SPA - see app/smoke.cjs. Catches a broken app://
-# protocol handler or preload before they ship.
-name: Desktop render smoke
+# Packaged-app smoke test on every OS. Packages the app with electron-builder
+# (`--dir`: the app the installers wrap, without the installers) and launches it
+# with --smoke-test in a throwaway profile - see app/electron/smoke_test.ts and
+# app/scripts/smoke-packaged.mjs. The app exits 0 only once the database has
+# opened, the window has loaded app://local/ and the PTY host has started a
+# process, so this catches what tests run from the source tree cannot: a native
+# addon left inside app.asar, a dependency missing from the package, a broken
+# app:// protocol handler or preload.
+name: Desktop packaged smoke
 
 on:
   workflow_dispatch:
@@ -20,8 +24,17 @@ permissions:
   contents: read
 
 jobs:
-  render-smoke:
-    runs-on: ubuntu-22.04
+  packaged-smoke:
+    name: Packaged smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # Never hunt the runner's keychain for a signing identity.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -39,7 +52,12 @@ jobs:
         working-directory: app
         run: npm run build:app
 
+      - name: Package the app
+        working-directory: app
+        run: npx electron-builder --dir --publish never
+
       - name: Install Xvfb + Electron runtime libs
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -50,6 +68,12 @@ jobs:
             libgbm1 \
             libasound2
 
-      - name: Launch headless and assert render
+      - name: Launch the packaged app with --smoke-test
         working-directory: app
-        run: xvfb-run -a --server-args="-screen 0 1280x800x24" node smoke.cjs
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a --server-args="-screen 0 1280x800x24" node scripts/smoke-packaged.mjs
+          else
+            node scripts/smoke-packaged.mjs
+          fi
