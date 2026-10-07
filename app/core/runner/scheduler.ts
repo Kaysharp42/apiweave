@@ -92,6 +92,8 @@ export class RunScheduler {
   /** runId → agent name, for runs an agent started. In memory: a restart interrupts every run anyway. */
   private readonly agentRuns = new Map<string, string>()
   private readonly queue: string[] = []
+  /** runId → callers of {@link whenFinished} still waiting on it. */
+  private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
   private draining = false
 
   public constructor(private readonly deps: SchedulerDeps) {}
@@ -157,6 +159,22 @@ export class RunScheduler {
       return true
     }
     return false
+  }
+
+  /**
+   * Resolves with the run's terminal status once it has one — at once for a
+   * run that already finished, which a run can do inside `enqueue` when it
+   * fails before its first await. Rejects for a run that does not exist.
+   */
+  public whenFinished(runId: string): Promise<RunTerminalStatus> {
+    const run = this.deps.runs.getById(runId)
+    if (run === undefined) return Promise.reject(new NotFoundError(`run ${runId} not found`))
+    if (run.status !== "pending" && run.status !== "running") return Promise.resolve(run.status)
+    return new Promise((resolve) => {
+      const waiters = this.finishWaiters.get(runId) ?? []
+      waiters.push(resolve)
+      this.finishWaiters.set(runId, waiters)
+    })
   }
 
   public reconcileOnStartup(): number {
@@ -374,6 +392,9 @@ export class RunScheduler {
 
   private emitFinished(runId: string, status: RunTerminalStatus): void {
     this.deps.emitProgress?.(runId, { kind: "run.finished", runId, status })
+    const waiters = this.finishWaiters.get(runId)
+    this.finishWaiters.delete(runId)
+    for (const resolve of waiters ?? []) resolve(status)
   }
 
   /** A missing approver means no one can be asked, which is a no. A throwing one is too. */

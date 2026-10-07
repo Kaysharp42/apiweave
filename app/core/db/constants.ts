@@ -17,3 +17,12 @@ export const SIDE_TABLE_THRESHOLD_BYTES = 1024 * 1024
  * history.
  */
 export const RUN_HISTORY_RETENTION_PER_WORKFLOW = 100
+
+/**
+ * Finished project runs kept per project, pruned the same way as
+ * {@link RUN_HISTORY_RETENTION_PER_WORKFLOW} each time one finishes. The
+ * workflows' own runs follow their workflow's retention, not this one.
+ *
+ * ponytail: fixed knob, like the run retention above.
+ */
+export const PROJECT_RUN_HISTORY_RETENTION_PER_PROJECT = 50

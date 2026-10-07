@@ -1038,6 +1038,23 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("whenFinished", () => {
+    it("resolves with the terminal status, at once for a finished run, and rejects for an unknown one", async () => {
+      const ws = seedWorkspace()
+      const scheduler = makeScheduler()
+      const queued = scheduler.enqueue({ workspaceId: ws, workflowId: seedWorkflow(ws) })
+      expect(await scheduler.whenFinished(queued)).toBe("completed")
+      expect(await scheduler.whenFinished(queued)).toBe("completed")
+
+      const slow = scheduler.enqueue({ workspaceId: ws, workflowId: seedWorkflow(ws, 5000) })
+      const finished = scheduler.whenFinished(slow)
+      scheduler.cancel(slow)
+      expect(await finished).toBe("cancelled")
+
+      await expect(scheduler.whenFinished("nope")).rejects.toThrow("not found")
+    })
+  })
+
   describe("shutdown", () => {
     it("force-reconciles active runs to a terminal state", async () => {
       const ws = seedWorkspace()
