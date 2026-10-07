@@ -10,17 +10,28 @@ type Migration = {
 
 const MIGRATION_FILE = /^(\d+)_.*\.sql$/
 
-export function runMigrations(database: Database, migrationsPath = defaultMigrationsPath()): number {
+/**
+ * Applies every migration newer than the database's user_version. When at
+ * least one is pending, `beforeApply` runs first with the current version —
+ * the composition root takes its pre-upgrade backup there.
+ */
+export function runMigrations(
+  database: Database,
+  migrationsPath = defaultMigrationsPath(),
+  beforeApply?: (currentVersion: number) => void,
+): number {
   const migrations = readMigrations(migrationsPath)
   const latestVersion = migrations.at(-1)?.version ?? 0
   const currentVersion = getUserVersion(database)
   if (currentVersion > latestVersion) {
     throw new Error(`migration not found: database user_version ${currentVersion} is newer than current ${latestVersion}`)
   }
-  for (const migration of migrations) {
-    if (migration.version > currentVersion) {
-      applyMigration(database, migration)
-    }
+  const pending = migrations.filter((migration) => migration.version > currentVersion)
+  if (pending.length > 0) {
+    beforeApply?.(currentVersion)
+  }
+  for (const migration of pending) {
+    applyMigration(database, migration)
   }
   return getUserVersion(database)
 }

@@ -64,6 +64,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The database is backed up before an upgrade and checked at every launch.**
+  Before a new version changes the database schema, a copy is saved to
+  `backups/` in the data folder (the five newest are kept), and a failed
+  upgrade names that copy in the startup error. Every launch runs a quick
+  integrity check, and a damaged database stops startup with an error that
+  points at the backups instead of failing later. Once deletes leave a quarter
+  of the file empty, it is compacted at launch.
+
 - **A loop in a workflow no longer sends thousands of requests.** A cycle
   drawn on the canvas ran until a 10,000-step budget gave out, sending a real
   request each time round. The canvas now refuses a connection that leads back
