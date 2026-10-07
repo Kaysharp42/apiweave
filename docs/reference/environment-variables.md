@@ -27,7 +27,7 @@ Variables the Electron main process reads from the host environment. In a packag
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `APIWEAVE_FRONTEND_DIST` | No | `process.resourcesPath/renderer` (packaged), `app.getAppPath()/dist/renderer` (dev) | Absolute path to the renderer's `dist/` directory. Override to point the main process at a custom build of the renderer. |
+| `APIWEAVE_FRONTEND_DIST` | No | `app.getAppPath()/dist/renderer` | Dev runs only: absolute path to the renderer's `dist/` directory, to point the main process at a custom build of the renderer. A packaged build ignores it and always serves the renderer it shipped with. |
 | `APIWEAVE_DEV_UPDATES` | No | unset | Set to `1` to rehearse the updater against a local manifest (`app/dev-app-update.yml`) instead of the release channel. |
 | `APIWEAVE_CLOUD_ENTRY_URL` | No | baked-in Cloud entry URL | Override the APIWeave Cloud entry URL. The desktop fetches this environment's configuration, which supplies the matching web (`https://dev.apiweave.app`), API (`https://api-dev.apiweave.app`), and auth (`https://auth-dev.apiweave.app`) URLs. |
 | `APPIMAGE` | No | set by AppImage runtime | Linux-only. Set automatically when the app runs from an AppImage; the updater uses it to self-update the AppImage in place. |

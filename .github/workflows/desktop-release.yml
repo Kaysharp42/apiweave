@@ -55,6 +55,16 @@ jobs:
             exit 1
           fi
 
+      # Every installed client refuses an update whose manifest is not signed by
+      # the key compiled into it (app/electron/update_signature.ts). Checked here,
+      # before anything is built, so a missing secret or a commit still carrying
+      # the placeholder key fails in seconds instead of after 45 minutes of
+      # packaging — and nothing is ever published unsigned.
+      - name: Check the update signing key
+        env:
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+        run: node app/scripts/sign-update-manifest.mjs --check
+
       # The four packaging jobs each run `electron-builder --publish always`,
       # and electron-builder's GitHub publisher resolves the target release by
       # listing releases and creating one when it finds no match. That
@@ -145,6 +155,46 @@ jobs:
         working-directory: app
         run: npm run build:app
 
+      # OS code signing turns itself on when its secrets exist and stays off
+      # otherwise, so a release never waits on a certificate. electron-builder
+      # reads its credentials from the environment, but an unset secret expands
+      # to "" and electron-builder treats an empty CSC_LINK as a value, not as
+      # absent — so only the secrets actually configured are exported, and each
+      # runner gets only its own platform's: CSC_LINK falls back as the Windows
+      # certificate too, which would hand the Apple .p12 to signtool.
+      # See docs/reference/release-and-updates.md for what to buy and set.
+      - name: Load code-signing credentials (when configured)
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          case "$RUNNER_OS" in
+            macOS) names="CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID" ;;
+            Windows) names="WIN_CSC_LINK WIN_CSC_KEY_PASSWORD" ;;
+            *) names="" ;;
+          esac
+          for name in $names; do
+            if [[ -n "${!name}" ]]; then
+              { echo "$name<<__APIWEAVE_SECRET__"; echo "${!name}"; echo "__APIWEAVE_SECRET__"; } >> "$GITHUB_ENV"
+              echo "$name is configured."
+            fi
+          done
+          # Without a certificate, keep electron-builder from hunting the
+          # runner's keychain for any identity it can find.
+          if [[ "$RUNNER_OS" == "macOS" && -z "$CSC_LINK" ]]; then
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "::notice::No CSC_LINK secret; the macOS build is unsigned."
+          fi
+          if [[ "$RUNNER_OS" == "Windows" && -z "$WIN_CSC_LINK" ]]; then
+            echo "::notice::No WIN_CSC_LINK secret; the Windows build is unsigned."
+          fi
+
       # electron-builder publishes straight to the draft GitHub release for
       # this tag as part of packaging — that's also what makes it write the
       # electron-updater manifests (latest.yml / latest-linux.yml) and
@@ -163,7 +213,6 @@ jobs:
       - name: Package and publish installer
         working-directory: app
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ github.token }}
         run: ${{ matrix.command }}
 
@@ -215,6 +264,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only for the signing script; the release assets come from the draft.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: app/scripts
+
       # Each matrix job already published its own installer(s) plus update
       # metadata straight to the draft release for this tag (see the "Package
       # and publish installer" step above), so this job pulls that release's
@@ -370,6 +424,25 @@ jobs:
 
           check_manifest assets/latest.yml
           check_manifest assets/latest-linux.yml
+
+      # Signs each manifest's version and installer sha512 with the update
+      # signing key; every client verifies that against the key compiled into
+      # it before installing anything (app/electron/update_signature.ts). The
+      # script hashes the installer bytes itself rather than trusting the
+      # manifest, and fails the job if the secret is missing. The signature
+      # does not cover stagingPercentage, so the rollout workflow can still
+      # rewrite it without the key.
+      - name: Sign update manifests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          node app/scripts/sign-update-manifest.mjs assets/latest.yml assets/latest-linux.yml
+          gh release upload "$GITHUB_REF_NAME" assets/latest.yml assets/latest-linux.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
       - name: Generate release description
         shell: bash

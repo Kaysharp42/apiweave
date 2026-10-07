@@ -114,7 +114,7 @@ APIWeave checks GitHub Releases for a newer version shortly after launch, then e
 
 Checks the app makes on its own stay quiet unless they find something: no spinner appears in a panel you did not open, and a check that fails because the machine was briefly offline is written to the log rather than shown as an error. A check *you* start always reports what happened.
 
-The default is **Notify me** rather than **Automatic** on purpose. The Windows and macOS builds are not code-signed yet, so the updater has no publisher certificate to verify a downloaded installer against — you approving each version is the strongest check available. Once signing lands, **Automatic** becomes a reasonable default.
+Every update is checked before it can install: the release pipeline signs each update, and the app refuses any download whose signature does not match the key built into it — the Updates panel says so instead of installing. The default is still **Notify me** rather than **Automatic**, because the Windows and macOS builds are not OS code-signed yet, and you approving each version stays the last check before new code runs.
 
 Which of those the app can actually carry out depends on the platform:
 

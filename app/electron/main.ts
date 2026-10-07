@@ -1,5 +1,5 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from "electron"
 import path from "node:path"
 import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
@@ -75,6 +75,7 @@ import {
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
+import { CONTENT_SECURITY_POLICY, isAppUrl, restrictPermissions } from "./web_security"
 import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
@@ -177,24 +178,12 @@ const mayQuit = createQuitGate(
   () => app.quit(),
 )
 
-const APP_ORIGIN = "app://local"
-
-function isAppOrigin(url: string): boolean {
-  try {
-    return new URL(url).origin === new URL(APP_ORIGIN).origin
-  } catch {
-    return false
-  }
-}
-
 function frontendDistDir(): string {
-  if (process.env["APIWEAVE_FRONTEND_DIST"]) {
-    return process.env["APIWEAVE_FRONTEND_DIST"]
-  }
-
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "renderer")
-    : path.resolve(app.getAppPath(), "dist/renderer")
+  // A packaged build serves only the renderer it shipped with: honouring the
+  // override there would let anything that can set an environment variable
+  // swap in a document that inherits the preload bridge.
+  if (app.isPackaged) return path.join(process.resourcesPath, "renderer")
+  return process.env["APIWEAVE_FRONTEND_DIST"] || path.resolve(app.getAppPath(), "dist/renderer")
 }
 
 /**
@@ -299,7 +288,7 @@ async function createWindow(): Promise<void> {
   // Never let the privileged app:// document navigate to attacker-controlled
   // content — that content would inherit the same preload/IPC bridge.
   win.webContents.on("will-navigate", (event, url) => {
-    if (!isAppOrigin(url)) {
+    if (!isAppUrl(url)) {
       event.preventDefault()
     }
   })
@@ -387,6 +376,7 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    restrictPermissions(session.defaultSession)
     database = initDatabase({ userDataPath: app.getPath("userData") })
     // One-shot in-place rewrite: any workflow row persisted before the
     // strict canonical-node schema landed is rewritten so its http-request
@@ -729,9 +719,9 @@ if (!hasSingleInstanceLock) {
     // lets them check on demand.
     // How much the updater may do unattended is the user's call, persisted in
     // app_settings alongside mcp.enabled. The default is "notify" rather than
-    // "automatic": the Windows build is unsigned, so electron-updater has no
-    // Authenticode publisher to check the downloaded installer against, and the
-    // user approving a specific version is the only verification there is.
+    // "automatic": every update must carry a signature from the key compiled
+    // into the app (update_signature.ts), but the user approving a specific
+    // version is still the last check before new code runs.
     const readUpdatePolicy = (): UpdatePolicy | null => {
       if (database === null) return null
       const value = appSettings.get("updates.policy")
@@ -948,18 +938,9 @@ if (!hasSingleInstanceLock) {
       // never cache.
       const headers = new Headers(response.headers)
       headers.set("Cache-Control", "no-store")
-      // Restrict the renderer document to same-origin scripts/workers only.
-      // Monaco is now bundled locally (see src/lib/monaco.ts) and the editor
-      // assets are served from app://local, so no CDN script source is needed.
-      // Other resource types (fonts, images, styles) are left unrestricted to
-      // keep web-font loading working; only script/worker execution is pinned.
-      // 'wasm-unsafe-eval' allows WebAssembly.instantiate (libsodium ships a
-      // wasm build) without granting full eval.
+      // The policy, and why each source is in it, lives in web_security.ts.
       if (pathname === "/index.html") {
-        headers.set(
-          "Content-Security-Policy",
-          "script-src 'self' app: 'wasm-unsafe-eval'; worker-src 'self' app: blob:",
-        )
+        headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
       }
       return new Response(response.body, {
         status: response.status,

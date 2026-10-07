@@ -86,11 +86,13 @@ jobs:
             fi
             mv next.yml "$manifest"
 
-            # Nothing above may touch version, path or sha512 — those are what
-            # the client trusts the download against, and CI already verified
-            # them at release time.
+            # Nothing above may touch version, path, sha512 or
+            # apiweaveSignature — those are what the client trusts the
+            # download against, CI verified and signed them at release time,
+            # and changing any of them makes every client refuse the update.
+            # stagingPercentage is deliberately outside the signature.
             echo "--- $manifest ---"
-            grep -E '^(version|path|sha512|stagingPercentage):' "$manifest"
+            grep -E '^(version|path|sha512|apiweaveSignature|stagingPercentage):' "$manifest"
           done
 
           gh release upload "$TAG" latest.yml latest-linux.yml \

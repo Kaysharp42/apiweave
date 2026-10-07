@@ -48,6 +48,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
   escapes them; a prompt with a line break is refused there, since `cmd.exe`
   cannot carry one. Launching such an agent in an external terminal refuses
   those characters instead.
+- **Updates are signed, and the app refuses one that is not.** Releases sign
+  each Windows and AppImage update with a private key held as a CI secret,
+  and the app checks the downloaded installer against the key built
+  into it before it can install. A download that fails is never installed, and
+  the Updates panel says why. Previously anyone able to write a GitHub release
+  asset could ship code to every install.
+- **Packaged builds are locked down.** Electron fuses now ignore
+  `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS` and `--inspect`,
+  load only the integrity-checked `app.asar`, and encrypt cookies at rest. A
+  packaged build ignores `APIWEAVE_FRONTEND_DIST`. The window has a full
+  Content Security Policy instead of one covering only scripts, every web
+  permission except clipboard access is denied, and the window can no longer
+  be navigated to `file:` or `data:` URLs.
 
 ### Fixed
 
