@@ -135,6 +135,8 @@ What happens when a workflow does not pass:
 
 The order comes from **Manage Workflows**. A workflow added to the project after the order was last saved runs after the ordered ones. Disabled workflows are not run and do not appear in the project run.
 
+Once a project run has finished, **JUnit XML** and **HTML report** on the card export it, with one test suite per workflow; see [Run reports](visualization-and-debugging.md#5-run-reports-junit-and-html).
+
 The card also lists the project's earlier runs; click one to see its workflows. APIWeave keeps the newest 50 finished project runs per project. Each workflow's own run follows that workflow's History retention, so an old project run can point at a workflow run that has since been pruned.
 
 Variable and secret state does not pass between workflows: each workflow starts from its own variables and the chosen environment, as it would from the canvas. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.

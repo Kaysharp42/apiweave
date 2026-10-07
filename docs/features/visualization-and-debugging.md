@@ -174,6 +174,52 @@ on large workflows.
 - URLs continue to forbid `{{secrets.*}}` substitution (the executor's
   `allowSecrets: false` guard is unchanged).
 
+---
+
+## 5. Run reports (JUnit and HTML)
+
+Export any finished run as a **JUnit XML** file for CI dashboards or as a
+single **HTML** page to share.
+
+### Where to find it
+
+- **One workflow run**: in **Run history**, the file icons on a finished run's
+  row export its JUnit XML or HTML report.
+- **A project run**: on the project page, **JUnit XML** and **HTML report** in
+  the **Project runs** card export the selected project run once it has
+  finished.
+
+Either way, APIWeave asks where to save the file. Reports are built when you
+export them and are not kept anywhere else.
+
+### What it contains
+
+- One `<testsuite>` per workflow run: a single run gives one, a project run one
+  per workflow, in run order.
+- One `<testcase>` per node that ran, named by its label. Start and End nodes
+  are not test cases. An assertion node is one test case; when it fails, its
+  failed rules (source, path, operator and why) are the failure text.
+- A failed node becomes a `<failure>` with its message: the failed assertion
+  rules, an unexpected status code, or the stored error. A node that was
+  skipped or never finished is `<skipped>`.
+- A run that failed, was cancelled or was interrupted without any failed node
+  gets a failing `Run` test case, so CI never reads it as passing.
+- A workflow in a project run that never ran (skipped, or its run deleted from
+  History) is one skipped test case.
+- Times are in seconds.
+
+The HTML page has the same suites and steps, with each HTTP node's method, URL
+and status code. It is self-contained: inline styles, no scripts, nothing
+loaded from the network.
+
+### Privacy and safety
+
+A report is built from the stored run, after secret values have been masked.
+Because it is a file meant to leave the app, it goes further than run history:
+it carries no request or response headers or bodies and no variables, and URLs
+keep only their path (the query string reads `<REDACTED>`). Open the run in
+APIWeave for the full evidence.
+
 ## Related
 
 - [Workflows and Nodes](workflows-and-nodes.md) — node types, running, and the run camera.

@@ -265,6 +265,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
   can do the same over MCP with `projects_run`, `projects_getRun`,
   `projects_listRuns` and `projects_cancelRun`; an agent's project run still
   asks before any workflow sends secrets.
+- **JUnit and HTML run reports.** Export a finished run from History, or a
+  finished project run from its card, as JUnit XML for CI or as one
+  self-contained HTML page; APIWeave asks where to save it. A project run
+  report has one test suite per workflow. Reports are built from the stored,
+  masked run and leave out headers, bodies and variables. The unused
+  temp-folder report artifacts and their handlers are gone.
 - **Delete runs from History.** Each finished run in the History panel has a
   delete button, and **Clear history** deletes every finished run of the
   workflow. Runs still in progress are kept. Agents connected through MCP
