@@ -64,6 +64,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Deleting an environment deletes its secrets.** Environment-scoped secrets
+  used to stay in the database, unreachable, after their environment was
+  deleted, whether locally or by a cloud sync. They now go with it, and the
+  update removes the ones already left behind.
+
 - **A failed workflow import leaves nothing behind.** Importing a workflow
   bundle with its environment created the environment first, so a bundle whose
   workflow was then rejected left a stray environment. Both are now written in

@@ -378,6 +378,28 @@ describe("database migrations", () => {
     }
   })
 
+  it("removes secrets orphaned by environments deleted before the cascade existed", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 18) })
+    old.kvStore.set("INSERT INTO workspaces (id, name, slug) VALUES ('ws', 'W', 'w')")
+    old.kvStore.set("INSERT INTO environments (id, workspace_id, scopeId, name, slug) VALUES ('env', 'ws', 'ws', 'E', 'e')")
+    for (const [id, scopeType, scopeId] of [["live", "environment", "env"], ["orphan", "environment", "gone"], ["ws", "workspace", "ws"]]) {
+      old.kvStore.set(
+        "INSERT INTO secrets_metadata (id, workspace_id, scopeType, scopeId, key, label) VALUES (?, 'ws', ?, ?, 'K', '')",
+        [id!, scopeType!, scopeId!],
+      )
+    }
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.kvStore.query("SELECT id FROM secrets_metadata ORDER BY id")).toEqual([{ id: "live" }, { id: "ws" }])
+    } finally {
+      upgraded.close()
+    }
+  })
+
   it("rejects destructive migration files before execution", () => {
     const tempRoot = makeTempRoot()
     const migrationsPath = path.join(tempRoot, "migrations")

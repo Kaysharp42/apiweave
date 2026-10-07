@@ -140,7 +140,7 @@ To delete an environment:
 2. Find the environment you want to remove.
 3. Click **Delete**.
 
-Workflows that still have the deleted environment selected fall back to the header default on their next run. Environment-scoped secrets are keyed to the environment's ID and are not automatically deleted with it; re-create the environment to bind new secrets.
+Workflows that still have the deleted environment selected fall back to the header default on their next run. The environment's own secrets are deleted with it; workspace secrets are untouched.
 
 ## OpenAPI/Swagger URL
 
