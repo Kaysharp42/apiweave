@@ -1,54 +1,10 @@
 import { create } from "zustand";
 import type { Workflow } from "../types/Workflow";
-import type { Project } from "../types/Project";
-import type { PaginationState } from "../types/PaginationState";
+import type { SidebarState } from "../types/SidebarState";
 import { apiweave } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 
 const sidebarLog = getLogger("SidebarStore");
-
-interface SidebarState {
-  workflows: Workflow[];
-  allWorkflows: Workflow[];
-  collections: Project[];
-  /** Workspace-scoped projects (fetched from /api/workspaces/{id}/projects). */
-  projects: Project[];
-  pagination: PaginationState;
-  isRefreshing: boolean;
-  isLoadingMore: boolean;
-  searchQuery: string;
-  workflowVersion: number;
-  collectionVersion: number;
-  projectVersion: number;
-  /** Currently active workspace ID for scoped fetching. */
-  activeWorkspaceId: string | null;
-  setSearchQuery: (q: string) => void;
-  signalWorkflowsRefresh: () => void;
-  /**
-   * Merge one authoritative workflow into the cached lists in place. A live
-   * canvas update only needs the row it changed — a full refetch here would
-   * reset pagination and replace the visible list on every applied snapshot.
-   * Falls back to the refresh signal only when the change moves the row into a
-   * list it is not cached in, which no in-place edit can position.
-   */
-  applyWorkflowChange: (workflow: Workflow) => void;
-  signalCollectionsRefresh: () => void;
-  signalProjectsRefresh: () => void;
-  setActiveWorkspaceId: (workspaceId: string | null) => void;
-  fetchWorkflows: (
-    skip?: number,
-    append?: boolean,
-    limit?: number,
-    includeAttached?: boolean,
-  ) => Promise<void>;
-  fetchAllWorkflows: () => Promise<void>;
-  fetchCollections: () => Promise<void>;
-  fetchProjects: () => Promise<void>;
-  refreshAll: (selectedNav: string) => Promise<void>;
-  setIsRefreshing: (v: boolean) => void;
-  setIsLoadingMore: (v: boolean) => void;
-  resetPagination: () => void;
-}
 
 const useSidebarStore = create<SidebarState>()((set, get) => ({
   workflows: [],
@@ -56,10 +12,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   collections: [],
   projects: [],
 
-  pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
-
   isRefreshing: false,
-  isLoadingMore: false,
   searchQuery: "",
 
   workflowVersion: 0,
@@ -77,9 +30,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       const id = workflow.workflowId;
       const inWorkflows = s.workflows.some((w) => w.workflowId === id);
       const inAllWorkflows = s.allWorkflows.some((w) => w.workflowId === id);
-      // Cached in neither list: the row sits outside the sidebar's fetched
-      // window, so nothing on screen is stale and a refetch would cost the
-      // user their pagination for no visible gain.
+      // Cached in neither list: nothing on screen is stale.
       if (!inWorkflows && !inAllWorkflows) {
         return { workflows: s.workflows, allWorkflows: s.allWorkflows };
       }
@@ -95,8 +46,8 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
         inWorkspace && (workflow.collectionId ?? null) === null;
 
       // Detaching a row from its project makes it newly eligible for the flat
-      // list, and its position there follows server ordering across pages that
-      // were never fetched — only a refetch can place it correctly.
+      // list, and its position there follows server ordering — only a refetch
+      // can place it correctly.
       if (belongsInWorkflows && !inWorkflows) {
         return { workflowVersion: s.workflowVersion + 1 };
       }
@@ -130,46 +81,28 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       workflows: [],
       allWorkflows: [],
       projects: [],
-      pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     });
     if (workspaceId) {
       void get().fetchProjects();
-      void get().fetchWorkflows(0);
+      void get().fetchWorkflows();
     }
   },
 
-  fetchWorkflows: async (
-    skip = 0,
-    append = false,
-    limit = 20,
-    includeAttached = false,
-  ) => {
+  // The workspace's unattached workflows, all of them: the list handler does
+  // not page.
+  fetchWorkflows: async () => {
     const { activeWorkspaceId } = get();
     if (!activeWorkspaceId) {
-      set({ isLoadingMore: false, isRefreshing: false });
+      set({ isRefreshing: false });
       return;
     }
 
     try {
-      const data = await apiweave.workflows.list(
-        activeWorkspaceId,
-        includeAttached,
-      );
-      const prev = get().workflows;
-      set({
-        workflows: append ? [...prev, ...data.items] : [...data.items],
-        pagination: {
-          skip,
-          limit,
-          total: data.total,
-          hasMore: data.items.length === limit && skip + limit < data.total,
-        },
-        isLoadingMore: false,
-        isRefreshing: false,
-      });
+      const data = await apiweave.workflows.list(activeWorkspaceId, false);
+      set({ workflows: [...data.items], isRefreshing: false });
     } catch (err) {
       sidebarLog.error("error fetching workflows", err);
-      set({ isLoadingMore: false, isRefreshing: false });
+      set({ isRefreshing: false });
     }
   },
 
@@ -204,7 +137,7 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     set({ isRefreshing: true });
     const { fetchWorkflows, fetchProjects, fetchAllWorkflows } = get();
     if (selectedNav === "workflows") {
-      await fetchWorkflows(0);
+      await fetchWorkflows();
     } else if (selectedNav === "projects") {
       await fetchProjects();
       await fetchAllWorkflows();
@@ -229,9 +162,6 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
   },
 
   setIsRefreshing: (v: boolean) => set({ isRefreshing: v }),
-  setIsLoadingMore: (v: boolean) => set({ isLoadingMore: v }),
-  resetPagination: () =>
-    set({ pagination: { skip: 0, limit: 20, total: 0, hasMore: false } }),
 }));
 
 export default useSidebarStore;

@@ -248,6 +248,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   failed" screen. The desktop app has one local owner, so none of them could
   be reached. The workspace switcher's **Manage workspaces** entry, which did
   nothing, is gone with them.
+- The sidebar's workflow paging. The workflow list always returned every
+  workflow, so the infinite scroll never loaded a second page; its "Showing
+  all N workflows" footer is gone with it.
 - Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that
   nothing imported, and `axios`. Neither ran, but both shipped inside the app.
 

@@ -151,9 +151,7 @@ function resetStores(): void {
     workflows: [],
     collections: [],
     projects: [],
-    pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     isRefreshing: false,
-    isLoadingMore: false,
     searchQuery: "",
     workflowVersion: 0,
     collectionVersion: 0,
@@ -198,7 +196,7 @@ describe("sidebar workflow IPC calls", () => {
     const invoke = installBridge();
     useSidebarStore.setState({ activeWorkspaceId: "ws-1" });
 
-    await useSidebarStore.getState().fetchWorkflows(0);
+    await useSidebarStore.getState().fetchWorkflows();
 
     expect(invoke).toHaveBeenCalledWith("workflows", "list", {
       workspaceId: "ws-1",
@@ -213,7 +211,7 @@ describe("sidebar workflow IPC calls", () => {
     mocks.useScopeContext.mockReturnValue(scopeContext(null, false));
     const invoke = installBridge();
 
-    await useSidebarStore.getState().fetchWorkflows(0);
+    await useSidebarStore.getState().fetchWorkflows();
 
     render(<Sidebar />);
     fireEvent.click(screen.getByText("show create workflow"));

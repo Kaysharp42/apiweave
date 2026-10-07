@@ -68,7 +68,6 @@ export type { ApiResponse } from "./ApiResponse";
 export type { AssertionResult } from "./AssertionResult";
 export type { KeyValue } from "./KeyValue";
 export type { WorkspaceTab } from "./WorkspaceTab";
-export type { PaginationState } from "./PaginationState";
 export type { NavSection } from "./NavSection";
 export type { CanvasActionType } from "./CanvasActionType";
 export type { CanvasAction } from "./CanvasAction";

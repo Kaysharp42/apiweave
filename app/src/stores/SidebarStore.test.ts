@@ -36,16 +36,14 @@ describe("SidebarStore.applyWorkflowChange", () => {
       allWorkflows: [],
       activeWorkspaceId: "ws1",
       workflowVersion: 0,
-      pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     });
   });
 
-  it("patches a cached row in place without resetting pagination", () => {
+  it("patches a cached row in place without a refetch", () => {
     const cached = makeWorkflow();
     useSidebarStore.setState({
       workflows: [cached, makeWorkflow({ workflowId: "wf2" })],
       allWorkflows: [cached],
-      pagination: { skip: 80, limit: 20, total: 100, hasMore: true },
     });
 
     useSidebarStore
@@ -55,8 +53,6 @@ describe("SidebarStore.applyWorkflowChange", () => {
     const state = useSidebarStore.getState();
     expect(state.workflows.map((w) => w.name)).toEqual(["Renamed", "Workflow"]);
     expect(state.allWorkflows[0]?.name).toBe("Renamed");
-    // The whole point of patching rather than refetching.
-    expect(state.pagination).toEqual({ skip: 80, limit: 20, total: 100, hasMore: true });
     expect(state.workflowVersion).toBe(0);
   });
 
@@ -110,16 +106,13 @@ describe("SidebarStore.applyWorkflowChange", () => {
     useSidebarStore.setState({
       workflows: [makeWorkflow({ workflowId: "wf-other" })],
       allWorkflows: [],
-      pagination: { skip: 80, limit: 20, total: 100, hasMore: true },
     });
 
     useSidebarStore.getState().applyWorkflowChange(makeWorkflow({ rev: 2 }));
 
     const state = useSidebarStore.getState();
-    // Outside the fetched window: nothing on screen is stale, so a refetch
-    // would only cost the user their pagination.
+    // Nothing on screen is stale, so there is nothing to refetch.
     expect(state.workflowVersion).toBe(0);
-    expect(state.pagination.skip).toBe(80);
     expect(state.workflows).toHaveLength(1);
   });
 });

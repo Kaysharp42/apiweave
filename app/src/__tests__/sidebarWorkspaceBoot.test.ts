@@ -6,9 +6,7 @@ function resetStores(): void {
     workflows: [],
     collections: [],
     projects: [],
-    pagination: { skip: 0, limit: 20, total: 0, hasMore: false },
     isRefreshing: false,
-    isLoadingMore: false,
     searchQuery: "",
     workflowVersion: 0,
     collectionVersion: 0,
@@ -95,7 +93,6 @@ describe("sidebar workspace boot", () => {
           updatedAt: "2026-06-18T00:00:00Z",
         },
       ],
-      pagination: { skip: 20, limit: 20, total: 100, hasMore: true },
     });
 
     const invoke = installBridge();
@@ -106,12 +103,6 @@ describe("sidebar workspace boot", () => {
     expect(useSidebarStore.getState().activeWorkspaceId).toBe("ws-B");
     expect(useSidebarStore.getState().workflows).toEqual([]);
     expect(useSidebarStore.getState().projects).toEqual([]);
-    expect(useSidebarStore.getState().pagination).toEqual({
-      skip: 0,
-      limit: 20,
-      total: 0,
-      hasMore: false,
-    });
 
     // Wait for async fetches on ws-B
     await vi.waitFor(() => {
