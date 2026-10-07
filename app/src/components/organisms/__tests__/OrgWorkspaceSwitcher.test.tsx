@@ -12,12 +12,7 @@ import type { Workspace } from "../../../types/Workspace";
 
 const mockSwitchTo = vi.fn();
 const mockRefresh = vi.fn<() => Promise<void>>();
-const authState = vi.hoisted(() => ({ isSingleUser: false }));
 const cloudState = vi.hoisted(() => ({ status: null as import("../../../types").CloudSyncStatus | null }));
-
-vi.mock("../../../auth/useAuth", () => ({
-  useAuth: () => ({ isSingleUser: authState.isSingleUser }),
-}));
 
 vi.mock("../../../hooks/useCloudSync", () => ({
   useCloudSync: () => ({ status: cloudState.status }),
@@ -84,7 +79,6 @@ describe("OrgWorkspaceSwitcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRefresh.mockResolvedValue(undefined);
-    authState.isSingleUser = false;
     cloudState.status = null;
     setContext({
       availableWorkspaces: [],
@@ -266,12 +260,9 @@ describe("OrgWorkspaceSwitcher", () => {
     });
   });
 
-  it("shows workspace creation on desktop even in single-user mode", async () => {
-    // Desktop is single-user but IPC-backed: users create workspaces locally and
-    // cloud sync provisions them. The old web-only "hide when single-user" gate
-    // no longer applies on the desktop shell.
+  it("offers workspace creation and nothing else", async () => {
+    // Users create workspaces locally and cloud sync provisions them.
     const user = userEvent.setup();
-    authState.isSingleUser = true;
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({
       availableWorkspaces: [makeEntry(personalWs)],
@@ -284,7 +275,6 @@ describe("OrgWorkspaceSwitcher", () => {
     expect(
       screen.getByRole("button", { name: "New workspace" }),
     ).toBeInTheDocument();
-    // "Manage workspaces" stays a web/team-only affordance.
     expect(
       screen.queryByRole("button", { name: "Manage workspaces" }),
     ).not.toBeInTheDocument();

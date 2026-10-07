@@ -7,15 +7,12 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ChevronDown,
   HardDrive,
-  ListTree,
   Lock,
   Plus,
   UserRound,
   Users,
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
-import { useAuth } from "../../auth/useAuth";
-import { isDesktopShell } from "../../utils/isDesktopShell";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
@@ -77,7 +74,6 @@ export function OrgWorkspaceSwitcher() {
     switchTo,
     isLoading,
   } = useWorkspace();
-  const { isSingleUser } = useAuth();
   const cloud = useCloudSync();
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -120,17 +116,23 @@ export function OrgWorkspaceSwitcher() {
   const personalWorkspace = availableWorkspaces.find(
     (e) => e.workspace.isPersonal,
   );
-  const otherWorkspaces = availableWorkspaces.filter((e) => !e.workspace.isPersonal);
+  const otherWorkspaces = availableWorkspaces.filter(
+    (e) => !e.workspace.isPersonal,
+  );
 
   const flatList: WorkspaceEntry[] = [];
   if (personalWorkspace) flatList.push(personalWorkspace);
   flatList.push(...otherWorkspaces);
 
   const currentEntry = currentWorkspace
-    ? availableWorkspaces.find((entry) => entry.workspace.workspaceId === currentWorkspace.workspaceId)
+    ? availableWorkspaces.find(
+        (entry) => entry.workspace.workspaceId === currentWorkspace.workspaceId,
+      )
     : undefined;
   const displayLabel = currentWorkspace?.name ?? "Personal";
-  const displaySource = currentEntry ? workspaceSource(currentEntry, cloud.status) : "Personal workspace";
+  const displaySource = currentEntry
+    ? workspaceSource(currentEntry, cloud.status)
+    : "Personal workspace";
   // The workspace you are looking at is the one place a paused sync has to be
   // legible without opening anything.
   const displayLocked = currentEntry
@@ -223,36 +225,21 @@ export function OrgWorkspaceSwitcher() {
                 )}
               </div>
 
-              {(isDesktopShell() || !isSingleUser) && (
-                <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    fullWidth
-                    className="justify-start text-xs"
-                    icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                    onClick={() => {
-                      close();
-                      setCreateWsOpen(true);
-                    }}
-                  >
-                    New workspace
-                  </Button>
-                  {/* "Manage workspaces" is a web/team-only surface. */}
-                  {!isSingleUser && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      fullWidth
-                      className="justify-start text-xs"
-                      icon={<ListTree className="h-4 w-4" aria-hidden="true" />}
-                      onClick={() => close()}
-                    >
-                      Manage workspaces
-                    </Button>
-                  )}
-                </div>
-              )}
+              <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  fullWidth
+                  className="justify-start text-xs"
+                  icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => {
+                    close();
+                    setCreateWsOpen(true);
+                  }}
+                >
+                  New workspace
+                </Button>
+              </div>
             </PopoverPanel>
           </>
         )}

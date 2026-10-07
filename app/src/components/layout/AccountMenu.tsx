@@ -18,7 +18,7 @@ import {
 } from "./accountMenuUtils";
 
 export function AccountMenu() {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   // Second useCloudSync instance: it only reads status for the header identity.
   // Both instances share the same push-based refresh (onCloudStatusChanged), so
   // the only extra cost is one status fetch on mount.
@@ -77,10 +77,6 @@ export function AccountMenu() {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [open]);
-
-  if (!isAuthenticated || !user) {
-    return null;
-  }
 
   // Identity reflects the linked cloud account once available, falling back to
   // the local profile — so the name and email update after linking.

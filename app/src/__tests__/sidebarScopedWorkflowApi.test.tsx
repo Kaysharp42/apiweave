@@ -40,10 +40,6 @@ vi.mock("../hooks/useScopeContext", () => ({
   useScopeContext: () => mocks.useScopeContext(),
 }));
 
-vi.mock("../auth/useAuth", () => ({
-  useAuth: () => ({ hasPermission: () => true }),
-}));
-
 vi.mock("../components/layout/SidebarHeader", () => ({
   SidebarHeader: ({ onCreateNew }: { onCreateNew: () => void }) => (
     <button type="button" onClick={onCreateNew}>

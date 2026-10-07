@@ -243,6 +243,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   each node's **Continue on failure** toggle in its Settings tab.
 - The renderer's startup gate, left over from the retired HTTP backend. Its
   spinner never showed and its error screen was unreachable.
+- The web sign-in leftovers: the marketing landing page, the `/login` route,
+  the admin route guard, the deployment-mode switch and an "Auth bootstrap
+  failed" screen. The desktop app has one local owner, so none of them could
+  be reached. The workspace switcher's **Manage workspaces** entry, which did
+  nothing, is gone with them.
 - Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that
   nothing imported, and `axios`. Neither ran, but both shipped inside the app.
 

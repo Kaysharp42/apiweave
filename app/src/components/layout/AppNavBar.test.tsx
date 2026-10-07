@@ -18,12 +18,6 @@ vi.mock("../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
-vi.mock("../../auth/useAuth", () => ({
-  useAuth: () => ({
-    isSingleUser: true,
-  }),
-}));
-
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location-probe">{location.pathname}</div>;

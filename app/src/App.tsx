@@ -4,18 +4,9 @@ import {
   useLayoutEffect,
   useContext,
   createContext,
-  type ReactNode,
   useMemo,
 } from "react";
-import {
-  BrowserRouter as Router,
-  HashRouter,
-  Routes,
-  Route,
-  Navigate,
-  Outlet,
-} from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
+import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
@@ -29,7 +20,6 @@ import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
 import { AuthProvider } from "./auth/AuthProvider";
-import { useAuth } from "./auth/useAuth";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
@@ -37,7 +27,6 @@ import { UnsavedChangesDialog } from "./components/organisms/UnsavedChangesDialo
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { apiweave } from "./utils/apiweaveClient";
-import { isDesktopShell } from "./utils/isDesktopShell";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
 import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
@@ -62,52 +51,6 @@ export const AppContext = createContext<AppContextType>({
   autoSaveEnabled: true,
   setAutoSaveEnabled: () => {},
 });
-
-// ---------------------------------------------------------------------------
-// ProtectedRoute — shows spinner while loading, redirects when unauthenticated
-// ---------------------------------------------------------------------------
-
-function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { status, deploymentMode, modeLoaded, error } = useAuth();
-
-  if (status === "loading" || !modeLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
-        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
-      </div>
-    );
-  }
-
-  // In single-user mode, an unauthenticated /me response is a backend bug,
-  // not a sign that the user needs to log in. Surface the error instead
-  // of redirecting to /login (which would just bounce back via LoginEntry).
-  if (status === "unauthenticated" && deploymentMode === "single_user") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
-            Auth bootstrap failed
-          </h1>
-          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
-            Single-user mode requires <code>/api/auth/me</code> to succeed. The
-            backend did not return a user.
-          </p>
-          {error !== null && (
-            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
-              {error}
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated") {
-    return <Navigate to="/app" replace />;
-  }
-
-  return <>{children}</>;
-}
 
 // Reopen the workspace the user last had selected, as long as it still
 // exists. Falls back to the personal workspace (then the first available)
@@ -208,11 +151,9 @@ function DefaultWorkspaceRedirect() {
  */
 function AuthedRoutes() {
   return (
-    <ProtectedRoute>
-      <WorkspaceProvider>
-        <Outlet />
-      </WorkspaceProvider>
-    </ProtectedRoute>
+    <WorkspaceProvider>
+      <Outlet />
+    </WorkspaceProvider>
   );
 }
 
@@ -353,31 +294,18 @@ function App() {
     () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
     [darkMode, autoSaveEnabled],
   );
-  const RouterComponent = isDesktopShell() ? HashRouter : Router;
 
   return (
     <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
         <AuthProvider>
-          <RouterComponent>
+          <HashRouter>
             <AccountSessionReset />
             {/* App-wide, not in the canvas workspace: quitting or signing out
                 asks about unsaved tabs from any route, Cloud Sync included. */}
             <UnsavedChangesDialog />
             <Routes>
-              {/* Desktop skips the marketing landing page — no login needed
-                  (single-user backend), so go straight to the workspace. */}
-              <Route
-                path="/"
-                element={
-                  isDesktopShell() ? (
-                    <Navigate to="/app" replace />
-                  ) : (
-                    <LandingPage />
-                  )
-                }
-              />
-              <Route path="/login" element={<Navigate to="/app" replace />} />
+              <Route path="/" element={<Navigate to="/app" replace />} />
 
               {/* Every signed-in route shares one auth + workspace parent, so
                   moving between them never remounts the providers. */}
@@ -497,7 +425,7 @@ function App() {
                 <Route path="/*" element={<NotFoundPage />} />
               </Route>
             </Routes>
-          </RouterComponent>
+          </HashRouter>
         </AuthProvider>
         <Toast />
       </PaletteProvider>

@@ -32,17 +32,7 @@ const LOCAL_DESKTOP_USER: User = {
  * The desktop app has one local owner and no sign-in: access is enforced in
  * the Electron main process, so there is nothing to fetch or log out of.
  */
-const LOCAL_OWNER_AUTH: AuthContextValue = {
-  user: LOCAL_DESKTOP_USER,
-  status: "authenticated",
-  error: null,
-  isSetupComplete: true,
-  deploymentMode: "single_user",
-  modeLoaded: true,
-  login: () => undefined,
-  logout: () => Promise.resolve(),
-  refresh: () => Promise.resolve(),
-};
+const LOCAL_OWNER_AUTH: AuthContextValue = { user: LOCAL_DESKTOP_USER };
 
 export function AuthProvider({ children }: AuthProviderProps) {
   return (
