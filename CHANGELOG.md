@@ -194,6 +194,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   to create its workflow. Both now create the workflow in the project. The HAR
   preview also now honours the chosen import mode and the **Sanitize** option,
   which it used to ignore.
+- **Large JSON responses no longer freeze the window.** The response tree
+  opened every row of the body, so a 1 MB response mounted hundreds of
+  thousands of elements. A collection with more than 100 entries now starts
+  collapsed, and a body over 100 KB opens one level at a time.
 
 ### Added
 
