@@ -15,7 +15,6 @@ const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 
 vi.mock("../../utils/apiweaveClient", () => ({
-  default: "ipc://apiweave",
   apiweave: {
     nodePresets: {
       list: (...args: unknown[]) => mockList(...args),

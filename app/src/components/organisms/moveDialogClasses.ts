@@ -1,7 +1,7 @@
 /**
  * The `<select>` styling both move dialogs use — the same daisyUI + design-token
- * pairing every other modal form control in the app uses (see
- * `auth/InviteUserModal.tsx`), kept in one place so the two dialogs cannot drift.
+ * pairing every other modal form control in the app uses, kept in one place so
+ * the two dialogs cannot drift.
  */
 export const MOVE_DIALOG_SELECT_CLASS = [
   "select select-bordered w-full cursor-pointer",

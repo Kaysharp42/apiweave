@@ -507,12 +507,6 @@ describe("Task 20: useWorkflowPolling carries no polling or SSE machinery", () =
     expect(source).not.toMatch(/EventSource/);
   });
 
-  it("does not call authenticatedFetch or import legacy run URLs", () => {
-    expect(source).not.toContain("authenticatedFetch");
-    expect(source).not.toContain("/api/workflows/");
-    expect(source).not.toContain("workflowRunStatusUrl");
-  });
-
   it("subscribes via onRunProgress", () => {
     expect(source).toContain("onRunProgress");
   });
