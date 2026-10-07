@@ -6,10 +6,10 @@ import { mustExist, parseJson, slugify, toJson } from "./helpers"
 import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &
-  Partial<Pick<Collection, "projectId" | "description" | "color" | "workflowOrder" | "continueOnFail">>
+  Partial<Pick<Collection, "projectId" | "description" | "color" | "workflowOrder">>
 
 export type CollectionUpdate = Partial<
-  Pick<Collection, "name" | "projectId" | "description" | "color" | "workflowCount" | "workflowOrder" | "continueOnFail">
+  Pick<Collection, "name" | "projectId" | "description" | "color" | "workflowCount" | "workflowOrder">
 >
 
 const COLUMNS = "id, workspace_id, name, workflow_ids_json, settings_json, rev, createdAt, updatedAt"
@@ -30,7 +30,6 @@ interface CollectionSettings {
   readonly description: string | null
   readonly color: string | null
   readonly workflowCount: number
-  readonly continueOnFail: boolean
 }
 
 export class CollectionRepository {
@@ -54,7 +53,6 @@ export class CollectionRepository {
       description: input.description ?? null,
       color: input.color ?? null,
       workflowCount: 0,
-      continueOnFail: input.continueOnFail ?? true,
     }
     this.store.set(
       "INSERT INTO collections (id, workspace_id, scopeId, name, slug, workflow_ids_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -89,7 +87,6 @@ export class CollectionRepository {
       description: merged.description ?? null,
       color: merged.color ?? null,
       workflowCount: merged.workflowCount,
-      continueOnFail: merged.continueOnFail,
     }
     this.store.set(
       "UPDATE collections SET name = ?, slug = ?, workflow_ids_json = ?, settings_json = ? WHERE id = ?",
@@ -150,7 +147,6 @@ function rowToCollection(row: CollectionRow): Collection {
     color: settings.color,
     workflowCount: settings.workflowCount,
     workflowOrder: [...workflowOrder],
-    continueOnFail: settings.continueOnFail,
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

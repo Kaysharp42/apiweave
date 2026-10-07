@@ -13,7 +13,6 @@ export const CollectionSchema = z
     color: z.string().nullable().optional(),
     workflowCount: z.number().int().nonnegative().default(0),
     workflowOrder: z.array(WorkflowOrderItemSchema).default([]),
-    continueOnFail: z.boolean().default(true),
     rev: RevisionSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,

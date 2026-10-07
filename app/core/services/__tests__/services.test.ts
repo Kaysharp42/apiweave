@@ -353,7 +353,6 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
       workspaceId: wsA,
       name: "Col",
       color: "#123456",
-      continueOnFail: false,
     })
     const workflow = workflows.create({
       workspaceId: wsA,
@@ -378,7 +377,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     // Format + sanitization invariants.
     expect(bundle.schemaVersion).toBe("2.0")
     expect(bundle.type).toBe("awecollection")
-    expect(bundle.project.continueOnFail).toBe(false)
+    expect(bundle.project).not.toHaveProperty("continueOnFail")
     expect(bundle.project.workflowOrder).toEqual([
       { workflowId: workflow.workflowId, order: 0, enabled: false, continueOnFail: false },
     ])
@@ -405,7 +404,6 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     const project2 = collections.listByWorkspace(wsB).items[0]!
     const importedWorkflow = workflows.listByCollection(wsB, project2.collectionId).items[0]!
     expect(project2.workflowCount).toBe(1)
-    expect(project2.continueOnFail).toBe(false)
     expect(project2.workflowOrder).toEqual([
       { workflowId: importedWorkflow.workflowId, order: 0, enabled: false, continueOnFail: false },
     ])
@@ -575,6 +573,18 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     expect(sameWorkspace.node("inBundle")).toMatchObject({ targetWorkflowId: sameWorkspace.importedLogin.workflowId })
     expect(sameWorkspace.node("outside")).toMatchObject({ targetWorkflowId: outside.workflowId })
     expect(sameWorkspace.result.warnings).toEqual([])
+  })
+
+  it("imports a bundle that still carries the retired project-level continueOnFail", async () => {
+    const wsA = seedWorkspace("a")
+    const project = collections.create({ workspaceId: wsA, name: "Old" })
+    workflows.create({ workspaceId: wsA, name: "WF", collectionId: project.collectionId })
+    const bundle = await exportService().exportProject(wsA, project.collectionId)
+    const older = { ...bundle, project: { ...bundle.project, continueOnFail: false } }
+
+    expect((await exportService().dryRunImport(seedWorkspace("b"), older)).valid).toBe(true)
+    const result = await exportService().importProject(seedWorkspace("c"), older)
+    expect(collections.getById(result.projectId)).not.toHaveProperty("continueOnFail")
   })
 
   it("dry-run flags a bad node and warns on schema drift", async () => {

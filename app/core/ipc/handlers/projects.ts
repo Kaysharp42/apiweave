@@ -18,7 +18,6 @@ const createInput = z
     color: z.string().nullable().optional(),
     projectId: z.string().nullable().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-    continueOnFail: z.boolean().optional(),
   })
   .strict()
 
@@ -32,7 +31,6 @@ const updateInput = z
     projectId: z.string().nullable().optional(),
     workflowCount: z.number().int().nonnegative().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-    continueOnFail: z.boolean().optional(),
   })
   .strict()
 
@@ -81,7 +79,6 @@ const ProjectBundleSchema = z
         description: z.string(),
         color: z.string(),
         workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-        continueOnFail: z.boolean().optional(),
       })
       .strict(),
     workflows: z.array(ExportedWorkflowSchema),

@@ -315,7 +315,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - **The project-wide Continue on Failure toggle** in Manage Workflows. Project
   runs follow each workflow row's own Continue/Stop flag, so the project-wide
-  switch had nothing to decide.
+  switch had nothing to decide. The setting behind it is gone too: projects no
+  longer store it, export it in `.awecollection` bundles or sync it. A bundle
+  or a synced project that still carries it imports as before, without it.
 - **The workflow-level Continue on Fail toggle.** It was never saved and the
   runner never read it, so it had no effect. Failure handling is per node:
   each node's **Continue on failure** toggle in its Settings tab.

@@ -65,7 +65,6 @@ export interface ProjectBundle {
     readonly description: string
     readonly color: string
     readonly workflowOrder?: readonly WorkflowOrderItem[]
-    readonly continueOnFail?: boolean
   }
   readonly workflows: readonly ExportedWorkflow[]
   readonly environments: readonly ExportedEnvironment[]
@@ -213,7 +212,6 @@ export class ProjectExportService {
         description: project.description ?? "",
         color: project.color ?? "#3B82F6",
         workflowOrder: project.workflowOrder,
-        continueOnFail: project.continueOnFail,
       },
       workflows: workflowsExport,
       environments: environmentsExport,
@@ -271,7 +269,6 @@ export class ProjectExportService {
         name: options.projectName?.trim() || bundle.project.name || "Imported Project",
         description: bundle.project.description ?? null,
         color: bundle.project.color ?? null,
-        continueOnFail: bundle.project.continueOnFail ?? true,
       })
       if (existingProject === undefined) {
         recordCollectionUpsert(this.syncProvider, project)
@@ -436,9 +433,6 @@ function validateBundle(bundle: ProjectBundle): string[] {
     }
     if (bundle.project["color"] !== undefined && typeof bundle.project["color"] !== "string") {
       errors.push("Invalid bundle: project color must be a string")
-    }
-    if (bundle.project["continueOnFail"] !== undefined && typeof bundle.project["continueOnFail"] !== "boolean") {
-      errors.push("Invalid bundle: project continueOnFail must be a boolean")
     }
   }
   const workflowIds = new Set<string>()
