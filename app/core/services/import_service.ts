@@ -230,31 +230,11 @@ export class ImportService {
     collectSecretRefs(allData, "workspace", targetWorkspaceId, refs, seen)
     for (const ref of refs) secretRefs.push(ref.name)
 
-    let mappedEnvId: string | null = null
     const bundledEnvs = bundle.environments ?? []
     const wfEnvId = bundle.workflow.selectedEnvironmentId ?? bundle.workflow.environmentId ?? null
-
-    if (wfEnvId && bundledEnvs.length > 0) {
-      const bundledEnv = bundledEnvs.find((e) => e.environmentId === wfEnvId) ?? bundledEnvs[0]
-      if (bundledEnv && createMissingEnvironments) {
-        const vars = sanitize
-          ? sanitizeVariablesForExport(bundledEnv.variables as Record<string, JsonValue>)
-          : (bundledEnv.variables as Record<string, JsonValue>)
-        const created = this.environments.transaction(() => {
-          const environment = this.environments.create({
-            workspaceId: targetWorkspaceId,
-            name: bundledEnv.name,
-            description: bundledEnv.description ?? null,
-            swaggerDocUrl: bundledEnv.swaggerDocUrl ?? null,
-            variables: vars,
-            secrets: {},
-          })
-          recordEnvironmentUpsert(this.syncProvider, environment)
-          return environment
-        })
-        mappedEnvId = created.environmentId
-      }
-    }
+    const bundledEnv = wfEnvId && createMissingEnvironments
+      ? bundledEnvs.find((e) => e.environmentId === wfEnvId) ?? bundledEnvs[0]
+      : undefined
 
     const rawNodes = sanitize
       ? bundle.workflow.nodes.map((n) => {
@@ -270,6 +250,7 @@ export class ImportService {
       ? sanitizeVariablesForExport((bundle.workflow.variables ?? {}) as Record<string, JsonValue>)
       : ((bundle.workflow.variables ?? {}) as Record<string, JsonValue>)
 
+    // Everything that can reject the bundle runs before the first write.
     const create: WorkflowCreate = {
       workspaceId: targetWorkspaceId,
       name: bundle.workflow.name || "Imported Workflow",
@@ -278,10 +259,27 @@ export class ImportService {
       edges: parseWorkflowEdges(bundle.workflow.edges ?? []),
       variables: wfVars as Record<string, JsonValue>,
       tags: [...(bundle.workflow.tags ?? [])],
-      selectedEnvironmentId: mappedEnvId,
+      selectedEnvironmentId: null,
     }
 
-    const created = this.workflows.transaction(() => this.recorded(this.workflows.create(create)))
+    // One transaction: the bundled environment and the workflow land together or not at all.
+    const created = this.workflows.transaction(() => {
+      if (bundledEnv !== undefined) {
+        const environment = this.environments.create({
+          workspaceId: targetWorkspaceId,
+          name: bundledEnv.name,
+          description: bundledEnv.description ?? null,
+          swaggerDocUrl: bundledEnv.swaggerDocUrl ?? null,
+          variables: sanitize
+            ? sanitizeVariablesForExport(bundledEnv.variables as Record<string, JsonValue>)
+            : (bundledEnv.variables as Record<string, JsonValue>),
+          secrets: {},
+        })
+        recordEnvironmentUpsert(this.syncProvider, environment)
+        return this.recorded(this.workflows.create({ ...create, selectedEnvironmentId: environment.environmentId }))
+      }
+      return this.recorded(this.workflows.create(create))
+    })
     await this.syncProvider.push()
 
     return {

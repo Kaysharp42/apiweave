@@ -12,16 +12,20 @@ import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { ImportService } from "../import_service"
 import type { WorkflowBundle } from "../import_service"
+import type { SyncProvider } from "../../sync/SyncProvider"
+import { RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 let db: InitializedDatabase
 let service: ImportService
 let wsId: string
+let environments: EnvironmentRepository
+let rebuild: (sync: SyncProvider) => ImportService
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
   const workspaces = new WorkspaceRepository(db.kvStore)
   const workflows = new WorkflowRepository(db.kvStore)
-  const environments = new EnvironmentRepository(db.kvStore)
+  environments = new EnvironmentRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
@@ -30,7 +34,8 @@ beforeEach(() => {
   const scopeResolver = new ScopeResolver(existence)
   const permissions = new LocalOwnerProvider()
   const sync = new LocalOnlySyncProvider()
-  service = new ImportService(workflows, environments, collections, sync, permissions, scopeResolver)
+  rebuild = (provider) => new ImportService(workflows, environments, collections, provider, permissions, scopeResolver)
+  service = rebuild(sync)
   wsId = workspaces.create({ name: "test", slug: "test" }).workspaceId
 })
 
@@ -81,6 +86,28 @@ describe("ImportService — workflow bundle export/import", () => {
     const result = await service.importWorkflow(wsId, bundle, true, true)
     expect(result.workflowId).toBeTruthy()
     expect(result.name).toBe("Imported")
+  })
+
+  it("leaves no bundled environment behind when the workflow cannot be imported", async () => {
+    const bundle = (nodes: WorkflowBundle["workflow"]["nodes"]): WorkflowBundle => ({
+      workflow: { name: "Imported", nodes, edges: [], variables: {}, selectedEnvironmentId: "env-1" },
+      environments: [{ environmentId: "env-1", name: "Bundled Env", description: null, variables: {}, swaggerDocUrl: null }],
+      secretReferences: [],
+      metadata: { exportedAt: "", workflowCount: 1, environmentCount: 1, secretReferenceCount: 0 },
+    })
+    const invalidNode = [{ nodeId: "n1", type: "no-such-type", label: "x", position: { x: 0, y: 0 }, config: {} }] as unknown as WorkflowBundle["workflow"]["nodes"]
+    await expect(service.importWorkflow(wsId, bundle(invalidNode), true, true)).rejects.toThrow()
+
+    const workflowWriteFails: SyncProvider = {
+      recordMutation: (mutation) => {
+        if (mutation.kind === RecordKind.WORKFLOW) throw new Error("workflow write failed")
+      },
+      pull: async () => undefined,
+      push: async () => undefined,
+    }
+    await expect(rebuild(workflowWriteFails).importWorkflow(wsId, bundle([]), true, true)).rejects.toThrow("workflow write failed")
+
+    expect(environments.listByWorkspace(wsId).items).toEqual([])
   })
 
   it("dryRun validates a bundle without creating anything", async () => {

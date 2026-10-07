@@ -12,6 +12,7 @@ import {
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import type { SyncProvider } from "../../sync/SyncProvider"
+import { RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { EnvironmentService } from "../environment_service"
@@ -590,5 +591,32 @@ describe("local write and cloud outbox entry commit together", () => {
 
     expect(environments.listByWorkspace(ws).items).toEqual([])
     expect(collections.listByWorkspace(ws).items).toEqual([])
+  })
+
+  it("imports a project bundle all or nothing", async () => {
+    const wsA = seedWorkspace("a")
+    const env = environments.create({ workspaceId: wsA, name: "Env" })
+    const collection = collections.create({ workspaceId: wsA, name: "Col" })
+    for (const name of ["one", "two"]) {
+      workflows.create({ workspaceId: wsA, name, collectionId: collection.collectionId, selectedEnvironmentId: env.environmentId })
+    }
+    const bundle = await new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
+      .exportProject(wsA, collection.collectionId)
+    let workflowWrites = 0
+    const secondWorkflowFails: SyncProvider = {
+      recordMutation: (mutation) => {
+        if (mutation.kind === RecordKind.WORKFLOW && ++workflowWrites === 2) throw new Error("outbox write failed")
+      },
+      pull: async () => undefined,
+      push: async () => undefined,
+    }
+    const wsB = seedWorkspace("b")
+
+    await expect(new ProjectExportService(collections, workflows, environments, secondWorkflowFails, permissions, scopeResolver)
+      .importProject(wsB, bundle)).rejects.toThrow("outbox write failed")
+
+    expect(collections.listByWorkspace(wsB).items).toEqual([])
+    expect(environments.listByWorkspace(wsB).items).toEqual([])
+    expect(workflows.listByWorkspace(wsB).items).toEqual([])
   })
 })

@@ -64,6 +64,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A failed workflow import leaves nothing behind.** Importing a workflow
+  bundle with its environment created the environment first, so a bundle whose
+  workflow was then rejected left a stray environment. Both are now written in
+  one transaction, as a project import already was.
+
 - **The database is backed up before an upgrade and checked at every launch.**
   Before a new version changes the database schema, a copy is saved to
   `backups/` in the data folder (the five newest are kept), and a failed
