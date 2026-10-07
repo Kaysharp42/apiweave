@@ -339,6 +339,18 @@ describe("Tooltip", () => {
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
+  it("shows over a Badge, which must forward its ref", async () => {
+    const user = userEvent.setup();
+    render(
+      <Tooltip content="Number of rules" delay={0}>
+        <Badge>3 rules</Badge>
+      </Tooltip>,
+    );
+
+    await user.hover(screen.getByText("3 rules"));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Number of rules");
+  });
+
   it("shows on keyboard focus and keeps the child's own handlers", async () => {
     const user = userEvent.setup();
     const onClick = vi.fn();

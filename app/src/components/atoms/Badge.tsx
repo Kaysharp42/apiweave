@@ -1,12 +1,11 @@
+import { forwardRef } from "react";
 import type { BadgeProps } from "../../types";
 
-export function Badge({
-  children,
-  variant = "default",
-  size = "md",
-  className = "",
-  ...rest
-}: BadgeProps) {
+// Forwards its ref so a Tooltip (which positions against its child) can wrap it.
+export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
+  { children, variant = "default", size = "md", className = "", ...rest },
+  ref,
+) {
   const variantClass: Record<string, string> = {
     default:
       "bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark",
@@ -35,6 +34,7 @@ export function Badge({
 
   return (
     <span
+      ref={ref}
       className={[
         "inline-flex items-center gap-1 rounded-full font-mono font-medium whitespace-nowrap leading-none",
         variantClass[variant] ?? variantClass.default,
@@ -48,4 +48,4 @@ export function Badge({
       {children}
     </span>
   );
-}
+});

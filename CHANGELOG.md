@@ -198,6 +198,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   opened every row of the body, so a 1 MB response mounted hundreds of
   thousands of elements. A collection with more than 100 entries now starts
   collapsed, and a body over 100 KB opens one level at a time.
+- **The node editor's header badges show their tooltips.** The rule count,
+  delay, merge strategy and called-workflow badges had tooltips that never
+  appeared.
 
 ### Added
 
