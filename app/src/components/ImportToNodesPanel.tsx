@@ -15,6 +15,7 @@ import { TextArea } from "./atoms/TextArea";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { getLogger } from "../utils/logger";
+import type { JsonValue } from "@shared/types/JsonValue";
 
 const importPanelLog = getLogger("ImportToNodesPanel");
 
@@ -34,6 +35,7 @@ interface NodeConfig {
   cookies?: string;
   timeout?: number;
   openapiMeta?: unknown | null;
+  responseSchemas?: Record<string, JsonValue>;
 }
 
 interface Node {
@@ -52,6 +54,7 @@ interface PaletteItem {
   cookies: string;
   timeout: number;
   openapiMeta: unknown | null;
+  responseSchemas?: Record<string, JsonValue>;
 }
 
 interface ImportedGroupPayload {
@@ -297,6 +300,9 @@ export function ImportToNodesPanel({
       cookies: node.config?.cookies || "",
       timeout: node.config?.timeout || 30,
       openapiMeta: node.config?.openapiMeta || null,
+      ...(node.config?.responseSchemas
+        ? { responseSchemas: node.config.responseSchemas }
+        : {}),
     }));
   };
 

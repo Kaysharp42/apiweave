@@ -686,6 +686,8 @@ function safeErrorClass(error: string): string {
   // A script's own error or failed-test count: the user's script wrote it, and
   // secret values in it were masked before this point, as in its console output.
   if (/^(Pre-request|Post-response) script\b/.test(error)) return error
+  // A responseSchemas verdict names only the status key; the violations are in the result's assertions.
+  if (/^Response does not match the schema for status (?:[1-5](?:\d\d|XX)|default)$/.test(error)) return error
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"

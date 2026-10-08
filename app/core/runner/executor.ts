@@ -6,6 +6,11 @@ import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
+import { RegexSandbox } from "./regex_sandbox"
+import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_schema"
+import type { Validator } from "@cfworker/json-schema"
+import { ASSERTION_VALUE_TYPES, parseSchemaValue } from "@shared/analysis/assertion_expected"
+import type { SchemaViolation } from "@shared/types/SchemaViolation"
 import { extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
@@ -365,6 +370,10 @@ export class WorkflowExecutor {
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
   private readonly oauthTokens: OAuthTokenCache
+  /** Loaded on the first rule that needs it (see `prepareRules`); `matches` is synchronous after that. */
+  private regex: RegexSandbox | null = null
+  /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
+  private readonly schemaValidators = new Map<unknown, Validator>()
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -1065,6 +1074,22 @@ export class WorkflowExecutor {
    * response has nothing for the script to read, so the script does not run.
    */
   private async executeHttpRequestNode(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const result = await this.executeHttpRequestWithScript(node, cancelSignal)
+    const schemas = node.config?.["responseSchemas"] as Readonly<Record<string, unknown>> | undefined
+    const key = schemas && result.statusCode !== undefined && !cancelSignal?.aborted ? responseSchemaKey(schemas, result.statusCode) : undefined
+    if (schemas === undefined || key === undefined) return result
+    const evaluation = this.evaluateAssertion(
+      0,
+      { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] },
+      () => ({ state: "resolved", nodeId: node.nodeId, result }),
+    )
+    const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
+    if (evaluation.outcome === "pass") return checked
+    // A request that already failed keeps its own reason; the violations are in `assertions`.
+    return { ...checked, status: "error", error: result.error ?? `Response does not match the schema for status ${key}` }
+  }
+
+  private async executeHttpRequestWithScript(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
     const result = await this.executeHttpRequestWithRetry(node, cancelSignal)
     const scripts = node.config?.["scripts"] as HttpScriptsConfig | undefined
     if (!scripts?.postResponse?.trim() || result.statusCode === undefined || cancelSignal?.aborted) return result
@@ -1118,6 +1143,7 @@ export class WorkflowExecutor {
     const retry = node.config?.["retry"] as HttpRetryConfig | undefined
     if (!retry) return this.executeHttpRequest(node, cancelSignal)
     const until = retry.until ?? []
+    await this.prepareRules(until)
     const attempts: HttpAttempt[] = []
     for (;;) {
       const attempt = await this.executeHttpRequest(node, cancelSignal)
@@ -1275,6 +1301,7 @@ export class WorkflowExecutor {
   }): Promise<void> {
     const { node, response, statusCode, responseHeaders, url, startedAt, secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders } = input
     try {
+      await this.prepareRules(finishConditions)
       const collected = await collectSseEvents(response, {
         maxEvents,
         ...(eventType === undefined ? {} : { eventType }),
@@ -1444,6 +1471,7 @@ export class WorkflowExecutor {
       }
     }
 
+    await this.prepareRules(assertions)
     const evaluations: AssertionEvaluation[] = []
     const failureMode = config["failureMode"] === "all" ? "all" : "first"
     let stopped = false
@@ -1548,7 +1576,8 @@ export class WorkflowExecutor {
 
     const actualState = actual === undefined ? "missing" : "present"
     try {
-      const passed = this.compareValues(actual, operator, expected.value)
+      const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected.value) : null
+      const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected.value)
       return {
         ...base,
         sourceNodeId,
@@ -1556,8 +1585,14 @@ export class WorkflowExecutor {
         actualType: jsonValueType(actual),
         outcome: passed ? "pass" : "fail",
         reasonCode: passed ? "passed" : "comparison-failed",
+        ...(violations && violations.length > 0
+          ? {
+              detail: `${violations.length} schema violation${violations.length === 1 ? "" : "s"}`,
+              schemaErrors: violations.slice(0, MAX_SCHEMA_VIOLATIONS),
+            }
+          : {}),
       }
-    } catch {
+    } catch (error) {
       return {
         ...base,
         sourceNodeId,
@@ -1565,8 +1600,30 @@ export class WorkflowExecutor {
         actualType: jsonValueType(actual),
         outcome: "fail",
         reasonCode: "comparison-error",
+        // The engine's own words for a bad pattern or schema; they carry the rule's text, not the response's.
+        ...(error instanceof Error ? { detail: error.message.slice(0, 300) } : {}),
       }
     }
+  }
+
+  /** Loads the regex sandbox when one of `rules` matches a regular expression. */
+  private async prepareRules(rules: readonly { readonly operator?: string }[]): Promise<void> {
+    if (this.regex === null && rules.some((rule) => rule.operator === "matches" || rule.operator === "notMatches")) {
+      this.regex = await RegexSandbox.load()
+    }
+  }
+
+  /** Where `actual` breaks `schema`; empty when it matches. A missing value is one violation. Throws on a schema that is not one. */
+  private schemaCheck(actual: unknown, schema: unknown): SchemaViolation[] {
+    if (actual === undefined) return [{ path: "", message: "Value is missing." }]
+    let validator = this.schemaValidators.get(schema)
+    if (validator === undefined) {
+      const parsed = parseSchemaValue(schema)
+      if (parsed === null) throw new Error("Expected value is not a JSON Schema object")
+      validator = compileSchema(parsed)
+      this.schemaValidators.set(schema, validator)
+    }
+    return schemaViolations(validator, actual)
   }
 
   private buildSkippedAssertionEvaluation(
@@ -1677,6 +1734,15 @@ export class WorkflowExecutor {
   private compareValues(actual: unknown, operator: string, expected: unknown): boolean {
     if (operator === "exists") return actual !== null && actual !== undefined
     if (operator === "notExists") return actual === null || actual === undefined
+    if (operator === "matches" || operator === "notMatches") {
+      // A missing value neither matches nor fails to: the rule fails either way.
+      if (actual === null || actual === undefined) return false
+      if (this.regex === null) throw new Error("Regular expressions were not loaded for this rule")
+      const text = typeof actual === "object" ? JSON.stringify(actual) : String(actual)
+      return this.regex.test(String(expected), text) === (operator === "matches")
+    }
+    if (operator === "type") return valueHasType(actual, expected)
+    if (operator === "matchesSchema") return this.schemaCheck(actual, expected).length === 0
     if (operator === "equals" && (actual == null || expected == null)) return actual === expected
     if (operator === "notEquals" && (actual == null || expected == null)) return actual !== expected
 
@@ -2498,8 +2564,14 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),
     error: typeof result.error === "string" ? result.error : null,
-    assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
+    // An http-request node has them only when it checked `responseSchemas`.
+    assertions: result.type === "assertion" || result.assertionEvaluations ? [...(result.assertionEvaluations ?? [])] : null,
   }
+}
+
+/** The `responseSchemas` key that applies to `status`: exact ("201"), then its class ("2XX"), then "default". */
+export function responseSchemaKey(schemas: Readonly<Record<string, unknown>>, status: number): string | undefined {
+  return [String(status), `${Math.floor(status / 100)}XX`, "default"].find((key) => schemas[key] !== undefined)
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {
@@ -2527,11 +2599,25 @@ function toAssertionOperator(value: string): AssertionOperator {
     case "count":
     case "exists":
     case "notExists":
+    case "matches":
+    case "notMatches":
+    case "type":
+    case "matchesSchema":
       return value
     case "equals":
     default:
       return "equals"
   }
+}
+
+/** The "type" operator: JSON's types, plus integer. A missing value has none. */
+function valueHasType(actual: unknown, expected: unknown): boolean {
+  if (!(ASSERTION_VALUE_TYPES as readonly unknown[]).includes(expected)) {
+    throw new Error(`Unknown type ${JSON.stringify(expected)}; use one of ${ASSERTION_VALUE_TYPES.join(", ")}`)
+  }
+  if (actual === undefined) return false
+  if (expected === "integer") return Number.isInteger(actual)
+  return jsonValueType(actual) === expected
 }
 
 function jsonValueType(value: unknown): JsonValueType | null {

@@ -4,6 +4,7 @@ import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
 import { Input } from "./atoms/Input";
+import { Toggle } from "./atoms/Toggle";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
 import type { OpenAPIImportProps } from "../types/OpenAPIImportProps";
@@ -24,6 +25,7 @@ export function OpenAPIImport({
   const [baseUrl, setBaseUrl] = useState<string>("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sanitize, setSanitize] = useState<boolean>(true);
+  const [schemaAssertions, setSchemaAssertions] = useState<boolean>(true);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewParamsKey, setPreviewParamsKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +97,7 @@ export function OpenAPIImport({
       baseUrl,
       tags: [...selectedTags].sort(),
       sanitize,
+      schemaAssertions,
     });
 
   const handlePreview = async () => {
@@ -113,6 +116,7 @@ export function OpenAPIImport({
         ...(baseUrl ? { baseUrl } : {}),
         ...(selectedTags.length > 0 ? { tagFilter: selectedTags } : {}),
         sanitize,
+        schemaAssertions,
         dryRun: true,
       })) as PreviewData;
       setPreview(data);
@@ -159,6 +163,9 @@ export function OpenAPIImport({
           body: n.config?.body || "",
           timeout: n.config?.timeout || 30,
           openapiMeta: null,
+          ...(n.config?.responseSchemas
+            ? { responseSchemas: n.config.responseSchemas }
+            : {}),
         }));
 
       const itemCount = items.length;
@@ -367,6 +374,12 @@ export function OpenAPIImport({
                 Sanitize sensitive headers (Authorization, API keys)
               </label>
             </div>
+
+            <Toggle
+              label="Add schema assertions: check each response body against the spec's schema for its status"
+              checked={schemaAssertions}
+              onChange={(e) => setSchemaAssertions(e.target.checked)}
+            />
 
             {/* Group Title */}
             <div>

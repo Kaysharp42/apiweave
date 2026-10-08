@@ -154,6 +154,7 @@ export interface RemoteOpenApiOptions {
   readonly baseUrl?: string
   readonly tagFilter?: readonly string[]
   readonly sanitize?: boolean
+  readonly schemaAssertions?: boolean
 }
 
 export class ImportService {
@@ -818,6 +819,7 @@ function buildParseOpts(opts: RemoteOpenApiOptions): OpenApiParseOptions {
   if (opts.baseUrl !== undefined) result["baseUrl"] = opts.baseUrl
   if (opts.tagFilter !== undefined) result["tagFilter"] = opts.tagFilter
   if (opts.sanitize !== undefined) result["sanitize"] = opts.sanitize
+  if (opts.schemaAssertions !== undefined) result["schemaAssertions"] = opts.schemaAssertions
   return result as OpenApiParseOptions
 }
 

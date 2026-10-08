@@ -129,3 +129,25 @@ describe("HTTPRequestConfigPanel retry", () => {
     expect(latest?.retry).toBeUndefined();
   });
 });
+
+describe("HTTPRequestConfigPanel response schemas", () => {
+  test("lists the statuses an OpenAPI import attached, and Remove stops checking one", () => {
+    let latest: NodeModalHTTPRequestConfig | undefined;
+    render(
+      <Harness
+        initialConfig={{ ...config, responseSchemas: { "200": { type: "object" }, "4XX": { type: "object" } } }}
+        onConfigChange={(next) => { latest = next; }}
+      />,
+    );
+    expect(screen.getByText("Status 200")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Stop checking the status 4XX schema"));
+    expect(latest?.responseSchemas).toEqual({ "200": { type: "object" } });
+    fireEvent.click(screen.getByLabelText("Stop checking the status 200 schema"));
+    expect(latest?.responseSchemas).toBeUndefined();
+  });
+
+  test("shows nothing for a request without schemas", () => {
+    render(<Harness />);
+    expect(screen.queryByText("Response schemas")).not.toBeInTheDocument();
+  });
+});

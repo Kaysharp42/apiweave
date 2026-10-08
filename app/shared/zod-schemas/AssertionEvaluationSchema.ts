@@ -2,6 +2,7 @@ import { z } from "zod"
 import { AssertionOperatorSchema } from "./AssertionOperatorSchema"
 import { AssertionSourceSchema } from "./AssertionSourceSchema"
 import { JsonValueTypeSchema } from "./JsonValueTypeSchema"
+import { SchemaViolationSchema } from "./SchemaViolationSchema"
 
 export const AssertionEvaluationSchema = z
   .object({
@@ -25,5 +26,9 @@ export const AssertionEvaluationSchema = z
       "skipped-after-failure",
       "legacy-result",
     ]),
+    // Why a comparison could not run (a bad regex or schema, a regex timeout), or how many schema violations there were.
+    detail: z.string().optional(),
+    // "matchesSchema": the first violations, each with where in the value and why.
+    schemaErrors: z.array(SchemaViolationSchema).optional(),
   })
   .strict()

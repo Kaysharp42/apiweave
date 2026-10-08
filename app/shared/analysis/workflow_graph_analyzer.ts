@@ -11,6 +11,7 @@ import type { WorkflowEdge } from "../types/WorkflowEdge"
 import type { WorkflowNode } from "../types/WorkflowNode"
 import { withoutCanvasOnlyNodes } from "../graph/frames"
 import { AssertionOperatorSchema } from "../zod-schemas/AssertionOperatorSchema"
+import { assertionExpectedProblem } from "./assertion_expected"
 import { AssertionSourceSchema } from "../zod-schemas/AssertionSourceSchema"
 import { DYNAMIC_FUNCTION_NAMES } from "../constants/dynamicFunctions"
 
@@ -478,6 +479,18 @@ function addAssertionAndBranchDiagnostics(workflow: WorkflowGraphInput, diagnost
           "assertion",
           [node.nodeId],
           "An assertion operator requires an expected value.",
+          { ruleIndex, operator: assertion.operator },
+          { kind: "set_assertion_expected", nodeId: node.nodeId },
+        ))
+      }
+      const expectedProblem = operatorValid ? assertionExpectedProblem(assertion.operator, assertion.expectedValue) : null
+      if (expectedProblem !== null) {
+        diagnostics.push(diagnostic(
+          "assertion_expected_invalid",
+          "error",
+          "assertion",
+          [node.nodeId],
+          expectedProblem,
           { ruleIndex, operator: assertion.operator },
           { kind: "set_assertion_expected", nodeId: node.nodeId },
         ))

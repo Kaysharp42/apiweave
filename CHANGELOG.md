@@ -64,6 +64,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A request dragged from an imported OpenAPI group saves.** Its node carried
+  `openapiMeta`, which the workflow schema did not accept, so every save of the
+  workflow failed afterwards. The field is now part of the HTTP Request node, so
+  the `Check API` drift badge also survives a reload.
+
+- **Typing in an assertion rule no longer loses focus after each character.**
+  Each rule card was keyed by its own contents and remounted on every
+  keystroke.
+
 - **Imported Call Workflow nodes call the imported workflows.** Importing a
   project, in the app or with `apiweave run`, left each Call Workflow node
   pointing at the original workflow, so it failed. It now points at the
@@ -269,6 +278,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Response validation: regex, type and JSON Schema operators.** Assertion
+  rules (and Retry `until` rules and SSE finish conditions) gain `matches` and
+  `notMatches` (a regular expression, bare or `/pattern/flags`), `type`
+  (`string`, `number`, `integer`, `boolean`, `object`, `array`, `null`) and
+  `matchesSchema` (an inline JSON Schema, draft 2020-12 by default, or draft-07,
+  2019-09 or draft-04 by its `$schema`). A failed schema rule lists its first 10
+  violations with where in the value and why, in the node's result, JUnit and
+  HTML reports and the CLI console. A regex match runs in the QuickJS sandbox
+  and is stopped after 100 ms, so a backtracking pattern cannot freeze the app;
+  values over 100,000 characters fail the rule. Schemas are interpreted by
+  `@cfworker/json-schema`, never compiled to code. A value of the wrong shape
+  for its operator is flagged before the run (`assertion_expected_invalid`).
+- **Contract checks from OpenAPI.** An HTTP Request node can carry
+  `responseSchemas`: a JSON Schema per status (`200`, `2XX`, `default`) that the
+  response body must match, or the node fails with the violations. OpenAPI and
+  Swagger import fills it from each operation's JSON responses, with every
+  `$ref` resolved into the schema and OpenAPI 3.0's `nullable` and Swagger's
+  dialect converted; **Add schema assertions** in the import dialog turns it
+  off. **Settings → Response schemas** lists and removes them.
 - **Scripts on HTTP requests.** An HTTP Request node has a **Scripts** tab
   with a pre-request script, which runs on the resolved request just before it
   is sent and can change its method, URL, headers and body (sign it with

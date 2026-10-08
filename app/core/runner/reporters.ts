@@ -219,7 +219,8 @@ function statusCodeOf(result: RunResult | undefined): number | undefined {
 
 function failureMessage(result: RunResult | undefined, entry: unknown): string {
   const failedRules = (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").length
-  if (failedRules > 0) {
+  // An http-request node that failed its responseSchemas says so in its error.
+  if (failedRules > 0 && !result?.error) {
     return `${failedRules} of ${result?.assertions?.length ?? 0} assertion rules failed`
   }
   const code = statusCodeOf(result)
@@ -232,9 +233,13 @@ function failureMessage(result: RunResult | undefined, entry: unknown): string {
   return typeof message === "string" && message !== "" ? message : "Node failed"
 }
 
-function describeRule(rule: AssertionEvaluation): string {
+/** The rule, then why it could not be compared or each schema violation, indented under it. */
+function describeRule(rule: AssertionEvaluation): string[] {
   const subject = rule.path === "" ? rule.source : `${rule.source} ${rule.path}`
-  return `Rule ${rule.ruleIndex + 1}: ${subject} ${rule.operator} — ${rule.outcome} (${rule.reasonCode})`
+  return [
+    `Rule ${rule.ruleIndex + 1}: ${subject} ${rule.operator} — ${rule.outcome} (${rule.reasonCode}${rule.detail ? `: ${rule.detail}` : ""})`,
+    ...(rule.schemaErrors ?? []).map((violation) => `  ${violation.path === "" ? "(root)" : violation.path}: ${violation.message}`),
+  ]
 }
 
 function details(result: RunResult | undefined, outcome: Outcome): string[] {
@@ -249,7 +254,7 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
     lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
   }
   for (const rule of result.assertions ?? []) {
-    if (outcome !== "failed" || rule.outcome === "fail") lines.push(describeRule(rule))
+    if (outcome !== "failed" || rule.outcome === "fail") lines.push(...describeRule(rule))
   }
   for (const script of result.scripts ?? []) {
     const label = script.phase === "preRequest" ? "Pre-request" : "Post-response"

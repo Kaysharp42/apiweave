@@ -499,6 +499,28 @@ describe("workflow graph analyzer", () => {
       .toContain("assertion_expected_missing")
   })
 
+  it("flags assertion_expected_invalid for a value with the wrong shape for its operator", () => {
+    const workflow = healthyWorkflow()
+    const withInvalid = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? {
+            ...node,
+            config: {
+              assertions: [
+                { source: "prev", path: "response.body.id", operator: "type", expectedValue: "text" },
+                { source: "prev", path: "response.body.id", operator: "matches", expectedValue: "^ord_" },
+              ],
+            },
+          }
+        : node),
+    } as unknown as Workflow
+
+    const invalid = analyzeWorkflowGraph(withInvalid).diagnostics.filter((item) => item.code === "assertion_expected_invalid")
+    expect(invalid).toHaveLength(1)
+    expect(invalid[0]!.message).toMatch(/"type" expects one of/)
+  })
+
   // Regression: parallel fan-out from one assertion outcome IS supported by
   // the runtime (`matching` edges branch in parallel via Promise.allSettled),
   // so routing three "pass" edges off an assertion is a legitimate shape.

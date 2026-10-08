@@ -6,6 +6,7 @@ import type { KeyValuePair } from "@shared/types/KeyValuePair";
 import type { UrlEncodedEntry } from "@shared/types/UrlEncodedEntry";
 import type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import type { JsonValue } from "@shared/types/JsonValue";
 
 export interface NodeModalHTTPRequestConfig {
   url?: string;
@@ -25,6 +26,7 @@ export interface NodeModalHTTPRequestConfig {
   expectedStatus?: number | number[] | undefined;
   retry?: NodeModalHttpRetryConfig | undefined;
   scripts?: HttpScriptsConfig | undefined;
+  responseSchemas?: Record<string, JsonValue> | undefined;
   formDataEntries?: FormDataEntry[];
   urlEncodedEntries?: UrlEncodedEntry[];
 }

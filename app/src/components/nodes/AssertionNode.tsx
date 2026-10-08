@@ -36,7 +36,20 @@ const ASSERTION_OPERATORS = [
   { value: "count", label: "Count (array length)" },
   { value: "exists", label: "Exists" },
   { value: "notExists", label: "Does Not Exist" },
+  { value: "matches", label: "Matches regex" },
+  { value: "notMatches", label: "Does Not Match regex" },
+  { value: "type", label: "Is of type" },
+  { value: "matchesSchema", label: "Matches JSON Schema" },
 ] as const;
+
+/** What to type for each operator's expected value. */
+const EXPECTED_PLACEHOLDERS: Partial<Record<AssertionOperator, string>> = {
+  count: "5",
+  matches: "/^ord_\\d+$/i",
+  notMatches: "error",
+  type: "string, number, integer, boolean, object, array or null",
+  matchesSchema: '{"type": "object", "required": ["id"]}',
+};
 
 /** What the path field is called, and shows, per assertion source. */
 const PATH_LABELS: Record<AssertionSource, string> = {
@@ -228,7 +241,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
           <input
             id="assertion-expected-value"
             type="text"
-            placeholder={operator === "count" ? "5" : "200"}
+            placeholder={EXPECTED_PLACEHOLDERS[operator] ?? "200"}
             className={nodeInputClass({
               invalid: Boolean(errors.expectedValue),
               mono: true,

@@ -372,6 +372,7 @@ export const apiweave = {
       readonly baseUrl?: string;
       readonly tagFilter?: readonly string[];
       readonly sanitize?: boolean;
+      readonly schemaAssertions?: boolean;
       readonly dryRun?: boolean;
     }) => invoke<unknown>("workflows", "importOpenapi", input),
     importOpenapiUrl: (input: {

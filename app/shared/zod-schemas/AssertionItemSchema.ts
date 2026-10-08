@@ -22,7 +22,7 @@ export const AssertionItemSchema = z
         'Locates the value inside `source`, and its shape depends on `source`. "prev": a path into the response object — "response.body.<field>" (dot notation, [0] for array indexes, e.g. response.body.data[0].id), "response.headers.<name>", "response.statusCode" or "response.duration"; a bare field name like "id" is NOT valid. "status": must be the empty string. "headers"/"cookies"/"variables": just the name (e.g. "content-type", "session", "token"), with no response. prefix.',
       ),
     operator: AssertionOperatorSchema.describe(
-      'How to compare. "exists"/"notExists" take no expectedValue; every other operator requires one. "count" requires a non-negative integer and compares the length of an array or string. "status" source accepts only equals, notEquals, gt, gte, lt or lte.',
+      'How to compare. "exists"/"notExists" take no expectedValue; every other operator requires one. "count" requires a non-negative integer and compares the length of an array or string. "matches"/"notMatches" take a regular expression, bare ("^ok") or as a literal with flags ("/^ok$/i"). "type" takes one of string, number, integer, boolean, object, array, null. "matchesSchema" takes a JSON Schema object (draft 2020-12 by default; set "$schema" for draft-07, 2019-09 or draft-04) and validates the value at path, usually "response.body". "status" source accepts only equals, notEquals, gt, gte, lt or lte.',
     ),
     expectedValue: JsonValueSchema.optional().describe(
       'The value to compare against. Required except for "exists"/"notExists". Never inline a real credential here — a secret-looking literal is rejected; use a "{{secrets.NAME}}" reference instead.',

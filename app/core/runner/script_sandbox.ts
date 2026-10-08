@@ -5,6 +5,7 @@ import {
   shouldInterruptAfterDeadline,
   type QuickJSContext,
   type QuickJSHandle,
+  type QuickJSWASMModule,
 } from "quickjs-emscripten-core"
 import variant from "@jitl/quickjs-singlefile-cjs-release-sync"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
@@ -76,7 +77,7 @@ export const SCRIPT_MEMORY_LIMIT_BYTES = 32 * 1024 * 1024
  * a construct that recurses inside the parser can still exhaust the host's
  * stack first, which `runScript` reports the same way.
  */
-const MAX_STACK_BYTES = 256 * 1024
+export const MAX_STACK_BYTES = 256 * 1024
 const MAX_LOG_LINES = 100
 const MAX_LOG_LINE_LENGTH = 2000
 const MAX_TESTS = 100
@@ -201,6 +202,15 @@ function encoding<T extends string>(value: string, allowed: ReadonlySet<string>,
   return value as T
 }
 
+/** A fresh QuickJS instance whose WebAssembly memory is capped at SCRIPT_MEMORY_LIMIT_BYTES above QuickJS's own. */
+export function newSandboxModule(): Promise<QuickJSWASMModule> {
+  const memory = new WebAssembly.Memory({
+    initial: BASE_PAGES,
+    maximum: BASE_PAGES + SCRIPT_MEMORY_LIMIT_BYTES / WASM_PAGE_BYTES,
+  })
+  return newQuickJSWASMModuleFromVariant(newVariant(variant, { wasmMemory: memory }))
+}
+
 /** Run one script. Never throws: every failure is the outcome's `error`. */
 export async function runScript(run: ScriptRun): Promise<ScriptRunResult> {
   const fileName = FILE_NAMES[run.phase]
@@ -215,11 +225,7 @@ export async function runScript(run: ScriptRun): Promise<ScriptRunResult> {
     ...(error === undefined ? {} : { error }),
   })
 
-  const memory = new WebAssembly.Memory({
-    initial: BASE_PAGES,
-    maximum: BASE_PAGES + SCRIPT_MEMORY_LIMIT_BYTES / WASM_PAGE_BYTES,
-  })
-  const quickjs = await newQuickJSWASMModuleFromVariant(newVariant(variant, { wasmMemory: memory }))
+  const quickjs = await newSandboxModule()
   const runtime = quickjs.newRuntime()
   runtime.setMaxStackSize(MAX_STACK_BYTES)
   runtime.setInterruptHandler(shouldInterruptAfterDeadline(Date.now() + run.timeoutMs))

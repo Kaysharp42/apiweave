@@ -7,6 +7,8 @@
 
 import type { JsonValue } from "@shared/types/JsonValue"
 import { AssertionNodeDataSchema } from "@shared/zod-schemas/AssertionNodeDataSchema"
+import { AssertionOperatorSchema } from "@shared/zod-schemas/AssertionOperatorSchema"
+import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { KVStore, SqliteParameters, SqliteRow } from "../db"
 
 /** Parse a JSON column into a known shape. The DB is local and only ever
@@ -307,10 +309,8 @@ function normalizeAssertionSource(value: unknown): "prev" | "variables" | "statu
     : "prev"
 }
 
-type CanonicalAssertionOperator = "equals" | "notEquals" | "contains" | "notContains" | "gt" | "gte" | "lt" | "lte" | "count" | "exists" | "notExists"
-
-function normalizeAssertionOperator(value: string): CanonicalAssertionOperator | null {
-  const aliases: Record<string, CanonicalAssertionOperator> = {
+function normalizeAssertionOperator(value: string): AssertionOperator | null {
+  const aliases: Record<string, AssertionOperator> = {
     not_equals: "notEquals",
     not_contains: "notContains",
     greater_than: "gt",
@@ -319,7 +319,6 @@ function normalizeAssertionOperator(value: string): CanonicalAssertionOperator |
     less_than_or_equal: "lte",
     not_exists: "notExists",
   }
-  const canonical = ["equals", "notEquals", "contains", "notContains", "gt", "gte", "lt", "lte", "count", "exists", "notExists"]
-  if (canonical.includes(value)) return value as CanonicalAssertionOperator
-  return aliases[value] ?? null
+  const canonical = AssertionOperatorSchema.safeParse(value)
+  return canonical.success ? canonical.data : (aliases[value] ?? null)
 }

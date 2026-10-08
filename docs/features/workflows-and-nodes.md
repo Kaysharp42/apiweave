@@ -96,12 +96,30 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Whether a failed request lets the run continue down the outgoing edge |
 | `retry` | Optional: send the request again until a condition holds, or after a network error or 5xx (see [Retry and polling](#retry-and-polling)) |
+| `response schemas` | Optional JSON Schemas the response body must match, keyed by status (`200`, `2XX`, `default`) — see [Response schemas](#response-schemas). Filled by [OpenAPI import](swagger-import.md#response-schema-checks) |
 | `scripts` | Optional JavaScript, on the **Scripts** tab: a pre-request script that can sign or rewrite the request, and a post-response script that can set variables and run custom tests (see [Scripting](scripting.md)) |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
 **Handles:** one input, one output.
+
+#### Response schemas
+
+`responseSchemas` maps a status to the JSON Schema its body must match. After
+the response arrives, the node picks the most specific key for the actual
+status — the exact code (`201`), then its class (`2XX`), then `default` — and
+validates the body against it. A status with no key is not checked. A mismatch
+fails the node with "Response does not match the schema for status 200", and
+its result lists each violation with where in the body it is and why, in the
+output panel, in run reports and on the CLI console. The check runs on negative
+tests too: a request expecting `404` is checked against the `404` (or `4XX`)
+schema.
+
+[OpenAPI import](swagger-import.md#response-schema-checks) fills this from the
+spec. On the **Settings** tab, **Response schemas** lists the statuses and
+removes one; edit a schema itself in the workflow's JSON. To check a schema
+from an Assertion node instead, use the `matchesSchema` operator.
 
 ### SSE Stream
 
@@ -190,7 +208,7 @@ Each assertion rule:
 | --- | --- |
 | `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
 | `path` | What it means depends on `source` — see the table below |
-| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists` |
+| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema` — see [Validation operators](#validation-operators) |
 | `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
 
 | `source` | `path` |
@@ -202,6 +220,47 @@ Each assertion rule:
 A bare field name is not a path: the value at the top of a JSON body is
 `response.body.id`, not `id`. `count` takes a non-negative integer and compares
 the length of an array or string; `status` accepts only the numeric comparison
+operators.
+
+#### Validation operators
+
+| Operator | `expectedValue` | Passes when |
+| --- | --- | --- |
+| `matches` | A regular expression: bare (`^ord_[0-9a-f]{8}$`) or a literal with flags (`/^ok$/i`) | the value matches it. A number or boolean is tested as its text, an object or array as its JSON |
+| `notMatches` | Same | the value does not match it |
+| `type` | `string`, `number`, `integer`, `boolean`, `object`, `array` or `null` | the value has that JSON type; `integer` is a number with no fraction, and also a `number` |
+| `matchesSchema` | A JSON Schema | the value is valid against it. Point `path` at `response.body` to check the whole body |
+
+A missing value fails all four, including `notMatches`. A string that starts
+and ends with `/` is read as a literal: `/api/v1/` is the pattern `api/v1`,
+which still matches any text containing it; write `^/api/v1/` to anchor a
+leading slash. The pattern syntax is JavaScript's.
+
+**Runaway patterns.** A pattern like `^(a+)+$` backtracks exponentially on
+some inputs, and V8, the engine the app runs on, has no time limit for a
+regular expression: one such match would freeze the whole app. So a match runs
+in the [script sandbox](scripting.md)'s engine, QuickJS, whose regex engine can
+be interrupted, and is stopped after 100 ms. The rule then fails with "Regular
+expression timed out after 100 ms". A value longer than 100,000 characters
+fails the rule too, rather than being tested in part.
+
+**JSON Schema.** Draft 2020-12 by default; a schema whose `$schema` names
+draft-07 (or 06), 2019-09 or draft-04 is validated by that draft. Formats such
+as `email`, `date-time` and `uuid` are checked; unknown keywords and formats
+are ignored. `$ref` resolves within the schema (`#/$defs/...`), not to other
+files. The schema is interpreted as data by
+[@cfworker/json-schema](https://github.com/cfworker/cfworker/tree/main/packages/json-schema)
+— nothing is generated or evaluated from it. A failed rule lists its first 10
+violations, each with a JSON Pointer to the value (`/items/0/qty`, empty for
+the value itself) and the reason, in the node's result, the reports and the CLI
+console, masked like everything else in a run.
+
+A value of the wrong shape — an unknown type name, a pattern that does not
+compile, a `matchesSchema` value that is not a schema object — is flagged
+before the run (`assertion_expected_invalid`), and at run time fails the rule
+with `comparison-error` and the reason.
+
+The Retry `until` rules and an SSE node's finish conditions take the same
 operators.
 
 **Handles:** one input, two outputs. `pass` fires when every rule passes; `fail` fires when at least one rule fails.

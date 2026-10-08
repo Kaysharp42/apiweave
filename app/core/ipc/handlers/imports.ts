@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { WorkflowSchema, KeyValuePairSchema } from "@shared/zod-schemas"
+import { WorkflowSchema, KeyValuePairSchema, JsonValueSchema, OpenApiNodeMetaSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { WorkflowBundleSchema } from "../../services/import_service"
@@ -57,17 +57,8 @@ const ImportedNodeSchema: z.ZodType<ImportedNode> = z.discriminatedUnion("type",
       timeout: z.number(),
       followRedirects: z.boolean(),
       extractors: z.record(z.string(), z.string()),
-      openapiMeta: z.object({
-        source: z.literal("openapi"),
-        method: z.string(),
-        path: z.string(),
-        operationId: z.string().nullable(),
-        fingerprint: z.string(),
-        definitionName: z.string().optional(),
-        definitionSpecUrl: z.string().optional(),
-        definitionScope: z.string().optional(),
-        sourceUiUrl: z.string().optional(),
-      }).strict().optional(),
+      openapiMeta: OpenApiNodeMetaSchema.optional(),
+      responseSchemas: z.record(z.string(), JsonValueSchema).optional(),
     }).strict(),
   }).strict(),
   z.object({
@@ -79,11 +70,12 @@ const ImportedNodeSchema: z.ZodType<ImportedNode> = z.discriminatedUnion("type",
   }).strict(),
 ])
 
-function buildOpenApiOpts(i: { baseUrl?: string; tagFilter?: string[]; sanitize?: boolean }) {
-  const opts: { baseUrl?: string; tagFilter?: readonly string[]; sanitize?: boolean } = {}
+function buildOpenApiOpts(i: { baseUrl?: string; tagFilter?: string[]; sanitize?: boolean; schemaAssertions?: boolean }) {
+  const opts: { baseUrl?: string; tagFilter?: readonly string[]; sanitize?: boolean; schemaAssertions?: boolean } = {}
   if (i.baseUrl !== undefined) opts["baseUrl"] = i.baseUrl
   if (i.tagFilter !== undefined) opts["tagFilter"] = i.tagFilter
   if (i.sanitize !== undefined) opts["sanitize"] = i.sanitize
+  if (i.schemaAssertions !== undefined) opts["schemaAssertions"] = i.schemaAssertions
   return opts
 }
 
@@ -152,6 +144,8 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       baseUrl: z.string().optional(),
       tagFilter: z.array(z.string()).optional(),
       sanitize: z.boolean().optional(),
+      /** Attach each operation's response body schemas to its node (default true). */
+      schemaAssertions: z.boolean().optional(),
       dryRun: z.boolean().optional(),
     }).strict(),
     output: z.unknown(),
@@ -170,6 +164,7 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       baseUrl: z.string().optional(),
       tagFilter: z.array(z.string()).optional(),
       sanitize: z.boolean().optional(),
+      schemaAssertions: z.boolean().optional(),
       dryRun: z.boolean().optional(),
     }).strict(),
     output: z.unknown(),

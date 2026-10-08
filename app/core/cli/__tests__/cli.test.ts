@@ -249,6 +249,37 @@ describe("apiweave run", () => {
     for (const output of [result.stdout, result.stderr, junit]) expect(output).not.toContain(TOKEN)
   })
 
+  it("fails a response that breaks its schema with exit 1, listing each violation in the console and JUnit", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; config?: object }[] }[] }
+    const workflow = project.workflows[0]!
+    workflow.nodes = workflow.nodes
+      .filter((node) => node.nodeId !== "check-status")
+      .map((node) =>
+        node.nodeId === "get-health"
+          ? {
+              ...node,
+              config: {
+                url: `${baseUrl}/health.json`,
+                responseSchemas: {
+                  "200": { type: "object", required: ["status", "version"], properties: { status: { enum: ["up"] } } },
+                },
+              },
+            }
+          : node,
+      )
+    fs.writeFileSync(path.join(dir, "contract.json"), JSON.stringify({ workflow }))
+
+    const junitPath = path.join(dir, "junit.xml")
+    const result = await run(["run", "contract.json", "--reporter-junit-export", junitPath])
+    expect(result.code).toBe(EXIT_FAILED)
+    expect(result.stdout).toContain("Response does not match the schema for status 200")
+    expect(result.stdout).toContain("(root): Instance does not have required property \"version\".")
+    expect(result.stdout).toContain("/status: Instance does not match any of")
+    const junit = fs.readFileSync(junitPath, "utf8")
+    expect(junit).toContain("Rule 1: prev response.body matchesSchema — fail (comparison-failed: 2 schema violations)")
+    expect(junit).toContain("(root): Instance does not have required property \"version\".")
+  })
+
   it("applies --timeout-request to every request", async () => {
     const result = await run(
       ["run", FIXTURE, "--env", "CI", "--var", `baseUrl=${baseUrl}/slow`, "--timeout-request", "50"],

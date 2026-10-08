@@ -18,6 +18,7 @@ import {
   Plus,
   Puzzle,
   Repeat,
+  ShieldCheck,
   Trash2,
   Type,
   Variable,
@@ -332,6 +333,7 @@ const KeyRoundCardIcon = createCardIcon(KeyRound);
 const Link2CardIcon = createCardIcon(Link2);
 const PuzzleCardIcon = createCardIcon(Puzzle);
 const RepeatCardIcon = createCardIcon(Repeat);
+const ShieldCheckCardIcon = createCardIcon(ShieldCheck);
 const TypeCardIcon = createCardIcon(Type);
 
 function buildPreviewUrl(url: string, pairs: KeyValuePair[]): string {
@@ -448,6 +450,59 @@ function ExtractorRow({
 }
 
 const DEFAULT_RETRY: NodeModalHttpRetryConfig = { maxAttempts: 5, intervalMs: 2000 };
+
+/**
+ * The response body schemas OpenAPI import attached, by status. They are
+ * checked on every run; a status can be dropped here, and a schema edited in
+ * the workflow's JSON.
+ */
+function ResponseSchemaSettings({
+  schemas,
+  onChange,
+}: {
+  schemas: NonNullable<NodeModalHTTPRequestConfig["responseSchemas"]>;
+  onChange: (schemas: NodeModalHTTPRequestConfig["responseSchemas"]) => void;
+}) {
+  const keys = Object.keys(schemas);
+  const remove = (key: string) => {
+    const rest = Object.fromEntries(
+      Object.entries(schemas).filter(([status]) => status !== key),
+    );
+    onChange(Object.keys(rest).length > 0 ? rest : undefined);
+  };
+  return (
+    <Card title="Response schemas" icon={ShieldCheckCardIcon}>
+      <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
+        The response body must match the JSON Schema for its status code (the
+        exact code, then its class such as 2XX, then default), or the request
+        fails and lists where the body differs. A status not listed is not
+        checked.
+      </p>
+      <ul className="space-y-2">
+        {keys.map((key) => (
+          <li
+            key={key}
+            className="flex items-center justify-between gap-2 rounded-sm border border-border px-3 py-2 dark:border-border-dark"
+          >
+            <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark">
+              Status {key}
+            </span>
+            <Button
+              variant="ghost"
+              intent="error"
+              size="xs"
+              aria-label={`Stop checking the status ${key} schema`}
+              onClick={() => remove(key)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 /**
  * Send the request again: poll until the "until" rules pass, or, with none,
@@ -910,6 +965,14 @@ export function HTTPRequestConfigPanel({
         retry={draftConfig.retry}
         onChange={(retry) => updateConfig({ retry })}
       />
+
+      {draftConfig.responseSchemas &&
+        Object.keys(draftConfig.responseSchemas).length > 0 && (
+          <ResponseSchemaSettings
+            schemas={draftConfig.responseSchemas}
+            onChange={(responseSchemas) => updateConfig({ responseSchemas })}
+          />
+        )}
 
       <Card title="Store response as variables" icon={PuzzleCardIcon}>
         <div className="mb-3 space-y-2">

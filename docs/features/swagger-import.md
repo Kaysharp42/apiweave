@@ -18,6 +18,7 @@
   - [Step 3: Drag Imported Requests to the Canvas](#step-3-drag-imported-requests-to-the-canvas)
 - [The `Check API` Warning Badge](#the-check-api-warning-badge)
 - [Path B: OpenAPI File Import](#path-b-openapi-file-import)
+- [Response Schema Checks](#response-schema-checks)
 - [Multi-Definition Swagger UI](#multi-definition-swagger-ui)
 - [Supported Versions](#supported-versions)
 - [Troubleshooting](#troubleshooting)
@@ -99,10 +100,38 @@ Use the file path when you have a spec on disk and do not need ongoing sync.
 2. Choose **OpenAPI** as the import source.
 3. Upload a `.json` or `.yaml` spec file from your computer.
 4. Click **Preview** to see the operations the importer extracted.
-5. Optionally pick a server URL, filter by tags, or enable sanitization for the request body.
+5. Optionally pick a server URL, filter by tags, or enable sanitization for the request body. **Add schema assertions** (on by default) attaches each operation's response schemas; see [Response Schema Checks](#response-schema-checks).
 6. Click **Add to Nodes**. The endpoints are added to the Add Nodes panel as a new palette group.
 
 The group added by Path B is local to the workflow. It does not depend on any environment, does not refresh, and does not generate `Check API` badges. If the spec on disk changes, run the import again.
+
+## Response Schema Checks
+
+An imported request carries the spec's contract for its responses: for each
+documented status with a JSON body (`application/json`, or a `+json` type such
+as `application/problem+json`), the response's schema is stored on the node as
+its [`responseSchemas`](workflows-and-nodes.md#response-schemas), keyed `200`,
+`4XX` or `default` as the spec keys it. When the request runs, the body must
+match the schema for the status it got — exact code, then class, then
+`default` — or the node fails and lists each violation. A status the spec does
+not document is not checked, and a response without a JSON body never is.
+
+The schemas are copied at import, not linked to the spec: every `$ref` they
+use is resolved and copied into the schema's own `$defs` (a recursive model
+stays recursive), so the workflow still validates if the spec moves or
+changes, and refreshing the spec does not change requests already on the
+canvas. OpenAPI 3.0 and Swagger 2.0 schemas are converted to JSON Schema
+2020-12: `nullable` (and `x-nullable`) becomes a `null` type, a boolean
+`exclusiveMinimum`/`exclusiveMaximum` becomes the numeric form, and a
+`writeOnly` property is no longer `required`, since it never appears in a
+response. OpenAPI 3.1 schemas are JSON Schema already. A `$ref` to another file
+is not fetched; that part of the body is accepted as is. A converted schema
+over 256 KB is not attached.
+
+Turn **Add schema assertions** off in the import dialog to import requests
+without them (the Swagger refresh of Path A always attaches them). On a
+request, **Settings → Response schemas** lists the checked statuses and removes
+one.
 
 ## Multi-Definition Swagger UI
 

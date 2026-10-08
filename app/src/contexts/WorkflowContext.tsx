@@ -198,6 +198,7 @@ export const WorkflowProvider = ({
             cookies?: string;
             timeout?: number;
             openapiMeta?: unknown;
+            responseSchemas?: Record<string, JsonValue>;
           };
         }[];
       }
@@ -264,6 +265,9 @@ export const WorkflowProvider = ({
       cookies: node.config?.cookies ?? "",
       timeout: node.config?.timeout ?? 30,
       openapiMeta: node.config?.openapiMeta ?? null,
+      ...(node.config?.responseSchemas
+        ? { responseSchemas: node.config.responseSchemas }
+        : {}),
     }));
 
     addImportedGroup({

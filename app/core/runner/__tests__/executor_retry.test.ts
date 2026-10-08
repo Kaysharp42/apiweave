@@ -168,7 +168,7 @@ describe("WorkflowExecutor — http-request retry", () => {
     expect(parse({ maxAttempts: 3, intervalMs: -1 })).toBe(false)
     expect(parse({ maxAttempts: 3 })).toBe(false)
     expect(parse({ maxAttempts: 3, intervalMs: 10, backoff: "linear" })).toBe(false)
-    expect(parse({ maxAttempts: 3, intervalMs: 10, until: [{ source: "prev", path: "x", operator: "matches" }] })).toBe(false)
+    expect(parse({ maxAttempts: 3, intervalMs: 10, until: [{ source: "prev", path: "x", operator: "regex" }] })).toBe(false)
     expect(parse({ maxAttempts: 3, intervalMs: 10, unknown: true })).toBe(false)
   })
 })

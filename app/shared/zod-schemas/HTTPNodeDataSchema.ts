@@ -5,7 +5,9 @@ import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
 import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
 import { HttpScriptsConfigSchema } from "./HttpScriptsConfigSchema"
+import { JsonValueSchema } from "./JsonValueSchema"
 import { KeyValuePairSchema } from "./KeyValuePairSchema"
+import { OpenApiNodeMetaSchema } from "./OpenApiNodeMetaSchema"
 import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
 
 /**
@@ -16,6 +18,9 @@ import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
  * dynamic functions. The `.describe()` calls carry that to MCP clients, which
  * see this shape as the JSON schema for `workflows_create`/`workflows_update`.
  */
+/** "200", "2XX" or "default", as OpenAPI keys its responses. */
+export const RESPONSE_SCHEMA_KEY = /^(?:[1-5](?:\d\d|XX)|default)$/
+
 export const HTTPNodeDataSchema = z
   .object({
     method: HttpMethodSchema.optional().describe("HTTP method. Defaults to GET when omitted."),
@@ -58,6 +63,13 @@ export const HTTPNodeDataSchema = z
       .record(z.string(), z.string())
       .optional()
       .describe('Captures values from this response into workflow variables: a map of variable name to a response path, e.g. {"token": "response.body.access_token"}. Later nodes read the value as "{{variables.token}}". Paths start at the response object: response.body.*, response.headers.*, response.statusCode.'),
+    responseSchemas: z
+      .record(z.string().regex(RESPONSE_SCHEMA_KEY), JsonValueSchema)
+      .optional()
+      .describe(
+        'JSON Schemas the response body must match, keyed by status code: "200", a range like "2XX", or "default". The most specific key for the actual status applies; a status with no key is not checked. A mismatch fails the node and lists where the body differs. Filled from the spec on OpenAPI import.',
+      ),
+    openapiMeta: OpenApiNodeMetaSchema.optional().describe("Set by OpenAPI import: which operation this request came from, used to flag drift when the spec is refreshed."),
     fileUploads: z.array(FileUploadSchema).optional(),
     auth: AuthConfigSchema.optional(),
     formDataEntries: z.array(FormDataEntrySchema).optional(),
