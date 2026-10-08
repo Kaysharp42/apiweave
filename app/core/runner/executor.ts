@@ -15,6 +15,8 @@ import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { AssertionSource } from "@shared/types/AssertionSource"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
+import type { HttpAttempt } from "@shared/types/HttpAttempt"
+import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -238,6 +240,8 @@ export interface NodeResult {
   readonly unresolvedPlaceholders?: readonly string[]
   readonly assertionEvaluations?: readonly AssertionEvaluation[]
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
+  /** Every request a retrying http-request node sent; the rest of the result is the last one's. */
+  readonly attempts?: readonly HttpAttempt[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
@@ -263,6 +267,32 @@ export interface ExecutorOutput {
   readonly results: readonly RunResult[]
   readonly failedNodes: readonly string[]
   readonly failureMessage: string | null
+}
+
+type AssertionResponseSource =
+  | { readonly state: "resolved"; readonly nodeId: string; readonly result: NodeResult }
+  | { readonly state: "source-unavailable" | "ambiguous-source" }
+
+/** Resolves `true` after `ms`, or `false` as soon as `signal` aborts (at once if it already has). */
+function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve(true)
+    }, ms)
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+}
+
+/** The wait after attempt number `attempt` (1-based): `intervalMs`, doubled per attempt when exponential, capped by `maxIntervalMs`. */
+export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
+  const base = retry.backoff === "exponential" ? retry.intervalMs * 2 ** (attempt - 1) : retry.intervalMs
+  return Math.min(base, retry.maxIntervalMs ?? Number.POSITIVE_INFINITY)
 }
 
 // -------------------- Internal sentinel --------------------
@@ -689,7 +719,7 @@ export class WorkflowExecutor {
       let result: NodeResult
 
       if (nodeType === "http-request") {
-        result = await this.executeHttpRequest(node, cancelSignal)
+        result = await this.executeHttpRequestWithRetry(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -948,6 +978,8 @@ export class WorkflowExecutor {
       }
       return withExtractorOutcomes({
         status: "error",
+        // Sent but unanswered (refused, reset, timed out): a retry may get through.
+        networkError: true,
         error: cancelSignal?.aborted
           ? "Request cancelled"
           : error instanceof Error && error.name === "TimeoutError"
@@ -959,6 +991,47 @@ export class WorkflowExecutor {
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       })
+    }
+  }
+
+  /**
+   * The node's request, sent again per `config.retry` — the structured way to
+   * poll, since a workflow has no loops. Each attempt is a full request
+   * (placeholders and extractors re-run), and the node's result is the last
+   * attempt's plus the list of every attempt. A request that could not be sent
+   * at all (a blocked URL, a body that would not build) is not retried.
+   */
+  private async executeHttpRequestWithRetry(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const retry = node.config?.["retry"] as HttpRetryConfig | undefined
+    if (!retry) return this.executeHttpRequest(node, cancelSignal)
+    const until = retry.until ?? []
+    const attempts: HttpAttempt[] = []
+    for (;;) {
+      const attempt = await this.executeHttpRequest(node, cancelSignal)
+      attempts.push({
+        ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
+        duration: Math.max(0, Math.round(attempt.duration ?? 0)),
+        ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
+      })
+      const result: NodeResult = { ...attempt, attempts }
+      if (cancelSignal?.aborted) return { ...result, status: "cancelled" }
+
+      const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
+      const done = !sent || (until.length > 0
+        ? until.every((rule, index) =>
+            this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId: node.nodeId, result: attempt })).outcome === "pass")
+        : attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500)
+      if (done) return result
+
+      if (attempts.length >= retry.maxAttempts) {
+        // The scheduler keeps this verdict and classes the cause like any other error.
+        const verdict = until.length > 0 ? "Condition not met" : "Failed"
+        const cause = attempt.error ?? (until.length > 0 ? undefined : `HTTP ${attempt.statusCode}`)
+        return { ...result, status: "error", error: `${verdict} after ${attempts.length} attempts${cause ? `: ${cause}` : ""}` }
+      }
+      // Harness mode collapses waits, as it does for Delay.
+      const waitMs = this.deps.baseUrl ? 0 : retryDelayMs(retry, attempts.length)
+      if (!(await waitFor(waitMs, cancelSignal))) return { ...result, status: "cancelled" }
     }
   }
 
@@ -1206,25 +1279,8 @@ export class WorkflowExecutor {
       return { status: "success", duration: 0, message: "Delayed for 0 ms (harness mode)" }
     }
 
-    // An abort that landed before this node started never fires the listener below.
-    if (cancelSignal?.aborted) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
-
-    return new Promise<NodeResult>((resolve) => {
-      const timer = setTimeout(() => {
-        resolve({ status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` })
-      }, durationMs)
-
-      if (cancelSignal) {
-        cancelSignal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer)
-            resolve({ status: "cancelled", duration: 0, message: "Delay cancelled" })
-          },
-          { once: true },
-        )
-      }
-    })
+    if (!(await waitFor(durationMs, cancelSignal))) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
+    return { status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` }
   }
 
   // -------------------- Assertion --------------------
@@ -1277,7 +1333,7 @@ export class WorkflowExecutor {
         continue
       }
 
-      const evaluation = this.evaluateAssertion(node.nodeId, index, assertion, edges)
+      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges))
       evaluations.push(evaluation)
       if (evaluation.outcome === "fail" && failureMode === "first") stopped = true
     }
@@ -1300,8 +1356,8 @@ export class WorkflowExecutor {
     }
   }
 
+  /** One rule against the response `resolveSource` locates (an assertion node's upstream request, or a retrying node's own attempt). */
   private evaluateAssertion(
-    assertionNodeId: string,
     ruleIndex: number,
     assertion: {
       readonly field?: string
@@ -1311,7 +1367,7 @@ export class WorkflowExecutor {
       readonly expectedValue?: unknown
       readonly source?: string
     },
-    edges: readonly WorkflowEdge[],
+    resolveSource: () => AssertionResponseSource,
   ): AssertionEvaluation {
     const source = toAssertionSource(assertion.source)
     const path = assertion.path ?? assertion.field ?? ""
@@ -1343,7 +1399,7 @@ export class WorkflowExecutor {
     if (source === "variables") {
       actual = this.workflowVariables[path]
     } else {
-      const resolution = this.resolveAssertionResponseSource(assertionNodeId, edges)
+      const resolution = resolveSource()
       if (resolution.state !== "resolved") {
         return {
           ...base,
@@ -1443,9 +1499,7 @@ export class WorkflowExecutor {
   private resolveAssertionResponseSource(
     assertionNodeId: string,
     edges: readonly WorkflowEdge[],
-  ):
-    | { readonly state: "resolved"; readonly nodeId: string; readonly result: NodeResult }
-    | { readonly state: "source-unavailable" | "ambiguous-source" } {
+  ): AssertionResponseSource {
     const queue = edges.filter((edge) => edge.target === assertionNodeId).map((edge) => edge.source)
     const visited = new Set<string>()
     const sourceIds = new Set<string>()
@@ -2278,6 +2332,7 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
       ? { expectedStatus: (Array.isArray(result.expectedStatus) ? [...result.expectedStatus] : result.expectedStatus) as number | number[] }
       : {}),
     ...buildRunResultDiagnostics(result),
+    ...(result.attempts ? { attempts: result.attempts.map((attempt) => ({ ...attempt })) } : {}),
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),
     error: typeof result.error === "string" ? result.error : null,

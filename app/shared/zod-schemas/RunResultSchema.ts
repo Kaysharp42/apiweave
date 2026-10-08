@@ -4,6 +4,7 @@ import { RunnerNodeStatusSchema } from "./RunnerNodeStatusSchema"
 import { TimestampSchema } from "./TimestampSchema"
 import { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
 import { ExtractorOutcomeSchema } from "./ExtractorOutcomeSchema"
+import { HttpAttemptSchema } from "./HttpAttemptSchema"
 
 export const RunResultSchema = z
   .object({
@@ -30,6 +31,8 @@ export const RunResultSchema = z
     // negative test (e.g. a passed node showing a 409) is legible without
     // cross-referencing the node's config.
     expectedStatus: z.union([z.number(), z.array(z.number())]).optional(),
+    // Every request a retrying http-request node sent, in order; `response` is the last one's.
+    attempts: z.array(HttpAttemptSchema).optional(),
     assertions: z.array(AssertionEvaluationSchema).nullable().optional(),
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
     // Call Workflow summary only — never the sub-workflow's own raw per-node

@@ -54,8 +54,10 @@ interface ReportCase {
   readonly durationMs: number
   /** One line: the failure or skip message. */
   readonly message: string | null
-  /** Further lines: failed assertion rules, request line, status code. */
+  /** Further lines: failed assertion rules, request line, status code, attempts. */
   readonly details: readonly string[]
+  /** Requests a retrying node sent; null when it has no retry. */
+  readonly attempts: number | null
 }
 
 interface ReportSuite {
@@ -109,7 +111,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [] }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null }],
       }
     }),
   }
@@ -141,6 +143,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
             ? `Did not finish (${recorded})`
             : null,
       details: details(result, outcome),
+      attempts: result?.attempts?.length ?? null,
     })
   }
   if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) {
@@ -152,6 +155,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
       durationMs: run.duration ?? 0,
       message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
       details: [],
+      attempts: null,
     })
   }
   return {
@@ -210,6 +214,9 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (typeof url === "string") lines.push(typeof method === "string" ? `${method} ${url}` : url)
   const code = statusCodeOf(result)
   if (code !== undefined) lines.push(`Status ${code}`)
+  if (result.attempts !== undefined) {
+    lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
+  }
   for (const rule of result.assertions ?? []) {
     if (outcome !== "failed" || rule.outcome === "fail") lines.push(describeRule(rule))
   }
@@ -419,7 +426,8 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
     const width = Math.max(0, ...suite.cases.map((testCase) => testCase.name.length))
     for (const testCase of suite.cases) {
       const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
-      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s`)}`)
+      const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
+      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`)
       if (testCase.outcome === "passed") continue
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)

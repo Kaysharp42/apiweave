@@ -184,6 +184,17 @@ or array order.
   be rejected, e.g. \`"expectedStatus": 409\` for a state-transition guard. It is
   orthogonal to \`continueOnFail\`: \`expectedStatus\` decides whether the node
   failed, \`continueOnFail\` decides whether a failure stops the branch.
+- \`retry\` — send the request again; this is how to poll an async API, since a
+  workflow has no loops (a back-edge is refused). \`{"maxAttempts": 10,
+  "intervalMs": 2000, "until": [{"source": "status", "path": "", "operator":
+  "equals", "expectedValue": 200}, {"source": "prev", "path":
+  "response.body.status", "operator": "equals", "expectedValue": "done"}]}\`
+  repeats the request until every \`until\` rule passes against this node's own
+  response (same rule shape as an assertion). Without \`until\` it repeats only on
+  network errors, timeouts and 5xx. \`backoff: "exponential"\` doubles the wait,
+  capped by \`maxIntervalMs\`. The node's result is the last attempt plus an
+  \`attempts\` list; it fails with "Condition not met after N attempts" when the
+  condition never holds.
 
 ### sse
 

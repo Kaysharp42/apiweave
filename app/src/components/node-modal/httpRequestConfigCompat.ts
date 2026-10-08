@@ -1,9 +1,11 @@
 import type {
+  AssertionItem,
   AuthConfig,
   FormDataEntry,
   HTTPRequestBodyType,
   KeyValuePair,
   NodeModalHTTPRequestConfig,
+  NodeModalHttpRetryConfig,
   UrlEncodedEntry,
 } from "../../types";
 
@@ -198,6 +200,48 @@ export function normalizeExpectedStatus(value: unknown): number | number[] | und
   return undefined;
 }
 
+function clampInteger(value: unknown, fallback: number, min: number, max: number): number {
+  return Math.min(Math.max(Math.round(getNumber(value, fallback)), min), max);
+}
+
+/** Keeps a saved or agent-written rule editable: the rule editor works in strings. */
+function normalizeRetryRule(value: unknown): AssertionItem[] {
+  if (!isRecord(value)) return [];
+  const { source, operator, path, expectedValue } = value;
+  if (typeof source !== "string" || typeof operator !== "string") return [];
+  return [{
+    source: source as AssertionItem["source"],
+    operator: operator as AssertionItem["operator"],
+    path: getString(path),
+    expectedValue:
+      typeof expectedValue === "string"
+        ? expectedValue
+        : expectedValue === undefined
+          ? ""
+          : JSON.stringify(expectedValue),
+  }];
+}
+
+/**
+ * Clamped to what HttpRetryConfigSchema accepts, so an edit never produces a
+ * config the save would refuse. An empty `until` and a cap of 0 (a cleared
+ * field) or one without exponential backoff are dropped.
+ */
+export function normalizeRetry(value: unknown): NodeModalHttpRetryConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const exponential = value.backoff === "exponential";
+  const until = Array.isArray(value.until) ? value.until.flatMap(normalizeRetryRule).slice(0, 20) : [];
+  return {
+    maxAttempts: clampInteger(value.maxAttempts, 5, 1, 100),
+    intervalMs: clampInteger(value.intervalMs, 1000, 0, 600_000),
+    ...(exponential ? { backoff: "exponential" as const } : {}),
+    ...(exponential && getNumber(value.maxIntervalMs, 0) > 0
+      ? { maxIntervalMs: clampInteger(value.maxIntervalMs, 30_000, 1, 3_600_000) }
+      : {}),
+    ...(until.length > 0 ? { until } : {}),
+  };
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -232,6 +276,7 @@ export function normalizeHttpRequestConfig(
     sslVerify: getBoolean(config.sslVerify, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
+    retry: normalizeRetry(config.retry),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),
     urlEncodedEntries: normalizeUrlEncodedEntries(config.urlEncodedEntries),
   };

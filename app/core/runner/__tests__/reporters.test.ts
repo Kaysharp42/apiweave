@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
-import { buildHtmlReport, buildJUnitReport, writeReport, type ReportInput, type ReportWorkflow } from "../reporters"
+import { buildConsoleReport, buildHtmlReport, buildJUnitReport, writeReport, type ReportInput, type ReportWorkflow } from "../reporters"
 
 // -------------------- A strict little XML reader --------------------
 
@@ -190,6 +190,26 @@ describe("buildJUnitReport — one workflow run", () => {
     })
     const testCase = all(all(parseXml(buildJUnitReport({ kind: "run", run, workflow: WORKFLOW })), "testsuite")[0]!, "testcase")[0]!
     expect(all(testCase, "failure")[0]!.attrs["message"]).toBe("Status 404, expected 200 or 201")
+  })
+
+  it("lists a retrying node's attempts, and counts them on the console", () => {
+    const run = makeRun({
+      status: "failed",
+      nodeStatuses: { http_1: { status: "failed" } },
+      results: [
+        result("http_1", {
+          status: "failed",
+          error: "Condition not met after 3 attempts",
+          response: { statusCode: 202 },
+          attempts: [{ statusCode: 202, duration: 5 }, { duration: 1, error: "Request timed out" }, { statusCode: 202, duration: 4 }],
+        }),
+      ],
+    })
+    const input: ReportInput = { kind: "run", run, workflow: WORKFLOW }
+    const testCase = all(all(parseXml(buildJUnitReport(input)), "testsuite")[0]!, "testcase")[0]!
+    expect(all(testCase, "failure")[0]!.attrs["message"]).toBe("Condition not met after 3 attempts")
+    expect(all(testCase, "failure")[0]!.text).toContain("Attempts 3: 202, no response, 202")
+    expect(buildConsoleReport(input, false)).toContain("GET /users  0.120s · 3 attempts")
   })
 
   it("escapes hostile names and messages, and drops characters XML cannot carry", () => {

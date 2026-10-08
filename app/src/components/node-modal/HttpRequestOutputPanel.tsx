@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Code2, Copy, FileText, Timer } from "lucide-react";
+import { Code2, Copy, FileText, Repeat, Timer } from "lucide-react";
 import { Badge } from "../atoms/Badge";
 import { IconButton } from "../atoms/IconButton";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
@@ -14,6 +14,7 @@ import {
   getNumberValue,
 } from "./nodeModalUtils";
 import { buildCurlCommand, buildFetchCommand } from "./copyAsCurl";
+import type { HttpAttempt } from "@shared/types/HttpAttempt";
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
 
@@ -71,6 +72,10 @@ export function HttpRequestOutputPanel({
     ? (outputRecord!.secretRefs as readonly string[])
     : [];
   const resolvedSecrets = outputRecord?.resolvedSecrets as readonly ResolvedSecretInfo[] | undefined;
+  // Set only on a node with Retry: every request it sent; the response shown is the last one's.
+  const attempts = Array.isArray(outputRecord?.attempts)
+    ? (outputRecord!.attempts as readonly HttpAttempt[])
+    : undefined;
 
   const commands = useMemo(
     () => ({
@@ -116,6 +121,21 @@ export function HttpRequestOutputPanel({
             <Badge variant="outline" size="sm">
               {responseSize}
             </Badge>
+            {attempts && (
+              <Badge
+                variant="outline"
+                size="sm"
+                title={attempts
+                  .map(
+                    (attempt, index) =>
+                      `#${index + 1}: ${attempt.statusCode ?? attempt.error ?? "no response"} · ${attempt.duration} ms`,
+                  )
+                  .join("\n")}
+              >
+                <Repeat className="h-3 w-3" />
+                {attempts.length} {attempts.length === 1 ? "attempt" : "attempts"}
+              </Badge>
+            )}
             {truncated && (
               <Badge variant="warning" size="sm">
                 Body truncated to first 1 MB

@@ -687,6 +687,46 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("http-request retry", () => {
+    it("persists the retry verdict, its cause and every attempt", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer()
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      const request = (nodeId: string, retry: Record<string, unknown>) => ({
+        nodeId,
+        type: "http-request" as const,
+        position: { x: 1, y: 0 },
+        config: { method: "GET" as const, url: `http://127.0.0.1:${port}/job`, retry: { maxAttempts: 2, intervalMs: 0, ...retry } },
+      })
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "retry-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          request("flaky", {}),
+          request("poll", { until: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }] }),
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "flaky" },
+          { edgeId: "e2", source: "start", target: "poll" },
+        ],
+      }).workflowId
+
+      const scheduler = makeScheduler()
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await scheduler.whenFinished(runId)
+
+      const refused = `Network error: connection refused by 127.0.0.1:${port} (ECONNREFUSED)`
+      const result = (nodeId: string) => runs.getById(runId)?.results.find((r) => r.nodeId === nodeId)
+      expect(result("flaky")?.error).toBe(`Failed after 2 attempts: ${refused}`)
+      expect(result("poll")?.error).toBe(`Condition not met after 2 attempts: ${refused}`)
+      expect(result("poll")?.attempts?.map((attempt) => attempt.error)).toEqual([refused, refused])
+    })
+  })
+
   describe("Call Workflow errors", () => {
     it("names a missing or unset target instead of a generic failure", async () => {
       const ws = seedWorkspace()

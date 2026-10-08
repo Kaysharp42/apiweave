@@ -104,3 +104,28 @@ describe("HTTPRequestConfigPanel expected status", () => {
     expect(latest?.expectedStatus).toBeUndefined();
   });
 });
+
+describe("HTTPRequestConfigPanel retry", () => {
+  test("turning retry on writes a default policy, and Quick Add writes an until rule", () => {
+    let latest: NodeModalHTTPRequestConfig | undefined;
+    render(<Harness onConfigChange={(next) => { latest = next; }} />);
+    fireEvent.click(screen.getByLabelText("Retry this request"));
+    expect(latest?.retry).toEqual({ maxAttempts: 5, intervalMs: 2000 });
+    fireEvent.click(screen.getByRole("button", { name: "Add Assertion" }));
+    expect(latest?.retry?.until).toEqual([
+      { source: "prev", path: "response.body.", operator: "equals", expectedValue: "" },
+    ]);
+  });
+
+  test("turning retry off removes it from the config", () => {
+    let latest: NodeModalHTTPRequestConfig | undefined;
+    render(
+      <Harness
+        initialConfig={{ ...config, retry: { maxAttempts: 3, intervalMs: 100 } }}
+        onConfigChange={(next) => { latest = next; }}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Retry this request"));
+    expect(latest?.retry).toBeUndefined();
+  });
+});

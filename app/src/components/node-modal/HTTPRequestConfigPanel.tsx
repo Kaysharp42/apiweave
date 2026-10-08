@@ -18,6 +18,7 @@ import {
   Link2,
   Plus,
   Puzzle,
+  Repeat,
   Trash2,
   Type,
   Variable,
@@ -50,6 +51,7 @@ import {
   setTemplateCompletionSuggestions,
 } from "../../utils/monacoTemplateCompletion";
 import { previewValue } from "../../utils/previewValue";
+import { AssertionRulesEditor } from "../molecules/AssertionRulesEditor";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import type {
@@ -60,6 +62,7 @@ import type {
   HTTPRequestConfigPanelProps,
   KeyValuePair,
   NodeModalHTTPRequestConfig,
+  NodeModalHttpRetryConfig,
   SelectOption,
   UrlEncodedEntry,
 } from "../../types";
@@ -340,6 +343,7 @@ const FileTextCardIcon = createCardIcon(FileText);
 const KeyRoundCardIcon = createCardIcon(KeyRound);
 const Link2CardIcon = createCardIcon(Link2);
 const PuzzleCardIcon = createCardIcon(Puzzle);
+const RepeatCardIcon = createCardIcon(Repeat);
 const TypeCardIcon = createCardIcon(Type);
 
 function buildPreviewUrl(url: string, pairs: KeyValuePair[]): string {
@@ -452,6 +456,107 @@ function ExtractorRow({
         </p>
       )}
     </div>
+  );
+}
+
+const DEFAULT_RETRY: NodeModalHttpRetryConfig = { maxAttempts: 5, intervalMs: 2000 };
+
+/**
+ * Send the request again: poll until the "until" rules pass, or, with none,
+ * ride out network errors and 5xx responses. A workflow has no loops, so this
+ * is where polling lives.
+ */
+function RetrySettings({
+  retry,
+  onChange,
+}: {
+  retry: NodeModalHttpRetryConfig | undefined;
+  onChange: (retry: NodeModalHttpRetryConfig | undefined) => void;
+}) {
+  const update = (patch: Partial<NodeModalHttpRetryConfig>) =>
+    onChange({ ...(retry ?? DEFAULT_RETRY), ...patch });
+  const exponential = retry?.backoff === "exponential";
+  return (
+    <Card title="Retry" icon={RepeatCardIcon} className="overflow-visible">
+      <div className="space-y-4">
+        <FormField
+          label="Retry this request"
+          hint="Poll an async API until it reports done, or retry network errors and 5xx responses."
+        >
+          <Toggle
+            aria-label="Retry this request"
+            checked={retry !== undefined}
+            onChange={(event) =>
+              onChange(event.target.checked ? DEFAULT_RETRY : undefined)
+            }
+          />
+        </FormField>
+        {retry && (
+          <>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Max attempts" hint="Every request counts, the first included. 1 to 100.">
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={retry.maxAttempts}
+                  onChange={(event) =>
+                    update({ maxAttempts: Number(event.target.value) || 1 })
+                  }
+                />
+              </FormField>
+              <FormField label="Interval" hint="Milliseconds to wait between attempts.">
+                <Input
+                  type="number"
+                  min={0}
+                  value={retry.intervalMs}
+                  onChange={(event) =>
+                    update({ intervalMs: Number(event.target.value) || 0 })
+                  }
+                />
+              </FormField>
+              <FormField label="Backoff" hint="Exponential doubles the wait after each attempt.">
+                <div className="flex flex-wrap gap-2">
+                  {(["fixed", "exponential"] as const).map((backoff) => (
+                    <Button
+                      key={backoff}
+                      variant={(retry.backoff ?? "fixed") === backoff ? "primary" : "secondary"}
+                      size="sm"
+                      onClick={() => update({ backoff })}
+                    >
+                      {backoff === "fixed" ? "Fixed" : "Exponential"}
+                    </Button>
+                  ))}
+                </div>
+              </FormField>
+              {exponential && (
+                <FormField label="Max interval" hint="Milliseconds; the longest a single wait may grow to.">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={retry.maxIntervalMs ?? ""}
+                    placeholder="No cap"
+                    onChange={(event) =>
+                      update({ maxIntervalMs: Number(event.target.value) || 0 })
+                    }
+                  />
+                </FormField>
+              )}
+            </div>
+            <FormField
+              label="Until"
+              hint="Stop once every rule passes against this request's response. With no rules, only network errors, timeouts and 5xx responses are retried. Whether the final response passes is still decided by the 2xx rule or Expected status."
+            >
+              <AssertionRulesEditor
+                rules={retry.until ?? []}
+                responseLabel="This response"
+                onChange={(until) => update({ until })}
+              />
+            </FormField>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -803,6 +908,11 @@ export function HTTPRequestConfigPanel({
           </FormField>
         </div>
       </Card>
+
+      <RetrySettings
+        retry={draftConfig.retry}
+        onChange={(retry) => updateConfig({ retry })}
+      />
 
       <Card title="Store response as variables" icon={PuzzleCardIcon}>
         <div className="mb-3 space-y-2">

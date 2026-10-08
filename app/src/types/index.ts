@@ -240,6 +240,8 @@ export type { NodeOutputPanelProps } from "./NodeOutputPanelProps";
 export type { AssertionFormModalProps } from "./AssertionFormModalProps";
 export type { AssertionFormResult } from "./AssertionFormResult";
 export type { AssertionConfigPanelProps } from "./AssertionConfigPanelProps";
+export type { AssertionRulesEditorProps } from "./AssertionRulesEditorProps";
+export type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";
 export type { DelayConfigPanelProps } from "./DelayConfigPanelProps";
 export type { MergeConfigPanelProps } from "./MergeConfigPanelProps";
 export type { CopySuccessState } from "./CopySuccessState";

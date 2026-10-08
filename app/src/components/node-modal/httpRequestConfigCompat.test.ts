@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAuthConfig, normalizeExpectedStatus } from "./httpRequestConfigCompat";
+import { normalizeAuthConfig, normalizeExpectedStatus, normalizeRetry } from "./httpRequestConfigCompat";
 
 describe("normalizeAuthConfig", () => {
   it("drops stale sub-configs from other auth types", () => {
@@ -51,5 +51,30 @@ describe("normalizeExpectedStatus", () => {
     expect(normalizeExpectedStatus([])).toBeUndefined();
     expect(normalizeExpectedStatus("409")).toBeUndefined();
     expect(normalizeExpectedStatus(undefined)).toBeUndefined();
+  });
+});
+
+describe("normalizeRetry", () => {
+  it("clamps to what the workflow schema accepts and keeps rules editable", () => {
+    expect(
+      normalizeRetry({
+        maxAttempts: 500,
+        intervalMs: -5,
+        backoff: "exponential",
+        maxIntervalMs: 9_999_999,
+        until: [{ source: "status", path: "", operator: "equals", expectedValue: 200 }, "junk"],
+      }),
+    ).toEqual({
+      maxAttempts: 100,
+      intervalMs: 0,
+      backoff: "exponential",
+      maxIntervalMs: 3_600_000,
+      until: [{ source: "status", path: "", operator: "equals", expectedValue: "200" }],
+    });
+  });
+
+  it("drops a backoff cap that only exponential backoff uses, and an absent policy", () => {
+    expect(normalizeRetry({ maxAttempts: 3, intervalMs: 10, maxIntervalMs: 50 })).toEqual({ maxAttempts: 3, intervalMs: 10 });
+    expect(normalizeRetry(undefined)).toBeUndefined();
   });
 });

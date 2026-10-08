@@ -574,6 +574,9 @@ function sanitizeRunResults(results: readonly RunResult[]): RunResult[] {
     ...result,
     request: sanitizeRequestMetadata(result.request),
     ...(typeof result.error === "string" ? { error: safeErrorClass(result.error) } : {}),
+    ...(result.attempts
+      ? { attempts: result.attempts.map((attempt) => (attempt.error === undefined ? attempt : { ...attempt, error: safeErrorClass(attempt.error) })) }
+      : {}),
   }))
 }
 
@@ -598,7 +601,14 @@ const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
   /^Call Workflow recursion depth exceeded$/,
 ]
 
+const RETRY_VERDICT = /^((?:Condition not met|Failed) after \d+ attempts)(?:: ([\s\S]*))?$/
+
 function safeErrorClass(error: string): string {
+  // A retrying node's verdict carries only its attempt count; its cause is classed on its own.
+  const retry = RETRY_VERDICT.exec(error)
+  if (retry) return retry[2] === undefined ? retry[1]! : `${retry[1]}: ${safeErrorClass(retry[2])}`
+  // The status a retry gave up on.
+  if (/^HTTP \d{3}$/.test(error)) return error
   // The runner's own network diagnosis names only the host, the system error
   // and its code; resolved secret values are masked before this point.
   if (error.startsWith(NETWORK_ERROR_PREFIX)) return error
