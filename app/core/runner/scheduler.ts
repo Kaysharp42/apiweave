@@ -3,6 +3,7 @@ import type { RunEvent, RunTerminalStatus } from "@shared/types/RunProgressEvent
 import type { JsonValue } from "@shared/types/JsonValue"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
 import type { RunResult } from "@shared/types/RunResult"
+import type { RunIteration } from "@shared/types/RunIteration"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
@@ -73,6 +74,10 @@ export interface EnqueueRequest {
   readonly selectedEnvironmentId?: string | null
   /** Set when an agent started the run over MCP: the client's name. */
   readonly agent?: string
+  /** The data row this run reads as `{{data.<column>}}`. Held in memory only, never stored with the run. */
+  readonly data?: Readonly<Record<string, JsonValue>>
+  /** Where the run sits in a data-driven run; stored with the run. */
+  readonly iteration?: RunIteration
 }
 
 /**
@@ -91,6 +96,8 @@ export class RunScheduler {
   private readonly activeRuns = new Map<string, AbortController>()
   /** runId → agent name, for runs an agent started. In memory: a restart interrupts every run anyway. */
   private readonly agentRuns = new Map<string, string>()
+  /** runId → its iteration's data row. In memory for the same reason, and so a data file's values are never written to history. */
+  private readonly runData = new Map<string, Readonly<Record<string, JsonValue>>>()
   private readonly queue: string[] = []
   /** runId → callers of {@link whenFinished} still waiting on it. */
   private readonly finishWaiters = new Map<string, ((status: RunTerminalStatus) => void)[]>()
@@ -136,8 +143,10 @@ export class RunScheduler {
       status: "pending",
       ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
+      ...(request.iteration ? { iteration: request.iteration } : {}),
     })
     if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
+    if (request.data !== undefined) this.runData.set(run.runId, request.data)
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
@@ -152,6 +161,8 @@ export class RunScheduler {
     const idx = this.queue.indexOf(runId)
     if (idx >= 0) {
       this.queue.splice(idx, 1)
+      this.agentRuns.delete(runId)
+      this.runData.delete(runId)
       this.deps.runs.updateStatus(runId, "cancelled")
       // A queued run never reached executeRun, so nothing else will publish its
       // terminal event — do it here or a subscriber waits forever (Phase 6).
@@ -274,6 +285,7 @@ export class RunScheduler {
       // where they go. Runs without secrets proceed as before.
       // ponytail: the waiting run holds its concurrency slot until answered or timed out.
       const agent = this.agentRuns.get(runId)
+      const data = this.runData.get(runId)
       const secretNames = Object.keys(secretResolution.secrets ?? {})
       if (agent !== undefined && secretNames.length > 0) {
         const approved = await this.askApproval(
@@ -282,7 +294,7 @@ export class RunScheduler {
             agent,
             workflowName: workflow.name,
             secretNames,
-            destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables),
+            destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {}),
           },
           controller.signal,
         )
@@ -304,6 +316,7 @@ export class RunScheduler {
         functions: this.deps.functions,
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
+        ...(data ? { data } : {}),
         emitProgress: (event) => this.handleProgress(runId, mask(event)),
         resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => reachable.workflows.get(workflowId),
         // A Call Workflow node's sub-execution is a run of the *target*
@@ -365,6 +378,7 @@ export class RunScheduler {
     } finally {
       this.activeRuns.delete(runId)
       this.agentRuns.delete(runId)
+      this.runData.delete(runId)
       void this.drain()
     }
   }
@@ -523,7 +537,7 @@ class AgentRunDenied extends Error {}
 
 /**
  * Where a run's requests go, for the approval prompt: every node's `url`,
- * with `{{env.*}}` and `{{variables.*}}` filled in where they are known before
+ * with `{{env.*}}`, `{{variables.*}}` and `{{data.*}}` filled in where they are known before
  * the run, reduced to its host when it then parses. A URL built from values
  * the run itself produces stays as written — the user sees that it is not
  * fixed rather than a guess.
@@ -532,13 +546,14 @@ export function requestDestinations(
   nodes: WorkflowGraph["nodes"],
   environmentVariables: Readonly<Record<string, unknown>>,
   variables: Readonly<Record<string, unknown>>,
+  data: Readonly<Record<string, unknown>> = {},
 ): string[] {
-  const scopes: Record<string, Readonly<Record<string, unknown>>> = { env: environmentVariables, variables }
+  const scopes: Record<string, Readonly<Record<string, unknown>>> = { env: environmentVariables, variables, data }
   const destinations = new Set<string>()
   for (const node of nodes) {
     const url = node.config?.["url"]
     if (typeof url !== "string" || url.length === 0) continue
-    const filled = url.replace(/\{\{\s*(env|variables)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
+    const filled = url.replace(/\{\{\s*(env|variables|data)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
       const value = key.split(".").reduce<unknown>(
         (current, part) => (typeof current === "object" && current !== null ? (current as Record<string, unknown>)[part] : undefined),
         scopes[scope],

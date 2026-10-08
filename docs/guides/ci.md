@@ -51,13 +51,27 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `-r, --reporter <list>` | `cli`, `junit`, `html`, comma separated. Default `cli`. |
 | `--reporter-junit-export <path>` | Where to write JUnit XML (default `apiweave-report.xml`). Naming a path turns the JUnit report on. |
 | `--reporter-html-export <path>` | Where to write the HTML report (default `apiweave-report.html`). Naming a path turns the HTML report on. |
-| `--bail` | Stop a project run at its first failed workflow, whatever its row says. |
+| `-d, --iteration-data <file>` | Run once per row of a CSV or JSON array file; each row's values are `{{data.<column>}}`. See [Data-driven runs](#data-driven-runs). |
+| `-n, --iteration-count <n>` | Run `n` times; with `--iteration-data`, its first `n` rows. |
+| `--bail` | Stop a project run at its first failed workflow, whatever its row says, and a data-driven run at its first failed iteration. |
 | `--timeout-request <ms>` | Timeout for every request, replacing each node's own timeout. |
 | `-k, --insecure` | Do not verify TLS certificates (self-signed test servers). |
 
 `--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports you ask for.
 
 The console report lists each workflow, a line per step with its time, and the failure message and failed assertion rules under a failed step, then a summary table. It uses colour only on a terminal, and never when `NO_COLOR` is set. The JUnit and HTML files are the same reports the app exports; see [Run reports](../features/visualization-and-debugging.md#5-run-reports-junit-and-html).
+
+## Data-driven runs
+
+`--iteration-data` runs the file once per row of a data file, the way `newman run -d` does:
+
+```bash
+apiweave run api.awecollection --env Staging --iteration-data users.csv --reporter cli,junit
+```
+
+A CSV file's header row names the columns; a JSON file is an array of objects. Iterations run one after another, each reading its row as `{{data.<column>}}`; a project bundle runs the whole project per row. The exit code is `1` if any iteration failed, and `--bail` stops at the first one that does. The console report adds an **Iterations** row to its summary, and the JUnit report has one `<testsuite>` per workflow per iteration, named `Health check [iteration 2]`.
+
+Data values are not masked. Keep credentials in secrets (`--secret`, `APIWEAVE_SECRET_<NAME>`), not in the data file. See [Data-Driven Runs](../features/data-driven-runs.md).
 
 ## Secrets
 
@@ -134,5 +148,6 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 ## Related
 
 - [Projects](../features/projects.md): project runs and `.awecollection` export.
+- [Data-Driven Runs](../features/data-driven-runs.md): CSV and JSON data files and `{{data.<column>}}`.
 - [Environments and Secrets](../features/environments-and-secrets.md): environments, secrets and how references resolve.
 - [Visualization and Debugging](../features/visualization-and-debugging.md#5-run-reports-junit-and-html): what the JUnit and HTML reports contain.

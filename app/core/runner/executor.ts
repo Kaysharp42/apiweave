@@ -92,6 +92,8 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
+  /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
+  readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
@@ -1883,25 +1885,12 @@ export class WorkflowExecutor {
         return value !== undefined ? value : match
       }
 
-      // Environment variables
-      if (varPath.startsWith("env.")) {
-        const pathParts = varPath.slice(4).split(".")
-        let value: unknown = this.environmentVariables
-        for (const part of pathParts) {
-          if (typeof value === "object" && value !== null) {
-            value = (value as Record<string, unknown>)[part]
-          } else {
-            return match
-          }
-        }
-        return value !== undefined && value !== null ? placeholderText(value) : match
-      }
-
-      // Workflow variables
-      if (varPath.startsWith("variables.")) {
-        const pathParts = varPath.slice(10).split(".")
-        let value: unknown = this.workflowVariables
-        for (const part of pathParts) {
+      // Environment variables, workflow variables, the iteration's data row
+      const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
+      if (scope) {
+        let value: unknown =
+          scope[1] === "env" ? this.environmentVariables : scope[1] === "variables" ? this.workflowVariables : this.deps.data
+        for (const part of scope[2]!.split(".")) {
           if (typeof value === "object" && value !== null) {
             value = (value as Record<string, unknown>)[part]
           } else {
@@ -2403,19 +2392,19 @@ function collectSecretRefs(config: Record<string, unknown> | undefined): readonl
 }
 
 /**
- * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{prev...}}`,
- * `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
+ * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{data.*}}`,
+ * `{{prev...}}`, `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
  * leaves an unresolved placeholder verbatim, so the assembled URL/headers/query
  * values tell us which references never resolved. Names only (never values).
  */
-const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|prev\b|secrets\.)([^}]*)\}\}/g
+const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|data\.|prev\b|secrets\.)([^}]*)\}\}/g
 
 function collectUnresolvedPlaceholders(values: readonly string[]): string[] {
   const found = new Set<string>()
   for (const value of values) {
     for (const match of value.matchAll(UNRESOLVED_REF_RE)) {
       const prefix = match[1]!
-      // `env./variables./secrets.` swallow their dot into the prefix, so `rest` never
+      // `env./variables./data./secrets.` swallow their dot into the prefix, so `rest` never
       // starts with one — but `prev` (bare word-boundary, no dot) needs its `.` kept as
       // the join separator. Trimming (not stripping a leading dot) also drops the
       // trailing whitespace `{{ env.EMAIL }}` leaves in `rest` before the closing `}}`.

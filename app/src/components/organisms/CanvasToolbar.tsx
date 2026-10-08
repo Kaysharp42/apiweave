@@ -17,8 +17,10 @@ import {
   Command,
   Frame,
   Ungroup,
+  FileSpreadsheet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Badge } from "../atoms/Badge";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import ButtonSelect from "../ButtonSelect";
@@ -58,11 +60,13 @@ export function CanvasToolbar({
   onImport,
   onCommandPalette,
   onRun,
+  onRunWithData,
   onCancel,
   onRunFromLastFailed,
   onRunAllFailed,
   onRunFromFailedNode,
   isRunning = false,
+  iteration = null,
   environments = EMPTY_ENVIRONMENTS,
   selectedEnvironment,
   onEnvironmentChange,
@@ -75,6 +79,7 @@ export function CanvasToolbar({
   const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const [isOverflowOpen, setIsOverflowOpen] = useState(false);
   const runMenuRef = useRef<HTMLDivElement>(null);
+  const dataFileRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
   const openAgentSession = useOpenAgentSession();
   // Straight from the store rather than down a prop chain: the lock is one
@@ -361,6 +366,45 @@ export function CanvasToolbar({
           className="w-px h-6 flex-shrink-0 bg-border dark:bg-border-dark mx-0.5"
           aria-hidden="true"
         />
+
+        {isRunning && iteration !== null && (
+          <Badge
+            variant="info"
+            size="sm"
+            className="flex-shrink-0"
+            aria-live="polite"
+          >
+            Iteration {iteration.index}/{iteration.count}
+          </Badge>
+        )}
+
+        {onRunWithData && (
+          <>
+            <IconButton
+              onClick={() => dataFileRef.current?.click()}
+              disabled={isRunning}
+              tooltip="Run with data… (CSV or JSON, once per row)"
+              aria-label="Run with data"
+              variant="ghost"
+              size="sm"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+            </IconButton>
+            <input
+              ref={dataFileRef}
+              type="file"
+              accept=".csv,.json,text/csv,application/json"
+              className="hidden"
+              aria-label="Data file to run with"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                // Cleared so picking the same file again still fires.
+                event.target.value = "";
+                if (file) onRunWithData(file);
+              }}
+            />
+          </>
+        )}
 
         <div className="relative flex flex-shrink-0" ref={runMenuRef}>
           <Button

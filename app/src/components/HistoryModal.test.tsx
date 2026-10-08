@@ -30,6 +30,7 @@ function summary(runId: string, status: RunSummary["status"], createdAt: string)
     failedNodes: [],
     failedNodeCount: 0,
     nodeCount: 0,
+    iteration: null,
     runRev: 1,
     createdAt,
     updatedAt: createdAt,

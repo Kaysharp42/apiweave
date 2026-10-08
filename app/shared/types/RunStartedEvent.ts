@@ -1,3 +1,5 @@
+import type { RunIteration } from "./RunIteration"
+
 /**
  * One run beginning, announced on the unkeyed `apiweave:run-started` channel.
  *
@@ -10,4 +12,6 @@ export interface RunStartedEvent {
   readonly runId: string
   readonly workspaceId: string
   readonly workflowId: string
+  /** Set when the run is one iteration of a data-driven run. */
+  readonly iteration: RunIteration | null
 }

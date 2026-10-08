@@ -7,6 +7,8 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { RunIteration } from "@shared/types/RunIteration";
+import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
@@ -65,6 +67,7 @@ type IpcRun = Run & {
   readonly failedNodes?: readonly string[] | null;
   readonly nodeStatuses?: Record<string, JsonValue>;
   readonly variables?: Record<string, JsonValue>;
+  readonly iteration?: RunIteration | null;
   readonly resolvedSecrets?: readonly {
     readonly name: string;
     readonly scopeType: "environment" | "workspace" | null;
@@ -544,6 +547,13 @@ export const apiweave = {
         readonly operationId?: string;
       } & Partial<IpcRun>,
     ) => invoke<IpcRun>("runs", "create", input),
+    /** A data-driven run: the workflow once per row. Returns iteration 1's run. */
+    createIterations: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly selectedEnvironmentId?: string | null;
+      readonly rows: readonly IterationRow[];
+    }) => invoke<IpcRun>("runs", "createIterations", input),
     wait: (workspaceId: string, runId: string, waitMs?: number) =>
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>

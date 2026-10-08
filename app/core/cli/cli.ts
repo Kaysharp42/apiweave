@@ -23,7 +23,8 @@ import { DynamicFunctions } from "../runner/dynamic_functions"
 import { SafeHttp, type SafeFetchOptions } from "../runner/safe_http"
 import { RunScheduler } from "../runner/scheduler"
 import { ProjectRunner, planProjectRun } from "../runner/project_runner"
-import { buildConsoleReport, buildReport, type ReportInput } from "../runner/reporters"
+import { buildConsoleReport, buildReport, type ReportInput, type SingleReportInput } from "../runner/reporters"
+import { MAX_ITERATION_DATA_BYTES, parseIterationData, type IterationRow } from "@shared/iteration-data/iterationData"
 import { createSecretMasker } from "../runner/secret_masker"
 import { CryptoRandomProvider, WallClockProvider } from "../runner/harness/providers"
 
@@ -75,7 +76,10 @@ Options:
   -r, --reporter <list>           cli, junit, html; comma separated (default cli)
       --reporter-junit-export <path>  JUnit XML file (default apiweave-report.xml)
       --reporter-html-export <path>   HTML file (default apiweave-report.html)
-      --bail                      Stop a project at its first failed workflow
+  -d, --iteration-data <file>     Run once per row of a CSV or JSON array file;
+                                  each row's values are {{data.<column>}}
+  -n, --iteration-count <n>       Run n times (with --iteration-data: its first n rows)
+      --bail                      Stop at the first failed workflow or iteration
       --timeout-request <ms>      Timeout for every request, overriding each node's
   -k, --insecure                  Do not verify TLS certificates
   -h, --help                      Show this help
@@ -121,6 +125,8 @@ interface CliOptions {
   readonly reporters: ReadonlySet<string>
   readonly junitPath: string
   readonly htmlPath: string
+  readonly iterationData: string | undefined
+  readonly iterationCount: number | undefined
   readonly bail: boolean
   readonly timeoutMs: number | undefined
   readonly insecure: boolean
@@ -141,6 +147,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       reporter: { type: "string", short: "r" },
       "reporter-junit-export": { type: "string" },
       "reporter-html-export": { type: "string" },
+      "iteration-data": { type: "string", short: "d" },
+      "iteration-count": { type: "string", short: "n" },
       bail: { type: "boolean" },
       "timeout-request": { type: "string" },
       insecure: { type: "boolean", short: "k" },
@@ -166,6 +174,11 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     timeoutMs = Number(values["timeout-request"])
     if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new UsageError("--timeout-request must be a positive whole number of milliseconds")
   }
+  let iterationCount: number | undefined
+  if (values["iteration-count"] !== undefined) {
+    iterationCount = Number(values["iteration-count"])
+    if (!Number.isInteger(iterationCount) || iterationCount <= 0) throw new UsageError("--iteration-count must be a positive whole number")
+  }
   const resolve = (target: string | undefined): string | undefined => (target === undefined ? undefined : path.resolve(cwd, target))
   return {
     file: path.resolve(cwd, file),
@@ -178,6 +191,8 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     reporters,
     junitPath: path.resolve(cwd, values["reporter-junit-export"] ?? "apiweave-report.xml"),
     htmlPath: path.resolve(cwd, values["reporter-html-export"] ?? "apiweave-report.html"),
+    iterationData: resolve(values["iteration-data"]),
+    iterationCount,
     bail: values.bail === true,
     timeoutMs,
     insecure: values.insecure === true,
@@ -204,6 +219,7 @@ function collectSecrets(options: CliOptions, env: CliIo["env"]): Map<string, str
 
 async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: (text: string) => string): Promise<number> {
   const bundle = readJson(options.file)
+  const rows = readIterationRows(options)
   const database = initDatabase({ databasePath: ":memory:" })
   let scheduler: RunScheduler | undefined
   try {
@@ -292,7 +308,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     // -------- Run --------
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
-    scheduler = new RunScheduler({
+    const runScheduler = new RunScheduler({
       runs,
       workflows,
       environments,
@@ -308,25 +324,47 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }
       },
     })
+    scheduler = runScheduler
 
-    let input: ReportInput
-    let passed: boolean
-    if (target.kind === "workflow") {
-      const runId = scheduler.enqueue({ workspaceId, workflowId: target.workflowId, selectedEnvironmentId: environmentId })
-      await scheduler.whenFinished(runId)
-      // Always the persisted run: secrets are masked when a run is stored.
-      const run = runs.getById(runId)!
-      input = { kind: "run", run, workflow: workflows.getById(run.workflowId) ?? null }
-      passed = run.status === "completed"
-    } else {
-      const projectRun = await new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler })
-        .start({ workspaceId, projectId: target.projectId, environmentId }).done
+    // One run of the target: a workflow run, or a project run. `data` is the
+    // iteration's row.
+    const runOnce = async (data?: IterationRow): Promise<SingleReportInput> => {
+      const withData = data === undefined ? {} : { data }
+      if (target.kind === "workflow") {
+        const runId = runScheduler.enqueue({ workspaceId, workflowId: target.workflowId, selectedEnvironmentId: environmentId, ...withData })
+        await runScheduler.whenFinished(runId)
+        // Always the persisted run: secrets are masked when a run is stored.
+        const run = runs.getById(runId)!
+        return { kind: "run", run, workflow: workflows.getById(run.workflowId) ?? null }
+      }
+      const projectRun = await new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler: runScheduler })
+        .start({ workspaceId, projectId: target.projectId, environmentId, ...withData }).done
       const itemRuns = projectRun.items.flatMap((item) => (item.runId === null ? [] : [runs.getById(item.runId)])).filter((run) => run !== undefined)
       const itemWorkflows = [...new Set(projectRun.items.map((item) => item.workflowId))]
         .map((workflowId) => workflows.getById(workflowId))
         .filter((workflow) => workflow !== undefined)
-      input = { kind: "project", projectName: collections.getById(projectRun.projectId)!.name, projectRun, runs: itemRuns, workflows: itemWorkflows }
-      passed = projectRun.status === "completed"
+      return { kind: "project", projectName: collections.getById(projectRun.projectId)!.name, projectRun, runs: itemRuns, workflows: itemWorkflows }
+    }
+    const statusOf = (one: SingleReportInput): string => (one.kind === "run" ? one.run.status : one.projectRun.status)
+
+    let input: ReportInput
+    let passed: boolean
+    if (rows === undefined) {
+      input = await runOnce()
+      passed = statusOf(input) === "completed"
+    } else {
+      // Iterations run one after another; a failed one stops the rest only with --bail.
+      const iterations: SingleReportInput[] = []
+      for (const row of rows) {
+        const one = await runOnce(row)
+        iterations.push(one)
+        const status = statusOf(one)
+        if (status === "cancelled" || status === "interrupted" || (options.bail && status !== "completed")) break
+      }
+      const first = iterations[0]!
+      const title = first.kind === "run" ? first.workflow?.name ?? first.run.workflowId : first.projectName
+      input = { kind: "iterations", title, iterations }
+      passed = iterations.every((one) => statusOf(one) === "completed")
     }
 
     // -------- Report --------
@@ -354,6 +392,30 @@ class CliHttp extends SafeHttp {
   public override safeFetch(url: string, init?: RequestInit, opts: SafeFetchOptions = {}): Promise<Response> {
     return super.safeFetch(url, init, { ...opts, ...this.overrides })
   }
+}
+
+/** `--iteration-data` rows, cut to `--iteration-count`; `--iteration-count` alone is that many empty rows. Undefined: a single run. */
+function readIterationRows(options: CliOptions): IterationRow[] | undefined {
+  if (options.iterationData === undefined) {
+    return options.iterationCount === undefined ? undefined : Array.from({ length: options.iterationCount }, () => ({}))
+  }
+  let text: string
+  try {
+    if (fs.statSync(options.iterationData).size > MAX_ITERATION_DATA_BYTES) {
+      throw new UsageError(`--iteration-data: ${options.iterationData} is larger than ${MAX_ITERATION_DATA_BYTES / 1024 / 1024} MB`)
+    }
+    text = fs.readFileSync(options.iterationData, "utf8")
+  } catch (error) {
+    if (error instanceof UsageError) throw error
+    throw new UsageError(`--iteration-data: cannot read ${options.iterationData}: ${errorMessage(error)}`)
+  }
+  let rows: IterationRow[]
+  try {
+    rows = parseIterationData(text, options.iterationData)
+  } catch (error) {
+    throw new UsageError(`--iteration-data: ${errorMessage(error)}`)
+  }
+  return options.iterationCount === undefined ? rows : rows.slice(0, options.iterationCount)
 }
 
 /** A project bundle's workflow by name, or by its id in the bundle (ids are new once imported). */

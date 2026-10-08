@@ -7,6 +7,8 @@ import useWorkflowPolling from "./useWorkflowPolling";
 const onRunStartedMock = vi.hoisted(() => vi.fn());
 const onRunProgressMock = vi.hoisted(() => vi.fn());
 const getLatestMock = vi.hoisted(() => vi.fn());
+const createIterationsMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/apiweaveClient", () => ({
   apiweave: {
@@ -15,6 +17,7 @@ vi.mock("../utils/apiweaveClient", () => ({
       getLatestFailed: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue({ runId: "r", results: [] }),
       create: vi.fn(),
+      createIterations: createIterationsMock,
     },
   },
   onRunProgress: onRunProgressMock,
@@ -23,7 +26,7 @@ vi.mock("../utils/apiweaveClient", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { error: vi.fn(), info: vi.fn() },
+  toast: { error: toastErrorMock, info: vi.fn(), success: vi.fn() },
 }));
 
 type Listener = (event: RunStartedEvent) => void;
@@ -83,7 +86,7 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
     const { camera, result } = setup();
 
     await act(async () => {
-      listener()({ runId: "run-agent", workspaceId: "ws1", workflowId: "wf1" });
+      listener()({ runId: "run-agent", workspaceId: "ws1", workflowId: "wf1", iteration: null });
     });
 
     expect(onRunProgressMock).toHaveBeenCalledWith(
@@ -102,8 +105,8 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
     const { result } = setup();
 
     await act(async () => {
-      listener()({ runId: "other-wf", workspaceId: "ws1", workflowId: "wf2" });
-      listener()({ runId: "other-ws", workspaceId: "ws2", workflowId: "wf1" });
+      listener()({ runId: "other-wf", workspaceId: "ws1", workflowId: "wf2", iteration: null });
+      listener()({ runId: "other-ws", workspaceId: "ws2", workflowId: "wf1", iteration: null });
     });
 
     expect(onRunProgressMock).not.toHaveBeenCalled();
@@ -115,10 +118,10 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
     const { result } = setup();
 
     await act(async () => {
-      listener()({ runId: "run-first", workspaceId: "ws1", workflowId: "wf1" });
+      listener()({ runId: "run-first", workspaceId: "ws1", workflowId: "wf1", iteration: null });
     });
     await act(async () => {
-      listener()({ runId: "run-second", workspaceId: "ws1", workflowId: "wf1" });
+      listener()({ runId: "run-second", workspaceId: "ws1", workflowId: "wf1", iteration: null });
     });
 
     expect(result.current.currentRunId).toBe("run-first");
@@ -146,5 +149,61 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
     await waitFor(() => expect(getLatestMock).toHaveBeenCalled());
     expect(result.current.currentRunId).toBeNull();
     expect(onRunProgressMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkflowPolling — running with data", () => {
+  const iteration = (index: number) => ({ groupId: "grp", index, count: 2 });
+  // jsdom's File has no text(); Chromium's does.
+  const dataFile = (content: string, name: string): File =>
+    Object.assign(new File([content], name), { text: async () => content });
+
+  beforeEach(() => {
+    onRunStartedMock.mockReset();
+    onRunProgressMock.mockReset();
+    onRunProgressMock.mockReturnValue(() => undefined);
+    getLatestMock.mockReset();
+    getLatestMock.mockResolvedValue(undefined);
+    createIterationsMock.mockReset();
+    toastErrorMock.mockReset();
+  });
+
+  it("runs once per row of a CSV file and shows which iteration is on screen", async () => {
+    const listener = captureRunStarted();
+    createIterationsMock.mockResolvedValue({ runId: "run-1", iteration: iteration(1) });
+    const { result } = setup();
+
+    await act(async () => {
+      await result.current.runWorkflowWithData(dataFile("user\r\nann\r\nbob\r\n", "users.csv"));
+    });
+
+    expect(createIterationsMock).toHaveBeenCalledWith({
+      workspaceId: "ws1",
+      workflowId: "wf1",
+      rows: [{ user: "ann" }, { user: "bob" }],
+    });
+    expect(result.current.currentRunId).toBe("run-1");
+    expect(result.current.currentIteration).toEqual(iteration(1));
+
+    // Iteration 1 ends; the main process starts iteration 2 and the canvas adopts it.
+    const progress = onRunProgressMock.mock.calls[0]![1] as (event: { kind: string; runId: string; status: string }) => void;
+    await act(async () => {
+      progress({ kind: "run.finished", runId: "run-1", status: "completed" });
+      listener()({ runId: "run-2", workspaceId: "ws1", workflowId: "wf1", iteration: iteration(2) });
+    });
+    expect(result.current.currentRunId).toBe("run-2");
+    expect(result.current.currentIteration).toEqual(iteration(2));
+  });
+
+  it("refuses a data file it cannot read as rows, without starting a run", async () => {
+    captureRunStarted();
+    const { result } = setup();
+
+    await act(async () => {
+      await result.current.runWorkflowWithData(dataFile('{"not":"an array"}', "rows.json"));
+    });
+
+    expect(createIterationsMock).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalledWith(expect.stringContaining("array of objects"));
   });
 });

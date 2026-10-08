@@ -512,6 +512,7 @@ if (!hasSingleInstanceLock) {
         runId: run.runId,
         workspaceId: run.workspaceId,
         workflowId: run.workflowId,
+        iteration: run.iteration ?? null,
       } satisfies RunStartedEvent)
     })
     scheduler = new RunScheduler({

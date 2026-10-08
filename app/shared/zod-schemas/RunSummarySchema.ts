@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { RevisionSchema } from "./RevisionSchema"
+import { RunIterationSchema } from "./RunIterationSchema"
 import { TimestampSchema } from "./TimestampSchema"
 
 /**
@@ -20,6 +21,7 @@ export const RunSummarySchema = z
     failedNodes: z.array(z.string().min(1)),
     failedNodeCount: z.number().int().nonnegative(),
     nodeCount: z.number().int().nonnegative(),
+    iteration: RunIterationSchema.nullable(),
     runRev: RevisionSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,

@@ -14,6 +14,7 @@ import {
 } from "../../services/read_budgets"
 import type { EvidenceSection } from "../../services/run_evidence"
 import { buildReport } from "../../runner/reporters"
+import { MAX_ITERATION_ROWS } from "@shared/iteration-data/iterationData"
 
 const ws = z.string().min(1)
 
@@ -26,8 +27,18 @@ const createInput = z
     variables: z.record(z.string(), JsonValueSchema).optional(),
     selectedEnvironmentId: z.string().nullable().optional(),
     nodeStatuses: z.record(z.string(), JsonValueSchema).optional(),
+    data: z.record(z.string(), JsonValueSchema).optional().describe("One data row, read by the workflow as {{data.<column>}} (a data-driven run's iteration). For several rows, call runs_create once per row. Values are not stored with the run and are not masked: never put secrets here."),
     waitMs: z.number().int().min(0).max(RUN_WAIT_MAX_MS).optional().describe("Bounded wait after enqueue in ms (default 10000, max 30000). 0 returns immediately with the queued snapshot; otherwise waits for completion up to this long and returns the current run on deadline — reuse its runId with runs_wait. A timeout or disconnect never cancels the run."),
     operationId: z.string().min(1).max(128).optional().describe("Caller idempotency key for safe retries: the same id in the same workspace with the same request returns the first run instead of enqueueing again; the same id with a changed request conflicts."),
+  })
+  .strict()
+
+const createIterationsInput = z
+  .object({
+    workspaceId: ws,
+    workflowId: z.string().min(1),
+    selectedEnvironmentId: z.string().nullable().optional(),
+    rows: z.array(z.record(z.string(), JsonValueSchema)).min(1).max(MAX_ITERATION_ROWS),
   })
   .strict()
 
@@ -94,6 +105,15 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
         },
         context?.signal !== undefined ? { signal: context.signal } : {},
       ),
+  })
+
+  // Renderer only (not on the MCP whitelist): a data-driven run, the workflow
+  // once per row. Returns iteration 1's run; the rest are announced on the
+  // run-started channel as they begin. An agent runs one row per runs_create.
+  router.register("runs", "createIterations", {
+    input: createIterationsInput,
+    output: RunSchema,
+    handle: ({ workspaceId, ...input }) => runs.createIterations(workspaceId, input),
   })
 
   router.register("runs", "wait", {

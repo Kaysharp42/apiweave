@@ -113,6 +113,58 @@ describe("WorkflowExecutor", () => {
       }
     })
 
+    it("substitutes a data-driven run's row as {{data.<column>}}", async () => {
+      const { createServer } = await import("node:http")
+      const seen: { url: string; user: string; body: string }[] = []
+      const server = createServer((request, response) => {
+        let body = ""
+        request.on("data", (chunk: Buffer) => (body += chunk.toString()))
+        request.on("end", () => {
+          seen.push({ url: request.url ?? "", user: String(request.headers["x-user"]), body })
+          response.end("{}")
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      try {
+        const workflow: WorkflowGraph = {
+          nodes: [
+            { nodeId: "start", type: "start" },
+            {
+              nodeId: "http_1",
+              type: "http-request",
+              config: {
+                method: "POST",
+                url: `http://127.0.0.1:${port}/users/{{data.id}}`,
+                headers: [{ key: "X-User", value: "{{data.user}}" }],
+                body: '{"id":{{data.id}},"name":"{{data.user}}","address":{{data.address}},"note":"{{data.missing}}"}',
+                bodyType: "json",
+              },
+            },
+            { nodeId: "end", type: "end" },
+          ],
+          edges: [
+            { edgeId: "e1", source: "start", target: "http_1" },
+            { edgeId: "e2", source: "http_1", target: "end" },
+          ],
+        }
+        const data = { id: 7, user: 'ann "a"', address: { city: "Oslo" } }
+
+        const output = await new WorkflowExecutor({ ...makeDeps(), data }).executeWorkflow(workflow)
+
+        expect(seen).toEqual([
+          {
+            url: "/users/7",
+            user: 'ann "a"',
+            body: '{"id":7,"name":"ann \\"a\\"","address":{"city":"Oslo"},"note":"{{data.missing}}"}',
+          },
+        ])
+        expect(output.results.find((r) => r.nodeId === "http_1")?.unresolvedPlaceholders).toEqual(["data.missing"])
+      } finally {
+        server.close()
+      }
+    })
+
     // An unresolved `{{env.BASE_URL}}` in the URL never reaches the network — it
     // fails `validateUrl`'s parse and throws before a response exists, landing in
     // the catch branch rather than the 401 case above. That branch must report

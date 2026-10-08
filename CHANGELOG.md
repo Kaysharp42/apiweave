@@ -269,6 +269,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Data-driven runs from a CSV or JSON file.** A workflow can run once per
+  row of a data file, each row's values read as `{{data.<column>}}`: a CSV
+  file's header names the columns, a JSON file is an array of objects. In the
+  app, **Run with data** beside **Run** picks the file; the toolbar shows
+  **Iteration 3/10**, each iteration is its own History entry with its place,
+  a failed iteration does not stop the next, and Cancel stops the rest. In CI,
+  `apiweave run --iteration-data <file>` (`-d`) does the same for a workflow or
+  a whole project, `--iteration-count` (`-n`) repeats a run, `--bail` stops at
+  the first failed iteration, and the reports have one suite per iteration
+  (`Health check [iteration 2]`). Agents pass one row as `data` on
+  `runs_create`. Row values are never stored with a run and are not masked:
+  keep secrets in the secret store.
 - **Poll async APIs with Retry.** An HTTP request can now repeat itself:
   **Settings → Retry** sets the attempts, the wait (fixed or exponential with
   a cap) and **Until** rules, the same rules an Assertion node takes, checked

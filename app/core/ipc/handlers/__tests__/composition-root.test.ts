@@ -164,6 +164,51 @@ describe("composition root — the wiring main.ts performs", () => {
     expect(await waitForStatus(run.runId, ["completed", "failed"])).toBe("completed")
   })
 
+  it("runs.createIterations runs the workflow once per row, in order, never storing the rows", async () => {
+    const ws = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflowId = seedWorkflow(ws.workspaceId)
+    const enqueue = vi.spyOn(scheduler!, "enqueue")
+    const rows = [{ user: "ann-row" }, { user: "bob-row" }, { user: "cy-row" }]
+
+    const first = await ok<{ runId: string; iteration: { groupId: string; index: number; count: number } }>("runs", "createIterations", {
+      workspaceId: ws.workspaceId,
+      workflowId,
+      rows,
+    })
+
+    expect(first.iteration).toMatchObject({ index: 1, count: 3 })
+    await vi.waitFor(() => expect(enqueue).toHaveBeenCalledTimes(3))
+    expect(enqueue.mock.calls.map(([request]) => request.data)).toEqual(rows)
+    const runIds = enqueue.mock.results.map((result) => result.value as string)
+    expect(await waitForStatus(runIds[2]!, ["completed", "failed"])).toBe("completed")
+    const stored = runIds.map((runId) => runs.getById(runId)!)
+    expect(stored.map((run) => run.iteration)).toEqual([1, 2, 3].map((index) => ({ groupId: first.iteration.groupId, index, count: 3 })))
+    expect(JSON.stringify(stored)).not.toContain("ann-row")
+  })
+
+  it("runs.createIterations stops the remaining iterations when the running one is cancelled", async () => {
+    const ws = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflowId = seedWorkflow(ws.workspaceId, 2000)
+    const enqueue = vi.spyOn(scheduler!, "enqueue")
+
+    const first = await ok<{ runId: string }>("runs", "createIterations", { workspaceId: ws.workspaceId, workflowId, rows: [{}, {}] })
+    await waitForStatus(first.runId, ["running"], 500)
+    await ok("runs", "cancel", { workspaceId: ws.workspaceId, runId: first.runId })
+
+    expect(await waitForStatus(first.runId, ["cancelled"])).toBe("cancelled")
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(enqueue).toHaveBeenCalledTimes(1)
+  })
+
+  it("runs.createIterations refuses an empty data set", async () => {
+    const ws = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const workflowId = seedWorkflow(ws.workspaceId)
+
+    const res = await router.dispatch({ domain: "runs", action: "createIterations", payload: { workspaceId: ws.workspaceId, workflowId, rows: [] } })
+
+    expect(res.ok).toBe(false)
+  })
+
   it("runs.cancel aborts a live scheduler run", async () => {
     const ws = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const workflowId = seedWorkflow(ws.workspaceId, 2000)

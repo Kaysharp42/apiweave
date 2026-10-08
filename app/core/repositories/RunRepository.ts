@@ -3,14 +3,16 @@ import { RUN_HISTORY_RETENTION_PER_WORKFLOW, SIDE_TABLE_THRESHOLD_BYTES } from "
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
+import type { RunIteration } from "@shared/types/RunIteration"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
 import { getMapped, insertAndRead, parseJson, queryMapped, toJson } from "./helpers"
 import { AssertionEvaluationSchema } from "@shared/zod-schemas/AssertionEvaluationSchema"
 import { RunResultSchema } from "@shared/zod-schemas/RunResultSchema"
+import { RunIterationSchema } from "@shared/zod-schemas/RunIterationSchema"
 
 export type RunCreate = Pick<Run, "workspaceId" | "workflowId"> &
-  Partial<Pick<Run, "status" | "trigger" | "variables" | "selectedEnvironmentId" | "nodeStatuses">>
+  Partial<Pick<Run, "status" | "trigger" | "variables" | "selectedEnvironmentId" | "nodeStatuses" | "iteration">>
 
 export type RunUpdate = Partial<
   Pick<
@@ -47,6 +49,7 @@ export interface RunSummaryRow {
   readonly failedNodes: readonly string[]
   readonly failedNodeCount: number
   readonly nodeCount: number
+  readonly iteration: RunIteration | null
   readonly runRev: number
   readonly createdAt: string
   readonly updatedAt: string
@@ -108,6 +111,7 @@ interface RunMetadata {
   readonly resumeFromNodeIds: readonly string[] | null
   readonly resumeMode: "single" | "all-failed" | null
   readonly resolvedSecrets: readonly ResolvedSecretInfo[]
+  readonly iteration: RunIteration | null
 }
 
 export class RunRepository {
@@ -126,6 +130,7 @@ export class RunRepository {
       resumeFromNodeIds: null,
       resumeMode: null,
       resolvedSecrets: [],
+      iteration: input.iteration ?? null,
     }
     const readBack = (): Run | undefined => this.getById(id)
     return insertAndRead(
@@ -222,6 +227,7 @@ export class RunRepository {
         // `->` (not json_extract) so a legacy scalar comes back as JSON text
         // rather than a bare value that would not parse.
         "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
+        "response_metadata_json -> '$.iteration' AS iteration_json, " +
         "(SELECT count(*) FROM run_node_results WHERE run_id = runs.id) AS node_count " +
         `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
       params,
@@ -429,6 +435,7 @@ export class RunRepository {
       resumeFromNodeIds: run.resumeFromNodeIds ?? null,
       resumeMode: run.resumeMode ?? null,
       resolvedSecrets: run.resolvedSecrets ?? [],
+      iteration: run.iteration ?? null,
     }
     this.store.transaction((tx) => {
       tx.set(
@@ -496,6 +503,7 @@ function rowToRun(row: RunRow): Run {
     resumeFromNodeIds: metadata.resumeFromNodeIds === null ? null : [...metadata.resumeFromNodeIds],
     resumeMode: metadata.resumeMode,
     resolvedSecrets: [...metadata.resolvedSecrets],
+    iteration: metadata.iteration,
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -529,7 +537,13 @@ function normalizeRunMetadata(value: unknown): RunMetadata {
           return [{ name: item["name"], resolved: item["resolved"], scopeType }]
         })
       : [],
+    iteration: normalizeIteration(metadata["iteration"]),
   }
+}
+
+function normalizeIteration(value: unknown): RunIteration | null {
+  const parsed = RunIterationSchema.safeParse(value)
+  return parsed.success ? parsed.data : null
 }
 
 function normalizeRunResults(value: unknown): RunResult[] {
@@ -586,6 +600,7 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly trigger: SqliteValue
   readonly duration: SqliteValue
   readonly failed_nodes_json: string | null
+  readonly iteration_json: string | null
   readonly node_count: number | null
 }
 
@@ -622,6 +637,7 @@ function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
     failedNodes,
     failedNodeCount: failedNodes.length,
     nodeCount: row.node_count ?? 0,
+    iteration: normalizeIteration(row.iteration_json === null ? null : parseJson<unknown>(row.iteration_json)),
     runRev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

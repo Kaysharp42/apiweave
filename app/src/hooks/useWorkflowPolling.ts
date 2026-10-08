@@ -15,6 +15,12 @@ import {
   IpcError,
 } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import type { RunIteration } from "@shared/types/RunIteration";
+import {
+  MAX_ITERATION_DATA_BYTES,
+  parseIterationData,
+  type IterationRow,
+} from "@shared/iteration-data/iterationData";
 import { analyzeWorkflowGraph } from "@shared/analysis/workflow_graph_analyzer";
 import type { WorkflowGraphInput } from "@shared/types/WorkflowGraphInput";
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge";
@@ -220,6 +226,8 @@ interface FailedNodeOption {
 }
 
 interface RunOptions {
+  /** Run once per row: a data-driven run. */
+  rows?: readonly IterationRow[];
   resume?: {
     mode: string;
     sourceRunId: string | null;
@@ -265,7 +273,11 @@ interface UseWorkflowPollingParams {
 interface UseWorkflowPollingResult {
   isRunning: boolean;
   currentRunId: string | null;
+  /** The iteration on screen when it is one of a data-driven run. */
+  currentIteration: RunIteration | null;
   runWorkflow: () => Promise<void>;
+  /** Parse a CSV or JSON data file and run the workflow once per row. */
+  runWorkflowWithData: (file: File) => Promise<void>;
   cancelRun: () => Promise<void>;
   runFromLastFailed: () => Promise<void>;
   runAllFailed: () => void;
@@ -304,6 +316,10 @@ export default function useWorkflowPolling({
 }: UseWorkflowPollingParams): UseWorkflowPollingResult {
   const [isRunning, setIsRunning] = useState(false);
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  const [currentIteration, setCurrentIteration] = useState<RunIteration | null>(null);
+  const currentIterationRef = useRef<RunIteration | null>(null);
+  /** Failed iterations of the data-driven run on screen, for its closing summary. */
+  const iterationFailuresRef = useRef<{ groupId: string; failed: number } | null>(null);
   const [isResumeLoading, setIsResumeLoading] = useState(false);
   const [latestFailedRun, setLatestFailedRun] = useState<{
     runId: string | null;
@@ -453,6 +469,21 @@ export default function useWorkflowPolling({
       // run.finished
       stopStream();
       runFinishedRef.current = true;
+      const iteration = currentIterationRef.current;
+      if (iteration !== null) {
+        const tally =
+          iterationFailuresRef.current?.groupId === iteration.groupId
+            ? iterationFailuresRef.current
+            : { groupId: iteration.groupId, failed: 0 };
+        if (event.status !== "completed") tally.failed += 1;
+        iterationFailuresRef.current = tally;
+        if (iteration.index === iteration.count) {
+          const passed = iteration.count - tally.failed;
+          const summary = `Data run finished: ${passed} of ${iteration.count} iterations passed`;
+          if (tally.failed === 0) toast.success(summary);
+          else toast.error(summary);
+        }
+      }
       // `isRunning` and the hydration both wait for the playback. The toolbar
       // saying "Run" while the canvas is still narrating is the same defect as
       // the edges being out of step with the nodes, one level up; and hydration
@@ -513,9 +544,11 @@ export default function useWorkflowPolling({
    * same machinery — there is no second, dimmer rendering of a run.
    */
   const attachToRun = useCallback(
-    (runId: string) => {
+    (runId: string, iteration: RunIteration | null) => {
       setCurrentRunId(runId);
       currentRunIdRef.current = runId;
+      setCurrentIteration(iteration);
+      currentIterationRef.current = iteration;
       setIsRunning(true);
       unsubscribeRef.current = onRunProgress(runId, handleEvent);
 
@@ -546,7 +579,7 @@ export default function useWorkflowPolling({
   );
 
   const executeWorkflow = useCallback(
-    async (_runOptions: RunOptions = {}) => {
+    async (runOptions: RunOptions = {}) => {
       if (!workspaceId || !workflowId) return;
 
       // One validator: the same `analyzeWorkflowGraph` that powers
@@ -664,13 +697,19 @@ export default function useWorkflowPolling({
         // input schema is .strict() and the scheduler's resume path isn't wired
         // yet, so this triggers a full run. Restore once the composition-root
         // enqueue handler + resume plumbing land (deferred Task 13/21 wiring).
-        const run = await apiweave.runs.create({
+        const request = {
           workspaceId,
           workflowId,
           ...(runEnvId ? { selectedEnvironmentId: runEnvId } : {}),
-        });
+        };
+        // A data-driven run returns iteration 1; the main process starts each
+        // next iteration when the previous one ends, and this canvas adopts it
+        // from the run-started broadcast like any run it did not start.
+        const run = runOptions.rows
+          ? await apiweave.runs.createIterations({ ...request, rows: runOptions.rows })
+          : await apiweave.runs.create(request);
 
-        attachToRun(run.runId);
+        attachToRun(run.runId, run.iteration ?? null);
       } catch (error) {
         const detail =
           error instanceof IpcError
@@ -704,10 +743,12 @@ export default function useWorkflowPolling({
    * Reassignment keeps the closure over the *current* graph without making the
    * subscription's identity depend on it.
    */
-  const adoptRunRef = useRef<(runId: string) => void>(() => undefined);
-  adoptRunRef.current = (runId: string) => {
+  const adoptRunRef = useRef<
+    (runId: string, iteration: RunIteration | null) => void
+  >(() => undefined);
+  adoptRunRef.current = (runId: string, iteration: RunIteration | null) => {
     clearCanvasForRun();
-    attachToRun(runId);
+    attachToRun(runId, iteration);
   };
 
   /** Whether this canvas is free to start showing `runId`. */
@@ -744,7 +785,7 @@ export default function useWorkflowPolling({
       if (event.workspaceId !== workspaceId) return;
       if (event.workflowId !== workflowId) return;
       if (!canAdoptRun(event.runId)) return;
-      adoptRunRef.current(event.runId);
+      adoptRunRef.current(event.runId, event.iteration);
     });
   }, [workspaceId, workflowId, canAdoptRun]);
 
@@ -770,7 +811,7 @@ export default function useWorkflowPolling({
         if (cancelled || !run) return;
         if (run.status !== "running" && run.status !== "pending") return;
         if (!canAdoptRun(run.runId)) return;
-        adoptRunRef.current(run.runId);
+        adoptRunRef.current(run.runId, run.iteration ?? null);
       } catch {
         // No readable run history is not a reason to fail opening a workflow.
       }
@@ -784,6 +825,28 @@ export default function useWorkflowPolling({
     if (!workspaceId || !workflowId) return;
     executeWorkflow({});
   }, [workspaceId, workflowId, executeWorkflow]);
+
+  const runWorkflowWithData = useCallback(
+    async (file: File) => {
+      if (file.size > MAX_ITERATION_DATA_BYTES) {
+        toast.error(
+          `${file.name} is larger than ${MAX_ITERATION_DATA_BYTES / 1024 / 1024} MB`,
+        );
+        return;
+      }
+      let rows: IterationRow[];
+      try {
+        rows = parseIterationData(await file.text(), file.name);
+      } catch (error) {
+        toast.error(
+          `Cannot run with ${file.name}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return;
+      }
+      await executeWorkflow({ rows });
+    },
+    [executeWorkflow],
+  );
 
   const cancelRun = useCallback(async () => {
     // The runner already finished and what is left on screen is the playback
@@ -886,6 +949,8 @@ export default function useWorkflowPolling({
         setNodes((nds) => selectiveNodeUpdate(nds, statuses));
         setCurrentRunId(fullRun.runId);
         currentRunIdRef.current = fullRun.runId;
+        setCurrentIteration(fullRun.iteration ?? null);
+        currentIterationRef.current = fullRun.iteration ?? null;
       } catch {
         // ignore
       }
@@ -902,7 +967,9 @@ export default function useWorkflowPolling({
   return {
     isRunning,
     currentRunId,
+    currentIteration,
     runWorkflow,
+    runWorkflowWithData,
     cancelRun,
     runFromLastFailed,
     runAllFailed,

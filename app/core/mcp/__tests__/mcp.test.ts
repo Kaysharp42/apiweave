@@ -223,6 +223,8 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "secrets.moveToScope",
       "runs.report",
       "projects.runReport",
+      // A background run per row; an agent passes one row per runs_create.
+      "runs.createIterations",
       // Deleting run history is irreversible and the user's call alone.
       "runs.delete",
       "runs.clearHistory",
