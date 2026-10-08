@@ -269,6 +269,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Import Postman collections.** **Projects → Import → Postman** turns a
+  Postman Collection v2.1, and optionally a Postman environment, into a new
+  project: one workflow per folder (nested folders named `Parent / Child`) or
+  one per request, each request with its method, URL, query, path variables,
+  headers, body (raw, urlencoded, form-data text fields, GraphQL as JSON) and
+  inherited auth (bearer, basic, API key, OAuth 2.0). Variables go to one
+  **Postman: …** environment, dynamic variables such as `{{$guid}}` to
+  APIWeave's dynamic functions, and test scripts that check the status or
+  store a response value to Expected status and extractors; other scripts are
+  kept in a note. Credential values are never imported: each becomes a
+  `{{secrets.NAME}}` reference, and the preview lists the secrets to create.
+  `apiweave run` runs a Postman collection directly. Collection v1 and v2.0
+  files are refused with a request to re-export. See
+  [Migrate from Postman](docs/guides/migrating-from-postman.md).
 - **OAuth 2.0 for HTTP requests.** The Auth tab offers OAuth 2.0 with two
   grant types. **Client credentials** runs headless, in the app and in
   `apiweave run`: the token is fetched before the request, reused until it

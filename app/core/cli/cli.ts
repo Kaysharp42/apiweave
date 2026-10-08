@@ -18,6 +18,7 @@ import { LocalOnlySyncProvider } from "../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../services/scope_resolver"
 import { ImportService, WorkflowBundleSchema } from "../services/import_service"
 import { ProjectExportService, type ProjectBundle } from "../services/project_export_service"
+import { convertPostmanCollection, isPostmanCollection, isPostmanEnvironment } from "../services/postman_import"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { DynamicFunctions } from "../runner/dynamic_functions"
 import { SafeHttp, type SafeFetchOptions } from "../runner/safe_http"
@@ -33,7 +34,8 @@ import { CryptoRandomProvider, WallClockProvider } from "../runner/harness/provi
  * keychain or MCP — so it runs under the `node` a CI image already has.
  *
  * CI has no APIWeave database, so the run starts from the files a user
- * exports: a workflow export or a `.awecollection` project bundle. They are
+ * exports: a workflow export, a `.awecollection` project bundle, or a Postman
+ * Collection v2.1, converted the way the app's Postman import does. They are
  * imported through the app's own import services into an in-memory SQLite
  * database that disappears with the process, then run by the same scheduler
  * and project runner as the app. Bundles carry secret references only; the
@@ -63,13 +65,15 @@ const REPORTERS = new Set(["cli", "junit", "html"])
 
 export const USAGE = `Usage: apiweave run <file> [options]
 
-Runs a workflow export (.json) or a project bundle (.awecollection) and exits
-0 when every run passes, 1 when a test fails, 2 on a usage or config error.
+Runs a workflow export (.json), a project bundle (.awecollection) or a Postman
+Collection v2.1 (.postman_collection.json) and exits 0 when every run passes,
+1 when a test fails, 2 on a usage or config error.
 
 Options:
   -w, --workflow <name|id>        Run one workflow of a project bundle
   -e, --env <name>                Environment from the file to run against
       --env-file <file>           Environment variables, JSON object or dotenv
+                                  (a Postman environment, for a Postman collection)
       --var <key=value>           Set an environment variable (repeatable)
       --secret <NAME=value>       Secret value (repeatable)
       --secrets-file <file>       Secret values, JSON object or dotenv
@@ -220,6 +224,9 @@ function collectSecrets(options: CliOptions, env: CliIo["env"]): Map<string, str
 async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: (text: string) => string): Promise<number> {
   const bundle = readJson(options.file)
   const rows = readIterationRows(options)
+  const envFileVariables = options.envFile === undefined ? {} : readKeyValueFile(options.envFile, "--env-file")
+  // A Postman environment is the collection's own environment, converted with it, not overrides.
+  const postmanEnvironment = isPostmanCollection(bundle) && isPostmanEnvironment(envFileVariables) ? envFileVariables : undefined
   const database = initDatabase({ databasePath: ":memory:" })
   let scheduler: RunScheduler | undefined
   try {
@@ -239,8 +246,10 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
 
     // -------- Load the file through the app's own importers --------
     let target: { readonly kind: "workflow"; readonly workflowId: string } | { readonly kind: "project"; readonly projectId: string }
-    if (isRecord(bundle) && bundle["type"] === "awecollection") {
-      const projectBundle = bundle as unknown as ProjectBundle
+    if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "awecollection")) {
+      const projectBundle = isPostmanCollection(bundle)
+        ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
+        : bundle as unknown as ProjectBundle
       const { projectId } = await new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
         .importProject(workspaceId, projectBundle)
       target = options.workflow === undefined
@@ -252,7 +261,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
         .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
       target = { kind: "workflow", workflowId }
     } else {
-      throw new UsageError(`${options.file} is not an APIWeave workflow export or .awecollection project bundle`)
+      throw new UsageError(`${options.file} is not an APIWeave workflow export, .awecollection project bundle or Postman collection`)
     }
 
     // -------- Environment --------
@@ -271,7 +280,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       environmentId = matches[0]!.environmentId
     }
     const overrides: Record<string, JsonValue> = {
-      ...(options.envFile === undefined ? {} : readKeyValueFile(options.envFile, "--env-file")),
+      ...(postmanEnvironment === undefined ? envFileVariables : {}),
       ...Object.fromEntries(parsePairs(options.vars, "--var")),
     }
     if (Object.keys(overrides).length > 0) {

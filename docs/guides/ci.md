@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- A workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle.
+- A workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
 - Node.js 22 or later on the machine that runs the tests.
 - A checkout of the APIWeave repository to build the CLI from. It is not published to npm yet.
 
@@ -17,6 +17,8 @@
 | `0` | Every run passed. |
 | `1` | A test failed: a node or assertion failed, or the run was cancelled. |
 | `2` | Usage or configuration error. Nothing was run. |
+
+A Postman collection is converted exactly as the app's [Postman import](migrating-from-postman.md) converts it, then runs as a project; a Postman environment passed to `--env-file` becomes its environment, named `Postman: <environment name>`.
 
 A project bundle runs as a project run: its enabled workflows, one after another, in the project's order. A workflow that fails stops the project unless its row is set to **Continue**. A workflow export runs that one workflow.
 
@@ -44,7 +46,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 |---|---|
 | `-w, --workflow <name\|id>` | Run one workflow of a project bundle, by name or by its id in the bundle. |
 | `-e, --env <name>` | Run against this environment from the file. Without it, each workflow uses the environment it was saved with. |
-| `--env-file <file>` | Environment variables from a JSON object or a dotenv file, layered on the environment. |
+| `--env-file <file>` | Environment variables from a JSON object or a dotenv file, layered on the environment. For a Postman collection, a Postman environment export. |
 | `--var <key=value>` | Set one environment variable (`{{env.key}}`). Repeatable; wins over `--env-file`. |
 | `--secret <NAME=value>` | A secret value (`{{secrets.NAME}}`). Repeatable. |
 | `--secrets-file <file>` | Secret values from a JSON object or a dotenv file. |

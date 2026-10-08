@@ -10,6 +10,8 @@ import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
+import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
+import type { PostmanImportResult } from "@shared/types/PostmanImportResult";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
@@ -776,6 +778,21 @@ export const apiweave = {
         workspaceId,
         bundle,
       }),
+    // A Postman Collection v2.1 (and optional Postman environment), as parsed JSON.
+    previewPostman: (input: {
+      readonly workspaceId: string;
+      readonly collection: Record<string, unknown>;
+      readonly environment?: Record<string, unknown>;
+      readonly mode?: "folder" | "request";
+      readonly projectName?: string;
+    }) => invoke<PostmanImportPreview>("projects", "previewPostman", input),
+    importPostman: (input: {
+      readonly workspaceId: string;
+      readonly collection: Record<string, unknown>;
+      readonly environment?: Record<string, unknown>;
+      readonly mode?: "folder" | "request";
+      readonly projectName?: string;
+    }) => invoke<PostmanImportResult>("projects", "importPostman", input),
   },
   cloud: {
     status: () => invoke<CloudSyncStatus>("cloud", "status", {}),

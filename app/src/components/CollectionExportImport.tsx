@@ -28,6 +28,7 @@ import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
 import { downloadTextFile } from "../utils/downloadFile";
+import { PostmanImportPanel } from "./PostmanImportPanel";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
 import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
@@ -62,7 +63,8 @@ interface CollectionExportImportProps {
     | "import-workflows"
     | "import-har"
     | "import-openapi"
-    | "import-curl";
+    | "import-curl"
+    | "import-postman";
   onImportSuccess?: (projectId: string) => void;
 }
 
@@ -72,7 +74,8 @@ type TabId =
   | "import-workflows"
   | "import-har"
   | "import-openapi"
-  | "import-curl";
+  | "import-curl"
+  | "import-postman";
 
 const TABS: TabItem[] = [
   { key: "export", icon: Download, label: "Export Project" },
@@ -81,6 +84,7 @@ const TABS: TabItem[] = [
   { key: "import-har", icon: Upload, label: "HAR File" },
   { key: "import-openapi", icon: Upload, label: "OpenAPI" },
   { key: "import-curl", icon: Terminal, label: "cURL" },
+  { key: "import-postman", icon: Upload, label: "Postman" },
 ];
 
 const TAB_TITLES: Record<TabId, (projectName: string | undefined) => string> = {
@@ -90,6 +94,7 @@ const TAB_TITLES: Record<TabId, (projectName: string | undefined) => string> = {
   "import-har": () => "Import HAR File to Project",
   "import-openapi": () => "Import OpenAPI to Project",
   "import-curl": () => "Import cURL to Project",
+  "import-postman": () => "Import Postman Collection",
 };
 
 export function CollectionExportImport({
@@ -1197,6 +1202,12 @@ export function CollectionExportImport({
               {isLoading ? "Importing..." : "Import to Project"}
             </Button>
           </div>
+        )}
+
+        {activeTab === "import-postman" && (
+          <PostmanImportPanel
+            onImported={() => useSidebarStore.getState().signalProjectsRefresh()}
+          />
         )}
 
         {/* Import cURL Tab */}

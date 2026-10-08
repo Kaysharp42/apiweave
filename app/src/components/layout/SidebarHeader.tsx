@@ -36,6 +36,7 @@ interface SidebarHeaderState {
     | "import-har"
     | "import-openapi"
     | "import-curl"
+    | "import-postman"
     | null;
 }
 
@@ -183,6 +184,12 @@ export function SidebarHeader({
       icon: Terminal,
       action: () =>
         dispatch({ type: "open-collection-import", mode: "import-curl" }),
+    },
+    {
+      label: "Postman",
+      icon: Upload,
+      action: () =>
+        dispatch({ type: "open-collection-import", mode: "import-postman" }),
     },
   ];
 

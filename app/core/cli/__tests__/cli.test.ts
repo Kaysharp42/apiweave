@@ -230,6 +230,44 @@ describe("apiweave run", () => {
     expect(received).toEqual([])
   })
 
+  describe("Postman collections", () => {
+    const schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+
+    it("imports a Postman collection and environment on the fly, the token a secret from the environment", async () => {
+      fs.writeFileSync(path.join(dir, "api.postman_collection.json"), JSON.stringify({
+        info: { name: "Health API", schema },
+        auth: { type: "bearer", bearer: [{ key: "token", value: "{{apiToken}}" }] },
+        item: [{
+          name: "Health",
+          request: { method: "GET", url: "{{baseUrl}}/health.json" },
+          event: [{ listen: "test", script: { exec: ["pm.test(\"up\", function () {", "  pm.response.to.have.status(200);", "});"] } }],
+        }],
+      }))
+      fs.writeFileSync(path.join(dir, "ci.postman_environment.json"), JSON.stringify({
+        name: "CI",
+        values: [{ key: "baseUrl", value: baseUrl, enabled: true }],
+      }))
+
+      const result = await run(
+        ["run", "api.postman_collection.json", "--env-file", "ci.postman_environment.json", "--env", "Postman: CI"],
+        { APIWEAVE_SECRET_apiToken: TOKEN },
+      )
+
+      expect(result.stderr).toBe("")
+      expect(result.code).toBe(EXIT_PASSED)
+      expect(received).toEqual([`Bearer ${TOKEN}`])
+      expect(result.stdout).toContain("Health")
+    })
+
+    it("exits 2 on a Collection v1 file, saying to re-export it", async () => {
+      fs.writeFileSync(path.join(dir, "old.json"), JSON.stringify({ id: "x", name: "Old", order: [], requests: [] }))
+      const result = await run(["run", "old.json"])
+
+      expect(result.code).toBe(EXIT_USAGE)
+      expect(result.stderr).toContain("Postman Collection v1")
+    })
+  })
+
   it.each([
     [["run", FIXTURE, "--env", "Prod"], "environment 'Prod' is not in the file (environments: CI)"],
     [["run", FIXTURE, "--workflow", "Nope"], "workflow 'Nope' is not in the project"],

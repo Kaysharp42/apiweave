@@ -168,6 +168,8 @@ To import:
 
 Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
 
+A Postman collection imports into a new project from the same menu (**Import → Postman**); see [Migrate from Postman](../guides/migrating-from-postman.md).
+
 A Call Workflow node follows its target into the import: when the target is in the same bundle, the node points at the imported copy. A target outside the bundle is kept when it exists in the destination workspace, and cleared otherwise; the import result lists every cleared target so you can pick a new one. A single workflow export carries none of its targets, so the same rule applies to each of its Call Workflow nodes.
 
 ## Dry-Run Validation

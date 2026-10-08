@@ -43,6 +43,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
 - [Swagger and OpenAPI Import](features/swagger-import.md): turn a spec into reusable request templates.
 - [Run Tests in CI](guides/ci.md): run exported workflows and projects headless with `apiweave run`, with exit codes and JUnit/HTML reports.
+- [Migrate from Postman](guides/migrating-from-postman.md): import a Postman Collection v2.1 and its environment as a project, and what each part becomes.
 
 **I'm having trouble (something broke or behaves wrong).**
 
