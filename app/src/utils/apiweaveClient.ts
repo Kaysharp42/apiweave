@@ -27,6 +27,9 @@ import type {
   AgentsBridge,
 } from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
+import type { OAuthBridge } from "@shared/types/OAuthBridge";
+import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
+import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -129,6 +132,7 @@ declare global {
     __APIWEAVE_MCP__?: McpBridge;
     __APIWEAVE_UPDATES__?: UpdatesBridge;
     __APIWEAVE_AGENTS__?: AgentsBridge;
+    __APIWEAVE_OAUTH__?: OAuthBridge;
     apiweave?: typeof apiweave;
   }
 
@@ -145,6 +149,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_MCP__?: McpBridge;
   __APIWEAVE_UPDATES__?: UpdatesBridge;
   __APIWEAVE_AGENTS__?: AgentsBridge;
+  __APIWEAVE_OAUTH__?: OAuthBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -1123,4 +1128,26 @@ export const agents = {
       throw error;
     }
   },
+} as const;
+
+function getOAuthBridge(): OAuthBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_OAUTH__ ?? globalApiweave.__APIWEAVE_OAUTH__
+  );
+}
+
+const oauthDesktopOnly = (): Promise<never> =>
+  Promise.reject(new Error("OAuth sign-in is only available in the desktop app"));
+
+/**
+ * OAuth 2.0 sign-in for HTTP nodes (Get token, its status, Clear token). A
+ * sibling of `agents`, off the router facade: see `OAuthBridge`.
+ */
+export const oauth = {
+  authorize: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.authorize(request) ?? oauthDesktopOnly(),
+  status: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.status(request) ?? oauthDesktopOnly(),
+  clear: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.clear(request) ?? oauthDesktopOnly(),
 } as const;

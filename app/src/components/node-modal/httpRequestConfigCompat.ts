@@ -156,7 +156,10 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
   if (!isRecord(value)) return DEFAULT_AUTH;
 
   const type =
-    value.type === "bearer" || value.type === "basic" || value.type === "apiKey"
+    value.type === "bearer" ||
+    value.type === "basic" ||
+    value.type === "apiKey" ||
+    value.type === "oauth2"
       ? value.type
       : "none";
   const authConfig: AuthConfig = { type };
@@ -180,6 +183,28 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
       key: apiKey ? getString(apiKey.key) : "",
       value: apiKey ? getString(apiKey.value) : "",
       addTo: apiKey?.addTo === "query" ? "query" : "header",
+    };
+  } else if (type === "oauth2") {
+    const oauth2 = isRecord(value.oauth2) ? value.oauth2 : {};
+    const grantType =
+      oauth2.grantType === "authorization_code"
+        ? "authorization_code"
+        : "client_credentials";
+    authConfig.oauth2 = {
+      grantType,
+      tokenUrl: getString(oauth2.tokenUrl),
+      clientId: getString(oauth2.clientId),
+      clientSecret: getString(oauth2.clientSecret),
+      scope: getString(oauth2.scope),
+      audience: getString(oauth2.audience),
+      clientAuth: oauth2.clientAuth === "body" ? "body" : "basic",
+      // Sign-in fields only for the grant that signs in.
+      ...(grantType === "authorization_code"
+        ? {
+            authorizationUrl: getString(oauth2.authorizationUrl),
+            tokenSecret: getString(oauth2.tokenSecret),
+          }
+        : {}),
     };
   }
 

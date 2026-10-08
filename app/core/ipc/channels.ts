@@ -63,6 +63,16 @@ export const AGENT_CHANNELS = {
 } as const
 
 /**
+ * OAuth 2.0 sign-in for HTTP nodes. Privileged and off the router, like
+ * `AGENT_CHANNELS`: it opens the system browser and writes the secret store.
+ */
+export const OAUTH_CHANNELS = {
+  authorize: "oauth:authorize",
+  status: "oauth:status",
+  clear: "oauth:clear",
+} as const
+
+/**
  * A run began — broadcast for EVERY run, whoever started it (the canvas's own
  * Run button, or an agent through the MCP `runs_create` tool).
  *

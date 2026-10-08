@@ -217,6 +217,8 @@ export type { BearerAuthConfig } from "@shared/types/BearerAuthConfig";
 export type { BasicAuthConfig } from "@shared/types/BasicAuthConfig";
 export type { ApiKeyAuthConfig } from "@shared/types/ApiKeyAuthConfig";
 export type { AuthConfig } from "@shared/types/AuthConfig";
+export type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig";
+export type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 export type { FormDataEntry } from "@shared/types/FormDataEntry";
 export type { UrlEncodedEntry } from "@shared/types/UrlEncodedEntry";
 export type { HTTPRequestBodyType } from "./HTTPRequestBodyType";

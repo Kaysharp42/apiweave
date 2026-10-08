@@ -315,13 +315,15 @@ function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
 // key-name heuristic happened to fire while walking the copy.
 function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
-  for (const [parent, leaf] of [["bearer", "token"], ["basic", "password"], ["apiKey", "value"]] as const) {
+  const leaves = [["bearer", ["token"]], ["basic", ["password"]], ["apiKey", ["value"]], ["oauth2", ["clientSecret", "tokenSecret"]]] as const
+  for (const [parent, names] of leaves) {
     const raw = auth[parent]
     if (!isRecord(raw)) continue
-    const withoutLeaf = { ...raw }
-    delete withoutLeaf[leaf]
-    const rest = sanitizeValue(withoutLeaf, true) as Record<string, JsonValue>
-    sanitized[parent] = { ...rest, [leaf]: referenceOrBlank(raw[leaf], "") }
+    const withoutLeaves = { ...raw }
+    for (const name of names) delete withoutLeaves[name]
+    const rest = sanitizeValue(withoutLeaves, true) as Record<string, JsonValue>
+    const redacted = Object.fromEntries(names.map((name) => [name, referenceOrBlank(raw[name], "")]))
+    sanitized[parent] = { ...rest, ...redacted }
   }
   return sanitized
 }

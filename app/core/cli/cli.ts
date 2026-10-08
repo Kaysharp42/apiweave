@@ -319,6 +319,8 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       functions: new DynamicFunctions(clock, rng),
       clock,
       rng,
+      // One OAuth 2.0 token cache per invocation: iterations reuse a client-credentials token.
+      oauthTokens: new Map(),
       resolveSecret: async (name) => {
         const plaintext = secrets.get(name)
         return plaintext === undefined ? { plaintext: null, scopeType: null } : { plaintext, scopeType: "workspace" }

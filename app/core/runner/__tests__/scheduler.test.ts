@@ -10,6 +10,8 @@ import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
+import { startFakeOAuthServer } from "./oauth_fake_server"
+import { encodeStoredToken } from "../oauth"
 
 let db: InitializedDatabase
 let workspaces: WorkspaceRepository
@@ -1313,6 +1315,13 @@ describe("agent-started runs that use secrets", () => {
 })
 
 describe("requestDestinations", () => {
+  it("includes an OAuth 2.0 node's token endpoint, which receives its credentials", () => {
+    const nodes = [
+      { nodeId: "a", type: "http-request", config: { url: "https://api.example.com/v1", auth: { type: "oauth2", oauth2: { tokenUrl: "https://idp.example.com/token" } } } },
+    ] as unknown as Parameters<typeof requestDestinations>[0]
+    expect(requestDestinations(nodes, {}, {})).toEqual(["api.example.com", "idp.example.com"])
+  })
+
   it("reduces a URL to its host where it resolves before the run, and keeps it as written where it does not", () => {
     const nodes = [
       { nodeId: "a", type: "http-request", config: { url: "https://api.example.com/v1/login" } },
@@ -1329,5 +1338,85 @@ describe("requestDestinations", () => {
       "vars.example.net",
       "{{login.response.body.next}}",
     ])
+  })
+})
+
+describe("OAuth 2.0 runs", () => {
+  it("never stores a fetched token, even when the API echoes it back", async () => {
+    const server = await startFakeOAuthServer()
+    const ws = seedWorkspace()
+    const workflowId = workflows.create({
+      workspaceId: ws,
+      name: "oauth-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "call",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: {
+            url: `${server.url}/api`,
+            auth: { type: "oauth2", oauth2: { grantType: "client_credentials", tokenUrl: `${server.url}/token`, clientId: "c", clientSecret: "{{secrets.CLIENT_SECRET}}" } },
+            extractors: { echoed: "response.body.youSent" },
+          },
+        },
+        { nodeId: "end", type: "end", position: { x: 2, y: 0 } },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "call" },
+        { edgeId: "e2", source: "call", target: "end" },
+      ],
+    }).workflowId
+    const events: RunEvent[] = []
+    const scheduler = makeScheduler({
+      emitProgress: (_runId, event) => events.push(event),
+      resolveSecret: async () => ({ plaintext: "client-secret-value", scopeType: "workspace" }),
+    })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    expect(await scheduler.whenFinished(runId)).toBe("completed")
+    await server.close()
+
+    expect(server.apiCalls).toEqual(["Bearer tok-1-abcdef"])
+    const stored = JSON.stringify(runs.getById(runId))
+    expect(stored).not.toContain("tok-1-abcdef")
+    expect(stored).toContain("Bearer <SECRET>")
+    expect(JSON.stringify(events)).not.toContain("tok-1-abcdef")
+  })
+
+  it("writes a refreshed token set back to the scope its secret came from", async () => {
+    const server = await startFakeOAuthServer()
+    const ws = seedWorkspace()
+    const workflowId = workflows.create({
+      workspaceId: ws,
+      name: "oauth-code-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "call",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: {
+            url: `${server.url}/api`,
+            auth: { type: "oauth2", oauth2: { grantType: "authorization_code", authorizationUrl: `${server.url}/authorize`, tokenUrl: `${server.url}/token`, clientId: "c", tokenSecret: "{{secrets.API_TOKEN}}" } },
+          },
+        },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    }).workflowId
+    const saved: { name: string; value: string; scope: unknown }[] = []
+    const scheduler = makeScheduler({
+      resolveSecret: async () => ({ plaintext: encodeStoredToken({ accessToken: "old-access", expiresAt: 0, refreshToken: "refresh-1" }), scopeType: "workspace" }),
+      saveSecret: async (name, value, scope) => {
+        saved.push({ name, value, scope })
+      },
+    })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    expect(await scheduler.whenFinished(runId)).toBe("completed")
+    await server.close()
+
+    expect(saved).toHaveLength(1)
+    expect(saved[0]).toMatchObject({ name: "API_TOKEN", scope: { workspaceId: ws, scopeType: "workspace", scopeId: ws } })
+    expect(JSON.parse(saved[0]!.value)).toMatchObject({ accessToken: "tok-1-abcdef", refreshToken: "refresh-1" })
+    expect(JSON.stringify(runs.getById(runId))).not.toContain("tok-1-abcdef")
   })
 })

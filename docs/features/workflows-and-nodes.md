@@ -88,7 +88,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `path variables` | Named segments of the URL path (`/users/:id`) with their values |
 | `headers` | Structured key/value rows, each with an active toggle |
 | `cookies` | Structured key/value rows, each with an active toggle |
-| `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
@@ -120,6 +120,27 @@ A request that never gets a response fails with its network cause, such as "Netw
 The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
 
 **Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final bounded result exists. Use the Complete path for a regular Assertion node that checks `response.body.events`.
+
+#### OAuth 2.0
+
+Choose **OAuth 2.0** on the node's **Auth** tab and the run fetches an access token before the request and sends it as `Authorization: Bearer <token>`. Two grant types:
+
+- **Client credentials** is headless and works in the app and in the [CLI](../guides/ci.md). Set the token URL, the client ID, the client secret, and optionally a scope and an audience.
+- **Authorization code (PKCE)** is for APIs that act on behalf of a user. Set the authorization URL as well, and name the secret the token is stored in. **Get token** opens your system browser to sign in. APIWeave receives the redirect on a one-time listener on `127.0.0.1` (an ephemeral port, closed after one callback or five minutes), checks the `state`, exchanges the code with the PKCE verifier, and seals the access and refresh token into that secret. The Auth tab then shows who the token was issued to (when the server sends an OpenID `id_token`) and when it expires; **Clear token** deletes it. Register `http://127.0.0.1/callback` as a redirect URI with your provider; RFC 8252 servers accept any port on the loopback address.
+
+**Client authentication** sends the client ID and secret as an HTTP Basic header (the default) or as `client_id`/`client_secret` form fields.
+
+The client secret and the token secret are secret *names*, stored in the workflow as `{{secrets.NAME}}`. A literal value is refused, so neither ever reaches the workflow file or an export. The token URL, client ID, scope and audience accept placeholders; **Get token** fills only `{{env.*}}` and `{{secrets.*}}`, since it runs outside a workflow run. Get token stores the token in the environment selected for the workflow, or in the workspace when none is.
+
+During a run:
+
+- A client-credentials token is reused across nodes and runs until 30 seconds before it expires (`expires_in`), for as long as the app is open. Tokens are never written to disk.
+- An authorization-code token that has expired is refreshed with the refresh token, and the new token (and a rotated refresh token) is written back to the same secret.
+- If the API answers `401`, the node fetches a fresh token and sends the request once more.
+- Every token is masked as `<SECRET>` in run history, events and reports, like a secret.
+- A run never opens a browser. When no token has been fetched, or it expired with no refresh token, the node fails with a message saying to use **Get token**. This also applies to runs an agent starts over MCP.
+
+Token endpoint failures fail the node with the status and the OAuth error code, for example "OAuth 2.0 token request failed: HTTP 401 (invalid_client)". The token endpoint is listed among the destinations when an agent-started run asks to use your secrets.
 
 #### Retry and polling
 

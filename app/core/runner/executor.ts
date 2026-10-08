@@ -3,6 +3,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
+import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
@@ -17,6 +18,7 @@ import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
+import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -57,11 +59,23 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
+  readonly oauth2?: OAuth2AuthConfig
 }
+
+/** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
+interface AuthRequestContext {
+  readonly signal: AbortSignal | undefined
+  readonly timeoutMs: number
+  readonly sslVerify: boolean
+  /** Skip the cached token: the last one was answered with a 401. */
+  readonly forceRefresh: boolean
+}
+
+const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/
 
 interface FormDataEntryLike {
   readonly key: string
@@ -95,6 +109,12 @@ export interface ExecutorDeps {
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
+  /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
+  readonly oauthTokens?: OAuthTokenCache
+  /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
+  readonly maskValue?: (value: string) => void
+  /** Writes a refreshed OAuth token set back to the secret it was read from. */
+  readonly saveSecret?: (name: string, value: string) => Promise<void>
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
   /**
@@ -338,9 +358,11 @@ export class WorkflowExecutor {
   // still can't hang or stack-overflow a run.
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
+  private readonly oauthTokens: OAuthTokenCache
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
+    this.oauthTokens = deps.oauthTokens ?? new Map()
   }
 
   public async executeWorkflow(
@@ -815,7 +837,7 @@ export class WorkflowExecutor {
 
   // -------------------- HTTP request --------------------
 
-  private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+  private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
@@ -863,7 +885,14 @@ export class WorkflowExecutor {
       headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
     }
 
-    this.applyAuthConfig(auth, headers, queryParams)
+    try {
+      await this.applyAuthConfig(auth, headers, queryParams, {
+        signal: cancelSignal, timeoutMs: timeout * 1000, sslVerify, forceRefresh: forceRefreshToken,
+      })
+    } catch (authError) {
+      if (!(authError instanceof OAuthError)) throw authError
+      return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
+    }
 
     url = appendQueryParams(url, queryParams)
 
@@ -908,6 +937,12 @@ export class WorkflowExecutor {
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
       })
+      // An OAuth token the API no longer accepts (revoked, rotated, or expired
+      // early): fetch a fresh one and send the request once more.
+      if (response.status === 401 && auth?.type === "oauth2" && !forceRefreshToken) {
+        await response.body?.cancel()
+        return this.executeHttpRequest(node, cancelSignal, true)
+      }
       const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
@@ -1071,7 +1106,16 @@ export class WorkflowExecutor {
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headers = this.normalizeKeyValueField(config["headers"] as KVField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
-    this.applyAuthConfig(auth, headers, queryParams)
+    try {
+      await this.applyAuthConfig(auth, headers, queryParams, {
+        // A zero SSE timeout means "no deadline" for the stream, not for the token request.
+        signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
+      })
+    } catch (authError) {
+      if (!(authError instanceof OAuthError)) throw authError
+      this.completeSseNode(node, { status: "error", error: authError.message, method: "GET", url, duration: 0 }, startedAt, secretRefs)
+      return false
+    }
     for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
     headers["Accept"] = "text/event-stream"
     url = appendQueryParams(url, queryParams)
@@ -2072,13 +2116,23 @@ export class WorkflowExecutor {
 
   // -------------------- HTTP auth / body construction --------------------
 
-  /** Apply the panel's auth config as an Authorization header or an apiKey header/query entry. */
-  private applyAuthConfig(
+  /**
+   * Apply the panel's auth config as an Authorization header or an apiKey
+   * header/query entry. OAuth 2.0 fetches its token first; its failures are
+   * thrown as `OAuthError` for the caller to report on the node.
+   */
+  private async applyAuthConfig(
     auth: HttpAuthConfig | undefined,
     headers: Record<string, string>,
     queryParams: Record<string, string>,
-  ): void {
+    context: AuthRequestContext,
+  ): Promise<void> {
     if (!auth || !auth.type || auth.type === "none") return
+    if (auth.type === "oauth2") {
+      if (!auth.oauth2) throw new OAuthError("OAuth 2.0: the node has no OAuth 2.0 settings")
+      headers["Authorization"] = `Bearer ${await this.oauthToken(auth.oauth2, context)}`
+      return
+    }
     if (auth.type === "bearer" && auth.bearer?.token) {
       headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
     } else if (auth.type === "basic" && auth.basic) {
@@ -2094,6 +2148,46 @@ export class WorkflowExecutor {
         headers[key] = value
       }
     }
+  }
+
+  private async oauthToken(oauth2: OAuth2AuthConfig, context: AuthRequestContext): Promise<string> {
+    // The client secret and the token are the only places secrets may go, and
+    // only as whole `{{secrets.NAME}}` references (the schema enforces it).
+    const secretName = (reference: string | undefined): string | undefined =>
+      reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
+    const clientSecretName = secretName(oauth2.clientSecret)
+    const clientSecret = clientSecretName === undefined ? undefined : this.deps.secrets?.[clientSecretName]
+    if (clientSecretName !== undefined && clientSecret === undefined) {
+      throw new OAuthError(`OAuth 2.0: secret ${clientSecretName} is not set`)
+    }
+    const tokenSecretName = secretName(oauth2.tokenSecret)
+    const storedToken = tokenSecretName === undefined ? undefined : this.deps.secrets?.[tokenSecretName]
+    const fill = (text: string | undefined): string | undefined =>
+      text ? this.substituteVariables(text, { allowSecrets: false }) : undefined
+    return oauthAccessToken(
+      {
+        grantType: oauth2.grantType,
+        tokenUrl: fill(oauth2.tokenUrl) ?? "",
+        clientId: fill(oauth2.clientId) ?? "",
+        clientAuth: oauth2.clientAuth ?? "basic",
+        ...(clientSecret === undefined ? {} : { clientSecret }),
+        ...(oauth2.scope ? { scope: fill(oauth2.scope)! } : {}),
+        ...(oauth2.audience ? { audience: fill(oauth2.audience)! } : {}),
+        ...(tokenSecretName === undefined ? {} : { tokenSecretName }),
+        ...(storedToken === undefined ? {} : { storedToken }),
+      },
+      {
+        http: this.deps.http,
+        cache: this.oauthTokens,
+        now: this.deps.clock.now().getTime(),
+        ...(context.signal ? { signal: context.signal } : {}),
+        timeoutMs: context.timeoutMs,
+        rejectUnauthorized: context.sslVerify,
+        mask: (value) => this.deps.maskValue?.(value),
+        ...(this.deps.saveSecret ? { save: this.deps.saveSecret } : {}),
+      },
+      context.forceRefresh,
+    )
   }
 
   /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */

@@ -14,6 +14,7 @@ import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_
 import { NotFoundError } from "../ipc/errors"
 import { SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
+import type { OAuthTokenCache } from "./oauth"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -64,6 +65,17 @@ export interface SchedulerDeps {
    * be asked, so such a run is refused.
    */
   readonly approveAgentRun?: (request: AgentRunApprovalRequest, signal: AbortSignal) => Promise<boolean>
+  /** OAuth 2.0 tokens kept across runs (the app session, a CLI process). Absent: each run fetches its own. */
+  readonly oauthTokens?: OAuthTokenCache
+  /**
+   * Writes a secret back into the scope it resolved from — a refreshed OAuth
+   * token set replacing the one it was refreshed from. Absent: never written.
+   */
+  readonly saveSecret?: (
+    name: string,
+    value: string,
+    scope: { workspaceId: string; scopeType: "environment" | "workspace"; scopeId: string },
+  ) => Promise<void>
 }
 
 export interface EnqueueRequest {
@@ -307,7 +319,17 @@ export class RunScheduler {
       // executor — persisted results, node snapshots, progress events — for the
       // run and its Call Workflow sub-runs alike. The executor keeps the real
       // values; only the stored/emitted copy is masked.
-      const mask = createSecretMasker(Object.values(secretResolution.secrets ?? {}))
+      // Tokens the run fetches itself (OAuth 2.0) join the set as they arrive.
+      const maskedValues = new Set(Object.values(secretResolution.secrets ?? {}))
+      let masker = createSecretMasker(maskedValues)
+      const mask = <T>(value: T): T => masker(value)
+      const maskValue = (value: string): void => {
+        if (maskedValues.has(value)) return
+        maskedValues.add(value)
+        masker = createSecretMasker(maskedValues)
+      }
+      const saveSecret = this.deps.saveSecret
+      const secretScopes = new Map(secretResolution.resolvedSecrets.map((info) => [info.name, info.scopeType]))
 
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
@@ -317,6 +339,18 @@ export class RunScheduler {
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         ...(data ? { data } : {}),
+        oauthTokens: this.deps.oauthTokens ?? new Map(),
+        maskValue,
+        ...(saveSecret
+          ? {
+              saveSecret: async (name: string, value: string) => {
+                const scopeType = secretScopes.get(name)
+                if (!scopeType) return
+                const scopeId = scopeType === "environment" ? selectedEnvironmentId : run.workspaceId
+                if (scopeId) await saveSecret(name, value, { workspaceId: run.workspaceId, scopeType, scopeId })
+              },
+            }
+          : {}),
         emitProgress: (event) => this.handleProgress(runId, mask(event)),
         resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => reachable.workflows.get(workflowId),
         // A Call Workflow node's sub-execution is a run of the *target*
@@ -550,8 +584,12 @@ export function requestDestinations(
 ): string[] {
   const scopes: Record<string, Readonly<Record<string, unknown>>> = { env: environmentVariables, variables, data }
   const destinations = new Set<string>()
-  for (const node of nodes) {
-    const url = node.config?.["url"]
+  const urls = nodes.flatMap((node) => {
+    // An OAuth 2.0 node also sends its client secret or token to the token endpoint.
+    const oauth2 = (node.config?.["auth"] as { oauth2?: { tokenUrl?: unknown } } | undefined)?.oauth2
+    return [node.config?.["url"], oauth2?.tokenUrl]
+  })
+  for (const url of urls) {
     if (typeof url !== "string" || url.length === 0) continue
     const filled = url.replace(/\{\{\s*(env|variables|data)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
       const value = key.split(".").reduce<unknown>(
@@ -630,6 +668,8 @@ function safeErrorClass(error: string): string {
   if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
   // The executor's own Call Workflow diagnoses carry at most the target's id.
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
+  // OAuth 2.0 diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/oauth.ts).
+  if (error.startsWith("OAuth 2.0")) return error
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"

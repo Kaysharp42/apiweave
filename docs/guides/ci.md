@@ -94,6 +94,18 @@ apiweave: missing secret API_TOKEN. Set APIWEAVE_SECRET_API_TOKEN, or pass --sec
 
 Secret values are masked in everything the CLI writes: console output, error messages and report files. As in the app, values shorter than four characters are not masked.
 
+### OAuth 2.0
+
+A client-credentials node runs as in the app: supply its client secret like any other secret. One token is fetched per `apiweave run` and reused by every request and iteration until it nears expiry. Fetched tokens are masked in the output too.
+
+The CLI cannot sign in through a browser, so an authorization-code node takes a refresh token instead: set the node's token secret to it, and the CLI exchanges it for an access token before the first request.
+
+```bash
+export APIWEAVE_SECRET_API_OAUTH="$REFRESH_TOKEN"
+```
+
+The refreshed tokens are not saved anywhere. If your provider rotates refresh tokens on every use, the one you supplied stops working after one run: use a client-credentials client for CI where you can.
+
 ## GitHub Actions
 
 Commit the exported bundle to your repository, store each secret as a repository secret, and add a job:

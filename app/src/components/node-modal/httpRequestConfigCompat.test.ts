@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { OAuth2AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
 import { normalizeAuthConfig, normalizeExpectedStatus, normalizeRetry } from "./httpRequestConfigCompat";
+import { oauth2Problems, secretNameOf, secretReferenceFor } from "./OAuth2AuthFields";
 
 describe("normalizeAuthConfig", () => {
   it("drops stale sub-configs from other auth types", () => {
@@ -29,6 +31,43 @@ describe("normalizeAuthConfig", () => {
     expect(result).toEqual({
       type: "apiKey",
       apiKey: { key: "X-Api-Key", value: "current-secret", addTo: "query" },
+    });
+  });
+
+  it("gives a new OAuth 2.0 config schema-valid defaults, and drops sign-in fields for client credentials", () => {
+    const fresh = normalizeAuthConfig({ type: "oauth2" });
+    expect(OAuth2AuthConfigSchema.safeParse(fresh.oauth2).success).toBe(true);
+    expect(fresh.oauth2).toMatchObject({ grantType: "client_credentials", clientAuth: "basic" });
+
+    const switched = normalizeAuthConfig({
+      type: "oauth2",
+      oauth2: { ...fresh.oauth2, grantType: "client_credentials", authorizationUrl: "x", tokenSecret: "{{secrets.T}}" },
+    });
+    expect(switched.oauth2).not.toHaveProperty("tokenSecret");
+    expect(switched.oauth2).not.toHaveProperty("authorizationUrl");
+  });
+});
+
+describe("OAuth 2.0 secret fields", () => {
+  it("store only a {{secrets.NAME}} reference, whatever is typed", () => {
+    expect(secretReferenceFor("CLIENT_SECRET")).toBe("{{secrets.CLIENT_SECRET}}");
+    expect(secretReferenceFor("my-secret value!")).toBe("{{secrets.mysecretvalue}}");
+    expect(secretReferenceFor("9abc")).toBe("{{secrets.abc}}");
+    expect(secretReferenceFor("")).toBe("");
+    expect(secretNameOf("{{secrets.CLIENT_SECRET}}")).toBe("CLIENT_SECRET");
+    for (const typed of ["hunter2", "{{env.X}}", "a b"]) {
+      expect(OAuth2AuthConfigSchema.shape.clientSecret.safeParse(secretReferenceFor(typed)).success).toBe(true);
+    }
+  });
+
+  it("explain what a config is missing before it can get a token", () => {
+    const problems = oauth2Problems({ grantType: "authorization_code", tokenUrl: "", clientId: "c" });
+    expect(problems).toMatchObject({
+      tokenUrl: "Enter the token URL",
+      clientId: "",
+      clientSecret: "",
+      authorizationUrl: "Enter the authorization URL",
+      tokenSecret: "Name the secret to store the token in",
     });
   });
 });

@@ -5,6 +5,7 @@ import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
+import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
 
 const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.awecollection")
 const TOKEN = "s3cr3t-fixture-token"
@@ -103,6 +104,66 @@ describe("apiweave run", () => {
 
     expect(result.code).toBe(EXIT_PASSED)
     expect(received).toEqual([`Bearer ${TOKEN}`])
+  })
+
+  describe("OAuth 2.0", () => {
+    /** The fixture's workflow, its request authenticated with `oauth2` against `url`. */
+    function oauthWorkflow(url: string, oauth2: Record<string, unknown>): string {
+      const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; config?: object }[] }[] }
+      const workflow = project.workflows[0]!
+      workflow.nodes = workflow.nodes
+        .filter((node) => node.nodeId !== "check-status")
+        .map((node) => (node.nodeId === "get-health" ? { ...node, config: { url: `${url}/api`, auth: { type: "oauth2", oauth2 } } } : node))
+      fs.writeFileSync(path.join(dir, "oauth.json"), JSON.stringify({ workflow }))
+      return "oauth.json"
+    }
+
+    it("runs a client-credentials workflow, fetching one token for every iteration and never printing it", async () => {
+      const idp = await startFakeOAuthServer()
+      try {
+        const file = oauthWorkflow(idp.url, {
+          grantType: "client_credentials",
+          tokenUrl: `${idp.url}/token`,
+          clientId: "ci",
+          clientSecret: "{{secrets.CLIENT_SECRET}}",
+          clientAuth: "body",
+        })
+        const result = await run(["run", file, "-n", "2", "-r", "cli,junit"], { APIWEAVE_SECRET_CLIENT_SECRET: "ci-secret-value" })
+
+        expect(result.stderr).toBe("")
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(idp.tokenCalls).toHaveLength(1)
+        expect(idp.tokenCalls[0]!.form.get("client_secret")).toBe("ci-secret-value")
+        expect(idp.apiCalls).toEqual(["Bearer tok-1-abcdef", "Bearer tok-1-abcdef"])
+        const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+        for (const output of [result.stdout, junit]) {
+          expect(output).not.toContain("tok-1-abcdef")
+          expect(output).not.toContain("ci-secret-value")
+        }
+      } finally {
+        await idp.close()
+      }
+    })
+
+    it("uses a refresh token given as the token secret for an authorization-code workflow", async () => {
+      const idp = await startFakeOAuthServer()
+      try {
+        const file = oauthWorkflow(idp.url, {
+          grantType: "authorization_code",
+          authorizationUrl: `${idp.url}/authorize`,
+          tokenUrl: `${idp.url}/token`,
+          clientId: "ci",
+          tokenSecret: "{{secrets.API_OAUTH}}",
+        })
+        const result = await run(["run", file], { APIWEAVE_SECRET_API_OAUTH: "ci-refresh-token" })
+
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(Object.fromEntries(idp.tokenCalls[0]!.form)).toEqual({ grant_type: "refresh_token", refresh_token: "ci-refresh-token", client_id: "ci" })
+        expect(idp.apiCalls).toEqual(["Bearer tok-1-abcdef"])
+      } finally {
+        await idp.close()
+      }
+    })
   })
 
   it.each([

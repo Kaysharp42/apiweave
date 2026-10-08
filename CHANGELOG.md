@@ -269,6 +269,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **OAuth 2.0 for HTTP requests.** The Auth tab offers OAuth 2.0 with two
+  grant types. **Client credentials** runs headless, in the app and in
+  `apiweave run`: the token is fetched before the request, reused until it
+  nears expiry, and fetched again once if the API answers 401. **Authorization
+  code with PKCE** signs in once through **Get token**, which opens your
+  browser and receives the redirect on a one-time `127.0.0.1` listener; the
+  access and refresh token are sealed in a secret you name, refreshed
+  automatically when they expire, and never stored in the workflow or an
+  export. The CLI takes a refresh token as that secret. Client secrets are
+  `{{secrets.NAME}}` references only, and every fetched token is masked in run
+  history, events and reports.
 - **Data-driven runs from a CSV or JSON file.** A workflow can run once per
   row of a data file, each row's values read as `{{data.<column>}}`: a CSV
   file's header names the columns, a JSON file is an array of objects. In the

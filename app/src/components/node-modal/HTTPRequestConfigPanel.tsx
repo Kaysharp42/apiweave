@@ -54,6 +54,7 @@ import { previewValue } from "../../utils/previewValue";
 import { AssertionRulesEditor } from "../molecules/AssertionRulesEditor";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
+import { OAuth2AuthFields } from "./OAuth2AuthFields";
 import type {
   AuthConfig,
   FileUpload,
@@ -87,6 +88,7 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "Bearer Token", value: "bearer" },
   { label: "Basic Auth", value: "basic" },
   { label: "API Key", value: "apiKey" },
+  { label: "OAuth 2.0", value: "oauth2" },
 ];
 
 function SecretRevealInput({
@@ -759,6 +761,15 @@ export function HTTPRequestConfigPanel({
           )}
           {auth.type === "apiKey" && (
             <ApiKeyAuthFields auth={auth} updateAuth={updateAuth} />
+          )}
+          {auth.type === "oauth2" && auth.oauth2 && (
+            <OAuth2AuthFields
+              config={auth.oauth2}
+              onChange={(patch) =>
+                updateAuth({ oauth2: { ...auth.oauth2!, ...patch } })
+              }
+              buttonClass={SELECT_BUTTON_CLASS}
+            />
           )}
         </div>
       </Card>
