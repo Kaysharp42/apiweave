@@ -269,6 +269,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Poll async APIs with Retry.** An HTTP request can now repeat itself:
+  **Settings → Retry** sets the attempts, the wait (fixed or exponential with
+  a cap) and **Until** rules, the same rules an Assertion node takes, checked
+  against the request's own response — for example status 200 and
+  `response.body.status` equals `done`. Without rules it retries network
+  errors, timeouts and 5xx responses. A run cancel stops it mid-wait; the
+  result keeps every attempt, the output panel and canvas node show the
+  count, and a condition that never holds fails the node with "Condition not
+  met after N attempts". Reports and `apiweave run` list the attempts.
 - **Run tests in CI with `apiweave run`.** A headless command runs an exported
   workflow or `.awecollection` project under plain Node, with no Electron and
   no window, and exits 0 when every run passes, 1 when a test fails and 2 on a
