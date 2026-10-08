@@ -211,6 +211,44 @@ describe("apiweave run", () => {
     expect(received).toEqual([`Bearer ${TOKEN}`])
   })
 
+  it("runs http-request scripts: a secret they read is required and masked, and their tests and output reach the reports", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; config?: object }[] }[] }
+    const workflow = project.workflows[0]!
+    workflow.nodes = workflow.nodes
+      .filter((node) => node.nodeId !== "check-status")
+      .map((node) =>
+        node.nodeId === "get-health"
+          ? {
+              ...node,
+              config: {
+                url: `${baseUrl}/down`,
+                scripts: {
+                  preRequest: 'aw.request.headers.Authorization = "Bearer " + aw.secrets.get("SCRIPT_TOKEN")',
+                  postResponse: 'console.log("auth echoed:", aw.response.json().auth)\naw.test("service is up", () => aw.expect(aw.response.json().status).toBe("ok"))',
+                },
+              },
+            }
+          : node,
+      )
+    fs.writeFileSync(path.join(dir, "scripted.json"), JSON.stringify({ workflow }))
+
+    const missing = await run(["run", "scripted.json"])
+    expect(missing.code).toBe(EXIT_USAGE)
+    expect(missing.stderr).toContain("SCRIPT_TOKEN")
+    expect(received).toEqual([])
+
+    const junitPath = path.join(dir, "junit.xml")
+    const result = await run(["run", "scripted.json", "--reporter-junit-export", junitPath], { APIWEAVE_SECRET_SCRIPT_TOKEN: TOKEN })
+    expect(result.code).toBe(EXIT_FAILED)
+    expect(received).toEqual([`Bearer ${TOKEN}`])
+    expect(result.stdout).toContain("Post-response script: 1 of 1 tests failed")
+    expect(result.stdout).toContain('Test "service is up": failed — AssertionError: expected "down" to be "ok"')
+    expect(result.stdout).toContain("> auth echoed: Bearer <SECRET>")
+    const junit = fs.readFileSync(junitPath, "utf8")
+    expect(junit).toContain("<system-out>auth echoed: Bearer &lt;SECRET&gt;</system-out>")
+    for (const output of [result.stdout, result.stderr, junit]) expect(output).not.toContain(TOKEN)
+  })
+
   it("applies --timeout-request to every request", async () => {
     const result = await run(
       ["run", FIXTURE, "--env", "CI", "--var", `baseUrl=${baseUrl}/slow`, "--timeout-request", "50"],

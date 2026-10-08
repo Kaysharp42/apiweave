@@ -426,13 +426,31 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-/** Extract secret names from `{{secrets.NAME}}` placeholders in a string. */
+/**
+ * Extract secret names from `{{secrets.NAME}}` placeholders in a string, and
+ * from an http-request script's `aw.secrets.get("NAME")` calls.
+ */
 export function extractSecretRefsFromString(value: string): string[] {
   const names: string[] = []
   for (const match of value.matchAll(SECRET_REF_RE)) {
     if (match[1] !== undefined) names.push(match[1])
   }
-  return names
+  return [...names, ...scriptSecretNames(value)]
+}
+
+/**
+ * Secret names a script reads with a literal `aw.secrets.get("NAME")`. A run
+ * resolves its secrets before it starts — that is what the agent approval
+ * prompt lists and what the masker scrubs — so a name computed at run time
+ * reads `undefined`. Also matches the JSON-escaped form (`\"NAME\"`), so a
+ * serialised node config can be scanned.
+ */
+export function scriptSecretNames(source: string): string[] {
+  const names = new Set<string>()
+  for (const match of source.matchAll(/\baw\.secrets\.get\(\s*\\?["'`]([A-Za-z_][A-Za-z0-9_]*)\\?["'`]\s*\)/g)) {
+    names.add(match[1]!)
+  }
+  return [...names]
 }
 
 /**

@@ -18,6 +18,7 @@ The two guides in this section cover the canvas itself and the data that flows b
 
 - [Workflows and Nodes](workflows-and-nodes.md): build, edit, and run workflows on the canvas. Covers every node type — including the Call Workflow node that runs another workflow as one step and the expected-status control for negative tests — canvas actions, and keyboard shortcuts.
 - [Variables and Extractors](variables-and-extractors.md): pass data between steps with the four placeholder namespaces, pull values from responses with extractors, and manage workflow-level variables.
+- [Scripting](scripting.md): pre-request and post-response JavaScript on an HTTP Request node, run in a sandbox, to sign requests, transform values into variables and write custom tests.
 - [Data-Driven Runs](data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or with `apiweave run --iteration-data`, reading each row as `{{data.<column>}}`.
 - [Node Presets](node-presets.md): save a node's configuration under a name and drag it into any workflow in the workspace. Covers saving, renaming, deleting, and what a preset does and does not carry.
 - [Visualization and Debugging](visualization-and-debugging.md): run timeline/waterfall, variable provenance tracing, masked-secret resolution confidence, and camera-follow during runs — read-only debugging views over existing run and dataflow data.

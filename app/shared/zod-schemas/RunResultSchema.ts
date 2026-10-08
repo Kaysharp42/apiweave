@@ -5,6 +5,7 @@ import { TimestampSchema } from "./TimestampSchema"
 import { AssertionEvaluationSchema } from "./AssertionEvaluationSchema"
 import { ExtractorOutcomeSchema } from "./ExtractorOutcomeSchema"
 import { HttpAttemptSchema } from "./HttpAttemptSchema"
+import { ScriptOutcomeSchema } from "./ScriptOutcomeSchema"
 
 export const RunResultSchema = z
   .object({
@@ -34,6 +35,8 @@ export const RunResultSchema = z
     // Every request a retrying http-request node sent, in order; `response` is the last one's.
     attempts: z.array(HttpAttemptSchema).optional(),
     assertions: z.array(AssertionEvaluationSchema).nullable().optional(),
+    // An http-request node's pre-request and post-response scripts, in the order they ran.
+    scripts: z.array(ScriptOutcomeSchema).optional(),
     extractorOutcomes: z.array(ExtractorOutcomeSchema).optional(),
     // Call Workflow summary only — never the sub-workflow's own raw per-node
     // results, which would bypass the top-level redaction pass in scheduler.ts.

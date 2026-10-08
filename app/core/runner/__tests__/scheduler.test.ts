@@ -565,6 +565,55 @@ describe("RunScheduler", () => {
       expectNoSecret(buildHtmlReport({ kind: "run", run: run!, workflow }))
     })
 
+    it("resolves a secret a script reads by name, and masks it in the script's console output and errors", async () => {
+      const ws = seedWorkspace()
+      const echo = await startEchoServer()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "script-secret-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "signed",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "GET",
+              url: `http://127.0.0.1:${echo.port}/signed`,
+              scripts: {
+                preRequest: 'aw.request.headers["X-Key"] = aw.secrets.get("script_key")\nconsole.log("key is", aw.secrets.get("script_key"))',
+                postResponse: 'aw.test("leaks", () => aw.expect(aw.secrets.get("script_key")).toBe("other"))\nthrow new Error("bad " + aw.secrets.get("script_key"))',
+              },
+            } as never,
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "signed" }],
+      }).workflowId
+
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+        resolveSecret: async (name) =>
+          name === "script_key" ? { plaintext: SECRET, scopeType: "workspace" } : { plaintext: null, scopeType: null },
+      })
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await scheduler.whenFinished(runId)
+      echo.close()
+
+      expect(echo.requests[0]?.headers["x-key"]).toBe(SECRET)
+      const run = runs.getById(runId)
+      expectNoSecret(run)
+      expectNoSecret(events)
+      const result = run?.results.find((r) => r.nodeId === "signed")
+      expect(result?.secretRefs).toEqual(["script_key"])
+      expect(result?.error).toBe("Post-response script failed: Error: bad <SECRET> (line 2, column 16)")
+      expect(result?.scripts?.map((script) => [script.logs, script.tests])).toEqual([
+        [["key is <SECRET>"], []],
+        [[], [{ name: "leaks", passed: false, error: 'AssertionError: expected "<SECRET>" to be "other"' }]],
+      ])
+      expect(run?.resolvedSecrets).toEqual([{ name: "script_key", scopeType: "workspace", resolved: true }])
+    })
+
     it("resolves and masks a secret used only inside a Call Workflow callee", async () => {
       const ws = seedWorkspace()
       const echo = await startEchoServer()
@@ -1215,8 +1264,44 @@ describe("agent-started runs that use secrets", () => {
         workflowName: "exfil",
         secretNames: ["API_KEY"],
         destinations: [`127.0.0.1:${server.port}`],
+        runsScripts: false,
       },
     ])
+    expect(server.bodies).toEqual([])
+    expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+  })
+
+  it("asks before a script reads a secret, and says the workflow runs scripts", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "scripted",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http_1",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: { method: "POST", url: `http://127.0.0.1:${server.port}/collect`, scripts: { preRequest: 'aw.request.body = aw.secrets.get("API_KEY")' } },
+        },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+    }).workflowId
+    const asked: AgentRunApprovalRequest[] = []
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        asked.push(request)
+        return false
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
+    await scheduler.whenFinished(runId)
+    server.close()
+
+    expect(asked).toMatchObject([{ secretNames: ["API_KEY"], runsScripts: true }])
     expect(server.bodies).toEqual([])
     expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
   })

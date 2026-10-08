@@ -125,7 +125,7 @@ Names are normalized to letters, digits and underscores (`base-url` becomes `bas
 
 ### Scripts
 
-APIWeave does not run JavaScript. The import recognizes the common patterns of a request's **test** script and turns them into node settings:
+The import does not convert scripts into APIWeave [scripts](../features/scripting.md): Postman's `pm.*` API is not APIWeave's `aw` API. It recognizes the common patterns of a request's **test** script and turns them into node settings:
 
 | Postman test script | APIWeave |
 |---|---|
@@ -134,7 +134,7 @@ APIWeave does not run JavaScript. The import recognizes the common patterns of a
 | `var jsonData = pm.response.json();` then `pm.environment.set("token", jsonData.data.token);` | An extractor `token` = `response.body.data.token`, so later requests in the workflow read `{{variables.token}}`. |
 | `pm.collectionVariables.set(...)`, `pm.variables.set(...)`, `pm.globals.set(...)` with `pm.response.json().path` | The same extractor. |
 
-A script made only of those patterns (wrapped in `pm.test(...)` or not) is fully converted and disappears. Anything else, a test script with other checks, every pre-request script, is kept word for word in a **Postman scripts** note on the workflow's canvas, with a warning, so you can rebuild it with [Assertion](../features/workflows-and-nodes.md) nodes and extractors. Collection-level scripts are kept in the project description and folder-level scripts in the folder's workflow description; neither is converted. A kept script that contains a bearer token, a JWT or a live API key is replaced by a line saying it was withheld, so a credential typed into a script does not reach APIWeave either.
+A script made only of those patterns (wrapped in `pm.test(...)` or not) is fully converted and disappears. Anything else, a test script with other checks, every pre-request script, is kept word for word in a **Postman scripts** note on the workflow's canvas, with a warning, so you can rebuild it with [Assertion](../features/workflows-and-nodes.md) nodes and extractors, or port it by hand to the request's **Scripts** tab ([Coming from Postman](../features/scripting.md#coming-from-postman) maps the common `pm.*` calls). Collection-level scripts are kept in the project description and folder-level scripts in the folder's workflow description; neither is converted. A kept script that contains a bearer token, a JWT or a live API key is replaced by a line saying it was withheld, so a credential typed into a script does not reach APIWeave either.
 
 ## Troubleshooting
 

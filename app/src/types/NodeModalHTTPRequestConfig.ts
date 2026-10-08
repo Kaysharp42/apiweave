@@ -5,6 +5,7 @@ import type { HTTPRequestBodyType } from "./HTTPRequestBodyType";
 import type { KeyValuePair } from "@shared/types/KeyValuePair";
 import type { UrlEncodedEntry } from "@shared/types/UrlEncodedEntry";
 import type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";
+import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
 
 export interface NodeModalHTTPRequestConfig {
   url?: string;
@@ -23,6 +24,7 @@ export interface NodeModalHTTPRequestConfig {
   continueOnFail?: boolean;
   expectedStatus?: number | number[] | undefined;
   retry?: NodeModalHttpRetryConfig | undefined;
+  scripts?: HttpScriptsConfig | undefined;
   formDataEntries?: FormDataEntry[];
   urlEncodedEntries?: UrlEncodedEntry[];
 }

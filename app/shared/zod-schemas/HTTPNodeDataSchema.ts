@@ -4,6 +4,7 @@ import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
 import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
+import { HttpScriptsConfigSchema } from "./HttpScriptsConfigSchema"
 import { KeyValuePairSchema } from "./KeyValuePairSchema"
 import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
 
@@ -49,6 +50,9 @@ export const HTTPNodeDataSchema = z
       ),
     retry: HttpRetryConfigSchema.optional().describe(
       "Send the request again: poll until a condition holds (`until`), or ride out network errors and 5xx responses. Attempts are recorded on the node result; the node fails with \"Condition not met after N attempts\" when the condition never holds.",
+    ),
+    scripts: HttpScriptsConfigSchema.optional().describe(
+      "JavaScript run in a sandbox before the request is sent (sign it, rewrite it) and after the response arrives (transform values into variables, custom checks with aw.test). Secrets are read only by literal name: aw.secrets.get(\"NAME\").",
     ),
     extractors: z
       .record(z.string(), z.string())

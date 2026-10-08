@@ -269,6 +269,23 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Scripts on HTTP requests.** An HTTP Request node has a **Scripts** tab
+  with a pre-request script, which runs on the resolved request just before it
+  is sent and can change its method, URL, headers and body (sign it with
+  `aw.crypto.hmacSha256`), and a post-response script, which reads the
+  response, sets workflow variables and runs custom checks with
+  `aw.test(name, fn)` and `aw.expect(value)`; a failed test or a thrown error
+  fails the node, naming the script's line and column. Scripts are synchronous
+  JavaScript in a sandbox (QuickJS compiled to WebAssembly) with no network,
+  file system or timers, a time limit (1 s by default, up to 30 s) and a 32 MB
+  memory limit. They read secrets only by literal name, `aw.secrets.get("NAME")`,
+  so those secrets are resolved up front, masked in console output and results,
+  required by `apiweave run`, and covered by the approval an agent's run needs;
+  the approval dialog now also says when a workflow runs scripts. Console
+  output and test results appear in the node's output, run history, JUnit
+  (`<system-out>`), HTML and console reports. Imported Postman scripts are
+  still kept as notes, and can now be ported by hand. See
+  [Scripting](docs/features/scripting.md).
 - **Import Postman collections.** **Projects → Import → Postman** turns a
   Postman Collection v2.1, and optionally a Postman environment, into a new
   project: one workflow per folder (nested folders named `Parent / Child`) or

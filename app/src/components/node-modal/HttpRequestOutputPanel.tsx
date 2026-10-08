@@ -14,7 +14,9 @@ import {
   getNumberValue,
 } from "./nodeModalUtils";
 import { buildCurlCommand, buildFetchCommand } from "./copyAsCurl";
+import { ScriptOutcomes } from "./ScriptOutcomes";
 import type { HttpAttempt } from "@shared/types/HttpAttempt";
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome";
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
 
@@ -76,6 +78,11 @@ export function HttpRequestOutputPanel({
   const attempts = Array.isArray(outputRecord?.attempts)
     ? (outputRecord!.attempts as readonly HttpAttempt[])
     : undefined;
+
+  // Set only on a node with scripts: what each one did on this run.
+  const scripts = Array.isArray(outputRecord?.scripts)
+    ? (outputRecord!.scripts as readonly ScriptOutcome[])
+    : [];
 
   const commands = useMemo(
     () => ({
@@ -194,6 +201,7 @@ export function HttpRequestOutputPanel({
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
+        {scripts.length > 0 && <ScriptOutcomes scripts={scripts} />}
         {/* A response the inspector cannot draw must not close the node
             editor and its unapplied draft. */}
         <ErrorBoundary name="response inspector">

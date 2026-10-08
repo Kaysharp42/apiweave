@@ -5,7 +5,8 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { collectSseEvents, type SseEvent } from "./sse"
-import { extractSecretRefsFromString } from "../services/secret_utils"
+import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
+import { extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -19,6 +20,9 @@ import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
+import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
+import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -264,6 +268,8 @@ export interface NodeResult {
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
   /** Every request a retrying http-request node sent; the rest of the result is the last one's. */
   readonly attempts?: readonly HttpAttempt[]
+  /** What the node's pre-request and post-response scripts did, in the order they ran. */
+  readonly scripts?: readonly ScriptOutcome[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
@@ -743,7 +749,7 @@ export class WorkflowExecutor {
       let result: NodeResult
 
       if (nodeType === "http-request") {
-        result = await this.executeHttpRequestWithRetry(node, cancelSignal)
+        result = await this.executeHttpRequestNode(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -839,7 +845,7 @@ export class WorkflowExecutor {
 
   private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
-    const method = (config["method"] as string | undefined) ?? "GET"
+    let method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headersField = config["headers"] as KVField
@@ -873,7 +879,7 @@ export class WorkflowExecutor {
       url = url.split(`{${key}}`).join(encodeURIComponent(value))
     }
 
-    const headers = this.normalizeKeyValueField(headersField)
+    let headers = this.normalizeKeyValueField(headersField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
     const cookies = this.normalizeKeyValueField(config["cookies"] as KVField)
 
@@ -902,6 +908,28 @@ export class WorkflowExecutor {
     } catch (bodyError) {
       return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
     }
+
+    // The pre-request script sees the request exactly as it would be sent —
+    // placeholders resolved, auth applied — so it can sign it, and may change
+    // any of it. Whatever it leaves still goes through SafeHttp's URL checks.
+    const scripts = config["scripts"] as HttpScriptsConfig | undefined
+    let preRequest: ScriptOutcome | undefined
+    if (scripts?.preRequest?.trim()) {
+      const textBody = typeof fetchBody === "string" ? fetchBody : null
+      const run = await this.runNodeScript("preRequest", scripts.preRequest, scripts, {
+        request: { method, url, headers: { ...headers }, body: textBody },
+      })
+      preRequest = run.outcome
+      if (!run.request) {
+        return withExtractorOutcomes({ status: "error", error: scriptFailure(run.outcome) ?? "Pre-request script failed", method, url, duration: 0, scripts: [run.outcome] })
+      }
+      method = run.request.method
+      url = run.request.url
+      headers = run.request.headers
+      if (run.request.body !== textBody) fetchBody = run.request.body ?? undefined
+    }
+    const withScripts = (result: NodeResult): NodeResult =>
+      withExtractorOutcomes(preRequest ? { ...result, scripts: [preRequest] } : result)
 
     // A placeholder `substituteVariables` could not resolve is left in the
     // request verbatim, so the assembled end state tells us what went out
@@ -1000,10 +1028,10 @@ export class WorkflowExecutor {
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
 
-      return withExtractorOutcomes(result)
+      return withScripts(result)
     } catch (error) {
       if (error instanceof SafeUrlError) {
-        return withExtractorOutcomes({
+        return withScripts({
           status: "error",
           error: error.message,
           method,
@@ -1013,7 +1041,7 @@ export class WorkflowExecutor {
           ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
         })
       }
-      return withExtractorOutcomes({
+      return withScripts({
         status: "error",
         // Sent but unanswered (refused, reset, timed out): a retry may get through.
         networkError: true,
@@ -1029,6 +1057,54 @@ export class WorkflowExecutor {
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       })
     }
+  }
+
+  /**
+   * The node's request (retried per `config.retry`), then its post-response
+   * script, once, on the response the node ends with. A request that got no
+   * response has nothing for the script to read, so the script does not run.
+   */
+  private async executeHttpRequestNode(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const result = await this.executeHttpRequestWithRetry(node, cancelSignal)
+    const scripts = node.config?.["scripts"] as HttpScriptsConfig | undefined
+    if (!scripts?.postResponse?.trim() || result.statusCode === undefined || cancelSignal?.aborted) return result
+    const response: ScriptResponse = {
+      status: result.statusCode,
+      headers: result.headers ?? {},
+      body: result.body,
+      responseTime: result.duration ?? 0,
+    }
+    const run = await this.runNodeScript("postResponse", scripts.postResponse, scripts, { response })
+    const outcomes = [...(result.scripts ?? []), run.outcome]
+    const failure = scriptFailure(run.outcome)
+    if (failure === undefined) return { ...result, scripts: outcomes }
+    // A request that already failed keeps its own reason; the script's is in `scripts`.
+    return { ...result, status: "error", error: result.error ?? failure, scripts: outcomes }
+  }
+
+  /** Runs one of a node's scripts against this run's variables, environment, data row and the secrets it names. */
+  private runNodeScript(
+    phase: ScriptOutcome["phase"],
+    source: string,
+    scripts: HttpScriptsConfig,
+    subject: { readonly request: ScriptRequest } | { readonly response: ScriptResponse },
+  ): Promise<ScriptRunResult> {
+    const secrets: Record<string, string> = {}
+    for (const name of scriptSecretNames(source)) {
+      const value = this.deps.secrets?.[name]
+      if (value !== undefined) secrets[name] = value
+    }
+    return runScript({
+      phase,
+      source,
+      timeoutMs: scripts.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
+      variables: this.workflowVariables,
+      env: this.environmentVariables,
+      data: this.deps.data ?? {},
+      secrets,
+      ...subject,
+      uuid: () => this.deps.functions.uuid(),
+    })
   }
 
   /**
@@ -2387,7 +2463,7 @@ function buildRunResultResponse(result: NodeResult): JsonValue {
 }
 
 type RunResultDiagnostics = Partial<
-  Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow">
+  Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow" | "scripts">
 >
 
 function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
@@ -2397,6 +2473,9 @@ function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
       ? { unresolvedPlaceholders: [...result.unresolvedPlaceholders] }
       : {}),
     ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
+    ...(result.scripts
+      ? { scripts: result.scripts.map((script) => ({ ...script, logs: [...script.logs], tests: script.tests.map((test) => ({ ...test })) })) }
+      : {}),
     ...(result.subWorkflow
       ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
       : {}),
@@ -2468,7 +2547,18 @@ function jsonValueType(value: unknown): JsonValueType | null {
   }
 }
 
-/** Collect every {{secrets.NAME}} referenced by a node's config (names only). */
+/**
+ * Why a script fails its node: the error that stopped it, or its failed
+ * `aw.test`s. The prefix is what the scheduler's error classing lets through.
+ */
+function scriptFailure(outcome: ScriptOutcome): string | undefined {
+  const label = outcome.phase === "preRequest" ? "Pre-request script" : "Post-response script"
+  if (outcome.error !== undefined) return `${label} failed: ${outcome.error}`
+  const failed = outcome.tests.filter((test) => !test.passed).length
+  return failed > 0 ? `${label}: ${failed} of ${outcome.tests.length} tests failed` : undefined
+}
+
+/** Collect every {{secrets.NAME}} (and script `aw.secrets.get("NAME")`) referenced by a node's config (names only). */
 function collectSecretRefs(config: Record<string, unknown> | undefined): readonly string[] {
   if (!config) return []
   const names = new Set<string>()

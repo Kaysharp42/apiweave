@@ -1,3 +1,8 @@
+import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import {
+  DEFAULT_SCRIPT_TIMEOUT_MS,
+  MAX_SCRIPT_TIMEOUT_MS,
+} from "@shared/zod-schemas/HttpScriptsConfigSchema";
 import type {
   AssertionItem,
   AuthConfig,
@@ -267,6 +272,25 @@ export function normalizeRetry(value: unknown): NodeModalHttpRetryConfig | undef
   };
 }
 
+/**
+ * An empty script is dropped, and `scripts` with it when both are, so
+ * clearing an editor leaves no key behind (whitespace is kept: it may be the
+ * first keystroke). The time limit is clamped to what HttpScriptsConfigSchema
+ * accepts and dropped at its default.
+ */
+export function normalizeScripts(value: unknown): HttpScriptsConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const preRequest = getString(value.preRequest);
+  const postResponse = getString(value.postResponse);
+  if (!preRequest && !postResponse) return undefined;
+  const timeoutMs = clampInteger(value.timeoutMs, DEFAULT_SCRIPT_TIMEOUT_MS, 1, MAX_SCRIPT_TIMEOUT_MS);
+  return {
+    ...(preRequest ? { preRequest } : {}),
+    ...(postResponse ? { postResponse } : {}),
+    ...(timeoutMs !== DEFAULT_SCRIPT_TIMEOUT_MS ? { timeoutMs } : {}),
+  };
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -302,6 +326,7 @@ export function normalizeHttpRequestConfig(
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
     retry: normalizeRetry(config.retry),
+    scripts: normalizeScripts(config.scripts),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),
     urlEncodedEntries: normalizeUrlEncodedEntries(config.urlEncodedEntries),
   };

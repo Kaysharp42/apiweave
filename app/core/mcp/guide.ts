@@ -195,6 +195,15 @@ or array order.
   capped by \`maxIntervalMs\`. The node's result is the last attempt plus an
   \`attempts\` list; it fails with "Condition not met after N attempts" when the
   condition never holds.
+- \`scripts\` — \`{"preRequest": "...", "postResponse": "...", "timeoutMs": 1000}\`:
+  synchronous JavaScript in a sandbox (no network, files or timers). Pre-request
+  sees the resolved request as mutable \`aw.request\` {method, url, headers, body} —
+  sign it with \`aw.crypto.hmacSha256(key, text)\`. Post-response reads
+  \`aw.response\` (status, headers, body, json(), text()), sets
+  \`aw.variables.set(name, value)\`, and checks with \`aw.test(name, () =>
+  aw.expect(x).toBe(y))\`; a failed test or a thrown error fails the node.
+  Secrets only as \`aw.secrets.get("NAME")\` with a literal name. Prefer
+  extractors and assertion nodes when they can express it.
 
 ### sse
 

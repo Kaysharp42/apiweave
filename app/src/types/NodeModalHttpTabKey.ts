@@ -4,4 +4,5 @@ export type NodeModalHttpTabKey =
   | "headers"
   | "body"
   | "cookies"
+  | "scripts"
   | "settings";

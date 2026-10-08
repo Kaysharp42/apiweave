@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useEffect,
   useMemo,
@@ -55,6 +54,8 @@ import { AssertionRulesEditor } from "../molecules/AssertionRulesEditor";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
+import { HttpScriptsEditor } from "./HttpScriptsEditor";
+import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
   FileUpload,
@@ -67,21 +68,6 @@ import type {
   SelectOption,
   UrlEncodedEntry,
 } from "../../types";
-
-// Both chunks are independent (the config module only sets MonacoEnvironment /
-// loader.config, which the editor reads at mount, not at import), so fetch them
-// in parallel. Module imports are cached, so calling this again is free — the
-// panel warms it on mount so the ~MB editor chunk is ready before the user
-// reaches the Body tab instead of stalling on "Loading editor…".
-const loadMonaco = async () => {
-  const [, editorModule] = await Promise.all([
-    import("@/config/monaco"),
-    import("@monaco-editor/react"),
-  ]);
-  return editorModule;
-};
-
-const MonacoEditor = lazy(loadMonaco);
 
 const AUTH_OPTIONS: SelectOption[] = [
   { label: "None", value: "none" },
@@ -1013,6 +999,13 @@ export function HTTPRequestConfigPanel({
             />
           </FormField>
         </Card>
+      )}
+      {activeTab === "scripts" && (
+        <HttpScriptsEditor
+          scripts={draftConfig.scripts}
+          isDarkMode={isDarkMode}
+          onChange={(scripts) => updateConfig({ scripts })}
+        />
       )}
       {activeTab === "settings" && renderSettings()}
       {jsonError && activeTab === "body" && (

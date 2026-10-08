@@ -96,6 +96,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Whether a failed request lets the run continue down the outgoing edge |
 | `retry` | Optional: send the request again until a condition holds, or after a network error or 5xx (see [Retry and polling](#retry-and-polling)) |
+| `scripts` | Optional JavaScript, on the **Scripts** tab: a pre-request script that can sign or rewrite the request, and a post-response script that can set variables and run custom tests (see [Scripting](scripting.md)) |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.

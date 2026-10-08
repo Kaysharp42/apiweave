@@ -95,7 +95,8 @@ function projectStatusCounts(results: Run["results"]): Record<string, JsonValue>
  * negative test legible; `unresolvedPlaceholders` names references that went
  * out as literal text (a 401 with placeholders present is a missing value,
  * not bad credentials); `attemptCount` says a retrying request gave up after
- * that many tries. Bodies stay in the evidence tool.
+ * that many tries; `failedScriptTests`/`scriptError` say a pre-request or
+ * post-response script failed it. Bodies stay in the evidence tool.
  */
 function projectFailedNode(result: RunResult): JsonValue {
   const response = isRecord(result.response) ? result.response : null
@@ -110,6 +111,13 @@ function projectFailedNode(result: RunResult): JsonValue {
     ...(typeof statusCode === "number" ? { responseStatusCode: statusCode } : {}),
     // A retrying request that gave up: how many times it was sent.
     ...(result.attempts ? { attemptCount: result.attempts.length } : {}),
+    // Script verdicts as counts; test names and console output stay in the evidence tool.
+    ...(result.scripts
+      ? {
+          failedScriptTests: result.scripts.reduce((sum, script) => sum + script.tests.filter((test) => !test.passed).length, 0),
+          scriptError: result.scripts.some((script) => script.error !== undefined),
+        }
+      : {}),
   }
 }
 

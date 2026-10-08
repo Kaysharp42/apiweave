@@ -16,7 +16,8 @@ import type { Workflow } from "@shared/types/Workflow"
  * It goes further than run history on purpose, because a report is a file that
  * leaves the app: it carries no request or response headers or bodies and no
  * variables — only names, statuses, timings, request method and URL (already
- * stripped of its query), response status codes and assertion rules.
+ * stripped of its query), response status codes and assertion rules, plus a
+ * script's test results and the console output its author chose to print.
  *
  * Mapping: one `<testsuite>` per workflow run (a single run gives one, a
  * project run one per workflow in run order) and one `<testcase>` per executed
@@ -70,6 +71,8 @@ interface ReportCase {
   readonly details: readonly string[]
   /** Requests a retrying node sent; null when it has no retry. */
   readonly attempts: number | null
+  /** What the node's scripts printed with console.log, in order. */
+  readonly logs: readonly string[]
 }
 
 interface ReportSuite {
@@ -137,7 +140,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
       }
     }),
   }
@@ -170,6 +173,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
             : null,
       details: details(result, outcome),
       attempts: result?.attempts?.length ?? null,
+      logs: (result?.scripts ?? []).flatMap((script) => script.logs),
     })
   }
   if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) {
@@ -182,6 +186,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
       message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
       details: [],
       attempts: null,
+      logs: [],
     })
   }
   return {
@@ -246,6 +251,16 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   for (const rule of result.assertions ?? []) {
     if (outcome !== "failed" || rule.outcome === "fail") lines.push(describeRule(rule))
   }
+  for (const script of result.scripts ?? []) {
+    const label = script.phase === "preRequest" ? "Pre-request" : "Post-response"
+    // The node's own error already says it when the script is why the node failed.
+    if (script.error !== undefined && !(result.error ?? "").includes(script.error)) lines.push(`${label} script error: ${script.error}`)
+    for (const test of script.tests) {
+      if (outcome !== "failed" || !test.passed) {
+        lines.push(`Test ${JSON.stringify(test.name)}: ${test.passed ? "passed" : `failed — ${test.error ?? ""}`}`)
+      }
+    }
+  }
   return lines
 }
 
@@ -304,14 +319,15 @@ function attrs(values: Readonly<Record<string, string | number | null>>): string
 function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   const head = `    <testcase${attrs({ classname: suite.name, name: testCase.name, time: seconds(testCase.durationMs) })}`
   const text = [testCase.message ?? "", ...testCase.details].filter((line) => line !== "").join("\n")
+  const children: string[] = []
   if (testCase.outcome === "failed") {
     const type = testCase.type === "assertion" ? "AssertionError" : "NodeFailure"
-    return `${head}>\n      <failure${attrs({ message: testCase.message, type })}>${escapeXmlText(text)}</failure>\n    </testcase>`
+    children.push(`      <failure${attrs({ message: testCase.message, type })}>${escapeXmlText(text)}</failure>`)
+  } else if (testCase.outcome === "skipped") {
+    children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  if (testCase.outcome === "skipped") {
-    return `${head}>\n      <skipped${attrs({ message: testCase.message })}/>\n    </testcase>`
-  }
-  return `${head}/>`
+  if (testCase.logs.length > 0) children.push(`      <system-out>${escapeXmlText(testCase.logs.join("\n"))}</system-out>`)
+  return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
 }
 
 /** JUnit XML: `<testsuites>` → one `<testsuite>` per workflow run → `<testcase>` per node. */
@@ -357,7 +373,7 @@ function htmlSuite(suite: ReportSuite): string {
           <td class="num">${seconds(testCase.durationMs)}s</td>
           <td>${testCase.message === null ? "" : `<div class="message">${escapeHtml(testCase.message)}</div>`}${testCase.details
             .map((line) => `<div class="detail">${escapeHtml(line)}</div>`)
-            .join("")}</td>
+            .join("")}${testCase.logs.length === 0 ? "" : `<pre class="logs">${escapeHtml(testCase.logs.join("\n"))}</pre>`}</td>
         </tr>`,
     )
     .join("\n")
@@ -406,6 +422,7 @@ export function buildHtmlReport(input: ReportInput): string {
   .badge { font-size: 0.75rem; font-weight: 600; }
   .badge.passed { color: var(--pass); } .badge.failed { color: var(--fail); } .badge.skipped { color: var(--skip); }
   .message { color: var(--fail); } tr.skipped .message { color: var(--skip); }
+  .logs { margin: 4px 0 0; white-space: pre-wrap; font-size: 0.78rem; color: var(--muted); }
   .detail { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 </style>
 </head>
@@ -457,6 +474,7 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
       if (testCase.outcome === "passed") continue
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
+      if (testCase.outcome === "failed") for (const line of testCase.logs) lines.push(`      ${paint(ANSI.dim, `> ${line}`)}`)
     }
     lines.push("")
   }

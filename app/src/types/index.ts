@@ -212,6 +212,8 @@ export type { MergeConditionType } from "./MergeConditionType";
 export type { NodeModalMergeConfig } from "./NodeModalMergeConfig";
 export type { NodeModalProps } from "./NodeModalProps";
 export type { HTTPRequestConfigPanelProps } from "./HTTPRequestConfigPanelProps";
+export type { HttpScriptsEditorProps } from "./HttpScriptsEditorProps";
+export type { ScriptOutcomesProps } from "./ScriptOutcomesProps";
 export type { HttpRequestOutputPanelProps } from "./HttpRequestOutputPanelProps";
 export type { BearerAuthConfig } from "@shared/types/BearerAuthConfig";
 export type { BasicAuthConfig } from "@shared/types/BasicAuthConfig";

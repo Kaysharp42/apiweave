@@ -77,7 +77,7 @@ Data values are not masked. Keep credentials in secrets (`--secret`, `APIWEAVE_S
 
 ## Secrets
 
-Bundles carry secret names only, never values, so CI supplies them. Each `{{secrets.NAME}}` is read from, in rising priority:
+Bundles carry secret names only, never values, so CI supplies them. Each `{{secrets.NAME}}`, and each secret a [script](../features/scripting.md) reads with `aw.secrets.get("NAME")`, is read from, in rising priority:
 
 1. `--secrets-file`
 2. the environment variable `APIWEAVE_SECRET_NAME`

@@ -12,7 +12,7 @@ import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorO
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
-import { SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "../services/secret_utils"
+import { SECRET_PLACEHOLDER, sanitizeVariablesForExport, scriptSecretNames } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
 
@@ -39,6 +39,11 @@ export interface AgentRunApprovalRequest {
    * (literal, `{{env.*}}`, `{{variables.*}}`), the URL as written otherwise.
    */
   readonly destinations: readonly string[]
+  /**
+   * The run includes http-request scripts. A pre-request script can rewrite a
+   * request after `destinations` was worked out, and reads secrets by name.
+   */
+  readonly runsScripts: boolean
 }
 
 export interface SchedulerDeps {
@@ -307,6 +312,7 @@ export class RunScheduler {
             workflowName: workflow.name,
             secretNames,
             destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {}),
+            runsScripts: reachable.nodes.some(hasScript),
           },
           controller.signal,
         )
@@ -512,6 +518,7 @@ export class RunScheduler {
     for (const node of nodes) {
       for (const value of collectStrings(node.config)) {
         for (const m of value.matchAll(pattern)) names.add(m[1]!)
+        for (const name of scriptSecretNames(value)) names.add(name)
       }
     }
     if (names.size === 0) return { resolvedSecrets: [] }
@@ -607,6 +614,12 @@ export function requestDestinations(
   return [...destinations]
 }
 
+/** A node with a non-empty pre-request or post-response script. */
+function hasScript(node: WorkflowGraph["nodes"][number]): boolean {
+  const scripts = node.config?.["scripts"] as { readonly preRequest?: unknown; readonly postResponse?: unknown } | undefined
+  return [scripts?.preRequest, scripts?.postResponse].some((source) => typeof source === "string" && source.trim() !== "")
+}
+
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
   // Redact secret-looking keys/values only (same posture as the failure path and
   // per-node snapshots). Real extracted values are kept for the trusted local run
@@ -670,6 +683,9 @@ function safeErrorClass(error: string): string {
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
   // OAuth 2.0 diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/oauth.ts).
   if (error.startsWith("OAuth 2.0")) return error
+  // A script's own error or failed-test count: the user's script wrote it, and
+  // secret values in it were masked before this point, as in its console output.
+  if (/^(Pre-request|Post-response) script\b/.test(error)) return error
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"
