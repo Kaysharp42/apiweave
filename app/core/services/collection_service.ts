@@ -35,7 +35,7 @@ export class CollectionService {
     private readonly scopeResolver: ScopeResolver,
   ) {}
 
-  async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId">): Promise<Collection> {
+  async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId" | "collectionId">): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_COLLECTIONS)
     const created = this.collections.transaction(() => {
       const collection = this.collections.create({ ...input, workspaceId })

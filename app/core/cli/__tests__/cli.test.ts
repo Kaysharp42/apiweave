@@ -6,6 +6,8 @@ import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
+import { projectFolderFiles, writeProjectFolder } from "../../services/project_folder"
+import type { ProjectBundle } from "../../services/project_export_service"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
 import {
   AWS_ACCESS_KEY_ID,
@@ -109,6 +111,31 @@ describe("apiweave run", () => {
     for (const output of [result.stdout, result.stderr, junit, fs.readFileSync(htmlPath, "utf8")]) {
       expect(output).not.toContain(TOKEN)
     }
+  })
+
+  it("runs a project folder (Export to folder) and exits 0, 1 or 2", async () => {
+    const folder = path.join(dir, "apiweave")
+    writeProjectFolder(folder, projectFolderFiles(JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as ProjectBundle))
+    fs.writeFileSync(path.join(folder, "README.md"), "Not part of the project.\n")
+
+    const passed = await run(["run", "apiweave", "--env", "CI", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+    expect(passed.stderr).toBe("")
+    expect(passed.code).toBe(EXIT_PASSED)
+    expect(received).toEqual([`Bearer ${TOKEN}`])
+    expect(passed.stdout).toContain("✔ Status is ok")
+
+    const one = await run(["run", folder, "--workflow", "wf_health", "--var", `baseUrl=${baseUrl}/down`, "--secret", `API_TOKEN=${TOKEN}`])
+    expect(one.code).toBe(EXIT_FAILED)
+    expect(one.stdout).toContain("✖ Status is ok")
+
+    const missingSecret = await run(["run", folder, "--var", `baseUrl=${baseUrl}`])
+    expect(missingSecret.code).toBe(EXIT_USAGE)
+    expect(missingSecret.stderr).toContain("missing secret API_TOKEN")
+
+    fs.rmSync(path.join(folder, "project.json"))
+    const notAProject = await run(["run", folder])
+    expect(notAProject.code).toBe(EXIT_USAGE)
+    expect(notAProject.stderr).toContain("has no project.json")
   })
 
   it("runs a single workflow export, its environment and a dotenv secrets file", async () => {

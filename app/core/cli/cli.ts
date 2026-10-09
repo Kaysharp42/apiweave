@@ -18,6 +18,7 @@ import { LocalOnlySyncProvider } from "../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../services/scope_resolver"
 import { ImportService, WorkflowBundleSchema } from "../services/import_service"
 import { ProjectExportService, type ProjectBundle } from "../services/project_export_service"
+import { readProjectFolder } from "../services/project_folder"
 import { convertPostmanCollection, isPostmanCollection, isPostmanEnvironment } from "../services/postman_import"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { DynamicFunctions } from "../runner/dynamic_functions"
@@ -64,14 +65,15 @@ export const SECRET_ENV_PREFIX = "APIWEAVE_SECRET_"
 
 const REPORTERS = new Set(["cli", "junit", "html"])
 
-export const USAGE = `Usage: apiweave run <file> [options]
+export const USAGE = `Usage: apiweave run <file|folder> [options]
 
-Runs a workflow export (.json), a project bundle (.awecollection) or a Postman
-Collection v2.1 (.postman_collection.json) and exits 0 when every run passes,
-1 when a test fails, 2 on a usage or config error.
+Runs a project folder (exported with "Export to folder"), a workflow export
+(.json), a project bundle (.awecollection) or a Postman Collection v2.1
+(.postman_collection.json) and exits 0 when every run passes, 1 when a test
+fails, 2 on a usage or config error.
 
 Options:
-  -w, --workflow <name|id>        Run one workflow of a project bundle
+  -w, --workflow <name|id>        Run one workflow of a project folder or bundle
   -e, --env <name>                Environment from the file to run against
       --env-file <file>           Environment variables, JSON object or dotenv
                                   (a Postman environment, for a Postman collection)
@@ -179,7 +181,7 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
   if (values.help === true) return "help"
   const [command, file, ...rest] = positionals
   if (command !== "run") throw new UsageError(command === undefined ? "missing command" : `unknown command '${command}'`)
-  if (file === undefined) throw new UsageError("missing <file> to run")
+  if (file === undefined) throw new UsageError("missing <file|folder> to run")
   if (rest.length > 0) throw new UsageError(`unexpected argument '${rest[0]}'`)
 
   const reporters = new Set((values.reporter ?? "cli").split(",").map((name) => name.trim()).filter((name) => name !== ""))
@@ -289,7 +291,9 @@ function collectSecrets(options: CliOptions, env: CliIo["env"]): Map<string, str
 }
 
 async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: (text: string) => string): Promise<number> {
-  const bundle = readJson(options.file)
+  // A project folder (`project.json` + workflows/ + environments/) is read through the app's own folder reader.
+  const folder = isDirectory(options.file) ? readProjectFolder(options.file) : undefined
+  const bundle = folder ?? readJson(options.file)
   const rows = readIterationRows(options)
   const envFileVariables = options.envFile === undefined ? {} : readKeyValueFile(options.envFile, "--env-file")
   // A Postman environment is the collection's own environment, converted with it, not overrides.
@@ -318,8 +322,11 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       const projectBundle = isPostmanCollection(bundle)
         ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
         : bundle as unknown as ProjectBundle
-      const { projectId } = await new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
-        .importProject(workspaceId, projectBundle)
+      const projects = new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
+      // A folder imports as the app's "Import from folder" does (ids kept); a bundle as its bundle import does.
+      const { projectId } = folder === undefined
+        ? await projects.importProject(workspaceId, projectBundle)
+        : await projects.upsertProject(workspaceId, projectBundle)
       target = options.workflow === undefined
         ? { kind: "project", projectId }
         : { kind: "workflow", workflowId: pickWorkflow(workflows.listByCollection(workspaceId, projectId).items, projectBundle, options.workflow) }
@@ -329,7 +336,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
         .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
       target = { kind: "workflow", workflowId }
     } else {
-      throw new UsageError(`${options.file} is not an APIWeave workflow export, .awecollection project bundle or Postman collection`)
+      throw new UsageError(`${options.file} is not an APIWeave project folder, workflow export, .awecollection project bundle or Postman collection`)
     }
 
     // -------- Environment --------
@@ -532,6 +539,14 @@ function referencedSecrets(roots: readonly string[], workspaceId: string, workfl
     }
   }
   return [...names].sort()
+}
+
+function isDirectory(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isDirectory()
+  } catch {
+    return false
+  }
 }
 
 function readJson(filePath: string): unknown {

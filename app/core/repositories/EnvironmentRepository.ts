@@ -7,7 +7,7 @@ import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type EnvironmentCreate = Pick<Environment, "workspaceId" | "name"> &
   Partial<
-    Pick<Environment, "description" | "swaggerDocUrl" | "baseEnvironmentId" | "variables" | "secrets" | "isDefault">
+    Pick<Environment, "environmentId" | "description" | "swaggerDocUrl" | "baseEnvironmentId" | "variables" | "secrets" | "isDefault">
   >
 
 export type EnvironmentUpdate = Partial<
@@ -47,7 +47,7 @@ export class EnvironmentRepository {
   public constructor(private readonly store: KVStore) {}
 
   public create(input: EnvironmentCreate): Environment {
-    const id = generateId()
+    const id = input.environmentId ?? generateId()
     const settings: EnvironmentSettings = {
       description: input.description ?? null,
       swaggerDocUrl: normalizeSwaggerUrl(input.swaggerDocUrl),

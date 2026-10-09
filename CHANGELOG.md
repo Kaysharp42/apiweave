@@ -278,6 +278,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Keep tests in a git repository.** **Export to Folder** writes a project
+  as plain JSON: `project.json` (order, enabled / continue on fail, secret
+  names), one file per workflow under `workflows/` and one per environment
+  under `environments/`. Files are written deterministically (sorted keys,
+  nodes and edges by id, whole-pixel positions, no timestamps or revisions),
+  so a one-node change diffs as one line and teammates merge cleanly.
+  Exporting again updates the folder in place and removes only the files it
+  wrote for deleted or renamed workflows. **Import from Folder** creates or
+  updates the project by id; a changed workflow keeps its previous version in
+  history, an unchanged one is not touched, and one missing from the folder
+  is moved out of the project, not deleted. `apiweave run <folder>` runs the
+  folder in CI. Secret values are never written. See
+  `docs/guides/git-workflows.md`.
 - **Version history.** Every workflow keeps its earlier versions — the
   workflow as it was before a change replaced it — so a bad auto-save, an
   agent's edit, an import or a cloud sync can be undone. A version is kept at

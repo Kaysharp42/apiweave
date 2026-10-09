@@ -298,6 +298,18 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  /**
+   * Export to folder / Import from folder make main write and delete files on
+   * disk; they live off the router (PROJECT_FOLDER_CHANNELS, a privileged
+   * preload world), so no local agent can reach them.
+   */
+  it("exposes no project folder tools — writing files on disk is not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("projectFolder")
+      expect(spec.action.toLowerCase()).not.toContain("folder")
+    }
+  })
+
   it("exposes no webhook or import tools (dropped/deferred surface)", () => {
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("webhooks")

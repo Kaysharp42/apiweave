@@ -37,7 +37,7 @@ export class EnvironmentService {
     private readonly secrets?: SecretRepository,
   ) {}
 
-  async create(workspaceId: string, input: Omit<EnvironmentCreate, "workspaceId">): Promise<Environment> {
+  async create(workspaceId: string, input: Omit<EnvironmentCreate, "workspaceId" | "environmentId">): Promise<Environment> {
     await this.authorize(workspaceId, "create")
     if (input.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, undefined, input.baseEnvironmentId)

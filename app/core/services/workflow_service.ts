@@ -244,7 +244,7 @@ export class WorkflowService {
     private readonly environments?: EnvironmentRepository,
   ) {}
 
-  async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId">, options?: { readonly layout?: boolean }): Promise<Workflow> {
+  async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId" | "workflowId">, options?: { readonly layout?: boolean }): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)

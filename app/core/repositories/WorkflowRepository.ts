@@ -19,11 +19,20 @@ import {
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
 import { WorkflowRevisionRepository, type WorkflowWriteSource } from "./WorkflowRevisionRepository"
 
+/** `workflowId` is minted when absent; an import from a project folder passes the folder's own id. */
 export type WorkflowCreate = Pick<Workflow, "workspaceId" | "name"> &
   Partial<
     Pick<
       Workflow,
-      "description" | "nodes" | "edges" | "variables" | "tags" | "collectionId" | "selectedEnvironmentId" | "nodeTemplates"
+      | "workflowId"
+      | "description"
+      | "nodes"
+      | "edges"
+      | "variables"
+      | "tags"
+      | "collectionId"
+      | "selectedEnvironmentId"
+      | "nodeTemplates"
     >
   >
 
@@ -112,7 +121,7 @@ export class WorkflowRepository {
   }
 
   public create(input: WorkflowCreate): Workflow {
-    const id = generateId()
+    const id = input.workflowId ?? generateId()
     const graph = canonicalWorkflow({ nodes: input.nodes ?? [], edges: input.edges ?? [] })
     const settings: WorkflowSettings = {
       description: input.description ?? null,

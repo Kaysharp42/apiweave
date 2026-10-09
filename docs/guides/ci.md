@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- A workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
+- A project folder (from **Export to Folder**, see [Keep Tests in a Git Repository](git-workflows.md)), a workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
 - Node.js 22 or later on the machine that runs the tests.
 - A checkout of the APIWeave repository to build the CLI from. It is not published to npm yet.
 
@@ -20,7 +20,7 @@
 
 A Postman collection is converted exactly as the app's [Postman import](migrating-from-postman.md) converts it, then runs as a project; a Postman environment passed to `--env-file` becomes its environment, named `Postman: <environment name>`.
 
-A project bundle runs as a project run: its enabled workflows, one after another, in the project's order. A workflow that fails stops the project unless its row is set to **Continue**. A workflow export runs that one workflow.
+A project folder or bundle runs as a project run: its enabled workflows, one after another, in the project's order. A workflow that fails stops the project unless its row is set to **Continue**. A workflow export runs that one workflow.
 
 ## Build the CLI
 
@@ -37,6 +37,7 @@ During development, `npm run cli -- run <file> ...` builds and runs in one step.
 ## Run a file
 
 ```bash
+apiweave run ./apiweave --env Staging
 apiweave run api.awecollection --env Staging
 apiweave run api.awecollection --workflow "Create order" --env Staging
 apiweave run login.json --var baseUrl=http://localhost:8080
@@ -44,7 +45,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 
 | Option | What it does |
 |---|---|
-| `-w, --workflow <name\|id>` | Run one workflow of a project bundle, by name or by its id in the bundle. |
+| `-w, --workflow <name\|id>` | Run one workflow of a project folder or bundle, by name or by its id in the folder or bundle. |
 | `-e, --env <name>` | Run against this environment from the file. Without it, each workflow uses the environment it was saved with. |
 | `--env-file <file>` | Environment variables from a JSON object or a dotenv file, layered on the environment. For a Postman collection, a Postman environment export. |
 | `--var <key=value>` | Set one environment variable (`{{env.key}}`). Repeatable; wins over `--env-file`. |
@@ -151,9 +152,19 @@ apiweave run api.awecollection --env Staging \
 
 A file that cannot be read, a key that does not match its certificate or a wrong passphrase exits `2` before any request is sent.
 
+## Keep tests in your repo
+
+Export the project with **Export to Folder** into a folder of your repository, for example `apiweave/`, and commit it. Each workflow is its own JSON file written in a stable order, so a change reviews as a small diff and teammates merge without stepping on each other. CI then runs the folder as it is checked out:
+
+```bash
+apiweave run ./apiweave --env Staging
+```
+
+When the tests change, edit them in the app, export to the same folder again and commit; after a pull, **Import from Folder** brings teammates' changes into the app. The folder holds secret names, never values: `project.json` lists them under `secrets`, and CI supplies each as `APIWEAVE_SECRET_<NAME>`. See [Keep Tests in a Git Repository](git-workflows.md) for the format and the team workflow.
+
 ## GitHub Actions
 
-Commit the exported bundle to your repository, store each secret as a repository secret, and add a job:
+Commit the exported project folder (or bundle) to your repository, store each secret as a repository secret, and add a job:
 
 ```yaml
 name: API tests
@@ -179,7 +190,7 @@ jobs:
         env:
           APIWEAVE_SECRET_API_TOKEN: ${{ secrets.API_TOKEN }}
         run: >
-          node .apiweave/app/dist/cli/apiweave.cjs run tests/api.awecollection
+          node .apiweave/app/dist/cli/apiweave.cjs run apiweave
           --env Staging
           --reporter cli,junit,html
           --reporter-junit-export reports/apiweave.xml
@@ -205,6 +216,7 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 ## Related
 
 - [Projects](../features/projects.md): project runs and `.awecollection` export.
+- [Keep Tests in a Git Repository](git-workflows.md): the project folder format, export, import and team workflow.
 - [Data-Driven Runs](../features/data-driven-runs.md): CSV and JSON data files and `{{data.<column>}}`.
 - [Environments and Secrets](../features/environments-and-secrets.md): environments, secrets and how references resolve.
 - [Visualization and Debugging](../features/visualization-and-debugging.md#5-run-reports-junit-and-html): what the JUnit and HTML reports contain.
