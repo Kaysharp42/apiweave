@@ -121,6 +121,10 @@ export APIWEAVE_SECRET_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 export APIWEAVE_SECRET_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
 ```
 
+### Digest
+
+Supply the password secret like any other: `APIWEAVE_SECRET_<NAME>`.
+
 ## Network: proxy and certificates
 
 The CLI has the flags for what the app's [Settings > Network](../features/network.md) holds:

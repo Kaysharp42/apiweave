@@ -50,15 +50,25 @@ export const AwsSigV4AuthConfigSchema = z
   })
   .strict()
 
+export const DigestAuthConfigSchema = z
+  .object({
+    username: z.string().describe("Placeholders are substituted."),
+    password: SecretReferenceSchema.describe('A "{{secrets.NAME}}" reference to the password — a literal is rejected.'),
+  })
+  .strict()
+
 export const AuthConfigSchema = z
   .object({
-    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4"]),
+    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4", "digest"]),
     bearer: BearerAuthConfigSchema.optional(),
     basic: BasicAuthConfigSchema.optional(),
     apiKey: ApiKeyAuthConfigSchema.optional(),
     oauth2: OAuth2AuthConfigSchema.optional(),
     awsSigV4: AwsSigV4AuthConfigSchema.optional().describe(
       "Signs the final request (after the pre-request script) with AWS Signature Version 4, on every attempt. A signed request does not follow redirects.",
+    ),
+    digest: DigestAuthConfigSchema.optional().describe(
+      "HTTP Digest (RFC 7616, MD5 or SHA-256, qop=auth): the request is sent, and answered once more with credentials when the server challenges it with a 401. Does not follow redirects.",
     ),
   })
   .strict()

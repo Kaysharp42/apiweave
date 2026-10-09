@@ -543,6 +543,7 @@ const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
 export const SECRET_REFERENCE_AUTH_FIELDS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["oauth2", ["clientSecret", "tokenSecret"]],
   ["awsSigV4", ["secretAccessKey", "sessionToken"]],
+  ["digest", ["password"]],
 ]
 
 function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<string, JsonValue> {

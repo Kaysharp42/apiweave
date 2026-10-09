@@ -1,10 +1,20 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { HTTPNodeDataSchema } from "@shared/zod-schemas"
-import { WorkflowExecutor, type WorkflowGraph, type WorkflowNode } from "../executor"
+import { WorkflowExecutor, type ExecutorDeps, type WorkflowGraph, type WorkflowNode } from "../executor"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
-import { AWS_ACCESS_KEY_ID, AWS_SECRET, startServer as startTestServer, verifyAwsSignature, type Handler, type TestServer } from "./auth_test_servers"
+import {
+  AWS_ACCESS_KEY_ID,
+  AWS_SECRET,
+  DIGEST_PASSWORD,
+  DIGEST_USER,
+  digestServer,
+  startServer as startTestServer,
+  verifyAwsSignature,
+  type Handler,
+  type TestServer,
+} from "./auth_test_servers"
 
 let server: TestServer | undefined
 afterEach(async () => {
@@ -17,18 +27,14 @@ async function startServer(handler: Handler): Promise<TestServer> {
   return server
 }
 
-function makeExecutor(secrets: Record<string, string> = {}, masked: string[] = []): WorkflowExecutor {
+function executorDeps(secrets: Record<string, string>, masked: string[] = []): ExecutorDeps {
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xDEADBEEF")
-  return new WorkflowExecutor({
-    clock,
-    rng,
-    http: new SafeHttp(),
-    functions: new DynamicFunctions(clock, rng),
-    secrets,
-    environmentVariables: { KEY_ID: AWS_ACCESS_KEY_ID },
-    maskValue: (value) => masked.push(value),
-  })
+  return { clock, rng, http: new SafeHttp(), functions: new DynamicFunctions(clock, rng), secrets, maskValue: (value) => masked.push(value) }
+}
+
+function makeExecutor(secrets: Record<string, string> = {}): WorkflowExecutor {
+  return new WorkflowExecutor({ ...executorDeps(secrets), environmentVariables: { KEY_ID: AWS_ACCESS_KEY_ID } })
 }
 
 /** The http node's result, with its response status lifted out. */
@@ -137,5 +143,57 @@ describe("WorkflowExecutor — AWS Signature V4", () => {
     )
     expect(received).toHaveLength(0)
     expect(callResult(output).error).toBe("AWS Signature V4: secret AWS_TOKEN is not set")
+  })
+})
+
+// -------------------- Digest --------------------
+
+describe("WorkflowExecutor — Digest auth", () => {
+  const digestAuth = { type: "digest", digest: { username: "{{env.DIGEST_USER}}", password: "{{secrets.DIGEST_PASSWORD}}" } }
+
+  async function run(config: Record<string, unknown>, handler: Handler, secrets: Record<string, string> = { DIGEST_PASSWORD }) {
+    const api = await startServer(handler)
+    const executor = new WorkflowExecutor({
+      ...executorDeps(secrets),
+      environmentVariables: { DIGEST_USER },
+    })
+    const output = await executor.executeWorkflow(chain(httpNode({ auth: digestAuth, url: `${api.base}/dir/index.html?x=1`, ...config })))
+    return { output, received: api.received }
+  }
+
+  it.each(["MD5", "SHA-256"] as const)("answers a %s challenge and resends the request, body included", async (algorithm) => {
+    const { output, received } = await run({ method: "POST", bodyType: "json", body: '{"a": 1}' }, digestServer(algorithm))
+    expect(callResult(output).statusCode).toBe(200)
+    expect(received).toHaveLength(2)
+    expect(received[0]!.headers["authorization"]).toBeUndefined()
+    expect(received[1]!.headers["authorization"]).toMatch(new RegExp(`^Digest username="Mufasa", realm="api@test", .*uri="/dir/index.html\\?x=1", algorithm=${algorithm}, `))
+    expect(received[1]!.body.toString()).toBe('{"a": 1}')
+  })
+
+  it("ends with the server's 401 when the password is wrong, without asking again", async () => {
+    const { output, received } = await run({}, digestServer("MD5"), { DIGEST_PASSWORD: "wrong password" })
+    expect(received).toHaveLength(2)
+    expect(callResult(output).statusCode).toBe(401)
+  })
+
+  it("is challenged afresh on every retry attempt", async () => {
+    const { output, received } = await run(
+      { retry: { maxAttempts: 2, intervalMs: 0, until: [{ source: "status", path: "", operator: "equals", expectedValue: 201 }] } },
+      digestServer("SHA-256"),
+    )
+    expect(received.map((request) => request.headers["authorization"] === undefined)).toEqual([true, false, true, false])
+    expect(callResult(output).statusCode).toBe(200)
+  })
+
+  it("fails without sending when the password secret is missing, or the server offers only auth-int", async () => {
+    const missing = await run({}, digestServer("MD5"), {})
+    expect(missing.received).toHaveLength(0)
+    expect(callResult(missing.output).error).toBe("Digest auth: secret DIGEST_PASSWORD is not set")
+    await server?.close()
+    server = undefined
+
+    const authInt = await run({}, digestServer("MD5", 'Digest realm="api@test", qop="auth-int", nonce="{nonce}"'))
+    expect(authInt.received).toHaveLength(1)
+    expect(callResult(authInt.output).error).toBe("Digest auth: the server offers only qop=auth-int, and only qop=auth is supported")
   })
 })

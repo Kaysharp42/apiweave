@@ -56,6 +56,7 @@ import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
 import { AwsSigV4AuthFields } from "./AwsSigV4AuthFields";
+import { DigestAuthFields } from "./DigestAuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
@@ -79,6 +80,7 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "API Key", value: "apiKey" },
   { label: "OAuth 2.0", value: "oauth2" },
   { label: "AWS Signature V4", value: "awsSigV4" },
+  { label: "Digest", value: "digest" },
 ];
 
 function SecretRevealInput({
@@ -821,6 +823,14 @@ export function HTTPRequestConfigPanel({
               config={auth.awsSigV4}
               onChange={(patch) =>
                 updateAuth({ awsSigV4: { ...auth.awsSigV4!, ...patch } })
+              }
+            />
+          )}
+          {auth.type === "digest" && auth.digest && (
+            <DigestAuthFields
+              config={auth.digest}
+              onChange={(patch) =>
+                updateAuth({ digest: { ...auth.digest!, ...patch } })
               }
             />
           )}

@@ -89,7 +89,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `headers` | Structured key/value rows, each with an active toggle |
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
-| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20) or [AWS Signature V4](#aws-signature-v4). Supports placeholders |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4) or [Digest](#digest). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
@@ -217,6 +217,14 @@ The secret access key and the session token are secret *names*, stored as `{{sec
 The request is signed last, over exactly what is sent: after placeholders, the other auth fields and the [pre-request script](scripting.md) have done their work, and again on every [retry](#retry-and-polling) attempt. The signature covers the method, the path, the query string (sent in the sorted, percent-encoded form it was signed in), the body's SHA-256 and every header the node sets (not `Cookie` or `User-Agent`). `X-Amz-Date` is added; for `s3`, so is `X-Amz-Content-Sha256`. A form-data body is encoded before it is signed. A signed request does not follow redirects, since a signature is only good for the URL it was made for: a 3xx comes back as the node's response.
 
 A missing secret fails the node before anything is sent, for example "AWS Signature V4: secret AWS_SECRET_ACCESS_KEY is not set". In the [CLI](../guides/ci.md), supply the secrets like any other.
+
+#### Digest
+
+Choose **Digest** on the **Auth** tab for servers that use HTTP Digest authentication ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)). Set the username (placeholders work) and the password, a secret *name* stored as `{{secrets.NAME}}`.
+
+The request goes out without credentials first. When the server answers `401` with a `WWW-Authenticate: Digest` challenge, the node computes the answer and sends the request once more with the `Authorization` header; the second response is the node's. A wrong password therefore ends in the server's second `401`. MD5 and SHA-256 are supported, with their `-sess` variants, with `qop=auth` (or no qop, for old servers); a server that offers only `qop=auth-int` fails the node with a message saying so. Every request, and every retry attempt, is challenged afresh, so a Digest request costs two round trips and sends its body twice. Like a signed request, it does not follow redirects.
+
+Digest is not available on SSE Stream nodes.
 
 #### Retry and polling
 

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
+import { createHash, randomBytes } from "node:crypto"
 import { signAwsSigV4 } from "../aws_sigv4"
 
 /** Local servers that check a request's auth the way the real service would. */
@@ -59,4 +60,40 @@ export function verifyAwsSignature(request: Received, response: ServerResponse):
   )
   const ok = authorization !== "" && expected.headers["Authorization"] === authorization
   response.writeHead(ok ? 200 : 403, { "Content-Type": "application/json" }).end(JSON.stringify({ ok }))
+}
+
+export const DIGEST_USER = "Mufasa"
+export const DIGEST_PASSWORD = "Circle of Life"
+
+/**
+ * A Digest server (RFC 7616, qop=auth), written independently of the
+ * client: it challenges a request without credentials with `challenge`
+ * (its `{nonce}` filled in), and answers 200 only when the response hash
+ * checks out for this request's method and URI.
+ */
+export function digestServer(algorithm: "MD5" | "SHA-256", challenge = `Digest realm="api@test", qop="auth", algorithm=${algorithm}, nonce="{nonce}", opaque="op-1"`): Handler {
+  const nonces = new Set<string>()
+  const hash = (text: string): string => createHash(algorithm === "MD5" ? "md5" : "sha256").update(text).digest("hex")
+  return (request, response) => {
+    const header = String(request.headers["authorization"] ?? "")
+    const params = Object.fromEntries([...header.matchAll(/(\w+)=(?:"([^"]*)"|([^\s,]+))/g)].map((m) => [m[1]!, m[2] ?? m[3]!]))
+    const valid =
+      header.startsWith("Digest ") &&
+      nonces.has(params["nonce"] ?? "") &&
+      params["uri"] === request.url &&
+      params["opaque"] === "op-1" &&
+      params["qop"] === "auth" &&
+      params["response"] ===
+        hash(
+          `${hash(`${params["username"]}:api@test:${DIGEST_PASSWORD}`)}:${params["nonce"]}:${params["nc"]}:${params["cnonce"]}:auth:${hash(`${request.method}:${request.url}`)}`,
+        ) &&
+      params["username"] === DIGEST_USER
+    if (valid) {
+      response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ ok: true, body: request.body.toString() }))
+      return
+    }
+    const nonce = randomBytes(8).toString("hex")
+    nonces.add(nonce)
+    response.writeHead(401, { "WWW-Authenticate": challenge.replace("{nonce}", nonce) }).end()
+  }
 }

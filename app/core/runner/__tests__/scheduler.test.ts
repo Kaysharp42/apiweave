@@ -1310,6 +1310,7 @@ describe("agent-started runs that use secrets", () => {
     const ws = seedWorkspace()
     const auths = [
       { type: "awsSigV4", awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" } },
+      { type: "digest", digest: { username: "u", password: "{{secrets.DIGEST_PASSWORD}}" } },
     ]
     const wf = workflows.create({
       workspaceId: ws,
@@ -1337,7 +1338,7 @@ describe("agent-started runs that use secrets", () => {
     const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
     await scheduler.whenFinished(runId)
 
-    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN"])
+    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN", "DIGEST_PASSWORD"])
     expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
   })
 

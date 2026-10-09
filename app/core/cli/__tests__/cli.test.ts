@@ -6,7 +6,15 @@ import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
-import { AWS_ACCESS_KEY_ID, AWS_SECRET, startServer as startAuthServer, verifyAwsSignature } from "../../runner/__tests__/auth_test_servers"
+import {
+  AWS_ACCESS_KEY_ID,
+  AWS_SECRET,
+  DIGEST_PASSWORD,
+  DIGEST_USER,
+  digestServer,
+  startServer as startAuthServer,
+  verifyAwsSignature,
+} from "../../runner/__tests__/auth_test_servers"
 import {
   PFX_PASSPHRASE,
   fixturePath,
@@ -200,6 +208,19 @@ describe("apiweave run", () => {
         expect(result.code).toBe(EXIT_PASSED)
         expect(api.received).toHaveLength(1)
         expect(result.stdout).not.toContain(AWS_SECRET)
+      } finally {
+        await api.close()
+      }
+    })
+
+    it("answers a Digest challenge with the password from the environment", async () => {
+      const api = await startAuthServer(digestServer("SHA-256"))
+      try {
+        const file = authWorkflow(`${api.base}/digest`, { type: "digest", digest: { username: DIGEST_USER, password: "{{secrets.DIGEST_PASSWORD}}" } })
+        const result = await run(["run", file], { APIWEAVE_SECRET_DIGEST_PASSWORD: DIGEST_PASSWORD })
+
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(api.received).toHaveLength(2)
       } finally {
         await api.close()
       }

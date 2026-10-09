@@ -7,6 +7,7 @@ import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { AuthError } from "./auth_error"
 import { signAwsSigV4 } from "./aws_sigv4"
+import { digestAuthorization, parseDigestChallenge } from "./digest_auth"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
@@ -29,6 +30,7 @@ import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
 import type { AwsSigV4AuthConfig } from "@shared/types/AwsSigV4AuthConfig"
+import type { DigestAuthConfig } from "@shared/types/DigestAuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
 import type { GraphqlBody } from "@shared/types/GraphqlBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
@@ -73,12 +75,13 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4" | "digest"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
   readonly oauth2?: OAuth2AuthConfig
   readonly awsSigV4?: AwsSigV4AuthConfig
+  readonly digest?: DigestAuthConfig
 }
 
 /** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
@@ -882,7 +885,8 @@ export class WorkflowExecutor {
     const timeout = (config["timeout"] as number | undefined) ?? 30
     const auth = config["auth"] as HttpAuthConfig | undefined
     // A signature covers one URL: a redirect would carry it somewhere it does not fit.
-    const followRedirects = auth?.type !== "awsSigV4" && ((config["followRedirects"] as boolean | undefined) ?? true)
+    const signed = auth?.type === "awsSigV4" || auth?.type === "digest"
+    const followRedirects = !signed && ((config["followRedirects"] as boolean | undefined) ?? true)
     const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
     const useCookieJar = (config["useCookieJar"] as boolean | undefined) ?? true
     const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
@@ -921,10 +925,17 @@ export class WorkflowExecutor {
       headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
     }
 
+    let digest: { readonly username: string; readonly password: string } | undefined
     try {
       await this.applyAuthConfig(auth, headers, queryParams, {
         signal: cancelSignal, timeoutMs: timeout * 1000, sslVerify, forceRefresh: forceRefreshToken,
       })
+      if (auth?.type === "digest") {
+        digest = {
+          username: this.substituteVariables(auth.digest?.username ?? ""),
+          password: this.authSecret("Digest auth", "password", auth.digest?.password, true)!,
+        }
+      }
     } catch (authError) {
       if (!(authError instanceof AuthError)) throw authError
       return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
@@ -1002,12 +1013,22 @@ export class WorkflowExecutor {
         fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit, {
+      const fetchOptions = {
         followRedirects,
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
         ...(useCookieJar ? { cookieJar: this.cookieJar } : {}),
-      })
+      }
+      let response = await this.deps.http.safeFetch(url, fetchInit, fetchOptions)
+      // Digest: the server's 401 carries the challenge; answer it once.
+      const challenge = digest && response.status === 401 ? parseDigestChallenge(response.headers.get("www-authenticate") ?? "") : null
+      if (digest && challenge) {
+        await response.body?.cancel()
+        const target = new URL(url)
+        const authorization = digestAuthorization(challenge, { ...digest, method, uri: `${target.pathname}${target.search}` })
+        const answered = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== "authorization"))
+        response = await this.deps.http.safeFetch(url, { ...fetchInit, headers: { ...answered, Authorization: authorization } }, fetchOptions)
+      }
       // An OAuth token the API no longer accepts (revoked, rotated, or expired
       // early): fetch a fresh one and send the request once more.
       if (response.status === 401 && auth?.type === "oauth2" && !forceRefreshToken) {
@@ -1073,7 +1094,7 @@ export class WorkflowExecutor {
 
       return withScripts(result)
     } catch (error) {
-      if (error instanceof SafeUrlError) {
+      if (error instanceof SafeUrlError || error instanceof AuthError) {
         return withScripts({
           status: "error",
           error: error.message,
@@ -1248,6 +1269,7 @@ export class WorkflowExecutor {
         // A zero SSE timeout means "no deadline" for the stream, not for the token request.
         signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
       })
+      if (auth?.type === "digest") throw new AuthError("Digest auth: not supported on SSE Stream nodes")
       for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
       headers["Accept"] = "text/event-stream"
       url = appendQueryParams(url, queryParams)

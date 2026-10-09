@@ -278,6 +278,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **HTTP Digest auth.** HTTP nodes can authenticate with Digest (RFC 7616,
+  MD5 or SHA-256 and their `-sess` variants, `qop=auth`): the request is sent,
+  and answered once more with credentials when the server challenges it. The
+  password is a `{{secrets.NAME}}` reference.
 - **AWS Signature V4 auth.** HTTP nodes can sign their requests for AWS APIs
   with an access key ID, a secret access key and an optional session token
   (both `{{secrets.NAME}}` references), a region and a service. The request is

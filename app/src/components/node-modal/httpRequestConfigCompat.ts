@@ -166,7 +166,8 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
     value.type === "basic" ||
     value.type === "apiKey" ||
     value.type === "oauth2" ||
-    value.type === "awsSigV4"
+    value.type === "awsSigV4" ||
+    value.type === "digest"
       ? value.type
       : "none";
   const authConfig: AuthConfig = { type };
@@ -222,6 +223,12 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
       region: getString(aws.region),
       service: getString(aws.service),
       ...(sessionToken ? { sessionToken } : {}),
+    };
+  } else if (type === "digest") {
+    const digest = isRecord(value.digest) ? value.digest : {};
+    authConfig.digest = {
+      username: getString(digest.username),
+      password: getString(digest.password),
     };
   }
 

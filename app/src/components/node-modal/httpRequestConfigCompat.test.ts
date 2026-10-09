@@ -157,3 +157,11 @@ describe("AWS Signature V4 auth", () => {
     });
   });
 });
+
+describe("Digest auth", () => {
+  it("keeps only the username and the password's secret reference", () => {
+    expect(
+      normalizeAuthConfig({ type: "digest", digest: { username: "{{env.USER}}", password: "{{secrets.PASS}}", extra: 1 }, basic: { username: "x", password: "y" } }),
+    ).toEqual({ type: "digest", digest: { username: "{{env.USER}}", password: "{{secrets.PASS}}" } });
+  });
+});

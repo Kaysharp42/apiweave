@@ -67,6 +67,13 @@ describe("sanitizeExportValue", () => {
     expect(sanitized.auth.awsSigV4).toEqual({ accessKeyId: "AKID", secretAccessKey: "", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" })
   })
 
+  it("keeps a Digest password's secret reference and blanks a literal", () => {
+    const exported = (password: string) =>
+      (sanitizeExportValue({ auth: { type: "digest", digest: { username: "alice", password } } }) as { auth: { digest: unknown } }).auth.digest
+    expect(exported("{{secrets.PASS}}")).toEqual({ username: "alice", password: "{{secrets.PASS}}" })
+    expect(exported("hunter2")).toEqual({ username: "alice", password: "" })
+  })
+
   it("keeps an OAuth 2.0 config's secret references and blanks anything else in their place", () => {
     const sanitized = sanitizeExportValue({
       auth: {
