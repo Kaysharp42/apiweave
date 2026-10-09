@@ -112,7 +112,7 @@ test.describe("NodeModal visual QA", () => {
     const dialog = page.getByRole("dialog");
     const tabs = dialog.getByRole("tab");
 
-    await expect(tabs).toHaveCount(6);
+    await expect(tabs).toHaveCount(7);
     await expect(dialog.getByLabel("Request URL")).toHaveValue(
       "https://api.example.com/users",
     );
