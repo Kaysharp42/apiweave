@@ -1,6 +1,8 @@
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
+import type { WorkspaceNodeMatch } from "@shared/types/WorkspaceNodeMatch"
+import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowSummaryFilters, WorkflowSummaryCursor } from "../repositories/WorkflowRepository"
@@ -255,6 +257,42 @@ export function searchWorkflowNodes(workflow: Workflow, request: NodeSearchReque
   }
 }
 
+/**
+ * The same safe-field match as `searchWorkflowNodes`, across every workflow of
+ * a workspace, for the command palette. Workflows come newest-updated first so
+ * the cap keeps the ones being worked on.
+ */
+// ponytail: parses every graph per query (in memory, no index). Fine to a few
+// thousand workflows; past that, prefilter with LIKE on graph_json or an FTS
+// table in WorkflowRepository.
+export function searchWorkspaceNodes(workflows: readonly Workflow[], query: string, limit: number): WorkspaceNodeSearchPage {
+  const needle = query.toLowerCase()
+  const ordered = [...workflows].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const matched: WorkspaceNodeMatch[] = []
+  let totalMatched = 0
+  for (const workflow of ordered) {
+    for (const node of workflow.nodes) {
+      const matchedOn = matchNodeFields(node, needle)
+      if (matchedOn.length === 0) continue
+      totalMatched += 1
+      if (matched.length >= limit) continue
+      const method = node.type === "http-request" ? node.config?.method : undefined
+      const url = node.type === "http-request" || node.type === "sse" ? node.config?.url : undefined
+      matched.push({
+        workflowId: workflow.workflowId,
+        workflowName: workflow.name,
+        nodeId: node.nodeId,
+        type: node.type,
+        label: node.label ?? null,
+        method: typeof method === "string" ? method : null,
+        urlPath: typeof url === "string" ? urlPathTemplate(url) : null,
+        matchedOn,
+      })
+    }
+  }
+  return { query, items: matched, totalMatched, omittedMatchCount: totalMatched - matched.length }
+}
+
 // fallow-ignore-next-line complexity
 function matchNodeFields(node: WorkflowNode, query: string): string[] {
   const matchedOn: string[] = []
@@ -288,16 +326,16 @@ function matchNodeFields(node: WorkflowNode, query: string): string[] {
 }
 
 /**
- * The matchable URL surface: placeholders kept (they are references, not
- * values), query string and fragment dropped (they carry literal values the
- * transport would withhold). Never throws on template URLs the URL parser
- * cannot parse.
+ * The matchable URL surface: placeholders kept as written (they are
+ * references, not values), query string, fragment and authority dropped (they
+ * carry literal values the transport would withhold, userinfo included).
+ * Never throws on template URLs the URL parser cannot parse.
  */
 function urlPathTemplate(url: string): string {
   const withoutQuery = url.split(/[?#]/, 1)[0] ?? ""
   try {
-    return new URL(withoutQuery, "http://placeholder.invalid").pathname
+    return decodeURI(new URL(withoutQuery).pathname)
   } catch {
-    return withoutQuery
+    return withoutQuery.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")
   }
 }

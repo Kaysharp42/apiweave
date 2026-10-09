@@ -368,6 +368,8 @@ export type { StepContextMenuState } from "./StepContextMenuState";
 export type { RevisionDiff } from "./RevisionDiff";
 export type { VersionHistoryDialogProps } from "./VersionHistoryDialogProps";
 export type { CommandPaletteProps } from "./CommandPaletteProps";
+export type { CommandPaletteItem } from "./CommandPaletteItem";
+export type { HighlightedTextProps } from "./HighlightedTextProps";
 export type { NodePaletteItem } from "./NodePaletteItem";
 export type { NodePaletteProps } from "./NodePaletteProps";
 export type { NodePaletteSection } from "./NodePaletteSection";

@@ -11,6 +11,8 @@ import type { RunIteration } from "@shared/types/RunIteration";
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
 import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
 import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary";
+import type { WorkflowSearchPage } from "@shared/types/WorkflowSearchPage";
+import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -319,6 +321,20 @@ export const apiweave = {
       }),
     delete: (workspaceId: string, workflowId: string) =>
       invoke<null>("workflows", "delete", { workspaceId, workflowId }),
+    /** Workflows whose name contains `query`, newest first, graph-free. */
+    search: (workspaceId: string, query: string, limit: number) =>
+      invoke<WorkflowSearchPage>("workflows", "search", {
+        workspaceId,
+        query,
+        limit,
+      }),
+    /** Nodes in any workflow of the workspace, by label, method, URL path or extractor. */
+    searchWorkspaceNodes: (workspaceId: string, query: string, limit: number) =>
+      invoke<WorkspaceNodeSearchPage>("workflows", "searchWorkspaceNodes", {
+        workspaceId,
+        query,
+        limit,
+      }),
     /** Earlier versions, newest first, without their content. */
     listRevisions: (workspaceId: string, workflowId: string) =>
       invoke<WorkflowRevisionSummary[]>("workflows", "listRevisions", {

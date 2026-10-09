@@ -11,6 +11,7 @@ import {
   WorkflowSearchPageSchema,
   WorkflowGetViewSchema,
   NodeSearchPageSchema,
+  WorkspaceNodeSearchPageSchema,
   WorkflowRevisionSchema,
   WorkflowRevisionSummarySchema,
 } from "@shared/zod-schemas"
@@ -185,6 +186,12 @@ const searchNodesInput = z.object({
   }
 })
 
+const searchWorkspaceNodesInput = z.object({
+  workspaceId: ws,
+  query: z.string().trim().min(1).max(200),
+  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional(),
+}).strict()
+
 const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
 
 // MCP-only meta field (stripped before it reaches the repository): the service
@@ -279,6 +286,12 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
       ...(i.nodeTypes !== undefined ? { nodeTypes: i.nodeTypes } : {}),
       limit: i.limit ?? NODE_SEARCH_DEFAULT_LIMIT,
     }),
+  })
+
+  router.register("workflows", "searchWorkspaceNodes", {
+    input: searchWorkspaceNodesInput,
+    output: WorkspaceNodeSearchPageSchema,
+    handle: (i) => workflows.searchWorkspaceNodes(i.workspaceId, i.query, i.limit ?? NODE_SEARCH_DEFAULT_LIMIT),
   })
 
   router.register("workflows", "update", {

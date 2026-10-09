@@ -2,6 +2,7 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { AssertionItem } from "@shared/types/AssertionItem"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
+import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowRevision } from "@shared/types/WorkflowRevision"
@@ -21,6 +22,7 @@ import {
   buildOutlineView,
   openSearchCursor,
   searchWorkflowNodes,
+  searchWorkspaceNodes,
   sealSearchCursor,
   type NodeSearchRequest,
 } from "./workflow_reads"
@@ -326,6 +328,12 @@ export class WorkflowService {
   async searchNodes(workspaceId: string, workflowId: string, request: NodeSearchRequest): Promise<NodeSearchPage> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
     return searchWorkflowNodes(this.mustGet(workspaceId, workflowId), request)
+  }
+
+  /** `searchNodes` across every workflow of the workspace, project-attached ones included. */
+  async searchWorkspaceNodes(workspaceId: string, query: string, limit: number): Promise<WorkspaceNodeSearchPage> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    return searchWorkspaceNodes(this.workflows.listByWorkspace(workspaceId, true).items, query, limit)
   }
 
 // fallow-ignore-next-line complexity

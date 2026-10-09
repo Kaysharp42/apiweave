@@ -28,6 +28,7 @@ const useCanvasStore = create<CanvasState>()((set) => ({
   reloadWorkflowId: null,
   reloadVersion: 0,
   pendingHistory: null,
+  pendingFocus: null,
 
   duplicateNode: (nodeId: string) => {
     const action = {
@@ -100,6 +101,11 @@ const useCanvasStore = create<CanvasState>()((set) => ({
     set({ pendingHistory: { workflowId, runId } }),
 
   clearPendingHistory: () => set({ pendingHistory: null }),
+
+  focusNode: (workflowId: string, nodeId: string) =>
+    set({ pendingFocus: { workflowId, nodeId } }),
+
+  clearPendingFocus: () => set({ pendingFocus: null }),
 
   signalWorkflowReload: (workflowId: string) => {
     set((s) => ({

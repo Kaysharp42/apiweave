@@ -64,6 +64,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Node search no longer reads a password written into a URL.** The URL path
+  that node search matches (`workflows_searchNodes`) kept the whole URL when it
+  could not be parsed, such as `https://user:pass@{{env.HOST}}/login`, so a
+  literal password in it was searchable. Search now drops the scheme and
+  authority, and matches placeholders as written rather than percent-encoded.
+
 - **A request dragged from an imported OpenAPI group saves.** Its node carried
   `openapiMeta`, which the workflow schema did not accept, so every save of the
   workflow failed afterwards. The field is now part of the HTTP Request node, so
@@ -277,6 +283,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   new ids, lands offset from the originals and is selected.
 
 ### Added
+
+- **Search workflows and nodes from the command palette.** `Ctrl+K` now finds
+  workflows by name and nodes in any workflow by label, method, URL path or
+  extractor name, with the match highlighted. Choosing a node opens its
+  workflow and centres the canvas on it.
 
 - **Keep tests in a git repository.** **Export to Folder** writes a project
   as plain JSON: `project.json` (order, enabled / continue on fail, secret

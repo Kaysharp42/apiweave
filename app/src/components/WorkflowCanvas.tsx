@@ -946,15 +946,8 @@ export function WorkflowCanvas({
    * canvas's only keyboard access, so it also has to be able to get *into* the
    * graph from nothing selected. See `nearestInDirection` for the scoring.
    */
-  const focusDirection = useCallback(
-    (direction: FocusDirection) => {
-      const targetId = nearestInDirection(
-        flatNodesRef.current,
-        selectedNodeRef.current?.id ?? null,
-        direction,
-      );
-      if (targetId === null) return;
-
+  const selectAndFrame = useCallback(
+    (targetId: string) => {
       selectedNodeRef.current =
         nodesRef.current.find((n) => n.id === targetId) ?? null;
       setNodes((nds) =>
@@ -974,6 +967,34 @@ export function WorkflowCanvas({
     },
     [setNodes, suspendFollow],
   );
+
+  const focusDirection = useCallback(
+    (direction: FocusDirection) => {
+      const targetId = nearestInDirection(
+        flatNodesRef.current,
+        selectedNodeRef.current?.id ?? null,
+        direction,
+      );
+      if (targetId !== null) selectAndFrame(targetId);
+    },
+    [selectAndFrame],
+  );
+
+  // A palette search result asked for a node of this workflow. Like
+  // `pendingHistory`, the request usually predates this canvas's mount, so it
+  // is read from the store once the graph is hydrated.
+  const pendingFocus = useCanvasStore((state) => state.pendingFocus);
+  useEffect(() => {
+    if (!isHydrated || !workflowId || pendingFocus?.workflowId !== workflowId) {
+      return;
+    }
+    useCanvasStore.getState().clearPendingFocus();
+    if (nodesRef.current.some((n) => n.id === pendingFocus.nodeId)) {
+      selectAndFrame(pendingFocus.nodeId);
+    } else {
+      toast.info("That node is no longer in this workflow.");
+    }
+  }, [isHydrated, pendingFocus, selectAndFrame, workflowId]);
 
   /**
    * Frame the current selection.
@@ -1995,6 +2016,7 @@ export function WorkflowCanvas({
       <CommandPalette
         open={isCommandPaletteOpen}
         commands={commands}
+        workspaceId={scope.workspaceId ?? null}
         onClose={() => setIsCommandPaletteOpen(false)}
       />
 

@@ -34,6 +34,10 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  *    whole graph (no MCP read redacts it like `workflows_get` does), and a write
  *    that replaces the workflow with it. Version history is the user's: an agent
  *    lists revisions (`workflows_listRevisions`) and points the user at it.
+ *  - `workflows.searchWorkspaceNodes` — the command palette's node search across
+ *    every workflow at once. An agent finds the workflow first
+ *    (`workflows_search`) and then its nodes (`workflows_searchNodes`), which
+ *    also returns the neighbour context a patch needs.
  *  - `projects.addWorkflow`, `projects.removeWorkflow` (phase 6) — project-centric
  *    duplicates of `workflows.attachToCollection`, which attaches AND detaches
  *    (nullable `collectionId`) in one workflow-centric tool. The IPC handlers

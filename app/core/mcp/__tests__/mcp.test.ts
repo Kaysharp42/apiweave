@@ -247,6 +247,8 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       // Both are the user's, from the Version history dialog.
       "workflows.getRevision",
       "workflows.restoreRevision",
+      // The palette's workspace-wide node search; agents use search + searchNodes.
+      "workflows.searchWorkspaceNodes",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }

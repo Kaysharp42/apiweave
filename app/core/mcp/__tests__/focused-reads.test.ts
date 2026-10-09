@@ -621,6 +621,66 @@ describe("Phase 2 — node search over safe fields only", () => {
   })
 })
 
+describe("workspace node search (command palette)", () => {
+  type WorkspaceMatchPage = {
+    items: Array<{ workflowId: string; workflowName: string; nodeId: string; method: string | null; urlPath: string | null; matchedOn: string[] }>
+    totalMatched: number
+    omittedMatchCount: number
+  }
+
+  it("searches every workflow by label, method and URL path, and caps the result", async () => {
+    const workspaceId = await seedWorkspace()
+    const project = await dispatchOk<{ collectionId: string }>("projects", "create", { workspaceId, name: "Shop" })
+    const users = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "users",
+      nodes: [{ nodeId: "list-users", type: "http-request", label: "List users", position: { x: 0, y: 0 }, config: { method: "GET", url: "{{env.BASE}}/users?page=2" } }],
+    })
+    const orders = await dispatchOk<{ workflowId: string }>("workflows", "create", {
+      workspaceId,
+      name: "orders",
+      collectionId: project.collectionId,
+      nodes: [{ nodeId: "create-order", type: "http-request", label: "Create order", position: { x: 0, y: 0 }, config: { method: "POST", url: "https://shop.test/users/orders" } }],
+    })
+
+    const byPath = await dispatchOk<WorkspaceMatchPage>("workflows", "searchWorkspaceNodes", { workspaceId, query: "/users" })
+    expect(byPath.items.map((item) => [item.workflowId, item.nodeId]).sort()).toEqual(
+      [[orders.workflowId, "create-order"], [users.workflowId, "list-users"]].sort(),
+    )
+    expect(byPath.items.find((item) => item.nodeId === "list-users")).toMatchObject({
+      workflowName: "users",
+      method: "GET",
+      urlPath: "{{env.BASE}}/users",
+    })
+
+    const byMethod = await dispatchOk<WorkspaceMatchPage>("workflows", "searchWorkspaceNodes", { workspaceId, query: "post" })
+    expect(byMethod.items.map((item) => item.nodeId)).toEqual(["create-order"])
+    expect(byMethod.items[0]?.matchedOn).toContain("method")
+
+    const capped = await dispatchOk<WorkspaceMatchPage>("workflows", "searchWorkspaceNodes", { workspaceId, query: "/users", limit: 1 })
+    expect(capped.items).toHaveLength(1)
+    expect(capped.totalMatched).toBe(2)
+    expect(capped.omittedMatchCount).toBe(1)
+
+    // Query strings and userinfo are values, never searched.
+    await dispatchOk("workflows", "create", {
+      workspaceId,
+      name: "creds",
+      nodes: [{ nodeId: "login", type: "http-request", position: { x: 0, y: 0 }, config: { method: "GET", url: "https://bob:hunter2@{{env.HOST}}/login" } }],
+    })
+    for (const query of ["page=2", "hunter2"]) {
+      const page = await dispatchOk<WorkspaceMatchPage>("workflows", "searchWorkspaceNodes", { workspaceId, query })
+      expect(page.totalMatched, query).toBe(0)
+    }
+  })
+
+  it("rejects a blank query", async () => {
+    const workspaceId = await seedWorkspace()
+    const error = await dispatchErr("workflows", "searchWorkspaceNodes", { workspaceId, query: "  " })
+    expect(error.code).toBe("validation")
+  })
+})
+
 describe("Phase 2 — compact run history with continuations", () => {
   async function seedRuns(count: number): Promise<{ workspaceId: string; workflowId: string; runIds: string[] }> {
     const workspaceId = await seedWorkspace()

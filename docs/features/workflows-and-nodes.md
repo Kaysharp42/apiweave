@@ -472,6 +472,24 @@ never exported. They hold the same configuration as the workflow itself —
 workflow's versions (`workflows_listRevisions`, metadata only); reading one and
 restoring one are yours, in this dialog.
 
+## Search
+
+The command palette (`Ctrl+K`, or **Open command palette** in the canvas
+toolbar) searches the whole workspace as well as the canvas commands. Type two
+characters or more and, after a short pause, it lists:
+
+- **Workflows** whose name contains the text (up to 5).
+- **Nodes** in any workflow, project-attached ones included, whose label, node
+  id, type, request method, URL path or extractor name contains it (up to 10,
+  most recently edited workflows first). Each row shows the node's method and
+  URL path and the workflow it is in.
+
+The matching text is highlighted. Arrow keys move through the results and
+`Enter` opens one: a workflow opens in its tab, and a node opens its workflow,
+selects the node and centres the canvas on it. Search never looks at request
+bodies, headers, auth, query strings or variable values, so it cannot match a
+secret.
+
 ## Keyboard Shortcuts
 
 On macOS every `Ctrl` shortcut below uses `⌘` instead, except `Ctrl+Tab` and `Ctrl+Shift+Tab`, which stay on Control because `⌘Tab` switches apps. Press `?` on the canvas for the same list, with the keys your platform uses.
