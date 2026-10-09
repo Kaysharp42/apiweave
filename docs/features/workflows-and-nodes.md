@@ -431,7 +431,7 @@ Every save is checked against the revision the canvas loaded. If the workflow ch
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
-Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
+To rerun only part of a workflow after fixing a step, use **Run from here** on a step (its node menu, or right-click it) or **Rerun failed branches** from the arrow beside **Run** or a failed run in History. The steps upstream are not sent again: their results and variables from an earlier run are reused. See [Rerun from a node, or rerun failed branches](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
 
 Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
 
