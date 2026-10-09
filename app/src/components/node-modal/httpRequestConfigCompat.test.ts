@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { OAuth2AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
 import { normalizeAuthConfig, normalizeExpectedStatus, normalizeHttpRequestConfig, normalizeRetry } from "./httpRequestConfigCompat";
-import { graphqlVariablesProblem } from "./GraphqlBodyEditor";
+import { jsonObjectTemplateProblem } from "../../utils/jsonObjectTemplateProblem";
 import { oauth2Problems } from "./OAuth2AuthFields";
 import { awsSigV4Problems } from "./AwsSigV4AuthFields";
-import { AwsSigV4AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
+import { AwsSigV4AuthConfigSchema, JwtAuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
 import { secretNameOf, secretReferenceFor } from "./SecretNameField";
 
 describe("normalizeAuthConfig", () => {
@@ -130,10 +130,10 @@ describe("GraphQL body", () => {
   });
 
   it("accepts variables whose placeholders stand in for values, and flags anything but an object", () => {
-    expect(graphqlVariablesProblem('{"id": {{variables.id}}, "name": "{{env.NAME}}"}')).toBeUndefined();
-    expect(graphqlVariablesProblem("")).toBeUndefined();
-    expect(graphqlVariablesProblem("[1]")).toBe("Variables must be a JSON object");
-    expect(graphqlVariablesProblem("{oops")).toBeDefined();
+    expect(jsonObjectTemplateProblem('{"id": {{variables.id}}, "name": "{{env.NAME}}"}')).toBeUndefined();
+    expect(jsonObjectTemplateProblem("")).toBeUndefined();
+    expect(jsonObjectTemplateProblem("[1]")).toBe("Must be a JSON object");
+    expect(jsonObjectTemplateProblem("{oops")).toBeDefined();
   });
 });
 
@@ -163,5 +163,24 @@ describe("Digest auth", () => {
     expect(
       normalizeAuthConfig({ type: "digest", digest: { username: "{{env.USER}}", password: "{{secrets.PASS}}", extra: 1 }, basic: { username: "x", password: "y" } }),
     ).toEqual({ type: "digest", digest: { username: "{{env.USER}}", password: "{{secrets.PASS}}" } });
+  });
+});
+
+describe("JWT auth", () => {
+  it("starts a new JWT config valid, with a five-minute expiry", () => {
+    const auth = normalizeAuthConfig({ type: "jwt" });
+    expect(auth.jwt).toEqual({ algorithm: "HS256", secret: "", payload: "{}", expiresInSeconds: 300 });
+    expect(JwtAuthConfigSchema.safeParse(auth.jwt).success).toBe(true);
+  });
+
+  it("keeps a saved config, clamping the lifetime and dropping a cleared one", () => {
+    const keep = normalizeAuthConfig({
+      type: "jwt",
+      jwt: { algorithm: "ES256", secret: "{{secrets.KEY}}", payload: '{"sub": 1}', header: '{"kid": "a"}', expiresInSeconds: 10_000_000, headerName: "X-Token", prefix: "" },
+    });
+    expect(keep.jwt).toEqual({
+      algorithm: "ES256", secret: "{{secrets.KEY}}", payload: '{"sub": 1}', header: '{"kid": "a"}', expiresInSeconds: 86_400, headerName: "X-Token", prefix: "",
+    });
+    expect(normalizeAuthConfig({ type: "jwt", jwt: { algorithm: "HS256", secret: "", payload: "{}" } }).jwt).not.toHaveProperty("expiresInSeconds");
   });
 });

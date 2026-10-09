@@ -682,7 +682,7 @@ function safeErrorClass(error: string): string {
   // The executor's own Call Workflow diagnoses carry at most the target's id.
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
   // Auth diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/auth_error.ts).
-  if (/^(OAuth 2\.0|AWS Signature V4|Digest auth)\b/.test(error)) return error
+  if (/^(OAuth 2\.0|AWS Signature V4|Digest auth|JWT)\b/.test(error)) return error
   // A script's own error or failed-test count: the user's script wrote it, and
   // secret values in it were masked before this point, as in its console output.
   if (/^(Pre-request|Post-response) script\b/.test(error)) return error

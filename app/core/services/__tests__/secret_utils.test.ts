@@ -67,6 +67,13 @@ describe("sanitizeExportValue", () => {
     expect(sanitized.auth.awsSigV4).toEqual({ accessKeyId: "AKID", secretAccessKey: "", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" })
   })
 
+  it("keeps a JWT signing key's secret reference and blanks a literal", () => {
+    const exported = (secret: string) =>
+      (sanitizeExportValue({ auth: { type: "jwt", jwt: { algorithm: "RS256", secret, payload: '{"sub": "ci"}' } } }) as { auth: { jwt: unknown } }).auth.jwt
+    expect(exported("{{secrets.JWT_KEY}}")).toEqual({ algorithm: "RS256", secret: "{{secrets.JWT_KEY}}", payload: '{"sub": "ci"}' })
+    expect(exported("-----BEGIN PRIVATE KEY-----abc-----END PRIVATE KEY-----")).toEqual({ algorithm: "RS256", secret: "", payload: '{"sub": "ci"}' })
+  })
+
   it("keeps a Digest password's secret reference and blanks a literal", () => {
     const exported = (password: string) =>
       (sanitizeExportValue({ auth: { type: "digest", digest: { username: "alice", password } } }) as { auth: { digest: unknown } }).auth.digest

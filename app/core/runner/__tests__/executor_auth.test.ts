@@ -1,3 +1,4 @@
+import { createHmac, generateKeyPairSync, verify } from "node:crypto"
 import { afterEach, describe, expect, it } from "vitest"
 import { HTTPNodeDataSchema } from "@shared/zod-schemas"
 import { WorkflowExecutor, type ExecutorDeps, type WorkflowGraph, type WorkflowNode } from "../executor"
@@ -195,5 +196,73 @@ describe("WorkflowExecutor — Digest auth", () => {
     const authInt = await run({}, digestServer("MD5", 'Digest realm="api@test", qop="auth-int", nonce="{nonce}"'))
     expect(authInt.received).toHaveLength(1)
     expect(callResult(authInt.output).error).toBe("Digest auth: the server offers only qop=auth-int, and only qop=auth is supported")
+  })
+})
+
+// -------------------- JWT --------------------
+
+describe("WorkflowExecutor — JWT bearer", () => {
+  const ec = generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+  const ecPem = String(ec.privateKey.export({ type: "pkcs8", format: "pem" }))
+  const echo: Handler = (request, response) =>
+    response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ youSent: request.headers["authorization"] ?? request.headers["x-token"] }))
+
+  async function run(jwt: Record<string, unknown>, secrets: Record<string, string>) {
+    const api = await startServer(echo)
+    const masked: string[] = []
+    const executor = new WorkflowExecutor({ ...executorDeps(secrets, masked), environmentVariables: { TENANT: 'acme "eu"' } })
+    const output = await executor.executeWorkflow({
+      ...chain(httpNode({ url: `${api.base}/me`, auth: { type: "jwt", jwt } })),
+      variables: { userId: 42 },
+    })
+    return { output, received: api.received, masked }
+  }
+
+  const decode = (segment: string): Record<string, unknown> => JSON.parse(Buffer.from(segment, "base64url").toString()) as Record<string, unknown>
+
+  it("sends an ES256 token signed per request, claims filled as a JSON template, iat and exp added", async () => {
+    const { output, received, masked } = await run(
+      {
+        algorithm: "ES256",
+        secret: "{{secrets.JWT_KEY}}",
+        payload: '{"sub": {{variables.userId}}, "tenant": "{{env.TENANT}}"}',
+        header: '{"kid": "key-1"}',
+        expiresInSeconds: 300,
+      },
+      { JWT_KEY: ecPem },
+    )
+    const authorization = String(received[0]!.headers["authorization"])
+    expect(authorization).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/)
+    const token = authorization.slice("Bearer ".length)
+    const [header, payload, signature] = token.split(".")
+    expect(decode(header!)).toEqual({ typ: "JWT", kid: "key-1", alg: "ES256" })
+    // The fixed clock: 2026-01-02T03:04:05Z.
+    expect(decode(payload!)).toEqual({ sub: 42, tenant: 'acme "eu"', iat: 1767323045, exp: 1767323345 })
+    expect(verify("sha256", Buffer.from(`${header}.${payload}`), { key: ec.publicKey, dsaEncoding: "ieee-p1363" }, Buffer.from(signature!, "base64url"))).toBe(true)
+    expect(masked).toEqual([token])
+    expect(callResult(output).statusCode).toBe(200)
+  })
+
+  it("sends the bare token in a custom header, keeping the payload's own iat and exp", async () => {
+    const { received } = await run(
+      { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: '{"iat": 1, "exp": 2}', expiresInSeconds: 60, headerName: "X-Token", prefix: "" },
+      { JWT_KEY: "shared-secret" },
+    )
+    const token = String(received[0]!.headers["x-token"])
+    const [header, payload, signature] = token.split(".")
+    expect(decode(payload!)).toEqual({ iat: 1, exp: 2 })
+    expect(createHmac("sha256", "shared-secret").update(`${header}.${payload}`).digest("base64url")).toBe(signature)
+    expect(received[0]!.headers["authorization"]).toBeUndefined()
+  })
+
+  it("fails without sending when the payload is not a JSON object or the key is missing", async () => {
+    const bad = await run({ algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: "[1]" }, { JWT_KEY: "k" })
+    expect(bad.received).toHaveLength(0)
+    expect(callResult(bad.output).error).toBe("JWT: the payload must be a JSON object")
+    await server?.close()
+    server = undefined
+
+    const missing = await run({ algorithm: "RS256", secret: "{{secrets.JWT_KEY}}", payload: "{}" }, {})
+    expect(callResult(missing.output).error).toBe("JWT: secret JWT_KEY is not set")
   })
 })

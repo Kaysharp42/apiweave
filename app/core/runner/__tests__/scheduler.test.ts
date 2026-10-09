@@ -11,6 +11,7 @@ import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import { startFakeOAuthServer } from "./oauth_fake_server"
+import { startServer as startAuthServer } from "./auth_test_servers"
 import { encodeStoredToken } from "../oauth"
 
 let db: InitializedDatabase
@@ -1311,6 +1312,7 @@ describe("agent-started runs that use secrets", () => {
     const auths = [
       { type: "awsSigV4", awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" } },
       { type: "digest", digest: { username: "u", password: "{{secrets.DIGEST_PASSWORD}}" } },
+      { type: "jwt", jwt: { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: "{}" } },
     ]
     const wf = workflows.create({
       workspaceId: ws,
@@ -1338,7 +1340,7 @@ describe("agent-started runs that use secrets", () => {
     const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
     await scheduler.whenFinished(runId)
 
-    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN", "DIGEST_PASSWORD"])
+    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN", "DIGEST_PASSWORD", "JWT_KEY"])
     expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
   })
 
@@ -1567,5 +1569,30 @@ describe("signed auth runs", () => {
 
     const call = runs.getById(runId)!.results.find((result) => result.nodeId === "call")
     expect(call?.error).toBe("AWS Signature V4: secret AWS_SECRET is not set")
+  })
+
+  it("never stores a signed JWT, even when the API echoes it back", async () => {
+    const api = await startAuthServer((request, response) =>
+      response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ youSent: request.headers["authorization"] })))
+    const ws = seedWorkspace()
+    const workflowId = seedAuthWorkflow(ws, `${api.base}/me`, {
+      type: "jwt",
+      jwt: { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: '{"sub": "ci"}', expiresInSeconds: 60 },
+    })
+    const events: RunEvent[] = []
+    const scheduler = makeScheduler({
+      emitProgress: (_runId, event) => events.push(event),
+      resolveSecret: async () => ({ plaintext: "jwt-signing-key", scopeType: "workspace" }),
+    })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    expect(await scheduler.whenFinished(runId)).toBe("completed")
+    await api.close()
+
+    const token = String(api.received[0]!.headers["authorization"]).slice("Bearer ".length)
+    expect(token.split(".")).toHaveLength(3)
+    const stored = JSON.stringify(runs.getById(runId))
+    expect(stored).not.toContain(token)
+    expect(stored).toContain("Bearer <SECRET>")
+    expect(JSON.stringify(events)).not.toContain(token)
   })
 })

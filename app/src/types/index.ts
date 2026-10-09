@@ -223,6 +223,7 @@ export type { AuthConfig } from "@shared/types/AuthConfig";
 export type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig";
 export type { AwsSigV4AuthConfig } from "@shared/types/AwsSigV4AuthConfig";
 export type { DigestAuthConfig } from "@shared/types/DigestAuthConfig";
+export type { JwtAuthConfig } from "@shared/types/JwtAuthConfig";
 export type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 export type { FormDataEntry } from "@shared/types/FormDataEntry";
 export type { UrlEncodedEntry } from "@shared/types/UrlEncodedEntry";

@@ -89,7 +89,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `headers` | Structured key/value rows, each with an active toggle |
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
-| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4) or [Digest](#digest). Supports placeholders |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4), [Digest](#digest) or [JWT Bearer](#jwt-bearer). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
@@ -225,6 +225,21 @@ Choose **Digest** on the **Auth** tab for servers that use HTTP Digest authentic
 The request goes out without credentials first. When the server answers `401` with a `WWW-Authenticate: Digest` challenge, the node computes the answer and sends the request once more with the `Authorization` header; the second response is the node's. A wrong password therefore ends in the server's second `401`. MD5 and SHA-256 are supported, with their `-sess` variants, with `qop=auth` (or no qop, for old servers); a server that offers only `qop=auth-int` fails the node with a message saying so. Every request, and every retry attempt, is challenged afresh, so a Digest request costs two round trips and sends its body twice. Like a signed request, it does not follow redirects.
 
 Digest is not available on SSE Stream nodes.
+
+#### JWT Bearer
+
+Choose **JWT Bearer** on the **Auth** tab when an API accepts a token you sign yourself (a service account, a test identity provider, an API that verifies a shared secret). The node signs a fresh JWT for every request, and every retry attempt, and sends it as `Authorization: Bearer <token>`.
+
+| Field | What it does |
+| --- | --- |
+| Algorithm | `HS256` (HMAC with a shared secret), `RS256` (RSA private key) or `ES256` (P-256 EC private key) |
+| Shared secret / Private key | A secret *name*, stored as `{{secrets.NAME}}`; a literal is refused. A private key is PEM (PKCS#8, PKCS#1 or SEC1). A key whose line breaks were lost when it was pasted into the one-line secret field, or that spells them `\n` (common in CI variables), is read correctly |
+| Payload | The claims, a JSON object. Placeholders work as in a JSON body: inside a string the value is escaped, standing alone (`"sub": {{variables.userId}}`) it is inserted as a value. `iat` is set to the current time unless the payload sets it |
+| Extra header fields | Optional JSON object, for example `{"kid": "key-1"}`. `alg` is always the chosen algorithm, `typ` defaults to `JWT` |
+| Expires in | Seconds, five minutes for a new config. Adds `exp` = `iat` + this, unless the payload sets `exp`. Empty: no `exp` |
+| Header / Prefix | Where the token goes: `Authorization` and `Bearer` by default. Another header (`X-Token`) and an empty prefix send the bare token |
+
+Every signed token is masked as `<SECRET>` in run history, events and reports, like a secret, so an API that echoes it back does not leak it. A payload or header that is not a JSON object, a key that is not a PEM private key of the right kind, or a missing secret fails the node before anything is sent, for example "JWT: ES256 needs a P-256 EC private key".
 
 #### Retry and polling
 

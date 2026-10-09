@@ -2,25 +2,9 @@ import { Suspense } from "react";
 import { Input } from "../atoms/Input";
 import { FormField } from "../molecules/FormField";
 import { registerTemplateCompletion } from "../../utils/monacoTemplateCompletion";
+import { jsonObjectTemplateProblem } from "../../utils/jsonObjectTemplateProblem";
 import { MonacoEditor } from "./lazyMonaco";
 import type { GraphqlBody, GraphqlBodyEditorProps } from "../../types";
-
-/**
- * Why the variables cannot be sent, or undefined. Placeholders stand in for
- * a value (`{{variables.id}}` alone may be a number), so they are filled with
- * one before parsing.
- */
-export function graphqlVariablesProblem(text: string): string | undefined {
-  if (!text.trim()) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(text.replace(/\{\{[^}]+\}\}/g, "0"));
-    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
-      ? undefined
-      : "Variables must be a JSON object";
-  } catch (error) {
-    return error instanceof Error ? error.message : "Invalid JSON";
-  }
-}
 
 function CodeField({
   label,
@@ -109,7 +93,7 @@ export function GraphqlBodyEditor({
       <CodeField
         label="Variables"
         hint='A JSON object. A placeholder standing alone, as in "id": {{variables.userId}}, is inserted as a value.'
-        error={graphqlVariablesProblem(current.variables ?? "")}
+        error={jsonObjectTemplateProblem(current.variables ?? "")}
         language="json"
         height={160}
         value={current.variables ?? ""}

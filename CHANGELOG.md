@@ -278,6 +278,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **JWT Bearer auth.** HTTP nodes can sign a fresh JWT for every request
+  (HS256, RS256 or ES256) from a payload template with placeholders, adding
+  `iat` and, by default, a five-minute `exp`, and send it as a bearer token or
+  in a header of your choice. The signing key is a `{{secrets.NAME}}`
+  reference (a PEM key that lost its line breaks still works), and every
+  signed token is masked in run history and reports.
 - **HTTP Digest auth.** HTTP nodes can authenticate with Digest (RFC 7616,
   MD5 or SHA-256 and their `-sess` variants, `qop=auth`): the request is sent,
   and answered once more with credentials when the server challenges it. The

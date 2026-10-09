@@ -8,6 +8,7 @@ import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { AuthError } from "./auth_error"
 import { signAwsSigV4 } from "./aws_sigv4"
 import { digestAuthorization, parseDigestChallenge } from "./digest_auth"
+import { signJwt } from "./jwt"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
@@ -31,6 +32,7 @@ import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
 import type { AwsSigV4AuthConfig } from "@shared/types/AwsSigV4AuthConfig"
 import type { DigestAuthConfig } from "@shared/types/DigestAuthConfig"
+import type { JwtAuthConfig } from "@shared/types/JwtAuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
 import type { GraphqlBody } from "@shared/types/GraphqlBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
@@ -75,13 +77,14 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4" | "digest"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4" | "digest" | "jwt"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
   readonly oauth2?: OAuth2AuthConfig
   readonly awsSigV4?: AwsSigV4AuthConfig
   readonly digest?: DigestAuthConfig
+  readonly jwt?: JwtAuthConfig
 }
 
 /** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
@@ -2335,6 +2338,15 @@ export class WorkflowExecutor {
       headers["Authorization"] = `Bearer ${await this.oauthToken(auth.oauth2, context)}`
       return
     }
+    if (auth.type === "jwt") {
+      const jwt = auth.jwt
+      const token = this.signedJwt(jwt)
+      // A fresh token per request, and as good as a password until it expires.
+      this.deps.maskValue?.(token)
+      const prefix = jwt?.prefix ?? "Bearer"
+      headers[jwt?.headerName?.trim() || "Authorization"] = prefix ? `${prefix} ${token}` : token
+      return
+    }
     if (auth.type === "bearer" && auth.bearer?.token) {
       headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
     } else if (auth.type === "basic" && auth.basic) {
@@ -2403,6 +2415,30 @@ export class WorkflowExecutor {
     const value = this.deps.secrets?.[name]
     if (value === undefined) throw new AuthError(`${scheme}: secret ${name} is not set`)
     return value
+  }
+
+  /** The JWT for one request: the payload and header filled as JSON templates, `iat` and `exp` added when absent. */
+  private signedJwt(jwt: JwtAuthConfig | undefined): string {
+    const key = this.authSecret("JWT", "signing key", jwt?.secret, true)!
+    const object = (label: string, text: string | undefined): Record<string, unknown> => {
+      if (!text?.trim()) return {}
+      let value: unknown
+      try {
+        value = JSON.parse(this.substituteVariables(text, { json: true }))
+      } catch {
+        throw new AuthError(`JWT: the ${label} is not valid JSON`)
+      }
+      if (typeof value !== "object" || value === null || Array.isArray(value)) throw new AuthError(`JWT: the ${label} must be a JSON object`)
+      return value as Record<string, unknown>
+    }
+    const claims = object("payload", jwt?.payload)
+    const iat = typeof claims["iat"] === "number" ? claims["iat"] : Math.floor(this.deps.clock.now().getTime() / 1000)
+    const payload = {
+      ...claims,
+      iat,
+      ...(jwt?.expiresInSeconds !== undefined && claims["exp"] === undefined ? { exp: iat + jwt.expiresInSeconds } : {}),
+    }
+    return signJwt(jwt?.algorithm ?? "HS256", key, object("header", jwt?.header), payload)
   }
 
   /** Sign the request as it will be sent. A form-data body is encoded first, since the signature covers its bytes. */

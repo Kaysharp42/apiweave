@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto"
 import fs from "node:fs"
 import http from "node:http"
 import os from "node:os"
@@ -221,6 +222,26 @@ describe("apiweave run", () => {
 
         expect(result.code).toBe(EXIT_PASSED)
         expect(api.received).toHaveLength(2)
+      } finally {
+        await api.close()
+      }
+    })
+
+    it("signs a JWT with the key from the environment and masks it in reports", async () => {
+      const api = await startAuthServer((request, response) => {
+        const [header, payload, signature] = String(request.headers["authorization"]).slice("Bearer ".length).split(".")
+        const ok = createHmac("sha256", "ci-jwt-key").update(`${header}.${payload}`).digest("base64url") === signature
+        // Echo the token, so a leak through the response would show.
+        response.writeHead(ok ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify({ token: request.headers.authorization }))
+      })
+      try {
+        const file = authWorkflow(`${api.base}/me`, { type: "jwt", jwt: { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: '{"sub": "ci"}' } })
+        const result = await run(["run", file, "-r", "cli,junit"], { APIWEAVE_SECRET_JWT_KEY: "ci-jwt-key" })
+
+        expect(result.code).toBe(EXIT_PASSED)
+        const token = String(api.received[0]!.headers["authorization"]).slice("Bearer ".length)
+        const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+        for (const output of [result.stdout, junit]) expect(output).not.toContain(token)
       } finally {
         await api.close()
       }

@@ -57,6 +57,7 @@ import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
 import { AwsSigV4AuthFields } from "./AwsSigV4AuthFields";
 import { DigestAuthFields } from "./DigestAuthFields";
+import { JwtAuthFields } from "./JwtAuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
@@ -81,6 +82,7 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "OAuth 2.0", value: "oauth2" },
   { label: "AWS Signature V4", value: "awsSigV4" },
   { label: "Digest", value: "digest" },
+  { label: "JWT Bearer", value: "jwt" },
 ];
 
 function SecretRevealInput({
@@ -832,6 +834,15 @@ export function HTTPRequestConfigPanel({
               onChange={(patch) =>
                 updateAuth({ digest: { ...auth.digest!, ...patch } })
               }
+            />
+          )}
+          {auth.type === "jwt" && auth.jwt && (
+            <JwtAuthFields
+              config={auth.jwt}
+              onChange={(patch) =>
+                updateAuth({ jwt: { ...auth.jwt!, ...patch } })
+              }
+              buttonClass={SELECT_BUTTON_CLASS}
             />
           )}
         </div>

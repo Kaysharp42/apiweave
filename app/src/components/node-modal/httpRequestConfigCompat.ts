@@ -1,4 +1,5 @@
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import { MAX_JWT_LIFETIME_SECONDS } from "@shared/zod-schemas/AuthConfigSchema";
 import {
   DEFAULT_SCRIPT_TIMEOUT_MS,
   MAX_SCRIPT_TIMEOUT_MS,
@@ -167,7 +168,8 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
     value.type === "apiKey" ||
     value.type === "oauth2" ||
     value.type === "awsSigV4" ||
-    value.type === "digest"
+    value.type === "digest" ||
+    value.type === "jwt"
       ? value.type
       : "none";
   const authConfig: AuthConfig = { type };
@@ -229,6 +231,34 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
     authConfig.digest = {
       username: getString(digest.username),
       password: getString(digest.password),
+    };
+  } else if (type === "jwt") {
+    // A token that expires in five minutes, unless the saved config says otherwise.
+    const jwt = isRecord(value.jwt) ? value.jwt : { expiresInSeconds: 300 };
+    const header = getString(jwt.header);
+    const expiresInSeconds = getNumber(jwt.expiresInSeconds, 0);
+    authConfig.jwt = {
+      algorithm:
+        jwt.algorithm === "RS256" || jwt.algorithm === "ES256"
+          ? jwt.algorithm
+          : "HS256",
+      secret: getString(jwt.secret),
+      payload: getString(jwt.payload) || "{}",
+      ...(header ? { header } : {}),
+      ...(expiresInSeconds > 0
+        ? {
+            expiresInSeconds: clampInteger(
+              expiresInSeconds,
+              300,
+              1,
+              MAX_JWT_LIFETIME_SECONDS,
+            ),
+          }
+        : {}),
+      ...(typeof jwt.headerName === "string"
+        ? { headerName: jwt.headerName }
+        : {}),
+      ...(typeof jwt.prefix === "string" ? { prefix: jwt.prefix } : {}),
     };
   }
 

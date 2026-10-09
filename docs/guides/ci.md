@@ -121,9 +121,15 @@ export APIWEAVE_SECRET_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
 export APIWEAVE_SECRET_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
 ```
 
-### Digest
+### Digest and JWT Bearer
 
-Supply the password secret like any other: `APIWEAVE_SECRET_<NAME>`.
+Supply the Digest password or the JWT signing key like any other secret, `APIWEAVE_SECRET_<NAME>`. A PEM private key can be passed with real line breaks or with `\n` in their place:
+
+```bash
+export APIWEAVE_SECRET_JWT_SIGNING_KEY="$(cat signing-key.pem)"
+```
+
+Signed JWTs are masked in the output like secrets.
 
 ## Network: proxy and certificates
 

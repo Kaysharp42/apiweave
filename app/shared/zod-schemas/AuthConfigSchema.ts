@@ -57,9 +57,28 @@ export const DigestAuthConfigSchema = z
   })
   .strict()
 
+/** Longest `expiresInSeconds`: a day. A test token has no business living longer. */
+export const MAX_JWT_LIFETIME_SECONDS = 86_400
+
+export const JwtAuthConfigSchema = z
+  .object({
+    algorithm: z.enum(["HS256", "RS256", "ES256"]),
+    secret: SecretReferenceSchema.describe(
+      'A "{{secrets.NAME}}" reference to the signing key — a literal is rejected: the shared secret for HS256, a PEM private key (RSA for RS256, P-256 EC for ES256) otherwise.',
+    ),
+    payload: z
+      .string()
+      .describe('The claims as JSON object TEXT. Placeholders are substituted JSON-aware. "iat" is added (now) unless set, and "exp" when expiresInSeconds is set.'),
+    header: z.string().optional().describe('Extra JOSE header fields as JSON object text, e.g. "{\"kid\": \"key-1\"}". "alg" is always the algorithm.'),
+    expiresInSeconds: z.number().int().min(1).max(MAX_JWT_LIFETIME_SECONDS).optional().describe("Adds exp = iat + this many seconds, unless the payload sets exp."),
+    headerName: z.string().optional().describe('The header the token is sent in. Defaults to "Authorization".'),
+    prefix: z.string().optional().describe('Written before the token, followed by a space. Defaults to "Bearer"; empty sends the bare token.'),
+  })
+  .strict()
+
 export const AuthConfigSchema = z
   .object({
-    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4", "digest"]),
+    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4", "digest", "jwt"]),
     bearer: BearerAuthConfigSchema.optional(),
     basic: BasicAuthConfigSchema.optional(),
     apiKey: ApiKeyAuthConfigSchema.optional(),
@@ -70,5 +89,6 @@ export const AuthConfigSchema = z
     digest: DigestAuthConfigSchema.optional().describe(
       "HTTP Digest (RFC 7616, MD5 or SHA-256, qop=auth): the request is sent, and answered once more with credentials when the server challenges it with a 401. Does not follow redirects.",
     ),
+    jwt: JwtAuthConfigSchema.optional().describe("Signs a fresh JWT for every request and sends it as a bearer token (or in another header). The signed token is masked in results."),
   })
   .strict()
