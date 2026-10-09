@@ -936,6 +936,17 @@ export function HTTPRequestConfigPanel({
             />
           </FormField>
           <FormField
+            label="Use cookie jar"
+            hint="Send the cookies earlier responses in this run set, and keep the ones this response sets. Off sends only this request's own cookies."
+          >
+            <Toggle
+              checked={draftConfig.useCookieJar ?? true}
+              onChange={(event) =>
+                updateConfig({ useCookieJar: event.target.checked })
+              }
+            />
+          </FormField>
+          <FormField
             label="Continue on failure"
             hint="Overrides the workflow's Continue on Fail setting for this node only — on, it keeps the run going past this request even if the workflow-level setting is off."
           >

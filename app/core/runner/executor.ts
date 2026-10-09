@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
+import { CookieJar } from "tough-cookie"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { collectSseEvents, type SseEvent } from "./sse"
@@ -118,6 +119,12 @@ export interface ExecutorDeps {
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
+  /**
+   * The run's cookie jar: cookies a response sets are sent by later requests
+   * of the same run. Absent: per executor. A Call Workflow child always shares
+   * its caller's, so a login sub-workflow leaves the caller signed in.
+   */
+  readonly cookieJar?: CookieJar
   /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
   readonly oauthTokens?: OAuthTokenCache
   /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
@@ -370,6 +377,7 @@ export class WorkflowExecutor {
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
   private readonly oauthTokens: OAuthTokenCache
+  private readonly cookieJar: CookieJar
   /** Loaded on the first rule that needs it (see `prepareRules`); `matches` is synchronous after that. */
   private regex: RegexSandbox | null = null
   /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
@@ -378,6 +386,7 @@ export class WorkflowExecutor {
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
     this.oauthTokens = deps.oauthTokens ?? new Map()
+    this.cookieJar = deps.cookieJar ?? new CookieJar()
   }
 
   public async executeWorkflow(
@@ -863,6 +872,7 @@ export class WorkflowExecutor {
     const timeout = (config["timeout"] as number | undefined) ?? 30
     const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
     const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const useCookieJar = (config["useCookieJar"] as boolean | undefined) ?? true
     const auth = config["auth"] as HttpAuthConfig | undefined
     const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
     const urlEncodedEntries = config["urlEncodedEntries"] as KVField
@@ -973,6 +983,7 @@ export class WorkflowExecutor {
         followRedirects,
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
+        ...(useCookieJar ? { cookieJar: this.cookieJar } : {}),
       })
       // An OAuth token the API no longer accepts (revoked, rotated, or expired
       // early): fetch a fresh one and send the request once more.
@@ -1231,7 +1242,7 @@ export class WorkflowExecutor {
       const response = await this.deps.http.safeFetch(
         url,
         { method: "GET", headers, signal },
-        { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000 },
+        { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000, cookieJar: this.cookieJar },
       )
       const responseHeaders = toHeaderRecord(response.headers)
       const statusCode = response.status
@@ -1928,7 +1939,7 @@ export class WorkflowExecutor {
     }
 
     const sub = this.deps.subRun?.begin(targetWorkflowId)
-    const childExecutor = new WorkflowExecutor(sub?.deps ?? this.deps)
+    const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
     childExecutor.callDepth = this.callDepth + 1
     let output: ExecutorOutput | undefined
     try {

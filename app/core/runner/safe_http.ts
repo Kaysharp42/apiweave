@@ -1,3 +1,4 @@
+import type { CookieJar } from "tough-cookie"
 import { Agent, Headers, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
 
 /**
@@ -39,6 +40,13 @@ export type SafeFetchOptions = {
   readonly rejectUnauthorized?: boolean
   /** Override the default response/body timeout. Set to zero only for a caller-managed stream lifetime. */
   readonly timeoutMs?: number
+  /**
+   * The run's cookie jar. Each hop sends the cookies it holds for that URL
+   * (RFC 6265 domain, path, Secure and expiry matching) and stores what the
+   * response sets, so a cookie set by a 302 reaches the next hop. A cookie the
+   * request names itself wins over the jar's cookie of the same name.
+   */
+  readonly cookieJar?: CookieJar
 }
 
 export class SafeHttp {
@@ -114,7 +122,9 @@ export class SafeHttp {
     let requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
-      const response = await this.fetchImpl(currentUrl, requestInit)
+      const jar = opts.cookieJar
+      const response = await this.fetchImpl(currentUrl, jar ? withJarCookies(requestInit, jar, currentUrl) : requestInit)
+      if (jar) storeCookies(jar, response, currentUrl)
       const hopResult = this.resolveHop(currentUrl, response, followRedirects, hop)
       if (hopResult.done) return hopResult.response
       await response.body?.cancel()
@@ -262,6 +272,32 @@ let insecureTlsDispatcher: Dispatcher | undefined
 function getInsecureTlsDispatcher(): Dispatcher {
   insecureTlsDispatcher ??= new Agent({ connect: { rejectUnauthorized: false } })
   return insecureTlsDispatcher
+}
+
+/**
+ * `init` with the jar's cookies for `url` added to its Cookie header. The
+ * jar's cookies are added per hop and never written back into the init the
+ * redirect chain carries, so a cross-origin hop drops the user's own Cookie
+ * header and still gets the jar's cookies for the new host.
+ */
+function withJarCookies(init: RequestInit, jar: CookieJar, url: string): RequestInit {
+  const headers = new Headers(init.headers)
+  const own = headers.get("cookie")
+  const ownNames = new Set((own ?? "").split(";").map((pair) => pair.split("=")[0]!.trim()))
+  const fromJar = jar
+    .getCookiesSync(url)
+    .filter((cookie) => !ownNames.has(cookie.key))
+    .map((cookie) => cookie.cookieString())
+  if (fromJar.length === 0) return init
+  headers.set("cookie", [...fromJar, ...(own ? [own] : [])].join("; "))
+  return { ...init, headers }
+}
+
+/** Store every Set-Cookie of `response`; one the jar refuses (another domain, a public suffix) is dropped. */
+function storeCookies(jar: CookieJar, response: Response, url: string): void {
+  for (const setCookie of response.headers.getSetCookie()) {
+    jar.setCookieSync(setCookie, url, { ignoreError: true })
+  }
 }
 
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"]

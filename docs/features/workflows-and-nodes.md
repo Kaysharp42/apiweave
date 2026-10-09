@@ -87,7 +87,8 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `query params` | Structured key/value rows, each with an active toggle |
 | `path variables` | Named segments of the URL path (`/users/:id`) with their values |
 | `headers` | Structured key/value rows, each with an active toggle |
-| `cookies` | Structured key/value rows, each with an active toggle |
+| `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
+| `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
 | `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
@@ -103,6 +104,24 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
 **Handles:** one input, one output.
+
+#### Cookies
+
+Every run has its own cookie jar. A `Set-Cookie` on any response, including a
+redirect, is stored, and every later request in the run — the next hop of a
+redirect, the next node, an SSE Stream — sends the cookies that match its URL,
+the way a browser does: by domain (a host-only cookie goes only to the host
+that set it, a `Domain` cookie to its subdomains too), by path, `Secure` only
+over HTTPS (or to localhost), and never after it expires or is deleted with
+`Max-Age=0`. `HttpOnly` and `SameSite` do not apply outside a browser. A login
+node that receives a session cookie therefore signs in every request after it,
+without extracting and re-sending it.
+
+The jar starts empty with each run. A Call Workflow node shares its caller's
+jar both ways, so a login sub-workflow leaves the caller signed in. Each
+workflow of a project run and each iteration of a data-driven run is its own
+run, with its own jar. Turn **Use cookie jar** off on a node to send it
+without the session, for a negative test.
 
 #### Response schemas
 

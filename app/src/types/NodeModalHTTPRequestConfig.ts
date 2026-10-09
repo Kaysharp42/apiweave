@@ -22,6 +22,7 @@ export interface NodeModalHTTPRequestConfig {
   auth?: AuthConfig;
   followRedirects?: boolean;
   sslVerify?: boolean;
+  useCookieJar?: boolean;
   continueOnFail?: boolean;
   expectedStatus?: number | number[] | undefined;
   retry?: NodeModalHttpRetryConfig | undefined;

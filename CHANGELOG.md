@@ -278,6 +278,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Automatic cookies.** Each run keeps a cookie jar: a cookie a response sets,
+  including on a redirect, is sent by every later request of the run that it
+  matches by domain, path, `Secure` and expiry, so a session-cookie login works
+  across nodes without extracting the cookie. A Call Workflow child shares its
+  caller's jar. A node's own cookie rows override the jar's cookie of the same
+  name, and **Use cookie jar** (on by default) turns it off for one request.
 - **Response validation: regex, type and JSON Schema operators.** Assertion
   rules (and Retry `until` rules and SSE finish conditions) gain `matches` and
   `notMatches` (a regular expression, bare or `/pattern/flags`), `type`

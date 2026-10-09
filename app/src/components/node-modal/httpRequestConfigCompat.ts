@@ -323,6 +323,7 @@ export function normalizeHttpRequestConfig(
     auth: normalizeAuthConfig(config.auth),
     followRedirects: getBoolean(config.followRedirects, true),
     sslVerify: getBoolean(config.sslVerify, true),
+    useCookieJar: getBoolean(config.useCookieJar, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
     retry: normalizeRetry(config.retry),

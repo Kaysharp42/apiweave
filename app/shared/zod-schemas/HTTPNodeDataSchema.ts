@@ -46,6 +46,10 @@ export const HTTPNodeDataSchema = z
     timeout: z.number().int().positive().optional().describe("Request timeout in seconds."),
     followRedirects: z.boolean().optional(),
     sslVerify: z.boolean().optional(),
+    useCookieJar: z
+      .boolean()
+      .optional()
+      .describe("Send the cookies earlier responses in this run set, and keep the ones this response sets. Defaults to true; false sends only this node's own cookies."),
     continueOnFail: z.boolean().optional().describe("When true, a failed request lets the run continue down the outgoing edge instead of stopping the branch."),
     expectedStatus: z
       .union([z.number().int().min(100).max(599), z.array(z.number().int().min(100).max(599)).min(1)])
