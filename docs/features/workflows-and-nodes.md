@@ -89,7 +89,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `headers` | Structured key/value rows, each with an active toggle |
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
-| `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20) or [AWS Signature V4](#aws-signature-v4). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
@@ -207,6 +207,16 @@ During a run:
 - A run never opens a browser. When no token has been fetched, or it expired with no refresh token, the node fails with a message saying to use **Get token**. This also applies to runs an agent starts over MCP.
 
 Token endpoint failures fail the node with the status and the OAuth error code, for example "OAuth 2.0 token request failed: HTTP 401 (invalid_client)". The token endpoint is listed among the destinations when an agent-started run asks to use your secrets.
+
+#### AWS Signature V4
+
+Choose **AWS Signature V4** on the **Auth** tab to sign requests to AWS APIs (API Gateway with IAM auth, Lambda function URLs, S3, OpenSearch...) the way the AWS SDKs do. Set the access key ID, the secret access key, the region and the service's signing name (`execute-api`, `s3`, `lambda`, `es`...), and for temporary credentials the session token, sent as `X-Amz-Security-Token`.
+
+The secret access key and the session token are secret *names*, stored as `{{secrets.NAME}}`; a literal is refused. The access key ID, region and service accept placeholders, so the key ID can come from `{{env.AWS_ACCESS_KEY_ID}}`.
+
+The request is signed last, over exactly what is sent: after placeholders, the other auth fields and the [pre-request script](scripting.md) have done their work, and again on every [retry](#retry-and-polling) attempt. The signature covers the method, the path, the query string (sent in the sorted, percent-encoded form it was signed in), the body's SHA-256 and every header the node sets (not `Cookie` or `User-Agent`). `X-Amz-Date` is added; for `s3`, so is `X-Amz-Content-Sha256`. A form-data body is encoded before it is signed. A signed request does not follow redirects, since a signature is only good for the URL it was made for: a 3xx comes back as the node's response.
+
+A missing secret fails the node before anything is sent, for example "AWS Signature V4: secret AWS_SECRET_ACCESS_KEY is not set". In the [CLI](../guides/ci.md), supply the secrets like any other.
 
 #### Retry and polling
 

@@ -57,6 +57,16 @@ describe("sanitizeExportValue", () => {
     expect(sanitized.graphql.variables).toContain("{{variables.otp}}")
   })
 
+  it("keeps an AWS Signature V4 config's secret references and blanks a literal in their place", () => {
+    const sanitized = sanitizeExportValue({
+      auth: {
+        type: "awsSigV4",
+        awsSigV4: { accessKeyId: "AKID", secretAccessKey: "literal-secret-key", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" },
+      },
+    }) as { auth: { awsSigV4: Record<string, unknown> } }
+    expect(sanitized.auth.awsSigV4).toEqual({ accessKeyId: "AKID", secretAccessKey: "", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" })
+  })
+
   it("keeps an OAuth 2.0 config's secret references and blanks anything else in their place", () => {
     const sanitized = sanitizeExportValue({
       auth: {

@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
+import { AWS_ACCESS_KEY_ID, AWS_SECRET, startServer as startAuthServer, verifyAwsSignature } from "../../runner/__tests__/auth_test_servers"
 import {
   PFX_PASSPHRASE,
   fixturePath,
@@ -170,6 +171,37 @@ describe("apiweave run", () => {
         expect(idp.apiCalls).toEqual(["Bearer tok-1-abcdef"])
       } finally {
         await idp.close()
+      }
+    })
+  })
+
+  describe("signed auth", () => {
+    /** The fixture's workflow, its one request sent to `url` with `auth`. */
+    function authWorkflow(url: string, auth: Record<string, unknown>): string {
+      const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; config?: object }[] }[] }
+      const workflow = project.workflows[0]!
+      workflow.nodes = workflow.nodes
+        .filter((node) => node.nodeId !== "check-status")
+        .map((node) => (node.nodeId === "get-health" ? { ...node, config: { url, auth } } : node))
+      fs.writeFileSync(path.join(dir, "auth.json"), JSON.stringify({ workflow }))
+      return "auth.json"
+    }
+
+    it("signs with AWS Signature V4 from secrets in the environment", async () => {
+      const api = await startAuthServer(verifyAwsSignature)
+      try {
+        const file = authWorkflow(`${api.base}/items`, {
+          type: "awsSigV4",
+          awsSigV4: { accessKeyId: AWS_ACCESS_KEY_ID, secretAccessKey: "{{secrets.AWS_SECRET}}", region: "eu-west-1", service: "execute-api" },
+        })
+        const result = await run(["run", file], { APIWEAVE_SECRET_AWS_SECRET: AWS_SECRET })
+
+        expect(result.stderr).toBe("")
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(api.received).toHaveLength(1)
+        expect(result.stdout).not.toContain(AWS_SECRET)
+      } finally {
+        await api.close()
       }
     })
   })

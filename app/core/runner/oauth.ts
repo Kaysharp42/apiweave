@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto"
 import { describeNetworkError, type SafeHttp } from "./safe_http"
+import { AuthError } from "./auth_error"
 
 /**
  * OAuth 2.0 for HTTP nodes: the token endpoint client, the token cache, PKCE,
@@ -10,7 +11,7 @@ import { describeNetworkError, type SafeHttp } from "./safe_http"
  * (see `safeErrorClass`), so they may hold secret NAMES, hosts, HTTP statuses
  * and spec-defined OAuth error codes, never a token, a secret or a body.
  */
-export class OAuthError extends Error {
+export class OAuthError extends AuthError {
   public override readonly name = "OAuthError"
 }
 

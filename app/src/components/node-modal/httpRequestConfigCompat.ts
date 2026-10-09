@@ -165,7 +165,8 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
     value.type === "bearer" ||
     value.type === "basic" ||
     value.type === "apiKey" ||
-    value.type === "oauth2"
+    value.type === "oauth2" ||
+    value.type === "awsSigV4"
       ? value.type
       : "none";
   const authConfig: AuthConfig = { type };
@@ -211,6 +212,16 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
             tokenSecret: getString(oauth2.tokenSecret),
           }
         : {}),
+    };
+  } else if (type === "awsSigV4") {
+    const aws = isRecord(value.awsSigV4) ? value.awsSigV4 : {};
+    const sessionToken = getString(aws.sessionToken);
+    authConfig.awsSigV4 = {
+      accessKeyId: getString(aws.accessKeyId),
+      secretAccessKey: getString(aws.secretAccessKey),
+      region: getString(aws.region),
+      service: getString(aws.service),
+      ...(sessionToken ? { sessionToken } : {}),
     };
   }
 

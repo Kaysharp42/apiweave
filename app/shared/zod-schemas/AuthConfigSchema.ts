@@ -40,12 +40,25 @@ export const OAuth2AuthConfigSchema = z
   })
   .strict()
 
+export const AwsSigV4AuthConfigSchema = z
+  .object({
+    accessKeyId: z.string().describe("The access key ID. Placeholders are substituted."),
+    secretAccessKey: SecretReferenceSchema.describe('A "{{secrets.NAME}}" reference to the secret access key — a literal is rejected.'),
+    sessionToken: SecretReferenceSchema.optional().describe('Temporary credentials: a "{{secrets.NAME}}" reference to the session token, sent as X-Amz-Security-Token.'),
+    region: z.string().describe('The region, e.g. "us-east-1". Placeholders are substituted.'),
+    service: z.string().describe('The signing name of the service, e.g. "execute-api", "s3", "lambda". Placeholders are substituted.'),
+  })
+  .strict()
+
 export const AuthConfigSchema = z
   .object({
-    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2"]),
+    type: z.enum(["none", "bearer", "basic", "apiKey", "oauth2", "awsSigV4"]),
     bearer: BearerAuthConfigSchema.optional(),
     basic: BasicAuthConfigSchema.optional(),
     apiKey: ApiKeyAuthConfigSchema.optional(),
     oauth2: OAuth2AuthConfigSchema.optional(),
+    awsSigV4: AwsSigV4AuthConfigSchema.optional().describe(
+      "Signs the final request (after the pre-request script) with AWS Signature Version 4, on every attempt. A signed request does not follow redirects.",
+    ),
   })
   .strict()

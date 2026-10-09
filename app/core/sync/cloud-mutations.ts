@@ -16,6 +16,7 @@ import {
   mapForbiddenKeyFilteredEntries,
   redactBodyLeaves,
   referenceOrBlank,
+  SECRET_REFERENCE_AUTH_FIELDS,
   sanitizeExtractorValues,
   sanitizeUrlWithReferences,
 } from "../services/secret_utils"
@@ -323,7 +324,12 @@ function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
 // key-name heuristic happened to fire while walking the copy.
 function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
-  const leaves = [["bearer", ["token"]], ["basic", ["password"]], ["apiKey", ["value"]], ["oauth2", ["clientSecret", "tokenSecret"]]] as const
+  const leaves: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ["bearer", ["token"]],
+    ["basic", ["password"]],
+    ["apiKey", ["value"]],
+    ...SECRET_REFERENCE_AUTH_FIELDS,
+  ]
   for (const [parent, names] of leaves) {
     const raw = auth[parent]
     if (!isRecord(raw)) continue

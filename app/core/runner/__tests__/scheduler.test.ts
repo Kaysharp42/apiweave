@@ -1306,6 +1306,41 @@ describe("agent-started runs that use secrets", () => {
     expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
   })
 
+  it("asks before a signed auth scheme uses its secrets, naming every one", async () => {
+    const ws = seedWorkspace()
+    const auths = [
+      { type: "awsSigV4", awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" } },
+    ]
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "signed",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        ...auths.map((auth, index) => ({
+          nodeId: `http_${index}`,
+          type: "http-request",
+          position: { x: index + 1, y: 0 },
+          config: { url: "https://api.example.com/x", auth },
+        })),
+      ] as WorkflowNode[],
+      edges: auths.map((_auth, index) => ({ edgeId: `e${index}`, source: index === 0 ? "start" : `http_${index - 1}`, target: `http_${index}` })),
+    }).workflowId
+    const asked: AgentRunApprovalRequest[] = []
+    const scheduler = makeScheduler({
+      resolveSecret: async () => ({ plaintext: "value", scopeType: "workspace" }),
+      approveAgentRun: async (request) => {
+        asked.push(request)
+        return false
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
+    await scheduler.whenFinished(runId)
+
+    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN"])
+    expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+  })
+
   it("runs normally once the user allows it", async () => {
     const server = await startServer()
     const ws = seedWorkspace()
@@ -1503,5 +1538,33 @@ describe("OAuth 2.0 runs", () => {
     expect(saved[0]).toMatchObject({ name: "API_TOKEN", scope: { workspaceId: ws, scopeType: "workspace", scopeId: ws } })
     expect(JSON.parse(saved[0]!.value)).toMatchObject({ accessToken: "tok-1-abcdef", refreshToken: "refresh-1" })
     expect(JSON.stringify(runs.getById(runId))).not.toContain("tok-1-abcdef")
+  })
+})
+
+describe("signed auth runs", () => {
+  function seedAuthWorkflow(ws: string, url: string, auth: Record<string, unknown>): string {
+    return workflows.create({
+      workspaceId: ws,
+      name: "signed-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call", type: "http-request", position: { x: 1, y: 0 }, config: { url, auth, extractors: { echoed: "response.body.youSent" } } },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    }).workflowId
+  }
+
+  it("keeps a signing failure's message in history, since it names the secret and not its value", async () => {
+    const ws = seedWorkspace()
+    const workflowId = seedAuthWorkflow(ws, "http://127.0.0.1:9/x", {
+      type: "awsSigV4",
+      awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", region: "us-east-1", service: "execute-api" },
+    })
+    const scheduler = makeScheduler({ resolveSecret: async () => ({ plaintext: null, scopeType: null }) })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    await scheduler.whenFinished(runId)
+
+    const call = runs.getById(runId)!.results.find((result) => result.nodeId === "call")
+    expect(call?.error).toBe("AWS Signature V4: secret AWS_SECRET is not set")
   })
 })

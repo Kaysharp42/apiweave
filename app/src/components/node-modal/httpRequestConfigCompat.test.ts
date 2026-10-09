@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { OAuth2AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
 import { normalizeAuthConfig, normalizeExpectedStatus, normalizeHttpRequestConfig, normalizeRetry } from "./httpRequestConfigCompat";
 import { graphqlVariablesProblem } from "./GraphqlBodyEditor";
-import { oauth2Problems, secretNameOf, secretReferenceFor } from "./OAuth2AuthFields";
+import { oauth2Problems } from "./OAuth2AuthFields";
+import { awsSigV4Problems } from "./AwsSigV4AuthFields";
+import { AwsSigV4AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
+import { secretNameOf, secretReferenceFor } from "./SecretNameField";
 
 describe("normalizeAuthConfig", () => {
   it("drops stale sub-configs from other auth types", () => {
@@ -131,5 +134,26 @@ describe("GraphQL body", () => {
     expect(graphqlVariablesProblem("")).toBeUndefined();
     expect(graphqlVariablesProblem("[1]")).toBe("Variables must be a JSON object");
     expect(graphqlVariablesProblem("{oops")).toBeDefined();
+  });
+});
+
+describe("AWS Signature V4 auth", () => {
+  it("normalizes to a schema-valid config, dropping an empty session token", () => {
+    const auth = normalizeAuthConfig({ type: "awsSigV4", awsSigV4: { region: "us-east-1", sessionToken: "" }, bearer: { token: "stale" } });
+    expect(auth).toEqual({
+      type: "awsSigV4",
+      awsSigV4: { accessKeyId: "", secretAccessKey: "", region: "us-east-1", service: "" },
+    });
+    expect(AwsSigV4AuthConfigSchema.safeParse(auth.awsSigV4).success).toBe(true);
+  });
+
+  it("names every field still missing", () => {
+    const problems = awsSigV4Problems({ accessKeyId: "AKID", secretAccessKey: "", region: " ", service: "s3" });
+    expect(problems).toEqual({
+      accessKeyId: "",
+      secretAccessKey: "Name the secret holding the secret access key",
+      region: "Enter the region",
+      service: "",
+    });
   });
 });

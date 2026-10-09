@@ -112,6 +112,15 @@ export APIWEAVE_SECRET_API_OAUTH="$REFRESH_TOKEN"
 
 The refreshed tokens are not saved anywhere. If your provider rotates refresh tokens on every use, the one you supplied stops working after one run: use a client-credentials client for CI where you can.
 
+### AWS Signature V4
+
+Signed requests run as in the app. Supply the secret access key (and the session token for temporary credentials) as secrets, for example from the credentials your CI's AWS role provides:
+
+```bash
+export APIWEAVE_SECRET_AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+export APIWEAVE_SECRET_AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN"
+```
+
 ## Network: proxy and certificates
 
 The CLI has the flags for what the app's [Settings > Network](../features/network.md) holds:

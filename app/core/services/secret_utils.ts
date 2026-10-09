@@ -539,6 +539,12 @@ const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
  * slot, not the secret, so another user re-importing the bundle keeps their own
  * `{{variables.token}}` wiring instead of finding `<SECRET>` in its place.
  */
+/** Auth sub-configs whose secret fields are `{{secrets.NAME}}` references only, by auth type. */
+export const SECRET_REFERENCE_AUTH_FIELDS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["oauth2", ["clientSecret", "tokenSecret"]],
+  ["awsSigV4", ["secretAccessKey", "sessionToken"]],
+]
+
 function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = { ...auth }
   const { bearer, basic, apiKey } = sanitized
@@ -552,15 +558,14 @@ function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<st
   if (isRecord(apiKey) && typeof apiKey["value"] === "string") {
     sanitized["apiKey"] = { ...apiKey, value: leaf(apiKey["value"]) }
   }
-  // OAuth 2.0 holds only `{{secrets.NAME}}` references (the schema refuses a
-  // literal); anything else blanks to "" so the bundle still imports.
-  const { oauth2 } = sanitized
-  if (isRecord(oauth2)) {
-    sanitized["oauth2"] = {
-      ...oauth2,
-      ...(oauth2["clientSecret"] === undefined ? {} : { clientSecret: referenceOrBlank(oauth2["clientSecret"], "") }),
-      ...(oauth2["tokenSecret"] === undefined ? {} : { tokenSecret: referenceOrBlank(oauth2["tokenSecret"], "") }),
-    }
+  // These secret fields hold only `{{secrets.NAME}}` references (the schema
+  // refuses a literal); anything else blanks to "" so the bundle still imports.
+  for (const [type, fields] of SECRET_REFERENCE_AUTH_FIELDS) {
+    const config = sanitized[type]
+    if (!isRecord(config)) continue
+    const redacted = { ...config }
+    for (const field of fields) if (config[field] !== undefined) redacted[field] = referenceOrBlank(config[field], "")
+    sanitized[type] = redacted
   }
   return sanitized
 }

@@ -278,6 +278,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **AWS Signature V4 auth.** HTTP nodes can sign their requests for AWS APIs
+  with an access key ID, a secret access key and an optional session token
+  (both `{{secrets.NAME}}` references), a region and a service. The request is
+  signed last, after the pre-request script, and again on every retry attempt;
+  a signed request does not follow redirects. Works in the CLI with secrets
+  from the environment.
 - **GraphQL requests.** HTTP nodes gain a GraphQL body type with a
   highlighted query editor, a JSON variables editor and an optional operation
   name. It is sent as `{query, variables, operationName}` JSON, or as query

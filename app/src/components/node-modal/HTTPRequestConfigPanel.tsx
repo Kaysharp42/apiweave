@@ -55,6 +55,7 @@ import { AssertionRulesEditor } from "../molecules/AssertionRulesEditor";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
+import { AwsSigV4AuthFields } from "./AwsSigV4AuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
 import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
@@ -77,6 +78,7 @@ const AUTH_OPTIONS: SelectOption[] = [
   { label: "Basic Auth", value: "basic" },
   { label: "API Key", value: "apiKey" },
   { label: "OAuth 2.0", value: "oauth2" },
+  { label: "AWS Signature V4", value: "awsSigV4" },
 ];
 
 function SecretRevealInput({
@@ -812,6 +814,14 @@ export function HTTPRequestConfigPanel({
                 updateAuth({ oauth2: { ...auth.oauth2!, ...patch } })
               }
               buttonClass={SELECT_BUTTON_CLASS}
+            />
+          )}
+          {auth.type === "awsSigV4" && auth.awsSigV4 && (
+            <AwsSigV4AuthFields
+              config={auth.awsSigV4}
+              onChange={(patch) =>
+                updateAuth({ awsSigV4: { ...auth.awsSigV4!, ...patch } })
+              }
             />
           )}
         </div>

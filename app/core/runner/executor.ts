@@ -1,10 +1,12 @@
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, Response as UndiciResponse, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { CookieJar } from "tough-cookie"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
+import { AuthError } from "./auth_error"
+import { signAwsSigV4 } from "./aws_sigv4"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
 import { RegexSandbox } from "./regex_sandbox"
@@ -26,6 +28,7 @@ import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
+import type { AwsSigV4AuthConfig } from "@shared/types/AwsSigV4AuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
 import type { GraphqlBody } from "@shared/types/GraphqlBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
@@ -70,11 +73,12 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
   readonly oauth2?: OAuth2AuthConfig
+  readonly awsSigV4?: AwsSigV4AuthConfig
 }
 
 /** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
@@ -87,6 +91,11 @@ interface AuthRequestContext {
 }
 
 const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/
+
+/** The NAME of a whole `{{secrets.NAME}}` reference, the only form an auth secret field holds. */
+function secretNameOf(reference: string | undefined): string | undefined {
+  return reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
+}
 
 interface FormDataEntryLike {
   readonly key: string
@@ -871,10 +880,11 @@ export class WorkflowExecutor {
     const body = config["body"] as string | Record<string, unknown> | undefined
     const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
-    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
+    const auth = config["auth"] as HttpAuthConfig | undefined
+    // A signature covers one URL: a redirect would carry it somewhere it does not fit.
+    const followRedirects = auth?.type !== "awsSigV4" && ((config["followRedirects"] as boolean | undefined) ?? true)
     const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
     const useCookieJar = (config["useCookieJar"] as boolean | undefined) ?? true
-    const auth = config["auth"] as HttpAuthConfig | undefined
     const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
     const urlEncodedEntries = config["urlEncodedEntries"] as KVField
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
@@ -916,7 +926,7 @@ export class WorkflowExecutor {
         signal: cancelSignal, timeoutMs: timeout * 1000, sslVerify, forceRefresh: forceRefreshToken,
       })
     } catch (authError) {
-      if (!(authError instanceof OAuthError)) throw authError
+      if (!(authError instanceof AuthError)) throw authError
       return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
     }
 
@@ -952,6 +962,16 @@ export class WorkflowExecutor {
     }
     const withScripts = (result: NodeResult): NodeResult =>
       withExtractorOutcomes(preRequest ? { ...result, scripts: [preRequest] } : result)
+
+    // Signed last, over exactly what is sent — after the script, on every attempt.
+    if (auth?.type === "awsSigV4") {
+      try {
+        ({ url, headers, body: fetchBody } = await this.signAwsRequest(auth.awsSigV4, method, url, headers, fetchBody))
+      } catch (authError) {
+        if (!(authError instanceof AuthError)) throw authError
+        return withScripts({ status: "error", error: authError.message, method, url, duration: 0 })
+      }
+    }
 
     // A placeholder `substituteVariables` could not resolve is left in the
     // request verbatim, so the assembled end state tells us what went out
@@ -1220,21 +1240,25 @@ export class WorkflowExecutor {
     url = this.substituteVariables(url, { allowSecrets: false })
     if (this.deps.baseUrl && !url.startsWith("http")) url = `${this.deps.baseUrl}${url}`
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
-    const headers = this.normalizeKeyValueField(config["headers"] as KVField)
+    let headers = this.normalizeKeyValueField(config["headers"] as KVField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
+    const followSseRedirects = followRedirects && auth?.type !== "awsSigV4"
     try {
       await this.applyAuthConfig(auth, headers, queryParams, {
         // A zero SSE timeout means "no deadline" for the stream, not for the token request.
         signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
       })
+      for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
+      headers["Accept"] = "text/event-stream"
+      url = appendQueryParams(url, queryParams)
+      if (auth?.type === "awsSigV4") {
+        ({ url, headers } = await this.signAwsRequest(auth.awsSigV4, "GET", url, headers, undefined))
+      }
     } catch (authError) {
-      if (!(authError instanceof OAuthError)) throw authError
+      if (!(authError instanceof AuthError)) throw authError
       this.completeSseNode(node, { status: "error", error: authError.message, method: "GET", url, duration: 0 }, startedAt, secretRefs)
       return false
     }
-    for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
-    headers["Accept"] = "text/event-stream"
-    url = appendQueryParams(url, queryParams)
     const unresolvedPlaceholders = collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)])
     const abortController = new AbortController()
     const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
@@ -1245,7 +1269,7 @@ export class WorkflowExecutor {
       const response = await this.deps.http.safeFetch(
         url,
         { method: "GET", headers, signal },
-        { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000, cookieJar: this.cookieJar },
+        { followRedirects: followSseRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000, cookieJar: this.cookieJar },
       )
       const responseHeaders = toHeaderRecord(response.headers)
       const statusCode = response.status
@@ -2309,14 +2333,12 @@ export class WorkflowExecutor {
   private async oauthToken(oauth2: OAuth2AuthConfig, context: AuthRequestContext): Promise<string> {
     // The client secret and the token are the only places secrets may go, and
     // only as whole `{{secrets.NAME}}` references (the schema enforces it).
-    const secretName = (reference: string | undefined): string | undefined =>
-      reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
-    const clientSecretName = secretName(oauth2.clientSecret)
+    const clientSecretName = secretNameOf(oauth2.clientSecret)
     const clientSecret = clientSecretName === undefined ? undefined : this.deps.secrets?.[clientSecretName]
     if (clientSecretName !== undefined && clientSecret === undefined) {
       throw new OAuthError(`OAuth 2.0: secret ${clientSecretName} is not set`)
     }
-    const tokenSecretName = secretName(oauth2.tokenSecret)
+    const tokenSecretName = secretNameOf(oauth2.tokenSecret)
     const storedToken = tokenSecretName === undefined ? undefined : this.deps.secrets?.[tokenSecretName]
     const fill = (text: string | undefined): string | undefined =>
       text ? this.substituteVariables(text, { allowSecrets: false }) : undefined
@@ -2344,6 +2366,54 @@ export class WorkflowExecutor {
       },
       context.forceRefresh,
     )
+  }
+
+  /**
+   * The value of a `{{secrets.NAME}}` auth field; `scheme` names the auth in
+   * the error. Absent and optional: undefined.
+   */
+  private authSecret(scheme: string, label: string, reference: string | undefined, required: boolean): string | undefined {
+    const name = secretNameOf(reference)
+    if (name === undefined) {
+      if (required) throw new AuthError(`${scheme}: no ${label} secret is set on the node`)
+      return undefined
+    }
+    const value = this.deps.secrets?.[name]
+    if (value === undefined) throw new AuthError(`${scheme}: secret ${name} is not set`)
+    return value
+  }
+
+  /** Sign the request as it will be sent. A form-data body is encoded first, since the signature covers its bytes. */
+  private async signAwsRequest(
+    config: AwsSigV4AuthConfig | undefined,
+    method: string,
+    url: string,
+    headers: Record<string, string>,
+    body: string | Buffer | UndiciFormData | undefined,
+  ): Promise<{ url: string; headers: Record<string, string>; body: string | Buffer | undefined }> {
+    const scheme = "AWS Signature V4"
+    const fill = (text: string | undefined): string => this.substituteVariables(text ?? "", { allowSecrets: false }).trim()
+    const accessKeyId = this.substituteVariables(config?.accessKeyId ?? "").trim()
+    const region = fill(config?.region)
+    const service = fill(config?.service)
+    if (!accessKeyId || !region || !service) throw new AuthError(`${scheme}: the access key ID, region and service are required`)
+    const secretAccessKey = this.authSecret(scheme, "secret access key", config?.secretAccessKey, true)!
+    const sessionToken = this.authSecret(scheme, "session token", config?.sessionToken, false)
+    let bytes: string | Buffer | undefined
+    const sent = { ...headers }
+    if (body instanceof UndiciFormData) {
+      const encoded = new UndiciResponse(body)
+      bytes = Buffer.from(await encoded.arrayBuffer())
+      for (const name of Object.keys(sent)) if (name.toLowerCase() === "content-type") delete sent[name]
+      sent["Content-Type"] = encoded.headers.get("content-type") ?? ""
+    } else {
+      bytes = body
+    }
+    const signed = signAwsSigV4(
+      { method, url, headers: sent, body: method.toUpperCase() === "GET" ? undefined : bytes, region, service, now: this.deps.clock.now() },
+      { accessKeyId, secretAccessKey, ...(sessionToken === undefined ? {} : { sessionToken }) },
+    )
+    return { url: signed.url, headers: signed.headers, body: bytes }
   }
 
   /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */
