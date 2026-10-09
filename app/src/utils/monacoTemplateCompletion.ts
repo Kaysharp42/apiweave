@@ -126,4 +126,5 @@ export function registerTemplateCompletion(monaco: Monaco): void {
   };
 
   monaco.languages.registerCompletionItemProvider("json", provider);
+  monaco.languages.registerCompletionItemProvider("graphql", provider);
 }

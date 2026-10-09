@@ -283,3 +283,81 @@ describe("WorkflowExecutor — placeholders in JSON bodies", () => {
     expect(asText).toBe(`name="${awkward}"`)
   })
 })
+
+describe("WorkflowExecutor — GraphQL bodies", () => {
+  const query = "query User($id: ID!, $name: String) { user(id: $id, name: $name) { id } }"
+  const graphql = {
+    query: `${query} # by {{variables.who}}`,
+    variables: '{"id": {{variables.id}}, "name": "{{variables.name}}", "filter": {{variables.filter}}}',
+    operationName: "User",
+  }
+  const variables = { who: "ci", id: 42, name: 'say "hi"\\', filter: { active: true } }
+
+  async function send(method: string, config: Record<string, unknown>, response = () => new Response("{}", { status: 200 })) {
+    const { executor, captured } = makeExecutorWithCapture(response)
+    const output = await executor.executeWorkflow({
+      ...singleHttpNodeWorkflow({ method, url: "http://localhost/graphql", bodyType: "graphql", ...config }),
+      variables,
+    })
+    return { output, request: captured[0] }
+  }
+
+  it("POSTs {query, variables, operationName} as JSON, the variables a JSON template", async () => {
+    const { request } = await send("POST", { graphql })
+    expect(request!.url).toBe("http://localhost/graphql")
+    expect((request!.init.headers as Record<string, string>)["Content-Type"]).toBe("application/json")
+    expect(JSON.parse(request!.init.body as string)).toEqual({
+      query: `${query} # by ci`,
+      variables: { id: 42, name: 'say "hi"\\', filter: { active: true } },
+      operationName: "User",
+    })
+  })
+
+  it("leaves out empty variables and operation name, and keeps a Content-Type the user set", async () => {
+    const { request } = await send("POST", {
+      graphql: { query: "{ me { id } }", variables: "  " },
+      headers: [{ key: "content-type", value: "application/graphql+json" }],
+    })
+    expect(JSON.parse(request!.init.body as string)).toEqual({ query: "{ me { id } }" })
+    expect((request!.init.headers as Record<string, string>)["Content-Type"]).toBeUndefined()
+  })
+
+  it("sends a GET as query, variables and operationName parameters, with no body", async () => {
+    const { request } = await send("GET", { graphql })
+    const url = new URL(request!.url)
+    expect(url.searchParams.get("query")).toBe(`${query} # by ci`)
+    expect(JSON.parse(url.searchParams.get("variables")!)).toEqual({ id: 42, name: 'say "hi"\\', filter: { active: true } })
+    expect(url.searchParams.get("operationName")).toBe("User")
+    expect(request!.init.body).toBeUndefined()
+  })
+
+  it("fails the node without sending when the variables are not a JSON object", async () => {
+    for (const bad of ["{oops", "[1, 2]"]) {
+      const { output, request } = await send("POST", { graphql: { query: "{ me }", variables: bad } })
+      expect(request).toBeUndefined()
+      expect(output.results[0]!.error).toMatch(/^Failed to build request body: Error: GraphQL variables (are not valid JSON|must be a JSON object)$/)
+    }
+  })
+
+  it("lets an assertion fail a 200 response that carries GraphQL errors", async () => {
+    const { executor } = makeExecutorWithCapture(
+      () => new Response(JSON.stringify({ data: null, errors: [{ message: "not found" }] }), { status: 200 }),
+    )
+    const output = await executor.executeWorkflow({
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "gql", type: "http-request", config: { method: "POST", url: "http://localhost/graphql", bodyType: "graphql", graphql: { query: "{ me }" } } },
+        { nodeId: "check", type: "assertion", config: { assertions: [{ source: "prev", path: "response.body.errors", operator: "notExists" }] } },
+        { nodeId: "end", type: "end" },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "gql" },
+        { edgeId: "e2", source: "gql", target: "check" },
+        { edgeId: "e3", source: "check", target: "end", sourceHandle: "pass" },
+      ],
+    })
+    expect(output.nodeStatuses["gql"]).toBe("passed")
+    expect(output.nodeStatuses["check"]).toBe("failed")
+    expect(output.status).toBe("failed")
+  })
+})

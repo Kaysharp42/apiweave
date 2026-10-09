@@ -98,11 +98,11 @@ describe("Postman collection conversion", () => {
       formDataEntries: [{ key: "note", value: "monthly", type: "text", active: true }],
     })
     const graphql = request("Search products")
-    expect(graphql["bodyType"]).toBe("json")
-    expect(JSON.parse((graphql["body"] as string).replace("{{env.searchTerm}}", "shoes"))).toEqual({
-      query: "query Search($term: String!) { products(term: $term) { id name } }",
-      variables: { term: "shoes" },
-    })
+    expect(graphql["bodyType"]).toBe("graphql")
+    expect(graphql["body"]).toBeUndefined()
+    const { query, variables } = graphql["graphql"] as { query: string; variables: string }
+    expect(query).toBe("query Search($term: String!) { products(term: $term) { id name } }")
+    expect(JSON.parse(variables.replace("{{env.searchTerm}}", "shoes"))).toEqual({ term: "shoes" })
     expect(request("Ping")).toMatchObject({ bodyType: "raw", body: "ping", headers: [{ key: "Content-Type", value: "text/plain" }] })
     // An explicit Content-Type wins over the language's.
     expect(request("Import feed")["headers"]).toEqual([{ key: "Content-Type", value: "application/vnd.shop+xml" }])

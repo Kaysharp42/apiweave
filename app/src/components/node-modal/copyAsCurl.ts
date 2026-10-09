@@ -57,9 +57,34 @@ function authQueryParams(config: NodeModalHTTPRequestConfig): KeyValuePair[] {
   return [];
 }
 
+function graphqlFields(
+  config: NodeModalHTTPRequestConfig,
+): [string, string][] {
+  const graphql = config.graphql ?? { query: "" };
+  return [
+    ["query", graphql.query],
+    ...(graphql.variables?.trim()
+      ? [["variables", graphql.variables.trim()] as [string, string]]
+      : []),
+    ...(graphql.operationName
+      ? [["operationName", graphql.operationName] as [string, string]]
+      : []),
+  ];
+}
+
 function bodyData(config: NodeModalHTTPRequestConfig): string | undefined {
   if (config.bodyType === "none" || config.bodyType === "binary")
     return undefined;
+  if (config.bodyType === "graphql") {
+    if ((config.method || "GET") === "GET") return undefined;
+    // The variables are spliced in as written: they may hold placeholders.
+    const fields = graphqlFields(config).map(([key, value]) =>
+      key === "variables"
+        ? `"variables": ${value}`
+        : `${JSON.stringify(key)}: ${JSON.stringify(value)}`,
+    );
+    return `{${fields.join(", ")}}`;
+  }
   if (config.bodyType === "x-www-form-urlencoded") {
     const params = (config.urlEncodedEntries || [])
       .filter((entry) => entry.active && entry.key.trim())
@@ -81,21 +106,41 @@ function bodyData(config: NodeModalHTTPRequestConfig): string | undefined {
   return config.body || undefined;
 }
 
-export function buildCurlCommand(
-  rawConfig: NodeModalHTTPRequestConfig,
-): string {
-  const config = normalizeHttpRequestConfig(rawConfig);
+/** The URL, headers and body both commands send. */
+function requestParts(config: NodeModalHTTPRequestConfig): {
+  url: string;
+  headers: KeyValuePair[];
+  body: string | undefined;
+} {
+  const graphql = config.bodyType === "graphql";
+  const graphqlGet = graphql && (config.method || "GET") === "GET";
   const queryParams = [
     ...activePairs(config.queryParams),
     ...authQueryParams(config),
+    ...(graphqlGet
+      ? graphqlFields(config).map(([key, value]) => ({ key, value }))
+      : []),
   ];
   const url = appendQueryParams(
     config.url || "https://api.example.com",
     queryParams,
   );
-  const method = config.method || "GET";
   const headers = [...activePairs(config.headers), ...authHeaders(config)];
-  const body = bodyData(config);
+  if (
+    graphql &&
+    !graphqlGet &&
+    !headers.some((header) => header.key.toLowerCase() === "content-type")
+  )
+    headers.push({ key: "Content-Type", value: "application/json" });
+  return { url, headers, body: bodyData(config) };
+}
+
+export function buildCurlCommand(
+  rawConfig: NodeModalHTTPRequestConfig,
+): string {
+  const config = normalizeHttpRequestConfig(rawConfig);
+  const { url, headers, body } = requestParts(config);
+  const method = config.method || "GET";
 
   const parts = ["curl", "--request", method, shellQuote(url)];
   headers.forEach((header) =>
@@ -111,26 +156,15 @@ export function buildFetchCommand(
   rawConfig: NodeModalHTTPRequestConfig,
 ): string {
   const config = normalizeHttpRequestConfig(rawConfig);
-  const queryParams = [
-    ...activePairs(config.queryParams),
-    ...authQueryParams(config),
-  ];
-  const url = appendQueryParams(
-    config.url || "https://api.example.com",
-    queryParams,
-  );
+  const parts = requestParts(config);
   const headers = Object.fromEntries(
-    [...activePairs(config.headers), ...authHeaders(config)].map((pair) => [
-      pair.key,
-      pair.value,
-    ]),
+    parts.headers.map((pair) => [pair.key, pair.value]),
   );
-  const body = bodyData(config);
   const requestInit: Record<string, unknown> = {
     method: config.method || "GET",
     headers,
     redirect: config.followRedirects ? "follow" : "manual",
   };
-  if (body) requestInit.body = body;
-  return `${"fetch"}(${JSON.stringify(url)}, ${JSON.stringify(requestInit, null, 2)});`;
+  if (parts.body) requestInit.body = parts.body;
+  return `${"fetch"}(${JSON.stringify(parts.url)}, ${JSON.stringify(requestInit, null, 2)});`;
 }

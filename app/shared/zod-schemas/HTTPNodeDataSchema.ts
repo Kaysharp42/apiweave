@@ -2,6 +2,7 @@ import { z } from "zod"
 import { AuthConfigSchema } from "./AuthConfigSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
+import { GraphqlBodySchema } from "./GraphqlBodySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
 import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
 import { HttpScriptsConfigSchema } from "./HttpScriptsConfigSchema"
@@ -40,9 +41,12 @@ export const HTTPNodeDataSchema = z
       .optional()
       .describe('Request body as a STRING, not an object — JSON bodies are the serialized text, e.g. "{\\"name\\": \\"Rex\\"}". Placeholders are substituted inside it. Set bodyType to "json" alongside it.'),
     bodyType: z
-      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary"])
+      .enum(["none", "json", "raw", "form-data", "x-www-form-urlencoded", "binary", "graphql"])
       .optional()
-      .describe("How to encode the body and which Content-Type to send."),
+      .describe('How to encode the body and which Content-Type to send. "graphql" sends `graphql` instead of `body`.'),
+    graphql: GraphqlBodySchema.optional().describe(
+      'The GraphQL request when bodyType is "graphql": POSTed as application/json {query, variables, operationName}, or sent as query parameters when the method is GET. A response with an `errors` array still returns 200; assert `response.body.errors` notExists to fail on it.',
+    ),
     timeout: z.number().int().positive().optional().describe("Request timeout in seconds."),
     followRedirects: z.boolean().optional(),
     sslVerify: z.boolean().optional(),

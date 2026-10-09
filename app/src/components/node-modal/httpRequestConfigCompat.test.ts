@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OAuth2AuthConfigSchema } from "@shared/zod-schemas/AuthConfigSchema";
-import { normalizeAuthConfig, normalizeExpectedStatus, normalizeRetry } from "./httpRequestConfigCompat";
+import { normalizeAuthConfig, normalizeExpectedStatus, normalizeHttpRequestConfig, normalizeRetry } from "./httpRequestConfigCompat";
+import { graphqlVariablesProblem } from "./GraphqlBodyEditor";
 import { oauth2Problems, secretNameOf, secretReferenceFor } from "./OAuth2AuthFields";
 
 describe("normalizeAuthConfig", () => {
@@ -115,5 +116,20 @@ describe("normalizeRetry", () => {
   it("drops a backoff cap that only exponential backoff uses, and an absent policy", () => {
     expect(normalizeRetry({ maxAttempts: 3, intervalMs: 10, maxIntervalMs: 50 })).toEqual({ maxAttempts: 3, intervalMs: 10 });
     expect(normalizeRetry(undefined)).toBeUndefined();
+  });
+});
+
+describe("GraphQL body", () => {
+  it("keeps the GraphQL body type and drops empty variables and operation name", () => {
+    const config = normalizeHttpRequestConfig({ bodyType: "graphql", graphql: { query: "{ me }", variables: "", operationName: "" } });
+    expect(config.bodyType).toBe("graphql");
+    expect(config.graphql).toEqual({ query: "{ me }" });
+  });
+
+  it("accepts variables whose placeholders stand in for values, and flags anything but an object", () => {
+    expect(graphqlVariablesProblem('{"id": {{variables.id}}, "name": "{{env.NAME}}"}')).toBeUndefined();
+    expect(graphqlVariablesProblem("")).toBeUndefined();
+    expect(graphqlVariablesProblem("[1]")).toBe("Variables must be a JSON object");
+    expect(graphqlVariablesProblem("{oops")).toBeDefined();
   });
 });

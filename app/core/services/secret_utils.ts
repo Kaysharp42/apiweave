@@ -887,6 +887,13 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
     if (typeof value !== "string" || value.trim().length === 0) return undefined
     return mode === "export" ? redactBodyLeaves(value, SECRET_PLACEHOLDER) : sanitizeBodyForAgentRead(value)
   },
+  // A GraphQL request's variables are JSON text, redacted the way a body is.
+  graphql: (value, mode) => {
+    if (!isRecord(value)) return undefined
+    const sanitized = sanitizeValue(value, mode) as Record<string, JsonValue>
+    const variables = FIELD_SANITIZERS["body"]!(value["variables"] ?? "", mode)
+    return variables === undefined ? sanitized : { ...sanitized, variables }
+  },
 }
 
 /** The redacted form of one field, or `undefined` when no structural rule applies. */

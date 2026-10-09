@@ -603,10 +603,9 @@ class PostmanConverter {
         config["formDataEntries"] = this.formEntries(body.formdata ?? [], name, where).map(({ key, value }) => ({ key, value, type: "text", active: true }))
         return
       case "graphql": {
-        // APIWeave has no GraphQL body type: send what a GraphQL server expects over HTTP.
-        const variables = this.secureJsonText(body.graphql?.variables?.trim() || "{}", name)
-        config["bodyType"] = "json"
-        config["body"] = `{\n  "query": ${JSON.stringify(body.graphql?.query ?? "")},\n  "variables": ${variables}\n}`
+        const variables = this.secureJsonText(body.graphql?.variables?.trim() ?? "", name)
+        config["bodyType"] = "graphql"
+        config["graphql"] = { query: body.graphql?.query ?? "", ...(variables ? { variables } : {}) }
         return
       }
       default:

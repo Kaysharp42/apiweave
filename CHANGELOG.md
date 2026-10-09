@@ -278,6 +278,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **GraphQL requests.** HTTP nodes gain a GraphQL body type with a
+  highlighted query editor, a JSON variables editor and an optional operation
+  name. It is sent as `{query, variables, operationName}` JSON, or as query
+  parameters for a `GET`. Placeholders work in all three; the variables are a
+  JSON template, so a standalone `{{variables.id}}` can be a number. Postman
+  GraphQL bodies now import as GraphQL. To fail on a `200` that carries GraphQL
+  `errors`, assert `response.body.errors` **not exists**.
 - **Proxy, private CAs and client certificates (mTLS).** Settings > Network
   sends every request through an http(s) proxy (with a bypass list and Basic
   credentials), trusts the operating system's certificate store (on by

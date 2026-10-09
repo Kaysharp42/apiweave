@@ -1,13 +1,14 @@
 import { loader } from "@monaco-editor/react";
-// The editor API plus the two languages the app edits: JSON (request bodies,
+// The editor API plus the languages the app edits: JSON (request bodies,
 // with its language service; the contribution brings the editor's own
-// features with it) and JavaScript (request scripts, highlighting only — its
-// grammar loads on first use). `import "monaco-editor"` is editor.main, which
+// features with it), JavaScript (request scripts) and GraphQL (queries) —
+// highlighting only, each grammar a small chunk loaded on first use. `import "monaco-editor"` is editor.main, which
 // adds ~80 grammars and the TypeScript, CSS and HTML language services, a
 // 7 MB TypeScript worker among them.
 import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 import "monaco-editor/esm/vs/language/json/monaco.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution.js";
+import "monaco-editor/esm/vs/basic-languages/graphql/graphql.contribution.js";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import jsonWorker from "monaco-editor/esm/vs/language/json/json.worker?worker";
 

@@ -267,6 +267,14 @@ const sanitizeKeyValueField: ConfigFieldSanitizer = (value) =>
 
 const CONFIG_FIELD_SANITIZERS: Readonly<Record<string, ConfigFieldSanitizer>> = {
   body: (value) => (typeof value === "string" ? sanitizeBodyText(value) : undefined),
+  // A GraphQL request's variables are JSON text, judged the way a body is.
+  graphql: (value) =>
+    isRecord(value)
+      ? {
+          ...(sanitizeValue(value, true) as Record<string, JsonValue>),
+          ...(typeof value["variables"] === "string" ? { variables: sanitizeBodyText(value["variables"]) } : {}),
+        }
+      : undefined,
   url: (value) => (typeof value === "string" ? sanitizeUrl(value) : undefined),
   auth: (value) => (isRecord(value) ? sanitizeAuthConfig(value) : undefined),
   fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploads(value) : undefined),

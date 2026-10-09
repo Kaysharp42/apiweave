@@ -173,6 +173,8 @@ or array order.
 
 - \`headers\`, \`queryParams\`, \`cookies\` are **arrays of \`{key, value}\`**, not maps.
 - \`body\` is a **string**, not an object. A JSON body is its serialized text.
+- GraphQL: \`"bodyType": "graphql"\` with \`"graphql": {"query": "...", "variables": "<JSON text>"}\`
+  instead of \`body\`. A GraphQL error answers 200: assert \`response.body.errors\` notExists.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.

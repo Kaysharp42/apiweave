@@ -27,6 +27,7 @@ import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
+import type { GraphqlBody } from "@shared/types/GraphqlBody"
 import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
@@ -919,14 +920,16 @@ export class WorkflowExecutor {
       return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
     }
 
-    url = appendQueryParams(url, queryParams)
-
     let fetchBody: string | Buffer | UndiciFormData | undefined
     try {
-      fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+      fetchBody = bodyType === "graphql"
+        ? this.buildGraphqlRequest(config["graphql"] as GraphqlBody | undefined, method, headers, queryParams)
+        : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
     } catch (bodyError) {
-      return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
+      return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url: appendQueryParams(url, queryParams), duration: 0 })
     }
+
+    url = appendQueryParams(url, queryParams)
 
     // The pre-request script sees the request exactly as it would be sent —
     // placeholders resolved, auth applied — so it can sign it, and may change
@@ -2412,6 +2415,45 @@ export class WorkflowExecutor {
         return json
       }
     }
+  }
+
+  /**
+   * A GraphQL request per GraphQL over HTTP: a GET carries `query`,
+   * `variables` (JSON) and `operationName` as query parameters; any other
+   * method POSTs them as a JSON object. The variables are a JSON template, so
+   * a placeholder inside a string is escaped and one standing alone can be a
+   * number or an object.
+   */
+  private buildGraphqlRequest(
+    graphql: GraphqlBody | undefined,
+    method: string,
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): string | undefined {
+    const query = this.substituteVariables(graphql?.query ?? "")
+    const variablesText = this.substituteVariables(graphql?.variables ?? "", { json: true })
+    let variables: unknown
+    if (variablesText.trim() !== "") {
+      try {
+        variables = JSON.parse(variablesText)
+      } catch {
+        throw new Error("GraphQL variables are not valid JSON")
+      }
+      if (typeof variables !== "object" || variables === null || Array.isArray(variables)) {
+        throw new Error("GraphQL variables must be a JSON object")
+      }
+    }
+    const operationName = graphql?.operationName?.trim() ? this.substituteVariables(graphql.operationName.trim()) : undefined
+    if (method.toUpperCase() === "GET") {
+      queryParams["query"] = query
+      if (variables !== undefined) queryParams["variables"] = JSON.stringify(variables)
+      if (operationName !== undefined) queryParams["operationName"] = operationName
+      return undefined
+    }
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = "application/json"
+    }
+    return JSON.stringify({ query, ...(variables === undefined ? {} : { variables }), ...(operationName === undefined ? {} : { operationName }) })
   }
 
   /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */

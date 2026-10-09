@@ -35,6 +35,7 @@ export const requestsAndDataChapter: TutorialChapter = {
         "form-data",
         "urlencoded",
         "binary",
+        "graphql",
         "upload",
         "timeout",
         "redirect",

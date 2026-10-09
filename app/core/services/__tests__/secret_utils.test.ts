@@ -46,6 +46,17 @@ describe("sanitizeExportValue", () => {
     expect((auth["basic"] as Record<string, unknown>)["password"]).toBe("{{env.PASSWORD}}")
   })
 
+  it("redacts a credential leaf in GraphQL variables the way it does in a body", () => {
+    const sanitized = sanitizeExportValue({
+      bodyType: "graphql",
+      graphql: { query: "mutation Login($password: String!) { login(password: $password) }", variables: '{"user": "alice", "password": "hunter2", "otp": "{{variables.otp}}"}' },
+    }) as { graphql: { query: string; variables: string } }
+    expect(sanitized.graphql.query).toBe("mutation Login($password: String!) { login(password: $password) }")
+    expect(sanitized.graphql.variables).not.toContain("hunter2")
+    expect(sanitized.graphql.variables).toContain("alice")
+    expect(sanitized.graphql.variables).toContain("{{variables.otp}}")
+  })
+
   it("keeps an OAuth 2.0 config's secret references and blanks anything else in their place", () => {
     const sanitized = sanitizeExportValue({
       auth: {

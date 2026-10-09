@@ -56,6 +56,7 @@ import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
 import { HttpScriptsEditor } from "./HttpScriptsEditor";
+import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
 import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
@@ -247,6 +248,7 @@ const BODY_TYPES: SelectOption[] = [
   { label: "Form-data", value: "form-data" },
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
+  { label: "GraphQL", value: "graphql" },
 ];
 
 function JsonBodyEditor({
@@ -849,6 +851,14 @@ export function HTTPRequestConfigPanel({
             error={jsonError}
             isDarkMode={isDarkMode}
             updateConfig={updateConfig}
+          />
+        )}
+
+        {draftConfig.bodyType === "graphql" && (
+          <GraphqlBodyEditor
+            graphql={draftConfig.graphql}
+            isDarkMode={isDarkMode}
+            onChange={(graphql) => updateConfig({ graphql })}
           />
         )}
 

@@ -65,7 +65,7 @@ A Postman environment passed to `--env-file` becomes the collection's environmen
 | raw, language Text, JavaScript, HTML or XML | Body type Raw, with a `Content-Type` header of `text/plain`, `application/javascript`, `text/html` or `application/xml` unless the request already sets one. |
 | x-www-form-urlencoded | Body type `x-www-form-urlencoded`. Disabled fields are skipped. |
 | form-data | Body type form-data with its text fields. **File fields are skipped** with a warning: add the file on the node. |
-| GraphQL | APIWeave has no GraphQL body type, so it becomes the JSON body a GraphQL server expects: `{"query": "...", "variables": {...}}`. |
+| GraphQL | A GraphQL body: the query and the variables carry over as written, and the request is sent as `{"query": "...", "variables": {...}}`. See [GraphQL](../features/workflows-and-nodes.md#graphql). |
 | binary (file) | Skipped, with a warning. |
 
 ### Auth

@@ -90,7 +90,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
 | `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
 | `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
-| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
+| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
@@ -139,6 +139,34 @@ schema.
 spec. On the **Settings** tab, **Response schemas** lists the statuses and
 removes one; edit a schema itself in the workflow's JSON. To check a schema
 from an Assertion node instead, use the `matchesSchema` operator.
+
+#### GraphQL
+
+Choose **GraphQL** as the body type to write a query, its variables and,
+optionally, an operation name, in separate editors. The request is sent the way
+[GraphQL over HTTP](https://graphql.github.io/graphql-over-http/) describes:
+
+- Any method but `GET` sends a JSON body, `{"query": "...", "variables": {...}, "operationName": "..."}`,
+  with `Content-Type: application/json` unless you set one. Empty variables and
+  operation name are left out.
+- `GET` sends them as the `query`, `variables` (JSON text) and `operationName`
+  query parameters, and no body.
+
+Placeholders work in all three fields. The variables are a JSON template, like a
+JSON body: a placeholder inside a string (`"name": "{{variables.name}}"`) is
+escaped, and one standing alone (`"id": {{variables.userId}}`) is inserted as
+is, so it can be a number, a boolean or an object. Variables that are not a JSON
+object once filled fail the node with "GraphQL variables are not valid JSON"
+(or "must be a JSON object").
+
+A GraphQL server usually answers `200` even when the operation failed, and puts
+the failures in an `errors` array. To fail on that, add an Assertion node rule
+`prev` · `response.body.errors` · **not exists**, or the same rule in a retry's
+`until`. Check the data with ordinary rules on `response.body.data.*`.
+
+Postman collections import their GraphQL bodies as GraphQL. To turn a JSON
+body that already holds `{"query": ..., "variables": ...}` into one, copy the
+two values into the GraphQL editors.
 
 ### SSE Stream
 

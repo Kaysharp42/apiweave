@@ -7,6 +7,7 @@ import type { UrlEncodedEntry } from "@shared/types/UrlEncodedEntry";
 import type { NodeModalHttpRetryConfig } from "./NodeModalHttpRetryConfig";
 import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
 import type { JsonValue } from "@shared/types/JsonValue";
+import type { GraphqlBody } from "@shared/types/GraphqlBody";
 
 export interface NodeModalHTTPRequestConfig {
   url?: string;
@@ -16,6 +17,7 @@ export interface NodeModalHTTPRequestConfig {
   cookies?: string | KeyValuePair[];
   body?: string;
   bodyType?: HTTPRequestBodyType;
+  graphql?: GraphqlBody | undefined;
   timeout?: number;
   extractors?: Record<string, string>;
   fileUploads?: FileUpload[];

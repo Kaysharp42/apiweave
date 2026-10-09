@@ -5,6 +5,7 @@ import {
 } from "@shared/zod-schemas/HttpScriptsConfigSchema";
 import type {
   AssertionItem,
+  GraphqlBody,
   AuthConfig,
   FormDataEntry,
   HTTPRequestBodyType,
@@ -291,6 +292,18 @@ export function normalizeScripts(value: unknown): HttpScriptsConfig | undefined 
   };
 }
 
+/** Empty variables and operation name are dropped, so the request leaves them out. */
+export function normalizeGraphql(value: unknown): GraphqlBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const variables = getString(value.variables);
+  const operationName = getString(value.operationName);
+  return {
+    query: getString(value.query),
+    ...(variables ? { variables } : {}),
+    ...(operationName ? { operationName } : {}),
+  };
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -298,7 +311,8 @@ function normalizeBodyType(value: unknown): HTTPRequestBodyType {
     value === "raw" ||
     value === "form-data" ||
     value === "x-www-form-urlencoded" ||
-    value === "binary"
+    value === "binary" ||
+    value === "graphql"
   ) {
     return value;
   }
@@ -318,6 +332,7 @@ export function normalizeHttpRequestConfig(
     cookies: parseKeyValuePairs(config.cookies),
     body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
+    graphql: normalizeGraphql(config.graphql),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),
     fileUploads: config.fileUploads || [],
     auth: normalizeAuthConfig(config.auth),
