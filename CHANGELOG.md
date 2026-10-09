@@ -64,6 +64,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The environment editor lists the environment's secrets.** Its Secrets panel
+  read a field the app no longer fills, so it always said there were none. It
+  now lists the secrets stored for the environment.
+
 - **Node search no longer reads a password written into a URL.** The URL path
   that node search matches (`workflows_searchNodes`) kept the whole URL when it
   could not be parsed, such as `https://user:pass@{{env.HOST}}/login`, so a
@@ -283,6 +287,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   new ids, lands offset from the originals and is selected.
 
 ### Added
+
+- **Import environment variables from a file.** **Import variables…** in the
+  environment editor reads a `.env` file, a flat JSON object or a Postman
+  environment export, previews each key as new, changed or unchanged, and keeps
+  or overwrites existing values as you choose. Keys that look like credentials
+  are imported as secrets by default: sealed into the environment's secret
+  store and never shown or written as plain variables. **Export .env** saves
+  the plain variables.
 
 - **Search workflows and nodes from the command palette.** `Ctrl+K` now finds
   workflows by name and nodes in any workflow by label, method, URL path or

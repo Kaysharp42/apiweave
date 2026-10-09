@@ -23,11 +23,11 @@ import type { ScopeResolver } from "./scope_resolver"
 import {
   assertNoSecretValues,
   collectSecretRefs,
-  isSecretKey,
   sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
+import { isSecretKey } from "@shared/credentials/credentials"
 import { SafeHttp, describeNetworkError } from "../runner/safe_http"
 
 // ponytail: fixed 10 MiB knob for remote OpenAPI/Swagger doc fetches — large

@@ -5,7 +5,7 @@ import type { PostmanRequiredSecret } from "@shared/types/PostmanRequiredSecret"
 import { ValidationError } from "../ipc/errors"
 import { chainEdges, makeEndNode, makeStartNode, positionForIndex } from "./import_parsers"
 import { SCHEMA_VERSION, type ExportedEnvironment, type ExportedWorkflow, type ProjectBundle } from "./project_export_service"
-import { containsCredentialMaterial, isSecretKey } from "./secret_utils"
+import { containsCredentialMaterial, isSecretKey } from "@shared/credentials/credentials"
 
 /**
  * Postman Collection v2.1 → APIWeave project bundle. Pure: it builds the same
@@ -144,11 +144,6 @@ export function isPostmanCollection(value: unknown): boolean {
   const info = value["info"]
   if (isRecord(info) && typeof info["schema"] === "string") return info["schema"].includes("getpostman.com")
   return isPostmanV1(value)
-}
-
-/** True for a Postman environment export (`{ name, values: [...] }`). */
-export function isPostmanEnvironment(value: unknown): boolean {
-  return isRecord(value) && Array.isArray(value["values"]) && typeof value["name"] === "string"
 }
 
 function isPostmanV1(value: Record<string, unknown>): boolean {

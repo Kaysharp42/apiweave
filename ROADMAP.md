@@ -39,8 +39,8 @@ import or sync.
 - **MCP tool surface expansion.** Additional local-only MCP tools that map to
   existing IPC handlers, staying inside the loopback bridge and the per-install
   token model.
-- **Environment editing improvements.** Bulk variable import and clearer
-  messaging when a workflow still points at a deleted environment.
+- **Environment editing improvements.** Clearer messaging when a workflow
+  still points at a deleted environment.
 
 ## Later
 

@@ -27,7 +27,7 @@ vi.mock("../utils/encryptSecretValue", () => ({
   encryptSecretValue: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
 }));
 
-const makeEnv = (secrets?: Record<string, string>): ScopedEnvironment => ({
+const makeEnv = (): ScopedEnvironment => ({
   environmentId: "env-1",
   name: "Test Environment",
   variables: {},
@@ -37,45 +37,58 @@ const makeEnv = (secrets?: Record<string, string>): ScopedEnvironment => ({
   allowedWorkspaceIds: [],
   createdAt: "2026-01-01T00:00:00Z",
   updatedAt: "2026-01-01T00:00:00Z",
-  secrets: secrets ?? {},
 });
+
+/** Secrets stored in the environment's scope, as the secret store lists them. */
+async function storeHolds(...names: string[]): Promise<void> {
+  const { listScopedSecrets } = await import("../hooks/useSecretValues");
+  vi.mocked(listScopedSecrets).mockResolvedValue(
+    names.map((name) => ({
+      secretId: `sec-${name}`,
+      name,
+      scopeType: "environment",
+      scopeId: "env-1",
+      keyId: "test-key-id",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    })),
+  );
+}
 
 describe("SecretsPanel", () => {
   const onClose = vi.fn();
-  const onSecretsChange = vi.fn().mockResolvedValue(undefined);
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    await storeHolds();
   });
 
-  it("renders empty state when no secret keys exist", () => {
+  it("renders empty state when the store holds no secrets for the environment", async () => {
     render(
       <SecretsPanel
         isOpen={true}
         environment={makeEnv()}
-        onSecretsChange={onSecretsChange}
         onClose={onClose}
       />,
     );
 
-    expect(screen.getByText("No secrets configured")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Add secret keys in Environment Manager/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No secrets in this environment")).toBeInTheDocument();
   });
 
-  it("shows secret keys with Set value buttons", () => {
+  it("lists the environment's secrets from the secret store, with Set value buttons", async () => {
+    const { listScopedSecrets } = await import("../hooks/useSecretValues");
+    await storeHolds("API_KEY", "DB_PASSWORD");
     render(
       <SecretsPanel
         isOpen={true}
-        environment={makeEnv({ API_KEY: "", DB_PASSWORD: "" })}
-        onSecretsChange={onSecretsChange}
+        environment={makeEnv()}
         onClose={onClose}
       />,
     );
 
-    expect(screen.getByText("API_KEY")).toBeInTheDocument();
+    expect(await screen.findByText("API_KEY")).toBeInTheDocument();
     expect(screen.getByText("DB_PASSWORD")).toBeInTheDocument();
+    expect(listScopedSecrets).toHaveBeenCalledWith("environment", "env-1", "ws-1");
 
     const setValueButtons = screen.getAllByText("Set value");
     expect(setValueButtons).toHaveLength(2);
@@ -84,16 +97,16 @@ describe("SecretsPanel", () => {
   it("opens SecretValueEditor modal when Set value is clicked", async () => {
     const user = userEvent.setup();
 
+    await storeHolds("API_KEY");
     render(
       <SecretsPanel
         isOpen={true}
-        environment={makeEnv({ API_KEY: "" })}
-        onSecretsChange={onSecretsChange}
+        environment={makeEnv()}
         onClose={onClose}
       />,
     );
 
-    const setValueBtn = screen.getByText("Set value");
+    const setValueBtn = await screen.findByText("Set value");
     await user.click(setValueBtn);
 
     await waitFor(() => {
@@ -109,16 +122,16 @@ describe("SecretsPanel", () => {
     const user = userEvent.setup();
     const secretPlaintext = "super-secret-value-xyz-789";
 
+    await storeHolds("API_KEY");
     render(
       <SecretsPanel
         isOpen={true}
-        environment={makeEnv({ API_KEY: "" })}
-        onSecretsChange={onSecretsChange}
+        environment={makeEnv()}
         onClose={onClose}
       />,
     );
 
-    await user.click(screen.getByText("Set value"));
+    await user.click(await screen.findByText("Set value"));
 
     await waitFor(() => {
       expect(
@@ -143,16 +156,16 @@ describe("SecretsPanel", () => {
     const { deleteScopedSecret } = await import("../hooks/useSecretValues");
     const user = userEvent.setup();
 
+    await storeHolds("API_KEY");
     render(
       <SecretsPanel
         isOpen={true}
-        environment={makeEnv({ API_KEY: "" })}
-        onSecretsChange={onSecretsChange}
+        environment={makeEnv()}
         onClose={onClose}
       />,
     );
 
-    const removeBtn = screen.getByRole("button", {
+    const removeBtn = await screen.findByRole("button", {
       name: /Remove secret API_KEY/i,
     });
     await user.click(removeBtn);
@@ -171,16 +184,16 @@ describe("SecretsPanel", () => {
     const { fetchScopedPublicKey, postScopedEncryptedSecret } = await import("../hooks/useSecretValues");
     const user = userEvent.setup();
 
+    await storeHolds("API_KEY");
     render(
       <SecretsPanel
         isOpen={true}
-        environment={makeEnv({ API_KEY: "" })}
-        onSecretsChange={onSecretsChange}
+        environment={makeEnv()}
         onClose={onClose}
       />,
     );
 
-    await user.click(screen.getByText("Set value"));
+    await user.click(await screen.findByText("Set value"));
     await user.type(screen.getByPlaceholderText(/Enter value for API_KEY/), "secret-value");
     await user.click(screen.getByText("Save encrypted"));
 

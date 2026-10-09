@@ -27,12 +27,12 @@ import {
   assertNoSecretValues,
   collectSecretRefs,
   findRedactedPlaceholders,
-  isSecretKey,
   SECRET_PLACEHOLDER,
   sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
+import { isSecretKey } from "@shared/credentials/credentials"
 
 /** Schema version for project bundles. Existing v2 files remain importable. */
 export const SCHEMA_VERSION = "2.0"

@@ -30,7 +30,6 @@ export type {
   DryRunResult,
 } from "./project_export_service"
 export {
-  isSecretKey,
   detectSecretsInValue,
   sanitizeVariablesForExport,
   extractSecretRefsFromString,

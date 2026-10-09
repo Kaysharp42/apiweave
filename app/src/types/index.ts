@@ -401,3 +401,7 @@ export type { TutorialCompanionState } from "./TutorialCompanionState";
 export type { TutorialCompanionProps } from "./TutorialCompanionProps";
 export type { TutorialPracticeStep } from "./TutorialPracticeStep";
 export type { ErrorBoundaryProps } from "./ErrorBoundaryProps";
+export type { EnvImportRow } from "./EnvImportRow";
+export type { EnvImportStatus } from "./EnvImportStatus";
+export type { EnvImportPlan } from "./EnvImportPlan";
+export type { EnvironmentVariablesImportDialogProps } from "./EnvironmentVariablesImportDialogProps";

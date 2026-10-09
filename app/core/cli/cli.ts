@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { parseArgs, parseEnv } from "node:util"
+import { parseArgs } from "node:util"
 import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Workflow } from "@shared/types/Workflow"
@@ -19,7 +19,8 @@ import { ScopeResolver } from "../services/scope_resolver"
 import { ImportService, WorkflowBundleSchema } from "../services/import_service"
 import { ProjectExportService, type ProjectBundle } from "../services/project_export_service"
 import { readProjectFolder } from "../services/project_folder"
-import { convertPostmanCollection, isPostmanCollection, isPostmanEnvironment } from "../services/postman_import"
+import { convertPostmanCollection, isPostmanCollection } from "../services/postman_import"
+import { isPostmanEnvironment, parseDotenv } from "@shared/env-file/envFile"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { DynamicFunctions } from "../runner/dynamic_functions"
 import { SafeHttp, type SafeFetchOptions } from "../runner/safe_http"
@@ -571,7 +572,7 @@ function readKeyValueFile(filePath: string, flag: string): Record<string, JsonVa
   } catch (error) {
     throw new UsageError(`${flag}: cannot read ${filePath}: ${errorMessage(error)}`)
   }
-  if (!text.trimStart().startsWith("{")) return parseEnv(text) as Record<string, string>
+  if (!text.trimStart().startsWith("{")) return parseDotenv(text)
   let parsed: unknown
   try {
     parsed = JSON.parse(text)

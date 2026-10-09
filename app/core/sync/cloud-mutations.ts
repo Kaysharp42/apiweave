@@ -7,7 +7,6 @@ import type { Workspace } from "@shared/types/Workspace"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import {
   assertNoSecretValues,
-  containsCredentialMaterial,
   isCredentialFreeReference,
   isEmptySyncValue,
   isForbiddenSecretStorageKey,
@@ -20,6 +19,7 @@ import {
   sanitizeExtractorValues,
   sanitizeUrlWithReferences,
 } from "../services/secret_utils"
+import { containsCredentialMaterial } from "@shared/credentials/credentials"
 import type { SyncProvider } from "./SyncProvider"
 
 const textEncoder = new TextEncoder()

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Lock, Trash2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Modal } from "./molecules/Modal";
@@ -6,40 +6,38 @@ import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { EmptyState } from "./molecules/EmptyState";
 import SecretValueEditor from "./SecretValueEditor";
-import { deleteScopedSecret } from "../hooks/useSecretValues";
+import { deleteScopedSecret, listScopedSecrets } from "../hooks/useSecretValues";
 import type { SecretsPanelProps, SecretScopeType } from "../types";
 
 export default function SecretsPanel({
   isOpen,
   environment,
-  onSecretsChange,
   onClose,
 }: SecretsPanelProps) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [unsetting, setUnsetting] = useState<string | null>(null);
-  const [secretKeys, setSecretKeys] = useState<string[]>(() =>
-    Object.keys(environment?.secrets ?? {}),
-  );
+  const [secretKeys, setSecretKeys] = useState<string[]>([]);
 
   const environmentId = environment?.environmentId ?? "";
   const scopeType: SecretScopeType = "environment";
   const scopeId = environmentId;
   const workspaceId = environment?.scopeType === "workspace" ? environment.scopeId : undefined;
 
+  // The names come from the secret store: the environment record carries none.
   const refreshKeys = useCallback(() => {
-    if (environment?.secrets) {
-      setSecretKeys(Object.keys(environment.secrets));
-    }
-  }, [environment?.secrets]);
+    if (!environmentId) return;
+    listScopedSecrets(scopeType, environmentId, workspaceId)
+      .then((secrets) => setSecretKeys(secrets.map((secret) => secret.name)))
+      .catch(() => setSecretKeys([]));
+  }, [environmentId, scopeType, workspaceId]);
+
+  useEffect(() => {
+    if (isOpen) refreshKeys();
+  }, [isOpen, refreshKeys]);
 
   const handleSetValue = useCallback((key: string) => {
     setEditingKey(key);
   }, []);
-
-  const handleEditorSuccess = useCallback(() => {
-    refreshKeys();
-    onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
-  }, [refreshKeys, onSecretsChange, environment?.secrets]);
 
   const handleUnset = useCallback(
     async (secretName: string) => {
@@ -48,7 +46,6 @@ export default function SecretsPanel({
         await deleteScopedSecret(scopeType, scopeId, secretName, workspaceId);
         setSecretKeys((prev) => prev.filter((k) => k !== secretName));
         toast.success(`Secret "${secretName}" removed`);
-        onSecretsChange?.(environment?.secrets ?? {}).catch(() => {});
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         toast.error(`Failed to remove secret: ${message}`);
@@ -56,7 +53,7 @@ export default function SecretsPanel({
         setUnsetting(null);
       }
     },
-    [scopeId, workspaceId, onSecretsChange, environment?.secrets],
+    [scopeType, scopeId, workspaceId],
   );
 
   const hasKeys = secretKeys.length > 0;
@@ -91,8 +88,8 @@ export default function SecretsPanel({
                   strokeWidth={1.5}
                 />
               }
-              title="No secrets configured"
-              description="Add secret keys in Environment Manager, then set their values here."
+              title="No secrets in this environment"
+              description="Import variables from a .env, JSON or Postman file to add some."
             />
           ) : (
             <div className="space-y-2">
@@ -152,7 +149,7 @@ export default function SecretsPanel({
           {...(workspaceId ? { workspaceId } : {})}
           secretName={editingKey}
           onClose={() => setEditingKey(null)}
-          onSuccess={handleEditorSuccess}
+          onSuccess={refreshKeys}
         />
       )}
     </>

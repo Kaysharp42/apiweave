@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Check, Lock, Pencil, X } from "lucide-react";
+import { Check, Download, Lock, Pencil, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
@@ -8,6 +8,9 @@ import { TextArea } from "../atoms/TextArea";
 import { FormField } from "../molecules/FormField";
 import { Card } from "../molecules/Card";
 import SecretsPanel from "../SecretsPanel";
+import { EnvironmentVariablesImportDialog } from "./EnvironmentVariablesImportDialog";
+import { toDotenv } from "@shared/env-file/envFile";
+import { downloadTextFile } from "../../utils/downloadFile";
 import {
   getValidBaseEnvironmentOptions,
   resolveInheritedVariables,
@@ -40,6 +43,7 @@ export function EnvironmentForm({
   const [editKey, setEditKey] = useState<string>("");
   const [editValue, setEditValue] = useState<string>("");
   const [showSecretsPanel, setShowSecretsPanel] = useState<boolean>(false);
+  const [showImport, setShowImport] = useState<boolean>(false);
   const [nameError, setNameError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +62,7 @@ export function EnvironmentForm({
     setNewVarKey("");
     setNewVarValue("");
     setShowSecretsPanel(false);
+    setShowImport(false);
   }, [environment]);
 
   function updateField<K extends keyof EnvironmentFormData>(
@@ -271,8 +276,37 @@ export function EnvironmentForm({
             )}
 
             <div>
-              <div className="block text-sm font-medium text-text-secondary dark:text-text-secondary-dark mb-2">
-                Variables
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+                  Variables
+                </span>
+                <div className="flex gap-2">
+                  {environment && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      icon={<Upload className="w-3 h-3" />}
+                      onClick={() => setShowImport(true)}
+                    >
+                      Import variables…
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    icon={<Download className="w-3 h-3" />}
+                    disabled={Object.keys(form.variables).length === 0}
+                    onClick={() =>
+                      downloadTextFile(
+                        `${form.name.trim() || "environment"}.env`,
+                        toDotenv(form.variables),
+                        "text/plain",
+                      )
+                    }
+                  >
+                    Export .env
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2 mb-3">
@@ -396,9 +430,9 @@ export function EnvironmentForm({
             {environment && (
               <div className="pt-4 border-t border-border dark:border-border-dark">
                 <div className="flex items-center justify-between mb-3">
-                  <label className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
-                    Secrets ({Object.keys(environment.secrets ?? {}).length})
-                  </label>
+                  <span className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
+                    Secrets
+                  </span>
                   <Button
                     variant="outline"
                     size="xs"
@@ -466,6 +500,16 @@ export function EnvironmentForm({
           </Button>
         </div>
       </form>
+
+      {environment && (
+        <EnvironmentVariablesImportDialog
+          isOpen={showImport}
+          environment={environment}
+          variables={form.variables}
+          onClose={() => setShowImport(false)}
+          onImported={(variables) => updateField("variables", variables)}
+        />
+      )}
 
       <SecretsPanel
         key={environment?.environmentId ?? "no-environment"}
