@@ -189,6 +189,7 @@ export class AssertionAuthoringService {
     mode: "append" | "replace",
     drafts: readonly unknown[],
     runId?: string,
+    source?: string,
   ): Promise<AssertionApplyResult> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
     const sourceNodeId = resolveAssertionSource(workflow, assertionNodeId)
@@ -206,6 +207,7 @@ export class AssertionAuthoringService {
       assertionNodeId,
       mode,
       validation.rules,
+      source,
     )
     return { workflow: updated, revision: updated.rev }
   }

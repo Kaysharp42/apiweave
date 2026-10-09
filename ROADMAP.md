@@ -27,13 +27,13 @@ variable provenance, secret resolution confidence), the **run camera** that
 follows the active branch during runs, and sync **failure visibility** (dead-letter
 records and real rejection reasons).
 
-Rerun (1.0): **run from a node** and **rerun failed branches**, reusing the
-upstream results and variables of an earlier run.
+Rerun and undo (1.0): **run from a node** and **rerun failed branches**, reusing
+the upstream results and variables of an earlier run, and **version history**
+for every workflow, restoring an earlier version after a bad save, agent edit,
+import or sync.
 
 ## Next
 
-- **Workflow history.** A per-workflow diff view across revisions, using the
-  canvas auto-save as the source of truth.
 - **One-click project runs.** Execute a project's enabled workflows in order
   under the per-row `continueOnFail` flag, producing one project run record.
 - **MCP tool surface expansion.** Additional local-only MCP tools that map to

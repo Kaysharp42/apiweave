@@ -18,6 +18,7 @@ import {
   Frame,
   Ungroup,
   FileSpreadsheet,
+  FileClock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "../atoms/Badge";
@@ -49,6 +50,7 @@ export function CanvasToolbar({
   canGroup,
   canUngroup,
   onHistory,
+  onVersionHistory,
   onJsonEditor,
   onImport,
   onCommandPalette,
@@ -226,6 +228,17 @@ export function CanvasToolbar({
               showLabel={showLabels}
             />
           )}
+          {/* Icon-only at every density, like undo: it is the undo for what
+              undo cannot reach — a save, an agent's edit, a sync. */}
+          <IconButton
+            onClick={onVersionHistory}
+            tooltip="Version history"
+            aria-label="Version history"
+            variant="ghost"
+            size="sm"
+          >
+            <FileClock className="w-4 h-4" />
+          </IconButton>
           <ToolbarButton
             icon={Code}
             label="JSON"

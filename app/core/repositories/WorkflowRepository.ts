@@ -17,6 +17,7 @@ import {
   toJson,
 } from "./helpers"
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
+import { WorkflowRevisionRepository, type WorkflowWriteSource } from "./WorkflowRevisionRepository"
 
 export type WorkflowCreate = Pick<Workflow, "workspaceId" | "name"> &
   Partial<
@@ -100,10 +101,15 @@ interface WorkflowSettings {
 }
 
 export class WorkflowRepository {
+  /** Each workflow's earlier versions; every content write below records one first. */
+  public readonly revisions: WorkflowRevisionRepository
+
   public constructor(
     private readonly store: KVStore,
     private readonly onChanged?: (event: WorkflowChangedEvent) => void,
-  ) {}
+  ) {
+    this.revisions = new WorkflowRevisionRepository(store)
+  }
 
   public create(input: WorkflowCreate): Workflow {
     const id = generateId()
@@ -219,11 +225,13 @@ export class WorkflowRepository {
     return this.listByCollection(workspaceId, collectionId).total
   }
 
-  public update(workflowId: string, patch: WorkflowUpdate): Workflow | undefined {
+  /** `source` is who is writing, for the revision this write keeps of what it replaces. */
+  public update(workflowId: string, patch: WorkflowUpdate, source: WorkflowWriteSource = "canvas"): Workflow | undefined {
     const existing = this.getById(workflowId)
     if (existing === undefined) {
       return undefined
     }
+    this.revisions.capture(existing, source)
     const merged: Workflow = { ...existing, ...patch }
     const graph = canonicalWorkflow({ nodes: merged.nodes, edges: merged.edges })
     const settings: WorkflowSettings = {
@@ -248,11 +256,16 @@ export class WorkflowRepository {
    * use this so a concurrent edit between the read and the write is reported as
    * a conflict rather than silently overwritten.
    */
-  public updateAtRevision(workflowId: string, expectedRevision: number, patch: WorkflowUpdate): Workflow | undefined {
+  public updateAtRevision(
+    workflowId: string,
+    expectedRevision: number,
+    patch: WorkflowUpdate,
+    source: WorkflowWriteSource = "canvas",
+  ): Workflow | undefined {
     return this.transaction(() => {
       const existing = this.getById(workflowId)
       if (existing === undefined || existing.rev !== expectedRevision) return undefined
-      return this.update(workflowId, patch)
+      return this.update(workflowId, patch, source)
     })
   }
 
@@ -263,6 +276,7 @@ export class WorkflowRepository {
     assertionNodeId: string,
     mode: "append" | "replace",
     rules: readonly AssertionItem[],
+    source: WorkflowWriteSource = "canvas",
   ): Workflow | undefined {
     return this.transaction(() => {
       const existing = this.getById(workflowId)
@@ -283,6 +297,7 @@ export class WorkflowRepository {
       })
       if (!found) return undefined
 
+      this.revisions.capture(existing, source)
       const graph = canonicalWorkflow({ nodes, edges: existing.edges })
       const result = this.store.set(
         "UPDATE workflows SET graph_json = ? WHERE id = ? AND rev = ?",

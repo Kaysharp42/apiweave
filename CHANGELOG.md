@@ -278,6 +278,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Version history.** Every workflow keeps its earlier versions — the
+  workflow as it was before a change replaced it — so a bad auto-save, an
+  agent's edit, an import or a cloud sync can be undone. A version is kept at
+  most every 10 minutes of canvas editing and always before any other change;
+  the newest 50 are kept, for up to 90 days. **Version history** on the
+  toolbar shows what restoring a version would change and restores it, as a
+  change you can undo the same way. Versions stay on this computer. Agents can
+  list them (`workflows_listRevisions`); restoring is the user's.
+
 - **Rerun from a node, or rerun failed branches.** After fixing a failed step,
   rerun only that part of the workflow: **Run from here** on a step (its node
   menu or right-click), or **Rerun failed branches** from the Run menu or a

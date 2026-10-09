@@ -52,6 +52,7 @@ import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
 import { PromptDialog } from "./molecules/PromptDialog";
 import { ContextMenu } from "./molecules/ContextMenu";
+import { VersionHistoryDialog } from "./organisms/VersionHistoryDialog";
 import { RunFollowPill } from "./molecules/RunFollowPill";
 import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
@@ -390,6 +391,7 @@ export function WorkflowCanvas({
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const pendingHistory = useCanvasStore((state) => state.pendingHistory);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
@@ -1346,6 +1348,34 @@ export function WorkflowCanvas({
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
 
+  // Version history restore: unsaved edits are saved first, so the restore
+  // keeps them as a version too, then the revision is written back at the
+  // revision this canvas is on and the canvas shows the result.
+  const restoreRevision = useCallback(
+    async (revisionId: string): Promise<void> => {
+      if (!scope.workspaceId || !workflowId) return;
+      await saveWorkflow(false);
+      try {
+        await apiweave.workflows.restoreRevision({
+          workspaceId: scope.workspaceId,
+          workflowId,
+          revisionId,
+          expectedRevision: baseRevisionRef.current,
+        });
+      } catch (error) {
+        if (error instanceof IpcError && error.code === "conflict") {
+          throw new Error(
+            "This workflow changed while you were looking. Load the latest, then restore again.",
+          );
+        }
+        throw error;
+      }
+      await reloadWorkflowFromServer();
+      toast.success("Version restored");
+    },
+    [scope.workspaceId, workflowId, saveWorkflow, reloadWorkflowFromServer],
+  );
+
   // ── Undo / redo ──────────────────────────────────────
 
   // Same merge `showWorkflow` uses: a snapshot carries the persisted graph
@@ -1859,6 +1889,7 @@ export function WorkflowCanvas({
         canGroup={canvasTipContext.canGroup}
         canUngroup={canvasTipContext.canUngroup}
         onHistory={() => setShowHistory(true)}
+        onVersionHistory={() => setShowVersionHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {
             toast.info(
@@ -2034,6 +2065,15 @@ export function WorkflowCanvas({
             setTimelineRunId(runId);
             setShowHistory(false);
           }}
+        />
+      )}
+
+      {showVersionHistory && scope.workspaceId && workflowId && (
+        <VersionHistoryDialog
+          workspaceId={scope.workspaceId}
+          workflowId={workflowId}
+          onClose={() => setShowVersionHistory(false)}
+          onRestore={restoreRevision}
         />
       )}
 

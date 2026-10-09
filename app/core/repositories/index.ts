@@ -9,6 +9,8 @@ export type {
   WorkflowSummaryPage,
   WorkflowSummaryRow,
 } from "./WorkflowRepository"
+export { WorkflowRevisionRepository } from "./WorkflowRevisionRepository"
+export type { WorkflowWriteSource } from "./WorkflowRevisionRepository"
 export { RunRepository } from "./RunRepository"
 export type {
   RunCreate,

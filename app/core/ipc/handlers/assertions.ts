@@ -9,6 +9,7 @@ import {
 } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
+import { writeSource } from "./common"
 
 const id = z.string().min(1)
 const baseInput = z.object({ workspaceId: id, workflowId: id, sourceNodeId: id }).strict()
@@ -60,7 +61,7 @@ export function registerAssertionHandlers(router: IpcRouter, deps: HandlerDeps):
       })
       .strict(),
     output: AssertionApplyResultSchema,
-    handle: (input) => assertionAuthoring.apply(
+    handle: (input, context) => assertionAuthoring.apply(
       input.workspaceId,
       input.workflowId,
       input.expectedRevision,
@@ -68,6 +69,7 @@ export function registerAssertionHandlers(router: IpcRouter, deps: HandlerDeps):
       input.mode,
       input.rules,
       input.runId,
+      writeSource(context),
     ),
   })
 }

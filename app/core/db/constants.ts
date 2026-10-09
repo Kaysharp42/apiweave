@@ -26,3 +26,17 @@ export const RUN_HISTORY_RETENTION_PER_WORKFLOW = 100
  * ponytail: fixed knob, like the run retention above.
  */
 export const PROJECT_RUN_HISTORY_RETENTION_PER_PROJECT = 50
+
+/**
+ * Workflow revisions (snapshots taken before a write replaces a workflow).
+ * Canvas auto-saves every 700 ms of editing, so a canvas write is snapshotted
+ * only when the newest snapshot is a canvas one older than this; any other
+ * writer (an agent, cloud sync, an import, a restore) is always snapshotted
+ * first. Each workflow keeps its newest {@link WORKFLOW_REVISIONS_KEPT}, none
+ * older than {@link WORKFLOW_REVISION_MAX_AGE_MS}.
+ *
+ * ponytail: fixed knobs, like the run retention above.
+ */
+export const WORKFLOW_REVISION_INTERVAL_MS = 10 * 60 * 1000
+export const WORKFLOW_REVISIONS_KEPT = 50
+export const WORKFLOW_REVISION_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000

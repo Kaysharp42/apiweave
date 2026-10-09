@@ -849,7 +849,7 @@ describe("CloudSyncProvider", () => {
     it("preserves and rebases a local edit made after an equivalent baseline snapshot", async () => {
       store.set(
         "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ["workflow-edited", WORKSPACE_ID, WORKSPACE_ID, "Edited After Snapshot", "edited", "{}", "{}", "{}", 8],
+        ["workflow-edited", WORKSPACE_ID, WORKSPACE_ID, "Edited After Snapshot", "edited", '{"nodes":[],"edges":[]}', "{}", '{"tags":[],"nodeTemplates":[]}', 8],
       )
       const repository = new CloudSyncRepository(store)
       repository.upsertWorkspaceBinding({
@@ -1778,7 +1778,7 @@ describe("CloudSyncProvider", () => {
     it("does not overwrite a newer local revision during pull", async () => {
       store.set(
         "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ["workflow-newer", WORKSPACE_ID, WORKSPACE_ID, "Local Newer", "local-newer", "{}", "{}", "{}", 5],
+        ["workflow-newer", WORKSPACE_ID, WORKSPACE_ID, "Local Newer", "local-newer", '{"nodes":[],"edges":[]}', "{}", '{"tags":[],"nodeTemplates":[]}', 5],
       )
       nock(API_BASE)
         .post("/apiweave.v1.SyncService/Hello")
@@ -1815,7 +1815,7 @@ describe("CloudSyncProvider", () => {
     it("creates a sanitized conflict when a pull overtakes a dirty local record", async () => {
       store.set(
         "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ["workflow-dirty", WORKSPACE_ID, WORKSPACE_ID, "Local Dirty", "local-dirty", "{}", "{}", "{}", 6],
+        ["workflow-dirty", WORKSPACE_ID, WORKSPACE_ID, "Local Dirty", "local-dirty", '{"nodes":[],"edges":[]}', "{}", '{"tags":[],"nodeTemplates":[]}', 6],
       )
       provider.enqueue({
         kind: "workflow",

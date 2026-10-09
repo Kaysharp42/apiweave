@@ -143,6 +143,7 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `workflows_delete`
 - `workflows_attachToCollection`
 - `workflows_setEnvironment`
+- `workflows_listRevisions`
 
 `workflows_update` replaces the `nodes`, `edges` and `variables` lists wholesale.
 `workflows_patch` changes a subset instead: `upsertNodes` and `upsertEdges`
@@ -154,6 +155,11 @@ revision the caller last read, so a concurrent desktop edit produces a conflict
 rather than being overwritten. The desktop canvas saves the same way: an agent's
 edit that lands while the canvas has unsaved changes is never overwritten by the
 canvas's next save.
+
+Every agent write keeps the workflow as it was just before it as a version
+(see [Version history](workflows-and-nodes.md#version-history)), so the user can
+undo it. `workflows_listRevisions` lists those versions, metadata only; reading
+a version's content and restoring one are not agent tools.
 
 `workflows_create`, `workflows_update` and `workflows_patch` each return
 `{ result, diagnosis }`, where `diagnosis` is the same report `workflow_diagnose`

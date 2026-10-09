@@ -11,6 +11,8 @@ export interface CanvasToolbarProps {
   canGroup: boolean;
   canUngroup: boolean;
   onHistory: () => void;
+  /** Open the workflow's earlier versions. */
+  onVersionHistory: () => void;
   onJsonEditor: () => void;
   onImport: () => void;
   onCommandPalette: () => void;

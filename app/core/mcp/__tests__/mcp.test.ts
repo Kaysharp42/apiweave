@@ -242,6 +242,11 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "projects.listWorkflows",
       "projects.addWorkflow",
       "projects.removeWorkflow",
+      // Version history: an agent sees which revisions exist, but reading one
+      // is the whole unredacted graph and restoring one replaces the workflow.
+      // Both are the user's, from the Version history dialog.
+      "workflows.getRevision",
+      "workflows.restoreRevision",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }

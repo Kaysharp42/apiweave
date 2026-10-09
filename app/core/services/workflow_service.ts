@@ -4,6 +4,8 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
+import type { WorkflowRevision } from "@shared/types/WorkflowRevision"
+import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary"
 import type {
   CollectionRepository,
   EnvironmentRepository,
@@ -12,6 +14,7 @@ import type {
   WorkflowSummaryFilters,
   WorkflowSummaryRow,
   WorkflowUpdate,
+  WorkflowWriteSource,
 } from "../repositories"
 import {
   buildNodesView,
@@ -336,7 +339,7 @@ export class WorkflowService {
     workspaceId: string,
     workflowId: string,
     patch: WorkflowUpdate,
-    options?: { readonly layout?: boolean; readonly expectedRevision?: number },
+    options?: { readonly layout?: boolean; readonly expectedRevision?: number; readonly source?: WorkflowWriteSource },
   ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
@@ -356,7 +359,7 @@ export class WorkflowService {
         next = { ...patch, nodes: layoutWorkflowNodes(nextNodes, nextEdges) }
       }
     }
-    const updated = this.writeAtRevision(workspaceId, workflowId, options?.expectedRevision, next)
+    const updated = this.writeAtRevision(workspaceId, workflowId, options?.expectedRevision, next, options?.source)
     await this.syncProvider.push()
     return updated
   }
@@ -373,7 +376,12 @@ export class WorkflowService {
    * call ends with the upserted version. `expectedRevision` makes the write a
    * compare-and-swap against the revision the caller last read.
    */
-  async patch(workspaceId: string, workflowId: string, patch: WorkflowGraphPatch): Promise<Workflow> {
+  async patch(
+    workspaceId: string,
+    workflowId: string,
+    patch: WorkflowGraphPatch,
+    source: WorkflowWriteSource = "canvas",
+  ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
     assertRevision(existing, patch.expectedRevision)
@@ -397,7 +405,7 @@ export class WorkflowService {
     }
     const persist: WorkflowUpdate & { nodes: Workflow["nodes"] } = { ...next, nodes, edges }
 
-    const updated = this.writeAtRevision(workspaceId, workflowId, patch.expectedRevision, persist)
+    const updated = this.writeAtRevision(workspaceId, workflowId, patch.expectedRevision, persist, source)
     await this.syncProvider.push()
     return updated
   }
@@ -409,6 +417,7 @@ export class WorkflowService {
     assertionNodeId: string,
     mode: "append" | "replace",
     rules: readonly AssertionItem[],
+    source: WorkflowWriteSource = "canvas",
   ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
@@ -429,6 +438,7 @@ export class WorkflowService {
       assertionNodeId,
       mode,
       canonicalRules,
+      source,
     )))
     if (updated === undefined) {
       const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
@@ -437,6 +447,46 @@ export class WorkflowService {
         currentRevision: current?.rev,
       })
     }
+    await this.syncProvider.push()
+    return updated
+  }
+
+  /** A workflow's earlier versions, newest first, without their content. */
+  async listRevisions(workspaceId: string, workflowId: string): Promise<readonly WorkflowRevisionSummary[]> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    this.mustGet(workspaceId, workflowId)
+    return this.workflows.revisions.list(workflowId)
+  }
+
+  /** One earlier version of a workflow, with the content restoring it would write back. */
+  async getRevision(workspaceId: string, workflowId: string, revisionId: string): Promise<WorkflowRevision> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    this.mustGet(workspaceId, workflowId)
+    const revision = this.workflows.revisions.get(workflowId, revisionId)
+    if (revision === undefined) throw new NotFoundError(`revision ${revisionId} not found`)
+    return revision
+  }
+
+  /**
+   * Write an earlier version's content back over the workflow — name,
+   * description, graph, variables, tags and node templates; its project and
+   * selected environment stay as they are. An ordinary write at
+   * `expectedRevision`, so a stale canvas conflicts, and like any non-canvas
+   * write it keeps the content it replaces as a revision: a restore can be
+   * undone by restoring that.
+   */
+  async restoreRevision(
+    workspaceId: string,
+    workflowId: string,
+    revisionId: string,
+    expectedRevision: number,
+  ): Promise<Workflow> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    assertRevision(this.mustGet(workspaceId, workflowId), expectedRevision)
+    const revision = this.workflows.revisions.get(workflowId, revisionId)
+    if (revision === undefined) throw new NotFoundError(`revision ${revisionId} not found`)
+    this.assertCallWorkflowTargetsInWorkspace(revision.snapshot.nodes, workspaceId, workflowId)
+    const updated = this.writeAtRevision(workspaceId, workflowId, expectedRevision, revision.snapshot, "restore")
     await this.syncProvider.push()
     return updated
   }
@@ -538,10 +588,11 @@ export class WorkflowService {
     workflowId: string,
     expectedRevision: number | undefined,
     persist: WorkflowUpdate,
+    source: WorkflowWriteSource = "canvas",
   ): Workflow {
     const updated = this.workflows.transaction(() => this.recorded(expectedRevision === undefined
-      ? this.workflows.update(workflowId, persist)
-      : this.workflows.updateAtRevision(workflowId, expectedRevision, persist)))
+      ? this.workflows.update(workflowId, persist, source)
+      : this.workflows.updateAtRevision(workflowId, expectedRevision, persist, source)))
     if (updated !== undefined) return updated
     const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)

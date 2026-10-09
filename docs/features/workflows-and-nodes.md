@@ -23,6 +23,7 @@
   - [Call Workflow](#call-workflow)
 - [Reusing a Node Configuration](#reusing-a-node-configuration)
 - [Canvas Actions](#canvas-actions)
+  - [Version history](#version-history)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Recommended Build Pattern](#recommended-build-pattern)
 
@@ -418,6 +419,7 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | --- | --- |
 | **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
 | **History** | Opens run history for the workflow, with per-run timeline and detail views. |
+| **Version history** | Lists earlier versions of the workflow and restores one. See [Version history](#version-history). |
 | **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it: the run is recorded as `cancelled`, the node it interrupted (a request, a delay, a merge still waiting) shows as skipped, and nothing after it runs. |
 | **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. **Apply** (`Ctrl+S`) applies and saves them. Closing with unapplied changes (Escape, a click outside, or the close button) asks **Apply**, **Discard** or **Keep editing**; invalid JSON stays open with the error shown. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
@@ -434,6 +436,41 @@ The node editor holds its edits until they are applied to the node. **Save**, th
 To rerun only part of a workflow after fixing a step, use **Run from here** on a step (its node menu, or right-click it) or **Rerun failed branches** from the arrow beside **Run** or a failed run in History. The steps upstream are not sent again: their results and variables from an earlier run are reused. See [Rerun from a node, or rerun failed branches](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
 
 Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
+
+### Version history
+
+Undo (`Ctrl+Z`) covers the edits on the canvas since it opened. **Version history**
+(the clock-on-a-page icon on the toolbar) goes further back, and covers changes
+that did not come from the canvas: a bad auto-save, an agent's edit over MCP, an
+import into the workflow, a cloud sync that replaced it.
+
+Each version is the workflow as it was just **before** a change replaced it,
+labelled with that change — *Before canvas edits*, *Before agent Claude Code*,
+*Before cloud sync*, *Before import*, *Before restore*. A version is kept:
+
+- while you edit on the canvas, at most once every 10 minutes (auto-save runs
+  every 700 ms, and a version per save would bury the useful ones);
+- always before an agent, an import, a cloud sync or a restore changes the
+  workflow, and before the first canvas save after one of those;
+- never twice in a row with the same content.
+
+Each workflow keeps its newest 50 versions, none older than 90 days. Versions are
+deleted with their workflow.
+
+Pick a version to see what restoring it would change — how many nodes it adds
+back, removes and changes — then **Restore**. Restoring writes the version's
+name, description, nodes, edges, variables, tags and node templates back over
+the workflow; its project and selected environment stay as they are. Your
+unsaved edits are saved first, and the workflow as it was before the restore is
+kept as a version itself, so a restore can be undone the same way. A restore is
+checked against the revision the canvas is on, like any save: if the workflow
+changed elsewhere in the meantime it is refused and nothing is overwritten.
+
+Versions stay on this computer: they are never synced to APIWeave Cloud and
+never exported. They hold the same configuration as the workflow itself —
+`{{secrets.NAME}}` references, never secret values. An agent can list a
+workflow's versions (`workflows_listRevisions`, metadata only); reading one and
+restoring one are yours, in this dialog.
 
 ## Keyboard Shortcuts
 

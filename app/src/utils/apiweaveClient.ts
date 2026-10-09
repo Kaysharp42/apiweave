@@ -9,6 +9,8 @@ import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
 import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
+import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
+import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -312,6 +314,25 @@ export const apiweave = {
       }),
     delete: (workspaceId: string, workflowId: string) =>
       invoke<null>("workflows", "delete", { workspaceId, workflowId }),
+    /** Earlier versions, newest first, without their content. */
+    listRevisions: (workspaceId: string, workflowId: string) =>
+      invoke<WorkflowRevisionSummary[]>("workflows", "listRevisions", {
+        workspaceId,
+        workflowId,
+      }),
+    getRevision: (workspaceId: string, workflowId: string, revisionId: string) =>
+      invoke<WorkflowRevision>("workflows", "getRevision", {
+        workspaceId,
+        workflowId,
+        revisionId,
+      }),
+    /** Write a revision's content back; `conflict` when `expectedRevision` is stale. */
+    restoreRevision: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly revisionId: string;
+      readonly expectedRevision: number;
+    }) => invoke<Workflow>("workflows", "restoreRevision", input),
     attachToCollection: (
       workspaceId: string,
       workflowId: string,

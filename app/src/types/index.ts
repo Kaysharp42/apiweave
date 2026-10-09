@@ -365,6 +365,8 @@ export type { CanvasNodeTemplate } from "./CanvasNodeTemplate";
 export type { CanvasNodeContextMenuProps } from "./CanvasNodeContextMenuProps";
 export type { CanvasNodeContextMenuState } from "./CanvasNodeContextMenuState";
 export type { StepContextMenuState } from "./StepContextMenuState";
+export type { RevisionDiff } from "./RevisionDiff";
+export type { VersionHistoryDialogProps } from "./VersionHistoryDialogProps";
 export type { CommandPaletteProps } from "./CommandPaletteProps";
 export type { NodePaletteItem } from "./NodePaletteItem";
 export type { NodePaletteProps } from "./NodePaletteProps";

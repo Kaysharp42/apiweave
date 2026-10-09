@@ -43,6 +43,7 @@ describe("database migrations", () => {
         "runs",
         "scoped_keys",
         "secrets_metadata",
+        "workflow_revisions",
         "workflows",
         "workspaces",
       ])
