@@ -65,6 +65,16 @@ const useCanvasStore = create<CanvasState>()((set) => ({
     notifyPendingActionHandlers(action);
   },
 
+  runFromNode: (nodeId: string) => {
+    const action = {
+      type: "run-from" as CanvasActionType,
+      nodeId,
+      timestamp: Date.now(),
+    };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
+
   clearPendingAction: () => set({ pendingAction: null }),
 
   // sessionStorage carries the clipboard across the tabs of this window.

@@ -51,6 +51,7 @@ import HistoryModal from "./HistoryModal";
 import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
 import { PromptDialog } from "./molecules/PromptDialog";
+import { ContextMenu } from "./molecules/ContextMenu";
 import { RunFollowPill } from "./molecules/RunFollowPill";
 import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
@@ -117,7 +118,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
-import { Wand2 } from "lucide-react";
+import { Copy, Files, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -138,6 +139,7 @@ import { resolveTutorialScope } from "../utils/tutorialScope";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
+import type { StepContextMenuState } from "../types/StepContextMenuState";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
@@ -395,6 +397,7 @@ export function WorkflowCanvas({
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] =
     useState<CanvasNodeContextMenuState | null>(null);
+  const [stepMenu, setStepMenu] = useState<StepContextMenuState | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
@@ -471,9 +474,8 @@ export function WorkflowCanvas({
     runWorkflow,
     runWorkflowWithData,
     cancelRun,
-    runFromLastFailed,
-    runAllFailed,
-    runFromFailedNodes,
+    runFromNode,
+    rerunFailed,
     resumeOptions,
     resumeSourceRunId,
     isResumeLoading,
@@ -741,6 +743,18 @@ export function WorkflowCanvas({
     });
   }, []);
 
+  // "Run from here" — a node's action menu or its right-click menu — reaches the
+  // canvas the same way. Only the canvas holding that node answers it.
+  const runFromNodeRef = useRef(runFromNode);
+  runFromNodeRef.current = runFromNode;
+  useEffect(() => {
+    return useCanvasStore.getState().registerPendingActionHandler((action) => {
+      if (action.type !== "run-from" || !action.nodeId) return;
+      if (!nodesRef.current.some((n) => n.id === action.nodeId)) return;
+      runFromNodeRef.current(action.nodeId);
+    });
+  }, []);
+
   const handleSavePreset = useCallback(
     (name: string) => {
       const node = presetSource;
@@ -825,6 +839,17 @@ export function WorkflowCanvas({
     selectedNodeRef.current = null;
     setNodeContextMenu(null);
   }, []);
+
+  // A step's right-click menu: rerun from it, or the node actions its own menu has.
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: CanvasNode) => {
+      if (asPresetNodeType(node.type) === null) return;
+      event.preventDefault();
+      setNodeContextMenu(null);
+      setStepMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+    },
+    [],
+  );
 
   const onPaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
@@ -1716,6 +1741,7 @@ export function WorkflowCanvas({
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
+        onNodeContextMenu={onNodeContextMenu}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -1847,13 +1873,10 @@ export function WorkflowCanvas({
         onRun={runWorkflow}
         onRunWithData={(file) => void runWorkflowWithData(file)}
         onCancel={cancelRun}
-        onRunFromLastFailed={runFromLastFailed}
-        onRunAllFailed={runAllFailed}
-        onRunFromFailedNode={(nodeId) => {
-          if (resumeSourceRunId) {
-            runFromFailedNodes([nodeId], resumeSourceRunId, "single");
-          }
-        }}
+        onRerunFailed={() => rerunFailed()}
+        onRunFromFailedNode={(nodeId) =>
+          runFromNode(nodeId, resumeSourceRunId ?? undefined)
+        }
         isRunning={isRunning}
         iteration={currentIteration}
         environments={environments}
@@ -1895,6 +1918,36 @@ export function WorkflowCanvas({
           workspaceId={scope.workspaceId ?? ""}
           onSelect={addContextMenuNode}
           onClose={() => setNodeContextMenu(null)}
+        />
+      )}
+
+      {stepMenu && (
+        <ContextMenu
+          x={stepMenu.x}
+          y={stepMenu.y}
+          label="Step actions"
+          onClose={() => setStepMenu(null)}
+          items={[
+            {
+              key: "run-from",
+              icon: Play,
+              label: "Run from here",
+              onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
+            },
+            {
+              key: "duplicate",
+              icon: Files,
+              label: "Duplicate",
+              separated: true,
+              onSelect: () => useCanvasStore.getState().duplicateNode(stepMenu.nodeId),
+            },
+            {
+              key: "copy",
+              icon: Copy,
+              label: "Copy",
+              onSelect: () => useCanvasStore.getState().copyNode(stepMenu.nodeId),
+            },
+          ]}
         />
       )}
 
@@ -1976,6 +2029,7 @@ export function WorkflowCanvas({
           }}
           {...(historyRunId ? { highlightRunId: historyRunId } : {})}
           onSelectRun={loadHistoricalRun}
+          onRerunFailed={(runId) => rerunFailed(runId)}
           onShowTimeline={(runId) => {
             setTimelineRunId(runId);
             setShowHistory(false);

@@ -12,7 +12,20 @@ import { RunResultSchema } from "@shared/zod-schemas/RunResultSchema"
 import { RunIterationSchema } from "@shared/zod-schemas/RunIterationSchema"
 
 export type RunCreate = Pick<Run, "workspaceId" | "workflowId"> &
-  Partial<Pick<Run, "status" | "trigger" | "variables" | "selectedEnvironmentId" | "nodeStatuses" | "iteration">>
+  Partial<
+    Pick<
+      Run,
+      | "status"
+      | "trigger"
+      | "variables"
+      | "selectedEnvironmentId"
+      | "nodeStatuses"
+      | "iteration"
+      | "resumeFromRunId"
+      | "resumeFromNodeIds"
+      | "resumeMode"
+    >
+  >
 
 export type RunUpdate = Partial<
   Pick<
@@ -50,6 +63,8 @@ export interface RunSummaryRow {
   readonly failedNodeCount: number
   readonly nodeCount: number
   readonly iteration: RunIteration | null
+  /** The run a rerun reused results from; null for an ordinary run. */
+  readonly resumeFromRunId: string | null
   readonly runRev: number
   readonly createdAt: string
   readonly updatedAt: string
@@ -126,9 +141,9 @@ export class RunRepository {
       error: null,
       failedNodes: null,
       failureMessage: null,
-      resumeFromRunId: null,
-      resumeFromNodeIds: null,
-      resumeMode: null,
+      resumeFromRunId: input.resumeFromRunId ?? null,
+      resumeFromNodeIds: input.resumeFromNodeIds ?? null,
+      resumeMode: input.resumeMode ?? null,
       resolvedSecrets: [],
       iteration: input.iteration ?? null,
     }
@@ -228,6 +243,7 @@ export class RunRepository {
         // rather than a bare value that would not parse.
         "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
         "response_metadata_json -> '$.iteration' AS iteration_json, " +
+        "json_extract(response_metadata_json, '$.resumeFromRunId') AS resume_from_run_id, " +
         "(SELECT count(*) FROM run_node_results WHERE run_id = runs.id) AS node_count " +
         `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
       params,
@@ -601,6 +617,7 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly duration: SqliteValue
   readonly failed_nodes_json: string | null
   readonly iteration_json: string | null
+  readonly resume_from_run_id: SqliteValue
   readonly node_count: number | null
 }
 
@@ -638,6 +655,7 @@ function rowToRunSummary(row: RunSummaryQueryRow): RunSummaryRow {
     failedNodeCount: failedNodes.length,
     nodeCount: row.node_count ?? 0,
     iteration: normalizeIteration(row.iteration_json === null ? null : parseJson<unknown>(row.iteration_json)),
+    resumeFromRunId: typeof row.resume_from_run_id === "string" ? row.resume_from_run_id : null,
     runRev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

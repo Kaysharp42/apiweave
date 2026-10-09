@@ -8,6 +8,7 @@ import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -558,6 +559,8 @@ export const apiweave = {
         readonly workflowId: string;
         readonly waitMs?: number;
         readonly operationId?: string;
+        /** Rerun part of the workflow, reusing an earlier run's upstream results. */
+        readonly resume?: RunResumeRequest;
       } & Partial<IpcRun>,
     ) => invoke<IpcRun>("runs", "create", input),
     /** A data-driven run: the workflow once per row. Returns iteration 1's run. */

@@ -2,6 +2,7 @@ import type { Run } from "@shared/types/Run"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeEvidencePage } from "@shared/types/NodeEvidencePage"
 import type { RunResult } from "@shared/types/RunResult"
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
 import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
 import { RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
@@ -26,8 +27,11 @@ export interface RunTrigger extends IterationScheduler {
   cancel(runId: string): boolean
 }
 
-/** What `runs.create` takes: a run row's fields plus one data row for `{{data.<column>}}`. */
-export type RunCreateInput = Omit<RunCreate, "workspaceId"> & { readonly data?: Readonly<Record<string, JsonValue>> }
+/** What `runs.create` takes: a run row's fields, one data row for `{{data.<column>}}`, and a rerun request. */
+export type RunCreateInput = Omit<RunCreate, "workspaceId"> & {
+  readonly data?: Readonly<Record<string, JsonValue>>
+  readonly resume?: RunResumeRequest
+}
 
 /**
  * Minimal broker surface the wait needs — subscribe plus nothing else. Typed
@@ -290,6 +294,7 @@ export class RunService {
         ...(input.variables ? { variables: input.variables } : {}),
         ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
         ...(input.data !== undefined ? { data: input.data } : {}),
+        ...(input.resume !== undefined ? { resume: input.resume } : {}),
         ...(agent !== undefined ? { agent } : {}),
       })
       return this.mustGet(workspaceId, runId)
@@ -475,6 +480,7 @@ function canonicalCreateRequest(input: RunCreateInput): string {
     selectedEnvironmentId: input.selectedEnvironmentId ?? null,
     nodeStatuses: sortJsonValue(input.nodeStatuses ?? {}),
     data: sortJsonValue(input.data ?? null),
+    resume: sortJsonValue(input.resume ?? null),
   })
 }
 

@@ -8,4 +8,6 @@ export interface HistoryModalProps {
   onClose: () => void;
   onSelectRun: (run: RunSummary) => void;
   onShowTimeline?: (runId: string) => void;
+  /** Rerun this failed run's failed steps and what follows them. */
+  onRerunFailed?: (runId: string) => void;
 }

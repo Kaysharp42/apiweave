@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema } from "@shared/zod-schemas"
+import { RunSchema, JsonValueSchema, RunHistoryPageSchema, NodeEvidencePageSchema, RunResumeRequestSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { ifFound, listResult } from "./common"
@@ -27,6 +27,7 @@ const createInput = z
     variables: z.record(z.string(), JsonValueSchema).optional(),
     selectedEnvironmentId: z.string().nullable().optional(),
     nodeStatuses: z.record(z.string(), JsonValueSchema).optional(),
+    resume: RunResumeRequestSchema.optional().describe("Rerun part of the workflow instead of all of it: start at `nodeId` (or, without it, rerun the steps the source run failed) and run everything downstream, reusing the source run's results and variables upstream (`fromRunId`, default the latest run). Refused when a needed variable was stored masked in that run. The new run records `resumeFromRunId`."),
     data: z.record(z.string(), JsonValueSchema).optional().describe("One data row, read by the workflow as {{data.<column>}} (a data-driven run's iteration). For several rows, call runs_create once per row. Values are not stored with the run and are not masked: never put secrets here."),
     waitMs: z.number().int().min(0).max(RUN_WAIT_MAX_MS).optional().describe("Bounded wait after enqueue in ms (default 10000, max 30000). 0 returns immediately with the queued snapshot; otherwise waits for completion up to this long and returns the current run on deadline — reuse its runId with runs_wait. A timeout or disconnect never cancels the run."),
     operationId: z.string().min(1).max(128).optional().describe("Caller idempotency key for safe retries: the same id in the same workspace with the same request returns the first run instead of enqueueing again; the same id with a changed request conflicts."),

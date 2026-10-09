@@ -31,6 +31,7 @@ function summary(runId: string, status: RunSummary["status"], createdAt: string)
     failedNodeCount: 0,
     nodeCount: 0,
     iteration: null,
+    resumeFromRunId: null,
     runRev: 1,
     createdAt,
     updatedAt: createdAt,
@@ -66,6 +67,25 @@ describe("HistoryModal", () => {
     );
     expect(apiweave.runs.report).toHaveBeenCalledWith("ws-1", "run-newer", "junit");
     expect(onSelectRun).not.toHaveBeenCalled();
+  });
+
+  it("reruns a failed run's failed branches, and marks a rerun with the run it reused", async () => {
+    vi.mocked(apiweave.runs.history).mockResolvedValue({
+      items: [
+        { ...summary("run-rerun", "completed", "2026-09-16T11:00:00.000Z"), resumeFromRunId: "run-failed-1234" },
+        { ...summary("run-failed-1234", "failed", "2026-09-16T10:00:00.000Z"), failedNodes: ["b"], failedNodeCount: 1 },
+      ],
+      nextCursor: null,
+    });
+    const onRerunFailed = vi.fn();
+    const onClose = vi.fn();
+    render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={onClose} onSelectRun={() => {}} onRerunFailed={onRerunFailed} />);
+
+    expect(await screen.findByText("Rerun of run-fail")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Rerun the failed branches of run run-rerun" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Rerun the failed branches of run run-failed-1234" }));
+    expect(onRerunFailed).toHaveBeenCalledWith("run-failed-1234");
+    expect(onClose).toHaveBeenCalled();
   });
 
   it("lists run summaries for the workflow", async () => {

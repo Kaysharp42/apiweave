@@ -278,6 +278,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Rerun from a node, or rerun failed branches.** After fixing a failed step,
+  rerun only that part of the workflow: **Run from here** on a step (its node
+  menu or right-click), or **Rerun failed branches** from the Run menu or a
+  failed run in History. Upstream steps are not sent again — their stored
+  results and variables are reused, merges join the branches that passed, and
+  a rerun that would need a value history only holds masked is refused instead
+  of sending `<SECRET>`. The new run is marked **Rerun of** its source in
+  History. Agents pass `resume` to `runs_create`.
+
 - **JWT Bearer auth.** HTTP nodes can sign a fresh JWT for every request
   (HS256, RS256 or ES256) from a payload template with placeholders, adding
   `iat` and, by default, a five-minute `exp`, and send it as a bearer token or

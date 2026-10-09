@@ -4,14 +4,18 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunIteration } from "@shared/types/RunIteration"
+import type { Run } from "@shared/types/Run"
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
+import type { Workflow } from "@shared/types/Workflow"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
+import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
-import { NotFoundError } from "../ipc/errors"
+import { NotFoundError, ValidationError } from "../ipc/errors"
+import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, splitSeedVariables, type ResumeSeed } from "./resume"
 import { SECRET_PLACEHOLDER, sanitizeVariablesForExport, scriptSecretNames } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
@@ -86,7 +90,8 @@ export interface SchedulerDeps {
 export interface EnqueueRequest {
   readonly workspaceId: string
   readonly workflowId: string
-  readonly startNodeIds?: readonly string[]
+  /** Rerun part of the workflow from an earlier run of it — see core/runner/resume.ts. */
+  readonly resume?: RunResumeRequest
   readonly variables?: Readonly<Record<string, unknown>>
   readonly selectedEnvironmentId?: string | null
   /** Set when an agent started the run over MCP: the client's name. */
@@ -154,13 +159,21 @@ export class RunScheduler {
       request.selectedEnvironmentId === undefined
         ? workflow.selectedEnvironmentId ?? null
         : request.selectedEnvironmentId
+    // A rerun starts from the source run's variables; the caller's own win.
+    const resume = request.resume ? this.planResume(workflow, request.resume, request.variables ?? {}) : undefined
+    const variables = resume
+      ? { ...resume.variables, ...(request.variables as Record<string, JsonValue> | undefined) }
+      : request.variables as Record<string, JsonValue> | undefined
     const run = this.deps.runs.create({
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
       status: "pending",
-      ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
+      ...(variables ? { variables } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
       ...(request.iteration ? { iteration: request.iteration } : {}),
+      ...(resume
+        ? { resumeFromRunId: resume.sourceRunId, resumeFromNodeIds: resume.entries, resumeMode: request.resume?.nodeId ? "single" : "all-failed" }
+        : {}),
     })
     if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
     if (request.data !== undefined) this.runData.set(run.runId, request.data)
@@ -391,7 +404,9 @@ export class RunScheduler {
       const output = await executor.executeWorkflow(graph, {
         runId,
         cancelSignal: controller.signal,
-        ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
+        ...(run.resumeFromRunId && run.resumeFromNodeIds
+          ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph) }
+          : {}),
       })
 
       this.emitFinished(runId, this.recordOutcome(runId, mask(output)))
@@ -449,6 +464,82 @@ export class RunScheduler {
     const waiters = this.finishWaiters.get(runId)
     this.finishWaiters.delete(runId)
     for (const resolve of waiters ?? []) resolve(status)
+  }
+
+  /**
+   * Check a rerun request against the stored source run and the current graph,
+   * before any run row exists: where it starts, and the variables it reuses.
+   * Refused when the source is not a finished run of this workflow, names no
+   * step, or would need a variable its history only holds masked and the
+   * caller did not pass.
+   */
+  private planResume(
+    workflow: Workflow,
+    request: RunResumeRequest,
+    given: Readonly<Record<string, unknown>>,
+  ): { readonly sourceRunId: string; readonly entries: string[]; readonly variables: Record<string, JsonValue> } {
+    const source = request.fromRunId === undefined
+      ? this.deps.runs.getLatestRun(workflow.workflowId, workflow.workspaceId)
+      : this.deps.runs.getById(request.fromRunId)
+    if (source === undefined || source.workflowId !== workflow.workflowId || source.workspaceId !== workflow.workspaceId) {
+      throw request.fromRunId === undefined
+        ? new ValidationError("This workflow has no run to rerun from yet; run it first")
+        : new NotFoundError(`run ${request.fromRunId} not found`)
+    }
+    if (source.status === "pending" || source.status === "running") {
+      throw new ValidationError(`Run ${source.runId} is still ${source.status}; rerun from it once it has finished`)
+    }
+    const nodes = withoutCanvasOnlyNodes(workflow.nodes) as unknown as WorkflowGraph["nodes"]
+    const edges = workflow.edges as unknown as WorkflowGraph["edges"]
+    let requested: string[]
+    if (request.nodeId !== undefined) {
+      const node = nodes.find((candidate) => candidate.nodeId === request.nodeId)
+      if (node === undefined) throw new ValidationError(`node ${request.nodeId} is not a step of this workflow`)
+      if (node.type === "start" || node.type === "end") {
+        throw new ValidationError(`a rerun starts at a step, not at the ${node.type} node; run the whole workflow instead`)
+      }
+      requested = [node.nodeId]
+    } else {
+      requested = (source.failedNodes ?? []).filter((id) => nodes.some((node) => node.nodeId === id))
+      if (requested.length === 0) throw new ValidationError(`Run ${source.runId} has no failed step to rerun`)
+    }
+    const entries = resumeEntries(edges, requested)
+    const { variables, masked } = splitSeedVariables(source.variables)
+    const needed = maskedVariablesRead(nodes, downstreamOf(edges, entries), masked).filter((name) => !(name in given))
+    if (needed.length > 0) {
+      const names = needed.map((name) => `{{variables.${name}}}`).join(", ")
+      throw new ValidationError(
+        `Cannot rerun: ${names} ${needed.length === 1 ? "is" : "are"} stored masked in run ${source.runId} ` +
+          "(run history never keeps a secret or credential-like value). Rerun from the node that sets " +
+          `${needed.length === 1 ? "it" : "them"}, or run the whole workflow.`,
+        { maskedVariables: needed },
+      )
+    }
+    return { sourceRunId: source.runId, entries, variables }
+  }
+
+  /**
+   * What a rerun's source run settled, read when the rerun starts: the source,
+   * then the run it resumed, and so on, so a rerun of a rerun still has the
+   * results its source only inherited.
+   */
+  private resumeSeed(run: Run, sourceRunId: string, entries: readonly string[], graph: WorkflowGraph): ResumeSeed {
+    const chain: Run[] = []
+    const seen = new Set<string>()
+    for (let id: string | null | undefined = sourceRunId; id && !seen.has(id); ) {
+      seen.add(id)
+      const source = this.deps.runs.getById(id)
+      if (source === undefined || source.workflowId !== run.workflowId) break
+      chain.push(source)
+      id = source.resumeFromRunId
+    }
+    if (chain.length === 0) throw new Error(`source run ${sourceRunId} of run ${run.runId} not found`)
+    const scope = downstreamOf(graph.edges, entries)
+    return {
+      scope,
+      results: seedResults(chain, graph.edges, scope),
+      maskedVariables: splitSeedVariables(chain[0]!.variables).masked,
+    }
   }
 
   /** A missing approver means no one can be asked, which is a no. A throwing one is too. */
@@ -686,6 +777,9 @@ function safeErrorClass(error: string): string {
   // A script's own error or failed-test count: the user's script wrote it, and
   // secret values in it were masked before this point, as in its console output.
   if (/^(Pre-request|Post-response) script\b/.test(error)) return error
+  // A rerun refusing a seeded value names the placeholder and node, never the value.
+  const unwrapped = error.replace(/^Error: /, "")
+  if (unwrapped.startsWith(RERUN_REFUSED)) return unwrapped
   // A responseSchemas verdict names only the status key; the violations are in the result's assertions.
   if (/^Response does not match the schema for status (?:[1-5](?:\d\d|XX)|default)$/.test(error)) return error
   const normalized = error.toLowerCase()

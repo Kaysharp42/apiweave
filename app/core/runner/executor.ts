@@ -16,7 +16,8 @@ import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_s
 import type { Validator } from "@cfworker/json-schema"
 import { ASSERTION_VALUE_TYPES, parseSchemaValue } from "@shared/analysis/assertion_expected"
 import type { SchemaViolation } from "@shared/types/SchemaViolation"
-import { extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
+import { SECRET_PLACEHOLDER, extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
+import type { ResumeSeed } from "./resume"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -262,7 +263,12 @@ export interface ExecuteOptions {
   readonly runId?: string
   readonly startNodeIds?: readonly string[]
   readonly cancelSignal?: AbortSignal
+  /** A rerun: what the source run already settled. `startNodeIds` are its entries. */
+  readonly resume?: ResumeSeed
 }
+
+/** How every refusal to read a rerun's seeded value starts; the scheduler passes it through to history. */
+export const RERUN_REFUSED = "Not rerun:"
 
 export interface NodeResult {
   readonly status: string
@@ -398,6 +404,12 @@ export class WorkflowExecutor {
   private regex: RegexSandbox | null = null
   /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
   private readonly schemaValidators = new Map<unknown, Validator>()
+  /** On a rerun, the nodes it executes; every other node holds the source run's result. */
+  private resumeScope: ReadonlySet<string> | null = null
+  /** Nodes whose result was seeded from the source run rather than produced here. */
+  private readonly seededNodeIds = new Set<string>()
+  /** Source-run variables that were stored masked, so were not seeded. */
+  private readonly maskedSeedVariables = new Set<string>()
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -436,6 +448,7 @@ export class WorkflowExecutor {
     this.nodeRuns.clear()
     this.sseListeners.clear()
     this.sseTasks.clear()
+    if (options.resume) this.seedResume(options.resume, nodes, edges)
 
     // Workflows have no loops: a cycle would send its requests until something
     // gave out. The canvas refuses to draw one, and a graph that has one anyway
@@ -507,6 +520,26 @@ export class WorkflowExecutor {
       // this is a no-op in the normal case.
       this.abortSseListeners()
       await this.waitForSseTasks()
+    }
+  }
+
+  /**
+   * Lay down what the source run of a rerun settled: the results of every node
+   * outside the scope (see core/runner/resume.ts), and the branches each such
+   * merge joined, which `{{prev[i]...}}` reads after it. Seeded results are
+   * read like any other but never reported as this run's.
+   */
+  private seedResume(seed: ResumeSeed, nodes: ReadonlyMap<string, WorkflowNode>, edges: readonly WorkflowEdge[]): void {
+    this.resumeScope = seed.scope
+    for (const name of seed.maskedVariables) this.maskedSeedVariables.add(name)
+    for (const stored of seed.results) {
+      const node = nodes.get(stored.nodeId)
+      if (!node || seed.scope.has(stored.nodeId)) continue
+      this.results.set(stored.nodeId, seededNodeResult(stored, node.type))
+      this.seededNodeIds.add(stored.nodeId)
+    }
+    for (const id of this.seededNodeIds) {
+      if (nodes.get(id)?.type === "merge") this.branchResults.set(id, this.mergeBranchResults(id, edges))
     }
   }
 
@@ -1884,9 +1917,14 @@ export class WorkflowExecutor {
 
     const incomingEdges = edges.filter((e) => e.target === nodeId)
     const predecessorNodeIds = incomingEdges.map((e) => e.source)
+    // On a rerun a predecessor outside the scope never runs: its seeded result
+    // is all it will ever have, and without a passing one it counts as failed.
+    const settledBySource = (id: string): boolean => this.resumeScope !== null && !this.resumeScope.has(id)
+    const waitingOn = (): string[] =>
+      predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id) && !settledBySource(id))
 
     if (mergeStrategy === "all" || mergeStrategy === "conditional") {
-      let missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
+      let missing = waitingOn()
       if (missing.length > 0) {
         const maxWait = 30000
         const waitInterval = 100
@@ -1894,7 +1932,7 @@ export class WorkflowExecutor {
         while (missing.length > 0 && elapsed < maxWait && !cancelSignal?.aborted) {
           await new Promise((resolve) => setTimeout(resolve, waitInterval))
           elapsed += waitInterval
-          missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
+          missing = waitingOn()
         }
         if (cancelSignal?.aborted) throw new Error("Merge cancelled")
         if (missing.length > 0) {
@@ -1902,7 +1940,8 @@ export class WorkflowExecutor {
         }
       }
 
-      const failed = predecessorNodeIds.filter((id) => this.failedNodes.has(id))
+      const failed = predecessorNodeIds.filter((id) =>
+        this.failedNodes.has(id) || (settledBySource(id) && this.results.get(id)?.status !== "success"))
       if (failed.length > 0) {
         throw new Error(`Cannot merge: ${failed.length} predecessor(s) failed`)
       }
@@ -1919,15 +1958,7 @@ export class WorkflowExecutor {
 
     this.mergeCompleted.add(nodeId)
 
-    const predecessorResults: Array<readonly [string, NodeResult]> = []
-    for (const predId of predecessorNodeIds) {
-      const dataNodeId = this.findDataProducingAncestor(predId, edges)
-      const result = this.results.get(dataNodeId)
-      if (result && (result.type === "http-request" || result.type === "sse")) {
-        predecessorResults.push([dataNodeId, result])
-      }
-    }
-
+    const predecessorResults = this.mergeBranchResults(nodeId, edges)
     this.branchResults.set(nodeId, predecessorResults)
 
     return {
@@ -2080,6 +2111,18 @@ export class WorkflowExecutor {
     }
   }
 
+  /** The response each branch into a merge carried, in incoming-edge order. */
+  private mergeBranchResults(nodeId: string, edges: readonly WorkflowEdge[]): Array<readonly [string, NodeResult]> {
+    const branches: Array<readonly [string, NodeResult]> = []
+    for (const edge of edges) {
+      if (edge.target !== nodeId) continue
+      const dataNodeId = this.findDataProducingAncestor(edge.source, edges)
+      const result = this.results.get(dataNodeId)
+      if (result && (result.type === "http-request" || result.type === "sse")) branches.push([dataNodeId, result])
+    }
+    return branches
+  }
+
   private findDataProducingAncestor(nodeId: string, edges: readonly WorkflowEdge[]): string {
     const visited = new Set<string>()
     const visit = (id: string): string => {
@@ -2137,6 +2180,10 @@ export class WorkflowExecutor {
       // Environment variables, workflow variables, the iteration's data row
       const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
       if (scope) {
+        const name = scope[2]!.split(".")[0]!
+        if (scope[1] === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+          throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+        }
         let value: unknown =
           scope[1] === "env" ? this.environmentVariables : scope[1] === "variables" ? this.workflowVariables : this.deps.data
         for (const part of scope[2]!.split(".")) {
@@ -2156,45 +2203,43 @@ export class WorkflowExecutor {
           const branchIndex = Number.parseInt(indexMatch[1]!, 10)
           const pathAfterIndex = indexMatch[2]!
 
-          if (this.currentBranchContext.length > 0) {
-            if (branchIndex >= 0 && branchIndex < this.currentBranchContext.length) {
-              const entry = this.currentBranchContext[branchIndex]!
-              const [, prevResult] = entry
-              const pathParts = pathAfterIndex.split(".")
-              return this.resolveDottedPath(prevResult, pathParts, match)
-            }
-            return match
-          }
-
-          const resultsList = [...this.results.values()]
-          if (branchIndex >= 0 && branchIndex < resultsList.length) {
-            const prevResult = resultsList[branchIndex]!
-            const pathParts = pathAfterIndex.split(".")
-            return this.resolveDottedPath(prevResult, pathParts, match)
-          }
-          return match
+          const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
+          const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
+          return entry ? this.readResult(entry[0], entry[1], pathAfterIndex.split("."), match) : match
         }
 
-        if (this.results.size > 0) {
-          const prevResult = [...this.results.values()].pop()!
-          const pathParts = varPath.slice(5).split(".")
-          return this.resolveDottedPath(prevResult, pathParts, match)
-        }
-        return match
+        const last = [...this.results.entries()].pop()
+        return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
       }
 
       // Direct node ID access
       const firstPart = varPath.split(".")[0]!
       const nodeResult = this.results.get(firstPart)
       if (nodeResult) {
-        const pathParts = varPath.split(".").slice(1)
-        return this.resolveDottedPath(nodeResult, pathParts, match)
+        return this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match)
       }
 
       return match
     }
 
     return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
+  }
+
+  /**
+   * A path into a node's result. A result seeded from a rerun's source run is
+   * the stored copy, so a value that was masked or cut short there is refused
+   * rather than sent as `<SECRET>` or as half a body.
+   */
+  private readResult(nodeId: string, result: NodeResult, pathParts: string[], match: string): string {
+    const text = this.resolveDottedPath(result, pathParts, match)
+    if (!this.seededNodeIds.has(nodeId)) return text
+    if (result.response?.truncated === true) {
+      throw new Error(`${RERUN_REFUSED} ${match} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
+    }
+    if (text.includes(SECRET_PLACEHOLDER)) {
+      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
+    }
+    return text
   }
 
   private resolveDottedPath(value: unknown, pathParts: string[], fallback: string): string {
@@ -2663,6 +2708,7 @@ export class WorkflowExecutor {
   private buildRunResults(): RunResult[] {
     const results: RunResult[] = []
     for (const [nodeId, result] of this.results.entries()) {
+      if (this.seededNodeIds.has(nodeId)) continue
       const status = this.nodeStatuses.get(nodeId) ?? (result.status === "success" ? "passed" : "failed")
       results.push(buildRunResult(nodeId, status, result))
     }
@@ -2672,6 +2718,7 @@ export class WorkflowExecutor {
   private buildOutputs(): Record<string, unknown> {
     const outputs: Record<string, unknown> = {}
     for (const [nodeId, result] of this.results.entries()) {
+      if (this.seededNodeIds.has(nodeId)) continue
       if (result.type === "http-request" || result.type === "sse") {
         outputs[nodeId] = { status: result.statusCode, body: result.body }
       } else if (result.type === "assertion") {
@@ -2685,6 +2732,37 @@ export class WorkflowExecutor {
     }
     return outputs
   }
+}
+
+/** A node result rebuilt from its stored copy, for a rerun to read as it read the original. */
+function seededNodeResult(stored: RunResult, type: WorkflowNode["type"]): NodeResult {
+  const response = isJsonRecord(stored.response) ? stored.response : {}
+  const request = isJsonRecord(stored.request) ? stored.request : {}
+  const passed = stored.status === "passed"
+  const statusCode = typeof response["statusCode"] === "number" ? response["statusCode"] : undefined
+  return {
+    status: passed ? "success" : "error",
+    type,
+    duration: stored.duration,
+    ...(statusCode !== undefined
+      ? {
+          statusCode,
+          headers: (isJsonRecord(response["headers"]) ? response["headers"] : {}) as Record<string, string>,
+          body: response["body"],
+          response: response as unknown as NonNullable<NodeResult["response"]>,
+        }
+      : {}),
+    ...(typeof request["method"] === "string" ? { method: request["method"] } : {}),
+    ...(typeof request["url"] === "string" ? { url: request["url"] } : {}),
+    ...(typeof stored.error === "string" ? { error: stored.error } : {}),
+    ...(type === "assertion"
+      ? { assertionOutcome: passed ? "pass" as const : "fail" as const, assertionEvaluations: stored.assertions ?? [] }
+      : {}),
+  }
+}
+
+function isJsonRecord(value: JsonValue | null | undefined): value is { readonly [key: string]: JsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function toJsonValue(value: unknown): JsonValue {

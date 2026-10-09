@@ -22,6 +22,8 @@ export const RunSummarySchema = z
     failedNodeCount: z.number().int().nonnegative(),
     nodeCount: z.number().int().nonnegative(),
     iteration: RunIterationSchema.nullable(),
+    /** Set on a rerun: the run whose results and variables it reused. */
+    resumeFromRunId: z.string().min(1).nullable(),
     runRev: RevisionSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,

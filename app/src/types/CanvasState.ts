@@ -21,6 +21,8 @@ export interface CanvasState {
   copyNode: (nodeId: string) => void;
   pasteNode: () => void;
   savePresetFromNode: (nodeId: string) => void;
+  /** Rerun the workflow from this node on, reusing the latest run's results upstream. */
+  runFromNode: (nodeId: string) => void;
   clearPendingAction: () => void;
   setClipboard: (clipboard: CanvasClipboard) => void;
   hydrateClipboard: () => void;

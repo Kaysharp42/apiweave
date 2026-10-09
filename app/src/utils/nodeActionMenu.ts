@@ -4,8 +4,10 @@ export const buildNodeActionMenuItems = ({
   collapsible = false,
   isExpanded = false,
   presetable = false,
+  runnable = false,
 } = {}): NodeActionMenuItem[] => {
   const items: NodeActionMenuItem[] = [
+    ...(runnable ? [{ key: "run-from", label: "Run from here" }] : []),
     { key: "duplicate", label: "Duplicate" },
     { key: "copy", label: "Copy" },
   ];
