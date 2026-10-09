@@ -411,7 +411,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
   Postman Collection v2.1, and optionally a Postman environment, into a new
   project: one workflow per folder (nested folders named `Parent / Child`) or
   one per request, each request with its method, URL, query, path variables,
-  headers, body (raw, urlencoded, form-data text fields, GraphQL as JSON) and
+  headers, body (raw, urlencoded, form-data text fields, GraphQL) and
   inherited auth (bearer, basic, API key, OAuth 2.0). Variables go to one
   **Postman: …** environment, dynamic variables such as `{{$guid}}` to
   APIWeave's dynamic functions, and test scripts that check the status or

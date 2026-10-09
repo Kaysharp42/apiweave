@@ -32,10 +32,15 @@ the upstream results and variables of an earlier run, and **version history**
 for every workflow, restoring an earlier version after a bad save, agent edit,
 import or sync.
 
+Teams and CI (1.0): **one-click project runs** with live progress, the headless
+**`apiweave run`** CLI with JUnit and HTML reports, **data-driven runs** from CSV
+or JSON, **Postman import**, **git-friendly project folders**, OAuth 2.0, Digest,
+AWS Signature V4 and JWT auth, GraphQL bodies, sandboxed pre-request and
+post-response scripts, schema and contract assertions, retry and polling, a
+per-run cookie jar, and proxy, private CA and client-certificate support.
+
 ## Next
 
-- **One-click project runs.** Execute a project's enabled workflows in order
-  under the per-row `continueOnFail` flag, producing one project run record.
 - **MCP tool surface expansion.** Additional local-only MCP tools that map to
   existing IPC handlers, staying inside the loopback bridge and the per-install
   token model.
@@ -59,8 +64,8 @@ The following were explored in earlier builds and are explicitly out of scope
 for the desktop app. They either contradict the local-first boundary or belong
 to the optional Cloud control plane rather than the desktop process:
 
-- Webhooks or remote triggers. Runs start from the UI or the local MCP bridge
-  today; local scheduling is planned (see Later).
+- Webhooks or remote triggers. Runs start from the UI, the local MCP bridge
+  or the `apiweave run` CLI in your own CI; local scheduling is planned (see Later).
 - Hosted execution or cloud-side run history. Cloud never builds or runs tests.
 - Real-time canvas collaboration. The desktop canvas is single-user on the
   machine it runs on.
