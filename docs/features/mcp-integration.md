@@ -227,6 +227,13 @@ environment this one inherits plain variables from; `null` clears it. See
 - `runs_getLatestFailed`
 - `runs_cancel`
 
+`runs_create` also reruns part of a workflow: `resume: { nodeId }` starts at
+that step, `resume: {}` reruns the steps the latest run failed, and `fromRunId`
+picks another source run. Upstream steps are not sent again; their stored
+results and variables are reused, and a rerun that would need a value stored
+masked is refused. See
+[Rerun from a node](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
+
 `runs_getNodeResult` is the exception to the metadata-only rule: it returns one
 node's stored request and response from a run, body included, after the same
 secret-redaction pass every MCP read gets. Use it to inspect a single node's
