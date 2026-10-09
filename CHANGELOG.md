@@ -278,6 +278,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Proxy, private CAs and client certificates (mTLS).** Settings > Network
+  sends every request through an http(s) proxy (with a bypass list and Basic
+  credentials), trusts the operating system's certificate store (on by
+  default, so a corporate root installed there just works in the packaged app,
+  which ignores `NODE_EXTRA_CA_CERTS`) and extra PEM CA files, and presents a
+  client certificate (PEM certificate and key, or PFX) to the hosts it names.
+  Files are checked when saved; the proxy password and passphrases are stored
+  encrypted and never shown again. The settings are not reachable over MCP. The
+  CLI gains `--proxy` (and honours `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`),
+  `--ca-cert`, `--use-system-ca` and `--client-cert host=cert,key[,SECRET]`.
 - **Automatic cookies.** Each run keeps a cookie jar: a cookie a response sets,
   including on a redirect, is sent by every later request of the run that it
   matches by domain, path, `Secure` and expiry, so a session-cookie login works

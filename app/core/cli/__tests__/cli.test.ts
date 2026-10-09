@@ -6,6 +6,14 @@ import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
+import {
+  PFX_PASSPHRASE,
+  fixturePath,
+  startConnectProxy,
+  startHttpsServer,
+  type TestProxy,
+  type TestServer,
+} from "../../runner/__tests__/network_test_servers"
 
 const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.awecollection")
 const TOKEN = "s3cr3t-fixture-token"
@@ -442,5 +450,77 @@ describe("apiweave run", () => {
       expect(result.stderr).toContain(message)
       expect(requests).toEqual([])
     })
+  })
+})
+
+describe("apiweave run — network flags", () => {
+  let tlsServer: TestServer
+  let mtlsServer: TestServer
+  let proxy: TestProxy
+  const secretEnv = { APIWEAVE_SECRET_API_TOKEN: TOKEN }
+
+  beforeAll(async () => {
+    tlsServer = await startHttpsServer()
+    mtlsServer = await startHttpsServer(true)
+    proxy = await startConnectProxy()
+  })
+
+  afterAll(async () => {
+    await Promise.all([tlsServer.close(), mtlsServer.close(), proxy.close()])
+  })
+
+  beforeEach(() => {
+    proxy.tunnels.length = 0
+  })
+
+  const against = (server: TestServer, ...flags: string[]): string[] => ["run", FIXTURE, "--env", "CI", "--var", `baseUrl=${server.url}`, ...flags]
+
+  it("trusts a private CA with --ca-cert, and fails the TLS handshake without it", async () => {
+    const without = await run(against(tlsServer), secretEnv)
+    expect(without.code).toBe(EXIT_FAILED)
+    expect(without.stdout).toContain("TLS handshake")
+
+    const trusted = await run(against(tlsServer, "--ca-cert", fixturePath("ca.pem")), secretEnv)
+    expect(trusted.stderr).toBe("")
+    expect(trusted.code).toBe(EXIT_PASSED)
+  })
+
+  it("presents a client certificate with --client-cert, its passphrase read as a secret", async () => {
+    const ca = ["--ca-cert", fixturePath("ca.pem")]
+    expect((await run(against(mtlsServer, ...ca), secretEnv)).code).toBe(EXIT_FAILED)
+
+    const pem = await run(against(mtlsServer, ...ca, "--client-cert", `127.0.0.1=${fixturePath("client.pem")},${fixturePath("client.key")}`), secretEnv)
+    expect(pem.code).toBe(EXIT_PASSED)
+
+    const pfx = await run(
+      against(mtlsServer, ...ca, "--client-cert", `127.0.0.1=${fixturePath("client.pfx")},PFX_PASS`),
+      { ...secretEnv, APIWEAVE_SECRET_PFX_PASS: PFX_PASSPHRASE },
+    )
+    expect(pfx.code).toBe(EXIT_PASSED)
+  })
+
+  it.each([
+    [["--client-cert", "no-equals-sign"], "--client-cert must look like"],
+    [["--client-cert", `127.0.0.1=${fixturePath("client.pem")}`], "needs its key file"],
+    [["--client-cert", `127.0.0.1=${fixturePath("client.pfx")},PFX_PASS`], "missing secret PFX_PASS"],
+    [["--client-cert", `127.0.0.1=${fixturePath("client.pfx")}`], "Client certificate for 127.0.0.1"],
+    [["--ca-cert", fixturePath("missing.pem")], "cannot read"],
+    [["--proxy", "socks5://127.0.0.1:1080"], "the proxy must be an http:// or https:// URL"],
+  ])("exits 2 on unusable network flags: %s", async (flags, message) => {
+    const result = await run(against(tlsServer, ...flags), secretEnv)
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain(message)
+  })
+
+  it("sends requests through --proxy, or HTTPS_PROXY, and honours NO_PROXY", async () => {
+    const ca = ["--ca-cert", fixturePath("ca.pem")]
+    expect((await run(against(tlsServer, ...ca, "--proxy", proxy.url), secretEnv)).code).toBe(EXIT_PASSED)
+    expect(proxy.tunnels).toEqual([new URL(tlsServer.url).host])
+
+    expect((await run(against(tlsServer, ...ca), { ...secretEnv, HTTPS_PROXY: proxy.url })).code).toBe(EXIT_PASSED)
+    expect(proxy.tunnels).toHaveLength(2)
+
+    expect((await run(against(tlsServer, ...ca), { ...secretEnv, HTTPS_PROXY: proxy.url, NO_PROXY: "127.0.0.1" })).code).toBe(EXIT_PASSED)
+    expect(proxy.tunnels).toHaveLength(2)
   })
 })

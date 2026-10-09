@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import {
   Bot,
   MousePointer2,
+  Network,
   Plug,
   RefreshCw,
   type LucideIcon,
@@ -10,6 +11,7 @@ import { Navigate, useParams } from "react-router-dom";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
 import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
 import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
+import { NetworkSettingsPanel } from "../components/organisms/NetworkSettingsPanel";
 import { UpdateSettingsPanel } from "../components/organisms/UpdateSettingsPanel";
 
 interface SettingsSection {
@@ -47,6 +49,13 @@ export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
     subtitle: "Let agents drive your workflows",
     width: "max-w-2xl",
     Panel: McpSetupPanel,
+  },
+  network: {
+    icon: Network,
+    title: "Network",
+    subtitle: "Proxy, trusted certificates and client certificates",
+    width: "max-w-3xl",
+    Panel: NetworkSettingsPanel,
   },
   updates: {
     icon: RefreshCw,

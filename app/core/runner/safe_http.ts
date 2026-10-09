@@ -1,5 +1,6 @@
 import type { CookieJar } from "tough-cookie"
-import { Agent, Headers, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
+import { Headers, fetch, type RequestInit, type Response } from "undici"
+import { NetworkDispatchers, type NetworkConfig } from "./network"
 
 /**
  * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
@@ -31,6 +32,8 @@ export type SafeHttpOptions = {
   readonly maxRedirectHops?: number
   readonly fetchImpl?: typeof fetch
   readonly timeoutMs?: number
+  /** Proxy, trusted CAs and client certificates; `configure` replaces it. */
+  readonly network?: NetworkConfig
 }
 
 export type SafeFetchOptions = {
@@ -53,11 +56,30 @@ export class SafeHttp {
   private readonly maxRedirectHops: number
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
+  private network: NetworkDispatchers
 
   public constructor(opts: SafeHttpOptions = {}) {
     this.maxRedirectHops = opts.maxRedirectHops ?? MAX_REDIRECT_HOPS
     this.fetchImpl = opts.fetchImpl ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 30_000
+    this.network = new NetworkDispatchers(opts.network)
+  }
+
+  /**
+   * Switch to a new network config for the next request. Requests already
+   * sent finish on the old connection pools, which close once they drain —
+   * not awaited, since an SSE listener without a deadline may hold one open
+   * for as long as its run lasts.
+   */
+  public configure(config: NetworkConfig): void {
+    const previous = this.network
+    this.network = new NetworkDispatchers(config)
+    previous.close().catch(() => undefined)
+  }
+
+  /** Close the connection pools a network config opened (the global agent is not ours). */
+  public close(): Promise<void> {
+    return this.network.close()
   }
 
   // -------------------- Pure validation (no I/O) --------------------
@@ -119,11 +141,14 @@ export class SafeHttp {
     const signal = composeAbortSignal(opts.timeoutMs ?? this.timeoutMs, init.signal)
     const followRedirects = opts.followRedirects ?? true
     const maxHops = followRedirects ? this.maxRedirectHops : 0
-    let requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
+    let requestInit: RequestInit = { ...init, redirect: "manual", signal }
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
       const jar = opts.cookieJar
-      const response = await this.fetchImpl(currentUrl, jar ? withJarCookies(requestInit, jar, currentUrl) : requestInit)
+      // Per hop: a redirect to another host may need another client certificate, or bypass the proxy.
+      const dispatcher = this.network.dispatcherFor(currentUrl, opts.rejectUnauthorized ?? true)
+      const hopInit = jar ? withJarCookies(requestInit, jar, currentUrl) : requestInit
+      const response = await this.fetchImpl(currentUrl, dispatcher ? { ...hopInit, dispatcher } : hopInit)
       if (jar) storeCookies(jar, response, currentUrl)
       const hopResult = this.resolveHop(currentUrl, response, followRedirects, hop)
       if (hopResult.done) return hopResult.response
@@ -262,18 +287,6 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname
 }
 
-let insecureTlsDispatcher: Dispatcher | undefined
-
-/**
- * Dispatcher for the per-node "accept a self-signed certificate" opt-out. One
- * shared pool, like undici's global agent: a fresh Agent per request would
- * leak its sockets.
- */
-function getInsecureTlsDispatcher(): Dispatcher {
-  insecureTlsDispatcher ??= new Agent({ connect: { rejectUnauthorized: false } })
-  return insecureTlsDispatcher
-}
-
 /**
  * `init` with the jar's cookies for `url` added to its Cookie header. The
  * jar's cookies are added per hop and never written back into the init the
@@ -340,13 +353,4 @@ function composeAbortSignal(timeoutMs: number, callerSignal: AbortSignal | null 
   if (timeoutMs > 0) signals.push(AbortSignal.timeout(timeoutMs))
   if (callerSignal) signals.push(callerSignal)
   return signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
-}
-
-/**
- * Attach the per-node "accept a self-signed certificate" dispatcher when
- * requested. Everything else rides undici's default global agent, which
- * pools connections across requests.
- */
-function withDispatcher(init: RequestInit, rejectUnauthorized: boolean | undefined): RequestInit {
-  return rejectUnauthorized === false ? { ...init, dispatcher: getInsecureTlsDispatcher() } : init
 }

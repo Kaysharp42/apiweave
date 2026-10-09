@@ -16,6 +16,7 @@ import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
+import type { NetworkBridge } from "@shared/types/NetworkBridge"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
@@ -23,6 +24,7 @@ import {
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
+  NETWORK_CHANNELS,
   OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   runProgressChannel,
@@ -226,6 +228,15 @@ const oauthBridge: OAuthBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_OAUTH__", oauthBridge)
+
+/** Settings > Network — a privileged world for the same reason as the OAuth bridge. */
+const networkBridge: NetworkBridge = {
+  get: invokeBridge(NETWORK_CHANNELS.get),
+  save: invokeBridge(NETWORK_CHANNELS.save),
+  chooseFile: invokeBridge(NETWORK_CHANNELS.chooseFile),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_NETWORK__", networkBridge)
 
 /**
  * The one thing that cannot travel over `contextBridge`: a session's output port.

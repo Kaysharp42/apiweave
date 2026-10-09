@@ -280,6 +280,19 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  /**
+   * Settings > Network decides where every request goes (the proxy), which
+   * servers are trusted (CAs) and makes main read files from disk. An agent
+   * able to change it could route a run's secrets through a proxy it controls,
+   * so it lives off the router (NETWORK_CHANNELS, a privileged preload world).
+   */
+  it("exposes no network settings tools — the proxy and trust store are not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("network")
+      expect(spec.domain).not.toBe("settings")
+    }
+  })
+
   it("exposes no webhook or import tools (dropped/deferred surface)", () => {
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("webhooks")

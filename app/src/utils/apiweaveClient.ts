@@ -32,6 +32,9 @@ import type { McpStatus } from "@shared/types/McpStatus";
 import type { OAuthBridge } from "@shared/types/OAuthBridge";
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
 import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
+import type { NetworkBridge } from "@shared/types/NetworkBridge";
+import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
+import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -135,6 +138,7 @@ declare global {
     __APIWEAVE_UPDATES__?: UpdatesBridge;
     __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_OAUTH__?: OAuthBridge;
+    __APIWEAVE_NETWORK__?: NetworkBridge;
     apiweave?: typeof apiweave;
   }
 
@@ -152,6 +156,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_UPDATES__?: UpdatesBridge;
   __APIWEAVE_AGENTS__?: AgentsBridge;
   __APIWEAVE_OAUTH__?: OAuthBridge;
+  __APIWEAVE_NETWORK__?: NetworkBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -1168,4 +1173,35 @@ export const oauth = {
     getOAuthBridge()?.status(request) ?? oauthDesktopOnly(),
   clear: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
     getOAuthBridge()?.clear(request) ?? oauthDesktopOnly(),
+} as const;
+
+function getNetworkBridge(): NetworkBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_NETWORK__ ??
+    globalApiweave.__APIWEAVE_NETWORK__
+  );
+}
+
+const networkDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Network settings are only available in the desktop app"),
+  );
+
+/** Electron wraps an error thrown in main as "Error invoking remote method 'x': Error: <message>". */
+function unwrapRemoteError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  throw new Error(
+    message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, ""),
+  );
+}
+
+/** Settings > Network. A sibling of `oauth`, off the router facade: see `NetworkBridge`. */
+export const network = {
+  get: (): Promise<NetworkSettingsState> =>
+    getNetworkBridge()?.get() ?? networkDesktopOnly(),
+  save: (update: NetworkSettingsUpdate): Promise<NetworkSettingsState> =>
+    getNetworkBridge()?.save(update).catch(unwrapRemoteError) ??
+    networkDesktopOnly(),
+  chooseFile: (): Promise<string | null> =>
+    getNetworkBridge()?.chooseFile() ?? networkDesktopOnly(),
 } as const;

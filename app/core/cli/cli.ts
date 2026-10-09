@@ -22,6 +22,7 @@ import { convertPostmanCollection, isPostmanCollection, isPostmanEnvironment } f
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { DynamicFunctions } from "../runner/dynamic_functions"
 import { SafeHttp, type SafeFetchOptions } from "../runner/safe_http"
+import { loadCaCertificates, loadClientCertificate, type NetworkConfig } from "../runner/network"
 import { RunScheduler } from "../runner/scheduler"
 import { ProjectRunner, planProjectRun } from "../runner/project_runner"
 import { buildConsoleReport, buildReport, type ReportInput, type SingleReportInput } from "../runner/reporters"
@@ -86,6 +87,14 @@ Options:
       --bail                      Stop at the first failed workflow or iteration
       --timeout-request <ms>      Timeout for every request, overriding each node's
   -k, --insecure                  Do not verify TLS certificates
+      --proxy <url>               Send requests through this proxy (default: the
+                                  HTTPS_PROXY or HTTP_PROXY variable; NO_PROXY applies)
+      --ca-cert <file>            Also trust this CA certificate, PEM (repeatable)
+      --use-system-ca             Also trust the operating system's certificate store
+      --client-cert <spec>        Client certificate (mTLS) for a host (repeatable):
+                                  host=cert.pem,key.pem[,PASSPHRASE_SECRET] or
+                                  host=client.pfx[,PASSPHRASE_SECRET]; host may be
+                                  *.example.com and may end in :port
   -h, --help                      Show this help
 
 Secrets are read from ${SECRET_ENV_PREFIX}<NAME> environment variables too.
@@ -134,6 +143,10 @@ interface CliOptions {
   readonly bail: boolean
   readonly timeoutMs: number | undefined
   readonly insecure: boolean
+  readonly proxy: string | undefined
+  readonly caCerts: readonly string[]
+  readonly useSystemCa: boolean
+  readonly clientCerts: readonly string[]
 }
 
 function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help" {
@@ -156,6 +169,10 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
       bail: { type: "boolean" },
       "timeout-request": { type: "string" },
       insecure: { type: "boolean", short: "k" },
+      proxy: { type: "string" },
+      "ca-cert": { type: "string", multiple: true },
+      "use-system-ca": { type: "boolean" },
+      "client-cert": { type: "string", multiple: true },
       help: { type: "boolean", short: "h" },
     },
   })
@@ -200,6 +217,56 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     bail: values.bail === true,
     timeoutMs,
     insecure: values.insecure === true,
+    proxy: values.proxy,
+    caCerts: (values["ca-cert"] ?? []).map((file) => path.resolve(cwd, file)),
+    useSystemCa: values["use-system-ca"] === true,
+    clientCerts: values["client-cert"] ?? [],
+  }
+}
+
+/**
+ * `--proxy` (or the HTTPS_PROXY / HTTP_PROXY variables, with NO_PROXY),
+ * `--ca-cert`, `--use-system-ca` and `--client-cert`, loaded. A client
+ * certificate's passphrase is a secret name, read like any other secret.
+ */
+function networkConfig(options: CliOptions, secrets: ReadonlyMap<string, string>, env: CliIo["env"], cwd: string): NetworkConfig {
+  const proxy = options.proxy ?? env["HTTPS_PROXY"] ?? env["https_proxy"] ?? env["HTTP_PROXY"] ?? env["http_proxy"]
+  const noProxy = env["NO_PROXY"] ?? env["no_proxy"]
+  if (proxy !== undefined && proxy !== "") {
+    let parsed: URL | undefined
+    try {
+      parsed = new URL(proxy)
+    } catch {
+      parsed = undefined
+    }
+    if (parsed === undefined || !["http:", "https:"].includes(parsed.protocol)) throw new UsageError("the proxy must be an http:// or https:// URL")
+  }
+  const clientCertificates = options.clientCerts.map((spec) => {
+    const separator = spec.indexOf("=")
+    const files = separator < 0 ? [] : spec.slice(separator + 1).split(",").map((part) => part.trim())
+    if (separator <= 0 || files.length === 0 || files[0] === "") {
+      throw new UsageError(`--client-cert must look like host=cert.pem,key.pem[,PASSPHRASE_SECRET] or host=client.pfx[,PASSPHRASE_SECRET], got '${spec}'`)
+    }
+    const isPfx = /\.(pfx|p12)$/i.test(files[0]!)
+    const [first, second] = files.map((file) => path.resolve(cwd, file))
+    const secretName = isPfx ? files[1] : files[2]
+    if (!isPfx && second === undefined) throw new UsageError(`--client-cert ${spec}: a PEM certificate needs its key file after it`)
+    const passphrase = secretName === undefined ? undefined : secrets.get(secretName)
+    if (secretName !== undefined && passphrase === undefined) {
+      throw new UsageError(`--client-cert ${spec}: missing secret ${secretName}. Set ${SECRET_ENV_PREFIX}${secretName} or pass --secret ${secretName}=value.`)
+    }
+    return loadClientCertificate({
+      host: spec.slice(0, separator),
+      ...(isPfx ? { pfxFile: first! } : { certFile: first!, keyFile: second! }),
+      ...(passphrase === undefined ? {} : { passphrase }),
+    })
+  })
+  return {
+    ...(proxy ? { proxy } : {}),
+    ...(noProxy ? { noProxy } : {}),
+    ca: loadCaCertificates(options.caCerts),
+    useSystemCa: options.useSystemCa,
+    clientCertificates,
   }
 }
 
@@ -229,6 +296,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
   const postmanEnvironment = isPostmanCollection(bundle) && isPostmanEnvironment(envFileVariables) ? envFileVariables : undefined
   const database = initDatabase({ databasePath: ":memory:" })
   let scheduler: RunScheduler | undefined
+  let http: CliHttp | undefined
   try {
     const workspaces = new WorkspaceRepository(database.kvStore)
     const workflows = new WorkflowRepository(database.kvStore)
@@ -315,16 +383,20 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     }
 
     // -------- Run --------
+    http = new CliHttp(
+      {
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options.insecure ? { rejectUnauthorized: false } : {}),
+      },
+      networkConfig(options, secrets, io.env, io.cwd),
+    )
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const runScheduler = new RunScheduler({
       runs,
       workflows,
       environments,
-      http: new CliHttp({
-        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
-        ...(options.insecure ? { rejectUnauthorized: false } : {}),
-      }),
+      http,
       functions: new DynamicFunctions(clock, rng),
       clock,
       rng,
@@ -390,14 +462,15 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     return passed ? EXIT_PASSED : EXIT_FAILED
   } finally {
     await scheduler?.shutdown(0)
+    await http?.close()
     database.close()
   }
 }
 
 /** `--timeout-request` and `--insecure` apply to every request, over each node's own setting. */
 class CliHttp extends SafeHttp {
-  public constructor(private readonly overrides: SafeFetchOptions) {
-    super()
+  public constructor(private readonly overrides: SafeFetchOptions, network: NetworkConfig) {
+    super({ network })
   }
 
   public override safeFetch(url: string, init?: RequestInit, opts: SafeFetchOptions = {}): Promise<Response> {

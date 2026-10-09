@@ -73,6 +73,17 @@ export const OAUTH_CHANNELS = {
 } as const
 
 /**
+ * Settings > Network. Privileged and off the router like `OAUTH_CHANNELS`: it
+ * decides where every request goes and which servers are trusted, and makes
+ * main read files from disk — no local agent may reach it over MCP.
+ */
+export const NETWORK_CHANNELS = {
+  get: "network:get",
+  save: "network:save",
+  chooseFile: "network:chooseFile",
+} as const
+
+/**
  * A run began — broadcast for EVERY run, whoever started it (the canvas's own
  * Run button, or an agent through the MCP `runs_create` tool).
  *

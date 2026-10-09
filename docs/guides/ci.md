@@ -58,6 +58,10 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--bail` | Stop a project run at its first failed workflow, whatever its row says, and a data-driven run at its first failed iteration. |
 | `--timeout-request <ms>` | Timeout for every request, replacing each node's own timeout. |
 | `-k, --insecure` | Do not verify TLS certificates (self-signed test servers). |
+| `--proxy <url>` | Send every request through this proxy. Default: the `HTTPS_PROXY` (or `HTTP_PROXY`) variable. See [Network](#network-proxy-and-certificates). |
+| `--ca-cert <file>` | Also trust this CA certificate (PEM). Repeatable. |
+| `--use-system-ca` | Also trust the operating system's certificate store. |
+| `--client-cert <spec>` | Present a client certificate (mTLS) to a host. Repeatable. See [Network](#network-proxy-and-certificates). |
 
 `--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports you ask for.
 
@@ -107,6 +111,26 @@ export APIWEAVE_SECRET_API_OAUTH="$REFRESH_TOKEN"
 ```
 
 The refreshed tokens are not saved anywhere. If your provider rotates refresh tokens on every use, the one you supplied stops working after one run: use a client-credentials client for CI where you can.
+
+## Network: proxy and certificates
+
+The CLI has the flags for what the app's [Settings > Network](../features/network.md) holds:
+
+```bash
+export HTTPS_PROXY=http://user:password@proxy.corp:3128
+export NO_PROXY=localhost,.internal
+export APIWEAVE_SECRET_CLIENT_PFX_PASSPHRASE="$PFX_PASSPHRASE"
+apiweave run api.awecollection --env Staging \
+  --ca-cert corp-root.pem \
+  --client-cert "api.example.com=client.pem,client.key" \
+  --client-cert "*.partner.example=partner.pfx,CLIENT_PFX_PASSPHRASE"
+```
+
+- **Proxy.** `--proxy <url>`, or else the `HTTPS_PROXY` / `https_proxy` variable, or else `HTTP_PROXY` / `http_proxy`, carries every request, http and https, through an http(s) proxy with `CONNECT`. Credentials go in the URL. `NO_PROXY` lists the hosts sent directly.
+- **CAs.** `--ca-cert` adds a PEM CA certificate to the bundled roots; `--use-system-ca` adds the operating system's store, which is where a CI image usually installs a corporate root. `NODE_EXTRA_CA_CERTS` works too, as it does for any Node program.
+- **Client certificates.** `--client-cert host=cert.pem,key.pem[,SECRET]` or `--client-cert host=client.pfx[,SECRET]`. The host may be `*.example.com` and may end in `:port`; the first matching flag is used. `SECRET` names the secret holding the key's or PFX's passphrase, supplied like any other secret (`APIWEAVE_SECRET_<NAME>`, `--secret`, `--secrets-file`), so it is masked in the output.
+
+A file that cannot be read, a key that does not match its certificate or a wrong passphrase exits `2` before any request is sent.
 
 ## GitHub Actions
 

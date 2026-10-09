@@ -10,6 +10,9 @@ vi.mock("../../components/organisms/AgentsSettingsPanel", () => ({
 vi.mock("../../components/organisms/McpSetupPanel", () => ({
   McpSetupPanel: () => <div>mcp panel</div>,
 }));
+vi.mock("../../components/organisms/NetworkSettingsPanel", () => ({
+  NetworkSettingsPanel: () => <div>network panel</div>,
+}));
 vi.mock("../../components/organisms/UpdateSettingsPanel", () => ({
   UpdateSettingsPanel: () => <div>updates panel</div>,
 }));
@@ -35,6 +38,7 @@ describe("AppSettingsPage", () => {
   it.each([
     ["agents", "Agents", "agents panel"],
     ["mcp-server", "MCP Server", "mcp panel"],
+    ["network", "Network", "network panel"],
     ["updates", "Updates", "updates panel"],
   ])("renders %s as a page", (section, heading, panel) => {
     renderAt(`/personal/personal/settings/${section}`);

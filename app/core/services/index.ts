@@ -18,6 +18,7 @@ export { WorkspaceService } from "./workspace_service"
 export type { WorkspaceCreateInput } from "./workspace_service"
 export { SecretService } from "./secret_service"
 export { OAuthService } from "./oauth_service"
+export { NetworkSettingsService, DEFAULT_NETWORK_SETTINGS } from "./network_settings_service"
 export type { SecretUpsert, SecretWriteStore } from "../secrets/SecretStore"
 export { ProjectExportService, SCHEMA_VERSION } from "./project_export_service"
 export type {

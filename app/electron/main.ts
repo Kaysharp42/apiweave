@@ -40,6 +40,7 @@ import {
   ProjectExportService,
   ImportService,
   OAuthService,
+  NetworkSettingsService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
@@ -71,6 +72,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
+  NETWORK_CHANNELS,
   OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
@@ -495,6 +497,15 @@ if (!hasSingleInstanceLock) {
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const http = new SafeHttp()
+    // Settings > Network (proxy, trusted CAs, client certificates). A saved
+    // setting that no longer loads (a certificate file moved) leaves the
+    // defaults in place; the Network page shows the problem.
+    const networkSettings = new NetworkSettingsService(appSettings, keyfile.masterKek)
+    try {
+      http.configure(networkSettings.config())
+    } catch (error) {
+      bootstrapLog.warn(`network settings not applied: ${error instanceof Error ? error.message : String(error)}`)
+    }
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -854,6 +865,33 @@ if (!hasSingleInstanceLock) {
     )
     ipcMain.handle(OAUTH_CHANNELS.status, requireTrustedSender((request: OAuthTokenRequest) => oauthService.status(request)))
     ipcMain.handle(OAUTH_CHANNELS.clear, requireTrustedSender((request: OAuthTokenRequest) => oauthService.clear(request)))
+
+    // Settings > Network. Off the router like oauth:*: where every request
+    // goes and which servers are trusted is the user's call, never an agent's.
+    // Certificate paths come from the native picker below.
+    ipcMain.handle(NETWORK_CHANNELS.get, requireTrustedSender(() => networkSettings.state()))
+    ipcMain.handle(
+      NETWORK_CHANNELS.save,
+      requireTrustedSender((update: unknown) => {
+        http.configure(networkSettings.save(update))
+        return networkSettings.state()
+      }),
+    )
+    ipcMain.handle(
+      NETWORK_CHANNELS.chooseFile,
+      requireTrustedSender(async (): Promise<string | null> => {
+        const options: Electron.OpenDialogOptions = {
+          properties: ["openFile"],
+          filters: [
+            { name: "Certificates and keys", extensions: ["pem", "crt", "cer", "key", "pfx", "p12"] },
+            { name: "All files", extensions: ["*"] },
+          ],
+        }
+        const win = mainWindow
+        const result = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+        return result.canceled ? null : (result.filePaths[0] ?? null)
+      }),
+    )
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

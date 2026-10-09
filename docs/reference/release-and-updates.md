@@ -107,7 +107,7 @@ Neither path has been exercised in CI yet: expect to iterate on the first signed
 
 ## Packaged-build hardening
 
-`build.electronFuses` in `app/package.json` flips Electron's fuses when electron-builder packages the app: `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` / `NODE_EXTRA_CA_CERTS` and `--inspect` are ignored; only `app.asar` is loaded, with its integrity checked on macOS and Windows; cookies are encrypted at rest; and `file://` pages get no extra privileges. A side effect for users: a corporate root CA can no longer be added through `NODE_EXTRA_CA_CERTS` — it has to be trusted by the OS. The fuses only apply to packaged builds; `npm run dev` is unaffected.
+`build.electronFuses` in `app/package.json` flips Electron's fuses when electron-builder packages the app: `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` / `NODE_EXTRA_CA_CERTS` and `--inspect` are ignored; only `app.asar` is loaded, with its integrity checked on macOS and Windows; cookies are encrypted at rest; and `file://` pages get no extra privileges. A side effect for users: a corporate root CA can no longer be added through `NODE_EXTRA_CA_CERTS`. Requests trust the OS certificate store by default, and Settings > Network can add a CA file (see [Network](../features/network.md)). The fuses only apply to packaged builds; `npm run dev` is unaffected.
 
 Packaged builds also ignore `APIWEAVE_FRONTEND_DIST` and always serve the renderer they shipped with.
 
