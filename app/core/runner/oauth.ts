@@ -34,6 +34,23 @@ export interface OAuthToken {
 /** Tokens by {@link tokenCacheKey}. One per app session (desktop) or process (CLI). */
 export type OAuthTokenCache = Map<string, OAuthToken>
 
+/**
+ * Token requests in flight, by {@link tokenCacheKey}. Concurrent branches and
+ * runs that need the same token await one request instead of each sending
+ * their own — two refreshes with one rotating refresh token would burn it.
+ */
+const inFlight = new Map<string, Promise<OAuthToken>>()
+
+// ponytail: the first caller's signal governs the shared request, so cancelling
+// that run fails the others waiting on it; their own retry is a fresh request.
+function singleFlight(key: string, request: () => Promise<OAuthToken>): Promise<OAuthToken> {
+  const pending = inFlight.get(key)
+  if (pending) return pending
+  const promise = request().finally(() => inFlight.delete(key))
+  inFlight.set(key, promise)
+  return promise
+}
+
 export function isTokenFresh(token: OAuthToken, now: number): boolean {
   return token.accessToken.length > 0 && (token.expiresAt === null || token.expiresAt - TOKEN_EXPIRY_SKEW_MS > now)
 }
@@ -236,25 +253,28 @@ export async function oauthAccessToken(config: ResolvedOAuth2, ctx: OAuthRunCont
 }
 
 async function clientCredentialsToken(config: ResolvedOAuth2, ctx: OAuthRunContext, forceRefresh: boolean): Promise<OAuthToken> {
-  if (!config.clientSecret) {
+  const clientSecret = config.clientSecret
+  if (!clientSecret) {
     throw new OAuthError("OAuth 2.0: client credentials need a client secret set as {{secrets.NAME}}")
   }
-  const key = tokenCacheKey(["client_credentials", config.tokenUrl, config.clientId, config.scope ?? "", config.audience ?? "", config.clientSecret])
+  const key = tokenCacheKey(["client_credentials", config.tokenUrl, config.clientId, config.scope ?? "", config.audience ?? "", clientSecret])
   const cached = ctx.cache.get(key)
   if (cached && !forceRefresh && isTokenFresh(cached, ctx.now)) return cached
-  const token = await requestToken(ctx.http, {
-    tokenUrl: config.tokenUrl,
-    clientId: config.clientId,
-    clientSecret: config.clientSecret,
-    clientAuth: config.clientAuth,
-    params: {
-      grant_type: "client_credentials",
-      ...(config.scope ? { scope: config.scope } : {}),
-      ...(config.audience ? { audience: config.audience } : {}),
-    },
-  }, ctx)
-  ctx.cache.set(key, token)
-  return token
+  return singleFlight(key, async () => {
+    const token = await requestToken(ctx.http, {
+      tokenUrl: config.tokenUrl,
+      clientId: config.clientId,
+      clientSecret,
+      clientAuth: config.clientAuth,
+      params: {
+        grant_type: "client_credentials",
+        ...(config.scope ? { scope: config.scope } : {}),
+        ...(config.audience ? { audience: config.audience } : {}),
+      },
+    }, ctx)
+    ctx.cache.set(key, token)
+    return token
+  })
 }
 
 async function authorizationCodeToken(config: ResolvedOAuth2, ctx: OAuthRunContext, forceRefresh: boolean): Promise<OAuthToken> {
@@ -272,33 +292,36 @@ async function authorizationCodeToken(config: ResolvedOAuth2, ctx: OAuthRunConte
   ctx.mask(config.storedToken)
   const current = ctx.cache.get(key) ?? decoded.token
   if (!forceRefresh && isTokenFresh(current, ctx.now)) return current
-  if (!current.refreshToken) {
+  const refreshToken = current.refreshToken
+  if (!refreshToken) {
     throw new OAuthError(`OAuth 2.0: the token in secret ${secretName} expired and has no refresh token. Use Get token again.`)
   }
-  ctx.mask(current.refreshToken)
-  const refreshed = await requestToken(ctx.http, {
-    tokenUrl: config.tokenUrl,
-    clientId: config.clientId,
-    ...(config.clientSecret ? { clientSecret: config.clientSecret } : {}),
-    clientAuth: config.clientAuth,
-    params: {
-      grant_type: "refresh_token",
-      refresh_token: current.refreshToken,
-      ...(config.scope ? { scope: config.scope } : {}),
-    },
-  }, ctx)
-  // A server that does not rotate refresh tokens leaves the old one valid.
-  const token: OAuthToken = {
-    ...refreshed,
-    refreshToken: refreshed.refreshToken ?? current.refreshToken,
-    ...(refreshed.authorizedAs ?? current.authorizedAs ? { authorizedAs: refreshed.authorizedAs ?? current.authorizedAs } : {}),
-  }
-  ctx.cache.set(key, token)
-  // Only a value "Get token" wrote is written back: a secret that held a bare
-  // refresh token (or anything else) is never overwritten by a run.
-  if (decoded.stored && ctx.save) {
-    // ponytail: a failed write keeps the refreshed token in the session cache only.
-    await ctx.save(secretName, encodeStoredToken(token)).catch(() => undefined)
-  }
-  return token
+  ctx.mask(refreshToken)
+  return singleFlight(key, async () => {
+    const refreshed = await requestToken(ctx.http, {
+      tokenUrl: config.tokenUrl,
+      clientId: config.clientId,
+      ...(config.clientSecret ? { clientSecret: config.clientSecret } : {}),
+      clientAuth: config.clientAuth,
+      params: {
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        ...(config.scope ? { scope: config.scope } : {}),
+      },
+    }, ctx)
+    // A server that does not rotate refresh tokens leaves the old one valid.
+    const token: OAuthToken = {
+      ...refreshed,
+      refreshToken: refreshed.refreshToken ?? refreshToken,
+      ...(refreshed.authorizedAs ?? current.authorizedAs ? { authorizedAs: refreshed.authorizedAs ?? current.authorizedAs } : {}),
+    }
+    ctx.cache.set(key, token)
+    // Only a value "Get token" wrote is written back: a secret that held a bare
+    // refresh token (or anything else) is never overwritten by a run.
+    if (decoded.stored && ctx.save) {
+      // ponytail: a failed write keeps the refreshed token in the session cache only.
+      await ctx.save(secretName, encodeStoredToken(token)).catch(() => undefined)
+    }
+    return token
+  })
 }

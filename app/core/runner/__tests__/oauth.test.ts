@@ -4,7 +4,7 @@ import { WorkflowExecutor, type ExecutorDeps, type WorkflowGraph } from "../exec
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider, type ClockProvider } from "../harness/providers"
-import { decodeStoredToken, encodeStoredToken, pkceChallenge, type OAuthTokenCache } from "../oauth"
+import { decodeStoredToken, encodeStoredToken, oauthAccessToken, pkceChallenge, type OAuthTokenCache } from "../oauth"
 import { startFakeOAuthServer, type FakeOAuthServer } from "./oauth_fake_server"
 
 const CLIENT_SECRET = "s3cret-client-value"
@@ -213,6 +213,23 @@ describe("OAuth 2.0 authorization code at run time", () => {
       stored: true,
       token: { accessToken: "tok-1-abcdef", expiresAt: now + 600_000, refreshToken: "refresh-2", authorizedAs: "ada@example.com" },
     })
+  })
+
+  it("sends one refresh for concurrent requests, on expiry and on a 401 alike", async () => {
+    server.tokenResponse = (_call, token) => ({ status: 200, body: { access_token: token, expires_in: 600, refresh_token: `refresh-${token}` } })
+    const resolved = {
+      grantType: "authorization_code" as const,
+      tokenUrl: `${server.url}/token`,
+      clientId: "public-client",
+      clientAuth: "body" as const,
+      tokenSecretName: "API_TOKEN",
+      storedToken: encodeStoredToken({ accessToken: "expired-token", expiresAt: now - 1000, refreshToken: "refresh-1" }),
+    }
+    const ctx = { http: new SafeHttp(), cache: new Map(), now, mask: () => undefined }
+    expect(await Promise.all([oauthAccessToken(resolved, ctx, false), oauthAccessToken(resolved, ctx, false)])).toEqual(["tok-1-abcdef", "tok-1-abcdef"])
+    expect(server.tokenCalls).toHaveLength(1)
+    expect(await Promise.all([oauthAccessToken(resolved, ctx, true), oauthAccessToken(resolved, ctx, true)])).toEqual(["tok-2-abcdef", "tok-2-abcdef"])
+    expect(server.tokenCalls.map((call) => call.form.get("refresh_token"))).toEqual(["refresh-1", "refresh-tok-1-abcdef"])
   })
 
   it("takes a bare refresh token (the CLI) and never writes over it", async () => {
