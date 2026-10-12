@@ -8,7 +8,7 @@ import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ProjectExportService } from "../project_export_service"
-import { exportProjectFolder, importProjectFolder, PROJECT_FILE } from "../project_folder"
+import { exportProjectFolder, importProjectFolder, PROJECT_FILE, writeProjectFolder } from "../project_folder"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 interface Store {
@@ -259,6 +259,22 @@ describe("project folder format", () => {
     await expect(importProjectFolder(store.projects, store.workspaceId, folder)).rejects.toThrow(/must be a file directly under workflows\//)
     await expect(exportProjectFolder(store.projects, store.workspaceId, projectId, folder)).rejects.toThrow(/not an APIWeave project file/)
   })
+
+  it("never names a file after a path-like id, and refuses to write outside the folder", async () => {
+    const store = openStore()
+    const { projectId } = seedProject(store)
+    // A name that slugs to empty puts the id in the file name.
+    store.workflows.create({ workflowId: "../../evil", workspaceId: store.workspaceId, name: "!!!", collectionId: projectId })
+    const target = path.join(folder, "inner")
+
+    await exportProjectFolder(store.projects, store.workspaceId, projectId, target)
+
+    expect(fs.existsSync(path.join(target, "workflows", "evil.json"))).toBe(true)
+    expect(fs.readdirSync(folder)).toEqual(["inner"])
+    const files = new Map([["../outside.json", "{}\n"], [PROJECT_FILE, fs.readFileSync(path.join(target, PROJECT_FILE), "utf8")]])
+    expect(() => writeProjectFolder(path.join(folder, "other"), files)).toThrow(/refusing to write \.\.\/outside\.json: it is outside/)
+    expect(fs.readdirSync(folder)).toEqual(["inner"])
+  })
 })
 
 describe("import from a project folder", () => {
@@ -326,5 +342,17 @@ describe("import from a project folder", () => {
     const otherWorkspace = store.workspaces.create({ name: "Other", slug: "other" }).workspaceId
 
     await expect(importProjectFolder(store.projects, otherWorkspace, folder)).rejects.toThrow(/already belong to another workspace/)
+  })
+
+  it("refuses an id that is not an APIWeave id, before touching the database", async () => {
+    const store = openStore()
+    const { projectId } = seedProject(store)
+    await exportProjectFolder(store.projects, store.workspaceId, projectId, folder)
+    editJson(path.join(folder, PROJECT_FILE), (doc) => {
+      (doc["workflows"] as { workflowId: string }[])[0]!.workflowId = "../../evil"
+    })
+
+    await expect(importProjectFolder(store.projects, store.workspaceId, folder)).rejects.toThrow(/workflows\.0\.workflowId: must be an APIWeave id/)
+    expect(store.workflows.getById("../../evil")).toBeUndefined()
   })
 })

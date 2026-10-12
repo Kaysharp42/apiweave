@@ -38,6 +38,9 @@ const MAX_SLUG_LENGTH = 60
 /** Names Windows will not create a file under, whatever the extension. */
 const RESERVED_NAME = /^(con|prn|aux|nul|com\d|lpt\d)$/
 
+/** What an id generated here looks like (a ULID), loosely: an id from a folder also names files and rows, so nothing path-like gets in. */
+const folderId = z.string().regex(/^[A-Za-z0-9_-]+$/, "must be an APIWeave id (letters, digits, '-' and '_')")
+
 const fileEntry = (directory: string) =>
   z.string().regex(new RegExp(`^${directory}/[^/\\\\:]+\\.json$`), `must be a file directly under ${directory}/`)
 
@@ -47,14 +50,14 @@ const ManifestSchema = z
     version: z.literal(FOLDER_FORMAT_VERSION, {
       message: `this folder was written by a newer APIWeave (only format version ${FOLDER_FORMAT_VERSION} is supported)`,
     }),
-    projectId: z.string().min(1),
+    projectId: folderId,
     name: z.string().min(1),
     description: z.string(),
     color: z.string(),
     workflows: z.array(
-      z.object({ workflowId: z.string().min(1), file: fileEntry("workflows"), enabled: z.boolean(), continueOnFail: z.boolean() }).strict(),
+      z.object({ workflowId: folderId, file: fileEntry("workflows"), enabled: z.boolean(), continueOnFail: z.boolean() }).strict(),
     ),
-    environments: z.array(z.object({ environmentId: z.string().min(1), file: fileEntry("environments") }).strict()),
+    environments: z.array(z.object({ environmentId: folderId, file: fileEntry("environments") }).strict()),
     secrets: z.array(z.string()),
   })
   .strict()
@@ -201,6 +204,11 @@ export function writeProjectFolder(folder: string, files: ReadonlyMap<string, st
     throw new ValidationError(`refusing to overwrite ${foreign.join(", ")} in ${folder}: ${PROJECT_FILE} does not list ${foreign.length === 1 ? "it" : "them"}. Move ${foreign.length === 1 ? "it" : "them"} away or choose another folder`)
   }
 
+  // Ids are validated on import and slugged into file names; this is the backstop if either ever slips.
+  const root = path.resolve(folder)
+  const escaping = [...files.keys()].find((file) => !path.resolve(root, file).startsWith(root + path.sep))
+  if (escaping !== undefined) throw new ValidationError(`refusing to write ${escaping}: it is outside ${folder}`)
+
   const written: string[] = []
   const ordered = [...files.keys()].filter((file) => file !== PROJECT_FILE).sort().concat(PROJECT_FILE)
   for (const file of ordered) {
@@ -285,13 +293,13 @@ function readIfExists(file: string): string | undefined {
   }
 }
 
-/** One file name per item: the name's slug; a clash (or a name Windows reserves) adds the id. Assigned in id order. */
+/** One file name per item: the name's slug; a clash (or a name Windows reserves) adds the id's slug. Assigned in id order. */
 function fileNames(directory: string, items: readonly { readonly id: string; readonly name: string }[]): Map<string, string> {
   const names = new Map<string, string>()
   const taken = new Set<string>()
   for (const item of [...items].sort((left, right) => compare(left.id, right.id))) {
     const slug = slugify(item.name, "").slice(0, MAX_SLUG_LENGTH).replace(/-+$/, "")
-    const base = slug === "" || RESERVED_NAME.test(slug) || taken.has(slug) ? `${slug === "" ? "" : `${slug}-`}${item.id.toLowerCase()}` : slug
+    const base = slug === "" || RESERVED_NAME.test(slug) || taken.has(slug) ? `${slug === "" ? "" : `${slug}-`}${slugify(item.id, "")}` : slug
     taken.add(base)
     names.set(item.id, `${directory}/${base}.json`)
   }
