@@ -876,10 +876,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `app_settings` (`http.allow_private_networks`) through new
   `settings.get` / `settings.setPrivateNetworks` handlers, and takes effect
   immediately.
-- **Auto-update.** The desktop app checks GitHub Releases for newer versions
-  under the policy chosen in **Settings → Updates** (notify by default;
-  automatic only where the platform can self-install), with staged rollouts and
-  a kill switch for bad releases.
 - **Sync failure visibility.** `cloud.listFailedRecords` plus an in-app Failed
   Records dialog surface dead-lettered sync records; rejected IPC dispatches are
   logged to `main.log`; the real server rejection reason reaches save toasts
@@ -949,7 +945,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Auto-update** from GitHub Releases on a pinned update channel.
+- **Auto-update** from GitHub Releases on a pinned update channel, under the
+  policy chosen in **Settings → Updates** (notify by default; automatic only
+  where the platform can self-install), with staged rollouts and a kill switch
+  for bad releases.
 - The app icon is set for the installer, taskbar and Start menu.
 
 ### Fixed
