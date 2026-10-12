@@ -2579,7 +2579,10 @@ export class WorkflowExecutor {
       default: {
         // Back-compat default for nodes saved before `bodyType` existed.
         if (body === undefined || body === null) return undefined
-        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: true })
+        // An untyped string body (cURL and HAR imports) may be XML or a form:
+        // escape for JSON only when it is declared as JSON, as `raw` does.
+        const isJson = bodyType === "json" || typeof body !== "string" || hasJsonContentType(headers)
+        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: isJson })
         // An empty field is no body at all, and claims no type.
         if (json.trim() !== "" && !Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
           headers["Content-Type"] = "application/json"
