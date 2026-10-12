@@ -1325,6 +1325,24 @@ describe("WorkflowExecutor", () => {
       expect(response["body"]).toBe(png.toString("base64"))
       expect(response["responseSizeBytes"]).toBe(png.byteLength)
     })
+
+    it("decodes a text body in its declared charset rather than storing it base64", async () => {
+      const response = await fetchOnce((res) => {
+        res.setHeader("Content-Type", "application/json; charset=windows-1252")
+        res.end(Buffer.from('{"name":"Caf\xe9"}', "latin1"))
+      })
+      expect(response["bodyEncoding"]).toBeUndefined()
+      expect(response["body"]).toEqual({ name: "Café" })
+    })
+
+    it("decodes a text body without a charset as UTF-8 with replacement characters", async () => {
+      const response = await fetchOnce((res) => {
+        res.setHeader("Content-Type", "text/plain")
+        res.end(Buffer.from("Caf\xe9", "latin1"))
+      })
+      expect(response["bodyEncoding"]).toBeUndefined()
+      expect(response["body"]).toBe("Caf\uFFFD")
+    })
   })
 
   describe("continueOnFail on http-request (item 9)", () => {

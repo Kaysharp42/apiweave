@@ -233,10 +233,26 @@ function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
   return record
 }
 
-/** The bytes as UTF-8 text, or null when they are not valid UTF-8 (a binary body). A sequence cut off by truncation is fine. */
-function decodeUtf8(bytes: Buffer): string | null {
+/**
+ * The body as text, or null when it is binary (stored base64). A textual
+ * Content-Type (text/*, JSON, XML, form) is always text, decoded with its
+ * declared charset or lossily as UTF-8; any other type is text only when it is
+ * valid UTF-8. A sequence cut off by truncation is fine.
+ */
+function decodeBody(bytes: Buffer, contentType: string, truncated: boolean): string | null {
+  const [mime = "", ...params] = contentType.toLowerCase().split(";").map((part) => part.trim())
+  if (/^text\/|[/+](json|xml)$|^application\/x-www-form-urlencoded$/.test(mime)) {
+    const charset = params.find((param) => param.startsWith("charset="))?.slice("charset=".length).replace(/"/g, "")
+    let decoder: TextDecoder
+    try {
+      decoder = new TextDecoder(charset || "utf-8")
+    } catch {
+      decoder = new TextDecoder("utf-8")
+    }
+    return decoder.decode(bytes, { stream: truncated })
+  }
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: true })
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: truncated })
   } catch {
     return null
   }
@@ -1100,7 +1116,7 @@ export class WorkflowExecutor {
       const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
-      const responseText = decodeUtf8(bytes)
+      const responseText = decodeBody(bytes, response.headers.get("content-type") ?? "", truncated)
       const declaredSize = Number(response.headers.get("content-length") ?? "")
       const responseSizeBytes = !truncated ? bytes.byteLength : Number.isFinite(declaredSize) && declaredSize > 0 ? declaredSize : undefined
 
