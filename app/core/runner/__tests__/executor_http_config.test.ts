@@ -374,3 +374,145 @@ describe("WorkflowExecutor — GraphQL bodies", () => {
     expect(output.status).toBe("failed")
   })
 })
+
+describe("WorkflowExecutor — placeholder resolution and auth (characterization)", () => {
+  function captureExecutor(extra: { data?: Record<string, unknown>; environmentVariables?: Record<string, string> } = {}) {
+    const captured: CapturedRequest[] = []
+    const fetchImpl = async (url: string, init: UndiciRequestInit): Promise<Response> => {
+      captured.push({ url, init })
+      return new Response(JSON.stringify({ id: 7 }), { status: 200, headers: { "Content-Type": "application/json" } })
+    }
+    const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
+    const rng = new SeededRandomProvider("0xDEADBEEF")
+    const http = new SafeHttp({ fetchImpl: fetchImpl as never })
+    const executor = new WorkflowExecutor({
+      clock, rng, http, functions: new DynamicFunctions(clock, rng), secrets: { API_KEY: "s3cret" }, ...extra,
+    })
+    return { executor, captured }
+  }
+
+  it("resolves every placeholder kind in a header, and leaves the unresolvable verbatim", async () => {
+    const { executor, captured } = captureExecutor({ data: { row: { id: 3 } }, environmentVariables: { HOST: "api" } })
+    const headers = {
+      "X-Func": "{{ randomHex(4) }}",
+      "X-Unknown-Func": "{{nope(1)}}",
+      "X-Secret": "{{secrets.API_KEY}}",
+      "X-Missing-Secret": "{{secrets.NOPE}}",
+      "X-Var": "{{variables.token}}",
+      "X-Var-Too-Deep": "{{variables.token.deeper}}",
+      "X-Data": "{{data.row.id}}",
+      "X-Env": "{{env.HOST}}",
+      "X-Prev": "{{prev.response.body.id}}",
+      "X-Prev-Index": "{{prev[0].response.body.id}}",
+      "X-Prev-Out-Of-Range": "{{prev[99].response.body.id}}",
+      "X-Node": "{{first.response.body.id}}",
+      "X-Unknown": "{{nowhere.id}}",
+    }
+    await executor.executeWorkflow({
+      variables: { token: "abc" },
+      nodes: [
+        { nodeId: "start", type: "start" },
+        { nodeId: "first", type: "http-request", config: { method: "GET", url: "http://localhost/first" } },
+        {
+          nodeId: "second",
+          type: "http-request",
+          config: {
+            method: "GET",
+            url: "http://localhost/second",
+            headers: Object.entries(headers).map(([key, value]) => ({ key, value, active: true })),
+          },
+        },
+      ],
+      edges: [
+        { edgeId: "e1", source: "start", target: "first" },
+        { edgeId: "e2", source: "first", target: "second" },
+      ],
+    })
+    const sent = captured[1]!.init.headers as Record<string, string>
+    expect(sent["X-Func"]).toMatch(/^[0-9a-f]{4}$/)
+    expect({ ...sent, "X-Func": undefined }).toMatchObject({
+      "X-Unknown-Func": "{{nope(1)}}",
+      "X-Secret": "s3cret",
+      "X-Missing-Secret": "{{secrets.NOPE}}",
+      "X-Var": "abc",
+      "X-Var-Too-Deep": "{{variables.token.deeper}}",
+      "X-Data": "3",
+      "X-Env": "api",
+      "X-Prev": "7",
+      "X-Prev-Index": "7",
+      "X-Prev-Out-Of-Range": "{{prev[99].response.body.id}}",
+      "X-Node": "7",
+      "X-Unknown": "{{nowhere.id}}",
+    })
+  })
+
+  it("refuses a variable that was masked in a rerun's source run", async () => {
+    const { executor, captured } = captureExecutor()
+    const output = await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/a", headers: [{ key: "X-T", value: "{{variables.token}}", active: true }] }),
+      { resume: { scope: new Set(["http_1", "end"]), results: [], maskedVariables: ["token"] } },
+    )
+    expect(captured).toHaveLength(0)
+    expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain(
+      "{{variables.token}} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.",
+    )
+  })
+
+  it("refuses a secret in the URL", async () => {
+    const { executor, captured } = captureExecutor()
+    const output = await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/{{secrets.API_KEY}}" }),
+    )
+    expect(captured).toHaveLength(0)
+    expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain(
+      "Secret substitution not allowed in URL/query/path contexts",
+    )
+  })
+
+  it("sends apiKey auth as a header by default and skips bearer auth without a token", async () => {
+    const { executor, captured } = captureExecutor()
+    await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/a", auth: { type: "apiKey", apiKey: { key: "X-Key", value: "{{secrets.API_KEY}}" } } }),
+    )
+    await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/b", auth: { type: "bearer", bearer: {} } }),
+    )
+    expect((captured[0]!.init.headers as Record<string, string>)["X-Key"]).toBe("s3cret")
+    expect((captured[1]!.init.headers as Record<string, string>)["Authorization"]).toBeUndefined()
+  })
+
+  it("fails an OAuth 2.0 node that has no OAuth 2.0 settings", async () => {
+    const { executor, captured } = captureExecutor()
+    const output = await executor.executeWorkflow(
+      singleHttpNodeWorkflow({ method: "GET", url: "http://localhost/a", auth: { type: "oauth2" } }),
+    )
+    expect(captured).toHaveLength(0)
+    expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain("OAuth 2.0: the node has no OAuth 2.0 settings")
+  })
+
+  it("reports why an assertion could not be evaluated", async () => {
+    const { executor } = captureExecutor()
+    const output = await executor.executeWorkflow({
+      nodes: [
+        { nodeId: "start", type: "start" },
+        {
+          nodeId: "check",
+          type: "assertion",
+          config: {
+            failureMode: "all",
+            assertions: [
+              { source: "prev", path: "response.body.id", operator: "equals", expectedValue: "{{variables.missing}}" },
+              { source: "status", path: "", operator: "equals", expectedValue: 200 },
+            ],
+          },
+        },
+      ],
+      edges: [{ edgeId: "e1", source: "start", target: "check" }],
+    })
+    const evaluations = output.results.find((r) => r.nodeId === "check")?.assertions
+    expect(evaluations?.map((e) => [e.reasonCode, e.actualState])).toEqual([
+      ["template-unresolved", "not-evaluated"],
+      ["source-unavailable", "source-unavailable"],
+    ])
+  })
+})

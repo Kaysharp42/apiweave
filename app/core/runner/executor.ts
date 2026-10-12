@@ -368,6 +368,22 @@ function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> 
   })
 }
 
+/** One attempt as `attempts` lists it. */
+function toHttpAttempt(attempt: NodeResult): HttpAttempt {
+  return {
+    ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
+    duration: Math.max(0, Math.round(attempt.duration ?? 0)),
+    ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
+  }
+}
+
+/** The node's error once the last attempt failed; `hasCondition` is whether `until` set the bar. */
+function retryExhaustedError(attempt: NodeResult, attemptCount: number, hasCondition: boolean): string {
+  const verdict = hasCondition ? "Condition not met" : "Failed"
+  const cause = attempt.error ?? (hasCondition ? undefined : `HTTP ${attempt.statusCode}`)
+  return `${verdict} after ${attemptCount} attempts${cause ? `: ${cause}` : ""}`
+}
+
 /** The wait after attempt number `attempt` (1-based): `intervalMs`, doubled per attempt when exponential, capped by `maxIntervalMs`. */
 export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
   const base = retry.backoff === "exponential" ? retry.intervalMs * 2 ** (attempt - 1) : retry.intervalMs
@@ -1282,31 +1298,28 @@ export class WorkflowExecutor {
     const attempts: HttpAttempt[] = []
     for (;;) {
       const attempt = await this.executeHttpRequest(node, cancelSignal)
-      attempts.push({
-        ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
-        duration: Math.max(0, Math.round(attempt.duration ?? 0)),
-        ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
-      })
+      attempts.push(toHttpAttempt(attempt))
       const result: NodeResult = { ...attempt, attempts }
       if (cancelSignal?.aborted) return { ...result, status: "cancelled" }
-
-      const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
-      const done = !sent || (until.length > 0
-        ? until.every((rule, index) =>
-            this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId: node.nodeId, result: attempt })).outcome === "pass")
-        : attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500)
-      if (done) return result
+      if (this.retryDone(node.nodeId, attempt, until)) return result
 
       if (attempts.length >= retry.maxAttempts) {
         // The scheduler keeps this verdict and classes the cause like any other error.
-        const verdict = until.length > 0 ? "Condition not met" : "Failed"
-        const cause = attempt.error ?? (until.length > 0 ? undefined : `HTTP ${attempt.statusCode}`)
-        return { ...result, status: "error", error: `${verdict} after ${attempts.length} attempts${cause ? `: ${cause}` : ""}` }
+        return { ...result, status: "error", error: retryExhaustedError(attempt, attempts.length, until.length > 0) }
       }
       // Harness mode collapses waits, as it does for Delay.
       const waitMs = this.deps.baseUrl ? 0 : retryDelayMs(retry, attempts.length)
       if (!(await waitFor(waitMs, cancelSignal))) return { ...result, status: "cancelled" }
     }
+  }
+
+  /** Whether `attempt` ends the retries: it was never sent, or it meets `until` (with no condition, any response below 500). */
+  private retryDone(nodeId: string, attempt: NodeResult, until: NonNullable<HttpRetryConfig["until"]>): boolean {
+    const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
+    if (!sent) return true
+    if (until.length === 0) return attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500
+    return until.every((rule, index) =>
+      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt })).outcome === "pass")
   }
 
   // -------------------- Server-Sent Events --------------------
@@ -1702,27 +1715,25 @@ export class WorkflowExecutor {
       }
 
       sourceNodeId = resolution.nodeId
-      if (source === "prev") {
-        const cleanPath = path.startsWith("response.") ? path.slice(9) : path
-        actual = this.getNestedValue(resolution.result, cleanPath)
-      } else if (source === "headers") {
-        actual = this.getResponseHeader(resolution.result, path)
-      } else if (source === "cookies") {
-        actual = this.getResponseCookie(resolution.result, path)
-      } else {
-        actual = resolution.result.statusCode
-      }
+      actual = this.readAssertionActual(source, path, resolution.result)
     }
 
-    const actualState = actual === undefined ? "missing" : "present"
+    const evaluated = { ...base, sourceNodeId, actualState: actual === undefined ? "missing" : "present", actualType: jsonValueType(actual) } as const
+    return this.compareAssertion(evaluated, actual, expected.value)
+  }
+
+  /** The verdict on `actual` once it was read; `evaluated` is everything else the evaluation reports. */
+  private compareAssertion(
+    evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
+    actual: unknown,
+    expected: unknown,
+  ): AssertionEvaluation {
+    const operator = evaluated.operator
     try {
-      const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected.value) : null
-      const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected.value)
+      const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected) : null
+      const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected)
       return {
-        ...base,
-        sourceNodeId,
-        actualState,
-        actualType: jsonValueType(actual),
+        ...evaluated,
         outcome: passed ? "pass" : "fail",
         reasonCode: passed ? "passed" : "comparison-failed",
         ...(violations && violations.length > 0
@@ -1734,16 +1745,21 @@ export class WorkflowExecutor {
       }
     } catch (error) {
       return {
-        ...base,
-        sourceNodeId,
-        actualState,
-        actualType: jsonValueType(actual),
+        ...evaluated,
         outcome: "fail",
         reasonCode: "comparison-error",
         // The engine's own words for a bad pattern or schema; they carry the rule's text, not the response's.
         ...(error instanceof Error ? { detail: error.message.slice(0, 300) } : {}),
       }
     }
+  }
+
+  /** The value a rule on a response `source` reads from `result`. */
+  private readAssertionActual(source: AssertionSource, path: string, result: NodeResult): unknown {
+    if (source === "prev") return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    if (source === "headers") return this.getResponseHeader(result, path)
+    if (source === "cookies") return this.getResponseCookie(result, path)
+    return result.statusCode
   }
 
   /** Loads the regex sandbox when one of `rules` matches a regular expression (a schema may hold `pattern`s). */
@@ -2196,79 +2212,76 @@ export class WorkflowExecutor {
     const resolve = (match: string, rawPath: string): string => {
       const varPath = rawPath.trim()
 
-      // Function call
-      const funcMatch = varPath.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$/)
-      if (funcMatch) {
-        const funcName = funcMatch[1]!
-        const params = funcMatch[2]!.trim()
-        const func = this.deps.functions.getFunction(funcName)
-        if (func) {
-          // A function that rejects its arguments fails the node with its own
-          // message rather than sending the placeholder text verbatim.
-          const paramList = params
-            ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
-            : []
-          return String(func(...paramList))
-        }
-      }
+      const called = this.callPlaceholderFunction(varPath)
+      if (called !== undefined) return called
 
       // Secrets
       if (varPath.startsWith("secrets.")) {
         if (!allowSecrets) {
           throw new Error("Secret substitution not allowed in URL/query/path contexts")
         }
-        const secretName = varPath.slice(8)
-        const value = this.deps.secrets?.[secretName]
+        const value = this.deps.secrets?.[varPath.slice(8)]
         return value !== undefined ? value : match
       }
 
       // Environment variables, workflow variables, the iteration's data row
       const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
-      if (scope) {
-        const name = scope[2]!.split(".")[0]!
-        if (scope[1] === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
-          throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
-        }
-        let value: unknown =
-          scope[1] === "env" ? this.environmentVariables : scope[1] === "variables" ? this.workflowVariables : this.deps.data
-        for (const part of scope[2]!.split(".")) {
-          if (typeof value === "object" && value !== null) {
-            value = (value as Record<string, unknown>)[part]
-          } else {
-            return match
-          }
-        }
-        return value !== undefined && value !== null ? placeholderText(value) : match
-      }
+      if (scope) return this.resolveScopedPlaceholder(scope[1]!, scope[2]!, match)
 
-      // Previous results
-      if (varPath.startsWith("prev")) {
-        const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
-        if (indexMatch) {
-          const branchIndex = Number.parseInt(indexMatch[1]!, 10)
-          const pathAfterIndex = indexMatch[2]!
-
-          const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
-          const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
-          return entry ? this.readResult(entry[0], entry[1], pathAfterIndex.split("."), match) : match
-        }
-
-        const entryPrev = this.entryPrev.getStore()
-        const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
-        return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
-      }
+      if (varPath.startsWith("prev")) return this.resolvePrevPlaceholder(varPath, match)
 
       // Direct node ID access
       const firstPart = varPath.split(".")[0]!
       const nodeResult = this.results.get(firstPart)
-      if (nodeResult) {
-        return this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match)
-      }
-
-      return match
+      return nodeResult ? this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match) : match
     }
 
     return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
+  }
+
+  /** A `name(args)` placeholder's value; undefined when `varPath` is no call to a known function. */
+  private callPlaceholderFunction(varPath: string): string | undefined {
+    const funcMatch = varPath.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$/)
+    if (!funcMatch) return undefined
+    const func = this.deps.functions.getFunction(funcMatch[1]!)
+    if (!func) return undefined
+    // A function that rejects its arguments fails the node with its own
+    // message rather than sending the placeholder text verbatim.
+    const params = funcMatch[2]!.trim()
+    const paramList = params
+      ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
+      : []
+    return String(func(...paramList))
+  }
+
+  /** `{{env.…}}`, `{{variables.…}}` or `{{data.…}}`: `path` walked from the named scope. */
+  private resolveScopedPlaceholder(scopeName: string, path: string, match: string): string {
+    const name = path.split(".")[0]!
+    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+    }
+    let value: unknown =
+      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    for (const part of path.split(".")) {
+      if (typeof value !== "object" || value === null) return match
+      value = (value as Record<string, unknown>)[part]
+    }
+    return value !== undefined && value !== null ? placeholderText(value) : match
+  }
+
+  /** `{{prev.…}}` reads the last result (a rerun entry's own predecessor); `{{prev[i].…}}` the i-th of the merged branches, else of all results. */
+  private resolvePrevPlaceholder(varPath: string, match: string): string {
+    const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
+    if (indexMatch) {
+      const branchIndex = Number.parseInt(indexMatch[1]!, 10)
+      const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
+      const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
+      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!.split("."), match) : match
+    }
+
+    const entryPrev = this.entryPrev.getStore()
+    const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
+    return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
   }
 
   /**
@@ -2430,29 +2443,39 @@ export class WorkflowExecutor {
       return
     }
     if (auth.type === "jwt") {
-      const jwt = auth.jwt
-      const token = this.signedJwt(jwt)
-      // A fresh token per request, and as good as a password until it expires.
-      this.deps.maskValue?.(token)
-      const prefix = jwt?.prefix ?? "Bearer"
-      headers[jwt?.headerName?.trim() || "Authorization"] = prefix ? `${prefix} ${token}` : token
-      return
-    }
-    if (auth.type === "bearer" && auth.bearer?.token) {
+      this.applyJwtAuth(auth.jwt, headers)
+    } else if (auth.type === "bearer" && auth.bearer?.token) {
       headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
     } else if (auth.type === "basic" && auth.basic) {
       const username = this.substituteVariables(auth.basic.username ?? "")
       const password = this.substituteVariables(auth.basic.password ?? "")
       headers["Authorization"] = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
-    } else if (auth.type === "apiKey" && auth.apiKey?.key) {
-      const key = this.substituteVariables(auth.apiKey.key)
-      const value = this.substituteVariables(auth.apiKey.value ?? "")
-      if (auth.apiKey.addTo === "query") {
-        queryParams[key] = value
-      } else {
-        headers[key] = value
-      }
+    } else if (auth.type === "apiKey") {
+      this.applyApiKeyAuth(auth.apiKey, headers, queryParams)
     }
+  }
+
+  private applyApiKeyAuth(
+    apiKey: HttpAuthConfig["apiKey"],
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): void {
+    if (!apiKey?.key) return
+    const key = this.substituteVariables(apiKey.key)
+    const value = this.substituteVariables(apiKey.value ?? "")
+    if (apiKey.addTo === "query") {
+      queryParams[key] = value
+    } else {
+      headers[key] = value
+    }
+  }
+
+  private applyJwtAuth(jwt: JwtAuthConfig | undefined, headers: Record<string, string>): void {
+    const token = this.signedJwt(jwt)
+    // A fresh token per request, and as good as a password until it expires.
+    this.deps.maskValue?.(token)
+    const prefix = jwt?.prefix ?? "Bearer"
+    headers[jwt?.headerName?.trim() || "Authorization"] = prefix ? `${prefix} ${token}` : token
   }
 
   private async oauthToken(oauth2: OAuth2AuthConfig, context: AuthRequestContext): Promise<string> {
