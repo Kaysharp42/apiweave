@@ -167,6 +167,14 @@ describe("script sandbox — the aw API", () => {
     expect(outcome.logs[100]).toBe("… output after 100 lines dropped")
   })
 
+  it("caps aw.test names and failure messages, and an uncaught error, like console lines", async () => {
+    const big = `const big = "x".repeat(50000)`
+    const { outcome } = await run(`${big}; aw.test(big, () => aw.expect(big).toEqual("y")); aw.test(big, () => {})`)
+    expect(outcome.tests.map((test) => [test.name.length, test.error?.length])).toEqual([[2001, 2001], [2001, undefined]])
+    const thrown = await run(`${big}; aw.expect(big).toEqual("y")`)
+    expect(thrown.outcome.error).toHaveLength(2001)
+  })
+
   it("hands back the request as the pre-request script left it", async () => {
     const result = await run(
       `aw.request.headers["X-Signature"] = aw.crypto.sha256(aw.request.body)

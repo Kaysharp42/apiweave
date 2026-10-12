@@ -85,7 +85,8 @@ export const SCRIPT_MEMORY_LIMIT_BYTES = 32 * 1024 * 1024
  */
 export const MAX_STACK_BYTES = 256 * 1024
 const MAX_LOG_LINES = 100
-const MAX_LOG_LINE_LENGTH = 2000
+/** Longest console line, test name or error kept; the rest is cut so a large response body quoted by `aw.expect` cannot balloon run history and reports. */
+const MAX_TEXT_LENGTH = 2000
 const MAX_TESTS = 100
 const MAX_VARIABLE_BYTES = 1024 * 1024
 
@@ -332,7 +333,7 @@ export async function evaluateScript(run: ScriptRun, assigned: Record<string, un
     duration: Date.now() - started,
     logs,
     tests,
-    ...(error === undefined ? {} : { error }),
+    ...(error === undefined ? {} : { error: clip(error) }),
   })
 
   const quickjs = await newSandboxModule()
@@ -345,15 +346,14 @@ export async function evaluateScript(run: ScriptRun, assigned: Record<string, un
     switch (op) {
       case "log":
         if (logs.length < MAX_LOG_LINES) {
-          const line = args[0] ?? ""
-          logs.push(line.length > MAX_LOG_LINE_LENGTH ? `${line.slice(0, MAX_LOG_LINE_LENGTH)}…` : line)
+          logs.push(clip(args[0] ?? ""))
         } else if (logs.length === MAX_LOG_LINES) {
           logs.push(`… output after ${MAX_LOG_LINES} lines dropped`)
         }
         return undefined
       case "test":
         if (tests.length >= MAX_TESTS) throw new RangeError(`a script may record at most ${MAX_TESTS} tests`)
-        tests.push(args[1] ? { name: args[0] ?? "", passed: false, error: args[1] } : { name: args[0] ?? "", passed: true })
+        tests.push(args[1] ? { name: clip(args[0] ?? ""), passed: false, error: clip(args[1]) } : { name: clip(args[0] ?? ""), passed: true })
         return undefined
       case "set": {
         const json = args[1] ?? "null"
@@ -422,6 +422,10 @@ export async function evaluateScript(run: ScriptRun, assigned: Record<string, un
     if (error instanceof RangeError) return { outcome: outcome("InternalError: stack overflow") }
     return { outcome: outcome(error instanceof Error ? error.message : String(error)) }
   }
+}
+
+function clip(text: string): string {
+  return text.length > MAX_TEXT_LENGTH ? `${text.slice(0, MAX_TEXT_LENGTH)}…` : text
 }
 
 function unwrap(context: QuickJSContext, result: ReturnType<QuickJSContext["evalCode"]>): QuickJSHandle {
