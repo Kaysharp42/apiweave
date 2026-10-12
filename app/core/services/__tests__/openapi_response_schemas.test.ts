@@ -111,6 +111,63 @@ describe("OpenAPI import: response schemas", () => {
     })
   })
 
+  it("converts schema lists, boolean schemas, bounds, file types and every nullable shape", () => {
+    const [node] = importedNodes({
+      openapi: "3.0.3",
+      info: { title: "Edge", version: "1" },
+      paths: {
+        "/edge": {
+          get: {
+            responses: {
+              "200": {
+                description: "ok",
+                content: {
+                  "application/json": {
+                    schema: {
+                      type: "object",
+                      required: ["a", 7],
+                      properties: {
+                        a: { allOf: [{ type: "string" }, true] },
+                        b: { type: "array", items: [{ type: "string", enum: ["x"], nullable: true }] },
+                        c: { type: "integer", maximum: 5, exclusiveMaximum: false },
+                        d: { type: "integer", exclusiveMinimum: true },
+                        e: { type: "file", description: "upload" },
+                        f: { nullable: true, allOf: [{ $ref: "#/components/schemas/Line" }] },
+                        g: { type: ["string", "null"], nullable: true },
+                        h: { not: { type: "string" }, additionalProperties: false },
+                        i: { $ref: "https://elsewhere.test/schema.json" },
+                        j: { type: "string", enum: ["y", null], "x-nullable": true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      components: { schemas: { Line: { type: "object" } } },
+    })
+    expect(node!.config.responseSchemas!["200"]).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      required: ["a", 7],
+      properties: {
+        a: { allOf: [{ type: "string" }, true] },
+        b: { type: "array", items: [{ type: ["string", "null"], enum: ["x", null] }] },
+        c: { type: "integer", maximum: 5 },
+        d: { type: "integer" },
+        e: { description: "upload" },
+        f: { anyOf: [{ allOf: [{ $ref: "#/$defs/Line" }] }, { type: "null" }] },
+        g: { type: ["string", "null"] },
+        h: { not: { type: "string" }, additionalProperties: false },
+        i: {},
+        j: { type: ["string", "null"], enum: ["y", null] },
+      },
+      $defs: { Line: { type: "object" } },
+    })
+  })
+
   it("attaches nothing when the option is off", () => {
     expect(importedNodes(SPEC_30, { schemaAssertions: false }).every((node) => node.config.responseSchemas === undefined)).toBe(true)
   })

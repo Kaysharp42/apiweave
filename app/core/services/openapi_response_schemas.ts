@@ -108,43 +108,58 @@ function toJsonSchema(root: unknown, spec: Record<string, unknown>): JsonValue {
     const out: JsonObject = {}
     for (const [key, value] of Object.entries(node)) {
       if (DROPPED.has(key) || value === undefined) continue
-      if (SCHEMA_MAPS.has(key) && isObject(value)) {
-        out[key] = Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, convert(schema)]))
-      } else if ((SCHEMA_LISTS.has(key) || SCHEMA_ONE.has(key)) && Array.isArray(value)) {
-        out[key] = value.map(convert)
-      } else if (SCHEMA_ONE.has(key)) {
-        out[key] = convert(value)
-      } else {
-        out[key] = value as JsonValue
-      }
+      out[key] = convertKeyword(key, value, convert)
     }
-    for (const [exclusive, bound] of [["exclusiveMinimum", "minimum"], ["exclusiveMaximum", "maximum"]] as const) {
-      if (typeof node[exclusive] !== "boolean") continue
-      delete out[exclusive]
-      if (node[exclusive] === true && typeof node[bound] === "number") {
-        out[exclusive] = node[bound]
-        delete out[bound]
-      }
-    }
+    rewriteExclusiveBounds(node, out)
     if (out["type"] === "file") delete out["type"]
-    const properties = node["properties"]
-    if (Array.isArray(out["required"]) && isObject(properties)) {
-      out["required"] = out["required"].filter((name) => {
-        const property = typeof name === "string" ? properties[name] : undefined
-        return !(isObject(property) && property["writeOnly"] === true)
-      })
-    }
-    if (node["nullable"] !== true && node["x-nullable"] !== true) return out
-    if (typeof out["type"] === "string") {
-      out["type"] = [out["type"], "null"]
-      if (Array.isArray(out["enum"]) && !out["enum"].includes(null)) out["enum"] = [...out["enum"], null]
-      return out
-    }
-    return Array.isArray(out["type"]) ? out : { anyOf: [out, { type: "null" }] }
+    dropWriteOnlyRequired(node, out)
+    return applyNullable(node, out)
   }
 
   const converted = convert(root)
   const schema: JsonObject = isObject(converted) ? { $schema: DRAFT_2020_12, ...converted } : { $schema: DRAFT_2020_12 }
   if (Object.keys(defs).length > 0) schema["$defs"] = { ...(isObject(schema["$defs"]) ? schema["$defs"] : {}), ...defs }
   return schema
+}
+
+/** One keyword's value, with any subschemas it holds converted. */
+function convertKeyword(key: string, value: unknown, convert: (node: unknown) => JsonValue): JsonValue {
+  if (SCHEMA_MAPS.has(key) && isObject(value)) {
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, convert(schema)]))
+  }
+  if ((SCHEMA_LISTS.has(key) || SCHEMA_ONE.has(key)) && Array.isArray(value)) return value.map(convert)
+  if (SCHEMA_ONE.has(key)) return convert(value)
+  return value as JsonValue
+}
+
+/** Boolean `exclusiveMinimum`/`exclusiveMaximum` (3.0, Swagger 2) as the numeric bound 2020-12 expects. */
+function rewriteExclusiveBounds(node: Record<string, unknown>, out: JsonObject): void {
+  for (const [exclusive, bound] of [["exclusiveMinimum", "minimum"], ["exclusiveMaximum", "maximum"]] as const) {
+    if (typeof node[exclusive] !== "boolean") continue
+    delete out[exclusive]
+    if (node[exclusive] === true && typeof node[bound] === "number") {
+      out[exclusive] = node[bound]
+      delete out[bound]
+    }
+  }
+}
+
+function dropWriteOnlyRequired(node: Record<string, unknown>, out: JsonObject): void {
+  const properties = node["properties"]
+  if (!Array.isArray(out["required"]) || !isObject(properties)) return
+  out["required"] = out["required"].filter((name) => {
+    const property = typeof name === "string" ? properties[name] : undefined
+    return !(isObject(property) && property["writeOnly"] === true)
+  })
+}
+
+/** `nullable: true` (3.0) or `x-nullable: true` (Swagger 2) as a `null` type. */
+function applyNullable(node: Record<string, unknown>, out: JsonObject): JsonValue {
+  if (node["nullable"] !== true && node["x-nullable"] !== true) return out
+  if (typeof out["type"] === "string") {
+    out["type"] = [out["type"], "null"]
+    if (Array.isArray(out["enum"]) && !out["enum"].includes(null)) out["enum"] = [...out["enum"], null]
+    return out
+  }
+  return Array.isArray(out["type"]) ? out : { anyOf: [out, { type: "null" }] }
 }
