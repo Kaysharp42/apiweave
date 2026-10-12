@@ -113,6 +113,7 @@ import {
   readSaveFailure,
 } from "../utils/workflowSaveFailure";
 import { apiweave, IpcError } from "../utils/apiweaveClient";
+import { restoreAfterSave } from "../utils/restoreAfterSave";
 import { autoLayoutRootNodes } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
@@ -309,7 +310,7 @@ export function WorkflowCanvas({
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
   const saveWorkflowRef = useRef<
-    ((silent: boolean, overwrite?: boolean) => Promise<void>) | null
+    ((silent: boolean, overwrite?: boolean) => Promise<boolean>) | null
   >(null);
   const hydrationVersionRef = useRef(0);
 
@@ -1211,11 +1212,13 @@ export function WorkflowCanvas({
   useEffect(() => {
     baseRevisionRef.current = workflow?.rev ?? 0;
   }, [workflow?.rev]);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
 
+  // Resolves true once the graph is on the server (or there is no workflow to
+  // save), false when the save was refused; every failure is toasted here.
   const sendSave = useCallback(
-    async (silent: boolean, overwrite: boolean) => {
-      if (!scope.workspaceId || !workflow) return;
+    async (silent: boolean, overwrite: boolean): Promise<boolean> => {
+      if (!scope.workspaceId || !workflow) return true;
 
       try {
         const canonicalWorkflow = canvasToWorkflow(
@@ -1252,7 +1255,7 @@ export function WorkflowCanvas({
             nodeCount,
             edgeCount,
           });
-          return;
+          return false;
         }
 
         let savedWorkflow: Workflow;
@@ -1296,7 +1299,7 @@ export function WorkflowCanvas({
                 },
               },
             );
-            return;
+            return false;
           }
           const cause =
             detail ??
@@ -1314,7 +1317,7 @@ export function WorkflowCanvas({
               : "Failed to save workflow — your changes are not saved",
             { id: `workflow-save-error-${workflowId}` },
           );
-          return;
+          return false;
         }
         baseRevisionRef.current = savedWorkflow.rev;
         hydratedBaselineRef.current = { nodeCount, edgeCount };
@@ -1329,6 +1332,7 @@ export function WorkflowCanvas({
           .getState()
           .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         useTabStore.getState().markClean(workflowId ?? "");
+        return true;
       } catch (error) {
         // The save never reached the server: the canvas state failed local
         // validation, or the IPC call itself threw. Log the full error for the
@@ -1345,6 +1349,7 @@ export function WorkflowCanvas({
             : "Failed to save workflow — your changes are not saved",
           { id: `workflow-save-error-${workflowId}` },
         );
+        return false;
       }
     },
     [
@@ -1380,7 +1385,7 @@ export function WorkflowCanvas({
 
   /** `overwrite` drops the revision check: the user chose to replace a newer server copy. */
   const saveWorkflow = useCallback(
-    (silent = false, overwrite = false): Promise<void> => {
+    (silent = false, overwrite = false): Promise<boolean> => {
       const sent = saveQueueRef.current.then(() => sendSave(silent, overwrite));
       saveQueueRef.current = sent;
       return sent;
@@ -1396,24 +1401,19 @@ export function WorkflowCanvas({
   // revision this canvas is on and the canvas shows the result.
   const restoreRevision = useCallback(
     async (revisionId: string): Promise<void> => {
-      if (!scope.workspaceId || !workflowId) return;
-      await saveWorkflow(false);
-      try {
-        await apiweave.workflows.restoreRevision({
-          workspaceId: scope.workspaceId,
-          workflowId,
-          revisionId,
-          expectedRevision: baseRevisionRef.current,
-        });
-      } catch (error) {
-        if (error instanceof IpcError && error.code === "conflict") {
-          throw new Error(
-            "This workflow changed while you were looking. Load the latest, then restore again.",
-          );
-        }
-        throw error;
-      }
-      await reloadWorkflowFromServer();
+      const workspaceId = scope.workspaceId;
+      if (!workspaceId || !workflowId) return;
+      await restoreAfterSave(
+        () => saveWorkflow(false),
+        () =>
+          apiweave.workflows.restoreRevision({
+            workspaceId,
+            workflowId,
+            revisionId,
+            expectedRevision: baseRevisionRef.current,
+          }),
+        () => reloadWorkflowFromServer(),
+      );
       toast.success("Version restored");
     },
     [scope.workspaceId, workflowId, saveWorkflow, reloadWorkflowFromServer],
@@ -1589,7 +1589,9 @@ export function WorkflowCanvas({
     workflowId,
     isHydrated,
     flush: flushAutoSave,
-    save: () => saveWorkflowRef.current?.(false) ?? Promise.resolve(),
+    save: async () => {
+      await saveWorkflowRef.current?.(false);
+    },
     readCanvas: () => ({
       nodes: nodesRef.current,
       edges: edgesRef.current,

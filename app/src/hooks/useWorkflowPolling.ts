@@ -257,7 +257,7 @@ interface UseWorkflowPollingParams {
   // is called in WorkflowCanvas. Awaited before a run so the scheduler loads
   // the current graph, not a copy stale by up to one autosave debounce.
   saveWorkflowRef?: MutableRefObject<
-    ((silent: boolean) => Promise<void>) | null
+    ((silent: boolean) => Promise<unknown>) | null
   > | null;
   /**
    * Optional run camera. It is told about the run from here rather than from the
