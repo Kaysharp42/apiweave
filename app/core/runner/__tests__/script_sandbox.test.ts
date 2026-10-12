@@ -160,6 +160,33 @@ describe("script sandbox — the aw API", () => {
     ])
   })
 
+  it("refuses an encoding it does not know, checking the key encoding first", async () => {
+    const { outcome } = await run(`
+      for (const call of [
+        () => aw.crypto.hmacSha256("k", "m", "latin1", "latin1"),
+        () => aw.crypto.hmacSha256("k", "m", "latin1"),
+        () => aw.crypto.sha256("m", "binary"),
+      ]) {
+        try { call() } catch (error) { console.log(error.name + ": " + error.message) }
+      }
+    `)
+    expect(outcome.logs).toEqual([
+      "TypeError: aw.crypto.hmacSha256 keyEncoding must be one of utf8, hex, base64",
+      "TypeError: aw.crypto.hmacSha256 encoding must be one of hex, base64, base64url",
+      "TypeError: aw.crypto.sha256 encoding must be one of hex, base64, base64url",
+    ])
+  })
+
+  it("caps aw.test calls and variable size", async () => {
+    const tests = await run(`for (let i = 0; i < 101; i++) aw.test("t" + i, () => {})`)
+    expect(tests.outcome.tests).toHaveLength(100)
+    expect(tests.outcome.error).toMatch(/^RangeError: a script may record at most 100 tests/)
+    const variables: Record<string, unknown> = {}
+    const big = await run(`aw.variables.set("small", 1); aw.variables.set("big", "x".repeat(1024 * 1024))`, { variables })
+    expect(big.outcome.error).toMatch(/^RangeError: aw\.variables\.set: a value may be at most 1048576 bytes of JSON/)
+    expect(variables).toEqual({ small: 1 })
+  })
+
   it("caps console output", async () => {
     const { outcome } = await run(`for (let i = 0; i < 500; i++) console.log("x".repeat(5000))`)
     expect(outcome.logs).toHaveLength(101)

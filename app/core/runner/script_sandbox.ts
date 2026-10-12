@@ -345,46 +345,18 @@ export async function evaluateScript(run: ScriptRun, assigned: Record<string, un
   const host = (op: string, args: readonly string[]): string | undefined => {
     switch (op) {
       case "log":
-        if (logs.length < MAX_LOG_LINES) {
-          logs.push(clip(args[0] ?? ""))
-        } else if (logs.length === MAX_LOG_LINES) {
-          logs.push(`… output after ${MAX_LOG_LINES} lines dropped`)
-        }
+        recordLog(logs, args[0] ?? "")
         return undefined
       case "test":
-        if (tests.length >= MAX_TESTS) throw new RangeError(`a script may record at most ${MAX_TESTS} tests`)
-        tests.push(args[1] ? { name: clip(args[0] ?? ""), passed: false, error: clip(args[1]) } : { name: clip(args[0] ?? ""), passed: true })
+        recordTest(tests, args)
         return undefined
-      case "set": {
-        const json = args[1] ?? "null"
-        if (json.length > MAX_VARIABLE_BYTES) throw new RangeError(`aw.variables.set: a value may be at most ${MAX_VARIABLE_BYTES} bytes of JSON`)
-        // Defined rather than assigned, so a variable named `__proto__` is a variable.
-        Object.defineProperty(assigned, args[0] ?? "", {
-          value: JSON.parse(json) as unknown,
-          writable: true,
-          enumerable: true,
-          configurable: true,
-        })
+      case "set":
+        assignVariable(assigned, args)
         return undefined
-      }
-      case "hmacSha256": {
-        const [key = "", message = "", output = "", keyEncoding = ""] = args
-        return createHmac("sha256", Buffer.from(key, encoding<BufferEncoding>(keyEncoding, KEY_ENCODINGS, "aw.crypto.hmacSha256 keyEncoding")))
-          .update(message, "utf8")
-          .digest(encoding<"hex" | "base64" | "base64url">(output, OUTPUT_ENCODINGS, "aw.crypto.hmacSha256 encoding"))
-      }
-      case "sha256":
-        return createHash("sha256")
-          .update(args[0] ?? "", "utf8")
-          .digest(encoding<"hex" | "base64" | "base64url">(args[1] ?? "", OUTPUT_ENCODINGS, "aw.crypto.sha256 encoding"))
-      case "base64Encode":
-        return Buffer.from(args[0] ?? "", "utf8").toString("base64")
-      case "base64Decode":
-        return Buffer.from(args[0] ?? "", "base64").toString("utf8")
       case "uuid":
         return run.uuid()
       default:
-        throw new TypeError(`unknown operation ${op}`)
+        return compute(op, args)
     }
   }
 
@@ -421,6 +393,53 @@ export async function evaluateScript(run: ScriptRun, assigned: Record<string, un
     // without its own check): the instance is in an unknown state, and dropped.
     if (error instanceof RangeError) return { outcome: outcome("InternalError: stack overflow") }
     return { outcome: outcome(error instanceof Error ? error.message : String(error)) }
+  }
+}
+
+function recordLog(logs: string[], line: string): void {
+  if (logs.length < MAX_LOG_LINES) {
+    logs.push(clip(line))
+  } else if (logs.length === MAX_LOG_LINES) {
+    logs.push(`… output after ${MAX_LOG_LINES} lines dropped`)
+  }
+}
+
+function recordTest(tests: ScriptTestResult[], args: readonly string[]): void {
+  if (tests.length >= MAX_TESTS) throw new RangeError(`a script may record at most ${MAX_TESTS} tests`)
+  tests.push(args[1] ? { name: clip(args[0] ?? ""), passed: false, error: clip(args[1]) } : { name: clip(args[0] ?? ""), passed: true })
+}
+
+function assignVariable(assigned: Record<string, unknown>, args: readonly string[]): void {
+  const json = args[1] ?? "null"
+  if (json.length > MAX_VARIABLE_BYTES) throw new RangeError(`aw.variables.set: a value may be at most ${MAX_VARIABLE_BYTES} bytes of JSON`)
+  // Defined rather than assigned, so a variable named `__proto__` is a variable.
+  Object.defineProperty(assigned, args[0] ?? "", {
+    value: JSON.parse(json) as unknown,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  })
+}
+
+/** The host operations that only compute: hashing and base64. */
+function compute(op: string, args: readonly string[]): string {
+  switch (op) {
+    case "hmacSha256": {
+      const [key = "", message = "", output = "", keyEncoding = ""] = args
+      return createHmac("sha256", Buffer.from(key, encoding<BufferEncoding>(keyEncoding, KEY_ENCODINGS, "aw.crypto.hmacSha256 keyEncoding")))
+        .update(message, "utf8")
+        .digest(encoding<"hex" | "base64" | "base64url">(output, OUTPUT_ENCODINGS, "aw.crypto.hmacSha256 encoding"))
+    }
+    case "sha256":
+      return createHash("sha256")
+        .update(args[0] ?? "", "utf8")
+        .digest(encoding<"hex" | "base64" | "base64url">(args[1] ?? "", OUTPUT_ENCODINGS, "aw.crypto.sha256 encoding"))
+    case "base64Encode":
+      return Buffer.from(args[0] ?? "", "utf8").toString("base64")
+    case "base64Decode":
+      return Buffer.from(args[0] ?? "", "base64").toString("utf8")
+    default:
+      throw new TypeError(`unknown operation ${op}`)
   }
 }
 
