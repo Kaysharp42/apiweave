@@ -606,7 +606,14 @@ if (!hasSingleInstanceLock) {
     const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
     const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
-      workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver, () => cloud.syncNewWorkspace()),
+      workspaces: new WorkspaceService(
+        workspaces,
+        workflows,
+        sync,
+        scopeResolver,
+        () => cloud.syncNewWorkspace(),
+        (workspaceId) => cloud.isSharedTeamWorkspace(workspaceId),
+      ),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
