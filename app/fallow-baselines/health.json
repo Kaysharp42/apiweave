@@ -1,5 +1,403 @@
 {
   "finding_counts": {
+    "core/cli/cli.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
+    "core/ipc/router.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/mcp/host.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/mcp/run-projection.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/repositories/CloudSyncRepository.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "core/repositories/RunRepository.ts": {
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "core/repositories/WorkflowRepository.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/repositories/helpers.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/runner/__tests__/auth_test_servers.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/__tests__/reporters.test.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/runner/digest_auth.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/executor.ts": {
+      "complexity_critical": {
+        "count": 6
+      },
+      "complexity_high": {
+        "count": 4
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 9
+      },
+      "crap_moderate": {
+        "count": 11
+      }
+    },
+    "core/runner/harness/json-utils.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/harness/mock-server.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/runner/harness/parity-runner.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/runner/network.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/oauth.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/project_runner.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/runner/regex_sandbox.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/reporters.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "core/runner/resume.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/runner/safe_http.ts": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "core/runner/scheduler.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/runner/script_sandbox.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/secrets/keyfile.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/__tests__/services.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/assertion_authoring_service.ts": {
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/cloud_first_sync_service.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "core/services/environment_service.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/import_parsers.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/import_service.ts": {
+      "complexity_high": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/network_settings_service.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/oauth_service.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "core/services/openapi_response_schemas.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/postman_import.ts": {
+      "complexity_high": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "core/services/project_export_service.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 3
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "core/services/secret_utils.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/workflow_reads.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "core/services/workflow_service.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "e2e/fixtures/desktop.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "e2e/node-modal.spec.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "electron/cloud/__tests__/cloud-transport.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "electron/cloud/__tests__/link.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "electron/cloud/cloud-client.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "electron/cloud/cloud-link.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "electron/cloud/cloud-sync-control.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "electron/cloud/cloud-transport.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "electron/cloud/cloud-workspace-reconciler.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "electron/main.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 4
+      },
+      "crap_moderate": {
+        "count": 6
+      }
+    },
     "scripts/audit-types.mjs": {
       "complexity_critical": {
         "count": 1
@@ -8,30 +406,45 @@
         "count": 1
       }
     },
-    "src/__tests__/WebhookManager.test.tsx": {
-      "crap_moderate": {
+    "shared/analysis/assertion_expected.ts": {
+      "complexity_moderate": {
         "count": 1
       }
     },
-    "src/components/AddNodesPanel.tsx": {
+    "shared/analysis/workflow_graph_analyzer.ts": {
       "complexity_critical": {
         "count": 1
       },
-      "crap_critical": {
-        "count": 1
+      "complexity_high": {
+        "count": 3
       },
-      "crap_moderate": {
-        "count": 4
-      }
-    },
-    "src/components/AssertionEditor.tsx": {
-      "complexity_critical": {
+      "complexity_moderate": {
         "count": 1
       },
       "crap_critical": {
         "count": 1
       },
       "crap_high": {
+        "count": 4
+      }
+    },
+    "shared/iteration-data/iterationData.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "src/__tests__/no-legacy-urls.test.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/__tests__/task10-secret-write-only.test.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/AssertionEditor.tsx": {
+      "complexity_moderate": {
         "count": 1
       },
       "crap_moderate": {
@@ -40,112 +453,58 @@
     },
     "src/components/CollectionExportImport.tsx": {
       "complexity_critical": {
-        "count": 2
+        "count": 1
       },
       "crap_critical": {
-        "count": 2
+        "count": 1
       },
       "crap_high": {
-        "count": 3
+        "count": 1
       },
       "crap_moderate": {
-        "count": 3
+        "count": 1
       }
     },
     "src/components/CollectionManager.tsx": {
-      "complexity_critical": {
+      "complexity_high": {
         "count": 1
       },
-      "crap_critical": {
-        "count": 2
-      },
-      "crap_high": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 2
-      }
-    },
-    "src/components/CurlImport.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
-      }
-    },
-    "src/components/CustomEdge.tsx": {
       "crap_moderate": {
         "count": 1
       }
     },
-    "src/components/DynamicFunctionsHelper.tsx": {
-      "crap_moderate": {
+    "src/components/CurlImport.tsx": {
+      "complexity_high": {
         "count": 1
-      }
-    },
-    "src/components/EnvironmentManager.tsx": {
-      "crap_critical": {
-        "count": 2
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 2
       }
     },
     "src/components/FileUploadSection.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "src/components/HARImport.tsx": {
-      "complexity_critical": {
+      "complexity_moderate": {
         "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
       }
     },
     "src/components/HistoryModal.tsx": {
-      "complexity_critical": {
+      "complexity_high": {
         "count": 1
-      },
-      "crap_critical": {
-        "count": 2
       },
       "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
         "count": 2
       }
     },
     "src/components/ImportToNodesPanel.tsx": {
       "complexity_critical": {
-        "count": 2
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
       },
       "crap_critical": {
-        "count": 2
-      },
-      "crap_high": {
-        "count": 3
+        "count": 1
       }
     },
     "src/components/MCPManager.tsx": {
@@ -160,26 +519,29 @@
       "complexity_critical": {
         "count": 1
       },
-      "crap_critical": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
         "count": 1
       }
     },
     "src/components/OpenAPIImport.tsx": {
-      "complexity_critical": {
+      "complexity_high": {
         "count": 1
       },
       "crap_critical": {
-        "count": 3
+        "count": 1
       },
       "crap_high": {
-        "count": 2
+        "count": 1
       },
       "crap_moderate": {
         "count": 1
       }
     },
-    "src/components/ScopedSecretList.tsx": {
-      "crap_moderate": {
+    "src/components/PostmanImportPanel.tsx": {
+      "complexity_moderate": {
         "count": 1
       }
     },
@@ -188,102 +550,48 @@
         "count": 1
       }
     },
-    "src/components/SecretsPrompt.tsx": {
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/ServiceTokenList.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "src/components/TokenValueDisplay.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/UserSecretBindingForm.tsx": {
-      "complexity_high": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      }
-    },
-    "src/components/VariablesPanel.tsx": {
-      "crap_high": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/WebhookManager.tsx": {
-      "complexity_high": {
-        "count": 1
-      }
-    },
     "src/components/WorkflowCanvas.tsx": {
       "complexity_critical": {
         "count": 2
       },
       "crap_critical": {
-        "count": 3
+        "count": 2
       },
       "crap_high": {
-        "count": 3
+        "count": 1
       },
       "crap_moderate": {
-        "count": 5
+        "count": 2
       }
     },
     "src/components/WorkflowExportImport.tsx": {
       "complexity_critical": {
         "count": 1
       },
+      "complexity_high": {
+        "count": 1
+      },
       "crap_critical": {
         "count": 1
       },
       "crap_high": {
         "count": 1
-      },
-      "crap_moderate": {
-        "count": 2
       }
     },
     "src/components/WorkflowJsonEditor.tsx": {
-      "complexity_critical": {
+      "complexity_high": {
         "count": 1
       },
-      "crap_critical": {
+      "complexity_moderate": {
         "count": 1
-      },
-      "crap_high": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 2
       }
     },
     "src/components/WorkflowSettingsPanel.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
+      "complexity_high": {
         "count": 1
       },
       "crap_high": {
-        "count": 2
+        "count": 1
       }
     },
     "src/components/__tests__/design-tokens.test.ts": {
@@ -299,147 +607,60 @@
         "count": 1
       }
     },
-    "src/components/auth/ApprovedDomainManager.tsx": {
-      "crap_high": {
+    "src/components/atoms/flow/NodeActionMenu.tsx": {
+      "crap_moderate": {
         "count": 1
       }
     },
-    "src/components/auth/InviteUserModal.tsx": {
+    "src/components/audit/AuditFilters.tsx": {
       "crap_high": {
         "count": 1
       }
     },
     "src/components/layout/AccountMenu.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
+      "complexity_moderate": {
         "count": 1
       }
     },
     "src/components/layout/AppNavBar.tsx": {
-      "crap_critical": {
-        "count": 1
-      },
       "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/MainLayout.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
         "count": 1
       }
     },
     "src/components/layout/Sidebar.tsx": {
       "complexity_critical": {
         "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 3
       }
     },
     "src/components/layout/SidebarHeader.tsx": {
-      "complexity_critical": {
+      "complexity_moderate": {
         "count": 1
-      },
-      "crap_critical": {
-        "count": 2
       },
       "crap_moderate": {
         "count": 1
       }
     },
     "src/components/layout/Workspace.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/sidebar/ProjectItem.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/sidebar/ProjectList.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/sidebar/SettingsContent.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/layout/sidebar/WorkflowItem.tsx": {
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/components/layout/sidebar/WorkflowList.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/components/molecules/ResponseInspector.tsx": {
       "complexity_moderate": {
         "count": 1
       }
     },
-    "src/components/node-modal/AssertionConfigPanel.tsx": {
-      "complexity_critical": {
-        "count": 3
-      },
-      "crap_critical": {
-        "count": 3
-      },
-      "crap_moderate": {
+    "src/components/layout/sidebar/ProjectItem.tsx": {
+      "complexity_high": {
         "count": 1
       }
     },
-    "src/components/node-modal/DelayConfigPanel.tsx": {
-      "crap_moderate": {
+    "src/components/layout/sidebar/ProjectList.tsx": {
+      "complexity_moderate": {
         "count": 1
       }
     },
-    "src/components/node-modal/HTTPRequestConfigPanel.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
+    "src/components/layout/sidebar/WorkflowList.tsx": {
+      "complexity_moderate": {
         "count": 1
       }
     },
-    "src/components/node-modal/HttpRequestOutputPanel.tsx": {
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/components/node-modal/MergeConfigPanel.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/components/node-modal/NodeModalHeader.tsx": {
+    "src/components/molecules/ResponseInspector.tsx": {
       "complexity_high": {
         "count": 1
       },
@@ -447,54 +668,76 @@
         "count": 1
       }
     },
-    "src/components/node-modal/nodeModalUtils.ts": {
-      "crap_critical": {
-        "count": 2
+    "src/components/node-modal/HTTPRequestConfigPanel.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "src/components/node-modal/HttpRequestOutputPanel.tsx": {
+      "complexity_high": {
+        "count": 1
       },
       "crap_high": {
         "count": 1
-      },
+      }
+    },
+    "src/components/node-modal/NodeModalHeader.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/node-modal/NodeModalShell.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/node-modal/OAuth2AuthFields.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/node-modal/WorkflowCallConfigPanel.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/components/node-modal/copyAsCurl.ts": {
       "crap_moderate": {
         "count": 2
       }
     },
     "src/components/nodes/AssertionNode.tsx": {
-      "complexity_critical": {
-        "count": 3
+      "complexity_high": {
+        "count": 2
       },
-      "crap_critical": {
-        "count": 4
+      "complexity_moderate": {
+        "count": 1
       },
       "crap_high": {
-        "count": 1
+        "count": 2
       },
       "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/nodes/DelayNode.tsx": {
-      "crap_high": {
         "count": 1
       }
     },
     "src/components/nodes/HTTPRequestNode.tsx": {
       "complexity_critical": {
-        "count": 3
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
       },
       "crap_critical": {
-        "count": 3
+        "count": 2
       },
       "crap_high": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 2
+        "count": 1
       }
     },
     "src/components/nodes/MergeNode.tsx": {
-      "crap_critical": {
-        "count": 1
-      },
       "crap_high": {
         "count": 1
       },
@@ -510,55 +753,37 @@
         "count": 1
       }
     },
-    "src/components/organisms/EnvironmentForm.tsx": {
-      "crap_high": {
+    "src/components/organisms/CreateWorkspaceModal.tsx": {
+      "complexity_high": {
         "count": 1
       },
-      "crap_moderate": {
+      "crap_high": {
         "count": 1
       }
     },
-    "src/components/organisms/OrgInvitesSection.tsx": {
+    "src/components/organisms/EnvironmentForm.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "src/components/organisms/ProjectRunPanel.tsx": {
       "complexity_moderate": {
         "count": 1
       }
     },
-    "src/components/organisms/OrgTeamsSection.tsx": {
+    "src/components/organisms/RunTimelinePanel.tsx": {
       "complexity_moderate": {
         "count": 1
-      }
-    },
-    "src/components/organisms/OrgWorkspaceSwitcher.tsx": {
-      "complexity_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/organisms/ProtectionSummary.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/organisms/ScopedEnvironmentList.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/components/organisms/TabBar.tsx": {
-      "crap_moderate": {
-        "count": 2
       }
     },
     "src/contexts/WorkflowContext.tsx": {
       "complexity_critical": {
         "count": 1
       },
-      "complexity_high": {
+      "complexity_moderate": {
         "count": 1
       },
       "crap_critical": {
-        "count": 2
-      },
-      "crap_high": {
         "count": 1
       },
       "crap_moderate": {
@@ -566,41 +791,22 @@
       }
     },
     "src/hooks/useAutoSave.ts": {
-      "crap_critical": {
+      "crap_moderate": {
         "count": 1
       }
     },
     "src/hooks/useCanvasDrop.ts": {
-      "crap_critical": {
-        "count": 1
-      },
       "crap_moderate": {
         "count": 1
       }
     },
-    "src/hooks/useClipboardActions.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/hooks/useHydration.ts": {
-      "crap_high": {
-        "count": 2
-      }
-    },
-    "src/hooks/useKeyboardShortcuts.ts": {
+    "src/hooks/useCloudSync.ts": {
       "crap_moderate": {
         "count": 1
       }
     },
     "src/hooks/useNodeBranchCounts.ts": {
-      "crap_critical": {
+      "crap_moderate": {
         "count": 2
       }
     },
@@ -609,87 +815,21 @@
         "count": 2
       },
       "crap_critical": {
-        "count": 4
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
       }
     },
     "src/hooks/useWorkflowPolling.ts": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "complexity_moderate": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 3
-      },
-      "crap_high": {
-        "count": 4
-      },
-      "crap_moderate": {
-        "count": 4
-      }
-    },
-    "src/pages/AccountSettingsPage.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/pages/AdminUsersPage.tsx": {
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_high": {
-        "count": 2
-      },
-      "crap_moderate": {
-        "count": 2
-      }
-    },
-    "src/pages/AuditPage.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/pages/InviteAdminPage.tsx": {
-      "crap_moderate": {
-        "count": 2
-      }
-    },
-    "src/pages/InvitePage.tsx": {
-      "crap_critical": {
-        "count": 1
-      },
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/pages/LoginPage.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/pages/NotFoundPage.tsx": {
-      "crap_moderate": {
-        "count": 1
-      }
-    },
-    "src/pages/OrgSettingsPage.tsx": {
-      "complexity_critical": {
-        "count": 1
-      },
-      "crap_critical": {
-        "count": 1
-      }
-    },
-    "src/pages/SetupPage.tsx": {
       "complexity_high": {
-        "count": 1
+        "count": 2
       },
       "crap_high": {
         "count": 1
       },
       "crap_moderate": {
-        "count": 1
+        "count": 3
       }
     },
     "src/pages/WorkspaceEnvironmentsPage.tsx": {
@@ -698,52 +838,115 @@
       },
       "crap_critical": {
         "count": 1
-      },
-      "crap_high": {
-        "count": 4
-      },
-      "crap_moderate": {
-        "count": 6
       }
     },
     "src/pages/WorkspaceProjectPage.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/pages/cloud/CloudSyncPage.tsx": {
       "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
         "count": 1
       },
       "crap_critical": {
         "count": 1
       },
-      "crap_moderate": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "src/pages/cloud/ConflictDetailPage.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/stores/EnvironmentStore.ts": {
+      "crap_high": {
         "count": 1
       }
     },
     "src/stores/SidebarStore.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "src/utils/environmentImport.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "src/utils/focusModeOrder.ts": {
+      "complexity_high": {
+        "count": 1
+      },
       "crap_high": {
+        "count": 1
+      }
+    },
+    "src/utils/runTimeline.ts": {
+      "complexity_moderate": {
         "count": 1
       }
     }
   },
   "runtime_coverage_findings": [],
   "target_keys": [
-    "src/components/layout/MainLayout.tsx:circular dependency",
-    "src/components/layout/Sidebar.tsx:complexity",
-    "src/stores/TabStore.ts:high impact",
-    "src/hooks/useSwaggerRefresh.ts:complexity",
-    "src/components/layout/Workspace.tsx:circular dependency",
+    "core/runner/executor.ts:high impact",
+    "core/services/project_export_service.ts:high impact",
+    "core/services/assertion_authoring_service.ts:high impact",
+    "core/services/workflow_service.ts:complexity",
+    "src/hooks/useCloudSync.ts:high impact",
+    "core/services/project_folder.ts:high impact",
     "src/components/atoms/flow/BaseNode.tsx:complexity",
-    "src/App.tsx:circular dependency",
-    "src/components/node-modal/HTTPRequestConfigPanel.tsx:complexity",
-    "src/components/node-modal/nodeModalUtils.ts:untested risk",
-    "src/components/WebhookManager.tsx:complexity",
-    "src/components/WorkflowExportImport.tsx:complexity",
-    "src/components/organisms/CanvasToolbar.tsx:complexity",
-    "src/hooks/useNodeBranchCounts.ts:untested risk",
-    "src/components/WorkflowCanvas.tsx:complexity",
-    "src/components/WorkflowSettingsPanel.tsx:complexity",
-    "src/components/layout/MainHeader.tsx:circular dependency",
-    "src/components/nodes/HTTPRequestNode.tsx:complexity",
+    "core/runner/scheduler.ts:complexity",
+    "src/components/node-modal/HttpRequestOutputPanel.tsx:complexity",
+    "core/services/run_evidence.ts:untested risk",
+    "src/components/layout/Workspace.tsx:circular dependency",
+    "shared/analysis/workflow_graph_analyzer.ts:high impact",
+    "src/hooks/useWorkspaceTabs.ts:high impact",
     "src/pages/WorkspaceEnvironmentsPage.tsx:complexity",
+    "src/App.tsx:circular dependency",
+    "core/runner/harness/json-utils.ts:untested risk",
+    "src/components/node-modal/copyAsCurl.ts:high impact",
+    "shared/env-file/envFile.ts:high impact",
+    "src/stores/TabStore.ts:high impact",
+    "core/runner/oauth.ts:complexity",
+    "src/components/organisms/AgentLaunchButton.tsx:complexity",
+    "shared/iteration-data/iterationData.ts:high impact",
+    "src/components/layout/MainLayout.tsx:circular dependency",
+    "src/components/OpenAPIImport.tsx:complexity",
+    "core/runner/resume.ts:high impact",
+    "src/hooks/useSwaggerRefresh.ts:complexity",
+    "src/components/node-modal/nodeModalUtils.ts:high impact",
+    "src/components/layout/MainHeader.tsx:circular dependency",
+    "core/runner/__tests__/auth_test_servers.ts:high impact",
+    "src/pages/WorkspaceProjectPage.tsx:complexity",
+    "core/runner/reporters.ts:high impact",
+    "src/utils/environmentInheritance.ts:high impact",
+    "src/components/layout/Sidebar.tsx:complexity",
+    "core/runner/network.ts:high impact",
     "src/components/CollectionExportImport.tsx:complexity",
-    "src/pages/Home.tsx:circular dependency"
+    "core/services/import_parsers.ts:high impact",
+    "src/components/molecules/ResponseInspector.tsx:complexity",
+    "core/mcp/harness/measurements.ts:high impact",
+    "src/components/CollectionManager.tsx:complexity",
+    "core/services/postman_import.ts:high impact",
+    "src/components/organisms/CreateWorkspaceModal.tsx:complexity",
+    "src/hooks/useWorkflowPolling.ts:complexity",
+    "src/components/NodeModal.tsx:complexity",
+    "core/runner/sse.ts:untested risk",
+    "src/components/organisms/AgentsSettingsPanel.tsx:complexity",
+    "src/components/WorkflowExportImport.tsx:complexity",
+    "src/components/WorkflowCanvas.tsx:complexity",
+    "src/pages/cloud/CloudSyncPage.tsx:complexity",
+    "src/components/organisms/CanvasToolbar.tsx:complexity",
+    "src/pages/cloud/ConflictDetailPage.tsx:complexity"
   ]
 }
