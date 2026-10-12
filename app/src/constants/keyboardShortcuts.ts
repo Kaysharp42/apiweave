@@ -165,8 +165,27 @@ function modifierMatches(event: KeyboardEvent, chord: KeyChord): boolean {
   return !event.ctrlKey && !event.metaKey;
 }
 
+/**
+ * The key a chord is compared with. A non-Latin layout types a non-ASCII
+ * character (Ctrl+N is "т" on Cyrillic), so that falls back to the physical
+ * key; anything ASCII keeps matching by character, which is what keeps AZERTY
+ * and Dvorak right — and "?" on AZERTY, whose physical key is `KeyM`.
+ */
+function eventKey(event: KeyboardEvent): string | undefined {
+  const key = event.key?.toLowerCase();
+  const code = event.code ?? "";
+  if (
+    /^(?:Key[A-Z]|Digit[0-9])$/.test(code) &&
+    key?.length === 1 &&
+    key.charCodeAt(0) > 127
+  ) {
+    return code.slice(-1).toLowerCase();
+  }
+  return key;
+}
+
 function chordMatches(event: KeyboardEvent, chord: KeyChord): boolean {
-  if (event.altKey || event.key?.toLowerCase() !== chord.key) return false;
+  if (event.altKey || eventKey(event) !== chord.key) return false;
   // "?" already took Shift to type; its key value says so.
   const shiftMatches =
     chord.key === "?" || Boolean(event.shiftKey) === Boolean(chord.shift);

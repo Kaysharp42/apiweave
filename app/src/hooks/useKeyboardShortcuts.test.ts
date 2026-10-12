@@ -111,6 +111,29 @@ describe("useKeyboardShortcuts", () => {
     input.remove();
   });
 
+  it("matches a non-Latin layout by physical key, a Latin one by character", () => {
+    const onNewWorkflow = vi.fn();
+    const onCloseTab = vi.fn();
+    const onShowShortcutsHelp = vi.fn();
+    renderHook(() =>
+      useKeyboardShortcuts({ onNewWorkflow, onCloseTab, onShowShortcutsHelp }),
+    );
+    const dispatch = (init: KeyboardEventInit) =>
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, ...init }),
+      );
+
+    // Cyrillic: Ctrl+N types "т".
+    dispatch({ key: "т", code: "KeyN", ctrlKey: true });
+    expect(onNewWorkflow).toHaveBeenCalledTimes(1);
+
+    // AZERTY: "z" sits on the US "W" key, and "?" on the US "M" key.
+    dispatch({ key: "z", code: "KeyW", ctrlKey: true });
+    expect(onCloseTab).not.toHaveBeenCalled();
+    dispatch({ key: "?", code: "KeyM", shiftKey: true });
+    expect(onShowShortcutsHelp).toHaveBeenCalledTimes(1);
+  });
+
   it("does not fire ctrl+n with another modifier held", () => {
     const onNewWorkflow = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onNewWorkflow }));
