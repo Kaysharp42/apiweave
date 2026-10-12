@@ -115,9 +115,27 @@ describe("workflow revisions", () => {
     expect(revisions()).toHaveLength(1)
   })
 
+  it("keeps one version per agent session, so sixty patches leave the state before the agent restorable", async () => {
+    await canvasSave("mine")
+    for (let index = 0; index < 60; index += 1) {
+      await service.patch(workspaceId, workflowId, { upsertNodes: [node(`agent-${index}`)] }, "agent:Claude Code")
+      advance(5_000)
+    }
+
+    const list = revisions()
+    expect(list.map((revision) => revision.source)).toEqual(["agent:Claude Code", "canvas"])
+    const beforeAgent = await service.getRevision(workspaceId, workflowId, list[0]!.revisionId)
+    expect(beforeAgent.snapshot.name).toBe("mine")
+    expect(nodeIds(beforeAgent.snapshot.nodes)).toEqual(["a"])
+    const current = await service.get(workspaceId, workflowId)
+    const restored = await service.restoreRevision(workspaceId, workflowId, list[0]!.revisionId, current.rev)
+    expect(nodeIds(restored.nodes)).toEqual(["a"])
+  })
+
   it("keeps the newest fifty, none older than ninety days", async () => {
     for (let index = 0; index < 55; index += 1) {
       await service.update(workspaceId, workflowId, { name: `agent ${index}` }, { source: "agent:a" })
+      advance(10 * MINUTE)
     }
     expect(revisions()).toHaveLength(50)
     expect((await service.getRevision(workspaceId, workflowId, revisions()[0]!.revisionId)).snapshot.name).toBe("agent 53")

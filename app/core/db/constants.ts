@@ -30,9 +30,10 @@ export const PROJECT_RUN_HISTORY_RETENTION_PER_PROJECT = 50
 
 /**
  * Workflow revisions (snapshots taken before a write replaces a workflow).
- * Canvas auto-saves every 700 ms of editing, so a canvas write is snapshotted
- * only when the newest snapshot is a canvas one older than this; any other
- * writer (an agent, cloud sync, an import, a restore) is always snapshotted
+ * Canvas auto-saves every 700 ms of editing and an agent patches in many small
+ * steps, so a write is snapshotted only when the newest snapshot was taken
+ * before a different writer's write, or is older than this; a change of writer
+ * (canvas, an agent, cloud sync, an import, a restore) is always snapshotted
  * first. Each workflow keeps its newest {@link WORKFLOW_REVISIONS_KEPT}, none
  * older than {@link WORKFLOW_REVISION_MAX_AGE_MS}.
  *

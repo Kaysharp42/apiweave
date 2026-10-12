@@ -36,9 +36,11 @@ export class WorkflowRevisionRepository {
 
   /**
    * Keep `current` as a revision before `source` replaces it — unless it is
-   * already the newest revision, or the canvas is writing again within a few
-   * minutes of its last snapshot (auto-save fires every 700 ms of editing).
-   * Any other writer is always snapshotted first, so its edit can be undone.
+   * already the newest revision, or the same writer is writing again within a
+   * few minutes of its last snapshot: canvas auto-save fires every 700 ms of
+   * editing, and an agent session is many small patches. A change of writer is
+   * always snapshotted first, so the state before an agent started stays
+   * reachable instead of being pruned out by the agent's own patches.
    */
   public capture(current: Workflow, source: WorkflowWriteSource): void {
     const now = Date.now()
@@ -48,8 +50,7 @@ export class WorkflowRevisionRepository {
     )
     if (
       newest !== undefined &&
-      source === "canvas" &&
-      newest.source === "canvas" &&
+      newest.source === source &&
       now - Date.parse(newest.createdAt) < WORKFLOW_REVISION_INTERVAL_MS
     ) {
       return
