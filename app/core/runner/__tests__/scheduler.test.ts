@@ -157,8 +157,14 @@ describe("RunScheduler", () => {
       }).workflowId
       const scheduler = makeScheduler()
 
+      // The saved environment is gone: any attempt to load it fails the run.
+      environments.delete(env.environmentId)
+      workflows.update(workflowId, { selectedEnvironmentId: env.environmentId })
+
       const runId = scheduler.enqueue({ workspaceId: ws, workflowId, selectedEnvironmentId: null })
       expect(runs.getById(runId)?.selectedEnvironmentId).toBeNull()
+      // It runs with none: the saved environment is not picked up at execute time either.
+      expect(await scheduler.whenFinished(runId)).toBe("completed")
     })
 
     it("substitutes selected environment variables in HTTP request URLs", async () => {

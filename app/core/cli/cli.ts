@@ -342,11 +342,11 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
 
     // -------- Environment --------
     // `--env` runs everything against that environment. Without it each
-    // workflow runs against its own saved one, as in the app (null tells the
-    // scheduler to use the workflow's). `--env-file` and `--var` are layered on
-    // whichever environments will be used.
+    // workflow runs against its own saved one, as in the app (leaving the
+    // environment unset tells the scheduler to use the workflow's). `--env-file`
+    // and `--var` are layered on whichever environments will be used.
     const available = environments.listByWorkspace(workspaceId).items
-    let environmentId: string | null = null
+    let environmentId: string | undefined
     if (options.env !== undefined) {
       const matches = available.filter((environment) => environment.name === options.env)
       if (matches.length !== 1) {
@@ -361,11 +361,11 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     }
     if (Object.keys(overrides).length > 0) {
       for (const environment of available) {
-        if (environmentId === null || environment.environmentId === environmentId) {
+        if (environmentId === undefined || environment.environmentId === environmentId) {
           environments.update(environment.environmentId, { variables: { ...environment.variables, ...overrides } })
         }
       }
-      if (environmentId === null) {
+      if (environmentId === undefined) {
         // A workflow saved without an environment gets one holding just the overrides.
         let cliEnvironmentId: string | undefined
         for (const workflow of workflows.listByWorkspace(workspaceId, true).items) {
@@ -422,14 +422,14 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     const runOnce = async (data?: IterationRow): Promise<SingleReportInput> => {
       const withData = data === undefined ? {} : { data }
       if (target.kind === "workflow") {
-        const runId = runScheduler.enqueue({ workspaceId, workflowId: target.workflowId, selectedEnvironmentId: environmentId, ...withData })
+        const runId = runScheduler.enqueue({ workspaceId, workflowId: target.workflowId, ...(environmentId === undefined ? {} : { selectedEnvironmentId: environmentId }), ...withData })
         await runScheduler.whenFinished(runId)
         // Always the persisted run: secrets are masked when a run is stored.
         const run = runs.getById(runId)!
         return { kind: "run", run, workflow: workflows.getById(run.workflowId) ?? null }
       }
       const projectRun = await new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler: runScheduler })
-        .start({ workspaceId, projectId: target.projectId, environmentId, ...withData }).done
+        .start({ workspaceId, projectId: target.projectId, ...(environmentId === undefined ? {} : { environmentId }), ...withData }).done
       const itemRuns = projectRun.items.flatMap((item) => (item.runId === null ? [] : [runs.getById(item.runId)])).filter((run) => run !== undefined)
       const itemWorkflows = [...new Set(projectRun.items.map((item) => item.workflowId))]
         .map((workflowId) => workflows.getById(workflowId))

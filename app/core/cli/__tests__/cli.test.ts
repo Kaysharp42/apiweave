@@ -93,6 +93,13 @@ describe("apiweave run", () => {
     expect(junit).toContain('tests="2" failures="0"')
   })
 
+  it("runs each workflow against the environment it was saved with when --env is not given", async () => {
+    const result = await run(["run", FIXTURE, "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(received).toEqual([`Bearer ${TOKEN}`])
+  })
+
   it("fails on a failed assertion with exit 1 and a JUnit failure, never printing the secret", async () => {
     const junitPath = path.join(dir, "out", "junit.xml")
     const htmlPath = path.join(dir, "out", "report.html")

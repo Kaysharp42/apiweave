@@ -153,9 +153,8 @@ export class RunScheduler {
     // placeholder goes out as literal text — a 401 from the target that is
     // indistinguishable from wrong credentials. `undefined` means "use the
     // workflow's default"; an explicit `null` means "run with no environment".
-    // The execute-time fallback (`run.selectedEnvironmentId ?? workflow.selectedEnvironmentId`)
-    // is kept as defense-in-depth, but the run row now reflects what will
-    // actually run, so the echo and the run agree.
+    // This is the only place the default is applied: `executeRun` reads the
+    // run row as is, so a stored null really runs with none.
     const inheritedEnvironmentId =
       request.selectedEnvironmentId === undefined
         ? workflow.selectedEnvironmentId ?? null
@@ -290,7 +289,7 @@ export class RunScheduler {
         ...(Object.keys(mergedVariables).length > 0 ? { variables: mergedVariables as Record<string, unknown> } : {}),
       }
 
-      const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
+      const selectedEnvironmentId = run.selectedEnvironmentId ?? null
       const environments = this.deps.environments
       const environment = selectedEnvironmentId ? environments?.getById(selectedEnvironmentId) : undefined
       if (selectedEnvironmentId && (environment === undefined || environment.workspaceId !== run.workspaceId)) {
