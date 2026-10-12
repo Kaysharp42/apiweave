@@ -59,7 +59,7 @@ A column the row does not have stays as literal `{{data.name}}` text and is list
 3. The canvas narrates each iteration in turn; the toolbar shows **Iteration 3/10** while one runs.
 4. When the last iteration ends, a notice says how many passed: `Data run finished: 9 of 10 iterations passed`.
 
-A failed iteration does not stop the next one. **Cancel** stops the iteration that is running and the ones after it. Each iteration appears in **History** with its place, and exports its own JUnit or HTML report.
+A failed iteration does not stop the next one. **Cancel** stops the iteration that is running and the ones after it. Each iteration appears in **History** with its place, and exports its own JUnit or HTML report. History retention counts the whole data-driven run as one run, so a large data file pushes no more earlier runs out of History than a single run would.
 
 ## Run with data in CI
 

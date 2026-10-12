@@ -482,16 +482,24 @@ function replaceNodeResults(store: KVStore, runId: string, results: readonly Run
   }
 }
 
+// A data-driven run's iterations share `iteration.groupId` and count as one
+// run for retention; any other run is its own group.
+const RUN_GROUP_SQL = "coalesce(response_metadata_json ->> '$.iteration.groupId', id)"
+
 /**
  * Keep the newest {@link RUN_HISTORY_RETENTION_PER_WORKFLOW} runs of a
- * workflow; delete older finished ones. Node results and side-table bodies go
- * with them through the FK cascade. Live runs are never pruned, but they do
- * count toward the newest N.
+ * workflow, counting a data-driven run's iterations as one run; delete older
+ * finished ones. Node results and side-table bodies go with them through the
+ * FK cascade. Live runs are never pruned, but they do count toward the newest N.
+ *
+ * ponytail: scans the workflow's runs with a JSON extract on each finish;
+ * add an expression index on the group key if long histories make it slow.
  */
 function pruneWorkflowHistory(store: KVStore, workflowId: string): void {
   store.delete(
-    `DELETE FROM runs WHERE workflow_id = ? AND ${TERMINAL_SQL} AND id NOT IN ` +
-      "(SELECT id FROM runs WHERE workflow_id = ? ORDER BY createdAt DESC, id DESC LIMIT ?)",
+    `DELETE FROM runs WHERE workflow_id = ? AND ${TERMINAL_SQL} AND ${RUN_GROUP_SQL} NOT IN ` +
+      `(SELECT ${RUN_GROUP_SQL} AS run_group FROM runs WHERE workflow_id = ? GROUP BY run_group ` +
+      "ORDER BY max(createdAt) DESC, max(id) DESC LIMIT ?)",
     [workflowId, workflowId, RUN_HISTORY_RETENTION_PER_WORKFLOW],
   )
 }

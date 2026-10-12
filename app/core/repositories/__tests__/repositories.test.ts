@@ -444,6 +444,32 @@ describe("RunRepository storage and retention", () => {
     expect(runs.getById(otherRun)).toBeDefined()
   })
 
+  it("counts a data-driven run's iterations as one run when pruning history", () => {
+    const { workspaceId, workflowId } = seedWorkflow()
+    const at = (runId: string, second: number): void =>
+      db.kvStore.set("UPDATE runs SET createdAt = ? WHERE id = ?", [new Date(Date.UTC(2030, 0, 1, 0, 0, second)).toISOString(), runId])
+    const singles: string[] = []
+    for (let i = 0; i < RUN_HISTORY_RETENTION_PER_WORKFLOW; i += 1) {
+      const runId = runs.create({ workspaceId, workflowId }).runId
+      at(runId, i)
+      runs.updateStatus(runId, "completed")
+      singles.push(runId)
+    }
+    const rows = RUN_HISTORY_RETENTION_PER_WORKFLOW + 50
+    const iterations: string[] = []
+    for (let index = 1; index <= rows; index += 1) {
+      const runId = runs.create({ workspaceId, workflowId, iteration: { groupId: "grp", index, count: rows } }).runId
+      at(runId, RUN_HISTORY_RETENTION_PER_WORKFLOW + index)
+      runs.updateStatus(runId, "completed")
+      iterations.push(runId)
+    }
+
+    // Every iteration survives, and the group evicts only the oldest single run.
+    for (const runId of iterations) expect(runs.getById(runId)).toBeDefined()
+    expect(runs.getById(singles[0]!)).toBeUndefined()
+    for (const runId of singles.slice(1)) expect(runs.getById(runId)).toBeDefined()
+  })
+
   it("deletes one finished run or clears a workflow's finished runs, scoped to the workspace, sparing live runs", () => {
     const { workspaceId, workflowId } = seedWorkflow()
     const done = runs.create({ workspaceId, workflowId }).runId

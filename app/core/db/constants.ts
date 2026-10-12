@@ -9,9 +9,10 @@
 export const SIDE_TABLE_THRESHOLD_BYTES = 1024 * 1024
 
 /**
- * Finished runs kept per workflow. Every time a run of a workflow reaches a
- * terminal status, older finished runs beyond this count are deleted with
- * their node results and side-table bodies.
+ * Finished runs kept per workflow, a data-driven run's iterations counting as
+ * one. Every time a run of a workflow reaches a terminal status, older
+ * finished runs beyond this count are deleted with their node results and
+ * side-table bodies.
  *
  * ponytail: fixed knob; make it a user setting only if people ask for longer
  * history.
