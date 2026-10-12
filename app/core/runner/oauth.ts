@@ -41,14 +41,36 @@ export type OAuthTokenCache = Map<string, OAuthToken>
  */
 const inFlight = new Map<string, Promise<OAuthToken>>()
 
-// ponytail: the first caller's signal governs the shared request, so cancelling
-// that run fails the others waiting on it; their own retry is a fresh request.
-function singleFlight(key: string, request: () => Promise<OAuthToken>): Promise<OAuthToken> {
-  const pending = inFlight.get(key)
-  if (pending) return pending
-  const promise = request().finally(() => inFlight.delete(key))
-  inFlight.set(key, promise)
-  return promise
+/**
+ * The token request for `key`, shared with any caller already waiting on it.
+ * The request is bound to no caller's signal — cancelling one run must not
+ * fail another run waiting on the same token — and ends on its own timeout;
+ * each caller races it against its own signal instead.
+ */
+function singleFlight(
+  key: string,
+  ctx: OAuthRunContext,
+  request: (options: TokenRequestOptions) => Promise<OAuthToken>,
+): Promise<OAuthToken> {
+  const signal = ctx.signal
+  const cancelled = () => new OAuthError("OAuth 2.0 token request failed: cancelled")
+  if (signal?.aborted) return Promise.reject(cancelled())
+  let shared = inFlight.get(key)
+  if (!shared) {
+    shared = request({
+      now: ctx.now,
+      ...(ctx.timeoutMs === undefined ? {} : { timeoutMs: ctx.timeoutMs }),
+      ...(ctx.rejectUnauthorized === undefined ? {} : { rejectUnauthorized: ctx.rejectUnauthorized }),
+    }).finally(() => inFlight.delete(key))
+    inFlight.set(key, shared)
+  }
+  if (!signal) return shared
+  const pending = shared
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => reject(cancelled())
+    signal.addEventListener("abort", onAbort, { once: true })
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort))
+  })
 }
 
 export function isTokenFresh(token: OAuthToken, now: number): boolean {
@@ -260,7 +282,7 @@ async function clientCredentialsToken(config: ResolvedOAuth2, ctx: OAuthRunConte
   const key = tokenCacheKey(["client_credentials", config.tokenUrl, config.clientId, config.scope ?? "", config.audience ?? "", clientSecret])
   const cached = ctx.cache.get(key)
   if (cached && !forceRefresh && isTokenFresh(cached, ctx.now)) return cached
-  return singleFlight(key, async () => {
+  return singleFlight(key, ctx, async (options) => {
     const token = await requestToken(ctx.http, {
       tokenUrl: config.tokenUrl,
       clientId: config.clientId,
@@ -271,7 +293,7 @@ async function clientCredentialsToken(config: ResolvedOAuth2, ctx: OAuthRunConte
         ...(config.scope ? { scope: config.scope } : {}),
         ...(config.audience ? { audience: config.audience } : {}),
       },
-    }, ctx)
+    }, options)
     ctx.cache.set(key, token)
     return token
   })
@@ -297,7 +319,7 @@ async function authorizationCodeToken(config: ResolvedOAuth2, ctx: OAuthRunConte
     throw new OAuthError(`OAuth 2.0: the token in secret ${secretName} expired and has no refresh token. Use Get token again.`)
   }
   ctx.mask(refreshToken)
-  return singleFlight(key, async () => {
+  return singleFlight(key, ctx, async (options) => {
     const refreshed = await requestToken(ctx.http, {
       tokenUrl: config.tokenUrl,
       clientId: config.clientId,
@@ -308,7 +330,7 @@ async function authorizationCodeToken(config: ResolvedOAuth2, ctx: OAuthRunConte
         refresh_token: refreshToken,
         ...(config.scope ? { scope: config.scope } : {}),
       },
-    }, ctx)
+    }, options)
     // A server that does not rotate refresh tokens leaves the old one valid.
     const token: OAuthToken = {
       ...refreshed,

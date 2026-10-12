@@ -232,6 +232,25 @@ describe("OAuth 2.0 authorization code at run time", () => {
     expect(server.tokenCalls.map((call) => call.form.get("refresh_token"))).toEqual(["refresh-1", "refresh-tok-1-abcdef"])
   })
 
+  it("lets a cancelled caller go without failing another waiting on the same refresh", async () => {
+    const resolved = {
+      grantType: "authorization_code" as const,
+      tokenUrl: `${server.url}/token`,
+      clientId: "public-client",
+      clientAuth: "body" as const,
+      tokenSecretName: "API_TOKEN",
+      storedToken: encodeStoredToken({ accessToken: "expired-token", expiresAt: now - 1000, refreshToken: "refresh-1" }),
+    }
+    const cache = new Map()
+    const controller = new AbortController()
+    const first = oauthAccessToken(resolved, { http: new SafeHttp(), cache, now, mask: () => undefined, signal: controller.signal }, false)
+    const second = oauthAccessToken(resolved, { http: new SafeHttp(), cache, now, mask: () => undefined, signal: new AbortController().signal }, false)
+    controller.abort()
+    await expect(first).rejects.toThrow("OAuth 2.0 token request failed: cancelled")
+    expect(await second).toBe("tok-1-abcdef")
+    expect(server.tokenCalls).toHaveLength(1)
+  })
+
   it("takes a bare refresh token (the CLI) and never writes over it", async () => {
     const saved: string[] = []
     const output = await makeExecutor({
