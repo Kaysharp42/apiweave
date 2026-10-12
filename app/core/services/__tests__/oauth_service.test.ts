@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { EnvironmentRepository, SecretRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { SecretService } from "../secret_service"
-import { OAuthService, authorizeWithPkce } from "../oauth_service"
+import { OAuthService, SIGN_IN_TIMEOUT_MS, authorizeWithPkce } from "../oauth_service"
 import { SafeHttp } from "../../runner/safe_http"
 import { decodeStoredToken, pkceChallenge } from "../../runner/oauth"
 import { startFakeOAuthServer, type FakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
@@ -108,6 +108,34 @@ describe("authorizeWithPkce", () => {
     await expect(
       authorizeWithPkce(new SafeHttp(), request(), { openExternal: async () => undefined, now: () => 0, timeoutMs: 50 }),
     ).rejects.toThrow("OAuth 2.0: sign-in timed out")
+  })
+
+  it("releases the listener and its timer when the browser cannot be opened", async () => {
+    const unhandled = vi.fn()
+    process.on("unhandledRejection", unhandled)
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      let redirectUri = ""
+      await expect(
+        authorizeWithPkce(new SafeHttp(), request(), {
+          openExternal: async (url) => {
+            redirectUri = new URL(url).searchParams.get("redirect_uri")!
+            throw new Error("no browser")
+          },
+          now: () => 0,
+        }),
+      ).rejects.toThrow("no browser")
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(SIGN_IN_TIMEOUT_MS)
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(unhandled).not.toHaveBeenCalled()
+      vi.useRealTimers()
+      await expect(fetch(redirectUri)).rejects.toThrow()
+    } finally {
+      vi.useRealTimers()
+      process.off("unhandledRejection", unhandled)
+    }
   })
 })
 

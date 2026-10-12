@@ -72,9 +72,11 @@ export async function authorizeWithPkce(
     if (request.scope) query.set("scope", request.scope)
     if (request.audience) query.set("audience", request.audience)
 
-    const callback = waitForCallback(server, state, options.timeoutMs ?? SIGN_IN_TIMEOUT_MS)
-    await options.openExternal(authorizationUrl.toString())
-    const code = await callback
+    // Together, so a browser that fails to open still leaves the callback with a handler.
+    const [, code] = await Promise.all([
+      options.openExternal(authorizationUrl.toString()),
+      waitForCallback(server, state, options.timeoutMs ?? SIGN_IN_TIMEOUT_MS),
+    ])
     return await requestToken(http, {
       tokenUrl: request.tokenUrl,
       clientId: request.clientId,
@@ -88,12 +90,17 @@ export async function authorizeWithPkce(
   }
 }
 
-/** The authorization code from the first `/callback` request, once its state matches. */
+/**
+ * The authorization code from the first `/callback` request, once its state
+ * matches. The timer lives as long as the listener: closing the server, on any
+ * outcome, clears it.
+ */
 function waitForCallback(server: Server, state: string, timeoutMs: number): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new OAuthError("OAuth 2.0: sign-in timed out. Use Get token to try again."))
     }, timeoutMs)
+    server.once("close", () => clearTimeout(timer))
     let answered = false
     server.on("request", (req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1")
