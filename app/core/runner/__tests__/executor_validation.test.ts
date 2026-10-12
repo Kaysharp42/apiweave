@@ -197,13 +197,36 @@ describe("assertion operator: matchesSchema", () => {
     expect(outcome!.schemaErrors).toHaveLength(10)
   })
 
-  it("reports a disallowed property once, not again as a failed one", () => {
+  it("reports a disallowed property once, not again as a failed one", async () => {
+    const regex = await RegexSandbox.load()
     const validator = compileSchema({ type: "object", additionalProperties: false, properties: { id: { type: "integer" } } })
-    expect(schemaViolations(validator, { id: "x", extra: 1 })).toEqual([
+    expect(schemaViolations(validator, { id: "x", extra: 1 }, regex)).toEqual([
       { path: "/id", message: 'Instance type "string" is invalid. Expected "integer".' },
       { path: "/extra", message: "Value is not allowed here." },
     ])
-    expect(schemaViolations(validator, { id: 1 })).toEqual([])
+    expect(schemaViolations(validator, { id: 1 }, regex)).toEqual([])
+  })
+
+  it("stops a backtracking schema pattern instead of hanging the process", async () => {
+    const native = RegExp
+    const started = Date.now()
+    const [outcome] = await evaluate(
+      [rule("response.body", "matchesSchema", { type: "object", properties: { name: { type: "string", pattern: "^(a+)+$" } } })],
+      { name: `${"a".repeat(40)}!` },
+    )
+    expect(Date.now() - started).toBeLessThan(2000)
+    expect(outcome).toMatchObject({ outcome: "fail", reasonCode: "comparison-error" })
+    expect(outcome!.detail).toMatch(/timed out after 100 ms/)
+    expect(globalThis.RegExp).toBe(native)
+
+    const regex = await RegexSandbox.load()
+    const keys = compileSchema({ type: "object", patternProperties: { "^(a+)+$": { type: "integer" } }, additionalProperties: false })
+    expect(() => schemaViolations(keys, { [`${"a".repeat(40)}!`]: 1 }, regex)).toThrow(/timed out/)
+    // Patterns still mean what they meant: matches, misses, and the keys they claim.
+    expect(schemaViolations(keys, { aaa: 1 }, regex)).toEqual([])
+    expect(schemaViolations(keys, { aaa: "x", b: 1 }, regex).map((violation) => violation.path)).toEqual(["/aaa", "/b"])
+    expect(schemaViolations(compileSchema({ type: "string", pattern: "^\\p{Lu}" }), "école", regex)).toHaveLength(1)
+    expect(() => schemaViolations(compileSchema({ type: "string", pattern: "(" }), "x", regex)).toThrow(SyntaxError)
   })
 })
 

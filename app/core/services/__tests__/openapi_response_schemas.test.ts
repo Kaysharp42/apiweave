@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { HTTPNodeDataSchema } from "@shared/zod-schemas"
 import { parseOpenApiSpec, type HttpRequestNode } from "../import_parsers"
 import { compileSchema, schemaViolations } from "../../runner/json_schema"
+import { RegexSandbox } from "../../runner/regex_sandbox"
 
 const SPEC_30 = {
   openapi: "3.0.3",
@@ -78,10 +79,11 @@ describe("OpenAPI import: response schemas", () => {
     expect(HTTPNodeDataSchema.safeParse(order!.config).success).toBe(true)
   })
 
-  it("produces schemas that validate real responses, recursion included", () => {
+  it("produces schemas that validate real responses, recursion included", async () => {
+    const regex = await RegexSandbox.load()
     const validator = compileSchema(importedNodes(SPEC_30)[0]!.config.responseSchemas!["200"] as object)
-    expect(schemaViolations(validator, { id: "o1", discount: null, lines: [{ sku: "A" }], parent: { id: "o0", lines: [] } })).toEqual([])
-    expect(schemaViolations(validator, { id: "o1", discount: 0, lines: [{}] }).map((violation) => violation.path)).toEqual([
+    expect(schemaViolations(validator, { id: "o1", discount: null, lines: [{ sku: "A" }], parent: { id: "o0", lines: [] } }, regex)).toEqual([])
+    expect(schemaViolations(validator, { id: "o1", discount: 0, lines: [{}] }, regex).map((violation) => violation.path)).toEqual([
       "/discount",
       "/lines/0",
     ])

@@ -400,7 +400,7 @@ export class WorkflowExecutor {
   private static readonly MAX_CALL_DEPTH = 8
   private readonly oauthTokens: OAuthTokenCache
   private readonly cookieJar: CookieJar
-  /** Loaded on the first rule that needs it (see `prepareRules`); `matches` is synchronous after that. */
+  /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
   private regex: RegexSandbox | null = null
   /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
   private readonly schemaValidators = new Map<unknown, Validator>()
@@ -1169,11 +1169,9 @@ export class WorkflowExecutor {
     const schemas = node.config?.["responseSchemas"] as Readonly<Record<string, unknown>> | undefined
     const key = schemas && result.statusCode !== undefined && !cancelSignal?.aborted ? responseSchemaKey(schemas, result.statusCode) : undefined
     if (schemas === undefined || key === undefined) return result
-    const evaluation = this.evaluateAssertion(
-      0,
-      { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] },
-      () => ({ state: "resolved", nodeId: node.nodeId, result }),
-    )
+    const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
+    await this.prepareRules([rule])
+    const evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
     const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
     if (evaluation.outcome === "pass") return checked
     // A request that already failed keeps its own reason; the violations are in `assertions`.
@@ -1702,9 +1700,9 @@ export class WorkflowExecutor {
     }
   }
 
-  /** Loads the regex sandbox when one of `rules` matches a regular expression. */
+  /** Loads the regex sandbox when one of `rules` matches a regular expression (a schema may hold `pattern`s). */
   private async prepareRules(rules: readonly { readonly operator?: string }[]): Promise<void> {
-    if (this.regex === null && rules.some((rule) => rule.operator === "matches" || rule.operator === "notMatches")) {
+    if (this.regex === null && rules.some((rule) => rule.operator === "matches" || rule.operator === "notMatches" || rule.operator === "matchesSchema")) {
       this.regex = await RegexSandbox.load()
     }
   }
@@ -1712,6 +1710,7 @@ export class WorkflowExecutor {
   /** Where `actual` breaks `schema`; empty when it matches. A missing value is one violation. Throws on a schema that is not one. */
   private schemaCheck(actual: unknown, schema: unknown): SchemaViolation[] {
     if (actual === undefined) return [{ path: "", message: "Value is missing." }]
+    if (this.regex === null) throw new Error("Regular expressions were not loaded for this rule")
     let validator = this.schemaValidators.get(schema)
     if (validator === undefined) {
       const parsed = parseSchemaValue(schema)
@@ -1719,7 +1718,7 @@ export class WorkflowExecutor {
       validator = compileSchema(parsed)
       this.schemaValidators.set(schema, validator)
     }
-    return schemaViolations(validator, actual)
+    return schemaViolations(validator, actual, this.regex)
   }
 
   private buildSkippedAssertionEvaluation(

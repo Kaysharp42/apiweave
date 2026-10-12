@@ -11,7 +11,8 @@ export const REGEX_TIMEOUT_MS = 100
 const TEST = "(pattern, flags, input) => new RegExp(pattern, flags).test(input)"
 
 /**
- * Runs the "matches"/"notMatches" operators' regular expressions. A pattern
+ * Runs the "matches"/"notMatches" operators' regular expressions, and a JSON
+ * Schema's `pattern`/`patternProperties` (see `json_schema.ts`). A pattern
  * comes from the workflow and the input from a server response, so a
  * backtracking pattern like `^(a+)+$` against a long run of `a`s would hang
  * V8's regex engine — and with it the whole main process — for as long as it
@@ -34,7 +35,7 @@ export class RegexSandbox {
   /** Whether `source` (`/pattern/flags` or a bare pattern) matches `input`. Throws an Error saying why it could not tell. */
   test(source: string, input: string): boolean {
     if (input.length > MAX_REGEX_INPUT_LENGTH) {
-      throw new Error(`Value is ${input.length} characters; "matches" tests at most ${MAX_REGEX_INPUT_LENGTH}`)
+      throw new Error(`Value is ${input.length} characters; a regular expression tests at most ${MAX_REGEX_INPUT_LENGTH}`)
     }
     const { pattern, flags } = parseRegexSource(source)
     if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
