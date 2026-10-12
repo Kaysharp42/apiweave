@@ -106,7 +106,7 @@ Secrets are read from ${SECRET_ENV_PREFIX}<NAME> environment variables too.
 class UsageError extends Error {}
 
 export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
-  let mask = (text: string): string => text
+  let mask = <T>(value: T): T => value
   const fail = (message: string): number => {
     io.stderr.write(mask(`apiweave: ${message}\n`))
     return EXIT_USAGE
@@ -291,7 +291,7 @@ function collectSecrets(options: CliOptions, env: CliIo["env"]): Map<string, str
   return secrets
 }
 
-async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: (text: string) => string): Promise<number> {
+async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: <T>(value: T) => T): Promise<number> {
   // A project folder (`project.json` + workflows/ + environments/) is read through the app's own folder reader.
   const folder = isDirectory(options.file) ? readProjectFolder(options.file) : undefined
   const bundle = folder ?? readJson(options.file)
@@ -459,12 +459,16 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     }
 
     // -------- Report --------
+    // Mask the report's input, not its output: node labels and names can hold
+    // a secret the run never masked, and the formats escape `<SECRET>` only if
+    // it is there before they are built.
+    const masked = mask(input)
     const color = io.stdout.isTTY === true && io.env["NO_COLOR"] === undefined
-    if (options.reporters.has("cli")) io.stdout.write(mask(buildConsoleReport(input, color)))
+    if (options.reporters.has("cli")) io.stdout.write(buildConsoleReport(masked, color))
     for (const [format, filePath] of [["junit", options.junitPath], ["html", options.htmlPath]] as const) {
       if (!options.reporters.has(format)) continue
       fs.mkdirSync(path.dirname(filePath), { recursive: true })
-      fs.writeFileSync(filePath, mask(buildReport(format, input)), "utf8")
+      fs.writeFileSync(filePath, buildReport(format, masked), "utf8")
       if (options.reporters.has("cli")) io.stdout.write(`${format === "junit" ? "JUnit" : "HTML"} report: ${filePath}\n`)
     }
     return passed ? EXIT_PASSED : EXIT_FAILED

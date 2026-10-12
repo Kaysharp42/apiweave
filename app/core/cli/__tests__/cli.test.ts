@@ -151,6 +151,28 @@ describe("apiweave run", () => {
     expect(received).toEqual([`Bearer ${TOKEN}`])
   })
 
+  it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
+    const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; label?: string }[] }[]; environments: unknown[] }
+    const workflow = project.workflows[0]!
+    workflow.nodes = workflow.nodes.map((node) => (node.nodeId === "get-health" ? { ...node, label: "Login as admin" } : node))
+    fs.writeFileSync(path.join(dir, "login.json"), JSON.stringify({ workflow, environments: project.environments }))
+    const junitPath = path.join(dir, "junit.xml")
+    const htmlPath = path.join(dir, "report.html")
+
+    const result = await run(
+      ["run", "login.json", "--env", "CI", "--var", `baseUrl=${baseUrl}`, "--reporter-junit-export", junitPath, "--reporter-html-export", htmlPath],
+      { APIWEAVE_SECRET_API_TOKEN: TOKEN, APIWEAVE_SECRET_ADMIN_PASSWORD: "admin" },
+    )
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(result.stdout).toContain("Login as <SECRET>")
+    const junit = fs.readFileSync(junitPath, "utf8")
+    expect(junit).toContain('name="Login as &lt;SECRET&gt;"')
+    const html = fs.readFileSync(htmlPath, "utf8")
+    expect(html).toContain("Login as &lt;SECRET&gt;")
+    for (const output of [junit, html]) expect(output).not.toContain("<SECRET>")
+  })
+
   describe("OAuth 2.0", () => {
     /** The fixture's workflow, its request authenticated with `oauth2` against `url`. */
     function oauthWorkflow(url: string, oauth2: Record<string, unknown>): string {
