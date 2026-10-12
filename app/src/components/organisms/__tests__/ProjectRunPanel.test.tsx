@@ -130,6 +130,31 @@ describe("ProjectRunPanel", () => {
     expect(onOpenRun).toHaveBeenCalledWith("wf-auth", "run-auth");
   });
 
+  it("keeps a pushed change that lands before the run reply instead of the stale created record", async () => {
+    const finished = projectRun({
+      status: "failed",
+      finishedAt: "2026-10-07T10:00:01.000Z",
+      items: [
+        { workflowId: "wf-auth", workflowName: "Auth", continueOnFail: false, runId: "run-auth", status: "failed", durationMs: 10 },
+        { workflowId: "wf-pay", workflowName: "Pay", continueOnFail: false, runId: null, status: "skipped", durationMs: null },
+      ],
+    });
+    // The runner pushes the terminal record before `projects.run` resolves with the created one.
+    apiMock.projects.run.mockImplementation(async () => {
+      for (const listener of listeners) listener(finished);
+      return projectRun({ status: "pending" });
+    });
+    render(<ProjectRunPanel workspaceId="ws-1" projectId="p-1" onOpenRun={vi.fn()} />);
+    await screen.findByLabelText("Environment for the project run");
+
+    await userEvent.click(screen.getByRole("button", { name: /Run project/ }));
+
+    const list = await screen.findByRole("region", { name: "Workflows in this project run" });
+    expect(within(list).getByLabelText("Skipped")).toBeInTheDocument();
+    expect(within(list).queryByLabelText("Pending")).toBeNull();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Run project/ })).toBeEnabled());
+  });
+
   it("runs with no environment when the user picks none, and lists earlier runs to switch between", async () => {
     apiMock.projects.listRuns.mockResolvedValue({
       items: [

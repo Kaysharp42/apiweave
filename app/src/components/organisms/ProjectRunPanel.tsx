@@ -116,7 +116,13 @@ export function ProjectRunPanel({
         projectId,
         chosenEnvironmentId === NO_ENVIRONMENT ? null : chosenEnvironmentId,
       );
-      setRuns((prev) => upsert(prev, run));
+      // The reply is the record as first created; a pushed change for it may
+      // already have landed and is always at least as new, so never replace one.
+      setRuns((prev) =>
+        prev.some((existing) => existing.projectRunId === run.projectRunId)
+          ? prev
+          : [run, ...prev],
+      );
       setSelectedRunId(run.projectRunId);
     } catch (error: unknown) {
       toast.error(errorMessage(error, "Failed to start the project run"));
