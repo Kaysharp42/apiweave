@@ -43,6 +43,12 @@ export function initDatabase(options: InitDatabaseOptions | string): Initialized
       database = openDatabase(options)
       assertIntact(database)
     } catch (error) {
+      // Only corruption earns the "restore a backup" advice: a locked or
+      // read-only file is intact, and restoring over it loses every write
+      // since the last upgrade.
+      if (!isCorruption(error)) {
+        throw new Error(`Could not open the database ${databasePath}: ${errorMessage(error)}`, { cause: error })
+      }
       throw new Error(
         `The database ${databasePath} is damaged and cannot be opened: ${errorMessage(error)}. ` +
           `Copies taken before past upgrades are in ${backupsDirectory(databasePath)}.`,
@@ -81,6 +87,11 @@ export function initDatabase(options: InitDatabaseOptions | string): Initialized
     database?.close()
     throw error
   }
+}
+
+function isCorruption(error: unknown): boolean {
+  const code = error instanceof Error && "code" in error ? error.code : undefined
+  return typeof code === "string" && (code.startsWith("SQLITE_CORRUPT") || code === "SQLITE_NOTADB")
 }
 
 function errorMessage(error: unknown): string {

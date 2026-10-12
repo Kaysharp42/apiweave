@@ -6,6 +6,7 @@ import { initDatabase, readMigrations, ThreadStore } from "../index"
 import { vacuumIfFragmented } from "../maintenance"
 import { LocalOnlySyncProvider } from "../../sync"
 import type { InitializedDatabase } from "../index"
+import type { BetterSqlite3Factory } from "../sqlite-types"
 
 vi.mock("../maintenance", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../maintenance")>()
@@ -366,6 +367,27 @@ describe("database migrations", () => {
     expect(() => initDatabase({ databasePath })).toThrow(
       new RegExp(`damaged.*${escapeRegExp(path.join(tempRoot, "backups"))}`),
     )
+  })
+
+  // Root ignores file permissions, so the file would open read-write.
+  it.skipIf(process.getuid?.() === 0)("reports a read-only database as unopenable, not damaged", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    // A rollback-journal file: switching it to WAL is a write, which fails.
+    const sqliteFactory: BetterSqlite3Factory = require("better-sqlite3")
+    const plain = new sqliteFactory(databasePath)
+    plain.exec("CREATE TABLE t (x)")
+    plain.close()
+    fs.chmodSync(databasePath, 0o444)
+
+    let message = ""
+    try {
+      initDatabase({ databasePath }).close()
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toMatch(new RegExp(`^Could not open the database ${escapeRegExp(databasePath)}: .*readonly`))
+    expect(message).not.toMatch(/damaged|backups/)
   })
 
   it("compacts the file at startup once a quarter of it is free", () => {
