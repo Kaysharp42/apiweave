@@ -106,7 +106,8 @@ export function mapForbiddenKeyFilteredEntries<V, T>(
   return out
 }
 
-const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
+// Same grammar `substituteVariables` resolves: it trims the placeholder, so `{{ secrets.NAME }}` is a reference too.
+const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
 /**
  * Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/

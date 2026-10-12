@@ -16,7 +16,7 @@ import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, splitSeedVariables, type ResumeSeed } from "./resume"
-import { SECRET_PLACEHOLDER, sanitizeVariablesForExport, scriptSecretNames } from "../services/secret_utils"
+import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
 
@@ -607,11 +607,9 @@ export class RunScheduler {
     if (!resolver) return { resolvedSecrets: [] }
 
     const names = new Set<string>()
-    const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
     for (const node of nodes) {
       for (const value of collectStrings(node.config)) {
-        for (const m of value.matchAll(pattern)) names.add(m[1]!)
-        for (const name of scriptSecretNames(value)) names.add(name)
+        for (const name of extractSecretRefsFromString(value)) names.add(name)
       }
     }
     if (names.size === 0) return { resolvedSecrets: [] }

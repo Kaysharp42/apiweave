@@ -430,6 +430,16 @@ describe("apiweave run", () => {
     expect(received).toEqual([])
   })
 
+  it("also stops for a missing secret written with spaces, which the runner resolves the same", async () => {
+    const spaced = path.join(dir, "spaced.awecollection")
+    fs.writeFileSync(spaced, fs.readFileSync(FIXTURE, "utf8").replace("{{secrets.API_TOKEN}}", "{{ secrets.API_TOKEN }}"))
+    const result = await run(["run", spaced, "--env", "CI", "--var", `baseUrl=${baseUrl}`])
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("missing secret API_TOKEN")
+    expect(received).toEqual([])
+  })
+
   describe("Postman collections", () => {
     const schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 
