@@ -55,14 +55,16 @@ export function askRendererToClose(
  * cancels that one and the gate quits again itself once the renderer agrees.
  * After that the gate stays open, so the second pass through `before-quit`
  * and the window's `close` goes straight through instead of asking again.
+ * A caller that quits some other way — installing an update — passes that as
+ * `then`, so the user is asked before anything irreversible starts.
  */
 export function createQuitGate(
   ask: () => Promise<boolean>,
   quit: () => void,
-): () => boolean {
+): (then?: () => void) => boolean {
   let open = false
   let asking = false
-  return () => {
+  return (then = quit) => {
     if (open) return true
     if (!asking) {
       asking = true
@@ -70,7 +72,7 @@ export function createQuitGate(
         asking = false
         if (!proceed) return
         open = true
-        quit()
+        then()
       })
     }
     return false

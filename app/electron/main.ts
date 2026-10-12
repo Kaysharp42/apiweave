@@ -837,7 +837,13 @@ if (!hasSingleInstanceLock) {
     )
     ipcMain.handle(
       "updates:restartAndInstall",
-      requireTrustedSender((): void => updates.restartAndInstall()),
+      // The installer is launched before electron-updater calls `app.quit()`,
+      // so asking about unsaved work in `before-quit` would be too late: the
+      // installer can kill the app under the prompt and Cancel stops nothing.
+      // Ask first; on Cancel the update stays downloaded and can be retried.
+      requireTrustedSender((): void => {
+        if (mayQuit(() => updates.restartAndInstall())) updates.restartAndInstall()
+      }),
     )
     ipcMain.handle(
       "updates:openReleasePage",
