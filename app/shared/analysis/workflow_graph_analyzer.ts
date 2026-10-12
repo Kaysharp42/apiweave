@@ -126,7 +126,7 @@ export function traverse(startIds: readonly string[], adjacency: ReadonlyMap<str
   return visited
 }
 
-/** Successor sets keyed by source node id, for `traverse` and `findCycles`. */
+/** Successor sets keyed by source node id, for `traverse`, `findCycles` and `cycleNodeIds`. */
 export function successorMap(edges: readonly { readonly source: string; readonly target: string }[]): Map<string, Set<string>> {
   const successors = new Map<string, Set<string>>()
   for (const edge of edges) {
@@ -147,9 +147,18 @@ export function wouldCreateCycle(
 }
 
 /**
+ * Every node that lies on a cycle, self-loops included, in `successors` key
+ * order: a node is on one exactly when it is reachable from its own successors.
+ */
+// ponytail: one reachability search per node, O(V·(V+E)); switch to Tarjan's SCC if workflows reach thousands of nodes.
+export function cycleNodeIds(successors: ReadonlyMap<string, ReadonlySet<string>>): string[] {
+  return [...successors.keys()].filter((nodeId) => traverse([...(successors.get(nodeId) ?? [])], successors).has(nodeId))
+}
+
+/**
  * The cycles a depth-first search closes, each as the node ids around it in
- * edge order (`["a", "b"]` for `a → b → a`). Every node on a cycle appears in
- * at least one of them.
+ * edge order (`["a", "b"]` for `a → b → a`). Not every node on a cycle need
+ * appear in one; `cycleNodeIds` gives them all.
  */
 export function findCycles(successors: ReadonlyMap<string, ReadonlySet<string>>): string[][] {
   const cycles: string[][] = []
@@ -374,9 +383,8 @@ function addTopologyDiagnostics(workflow: WorkflowGraphInput, diagnostics: Workf
     }
   }
 
-  const cycleNodeIds = new Set(findCycles(successors).flat())
-  if (cycleNodeIds.size > 0) {
-    const cycleNodes = [...cycleNodeIds].sort()
+  const cycleNodes = cycleNodeIds(successors).sort()
+  if (cycleNodes.length > 0) {
     diagnostics.push(diagnostic(
       "cycle_detected",
       "error",
