@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { EmptyState } from "./EmptyState";
 import { getLogger } from "../../utils/logger";
+import { confirmCloseAll } from "../../stores/PendingEditsStore";
 import type { ErrorBoundaryProps } from "../../types";
 
 const log = getLogger("ErrorBoundary");
@@ -37,6 +38,15 @@ export class ErrorBoundary extends React.Component<
 
   private readonly reset = (): void => this.setState({ error: null });
 
+  /**
+   * A reload runs no effect cleanups, so a pending auto-save and every tab's
+   * unsaved draft would go with it — and below the root the canvas is often
+   * fine. It asks first, like quitting does.
+   */
+  private readonly reload = async (): Promise<void> => {
+    if (await confirmCloseAll()) window.location.reload();
+  };
+
   render(): React.ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
@@ -61,7 +71,7 @@ export class ErrorBoundary extends React.Component<
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => window.location.reload()}
+                onClick={() => void this.reload()}
               >
                 Reload
               </Button>

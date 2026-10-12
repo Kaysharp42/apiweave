@@ -23,7 +23,6 @@ import { AuthProvider } from "./auth/AuthProvider";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
-import { UnsavedChangesDialog } from "./components/organisms/UnsavedChangesDialog";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { apiweave } from "./utils/apiweaveClient";
@@ -301,9 +300,6 @@ function App() {
         <AuthProvider>
           <HashRouter>
             <AccountSessionReset />
-            {/* App-wide, not in the canvas workspace: quitting or signing out
-                asks about unsaved tabs from any route, Cloud Sync included. */}
-            <UnsavedChangesDialog />
             <Routes>
               <Route path="/" element={<Navigate to="/app" replace />} />
 
