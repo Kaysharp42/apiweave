@@ -3,6 +3,7 @@ import path from "node:path"
 import { runMigrations } from "./migrations"
 import { assertIntact, backupDatabase, backupsDirectory, vacuumIfFragmented } from "./maintenance"
 import { SyncStore } from "./kvstore"
+import { getLogger } from "../logging/logger"
 import type { Database, BetterSqlite3Factory } from "./sqlite-types"
 
 export type InitDatabaseOptions = {
@@ -61,7 +62,13 @@ export function initDatabase(options: InitDatabaseOptions | string): Initialized
       throw new Error(`${errorMessage(error)}. The database was backed up before the upgrade to ${backupPath}.`)
     }
     if (onDisk) {
-      vacuumIfFragmented(opened)
+      // Compaction is an optimisation: a failed VACUUM (SQLITE_FULL on a
+      // nearly full disk, say) rolls back and leaves a healthy database.
+      try {
+        vacuumIfFragmented(opened)
+      } catch (error) {
+        getLogger("database").warn("startup VACUUM failed; continuing without compaction", error)
+      }
     }
     return {
       database: opened,

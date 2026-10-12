@@ -1,10 +1,16 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, readMigrations, ThreadStore } from "../index"
+import { vacuumIfFragmented } from "../maintenance"
 import { LocalOnlySyncProvider } from "../../sync"
 import type { InitializedDatabase } from "../index"
+
+vi.mock("../maintenance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../maintenance")>()
+  return { ...actual, vacuumIfFragmented: vi.fn(actual.vacuumIfFragmented) }
+})
 
 const tempRoots: string[] = []
 const CURRENT_SCHEMA_VERSION = readMigrations().at(-1)?.version ?? 0
@@ -377,6 +383,22 @@ describe("database migrations", () => {
       expect(reopened.database.pragma("freelist_count", { simple: true })).toBe(0)
     } finally {
       reopened.close()
+    }
+  })
+
+  it("still opens the database when the startup VACUUM fails", () => {
+    const db = openTempDatabase()
+    db.close()
+    vi.mocked(vacuumIfFragmented).mockImplementationOnce(() => {
+      throw new Error("SQLITE_FULL: database or disk is full")
+    })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined)
+    try {
+      const reopened = initDatabase({ databasePath: db.databasePath })
+      reopened.close()
+      expect(warn).toHaveBeenCalledOnce()
+    } finally {
+      warn.mockRestore()
     }
   })
 
