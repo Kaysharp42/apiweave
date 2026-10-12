@@ -4,6 +4,7 @@ import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { ReportFormat } from "@shared/types/ReportFormat"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import type { Workflow } from "@shared/types/Workflow"
 
 /**
@@ -160,39 +161,9 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
     const node = nodes.get(nodeId)
     const type = node?.type ?? "node"
     if (NOT_TEST_NODES.has(type)) continue
-    const result = results.get(nodeId)
-    const entry = run.nodeStatuses[nodeId]
-    const recorded = statusOf(entry) ?? result?.status ?? "idle"
-    const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
-    cases.push({
-      name: node?.label || nodeId,
-      type,
-      outcome,
-      durationMs: result?.duration ?? 0,
-      message:
-        outcome === "failed"
-          ? failureMessage(result, entry)
-          : outcome === "skipped" && recorded !== "skipped"
-            ? `Did not finish (${recorded})`
-            : null,
-      details: details(result, outcome),
-      attempts: result?.attempts?.length ?? null,
-      logs: (result?.scripts ?? []).flatMap((script) => script.logs),
-    })
+    cases.push(nodeCase(node?.label || nodeId, type, results.get(nodeId), run.nodeStatuses[nodeId]))
   }
-  if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) {
-    const live = run.status === "pending" || run.status === "running"
-    cases.push({
-      name: "Run",
-      type: "run",
-      outcome: live ? "skipped" : "failed",
-      durationMs: run.duration ?? 0,
-      message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
-      details: [],
-      attempts: null,
-      logs: [],
-    })
-  }
+  if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) cases.push(runCase(run))
   return {
     name,
     runId: run.runId,
@@ -200,6 +171,41 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
     startedAt: run.startedAt ?? null,
     durationMs: run.duration ?? 0,
     cases,
+  }
+}
+
+function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown): ReportCase {
+  const recorded = statusOf(entry) ?? result?.status ?? "idle"
+  const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
+  return {
+    name,
+    type,
+    outcome,
+    durationMs: result?.duration ?? 0,
+    message:
+      outcome === "failed"
+        ? failureMessage(result, entry)
+        : outcome === "skipped" && recorded !== "skipped"
+          ? `Did not finish (${recorded})`
+          : null,
+    details: details(result, outcome),
+    attempts: result?.attempts?.length ?? null,
+    logs: (result?.scripts ?? []).flatMap((script) => script.logs),
+  }
+}
+
+/** Stands in for a run that did not complete with no failed node to show for it. */
+function runCase(run: Run): ReportCase {
+  const live = run.status === "pending" || run.status === "running"
+  return {
+    name: "Run",
+    type: "run",
+    outcome: live ? "skipped" : "failed",
+    durationMs: run.duration ?? 0,
+    message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
+    details: [],
+    attempts: null,
+    logs: [],
   }
 }
 
@@ -248,6 +254,15 @@ function describeRule(rule: AssertionEvaluation): string[] {
 
 function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (result === undefined) return []
+  return [
+    ...requestLines(result),
+    ...(result.assertions ?? []).filter((rule) => outcome !== "failed" || rule.outcome === "fail").flatMap((rule) => describeRule(rule)),
+    ...(result.scripts ?? []).flatMap((script) => scriptLines(script, result.error ?? "", outcome)),
+  ]
+}
+
+/** The request line, the response status code, and each attempt a retrying node made. */
+function requestLines(result: RunResult): string[] {
   const lines: string[] = []
   const method = field(result.request, "method")
   const url = field(result.request, "url")
@@ -257,17 +272,17 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (result.attempts !== undefined) {
     lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
   }
-  for (const rule of result.assertions ?? []) {
-    if (outcome !== "failed" || rule.outcome === "fail") lines.push(...describeRule(rule))
-  }
-  for (const script of result.scripts ?? []) {
-    const label = script.phase === "preRequest" ? "Pre-request" : "Post-response"
-    // The node's own error already says it when the script is why the node failed.
-    if (script.error !== undefined && !(result.error ?? "").includes(script.error)) lines.push(`${label} script error: ${script.error}`)
-    for (const test of script.tests) {
-      if (outcome !== "failed" || !test.passed) {
-        lines.push(`Test ${JSON.stringify(test.name)}: ${test.passed ? "passed" : `failed — ${test.error ?? ""}`}`)
-      }
+  return lines
+}
+
+function scriptLines(script: ScriptOutcome, nodeError: string, outcome: Outcome): string[] {
+  const lines: string[] = []
+  const label = script.phase === "preRequest" ? "Pre-request" : "Post-response"
+  // The node's own error already says it when the script is why the node failed.
+  if (script.error !== undefined && !nodeError.includes(script.error)) lines.push(`${label} script error: ${script.error}`)
+  for (const test of script.tests) {
+    if (outcome !== "failed" || !test.passed) {
+      lines.push(`Test ${JSON.stringify(test.name)}: ${test.passed ? "passed" : `failed — ${test.error ?? ""}`}`)
     }
   }
   return lines
