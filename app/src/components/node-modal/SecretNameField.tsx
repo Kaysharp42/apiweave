@@ -1,5 +1,6 @@
 import { Input } from "../atoms/Input";
 import { FormField } from "../molecules/FormField";
+import type { SecretNameFieldProps } from "../../types";
 
 const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/;
 
@@ -26,14 +27,7 @@ export function SecretNameField({
   reference,
   onChange,
   placeholder,
-}: {
-  label: string;
-  hint: string;
-  error: string;
-  reference: string | undefined;
-  onChange: (reference: string) => void;
-  placeholder: string;
-}) {
+}: SecretNameFieldProps) {
   return (
     <FormField label={label} hint={hint} error={error}>
       <Input

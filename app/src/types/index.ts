@@ -415,3 +415,4 @@ export type { OAuth2TokenControlsProps } from "./OAuth2TokenControlsProps";
 export type { OAuth2AuthFieldsProps } from "./OAuth2AuthFieldsProps";
 export type { PostmanImportPanelProps } from "./PostmanImportPanelProps";
 export type { LoadedJsonFile } from "./LoadedJsonFile";
+export type { SecretNameFieldProps } from "./SecretNameFieldProps";
