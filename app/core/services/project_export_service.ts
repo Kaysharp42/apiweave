@@ -1,3 +1,4 @@
+import type { Collection } from "@shared/types/Collection"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
@@ -418,89 +419,16 @@ export class ProjectExportService {
     }
 
     const counts = this.collections.transaction(() => {
-      const existingProject = this.collections.getById(projectId)
-      const projectFields = {
-        name: bundle.project.name,
-        description: bundle.project.description || null,
-        color: bundle.project.color || null,
-      }
-      const project = existingProject === undefined
-        ? this.collections.create({ collectionId: projectId, workspaceId, ...projectFields })
-        : this.collections.update(projectId, projectFields) ?? existingProject
-
-      for (const incoming of bundle.environments) {
-        const stored = this.environments.getById(incoming.environmentId)
-        if (stored !== undefined && environmentFileText(exportEnvironment(stored, workspaceId)) === environmentFileText(incoming)) continue
-        const fields = {
-          name: incoming.name,
-          description: incoming.description ?? null,
-          swaggerDocUrl: incoming.swaggerDocUrl ?? null,
-          variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
-        }
-        const written = stored === undefined
-          ? this.environments.create({ environmentId: incoming.environmentId, workspaceId, ...fields, secrets: {} })
-          : this.environments.update(stored.environmentId, fields) ?? stored
-        recordEnvironmentUpsert(this.syncProvider, written)
-      }
+      const project = this.upsertFolderProject(workspaceId, bundle.project)
+      for (const incoming of bundle.environments) this.upsertFolderEnvironment(workspaceId, incoming)
 
       const folderIds = new Set(bundle.workflows.map((workflow) => workflow.workflowId))
       const previousProjects = new Set<string>()
-      let created = 0
-      let updated = 0
-      let unchanged = 0
+      const tally = { created: 0, updated: 0, unchanged: 0 }
       for (const incoming of bundle.workflows) {
-        const stored = this.workflows.getById(incoming.workflowId)
-        if (stored !== undefined && stored.collectionId === projectId
-          && workflowFileText(exportWorkflow(stored)) === workflowFileText(incoming)) {
-          unchanged += 1
-          continue
-        }
-        const nodes = retargetCallWorkflows(
-          incoming.nodes.map((node) => keepWithheldConfig(WorkflowNodeSchema.parse(node), stored)),
-          (targetWorkflowId, node) => {
-            if (folderIds.has(targetWorkflowId) || this.workflows.getByIdInWorkspace(targetWorkflowId, workspaceId)) return targetWorkflowId
-            warnings.push(callTargetClearedWarning(node.label ?? node.nodeId, incoming.name, targetWorkflowId))
-            return null
-          },
-        )
-        const fields = {
-          name: incoming.name,
-          description: incoming.description || null,
-          nodes,
-          edges: incoming.edges.map((edge) => WorkflowEdgeSchema.parse(edge)),
-          variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
-          tags: [...incoming.tags],
-          collectionId: projectId,
-          selectedEnvironmentId: incoming.selectedEnvironmentId,
-          nodeTemplates: stored !== undefined && stableJson(exportWorkflow(stored).nodeTemplates ?? []) === stableJson(incoming.nodeTemplates ?? [])
-            ? stored.nodeTemplates
-            : [...(incoming.nodeTemplates ?? [])],
-        }
-        const placeholders = findRedactedPlaceholders(toPlain({ nodes: fields.nodes, variables: fields.variables, nodeTemplates: fields.nodeTemplates }))
-        if (placeholders.length > 0) {
-          warnings.push(
-            `Workflow '${incoming.name}' has the placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}: `
-              + "the export withheld a credential there. Use a {{secrets.NAME}} reference instead"
-              + (stored === undefined ? "" : "; the version before this import is in the workflow's history"),
-          )
-        }
-        if (stored?.collectionId && stored.collectionId !== projectId) previousProjects.add(stored.collectionId)
-        const written = stored === undefined
-          ? this.workflows.create({ workflowId: incoming.workflowId, workspaceId, ...fields })
-          : this.workflows.update(stored.workflowId, fields, "import") ?? stored
-        recordWorkflowUpsert(this.syncProvider, written)
-        if (stored === undefined) created += 1
-        else updated += 1
+        tally[this.upsertFolderWorkflow(workspaceId, projectId, incoming, folderIds, previousProjects, warnings)] += 1
       }
-
-      let detached = 0
-      for (const member of this.workflows.listByCollection(workspaceId, projectId).items) {
-        if (folderIds.has(member.workflowId)) continue
-        const moved = this.workflows.update(member.workflowId, { collectionId: null }, "import")
-        if (moved !== undefined) recordWorkflowUpsert(this.syncProvider, moved)
-        warnings.push(`Workflow '${member.name}' is not in the folder; it was moved out of the project (not deleted)`)
-        detached += 1
-      }
+      const detached = this.detachWorkflowsNotInFolder(workspaceId, projectId, folderIds, warnings)
 
       for (const collectionId of previousProjects) {
         const previous = this.collections.update(collectionId, { workflowCount: this.workflows.countByCollection(workspaceId, collectionId) })
@@ -511,7 +439,7 @@ export class ProjectExportService {
         workflowOrder: buildImportedWorkflowOrder(bundle, new Map([...folderIds].map((id) => [id, id]))),
       }) ?? project
       recordCollectionUpsert(this.syncProvider, final)
-      return { created, updated, unchanged, detached }
+      return { ...tally, detached }
     })
 
     await this.syncProvider.push()
@@ -522,6 +450,77 @@ export class ProjectExportService {
       missingSecrets,
       warnings,
     }
+  }
+
+  private upsertFolderProject(workspaceId: string, incoming: ProjectBundle["project"]): Collection {
+    const existingProject = this.collections.getById(incoming.projectId)
+    const projectFields = {
+      name: incoming.name,
+      description: incoming.description || null,
+      color: incoming.color || null,
+    }
+    return existingProject === undefined
+      ? this.collections.create({ collectionId: incoming.projectId, workspaceId, ...projectFields })
+      : this.collections.update(incoming.projectId, projectFields) ?? existingProject
+  }
+
+  private upsertFolderEnvironment(workspaceId: string, incoming: ExportedEnvironment): void {
+    const stored = this.environments.getById(incoming.environmentId)
+    if (stored !== undefined && environmentFileText(exportEnvironment(stored, workspaceId)) === environmentFileText(incoming)) return
+    const fields = {
+      name: incoming.name,
+      description: incoming.description ?? null,
+      swaggerDocUrl: incoming.swaggerDocUrl ?? null,
+      variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
+    }
+    const written = stored === undefined
+      ? this.environments.create({ environmentId: incoming.environmentId, workspaceId, ...fields, secrets: {} })
+      : this.environments.update(stored.environmentId, fields) ?? stored
+    recordEnvironmentUpsert(this.syncProvider, written)
+  }
+
+  private upsertFolderWorkflow(
+    workspaceId: string,
+    projectId: string,
+    incoming: ExportedWorkflow,
+    folderIds: ReadonlySet<string>,
+    previousProjects: Set<string>,
+    warnings: string[],
+  ): "created" | "updated" | "unchanged" {
+    const stored = this.workflows.getById(incoming.workflowId)
+    if (stored !== undefined && stored.collectionId === projectId
+      && workflowFileText(exportWorkflow(stored)) === workflowFileText(incoming)) {
+      return "unchanged"
+    }
+    const nodes = retargetCallWorkflows(
+      incoming.nodes.map((node) => keepWithheldConfig(WorkflowNodeSchema.parse(node), stored)),
+      (targetWorkflowId, node) => {
+        if (folderIds.has(targetWorkflowId) || this.workflows.getByIdInWorkspace(targetWorkflowId, workspaceId)) return targetWorkflowId
+        warnings.push(callTargetClearedWarning(node.label ?? node.nodeId, incoming.name, targetWorkflowId))
+        return null
+      },
+    )
+    const fields = folderWorkflowFields(incoming, stored, projectId, nodes)
+    const placeholderWarning = withheldPlaceholderWarning(incoming.name, stored, fields)
+    if (placeholderWarning !== undefined) warnings.push(placeholderWarning)
+    if (stored?.collectionId && stored.collectionId !== projectId) previousProjects.add(stored.collectionId)
+    const written = stored === undefined
+      ? this.workflows.create({ workflowId: incoming.workflowId, workspaceId, ...fields })
+      : this.workflows.update(stored.workflowId, fields, "import") ?? stored
+    recordWorkflowUpsert(this.syncProvider, written)
+    return stored === undefined ? "created" : "updated"
+  }
+
+  private detachWorkflowsNotInFolder(workspaceId: string, projectId: string, folderIds: ReadonlySet<string>, warnings: string[]): number {
+    let detached = 0
+    for (const member of this.workflows.listByCollection(workspaceId, projectId).items) {
+      if (folderIds.has(member.workflowId)) continue
+      const moved = this.workflows.update(member.workflowId, { collectionId: null }, "import")
+      if (moved !== undefined) recordWorkflowUpsert(this.syncProvider, moved)
+      warnings.push(`Workflow '${member.name}' is not in the folder; it was moved out of the project (not deleted)`)
+      detached += 1
+    }
+    return detached
   }
 
   async dryRunImport(targetWorkspaceId: string, bundle: ProjectBundle): Promise<DryRunResult> {
@@ -731,6 +730,35 @@ function validateBundle(bundle: ProjectBundle): string[] {
 }
 
 /** A variable whose folder value reads as the stored value's exported form is unchanged: keep the stored (unredacted) value. */
+/** The fields a project folder's workflow is written with, keeping node templates the export left unchanged. */
+function folderWorkflowFields(incoming: ExportedWorkflow, stored: Workflow | undefined, projectId: string, nodes: Workflow["nodes"]) {
+  return {
+    name: incoming.name,
+    description: incoming.description || null,
+    nodes,
+    edges: incoming.edges.map((edge) => WorkflowEdgeSchema.parse(edge)),
+    variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
+    tags: [...incoming.tags],
+    collectionId: projectId,
+    selectedEnvironmentId: incoming.selectedEnvironmentId,
+    nodeTemplates: stored !== undefined && stableJson(exportWorkflow(stored).nodeTemplates ?? []) === stableJson(incoming.nodeTemplates ?? [])
+      ? stored.nodeTemplates
+      : [...(incoming.nodeTemplates ?? [])],
+  }
+}
+
+function withheldPlaceholderWarning(
+  workflowName: string,
+  stored: Workflow | undefined,
+  fields: Pick<Workflow, "nodes" | "variables" | "nodeTemplates">,
+): string | undefined {
+  const placeholders = findRedactedPlaceholders(toPlain({ nodes: fields.nodes, variables: fields.variables, nodeTemplates: fields.nodeTemplates }))
+  if (placeholders.length === 0) return undefined
+  return `Workflow '${workflowName}' has the placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}: `
+    + "the export withheld a credential there. Use a {{secrets.NAME}} reference instead"
+    + (stored === undefined ? "" : "; the version before this import is in the workflow's history")
+}
+
 function keepWithheldVariables(
   stored: Record<string, JsonValue>,
   incoming: Record<string, JsonValue>,

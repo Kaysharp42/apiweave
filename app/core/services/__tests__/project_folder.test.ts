@@ -335,6 +335,34 @@ describe("import from a project folder", () => {
     expect(store.collections.getById(projectId)!.workflowCount).toBe(2)
   })
 
+  it("pulls a workflow back from another project, and warns about withheld credentials and unknown call targets", async () => {
+    const store = openStore()
+    const { projectId, loginId, ordersId } = seedProject(store)
+    await exportProjectFolder(store.projects, store.workspaceId, projectId, folder)
+    const other = store.collections.create({ workspaceId: store.workspaceId, name: "Other" })
+    store.workflows.update(loginId, { collectionId: other.collectionId })
+    store.collections.update(other.collectionId, { workflowCount: 1 })
+    editJson(path.join(folder, "workflows/orders-list.json"), (doc) => {
+      const nodes = doc["nodes"] as Record<string, unknown>[]
+      nodes[1]!["config"] = { ...(nodes[1]!["config"] as Record<string, unknown>), url: "<SECRET>" }
+      nodes.push({ nodeId: "call", type: "workflow", label: "Call", position: { x: 0, y: 0 }, config: { targetWorkflowId: "wf-gone", targetWorkflowName: "Gone" } })
+    })
+
+    const result = await importProjectFolder(store.projects, store.workspaceId, folder)
+
+    expect(result).toMatchObject({ created: 0, updated: 2, unchanged: 0, detached: 0 })
+    expect(result.warnings).toEqual([
+      "Secret 'API_TOKEN' is not set in this workspace; add it before running the project",
+      "Call Workflow node 'Call' in workflow 'Orders / list' targeted workflow 'wf-gone', which is not in the import or this workspace; its target was cleared",
+      expect.stringMatching(/^Workflow 'Orders \/ list' has the placeholder "<SECRET>" at .+; the version before this import is in the workflow's history$/),
+    ])
+    const call = store.workflows.getById(ordersId)!.nodes.find((node) => node.nodeId === "call")!
+    expect(call.type === "workflow" ? call.config?.targetWorkflowId : "not a call node").toBeNull()
+    expect(store.workflows.getById(loginId)!.collectionId).toBe(projectId)
+    expect(store.collections.getById(other.collectionId)!.workflowCount).toBe(0)
+    expect(store.collections.getById(projectId)!.workflowCount).toBe(2)
+  })
+
   it("refuses a folder whose ids belong to another workspace", async () => {
     const store = openStore()
     const { projectId } = seedProject(store)
