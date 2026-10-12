@@ -264,6 +264,24 @@ describe("buildJUnitReport — project run", () => {
     expect(all(all(suites[2]!, "testcase")[0]!, "skipped")[0]!.attrs["message"]).toMatch(/deleted from history/)
   })
 
+  it("fails a failed workflow whose run is not stored, in every format", () => {
+    const failedRun: ProjectRun = {
+      ...projectRun,
+      items: [
+        { workflowId: "wf_1", workflowName: "Pruned run", continueOnFail: true, runId: "run_pruned", status: "failed", durationMs: 5000 },
+        { workflowId: "wf_2", workflowName: "Workflow gone", continueOnFail: false, runId: null, status: "failed", durationMs: null },
+      ],
+    }
+    const input: ReportInput = { kind: "project", projectName: "Checkout", projectRun: failedRun, runs: [], workflows: [] }
+    const root = parseXml(buildJUnitReport(input))
+    expect(root.attrs).toMatchObject({ tests: "2", failures: "2", skipped: "0" })
+    for (const suite of all(root, "testsuite")) {
+      expect(all(all(suite, "testcase")[0]!, "failure")[0]!.attrs["message"]).toMatch(/Workflow failed; its run record is unavailable/)
+    }
+    expect(buildHtmlReport(input)).toContain("<div><b>2</b>failed</div>")
+    expect(buildConsoleReport(input, false)).toMatch(/Workflows\s+2\s+0\s+2\s+0/)
+  })
+
   it("renders the same suites as HTML", () => {
     const html = buildHtmlReport({ kind: "project", projectName: "Checkout", projectRun, runs: [FAILED_RUN], workflows: [WORKFLOW] })
     expect(html.match(/<section>/g)).toHaveLength(3)

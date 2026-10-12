@@ -24,7 +24,8 @@ import type { Workflow } from "@shared/types/Workflow"
  * node, Start and End excluded. An assertion node is one test case; its failed
  * rules are listed in the failure text. A run that failed, was cancelled or was
  * interrupted with no failed node gets a `Run` test case that fails, so CI never
- * reads it as green. A project workflow that never ran is one skipped test case.
+ * reads it as green. A project workflow whose run is not stored is one test
+ * case: failed when its item failed, was cancelled or interrupted, else skipped.
  * A data-driven run is its iterations' suites in order, each suite name
  * suffixed ` [iteration N]`.
  */
@@ -53,7 +54,7 @@ export type SingleReportInput =
       readonly kind: "project"
       readonly projectName: string
       readonly projectRun: ProjectRun
-      /** The runs its items name; an item whose run is missing is reported as not run. */
+      /** The runs its items name; an item whose run is missing is reported from its own status. */
       readonly runs: readonly Run[]
       readonly workflows: readonly ReportWorkflow[]
     }
@@ -128,8 +129,11 @@ function toReport(input: ReportInput): Report {
     suites: input.projectRun.items.map((item) => {
       const run = item.runId === null ? undefined : runs.get(item.runId)
       if (run !== undefined) return runSuite(item.workflowName, run, workflows.get(item.workflowId) ?? null)
-      const reason =
-        item.runId !== null
+      // The item's own status still says how it ended, even with its run gone.
+      const failed = item.status === "failed" || item.status === "cancelled" || item.status === "interrupted"
+      const reason = failed
+        ? `Workflow ${item.status}; its run record is unavailable`
+        : item.runId !== null
           ? "Its run was deleted from history"
           : item.status === "skipped"
             ? "Not run: the project run stopped before this workflow"
@@ -140,7 +144,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
       }
     }),
   }
@@ -456,6 +460,11 @@ const CONSOLE_MARK: Record<Outcome, { mark: string; color: string }> = {
   skipped: { mark: "○", color: ANSI.yellow },
 }
 
+/** A project workflow that never ran: no run, and no failed case standing in for one. */
+function notRun(suite: ReportSuite): boolean {
+  return suite.runId === null && !suite.cases.some((testCase) => testCase.outcome === "failed")
+}
+
 /**
  * Plain text for a terminal or a CI log: one block per workflow run with a
  * line per step, failure messages and details under failed steps, then a
@@ -467,7 +476,7 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
   const report = toReport(input)
   const lines: string[] = [paint(ANSI.bold, report.title) + paint(ANSI.dim, ` · ${report.status}`), ""]
   for (const suite of report.suites) {
-    const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : suite.runId === null ? "skipped" : "failed"
+    const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : notRun(suite) ? "skipped" : "failed"
     lines.push(
       `${paint(CONSOLE_MARK[suiteOutcome].color, suite.name)}${paint(ANSI.dim, ` · ${suite.status} · ${seconds(suite.durationMs)}s`)}`,
     )
@@ -485,7 +494,7 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
   }
   const cases = counts(report.suites.flatMap((suite) => suite.cases))
   const passedSuites = report.suites.filter((suite) => suite.status === "completed").length
-  const skippedSuites = report.suites.filter((suite) => suite.runId === null).length
+  const skippedSuites = report.suites.filter(notRun).length
   const rows: (string | number)[][] = [
     ["", "total", "passed", "failed", "skipped"],
     ["Workflows", report.suites.length, passedSuites, report.suites.length - passedSuites - skippedSuites, skippedSuites],
