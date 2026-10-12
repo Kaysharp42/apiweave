@@ -99,6 +99,26 @@ describe("rerun from a node", () => {
     expect(runs.listRunSummaries(workspaceId, { workflowId }, undefined, 5).items[0]!.resumeFromRunId).toBe(source.runId)
   })
 
+  it("uses the workflow's current variables, and still seeds what the source run set", async () => {
+    const workflowId = linearWorkflow(
+      http("login", "/login", { extractors: { userId: "body.id" } }),
+      http("profile", "/{{variables.region}}/users/{{variables.userId}}"),
+    )
+    workflows.update(workflowId, { variables: { region: "old", userId: 0 } })
+    failing.add("/old/users/42")
+    const source = await run(workflowId)
+    expect(source.failedNodes).toEqual(["profile"])
+    expect(source.variables).toMatchObject({ region: "old", userId: 42 })
+
+    // The user fixes the variable the run failed on, then reruns.
+    workflows.update(workflowId, { variables: { region: "eu", userId: 0 } })
+    api.received.length = 0
+    const rerun = await run(workflowId, { nodeId: "profile" })
+
+    expect(rerun.status).toBe("completed")
+    expect(paths()).toEqual(["/eu/users/42"])
+  })
+
   it("defaults to the latest run, and a rerun of a rerun still has the first run's upstream results", async () => {
     const workflowId = linearWorkflow(
       http("login", "/login"),

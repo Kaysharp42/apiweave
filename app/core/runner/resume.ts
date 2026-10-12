@@ -11,7 +11,8 @@ import type { WorkflowEdge, WorkflowNode } from "./executor"
  * downstream of them — its *scope*. Every node outside the scope keeps the
  * result it had in the source run: those results are seeded into the executor
  * so `{{prev...}}`, `{{<nodeId>...}}` and merge nodes resolve as they did, and
- * the source run's variables are seeded so `{{variables.*}}` does too.
+ * the variables the source run set are seeded so `{{variables.*}}` does too
+ * (see {@link seedVariables}).
  *
  * Stored runs are masked: a secret's value, and any variable whose name or
  * value looks like a credential, is stored as `<SECRET>`. Such a variable is
@@ -58,14 +59,25 @@ export function isMasked(value: unknown): boolean {
   return JSON.stringify(value)?.includes(SECRET_PLACEHOLDER) === true
 }
 
-/** A source run's variables split into the ones a rerun can reuse and the names that were masked. */
-export function splitSeedVariables(variables: Readonly<Record<string, JsonValue>>): {
-  readonly variables: Record<string, JsonValue>
-  readonly masked: string[]
-} {
+/**
+ * The source run's variables a rerun starts from, split into the ones it can
+ * reuse and the names that were masked. A run stores every variable it ended
+ * with, the workflow's own definitions included at their source-time values,
+ * so a variable the current workflow defines is left to that definition —
+ * an edit since the source run wins — unless a node outside the scope, which
+ * the rerun does not execute, sets it.
+ */
+export function seedVariables(
+  variables: Readonly<Record<string, JsonValue>>,
+  defined: Readonly<Record<string, unknown>>,
+  nodes: readonly WorkflowNode[],
+  scope: ReadonlySet<string>,
+): { readonly variables: Record<string, JsonValue>; readonly masked: string[] } {
+  const setOutside = variablesWritten(nodes.filter((node) => !scope.has(node.nodeId)))
   const reusable: Record<string, JsonValue> = {}
   const masked: string[] = []
   for (const [name, value] of Object.entries(variables)) {
+    if (name in defined && !setOutside.has(name)) continue
     if (isMasked(value)) masked.push(name)
     else reusable[name] = value
   }
@@ -84,21 +96,27 @@ const SCRIPT_VARIABLE_WRITE = /aw\.variables\.set\(\s*["']([^"']+)["']/g
  */
 export function maskedVariablesRead(nodes: readonly WorkflowNode[], scope: ReadonlySet<string>, masked: readonly string[]): string[] {
   if (masked.length === 0) return []
+  const inScope = nodes.filter((node) => scope.has(node.nodeId))
   const read = new Set<string>()
+  for (const text of collectStrings(inScope.map((node) => node.config ?? {}))) {
+    for (const match of text.matchAll(VARIABLE_READ)) read.add((match[1] ?? match[2])!)
+  }
+  const written = variablesWritten(inScope)
+  return masked.filter((name) => read.has(name) && !written.has(name))
+}
+
+/** The variables `nodes` set: an extractor, a Call Workflow output, or a script's `aw.variables.set`. */
+function variablesWritten(nodes: readonly WorkflowNode[]): Set<string> {
   const written = new Set<string>()
   for (const node of nodes) {
-    if (!scope.has(node.nodeId)) continue
     const config = node.config ?? {}
     for (const key of ["extractors", "outputMapping"]) {
       const map = config[key]
       if (map !== null && typeof map === "object") for (const name of Object.keys(map)) written.add(name)
     }
-    for (const text of collectStrings(config)) {
-      for (const match of text.matchAll(VARIABLE_READ)) read.add((match[1] ?? match[2])!)
-      for (const match of text.matchAll(SCRIPT_VARIABLE_WRITE)) written.add(match[1]!)
-    }
+    for (const text of collectStrings(config)) for (const match of text.matchAll(SCRIPT_VARIABLE_WRITE)) written.add(match[1]!)
   }
-  return masked.filter((name) => read.has(name) && !written.has(name))
+  return written
 }
 
 /**

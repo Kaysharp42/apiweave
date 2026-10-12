@@ -15,7 +15,7 @@ import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps,
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, splitSeedVariables, type ResumeSeed } from "./resume"
+import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, type ResumeSeed } from "./resume"
 import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
@@ -406,7 +406,7 @@ export class RunScheduler {
         runId,
         cancelSignal: controller.signal,
         ...(run.resumeFromRunId && run.resumeFromNodeIds
-          ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph) }
+          ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph, workflow.variables) }
           : {}),
       })
 
@@ -505,8 +505,9 @@ export class RunScheduler {
       if (requested.length === 0) throw new ValidationError(`Run ${source.runId} has no failed step to rerun`)
     }
     const entries = resumeEntries(edges, requested)
-    const { variables, masked } = splitSeedVariables(source.variables)
-    const needed = maskedVariablesRead(nodes, downstreamOf(edges, entries), masked).filter((name) => !(name in given))
+    const scope = downstreamOf(edges, entries)
+    const { variables, masked } = seedVariables(source.variables, workflow.variables, nodes, scope)
+    const needed = maskedVariablesRead(nodes, scope, masked).filter((name) => !(name in given))
     if (needed.length > 0) {
       const names = needed.map((name) => `{{variables.${name}}}`).join(", ")
       throw new ValidationError(
@@ -524,7 +525,13 @@ export class RunScheduler {
    * then the run it resumed, and so on, so a rerun of a rerun still has the
    * results its source only inherited.
    */
-  private resumeSeed(run: Run, sourceRunId: string, entries: readonly string[], graph: WorkflowGraph): ResumeSeed {
+  private resumeSeed(
+    run: Run,
+    sourceRunId: string,
+    entries: readonly string[],
+    graph: WorkflowGraph,
+    defined: Readonly<Record<string, unknown>>,
+  ): ResumeSeed {
     const chain: Run[] = []
     const seen = new Set<string>()
     for (let id: string | null | undefined = sourceRunId; id && !seen.has(id); ) {
@@ -539,7 +546,7 @@ export class RunScheduler {
     return {
       scope,
       results: seedResults(chain, graph.edges, scope),
-      maskedVariables: splitSeedVariables(chain[0]!.variables).masked,
+      maskedVariables: seedVariables(chain[0]!.variables, defined, graph.nodes, scope).masked,
     }
   }
 
