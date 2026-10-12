@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseDotenv, parseVariablesFile, toDotenv } from "../envFile"
+import { parseDotenv, parseVariablesFile, safeName, toDotenv } from "../envFile"
 
 describe("parseDotenv", () => {
   it("reads comments, export, quotes, inline comments and multiline values", () => {
@@ -111,5 +111,32 @@ describe("parseVariablesFile", () => {
       { key: "session", value: "abc", suggestSecret: true },
       { key: "retries", value: "3", suggestSecret: false },
     ])
+  })
+
+  it("names every row as a placeholder can reference it, the last of a collision winning", () => {
+    const postman = parseVariablesFile(JSON.stringify({
+      name: "Staging",
+      values: [
+        { key: "api-key", value: "first", type: "secret" },
+        { key: "base.url", value: "https://staging.test" },
+        { key: "api_key", value: "second", type: "secret" },
+        { key: "1st", value: "x" },
+      ],
+    }))
+    expect(postman.variables).toEqual([
+      { key: "base_url", value: "https://staging.test", suggestSecret: false },
+      { key: "api_key", value: "second", suggestSecret: true },
+      { key: "_1st", value: "x", suggestSecret: false },
+    ])
+    expect(parseVariablesFile("DB.HOST=a\nDB-HOST=b\n").variables).toEqual([{ key: "DB_HOST", value: "b", suggestSecret: false }])
+    expect(parseVariablesFile('{ "my-var": "v" }').variables).toEqual([{ key: "my_var", value: "v", suggestSecret: false }])
+  })
+})
+
+describe("safeName", () => {
+  it("normalizes names to letters, digits and underscores", () => {
+    expect(safeName("base-url")).toBe("base_url")
+    expect(safeName("1st")).toBe("_1st")
+    expect(safeName("already_ok")).toBe("already_ok")
   })
 })

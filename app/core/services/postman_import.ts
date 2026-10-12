@@ -6,6 +6,7 @@ import { ValidationError } from "../ipc/errors"
 import { chainEdges, makeEndNode, makeStartNode, positionForIndex } from "./import_parsers"
 import { SCHEMA_VERSION, type ExportedEnvironment, type ExportedWorkflow, type ProjectBundle } from "./project_export_service"
 import { containsCredentialMaterial, isSecretKey } from "@shared/credentials/credentials"
+import { safeName } from "@shared/env-file/envFile"
 
 /**
  * Postman Collection v2.1 → APIWeave project bundle. Pure: it builds the same
@@ -813,12 +814,6 @@ class PostmanConverter {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** A Postman name as an APIWeave variable or secret name: letters, digits and underscores. */
-export function safeName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9_]/g, "_")
-  return /^[A-Za-z_]/.test(safe) ? safe : `_${safe}`
-}
 
 function placeholderNames(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER_RE)].map((match) => match[1]!.trim()).filter((name) => !name.startsWith("$"))

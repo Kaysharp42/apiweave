@@ -74,6 +74,13 @@ it would change before anything is written. It accepts:
 - **A Postman environment export** (`*.postman_environment.json`). Disabled
   entries are skipped.
 
+Names are imported as a placeholder can reference them: every character other
+than a letter, digit or underscore becomes `_`, and a name starting with a
+digit gets a leading `_` (`api-key` → `api_key`, `1st` → `_1st`). The preview
+shows the final name. This is the same renaming the Postman collection import
+applies, so a collection and its environment agree. When two keys end up with
+the same name, the last one wins.
+
 Each row is marked **New**, **Changed**, **Unchanged** or, for a secret this
 environment already stores, **Replaces secret**. Existing values are kept
 unless you turn on **Overwrite existing values**.

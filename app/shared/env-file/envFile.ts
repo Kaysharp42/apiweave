@@ -73,33 +73,51 @@ export function isPostmanEnvironment(value: unknown): boolean {
  * A variables file by content: JSON when it starts with `{`, dotenv otherwise.
  * A JSON object must be flat — a nested object or array is an error naming the
  * key, because an environment variable is one text value. Postman entries that
- * are disabled are skipped. Throws `SyntaxError` for bad JSON, `Error` otherwise.
+ * are disabled are skipped. Keys are normalized with `safeName`, so every row
+ * is a name a placeholder can reference. Throws `SyntaxError` for bad JSON,
+ * `Error` otherwise.
  */
 export function parseVariablesFile(text: string): VariablesFile {
   if (!text.trimStart().startsWith("{")) {
-    return { format: "dotenv", variables: Object.entries(parseDotenv(text)).map(([key, value]) => variable(key, value, false)) }
+    return { format: "dotenv", variables: variables(Object.entries(parseDotenv(text)).map(([key, value]) => [key, value, false])) }
   }
   const parsed: unknown = JSON.parse(text)
   if (!isRecord(parsed)) throw new Error("The file must hold a JSON object")
   if (isPostmanEnvironment(parsed)) {
-    // Keyed by name, so a repeated key keeps its last value, as in a .env file.
-    const byKey = new Map<string, ImportedVariable>()
-    for (const entry of (parsed["values"] as unknown[]).filter(isRecord)) {
+    const entries = (parsed["values"] as unknown[]).filter(isRecord).flatMap((entry): [string, string, boolean][] => {
       const key = entry["key"]
-      if (entry["enabled"] === false || typeof key !== "string" || key === "") continue
-      byKey.delete(key)
-      byKey.set(key, variable(key, scalarText(key, entry["value"]), entry["type"] === "secret"))
-    }
-    return { format: "postman", variables: [...byKey.values()] }
+      if (entry["enabled"] === false || typeof key !== "string" || key === "") return []
+      return [[key, scalarText(key, entry["value"]), entry["type"] === "secret"]]
+    })
+    return { format: "postman", variables: variables(entries) }
   }
-  return {
-    format: "json",
-    variables: Object.entries(parsed).map(([key, value]) => variable(key, scalarText(key, value), false)),
-  }
+  return { format: "json", variables: variables(Object.entries(parsed).map(([key, value]) => [key, scalarText(key, value), false])) }
 }
 
-function variable(key: string, value: string, typedSecret: boolean): ImportedVariable {
-  return { key, value, suggestSecret: typedSecret || isSecretKey(key) || containsCredentialMaterial(value) }
+/**
+ * A variable or secret name a `{{env.NAME}}` / `{{secrets.NAME}}` placeholder
+ * can reference: letters, digits and underscores, not starting with a digit.
+ * The Postman collection import names its references the same way, so a
+ * collection and its environment imported separately still match.
+ */
+export function safeName(name: string): string {
+  const safe = name.replace(/[^A-Za-z0-9_]/g, "_")
+  return /^[A-Za-z_]/.test(safe) ? safe : `_${safe}`
+}
+
+/**
+ * Entries as variables under their `safeName`, keyed by it: two keys that
+ * normalize to one name (or a repeated key) keep the last value, in the
+ * position of the last occurrence, as in a .env file.
+ */
+function variables(entries: readonly (readonly [string, string, boolean])[]): ImportedVariable[] {
+  const byName = new Map<string, ImportedVariable>()
+  for (const [key, value, typedSecret] of entries) {
+    const name = safeName(key)
+    byName.delete(name)
+    byName.set(name, { key: name, value, suggestSecret: typedSecret || isSecretKey(key) || containsCredentialMaterial(value) })
+  }
+  return [...byName.values()]
 }
 
 function scalarText(key: string, value: unknown): string {

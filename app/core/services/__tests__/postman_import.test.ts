@@ -8,7 +8,7 @@ import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ProjectExportService } from "../project_export_service"
-import { convertPostmanCollection, convertTestScript, isPostmanCollection, safeName } from "../postman_import"
+import { convertPostmanCollection, convertTestScript, isPostmanCollection } from "../postman_import"
 
 const FIXTURES = path.join(__dirname, "__fixtures__")
 const readFixture = (name: string): Record<string, unknown> =>
@@ -238,11 +238,6 @@ describe("convertTestScript", () => {
     // An expression that is not a response JSON path stays a script.
     expect(convertTestScript('pm.environment.set("t", Date.now());')).toMatchObject({ extractors: new Map(), complete: false })
     expect(convertTestScript('pm.expect(pm.response.code).to.equal(404);\nconsole.log("x")')).toMatchObject({ expectedStatus: [404], complete: false })
-  })
-
-  it("normalizes names to letters, digits and underscores", () => {
-    expect(safeName("base-url")).toBe("base_url")
-    expect(safeName("1st")).toBe("_1st")
   })
 })
 
