@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EnvironmentVariablesImportDialog } from "../EnvironmentVariablesImportDialog";
 import {
+  deleteScopedSecret,
   fetchScopedPublicKey,
   listScopedSecrets,
   postScopedEncryptedSecret,
@@ -14,6 +15,7 @@ vi.mock("../../../hooks/useSecretValues", () => ({
   listScopedSecrets: vi.fn(),
   fetchScopedPublicKey: vi.fn(),
   postScopedEncryptedSecret: vi.fn(),
+  deleteScopedSecret: vi.fn(),
 }));
 
 vi.mock("../../../utils/encryptSecretValue", () => ({
@@ -69,6 +71,7 @@ describe("EnvironmentVariablesImportDialog", () => {
       algorithm: "libsodium-sealed-box",
     });
     vi.mocked(postScopedEncryptedSecret).mockReset();
+    vi.mocked(deleteScopedSecret).mockReset();
     vi.mocked(encryptSecretValue)
       .mockReset()
       .mockResolvedValue(new Uint8Array([9, 9, 9]));
@@ -163,6 +166,38 @@ describe("EnvironmentVariablesImportDialog", () => {
 
     await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
     expect(onImported.mock.calls[0]?.[0]).toMatchObject({ BASE_URL: "https://staging.test" });
+  });
+
+  it("moves a key between plain and secret when overwriting", async () => {
+    const user = userEvent.setup();
+    vi.mocked(listScopedSecrets).mockResolvedValue([
+      {
+        secretId: "s1",
+        name: "USER",
+        scopeType: "environment",
+        scopeId: "env-1",
+        keyId: "key-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    const { onImported } = renderDialog({ API_KEY: "sk-old" });
+
+    await chooseFile(DOTENV);
+    expect(await screen.findByText("Replaces secret")).toBeInTheDocument();
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: /Overwrite existing values/ }));
+    await user.click(screen.getByRole("button", { name: "Import 4" }));
+
+    await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
+    expect(onImported).toHaveBeenCalledWith({
+      BASE_URL: "https://staging.test",
+      USER: "bob",
+      PORT: "8080",
+    });
+    expect(postScopedEncryptedSecret).toHaveBeenCalledWith(expect.objectContaining({ name: "API_KEY" }));
+    expect(deleteScopedSecret).toHaveBeenCalledWith("environment", "env-1", "USER", "ws-1");
   });
 
   it("reads a Postman environment and reports nested JSON", async () => {

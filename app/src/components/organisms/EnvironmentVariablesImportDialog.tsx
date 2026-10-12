@@ -9,6 +9,7 @@ import { Input } from "../atoms/Input";
 import { Toggle } from "../atoms/Toggle";
 import { Modal } from "../molecules/Modal";
 import {
+  deleteScopedSecret,
   fetchScopedPublicKey,
   listScopedSecrets,
   postScopedEncryptedSecret,
@@ -137,10 +138,13 @@ export function EnvironmentVariablesImportDialog({
           });
         }
       }
+      for (const name of plan.removedSecrets) {
+        await deleteScopedSecret("environment", environmentId, name, workspaceId);
+      }
       onImported(plan.variables);
       toast.success(
         `Imported ${variableCount} variable(s) and stored ${plan.secrets.length} secret(s).` +
-          (variableCount > 0 ? " Save the environment to keep the variables." : ""),
+          (variableCount + plan.removedVariables.length > 0 ? " Save the environment to keep the variables." : ""),
       );
       close();
     } catch (importError: unknown) {
