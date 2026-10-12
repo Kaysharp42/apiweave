@@ -12,7 +12,7 @@ import { assertionExpectedProblem } from "@shared/analysis/assertion_expected"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { isSecretKey } from "@shared/credentials/credentials"
-import { looksLikeSecretValue } from "./secret_utils"
+import { isSecretReference, looksLikeSecretValue } from "./secret_utils"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
 
@@ -430,10 +430,6 @@ function findHeader(headers: Record<string, JsonValue> | undefined, name: string
   if (!headers) return undefined
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
   return typeof entry?.[1] === "string" ? entry[1] : undefined
-}
-
-function isSecretReference(value: string): boolean {
-  return /^\{\{secrets\.[A-Za-z_][A-Za-z0-9_]*\}\}$/.test(value)
 }
 
 function isPathSegment(value: string): boolean {

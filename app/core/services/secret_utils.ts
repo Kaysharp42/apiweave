@@ -109,6 +109,11 @@ export function mapForbiddenKeyFilteredEntries<V, T>(
 // Same grammar `substituteVariables` resolves: it trims the placeholder, so `{{ secrets.NAME }}` is a reference too.
 const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
+/** True when a string is exactly one `{{secrets.NAME}}` reference, in the same grammar the runner resolves. */
+export function isSecretReference(value: string): boolean {
+  return new RegExp(`^${SECRET_REF_RE.source}$`).test(value)
+}
+
 /**
  * Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/
  * `prev`/`secrets` — a reference, not a literal. Round-trip redaction by value

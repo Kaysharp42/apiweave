@@ -140,6 +140,12 @@ describe("AssertionAuthoringService", () => {
     const safe = await authoring.validate(workspaceId, workflow.workflowId, "request", [
       { source: "prev", path: "body.ready", operator: "exists" },
     ], run.runId)
+
+    // The runner trims placeholders, so a spaced reference is a reference, not a literal.
+    const spacedRef = await authoring.validate(workspaceId, workflow.workflowId, "request", [
+      { source: "prev", path: "body.token", operator: "equals", expectedValue: "{{ secrets.TOKEN }}" },
+    ])
+    expect(spacedRef.issues.map((issue) => issue.code)).not.toContain("unsafe_literal")
     expect(safe).toMatchObject({
       valid: true,
       compatible: true,
