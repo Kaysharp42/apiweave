@@ -1,4 +1,6 @@
 import { createHash, createHmac } from "node:crypto"
+import path from "node:path"
+import { Worker } from "node:worker_threads"
 import {
   newQuickJSWASMModuleFromVariant,
   newVariant,
@@ -25,10 +27,14 @@ import type { ScriptTestResult } from "@shared/types/ScriptTestResult"
  * next. QuickJS's own malloc accounting cannot measure allocations in this
  * build (no malloc_usable_size), which is why the cap is on the memory itself.
  *
- * Scripts are synchronous and run on the caller's thread: the interrupt
- * handler stops one at its deadline. The WASM variant has the binary embedded
- * in its JavaScript, so esbuild bundles it into main.cjs and the CLI with no
- * .wasm file to locate or unpack from app.asar.
+ * A script is synchronous, so `runScript` evaluates it on a worker thread
+ * (`script_worker.ts`) rather than the caller's: in the app the caller
+ * is Electron's main process, which a `while (true) {}` would otherwise freeze
+ * — IPC, the MCP bridge and the Cancel button with it — until the deadline.
+ * The interrupt handler stops the script at its deadline inside the worker;
+ * cancelling the run terminates the worker. The WASM variant has the binary
+ * embedded in its JavaScript, so esbuild bundles it into the worker with no
+ * .wasm file to locate.
  */
 
 export interface ScriptRequest {
@@ -211,8 +217,112 @@ export function newSandboxModule(): Promise<QuickJSWASMModule> {
   return newQuickJSWASMModuleFromVariant(newVariant(variant, { wasmMemory: memory }))
 }
 
-/** Run one script. Never throws: every failure is the outcome's `error`. */
-export async function runScript(run: ScriptRun): Promise<ScriptRunResult> {
+/** One script for a worker; `uuid` is served over `channel` (see `script_worker.ts`). */
+export interface ScriptJob {
+  readonly run: Omit<ScriptRun, "uuid">
+  readonly channel: SharedArrayBuffer
+}
+
+export type ScriptWorkerMessage =
+  | { readonly type: "uuid" }
+  | { readonly type: "done"; readonly result: ScriptRunResult; readonly assigned: Record<string, unknown> }
+
+/** Room for one `uuid()` reply: an Int32 ready flag, an Int32 byte length, then the UTF-8 bytes. */
+export const SCRIPT_CHANNEL_BYTES = 8 + 256
+
+function spawnScriptWorker(): Worker {
+  // From TypeScript source (vitest, tsx harnesses) the entry is loaded through tsx.
+  if (__filename.endsWith(".ts")) {
+    const entry = JSON.stringify(path.join(__dirname, "script_worker.ts"))
+    return new Worker(`require("tsx/cjs"); require(${entry})`, { eval: true })
+  }
+  // Bundled, the worker sits beside main.cjs / apiweave.cjs. Packaged, it is
+  // unpacked (build.asarUnpack) and loaded from app.asar.unpacked, as node-pty
+  // loads its own worker: a worker's entry is read outside Electron's asar shim.
+  return new Worker(path.join(__dirname, "script-worker.cjs").replace(`app.asar${path.sep}`, `app.asar.unpacked${path.sep}`))
+}
+
+/**
+ * Workers that finished a script, kept for the next: starting one costs ~30 ms
+ * (loading the bundled engine), ten times the script itself, and a data-driven
+ * run pays that per row. Reuse carries nothing over — every script still gets a
+ * fresh WebAssembly instance — and an idle worker is unref'd, so it never keeps
+ * the CLI or the app from exiting.
+ * ponytail: never trimmed; it holds as many workers as scripts ever ran at once,
+ * which the scheduler's concurrency bounds. Add an idle timeout if that grows.
+ */
+const idleWorkers: Worker[] = []
+
+function acquireWorker(): Worker {
+  const idle = idleWorkers.pop()
+  if (idle) {
+    idle.ref()
+    return idle
+  }
+  const worker = spawnScriptWorker()
+  worker.on("exit", () => {
+    const index = idleWorkers.indexOf(worker)
+    if (index !== -1) idleWorkers.splice(index, 1)
+  })
+  return worker
+}
+
+/**
+ * Run one script on a worker thread. Never throws: every failure, cancellation
+ * included, is the outcome's `error`; cancelling terminates the worker, which
+ * stops the script wherever it is. Variables the script set are written into
+ * `run.variables` when it finishes.
+ */
+export function runScript(run: ScriptRun, signal?: AbortSignal): Promise<ScriptRunResult> {
+  const started = Date.now()
+  const failed = (error: string): ScriptRunResult => ({
+    outcome: { phase: run.phase, duration: Date.now() - started, logs: [], tests: [], error },
+  })
+  if (signal?.aborted) return Promise.resolve(failed("Script cancelled"))
+  const { uuid, ...data } = run
+  const channel = new SharedArrayBuffer(SCRIPT_CHANNEL_BYTES)
+  const worker = acquireWorker()
+  return new Promise((resolve) => {
+    const finish = (result: ScriptRunResult, reusable: boolean): void => {
+      signal?.removeEventListener("abort", cancel)
+      worker.off("message", onMessage).off("error", onError).off("exit", onExit)
+      if (reusable) {
+        worker.unref()
+        idleWorkers.push(worker)
+      } else {
+        void worker.terminate()
+      }
+      resolve(result)
+    }
+    const cancel = (): void => finish(failed("Script cancelled"), false)
+    const onError = (error: Error): void => finish(failed(`Script worker failed: ${error.message}`), false)
+    const onExit = (): void => finish(failed("Script worker exited before the script finished"), false)
+    const onMessage = (message: ScriptWorkerMessage): void => {
+      if (message.type === "uuid") {
+        const flags = new Int32Array(channel, 0, 2)
+        flags[1] = Buffer.from(uuid()).copy(new Uint8Array(channel, 8))
+        Atomics.store(flags, 0, 1)
+        Atomics.notify(flags, 0)
+        return
+      }
+      for (const [name, value] of Object.entries(message.assigned)) {
+        // Defined rather than assigned, so a variable named `__proto__` is a variable.
+        Object.defineProperty(run.variables, name, { value, writable: true, enumerable: true, configurable: true })
+      }
+      finish(message.result, true)
+    }
+    signal?.addEventListener("abort", cancel, { once: true })
+    worker.on("message", onMessage).on("error", onError).on("exit", onExit)
+    worker.postMessage({ run: data, channel } satisfies ScriptJob)
+  })
+}
+
+/**
+ * Evaluate one script on the calling thread — the worker's. Variables the
+ * script sets are written into `assigned`, not `run.variables`, for
+ * `runScript` to apply. Never throws: every failure is the outcome's `error`.
+ */
+export async function evaluateScript(run: ScriptRun, assigned: Record<string, unknown>): Promise<ScriptRunResult> {
   const fileName = FILE_NAMES[run.phase]
   const logs: string[] = []
   const tests: ScriptTestResult[] = []
@@ -249,7 +359,7 @@ export async function runScript(run: ScriptRun): Promise<ScriptRunResult> {
         const json = args[1] ?? "null"
         if (json.length > MAX_VARIABLE_BYTES) throw new RangeError(`aw.variables.set: a value may be at most ${MAX_VARIABLE_BYTES} bytes of JSON`)
         // Defined rather than assigned, so a variable named `__proto__` is a variable.
-        Object.defineProperty(run.variables, args[0] ?? "", {
+        Object.defineProperty(assigned, args[0] ?? "", {
           value: JSON.parse(json) as unknown,
           writable: true,
           enumerable: true,

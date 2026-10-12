@@ -997,7 +997,7 @@ export class WorkflowExecutor {
       const textBody = typeof fetchBody === "string" ? fetchBody : null
       const run = await this.runNodeScript("preRequest", scripts.preRequest, scripts, {
         request: { method, url, headers: { ...headers }, body: textBody },
-      })
+      }, cancelSignal)
       preRequest = run.outcome
       if (!run.request) {
         return withExtractorOutcomes({ status: "error", error: scriptFailure(run.outcome) ?? "Pre-request script failed", method, url, duration: 0, scripts: [run.outcome] })
@@ -1188,7 +1188,7 @@ export class WorkflowExecutor {
       body: result.body,
       responseTime: result.duration ?? 0,
     }
-    const run = await this.runNodeScript("postResponse", scripts.postResponse, scripts, { response })
+    const run = await this.runNodeScript("postResponse", scripts.postResponse, scripts, { response }, cancelSignal)
     const outcomes = [...(result.scripts ?? []), run.outcome]
     const failure = scriptFailure(run.outcome)
     if (failure === undefined) return { ...result, scripts: outcomes }
@@ -1202,6 +1202,7 @@ export class WorkflowExecutor {
     source: string,
     scripts: HttpScriptsConfig,
     subject: { readonly request: ScriptRequest } | { readonly response: ScriptResponse },
+    cancelSignal: AbortSignal | undefined,
   ): Promise<ScriptRunResult> {
     const secrets: Record<string, string> = {}
     for (const name of scriptSecretNames(source)) {
@@ -1218,7 +1219,7 @@ export class WorkflowExecutor {
       secrets,
       ...subject,
       uuid: () => this.deps.functions.uuid(),
-    })
+    }, cancelSignal)
   }
 
   /**

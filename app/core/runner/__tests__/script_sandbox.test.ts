@@ -3,7 +3,7 @@ import { ScriptOutcomeSchema } from "@shared/zod-schemas"
 import { runScript, type ScriptRun } from "../script_sandbox"
 import { scriptSecretNames } from "../../services/secret_utils"
 
-function run(source: string, overrides: Partial<ScriptRun> = {}): ReturnType<typeof runScript> {
+function run(source: string, overrides: Partial<ScriptRun> = {}, signal?: AbortSignal): ReturnType<typeof runScript> {
   return runScript({
     phase: "postResponse",
     source,
@@ -14,7 +14,7 @@ function run(source: string, overrides: Partial<ScriptRun> = {}): ReturnType<typ
     secrets: {},
     uuid: () => "00000000-0000-4000-8000-000000000000",
     ...overrides,
-  })
+  }, signal)
 }
 
 describe("script sandbox — isolation", () => {
@@ -33,6 +33,27 @@ describe("script sandbox — isolation", () => {
     const { outcome } = await run("for (;;) {}", { timeoutMs: 200 })
     expect(outcome.error).toBe("Script timed out after 200 ms")
     expect(Date.now() - started).toBeLessThan(2000)
+  })
+
+  it("runs off the caller's thread, which keeps serving its event loop, and cancelling stops the script", async () => {
+    const controller = new AbortController()
+    let ticks = 0
+    const ticker = setInterval(() => {
+      ticks += 1
+      if (ticks === 5) controller.abort()
+    }, 20)
+    const started = Date.now()
+    const { outcome } = await run("while (true) {}", { timeoutMs: 30_000 }, controller.signal)
+    clearInterval(ticker)
+    expect(ticks).toBe(5)
+    expect(outcome.error).toBe("Script cancelled")
+    expect(Date.now() - started).toBeLessThan(5000)
+  })
+
+  it("serves aw.crypto.uuid from the caller's generator, one call at a time", async () => {
+    let n = 0
+    const { outcome } = await run("console.log(aw.crypto.uuid(), aw.crypto.uuid())", { uuid: () => `uuid-${(n += 1)}` })
+    expect(outcome.logs).toEqual(["uuid-1 uuid-2"])
   })
 
   it("an infinite loop cannot be caught and resumed by the script", async () => {

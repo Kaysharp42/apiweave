@@ -155,7 +155,8 @@
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "dist/desktop/script-worker.cjs"
     ],
     "win": {
       "target": [
