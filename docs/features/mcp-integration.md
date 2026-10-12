@@ -27,11 +27,14 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
   no answer within two minutes, fails it before any request is sent, and the
   agent sees `deniedByUser: true`. The run executes the workflows as they were
   when you were asked: an edit made while the dialog is open does not change
-  where an approved secret goes. Runs you start yourself, and agent runs that
+  where an approved secret goes. An allowed run may only reach the hosts the
+  dialog listed: a request whose host turns out different when it is sent —
+  a URL shown as written, a variable an extractor or script rewrote, a
+  redirect — fails instead. Runs you start yourself, and agent runs that
   use no secret, are not affected. A secret a [script](scripting.md) reads
   with `aw.secrets.get("NAME")` counts, and when the workflow runs scripts the
-  dialog says so: a pre-request script can change a request after the
-  destinations were worked out.
+  dialog says so: a pre-request script can change a request, though not send
+  it to a host the dialog did not list.
 - Run tools return metadata-only projections: request and response bodies,
   headers, cookies, URLs, variable values, and assertion actual values stay in
   the local desktop UI. The one exception is `runs_getNodeResult`, which returns

@@ -41,11 +41,12 @@ export interface AgentRunApprovalRequest {
   /**
    * Where the run's requests go: the host where a URL resolves statically
    * (literal, `{{env.*}}`, `{{variables.*}}`), the URL as written otherwise.
+   * Once allowed, a request to any host not listed here fails.
    */
   readonly destinations: readonly string[]
   /**
    * The run includes http-request scripts. A pre-request script can rewrite a
-   * request after `destinations` was worked out, and reads secrets by name.
+   * request (within `destinations`), and reads secrets by name.
    */
   readonly runsScripts: boolean
 }
@@ -317,22 +318,23 @@ export class RunScheduler {
       const agent = this.agentRuns.get(runId)
       const data = this.runData.get(runId)
       const secretNames = Object.keys(secretResolution.secrets ?? {})
+      let http = this.deps.http
       if (agent !== undefined && secretNames.length > 0) {
+        const destinations = requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {})
         const approved = await this.askApproval(
-          {
-            runId,
-            agent,
-            workflowName: workflow.name,
-            secretNames,
-            destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {}),
-            runsScripts: reachable.nodes.some(hasScript),
-          },
+          { runId, agent, workflowName: workflow.name, secretNames, destinations, runsScripts: reachable.nodes.some(hasScript) },
           controller.signal,
         )
         if (!approved) {
           if (controller.signal.aborted) throw new Error("cancelled")
           throw new AgentRunDenied()
         }
+        // The listed hosts are a prediction: an extractor or script can
+        // rewrite a variable mid-run, a Call Workflow child has variables of
+        // its own, and path variables are filled in after the host. So the
+        // approval is enforced where requests leave — every hop of every
+        // request this run and its sub-runs send must reach a listed host.
+        http = http.restrictedTo(destinations)
       }
       // Every value this run resolved is scrubbed from whatever leaves the
       // executor — persisted results, node snapshots, progress events — for the
@@ -353,7 +355,7 @@ export class RunScheduler {
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
         rng: this.deps.rng,
-        http: this.deps.http,
+        http,
         functions: this.deps.functions,
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
@@ -668,7 +670,8 @@ export class RunScheduler {
 class AgentRunDenied extends Error {}
 
 /**
- * Where a run's requests go, for the approval prompt: every node's `url`,
+ * Where a run's requests go, for the approval prompt and the hosts the
+ * approved run is then held to: every node's `url`,
  * with `{{env.*}}`, `{{variables.*}}` and `{{data.*}}` filled in where they are known before
  * the run, reduced to its host when it then parses. A URL built from values
  * the run itself produces stays as written — the user sees that it is not

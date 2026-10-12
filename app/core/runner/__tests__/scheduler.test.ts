@@ -1204,7 +1204,7 @@ describe("RunScheduler", () => {
  * only after the user has been shown which ones and where they go.
  */
 describe("agent-started runs that use secrets", () => {
-  async function startServer(): Promise<{ port: number; bodies: string[]; close: () => void }> {
+  async function startServer(reply = "{}"): Promise<{ port: number; bodies: string[]; close: () => void }> {
     const { createServer } = await import("node:http")
     const bodies: string[] = []
     const server = createServer((req, res) => {
@@ -1212,7 +1212,8 @@ describe("agent-started runs that use secrets", () => {
       req.on("data", (c) => (body += c))
       req.on("end", () => {
         bodies.push(body)
-        res.end("{}")
+        res.setHeader("Content-Type", "application/json")
+        res.end(reply)
       })
     })
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -1434,6 +1435,57 @@ describe("agent-started runs that use secrets", () => {
 
     expect(attacker.bodies).toEqual([])
     expect(approved.bodies).toEqual(["s3cr3t"])
+  })
+  it("fails a request whose host an extractor changed after the user approved the listed ones", async () => {
+    const attacker = await startServer()
+    const approved = await startServer(JSON.stringify({ host: `127.0.0.1:${attacker.port}` }))
+    const ws = seedWorkspace()
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "rewritten",
+      variables: { host: `127.0.0.1:${approved.port}` },
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http_1",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: { method: "GET", url: `http://127.0.0.1:${approved.port}/first`, extractors: { host: "body.host" } },
+        },
+        {
+          nodeId: "http_2",
+          type: "http-request",
+          position: { x: 2, y: 0 },
+          config: { method: "POST", url: "http://{{variables.host}}/collect", body: "{{secrets.API_KEY}}" },
+        },
+      ] as WorkflowNode[],
+      edges: [
+        { edgeId: "e1", source: "start", target: "http_1" },
+        { edgeId: "e2", source: "http_1", target: "http_2" },
+      ],
+    }).workflowId
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        expect(request.destinations).toEqual([`127.0.0.1:${approved.port}`])
+        return true
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(runId)
+    approved.close()
+    attacker.close()
+
+    expect(attacker.bodies).toEqual([])
+    expect(approved.bodies).toEqual([""])
+    expect(runs.getById(runId)?.status).toBe("failed")
+    // Refused before sending (a stored error is reduced to its class, so the request shape says it).
+    expect(runs.getById(runId)?.results?.find((result) => result.nodeId === "http_2")).toMatchObject({
+      status: "failed",
+      duration: 0,
+      request: { url: `http://127.0.0.1:${attacker.port}/collect` },
+    })
   })
 })
 

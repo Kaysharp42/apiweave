@@ -121,7 +121,7 @@ Scripts run in a sandbox: QuickJS, a separate JavaScript engine compiled to WebA
 An agent connected over [MCP](mcp-integration.md) can write scripts, since they are a node setting, and run them. A script is code the agent chose, so:
 
 - a run an agent starts that would read a secret, from a script or a placeholder, waits for your approval, as before;
-- when the workflow runs scripts, the approval dialog says so: a pre-request script can change where a request goes after the destinations in the dialog were worked out, and can read the secrets it lists. Allow only workflows you trust.
+- when the workflow runs scripts, the approval dialog says so: a pre-request script can change a request and read the secrets it lists. It cannot send a request to a host the dialog did not list; such a request fails. Allow only workflows you trust.
 
 An agent run whose scripts read no secret runs without asking, like any agent run that uses no secret: the sandbox gives a script no way to reach anything a workflow could not already reach.
 

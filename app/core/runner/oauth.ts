@@ -114,7 +114,7 @@ export async function requestToken(http: SafeHttp, request: TokenRequest, option
       : error instanceof Error && error.name === "TimeoutError"
         ? "timed out"
         : error instanceof Error && error.name === "SafeUrlError"
-          ? "the token URL is not an http(s) URL"
+          ? error.message
           : (describeNetworkError(error, request.tokenUrl) ?? "network error")
     throw new OAuthError(`OAuth 2.0 token request failed: ${cause}`)
   }

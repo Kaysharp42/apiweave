@@ -34,7 +34,7 @@ describe("agentRunApprovalText", () => {
     expect(detail).not.toMatch(/^ {2}• trusted\.example\.com$/m)
   })
 
-  it("warns that scripts can change requests after the destinations were worked out", () => {
+  it("warns that scripts can change requests and read the secrets", () => {
     const request = { runId: "run-1", agent: "a", workflowName: "w", secretNames: ["K"], destinations: ["api.example.com"] }
     expect(agentRunApprovalText({ ...request, runsScripts: false }).detail).not.toContain("runs scripts")
     expect(agentRunApprovalText({ ...request, runsScripts: true }).detail).toContain(

@@ -57,6 +57,8 @@ export class SafeHttp {
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
   private network: NetworkDispatchers
+  /** Set only on a `restrictedTo` view: the hosts (with port) any hop may reach. */
+  private allowedHosts: ReadonlySet<string> | undefined
 
   public constructor(opts: SafeHttpOptions = {}) {
     this.maxRedirectHops = opts.maxRedirectHops ?? MAX_REDIRECT_HOPS
@@ -75,6 +77,17 @@ export class SafeHttp {
     const previous = this.network
     this.network = new NetworkDispatchers(config)
     previous.close().catch(() => undefined)
+  }
+
+  /**
+   * This client, refusing every request and redirect hop to a host (with
+   * port) outside `hosts`. The view inherits from this instance through its
+   * prototype, so it shares the connection pools and sees a later `configure`.
+   */
+  public restrictedTo(hosts: Iterable<string>): SafeHttp {
+    const restricted = Object.create(this) as SafeHttp
+    restricted.allowedHosts = new Set(hosts)
+    return restricted
   }
 
   /** Close the connection pools a network config opened (the global agent is not ours). */
@@ -144,6 +157,10 @@ export class SafeHttp {
     let requestInit: RequestInit = { ...init, redirect: "manual", signal }
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
+      const host = new URL(currentUrl).host
+      if (this.allowedHosts && !this.allowedHosts.has(host)) {
+        throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
+      }
       const jar = opts.cookieJar
       // Per hop: a redirect to another host may need another client certificate, or bypass the proxy.
       const dispatcher = this.network.dispatcherFor(currentUrl, opts.rejectUnauthorized ?? true)
