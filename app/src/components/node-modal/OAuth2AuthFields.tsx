@@ -13,6 +13,9 @@ import useEnvironmentStore, {
 import { oauth } from "../../utils/apiweaveClient";
 import type {
   OAuth2AuthConfig,
+  OAuth2AuthFieldsProps,
+  OAuth2Field,
+  OAuth2TokenControlsProps,
   OAuthTokenStatus,
   SelectOption,
 } from "../../types";
@@ -26,9 +29,6 @@ const CLIENT_AUTH_OPTIONS: SelectOption[] = [
   { label: "Basic auth header", value: "basic" },
   { label: "Client ID and secret in body", value: "body" },
 ];
-
-type OAuth2Field =
-  "tokenUrl" | "clientId" | "clientSecret" | "authorizationUrl" | "tokenSecret";
 
 /** What each field is missing before a token can be fetched; "" when it is fine. */
 export function oauth2Problems(
@@ -86,13 +86,7 @@ function useTokenScope(): {
   };
 }
 
-function TokenControls({
-  config,
-  ready,
-}: {
-  config: OAuth2AuthConfig;
-  ready: boolean;
-}) {
+function TokenControls({ config, ready }: OAuth2TokenControlsProps) {
   const { workspaceId, environmentId } = useTokenScope();
   const [status, setStatus] = useState<OAuthTokenStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -174,11 +168,7 @@ export function OAuth2AuthFields({
   config,
   onChange,
   buttonClass,
-}: {
-  config: OAuth2AuthConfig;
-  onChange: (patch: Partial<OAuth2AuthConfig>) => void;
-  buttonClass: string;
-}) {
+}: OAuth2AuthFieldsProps) {
   const problems = oauth2Problems(config);
   const authorizationCode = config.grantType === "authorization_code";
   return (

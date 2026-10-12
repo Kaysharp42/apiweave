@@ -410,3 +410,8 @@ export type { EnvImportRow } from "./EnvImportRow";
 export type { EnvImportStatus } from "./EnvImportStatus";
 export type { EnvImportPlan } from "./EnvImportPlan";
 export type { EnvironmentVariablesImportDialogProps } from "./EnvironmentVariablesImportDialogProps";
+export type { OAuth2Field } from "./OAuth2Field";
+export type { OAuth2TokenControlsProps } from "./OAuth2TokenControlsProps";
+export type { OAuth2AuthFieldsProps } from "./OAuth2AuthFieldsProps";
+export type { PostmanImportPanelProps } from "./PostmanImportPanelProps";
+export type { LoadedJsonFile } from "./LoadedJsonFile";

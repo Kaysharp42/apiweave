@@ -8,15 +8,7 @@ import { Toggle } from "./atoms/Toggle";
 import { Card } from "./molecules/Card";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
-
-interface PostmanImportPanelProps {
-  readonly onImported: (projectId: string) => void;
-}
-
-interface LoadedFile {
-  readonly name: string;
-  readonly json: Record<string, unknown>;
-}
+import type { LoadedJsonFile, PostmanImportPanelProps } from "../types";
 
 const errorText = (error: unknown, fallback: string): string =>
   error instanceof Error && error.message ? error.message : fallback;
@@ -47,8 +39,8 @@ async function readJsonFile(file: File): Promise<Record<string, unknown>> {
  */
 export function PostmanImportPanel({ onImported }: PostmanImportPanelProps) {
   const { workspaceId } = useScopeContext();
-  const [collection, setCollection] = useState<LoadedFile | null>(null);
-  const [environment, setEnvironment] = useState<LoadedFile | null>(null);
+  const [collection, setCollection] = useState<LoadedJsonFile | null>(null);
+  const [environment, setEnvironment] = useState<LoadedJsonFile | null>(null);
   const [perRequest, setPerRequest] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [preview, setPreview] = useState<PostmanImportPreview | null>(null);
@@ -57,7 +49,7 @@ export function PostmanImportPanel({ onImported }: PostmanImportPanelProps) {
   const [busy, setBusy] = useState(false);
 
   const pick =
-    (set: (file: LoadedFile | null) => void) =>
+    (set: (file: LoadedJsonFile | null) => void) =>
     async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
       const file = event.target.files?.[0];
       setPreview(null);
