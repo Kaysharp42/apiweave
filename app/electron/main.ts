@@ -235,7 +235,7 @@ function screenReaderArgs(): string[] {
  * The window is frameless, so Windows and Linux never showed that menu anyway:
  * they get none. macOS keeps the role-based minimum it needs for Cmd+C/V/Z,
  * Hide and Quit; none of those roles carries a reload or close accelerator.
- * A development build adds Toggle Developer Tools (Ctrl/Cmd+Shift+I).
+ * A development build adds Toggle Developer Tools (Ctrl+Shift+I, or Alt+Cmd+I on macOS).
  */
 function installApplicationMenu(): void {
   const developer: MenuItemConstructorOptions[] = app.isPackaged
