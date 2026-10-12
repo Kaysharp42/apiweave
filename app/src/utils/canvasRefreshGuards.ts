@@ -1,8 +1,8 @@
 /**
- * The two "should this replace what the user is looking at?" decisions the
- * canvas makes about writes it did not initiate. Both are pure so they can be
- * tested without standing up a ReactFlow canvas, and both default to leaving
- * the user's work alone.
+ * The "should this replace what the user is looking at?" decisions the canvas
+ * makes about writes that did not come from its own save. All are pure so they
+ * can be tested without standing up a ReactFlow canvas, and all default to
+ * leaving the user's work alone.
  */
 
 import type { DetachDecisionInput } from "../types/DetachDecisionInput";
@@ -42,4 +42,20 @@ export function canApplyBackgroundRefresh({
 }: BackgroundRefreshInput): boolean {
   if (tabIsDirty) return false;
   return hydrationVersionNow === hydrationVersionAtRequest;
+}
+
+/**
+ * Whether a write this renderer made outside the canvas save (Import to nodes
+ * saving templates) may become the revision the canvas's next save asserts.
+ *
+ * Only when it is the very next revision after the canvas's base: then nothing
+ * else landed in between, and the conflict check would otherwise blame "an
+ * agent or another device" for the user's own write. Any gap is a write from
+ * somewhere else, which the next save must still report as a conflict.
+ */
+export function writeFollowsBaseRevision(
+  baseRevision: number,
+  writtenRevision: number,
+): boolean {
+  return writtenRevision === baseRevision + 1;
 }

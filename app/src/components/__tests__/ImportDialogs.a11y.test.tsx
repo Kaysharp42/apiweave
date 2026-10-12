@@ -35,7 +35,7 @@ const dialogs: Array<[string, (onClose: () => void) => ReactElement]> = [
   ["Import OpenAPI/Swagger", (onClose) => <OpenAPIImport onClose={onClose} />],
   [
     "Import to Add Nodes",
-    (onClose) => <ImportToNodesPanel isOpen onClose={onClose} workflowId="wf-1" />,
+    (onClose) => <ImportToNodesPanel isOpen onClose={onClose} workflowId="wf-1" onTemplatesSaved={() => {}} />,
   ],
   [
     "Run History",

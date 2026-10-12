@@ -90,6 +90,7 @@ import { isLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
 import {
   canApplyBackgroundRefresh,
   shouldActOnDetach,
+  writeFollowsBaseRevision,
 } from "../utils/canvasRefreshGuards";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import {
@@ -1356,6 +1357,27 @@ export function WorkflowCanvas({
     ],
   );
 
+  // Import to nodes writes only `nodeTemplates`, which no canvas save sends,
+  // yet it bumps the revision every save asserts. Left untracked, the user's
+  // next save fails as a conflict blamed on someone else, and "Load latest"
+  // throws their unsaved edits away.
+  const handleTemplatesSaved = useCallback(
+    (savedWorkflow: Workflow) => {
+      if (
+        !workflowId ||
+        !writeFollowsBaseRevision(baseRevisionRef.current, savedWorkflow.rev)
+      ) {
+        return;
+      }
+      baseRevisionRef.current = savedWorkflow.rev;
+      // Its graph is the one the canvas was hydrated from; claim it, or
+      // hydration repaints the canvas over the user's unsaved edits.
+      noteSavedWorkflow(savedWorkflow);
+      useTabStore.getState().updateTabWorkflow(workflowId, savedWorkflow);
+    },
+    [workflowId, noteSavedWorkflow],
+  );
+
   /** `overwrite` drops the revision check: the user chose to replace a newer server copy. */
   const saveWorkflow = useCallback(
     (silent = false, overwrite = false): Promise<void> => {
@@ -2111,6 +2133,7 @@ export function WorkflowCanvas({
           isOpen={showImportToNodes}
           onClose={() => setShowImportToNodes(false)}
           workflowId={workflowId ?? ""}
+          onTemplatesSaved={handleTemplatesSaved}
         />
       )}
 
