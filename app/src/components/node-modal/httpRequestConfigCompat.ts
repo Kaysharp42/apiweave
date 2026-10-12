@@ -159,48 +159,19 @@ export function normalizeUrlEncodedEntries(value: unknown): UrlEncodedEntry[] {
   return parseKeyValuePairs(value).map((pair) => ({ ...pair, active: true }));
 }
 
-export function normalizeAuthConfig(value: unknown): AuthConfig {
-  if (!isRecord(value)) return DEFAULT_AUTH;
+function subConfig(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
 
-  const type =
-    value.type === "bearer" ||
-    value.type === "basic" ||
-    value.type === "apiKey" ||
-    value.type === "oauth2" ||
-    value.type === "awsSigV4" ||
-    value.type === "digest" ||
-    value.type === "jwt"
-      ? value.type
-      : "none";
-  const authConfig: AuthConfig = { type };
-
-  // Only keep the sub-config matching the selected type — otherwise stale
-  // token/password/API-key material from a previously selected auth type
-  // survives in the saved workflow config after switching to "none" or
-  // another type.
-  if (type === "bearer") {
-    const bearer = isRecord(value.bearer) ? value.bearer : undefined;
-    authConfig.bearer = { token: bearer ? getString(bearer.token) : "" };
-  } else if (type === "basic") {
-    const basic = isRecord(value.basic) ? value.basic : undefined;
-    authConfig.basic = {
-      username: basic ? getString(basic.username) : "",
-      password: basic ? getString(basic.password) : "",
-    };
-  } else if (type === "apiKey") {
-    const apiKey = isRecord(value.apiKey) ? value.apiKey : undefined;
-    authConfig.apiKey = {
-      key: apiKey ? getString(apiKey.key) : "",
-      value: apiKey ? getString(apiKey.value) : "",
-      addTo: apiKey?.addTo === "query" ? "query" : "header",
-    };
-  } else if (type === "oauth2") {
-    const oauth2 = isRecord(value.oauth2) ? value.oauth2 : {};
-    const grantType =
-      oauth2.grantType === "authorization_code"
-        ? "authorization_code"
-        : "client_credentials";
-    authConfig.oauth2 = {
+function normalizeOAuth2Auth(value: Record<string, unknown>): AuthConfig {
+  const oauth2 = subConfig(value.oauth2);
+  const grantType =
+    oauth2.grantType === "authorization_code"
+      ? "authorization_code"
+      : "client_credentials";
+  return {
+    type: "oauth2",
+    oauth2: {
       grantType,
       tokenUrl: getString(oauth2.tokenUrl),
       clientId: getString(oauth2.clientId),
@@ -215,29 +186,33 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
             tokenSecret: getString(oauth2.tokenSecret),
           }
         : {}),
-    };
-  } else if (type === "awsSigV4") {
-    const aws = isRecord(value.awsSigV4) ? value.awsSigV4 : {};
-    const sessionToken = getString(aws.sessionToken);
-    authConfig.awsSigV4 = {
+    },
+  };
+}
+
+function normalizeAwsSigV4Auth(value: Record<string, unknown>): AuthConfig {
+  const aws = subConfig(value.awsSigV4);
+  const sessionToken = getString(aws.sessionToken);
+  return {
+    type: "awsSigV4",
+    awsSigV4: {
       accessKeyId: getString(aws.accessKeyId),
       secretAccessKey: getString(aws.secretAccessKey),
       region: getString(aws.region),
       service: getString(aws.service),
       ...(sessionToken ? { sessionToken } : {}),
-    };
-  } else if (type === "digest") {
-    const digest = isRecord(value.digest) ? value.digest : {};
-    authConfig.digest = {
-      username: getString(digest.username),
-      password: getString(digest.password),
-    };
-  } else if (type === "jwt") {
-    // A token that expires in five minutes, unless the saved config says otherwise.
-    const jwt = isRecord(value.jwt) ? value.jwt : { expiresInSeconds: 300 };
-    const header = getString(jwt.header);
-    const expiresInSeconds = getNumber(jwt.expiresInSeconds, 0);
-    authConfig.jwt = {
+    },
+  };
+}
+
+function normalizeJwtAuth(value: Record<string, unknown>): AuthConfig {
+  // A token that expires in five minutes, unless the saved config says otherwise.
+  const jwt = isRecord(value.jwt) ? value.jwt : { expiresInSeconds: 300 };
+  const header = getString(jwt.header);
+  const expiresInSeconds = getNumber(jwt.expiresInSeconds, 0);
+  return {
+    type: "jwt",
+    jwt: {
       algorithm:
         jwt.algorithm === "RS256" || jwt.algorithm === "ES256"
           ? jwt.algorithm
@@ -259,10 +234,68 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
         ? { headerName: jwt.headerName }
         : {}),
       ...(typeof jwt.prefix === "string" ? { prefix: jwt.prefix } : {}),
-    };
-  }
+    },
+  };
+}
 
-  return authConfig;
+// Each normalizer builds only the sub-config matching its type — otherwise
+// stale token/password/API-key material from a previously selected auth type
+// survives in the saved workflow config after switching to "none" or another
+// type.
+const AUTH_NORMALIZERS: Record<
+  Exclude<AuthConfig["type"], "none">,
+  (value: Record<string, unknown>) => AuthConfig
+> = {
+  bearer: (value) => ({
+    type: "bearer",
+    bearer: { token: getString(subConfig(value.bearer).token) },
+  }),
+  basic: (value) => {
+    const basic = subConfig(value.basic);
+    return {
+      type: "basic",
+      basic: {
+        username: getString(basic.username),
+        password: getString(basic.password),
+      },
+    };
+  },
+  apiKey: (value) => {
+    const apiKey = subConfig(value.apiKey);
+    return {
+      type: "apiKey",
+      apiKey: {
+        key: getString(apiKey.key),
+        value: getString(apiKey.value),
+        addTo: apiKey.addTo === "query" ? "query" : "header",
+      },
+    };
+  },
+  oauth2: normalizeOAuth2Auth,
+  awsSigV4: normalizeAwsSigV4Auth,
+  digest: (value) => {
+    const digest = subConfig(value.digest);
+    return {
+      type: "digest",
+      digest: {
+        username: getString(digest.username),
+        password: getString(digest.password),
+      },
+    };
+  },
+  jwt: normalizeJwtAuth,
+};
+
+function isConfigurableAuthType(
+  type: unknown,
+): type is keyof typeof AUTH_NORMALIZERS {
+  return typeof type === "string" && Object.hasOwn(AUTH_NORMALIZERS, type);
+}
+
+export function normalizeAuthConfig(value: unknown): AuthConfig {
+  if (!isRecord(value)) return DEFAULT_AUTH;
+  if (!isConfigurableAuthType(value.type)) return { type: "none" };
+  return AUTH_NORMALIZERS[value.type](value);
 }
 
 function isStatusCode(value: unknown): value is number {

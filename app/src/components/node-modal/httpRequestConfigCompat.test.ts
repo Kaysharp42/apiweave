@@ -50,6 +50,41 @@ describe("normalizeAuthConfig", () => {
     expect(switched.oauth2).not.toHaveProperty("tokenSecret");
     expect(switched.oauth2).not.toHaveProperty("authorizationUrl");
   });
+
+  it("falls back to none for a non-object or unknown type, and fills missing sub-configs with empty values", () => {
+    expect(normalizeAuthConfig(null)).toEqual({ type: "none" });
+    expect(normalizeAuthConfig({ type: "kerberos", bearer: { token: "t" } })).toEqual({ type: "none" });
+    expect(normalizeAuthConfig({ type: "bearer" })).toEqual({ type: "bearer", bearer: { token: "" } });
+    expect(normalizeAuthConfig({ type: "basic", basic: { username: "u", password: 5 } })).toEqual({
+      type: "basic",
+      basic: { username: "u", password: "" },
+    });
+    expect(normalizeAuthConfig({ type: "basic" })).toEqual({ type: "basic", basic: { username: "", password: "" } });
+    expect(normalizeAuthConfig({ type: "apiKey", apiKey: "junk" })).toEqual({
+      type: "apiKey",
+      apiKey: { key: "", value: "", addTo: "header" },
+    });
+    expect(normalizeAuthConfig({ type: "digest" })).toEqual({ type: "digest", digest: { username: "", password: "" } });
+  });
+
+  it("keeps the sign-in fields for the authorization code grant", () => {
+    expect(
+      normalizeAuthConfig({
+        type: "oauth2",
+        oauth2: { grantType: "authorization_code", tokenUrl: "t", clientId: "c", clientAuth: "body", authorizationUrl: "a", tokenSecret: "{{secrets.T}}" },
+      }).oauth2,
+    ).toEqual({
+      grantType: "authorization_code",
+      tokenUrl: "t",
+      clientId: "c",
+      clientSecret: "",
+      scope: "",
+      audience: "",
+      clientAuth: "body",
+      authorizationUrl: "a",
+      tokenSecret: "{{secrets.T}}",
+    });
+  });
 });
 
 describe("OAuth 2.0 secret fields", () => {
@@ -147,6 +182,12 @@ describe("AWS Signature V4 auth", () => {
     expect(AwsSigV4AuthConfigSchema.safeParse(auth.awsSigV4).success).toBe(true);
   });
 
+  it("keeps a non-empty session token", () => {
+    expect(normalizeAuthConfig({ type: "awsSigV4", awsSigV4: { sessionToken: "{{secrets.S}}" } }).awsSigV4).toEqual({
+      accessKeyId: "", secretAccessKey: "", region: "", service: "", sessionToken: "{{secrets.S}}",
+    });
+  });
+
   it("names every field still missing", () => {
     const problems = awsSigV4Problems({ accessKeyId: "AKID", secretAccessKey: "", region: " ", service: "s3" });
     expect(problems).toEqual({
@@ -182,5 +223,11 @@ describe("JWT auth", () => {
       algorithm: "ES256", secret: "{{secrets.KEY}}", payload: '{"sub": 1}', header: '{"kid": "a"}', expiresInSeconds: 86_400, headerName: "X-Token", prefix: "",
     });
     expect(normalizeAuthConfig({ type: "jwt", jwt: { algorithm: "HS256", secret: "", payload: "{}" } }).jwt).not.toHaveProperty("expiresInSeconds");
+  });
+
+  it("falls back to HS256 and an empty payload, and ignores non-string header fields", () => {
+    expect(normalizeAuthConfig({ type: "jwt", jwt: { algorithm: "none", payload: "", expiresInSeconds: 60, headerName: 1, prefix: null } }).jwt).toEqual({
+      algorithm: "HS256", secret: "", payload: "{}", expiresInSeconds: 60,
+    });
   });
 });
