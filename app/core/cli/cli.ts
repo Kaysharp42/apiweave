@@ -3,6 +3,7 @@ import path from "node:path"
 import { parseArgs } from "node:util"
 import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { Environment } from "@shared/types/Environment"
 import type { Workflow } from "@shared/types/Workflow"
 import { initDatabase } from "../db"
 import {
@@ -180,29 +181,10 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     },
   })
   if (values.help === true) return "help"
-  const [command, file, ...rest] = positionals
-  if (command !== "run") throw new UsageError(command === undefined ? "missing command" : `unknown command '${command}'`)
-  if (file === undefined) throw new UsageError("missing <file|folder> to run")
-  if (rest.length > 0) throw new UsageError(`unexpected argument '${rest[0]}'`)
-
-  const reporters = new Set((values.reporter ?? "cli").split(",").map((name) => name.trim()).filter((name) => name !== ""))
-  for (const name of reporters) {
-    if (!REPORTERS.has(name)) throw new UsageError(`unknown reporter '${name}' (use cli, junit or html)`)
-  }
-  // Naming an export path asks for that report.
-  if (values["reporter-junit-export"] !== undefined) reporters.add("junit")
-  if (values["reporter-html-export"] !== undefined) reporters.add("html")
-
-  let timeoutMs: number | undefined
-  if (values["timeout-request"] !== undefined) {
-    timeoutMs = Number(values["timeout-request"])
-    if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new UsageError("--timeout-request must be a positive whole number of milliseconds")
-  }
-  let iterationCount: number | undefined
-  if (values["iteration-count"] !== undefined) {
-    iterationCount = Number(values["iteration-count"])
-    if (!Number.isInteger(iterationCount) || iterationCount <= 0) throw new UsageError("--iteration-count must be a positive whole number")
-  }
+  const file = runFileArgument(positionals)
+  const reporters = parseReporters(values.reporter, values["reporter-junit-export"], values["reporter-html-export"])
+  const timeoutMs = positiveInteger(values["timeout-request"], "--timeout-request must be a positive whole number of milliseconds")
+  const iterationCount = positiveInteger(values["iteration-count"], "--iteration-count must be a positive whole number")
   const resolve = (target: string | undefined): string | undefined => (target === undefined ? undefined : path.resolve(cwd, target))
   return {
     file: path.resolve(cwd, file),
@@ -225,6 +207,33 @@ function parseCliArgs(argv: readonly string[], cwd: string): CliOptions | "help"
     useSystemCa: values["use-system-ca"] === true,
     clientCerts: values["client-cert"] ?? [],
   }
+}
+
+/** The `<file|folder>` of `run <file|folder>`, the only command. */
+function runFileArgument(positionals: readonly string[]): string {
+  const [command, file, ...rest] = positionals
+  if (command !== "run") throw new UsageError(command === undefined ? "missing command" : `unknown command '${command}'`)
+  if (file === undefined) throw new UsageError("missing <file|folder> to run")
+  if (rest.length > 0) throw new UsageError(`unexpected argument '${rest[0]}'`)
+  return file
+}
+
+function parseReporters(list: string | undefined, junitExport: string | undefined, htmlExport: string | undefined): Set<string> {
+  const reporters = new Set((list ?? "cli").split(",").map((name) => name.trim()).filter((name) => name !== ""))
+  for (const name of reporters) {
+    if (!REPORTERS.has(name)) throw new UsageError(`unknown reporter '${name}' (use cli, junit or html)`)
+  }
+  // Naming an export path asks for that report.
+  if (junitExport !== undefined) reporters.add("junit")
+  if (htmlExport !== undefined) reporters.add("html")
+  return reporters
+}
+
+function positiveInteger(raw: string | undefined, message: string): number | undefined {
+  if (raw === undefined) return undefined
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value <= 0) throw new UsageError(message)
+  return value
 }
 
 /**
@@ -291,6 +300,17 @@ function collectSecrets(options: CliOptions, env: CliIo["env"]): Map<string, str
   return secrets
 }
 
+interface CliRepositories {
+  readonly workspaces: WorkspaceRepository
+  readonly workflows: WorkflowRepository
+  readonly runs: RunRepository
+  readonly environments: EnvironmentRepository
+  readonly collections: CollectionRepository
+  readonly projectRuns: ProjectRunRepository
+}
+
+type CliTarget = { readonly kind: "workflow"; readonly workflowId: string } | { readonly kind: "project"; readonly projectId: string }
+
 async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>, io: CliIo, mask: <T>(value: T) => T): Promise<number> {
   // A project folder (`project.json` + workflows/ + environments/) is read through the app's own folder reader.
   const folder = isDirectory(options.file) ? readProjectFolder(options.file) : undefined
@@ -303,91 +323,40 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
   let scheduler: RunScheduler | undefined
   let http: CliHttp | undefined
   try {
-    const workspaces = new WorkspaceRepository(database.kvStore)
-    const workflows = new WorkflowRepository(database.kvStore)
-    const runs = new RunRepository(database.kvStore)
-    const environments = new EnvironmentRepository(database.kvStore)
-    const collections = new CollectionRepository(database.kvStore)
-    const projectRuns = new ProjectRunRepository(database.kvStore)
-    const scopeResolver = new ScopeResolver({
-      workspaceExists: (id) => workspaces.getById(id) !== undefined,
-      environmentExists: (id) => environments.getById(id) !== undefined,
-    })
-    const sync = new LocalOnlySyncProvider()
-    const permissions = new LocalOwnerProvider()
-    const workspaceId = workspaces.create({ name: "APIWeave CLI", slug: "apiweave-cli" }).workspaceId
-
-    // -------- Load the file through the app's own importers --------
-    let target: { readonly kind: "workflow"; readonly workflowId: string } | { readonly kind: "project"; readonly projectId: string }
-    if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "awecollection")) {
-      const projectBundle = isPostmanCollection(bundle)
-        ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
-        : bundle as unknown as ProjectBundle
-      const projects = new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
-      // A folder imports as the app's "Import from folder" does (ids kept); a bundle as its bundle import does.
-      const { projectId } = folder === undefined
-        ? await projects.importProject(workspaceId, projectBundle)
-        : await projects.upsertProject(workspaceId, projectBundle)
-      target = options.workflow === undefined
-        ? { kind: "project", projectId }
-        : { kind: "workflow", workflowId: pickWorkflow(workflows.listByCollection(workspaceId, projectId).items, projectBundle, options.workflow) }
-    } else if (isRecord(bundle) && isRecord(bundle["workflow"])) {
-      if (options.workflow !== undefined) throw new UsageError("--workflow picks a workflow in a project bundle; this file is a single workflow")
-      const { workflowId } = await new ImportService(workflows, environments, collections, sync, permissions, scopeResolver)
-        .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
-      target = { kind: "workflow", workflowId }
-    } else {
-      throw new UsageError(`${options.file} is not an APIWeave project folder, workflow export, .awecollection project bundle or Postman collection`)
+    const repos: CliRepositories = {
+      workspaces: new WorkspaceRepository(database.kvStore),
+      workflows: new WorkflowRepository(database.kvStore),
+      runs: new RunRepository(database.kvStore),
+      environments: new EnvironmentRepository(database.kvStore),
+      collections: new CollectionRepository(database.kvStore),
+      projectRuns: new ProjectRunRepository(database.kvStore),
     }
+    const workspaceId = repos.workspaces.create({ name: "APIWeave CLI", slug: "apiweave-cli" }).workspaceId
+    const target = await importTarget(bundle, folder, postmanEnvironment, options.workflow, options.file, workspaceId, repos)
 
     // -------- Environment --------
     // `--env` runs everything against that environment. Without it each
     // workflow runs against its own saved one, as in the app (leaving the
     // environment unset tells the scheduler to use the workflow's). `--env-file`
     // and `--var` are layered on whichever environments will be used.
-    const available = environments.listByWorkspace(workspaceId).items
-    let environmentId: string | undefined
-    if (options.env !== undefined) {
-      const matches = available.filter((environment) => environment.name === options.env)
-      if (matches.length !== 1) {
-        const names = available.map((environment) => environment.name).join(", ") || "none"
-        throw new UsageError(`environment '${options.env}' is ${matches.length === 0 ? "not in" : "ambiguous in"} the file (environments: ${names})`)
-      }
-      environmentId = matches[0]!.environmentId
-    }
-    const overrides: Record<string, JsonValue> = {
-      ...(postmanEnvironment === undefined ? envFileVariables : {}),
-      ...Object.fromEntries(parsePairs(options.vars, "--var")),
-    }
-    if (Object.keys(overrides).length > 0) {
-      for (const environment of available) {
-        if (environmentId === undefined || environment.environmentId === environmentId) {
-          environments.update(environment.environmentId, { variables: { ...environment.variables, ...overrides } })
-        }
-      }
-      if (environmentId === undefined) {
-        // A workflow saved without an environment gets one holding just the overrides.
-        let cliEnvironmentId: string | undefined
-        for (const workflow of workflows.listByWorkspace(workspaceId, true).items) {
-          if (workflow.selectedEnvironmentId !== null) continue
-          cliEnvironmentId ??= environments.create({ workspaceId, name: "CLI", variables: overrides }).environmentId
-          workflows.update(workflow.workflowId, { selectedEnvironmentId: cliEnvironmentId })
-        }
-      }
-    }
+    const available = repos.environments.listByWorkspace(workspaceId).items
+    const environmentId = options.env === undefined ? undefined : pickEnvironment(available, options.env)
+    layerOverrides(
+      {
+        ...(postmanEnvironment === undefined ? envFileVariables : {}),
+        ...Object.fromEntries(parsePairs(options.vars, "--var")),
+      },
+      available,
+      environmentId,
+      workspaceId,
+      repos,
+    )
 
     // -------- Secrets: refuse to start a run that would send a placeholder --------
-    const roots = target.kind === "workflow" ? [target.workflowId] : projectWorkflowIds(target.projectId, workspaceId, collections, workflows)
-    const missing = referencedSecrets(roots, workspaceId, workflows).filter((name) => !secrets.has(name))
-    if (missing.length > 0) {
-      throw new UsageError(
-        `missing secret${missing.length === 1 ? "" : "s"} ${missing.join(", ")}. ` +
-          `Set ${missing.map((name) => SECRET_ENV_PREFIX + name).join(", ")}, or pass --secret NAME=value or --secrets-file.`,
-      )
-    }
+    requireSecrets(target, workspaceId, secrets, repos)
     if (options.bail && target.kind === "project") {
-      const project = collections.getById(target.projectId)!
-      collections.update(target.projectId, { workflowOrder: project.workflowOrder.map((item) => ({ ...item, continueOnFail: false })) })
+      const project = repos.collections.getById(target.projectId)!
+      repos.collections.update(target.projectId, { workflowOrder: project.workflowOrder.map((item) => ({ ...item, continueOnFail: false })) })
     }
 
     // -------- Run --------
@@ -401,9 +370,9 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const runScheduler = new RunScheduler({
-      runs,
-      workflows,
-      environments,
+      runs: repos.runs,
+      workflows: repos.workflows,
+      environments: repos.environments,
       http,
       functions: new DynamicFunctions(clock, rng),
       clock,
@@ -416,66 +385,169 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       },
     })
     scheduler = runScheduler
-
-    // One run of the target: a workflow run, or a project run. `data` is the
-    // iteration's row.
-    const runOnce = async (data?: IterationRow): Promise<SingleReportInput> => {
-      const withData = data === undefined ? {} : { data }
-      if (target.kind === "workflow") {
-        const runId = runScheduler.enqueue({ workspaceId, workflowId: target.workflowId, ...(environmentId === undefined ? {} : { selectedEnvironmentId: environmentId }), ...withData })
-        await runScheduler.whenFinished(runId)
-        // Always the persisted run: secrets are masked when a run is stored.
-        const run = runs.getById(runId)!
-        return { kind: "run", run, workflow: workflows.getById(run.workflowId) ?? null }
-      }
-      const projectRun = await new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler: runScheduler })
-        .start({ workspaceId, projectId: target.projectId, ...(environmentId === undefined ? {} : { environmentId }), ...withData }).done
-      const itemRuns = projectRun.items.flatMap((item) => (item.runId === null ? [] : [runs.getById(item.runId)])).filter((run) => run !== undefined)
-      const itemWorkflows = [...new Set(projectRun.items.map((item) => item.workflowId))]
-        .map((workflowId) => workflows.getById(workflowId))
-        .filter((workflow) => workflow !== undefined)
-      return { kind: "project", projectName: collections.getById(projectRun.projectId)!.name, projectRun, runs: itemRuns, workflows: itemWorkflows }
-    }
-    const statusOf = (one: SingleReportInput): string => (one.kind === "run" ? one.run.status : one.projectRun.status)
-
-    let input: ReportInput
-    let passed: boolean
-    if (rows === undefined) {
-      input = await runOnce()
-      passed = statusOf(input) === "completed"
-    } else {
-      // Iterations run one after another; a failed one stops the rest only with --bail.
-      const iterations: SingleReportInput[] = []
-      for (const row of rows) {
-        const one = await runOnce(row)
-        iterations.push(one)
-        const status = statusOf(one)
-        if (status === "cancelled" || status === "interrupted" || (options.bail && status !== "completed")) break
-      }
-      const first = iterations[0]!
-      const title = first.kind === "run" ? first.workflow?.name ?? first.run.workflowId : first.projectName
-      input = { kind: "iterations", title, iterations }
-      passed = iterations.every((one) => statusOf(one) === "completed")
-    }
+    const { input, passed } = await runIterations(
+      (data) => runOnce(runScheduler, target, workspaceId, environmentId, repos, data),
+      rows,
+      options.bail,
+    )
 
     // -------- Report --------
     // Mask the report's input, not its output: node labels and names can hold
     // a secret the run never masked, and the formats escape `<SECRET>` only if
     // it is there before they are built.
-    const masked = mask(input)
-    const color = io.stdout.isTTY === true && io.env["NO_COLOR"] === undefined
-    if (options.reporters.has("cli")) io.stdout.write(buildConsoleReport(masked, color))
-    for (const [format, filePath] of [["junit", options.junitPath], ["html", options.htmlPath]] as const) {
-      if (!options.reporters.has(format)) continue
-      fs.mkdirSync(path.dirname(filePath), { recursive: true })
-      fs.writeFileSync(filePath, buildReport(format, masked), "utf8")
-      if (options.reporters.has("cli")) io.stdout.write(`${format === "junit" ? "JUnit" : "HTML"} report: ${filePath}\n`)
-    }
+    writeReports(mask(input), options, io)
     return passed ? EXIT_PASSED : EXIT_FAILED
   } finally {
     await scheduler?.shutdown(0)
     await http?.close()
     database.close()
+  }
+}
+
+/** Loads the file through the app's own importers: a project to run, or one workflow of it, or a single workflow export. */
+async function importTarget(
+  bundle: unknown,
+  folder: ProjectBundle | undefined,
+  postmanEnvironment: Record<string, JsonValue> | undefined,
+  workflow: string | undefined,
+  file: string,
+  workspaceId: string,
+  { workspaces, workflows, environments, collections }: CliRepositories,
+): Promise<CliTarget> {
+  const scopeResolver = new ScopeResolver({
+    workspaceExists: (id) => workspaces.getById(id) !== undefined,
+    environmentExists: (id) => environments.getById(id) !== undefined,
+  })
+  const sync = new LocalOnlySyncProvider()
+  const permissions = new LocalOwnerProvider()
+  if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "awecollection")) {
+    const projectBundle = isPostmanCollection(bundle)
+      ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
+      : bundle as unknown as ProjectBundle
+    const projects = new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
+    // A folder imports as the app's "Import from folder" does (ids kept); a bundle as its bundle import does.
+    const { projectId } = folder === undefined
+      ? await projects.importProject(workspaceId, projectBundle)
+      : await projects.upsertProject(workspaceId, projectBundle)
+    return workflow === undefined
+      ? { kind: "project", projectId }
+      : { kind: "workflow", workflowId: pickWorkflow(workflows.listByCollection(workspaceId, projectId).items, projectBundle, workflow) }
+  }
+  if (isRecord(bundle) && isRecord(bundle["workflow"])) {
+    if (workflow !== undefined) throw new UsageError("--workflow picks a workflow in a project bundle; this file is a single workflow")
+    const { workflowId } = await new ImportService(workflows, environments, collections, sync, permissions, scopeResolver)
+      .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
+    return { kind: "workflow", workflowId }
+  }
+  throw new UsageError(`${file} is not an APIWeave project folder, workflow export, .awecollection project bundle or Postman collection`)
+}
+
+/** `--env`, by name: exactly one environment of the file must have it. */
+function pickEnvironment(available: readonly Environment[], wanted: string): string {
+  const matches = available.filter((environment) => environment.name === wanted)
+  if (matches.length !== 1) {
+    const names = available.map((environment) => environment.name).join(", ") || "none"
+    throw new UsageError(`environment '${wanted}' is ${matches.length === 0 ? "not in" : "ambiguous in"} the file (environments: ${names})`)
+  }
+  return matches[0]!.environmentId
+}
+
+/** `--env-file` and `--var` on the environment that will be used, or on every one when `--env` is not given. */
+function layerOverrides(
+  overrides: Record<string, JsonValue>,
+  available: readonly Environment[],
+  environmentId: string | undefined,
+  workspaceId: string,
+  { workflows, environments }: CliRepositories,
+): void {
+  if (Object.keys(overrides).length === 0) return
+  for (const environment of available) {
+    if (environmentId === undefined || environment.environmentId === environmentId) {
+      environments.update(environment.environmentId, { variables: { ...environment.variables, ...overrides } })
+    }
+  }
+  if (environmentId !== undefined) return
+  // A workflow saved without an environment gets one holding just the overrides.
+  let cliEnvironmentId: string | undefined
+  for (const workflow of workflows.listByWorkspace(workspaceId, true).items) {
+    if (workflow.selectedEnvironmentId !== null) continue
+    cliEnvironmentId ??= environments.create({ workspaceId, name: "CLI", variables: overrides }).environmentId
+    workflows.update(workflow.workflowId, { selectedEnvironmentId: cliEnvironmentId })
+  }
+}
+
+function requireSecrets(target: CliTarget, workspaceId: string, secrets: ReadonlyMap<string, string>, { workflows, collections }: CliRepositories): void {
+  const roots = target.kind === "workflow" ? [target.workflowId] : projectWorkflowIds(target.projectId, workspaceId, collections, workflows)
+  const missing = referencedSecrets(roots, workspaceId, workflows).filter((name) => !secrets.has(name))
+  if (missing.length > 0) {
+    throw new UsageError(
+      `missing secret${missing.length === 1 ? "" : "s"} ${missing.join(", ")}. ` +
+        `Set ${missing.map((name) => SECRET_ENV_PREFIX + name).join(", ")}, or pass --secret NAME=value or --secrets-file.`,
+    )
+  }
+}
+
+/** One run of the target: a workflow run, or a project run. `data` is the iteration's row. */
+async function runOnce(
+  scheduler: RunScheduler,
+  target: CliTarget,
+  workspaceId: string,
+  environmentId: string | undefined,
+  { workflows, runs, environments, collections, projectRuns }: CliRepositories,
+  data?: IterationRow,
+): Promise<SingleReportInput> {
+  const withData = data === undefined ? {} : { data }
+  if (target.kind === "workflow") {
+    const runId = scheduler.enqueue({ workspaceId, workflowId: target.workflowId, ...(environmentId === undefined ? {} : { selectedEnvironmentId: environmentId }), ...withData })
+    await scheduler.whenFinished(runId)
+    // Always the persisted run: secrets are masked when a run is stored.
+    const run = runs.getById(runId)!
+    return { kind: "run", run, workflow: workflows.getById(run.workflowId) ?? null }
+  }
+  const projectRun = await new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler })
+    .start({ workspaceId, projectId: target.projectId, ...(environmentId === undefined ? {} : { environmentId }), ...withData }).done
+  const itemRuns = projectRun.items.flatMap((item) => (item.runId === null ? [] : [runs.getById(item.runId)])).filter((run) => run !== undefined)
+  const itemWorkflows = [...new Set(projectRun.items.map((item) => item.workflowId))]
+    .map((workflowId) => workflows.getById(workflowId))
+    .filter((workflow) => workflow !== undefined)
+  return { kind: "project", projectName: collections.getById(projectRun.projectId)!.name, projectRun, runs: itemRuns, workflows: itemWorkflows }
+}
+
+/** A single run, or one per iteration row. */
+async function runIterations(
+  run: (data?: IterationRow) => Promise<SingleReportInput>,
+  rows: readonly IterationRow[] | undefined,
+  bail: boolean,
+): Promise<{ readonly input: ReportInput; readonly passed: boolean }> {
+  if (rows === undefined) {
+    const input = await run()
+    return { input, passed: statusOf(input) === "completed" }
+  }
+  // Iterations run one after another; a failed one stops the rest only with --bail.
+  const iterations: SingleReportInput[] = []
+  for (const row of rows) {
+    const one = await run(row)
+    iterations.push(one)
+    const status = statusOf(one)
+    if (status === "cancelled" || status === "interrupted" || (bail && status !== "completed")) break
+  }
+  const first = iterations[0]!
+  const title = first.kind === "run" ? first.workflow?.name ?? first.run.workflowId : first.projectName
+  return { input: { kind: "iterations", title, iterations }, passed: iterations.every((one) => statusOf(one) === "completed") }
+}
+
+function statusOf(one: SingleReportInput): string {
+  return one.kind === "run" ? one.run.status : one.projectRun.status
+}
+
+function writeReports(masked: ReportInput, options: CliOptions, io: CliIo): void {
+  const color = io.stdout.isTTY === true && io.env["NO_COLOR"] === undefined
+  if (options.reporters.has("cli")) io.stdout.write(buildConsoleReport(masked, color))
+  for (const [format, filePath] of [["junit", options.junitPath], ["html", options.htmlPath]] as const) {
+    if (!options.reporters.has(format)) continue
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, buildReport(format, masked), "utf8")
+    if (options.reporters.has("cli")) io.stdout.write(`${format === "junit" ? "JUnit" : "HTML"} report: ${filePath}\n`)
   }
 }
 

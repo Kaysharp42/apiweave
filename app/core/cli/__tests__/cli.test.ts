@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
-import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
+import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, USAGE, runCli } from "../cli"
 import { projectFolderFiles, writeProjectFolder } from "../../services/project_folder"
 import type { ProjectBundle } from "../../services/project_export_service"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
@@ -156,6 +156,27 @@ describe("apiweave run", () => {
 
     expect(result.code).toBe(EXIT_PASSED)
     expect(received).toEqual([`Bearer ${TOKEN}`])
+
+    const picked = await run(["run", "health.json", "--workflow", "Health", "--secrets-file", "secrets.env"])
+    expect(picked.code).toBe(EXIT_USAGE)
+    expect(picked.stderr).toContain("--workflow picks a workflow in a project bundle; this file is a single workflow")
+  })
+
+  it("prints the usage with --help and exits 0", async () => {
+    const result = await run(["run", FIXTURE, "-h"])
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(result.stdout).toBe(USAGE)
+    expect(result.stderr).toBe("")
+  })
+
+  it("exits 2 on a JSON file that is not something it can run", async () => {
+    fs.writeFileSync(path.join(dir, "other.json"), JSON.stringify({ hello: "world" }))
+
+    const result = await run(["run", "other.json"])
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("is not an APIWeave project folder, workflow export, .awecollection project bundle or Postman collection")
   })
 
   it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
@@ -493,6 +514,11 @@ describe("apiweave run", () => {
     [["run", FIXTURE, "--secret", TOKEN], "--secret expects KEY=value"],
     [["test", FIXTURE], "unknown command 'test'"],
     [["run", FIXTURE, "--nope"], "Unknown option '--nope'"],
+    [[], "missing command"],
+    [["run"], "missing <file|folder> to run"],
+    [["run", FIXTURE, "extra"], "unexpected argument 'extra'"],
+    [["run", FIXTURE, "--timeout-request", "0"], "--timeout-request must be a positive whole number of milliseconds"],
+    [["run", FIXTURE, "-n", "1.5"], "--iteration-count must be a positive whole number"],
   ])("exits 2 on a usage or config error: %j", async (argv, message) => {
     const result = await run(argv, { APIWEAVE_SECRET_API_TOKEN: TOKEN })
 
