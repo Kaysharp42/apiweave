@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
+import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, safeErrorClass, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { buildHtmlReport, buildJUnitReport } from "../reporters"
@@ -1652,5 +1652,49 @@ describe("signed auth runs", () => {
     expect(stored).not.toContain(token)
     expect(stored).toContain("Bearer <SECRET>")
     expect(JSON.stringify(events)).not.toContain(token)
+  })
+})
+
+describe("safeErrorClass", () => {
+  it("keeps the runner's own diagnoses and reduces everything else to a class, first match winning", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["Condition not met after 3 attempts", "Condition not met after 3 attempts"],
+      ["Failed after 2 attempts: connect ECONNREFUSED s3cr3t", "Failed after 2 attempts: Node execution failed"],
+      ["Failed after 2 attempts: HTTP 503", "Failed after 2 attempts: HTTP 503"],
+      ["HTTP 404", "HTTP 404"],
+      ["HTTP 404 s3cr3t", "Node execution failed"],
+      ["Network error: api.example.com ECONNREFUSED (ECONNREFUSED)", "Network error: api.example.com ECONNREFUSED (ECONNREFUSED)"],
+      ["Refused redirect from HTTPS to HTTP: http://x?token=s3cr3t", "Refused redirect from HTTPS to HTTP"],
+      ["Called workflow wf_1 not found", "Called workflow wf_1 not found"],
+      ["Called workflow wf 1 not found", "Node execution failed"],
+      ["Call Workflow node has no target workflow configured", "Call Workflow node has no target workflow configured"],
+      ["Call Workflow recursion depth exceeded", "Call Workflow recursion depth exceeded"],
+      ["OAuth 2.0 token request failed: 401 timeout", "OAuth 2.0 token request failed: 401 timeout"],
+      ["AWS Signature V4 needs a region", "AWS Signature V4 needs a region"],
+      ["Digest auth challenge missing", "Digest auth challenge missing"],
+      ["JWT signing failed", "JWT signing failed"],
+      ["JWTx timeout", "Request timed out"],
+      ["Pre-request script failed: s3cr3t", "Pre-request script failed: s3cr3t"],
+      ["Post-response script: 2 tests failed", "Post-response script: 2 tests failed"],
+      ["Pre-request scripting cancelled", "Cancelled"],
+      ["Error: Not rerun: {{prev.token}} in node http_1", "Not rerun: {{prev.token}} in node http_1"],
+      ["Not rerun: {{prev.token}}", "Not rerun: {{prev.token}}"],
+      ["Response does not match the schema for status 2XX", "Response does not match the schema for status 2XX"],
+      ["Response does not match the schema for status 200", "Response does not match the schema for status 200"],
+      ["Response does not match the schema for status default", "Response does not match the schema for status default"],
+      ["Response does not match the schema for status 600", "Node execution failed"],
+      ["Redirect loop at https://x?k=s3cr3t", "Redirect not followed"],
+      ["redirect cancelled", "Redirect not followed"],
+      ["Request cancelled by user", "Cancelled"],
+      ["Request timed out after 2.5s", "Request timed out after 2.5s"],
+      ["Request timed out after 2.5s at s3cr3t", "Request timed out"],
+      ["socket timeout", "Request timed out"],
+      ["The operation was aborted", "Request timed out"],
+      ["URL is required", "Request configuration invalid"],
+      ["Failed to build request: s3cr3t", "Request configuration invalid"],
+      ["s3cr3t is not a requestable URL", "Request configuration invalid"],
+      ["Error: Bearer s3cr3t", "Node execution failed"],
+    ]
+    for (const [input, expected] of cases) expect(safeErrorClass(input), input).toBe(expected)
   })
 })

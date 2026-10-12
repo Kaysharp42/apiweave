@@ -767,10 +767,15 @@ const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
 
 const RETRY_VERDICT = /^((?:Condition not met|Failed) after \d+ attempts)(?:: ([\s\S]*))?$/
 
-function safeErrorClass(error: string): string {
+export function safeErrorClass(error: string): string {
   // A retrying node's verdict carries only its attempt count; its cause is classed on its own.
   const retry = RETRY_VERDICT.exec(error)
   if (retry) return retry[2] === undefined ? retry[1]! : `${retry[1]}: ${safeErrorClass(retry[2])}`
+  return runnerDiagnosis(error) ?? genericErrorClass(error)
+}
+
+/** The runner's own messages that carry no input values, as they may be stored; undefined for any other error. */
+function runnerDiagnosis(error: string): string | undefined {
   // The status a retry gave up on.
   if (/^HTTP \d{3}$/.test(error)) return error
   // The runner's own network diagnosis names only the host, the system error
@@ -789,6 +794,11 @@ function safeErrorClass(error: string): string {
   if (unwrapped.startsWith(RERUN_REFUSED)) return unwrapped
   // A responseSchemas verdict names only the status key; the violations are in the result's assertions.
   if (/^Response does not match the schema for status (?:[1-5](?:\d\d|XX)|default)$/.test(error)) return error
+  return undefined
+}
+
+/** Any other error, reduced to a class that cannot carry what the request sent or received. */
+function genericErrorClass(error: string): string {
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"
