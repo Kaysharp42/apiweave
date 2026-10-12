@@ -290,6 +290,11 @@ describe("WorkflowExecutor — placeholders in JSON bodies", () => {
     )
     expect(body).toBe(`<user name="${awkward}"/>`)
   })
+
+  it("escapes an untyped body with no Content-Type, since it is sent as JSON", async () => {
+    const body = await sentBody({ body: '{"name": "{{variables.name}}"}' }, { name: awkward })
+    expect(JSON.parse(body)).toEqual({ name: awkward })
+  })
 })
 
 describe("WorkflowExecutor — GraphQL bodies", () => {
