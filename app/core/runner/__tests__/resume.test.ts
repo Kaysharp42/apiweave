@@ -220,6 +220,27 @@ describe("rerun failed branches", () => {
     expect(paths()).toEqual(["/b", "/c//a"])
     expect(rerun.results.map((result) => result.nodeId).sort()).toEqual(["b", "c", "merge"])
   })
+
+  it("resolves an entry's {{prev}} to its own predecessor, not the seeded node that finished last", async () => {
+    // The wait makes a2 finish after b1 in the source run, so it is the latest seeded result.
+    const nodes = [
+      node("start", "start"),
+      http("a1", "/a1"), node("wait", "delay", { duration: 50 }), http("a2", "/a2"),
+      http("b1", "/b1"), http("b2", "/b2/{{prev.body.path}}"),
+    ]
+    const edges = [edge("start", "a1"), edge("a1", "wait"), edge("wait", "a2"), edge("start", "b1"), edge("b1", "b2")]
+    const workflowId = workflows.create({ workspaceId, name: "branches", nodes, edges }).workflowId
+    failing.add("/b2//b1")
+    const source = await run(workflowId)
+    expect(source.failedNodes).toEqual(["b2"])
+
+    failing.clear()
+    api.received.length = 0
+    const rerun = await run(workflowId, { fromRunId: source.runId })
+
+    expect(rerun.status).toBe("completed")
+    expect(paths()).toEqual(["/b2//b1"])
+  })
 })
 
 describe("resume planning", () => {

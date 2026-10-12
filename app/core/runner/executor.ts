@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, Response as UndiciResponse, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
@@ -410,6 +411,14 @@ export class WorkflowExecutor {
   private readonly seededNodeIds = new Set<string>()
   /** Source-run variables that were stored masked, so were not seeded. */
   private readonly maskedSeedVariables = new Set<string>()
+  /** On a rerun, the nodes it starts at. */
+  private resumeEntryIds: ReadonlySet<string> = new Set()
+  /**
+   * `{{prev}}` for the node executing in this async context: a rerun entry's
+   * seeded predecessor (`null` when it has none, see `seededPrev`); `undefined`
+   * for every other node, which reads the latest result.
+   */
+  private readonly entryPrev = new AsyncLocalStorage<readonly [string, NodeResult] | null | undefined>()
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
@@ -477,6 +486,7 @@ export class WorkflowExecutor {
       }
       entryNodeIds = [startNode.nodeId]
     }
+    this.resumeEntryIds = new Set(options.resume ? entryNodeIds : [])
 
     if (options.cancelSignal?.aborted) {
       return this.buildOutput(caseName, startedAt, seed, "failed")
@@ -541,6 +551,18 @@ export class WorkflowExecutor {
     for (const id of this.seededNodeIds) {
       if (nodes.get(id)?.type === "merge") this.branchResults.set(id, this.mergeBranchResults(id, edges))
     }
+  }
+
+  /**
+   * The result a rerun entry's `{{prev}}` reads. In a normal run a node starts
+   * as its first predecessor lands, so the latest result is that
+   * predecessor's. An entry starts with every seeded result laid down in the
+   * source run's completion order, where the latest may be on another branch:
+   * it reads instead its predecessor that completed first in the source run.
+   */
+  private seededPrev(nodeId: string, edges: readonly WorkflowEdge[]): readonly [string, NodeResult] | null {
+    const predecessors = new Set(edges.filter((e) => e.target === nodeId).map((e) => e.source))
+    return [...this.results.entries()].find(([id]) => predecessors.has(id)) ?? null
   }
 
   // -------------------- Node execution --------------------
@@ -660,15 +682,19 @@ export class WorkflowExecutor {
       }
     }
 
+    // Run every node in its own `entryPrev` context, so one an entry's SSE
+    // consumer reaches does not inherit the entry's.
+    const prev = this.resumeEntryIds.has(nodeId) ? this.seededPrev(nodeId, edges) : undefined
+
     // SSE has two phases. The Ready path continues after its handshake; its
     // Complete path is scheduled by the background consumer when it closes.
     if (node.type === "sse") {
-      const ready = await this.startSseListener(node, nodes, edges, cancelSignal)
+      const ready = await this.entryPrev.run(prev, () => this.startSseListener(node, nodes, edges, cancelSignal))
       if (!ready) return
     // Execute node (skip start)
     } else if (node.type !== "start") {
       try {
-        const nodeExecResult = await this.executeNode(node, edges, cancelSignal)
+        const nodeExecResult = await this.entryPrev.run(prev, () => this.executeNode(node, edges, cancelSignal))
         if (nodeExecResult !== null && nodeExecResult.shouldContinue === false) {
           return
         }
@@ -2208,7 +2234,8 @@ export class WorkflowExecutor {
           return entry ? this.readResult(entry[0], entry[1], pathAfterIndex.split("."), match) : match
         }
 
-        const last = [...this.results.entries()].pop()
+        const entryPrev = this.entryPrev.getStore()
+        const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
         return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
       }
 
