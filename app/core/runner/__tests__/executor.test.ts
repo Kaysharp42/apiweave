@@ -1315,6 +1315,18 @@ describe("WorkflowExecutor", () => {
       expect((response["body"] as string).length).toBe(1024 * 1024)
     })
 
+    it("does not report a compressed Content-Length as the size of a truncated body", async () => {
+      const { gzipSync } = await import("node:zlib")
+      const response = await fetchOnce((res) => {
+        res.setHeader("Content-Type", "text/plain")
+        res.setHeader("Content-Encoding", "gzip")
+        res.end(gzipSync("a".repeat(2 * 1024 * 1024)))
+      })
+      expect(response["truncated"]).toBe(true)
+      expect((response["body"] as string).length).toBe(1024 * 1024)
+      expect(response["responseSizeBytes"]).toBeUndefined()
+    })
+
     it("stores a binary body as base64 instead of mangled UTF-8", async () => {
       const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0x00])
       const response = await fetchOnce((res) => {

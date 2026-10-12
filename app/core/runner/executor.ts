@@ -307,7 +307,7 @@ export interface NodeResult {
     readonly truncated?: boolean
     /** The body is not UTF-8 text and is stored base64-encoded. */
     readonly bodyEncoding?: "base64"
-    /** Full body size, when known (always, unless truncated without a Content-Length). */
+    /** Full body size, when known (always, unless truncated without an unencoded Content-Length). */
     readonly responseSizeBytes?: number
   }
   readonly mergedByOther?: boolean
@@ -1117,7 +1117,10 @@ export class WorkflowExecutor {
       const statusCode = response.status
       const duration = Date.now() - startTime
       const responseText = decodeBody(bytes, response.headers.get("content-type") ?? "", truncated)
-      const declaredSize = Number(response.headers.get("content-length") ?? "")
+      // fetch decodes gzip/br/deflate, but Content-Length counts the encoded
+      // bytes, so it is only the body's size when nothing was decoded.
+      const encoding = response.headers.get("content-encoding")
+      const declaredSize = !encoding || encoding === "identity" ? Number(response.headers.get("content-length") ?? "") : Number.NaN
       const responseSizeBytes = !truncated ? bytes.byteLength : Number.isFinite(declaredSize) && declaredSize > 0 ? declaredSize : undefined
 
       let responseBody: unknown
