@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Workflow } from "../types/Workflow";
 
 vi.mock("../utils/apiweaveClient", () => ({
-  authenticatedFetch: vi.fn(),
-  projectsUrl: vi.fn(),
-  workflowsUrl: vi.fn(),
-  default: "http://localhost",
+  apiweave: {
+    workflows: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+    projects: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+  },
 }));
 
 import useSidebarStore from "./SidebarStore";

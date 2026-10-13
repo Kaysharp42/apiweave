@@ -1,36 +1,20 @@
 import { ZodError } from "zod";
 import type { SaveFailureEnvelope } from "../types/SaveFailureEnvelope";
+import type { IpcError } from "./apiweaveClient";
 
 /**
- * The reason a save was refused, read from a non-OK response body. The IPC
- * shim reports failures as `{ detail, code, details }`; a save that only says
- * "failed" costs a debugging session, so every part that names a cause is
- * worth reading — even though a malformed body must not mask the original
- * failure.
+ * The reason a save was refused, read from the IPC error. A save that only
+ * says "failed" costs a debugging session, so every part that names a cause is
+ * worth reading: the message, the contract code, and the zod issues the
+ * handler attached when the request failed input validation.
  */
-export async function readSaveFailureEnvelope(
-  response: Response,
-): Promise<SaveFailureEnvelope> {
-  try {
-    const body = (await response.json()) as {
-      readonly detail?: unknown;
-      readonly code?: unknown;
-      readonly details?: unknown;
-    };
-    const detail =
-      typeof body.detail === "string" && body.detail.length > 0
-        ? body.detail
-        : undefined;
-    const code = typeof body.code === "string" ? body.code : undefined;
-    const envelope: SaveFailureEnvelope = {
-      issues: readableZodIssues(body.details),
-    };
-    if (detail !== undefined) envelope.detail = detail;
-    if (code !== undefined) envelope.code = code;
-    return envelope;
-  } catch {
-    return { issues: [] };
-  }
+export function readSaveFailure(error: IpcError): SaveFailureEnvelope {
+  const envelope: SaveFailureEnvelope = {
+    code: error.code,
+    issues: readableZodIssues(error.details),
+  };
+  if (error.message.length > 0) envelope.detail = error.message;
+  return envelope;
 }
 
 /**

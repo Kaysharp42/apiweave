@@ -5,8 +5,7 @@ import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import { workflowImportOpenapiUrl } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import type { OpenAPIImportProps } from "../types/OpenAPIImportProps";
 import type { PreviewNode } from "../types/PreviewNode";
 import type { PreviewData } from "../types/PreviewData";
@@ -110,31 +109,14 @@ export function OpenAPIImport({
     setIsLoading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", openapiFile);
-
-      const params = new URLSearchParams();
-      if (baseUrl) params.append("base_url", baseUrl);
-      if (selectedTags.length > 0)
-        params.append("tag_filter", selectedTags.join(","));
-      params.append("sanitize", String(sanitize));
-
-      const response = await authenticatedFetch(
-        `${workflowImportOpenapiUrl(workspaceId || "", true)}?${params}`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = (await response.json()) as Record<string, unknown>;
-        throw new Error(
-          (errorData.detail as string) || "Failed to preview OpenAPI file",
-        );
-      }
-
-      const data = (await response.json()) as PreviewData;
+      const data = (await apiweave.workflows.importOpenapi({
+        workspaceId: workspaceId || "",
+        spec: await openapiFile.text(),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(selectedTags.length > 0 ? { tagFilter: selectedTags } : {}),
+        sanitize,
+        dryRun: true,
+      })) as PreviewData;
       setPreview(data);
       setPreviewParamsKey(getPreviewParamsKey(openapiFile));
     } catch (err: unknown) {

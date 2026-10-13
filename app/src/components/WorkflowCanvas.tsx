@@ -109,9 +109,9 @@ import { CanvasCornerGutter, MiniMapSize } from "../constants/CanvasChrome";
 import { shouldBlockDestructiveAutosave } from "../utils/workflowSaveSafety";
 import {
   describeThrownSaveError,
-  readSaveFailureEnvelope,
+  readSaveFailure,
 } from "../utils/workflowSaveFailure";
-import { workflowDetailUrl } from "../utils/apiweaveClient";
+import { apiweave, IpcError } from "../utils/apiweaveClient";
 import { autoLayoutRootNodes } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
@@ -129,7 +129,6 @@ import type { CanvasEdge } from "../types/CanvasEdge";
 import type { WorkflowCanvasEdgeData } from "../types/WorkflowCanvasEdgeData";
 import type { WorkflowCanvasProps } from "../types/WorkflowCanvasProps";
 import type { WorkflowJsonData } from "../types/WorkflowJsonData";
-import { authenticatedFetch } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
 import { snapTransform } from "../utils/runCamera";
 import useEnvironmentStore, {
@@ -636,11 +635,9 @@ export function WorkflowCanvas({
       const hydrationAtRequest = hydrationVersionRef.current;
 
       try {
-        const response = await authenticatedFetch(
-          workflowDetailUrl(scope.workspaceId, workflowId),
+        const reloadedWorkflow = WorkflowSchema.parse(
+          await apiweave.workflows.get(scope.workspaceId, workflowId),
         );
-        if (!response.ok) return;
-        const reloadedWorkflow = WorkflowSchema.parse(await response.json());
         if (
           options?.onlyIfPristine &&
           !canApplyBackgroundRefresh({
@@ -1205,12 +1202,12 @@ export function WorkflowCanvas({
           return;
         }
 
-        const response = await authenticatedFetch(
-          workflowDetailUrl(scope.workspaceId, workflowId ?? ""),
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
+        let savedWorkflow: Workflow;
+        try {
+          savedWorkflow = WorkflowSchema.parse(
+            await apiweave.workflows.update(
+              scope.workspaceId,
+              workflowId ?? "",
               overwrite
                 ? workflowPayload
                 : {
@@ -1218,31 +1215,14 @@ export function WorkflowCanvas({
                     expectedRevision: baseRevisionRef.current,
                   },
             ),
-          },
-        );
-
-        if (response.ok) {
-          const savedWorkflow = WorkflowSchema.parse(await response.json());
-          baseRevisionRef.current = savedWorkflow.rev;
-          hydratedBaselineRef.current = { nodeCount, edgeCount };
-          // This echo is our own graph coming back. Claim it before the tab
-          // store hands it to `useHydration`, or the canvas re-hydrates from
-          // its own save and drops the run it is displaying.
-          noteSavedWorkflow(savedWorkflow);
-          // Workflow first, then clean: markClean drops a restored draft, and
-          // hydration must never see the draft gone while the tab still
-          // holds the pre-save workflow, or it re-hydrates from that.
-          useTabStore
-            .getState()
-            .updateTabWorkflow(workflowId ?? "", savedWorkflow);
-          useTabStore.getState().markClean(workflowId ?? "");
-        } else {
-          // The server says WHY it refused (a missing environment, a stale
-          // workspace, a rejected node). Both the toast and the console log
-          // must name that reason, or nobody — user or debugger — can tell
+          );
+        } catch (error) {
+          if (!(error instanceof IpcError)) throw error;
+          // The main process says WHY it refused (a missing environment, a
+          // stale workspace, a rejected node). Both the toast and the console
+          // log must name that reason, or nobody — user or debugger — can tell
           // what to fix.
-          const { detail, code, issues } =
-            await readSaveFailureEnvelope(response);
+          const { detail, code, issues } = readSaveFailure(error);
           if (code === "conflict") {
             // Someone else's edit landed first. Neither side is thrown away
             // on our own: the server keeps theirs, the canvas keeps ours
@@ -1271,7 +1251,6 @@ export function WorkflowCanvas({
             (code ? `the request was rejected (${code})` : undefined);
           canvasLog.error("workflow-save-failed", {
             workflowId,
-            status: response.status,
             code: code ?? null,
             detail: detail ?? null,
             issues,
@@ -1282,10 +1261,24 @@ export function WorkflowCanvas({
               : "Failed to save workflow — your changes are not saved",
             { id: `workflow-save-error-${workflowId}` },
           );
+          return;
         }
+        baseRevisionRef.current = savedWorkflow.rev;
+        hydratedBaselineRef.current = { nodeCount, edgeCount };
+        // This echo is our own graph coming back. Claim it before the tab
+        // store hands it to `useHydration`, or the canvas re-hydrates from
+        // its own save and drops the run it is displaying.
+        noteSavedWorkflow(savedWorkflow);
+        // Workflow first, then clean: markClean drops a restored draft, and
+        // hydration must never see the draft gone while the tab still
+        // holds the pre-save workflow, or it re-hydrates from that.
+        useTabStore
+          .getState()
+          .updateTabWorkflow(workflowId ?? "", savedWorkflow);
+        useTabStore.getState().markClean(workflowId ?? "");
       } catch (error) {
         // The save never reached the server: the canvas state failed local
-        // validation, or the fetch itself threw. Log the full error for the
+        // validation, or the IPC call itself threw. Log the full error for the
         // debugging session and put its most specific sentence in the toast.
         const cause = describeThrownSaveError(error);
         canvasLog.error("workflow-save-failed", {
@@ -1434,60 +1427,37 @@ export function WorkflowCanvas({
           edges: parsed.edges,
           variables: parsed.variables ?? workflowVariables,
         });
-        const response = await authenticatedFetch(
-          workflowDetailUrl(scope.workspaceId, workflowId),
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              nodes: editedWorkflow.nodes,
-              edges: editedWorkflow.edges,
-              variables: editedWorkflow.variables,
-              expectedRevision: workflow.rev,
-            }),
-          },
+        const savedWorkflow = WorkflowSchema.parse(
+          await apiweave.workflows.update(scope.workspaceId, workflowId, {
+            nodes: editedWorkflow.nodes,
+            edges: editedWorkflow.edges,
+            variables: editedWorkflow.variables,
+            expectedRevision: workflow.rev,
+          }),
         );
-        if (response.ok) {
-          const savedWorkflow = WorkflowSchema.parse(await response.json());
-          const canvasState = workflowToCanvas(savedWorkflow);
-          hydratedBaselineRef.current = {
-            nodeCount: canvasState.nodes.length,
-            edgeCount: canvasState.edges.length,
-          };
-          noteSavedWorkflow(savedWorkflow);
-          showWorkflow(canvasState, savedWorkflow);
+        const canvasState = workflowToCanvas(savedWorkflow);
+        hydratedBaselineRef.current = {
+          nodeCount: canvasState.nodes.length,
+          edgeCount: canvasState.edges.length,
+        };
+        noteSavedWorkflow(savedWorkflow);
+        showWorkflow(canvasState, savedWorkflow);
 
-          setShowJsonEditor(false);
-          toast.success("Workflow updated from JSON editor");
-        } else {
-          try {
-            const errBody = (await response.json()) as {
-              code?: string;
-              detail?: string | Array<{ loc?: string[]; msg?: string }>;
-            };
-            if (errBody.code === "conflict") {
-              toast.error(
-                "This workflow was changed elsewhere since the editor opened — reopen it to edit the latest version",
-              );
-            } else if (errBody.detail && Array.isArray(errBody.detail)) {
-              const messages = errBody.detail.map((d) => {
-                const loc = d.loc ? d.loc.slice(1).join(" → ") : "";
-                return `${loc}: ${d.msg}`;
-              });
-              toast.error(messages.join("\n"));
-            } else {
-              toast.error(
-                (errBody.detail as string) ||
-                  `Save failed (${response.status})`,
-              );
-            }
-          } catch {
-            toast.error(`Save failed with status ${response.status}`);
-          }
-        }
+        setShowJsonEditor(false);
+        toast.success("Workflow updated from JSON editor");
       } catch (err) {
         canvasLog.error("JSON editor save error:", err);
-        toast.error("Network error -- see console");
+        if (err instanceof IpcError && err.code === "conflict") {
+          toast.error(
+            "This workflow was changed elsewhere since the editor opened — reopen it to edit the latest version",
+          );
+          return;
+        }
+        const failure =
+          err instanceof IpcError ? readSaveFailure(err) : undefined;
+        const cause =
+          failure?.issues[0] ?? failure?.detail ?? describeThrownSaveError(err);
+        toast.error(cause ? `Save failed — ${cause}` : "Save failed -- see console");
       }
     },
     [

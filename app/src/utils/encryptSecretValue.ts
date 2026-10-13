@@ -28,7 +28,7 @@ function loadSodium(): Promise<Sodium> {
 export async function encryptSecretValue(
   plaintext: string,
   publicKeyInfo: SecretPublicKey,
-): Promise<string> {
+): Promise<Uint8Array> {
   const sodium = await loadSodium();
 
   const publicKeyBytes = sodium.from_base64(
@@ -41,5 +41,5 @@ export async function encryptSecretValue(
 
   plaintextBytes.fill(0);
 
-  return sodium.to_base64(encrypted);
+  return encrypted;
 }

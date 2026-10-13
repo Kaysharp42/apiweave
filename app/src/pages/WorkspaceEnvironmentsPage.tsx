@@ -13,7 +13,7 @@ import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog
 import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
 import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
 import { EnvironmentForm } from "../components/organisms/EnvironmentForm";
-import { apiweave, authenticatedJson } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { environmentMoveWarnings } from "../utils/workspaceMoveWarnings";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import useEnvironmentStore from "../stores/EnvironmentStore";
@@ -159,14 +159,10 @@ export default function WorkspaceEnvironmentsPage() {
     if (!workspaceId) return;
     setSaving(true);
     try {
-      await authenticatedJson<ScopedEnvironment>(
-        `/api/workspaces/${workspaceId}/environments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(environmentWritePayload(data)),
-        },
-      );
+      await apiweave.environments.create({
+        workspaceId,
+        ...environmentWritePayload(data),
+      });
       setViewMode("list");
       await refreshEnvironments();
     } catch (err) {
@@ -182,13 +178,10 @@ export default function WorkspaceEnvironmentsPage() {
     if (!selectedEnv || !workspaceId) return;
     setSaving(true);
     try {
-      await authenticatedJson<ScopedEnvironment>(
-        `/api/workspaces/${workspaceId}/environments/${selectedEnv.environmentId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(environmentWritePayload(data)),
-        },
+      await apiweave.environments.update(
+        workspaceId,
+        selectedEnv.environmentId,
+        environmentWritePayload(data),
       );
       setViewMode("list");
       setSelectedEnv(null);
@@ -209,10 +202,7 @@ export default function WorkspaceEnvironmentsPage() {
       return;
     }
     try {
-      await authenticatedJson(
-        `/api/workspaces/${workspaceId}/environments/${env.environmentId}`,
-        { method: "DELETE" },
-      );
+      await apiweave.environments.delete(workspaceId, env.environmentId);
       if (selectedEnv?.environmentId === env.environmentId) {
         setSelectedEnv(null);
         setViewMode("list");

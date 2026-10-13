@@ -189,6 +189,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   results only when you open it. Storing each node's result no longer rewrites
   every earlier result of the run, so a run with many nodes no longer gets
   slower with every node that completes.
+- **Importing a file into a project works.** From a project's import dialog, a
+  workflow bundle always failed validation, and an OpenAPI or HAR file failed
+  to create its workflow. Both now create the workflow in the project. The HAR
+  preview also now honours the chosen import mode and the **Sanitize** option,
+  which it used to ignore.
 
 ### Added
 

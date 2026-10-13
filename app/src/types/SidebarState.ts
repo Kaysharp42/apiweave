@@ -22,7 +22,7 @@ export interface SidebarState {
     limit?: number,
     includeAttached?: boolean,
   ) => Promise<void>;
-  fetchAllWorkflows: (skip?: number, append?: boolean) => Promise<void>;
+  fetchAllWorkflows: () => Promise<void>;
   fetchCollections: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
   setIsRefreshing: (v: boolean) => void;

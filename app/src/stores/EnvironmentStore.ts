@@ -1,7 +1,6 @@
 import { create } from "zustand";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import * as scopedApi from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 
 interface EnvironmentState {
   environments: ScopedEnvironment[];
@@ -45,14 +44,6 @@ function normalizeScopedEnvironment(
   return env;
 }
 
-/** Accept both the bare-array and the enveloped `{ environments, total }` payload. */
-function parseEnvironmentList(
-  payload: ScopedEnvironment[] | { environments?: ScopedEnvironment[] },
-): ScopedEnvironment[] {
-  const rawList = Array.isArray(payload) ? payload : (payload.environments ?? []);
-  return rawList.map(normalizeScopedEnvironment);
-}
-
 const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
   environments: [],
   loadedWorkspaceId: null,
@@ -79,21 +70,12 @@ const useEnvironmentStore = create<EnvironmentState>()((set, _get) => ({
     if (!workspaceId) return;
 
     try {
-      const response = await authenticatedFetch(
-        scopedApi.environmentsUrl(workspaceId),
-      );
+      const { items } = await apiweave.environments.list(workspaceId);
       // Sidebar, MainLayout and the environments page all drive this, so two
       // loads can be in flight at once. A response for a workspace we have since
-      // switched away from must not install itself over the current one —
-      // checked before the body is read and again after it is parsed.
-      if (_get().loadedWorkspaceId !== workspaceId || !response.ok) return;
-      const environments = parseEnvironmentList(
-        (await response.json()) as
-          | ScopedEnvironment[]
-          | { environments?: ScopedEnvironment[] },
-      );
+      // switched away from must not install itself over the current one.
       if (_get().loadedWorkspaceId !== workspaceId) return;
-      set({ environments });
+      set({ environments: items.map(normalizeScopedEnvironment) });
     } catch {
       /* silent — the list stays empty, which is the safe reading */
     } finally {

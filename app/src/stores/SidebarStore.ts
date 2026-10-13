@@ -2,21 +2,10 @@ import { create } from "zustand";
 import type { Workflow } from "../types/Workflow";
 import type { Project } from "../types/Project";
 import type { PaginationState } from "../types/PaginationState";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
-import { projectsUrl, workflowsUrl } from "../utils/apiweaveClient";
 
 const sidebarLog = getLogger("SidebarStore");
-
-interface PaginatedWorkflowResponse {
-  workflows: Workflow[];
-  total: number;
-}
-
-interface ProjectListResponse {
-  projects: Project[];
-  total: number;
-}
 
 interface SidebarState {
   workflows: Workflow[];
@@ -52,7 +41,7 @@ interface SidebarState {
     limit?: number,
     includeAttached?: boolean,
   ) => Promise<void>;
-  fetchAllWorkflows: (skip?: number, append?: boolean) => Promise<void>;
+  fetchAllWorkflows: () => Promise<void>;
   fetchCollections: () => Promise<void>;
   fetchProjects: () => Promise<void>;
   refreshAll: (selectedNav: string) => Promise<void>;
@@ -162,31 +151,22 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     }
 
     try {
-      const response = await authenticatedFetch(
-        workflowsUrl(activeWorkspaceId, { skip, limit, includeAttached }),
+      const data = await apiweave.workflows.list(
+        activeWorkspaceId,
+        includeAttached,
       );
-      if (response.ok) {
-        const data: PaginatedWorkflowResponse = await response.json();
-        const prev = get().workflows;
-        const newWorkflows = append
-          ? [...prev, ...data.workflows]
-          : data.workflows;
-        set({
-          workflows: newWorkflows,
-          pagination: {
-            skip,
-            limit,
-            total: data.total,
-            hasMore:
-              data.workflows.length === limit && skip + limit < data.total,
-          },
-          isLoadingMore: false,
-          isRefreshing: false,
-        });
-      } else {
-        sidebarLog.error("workflows fetch returned non-OK status", response.status);
-        set({ isLoadingMore: false, isRefreshing: false });
-      }
+      const prev = get().workflows;
+      set({
+        workflows: append ? [...prev, ...data.items] : [...data.items],
+        pagination: {
+          skip,
+          limit,
+          total: data.total,
+          hasMore: data.items.length === limit && skip + limit < data.total,
+        },
+        isLoadingMore: false,
+        isRefreshing: false,
+      });
     } catch (err) {
       sidebarLog.error("error fetching workflows", err);
       set({ isLoadingMore: false, isRefreshing: false });
@@ -200,14 +180,8 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       return;
     }
     try {
-      const response = await authenticatedFetch(projectsUrl(activeWorkspaceId));
-      if (response.ok) {
-        const data = (await response.json()) as {
-          projects: Project[];
-          total: number;
-        };
-        set({ collections: data.projects, isRefreshing: false });
-      }
+      const data = await apiweave.projects.list(activeWorkspaceId);
+      set({ collections: [...data.items], isRefreshing: false });
     } catch (err) {
       sidebarLog.error("error fetching collections", err);
       set({ isRefreshing: false });
@@ -218,11 +192,8 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
     const { activeWorkspaceId } = get();
     if (!activeWorkspaceId) return;
     try {
-      const response = await authenticatedFetch(projectsUrl(activeWorkspaceId));
-      if (response.ok) {
-        const data: ProjectListResponse = await response.json();
-        set({ projects: data.projects, isRefreshing: false });
-      }
+      const data = await apiweave.projects.list(activeWorkspaceId);
+      set({ projects: [...data.items], isRefreshing: false });
     } catch (err) {
       sidebarLog.error("error fetching projects", err);
       set({ isRefreshing: false });
@@ -236,32 +207,21 @@ const useSidebarStore = create<SidebarState>()((set, get) => ({
       await fetchWorkflows(0);
     } else if (selectedNav === "projects") {
       await fetchProjects();
-      await fetchAllWorkflows(0);
+      await fetchAllWorkflows();
     } else {
       set({ isRefreshing: false });
     }
   },
 
-  fetchAllWorkflows: async (skip = 0, append = false) => {
+  fetchAllWorkflows: async () => {
     const { activeWorkspaceId } = get();
     if (!activeWorkspaceId) {
       set({ isRefreshing: false });
       return;
     }
     try {
-      const response = await authenticatedFetch(
-        workflowsUrl(activeWorkspaceId, { skip, limit: 100, includeAttached: true }),
-      );
-      if (response.ok) {
-        const data: PaginatedWorkflowResponse = await response.json();
-        const prev = get().allWorkflows;
-        const next = append
-          ? [...prev, ...data.workflows]
-          : data.workflows;
-        set({ allWorkflows: next, isRefreshing: false });
-      } else {
-        set({ isRefreshing: false });
-      }
+      const data = await apiweave.workflows.list(activeWorkspaceId, true);
+      set({ allWorkflows: [...data.items], isRefreshing: false });
     } catch (err) {
       sidebarLog.error("error fetching workflows", err);
       set({ isRefreshing: false });

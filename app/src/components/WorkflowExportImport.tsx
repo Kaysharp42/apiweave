@@ -13,13 +13,8 @@ import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { Modal } from "./molecules/Modal";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { apiweave, authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave, IpcError } from "../utils/apiweaveClient";
 import { getLogger } from "../utils/logger";
-import {
-  workflowExportUrl,
-  workflowImportUrl,
-  workflowImportDryRunUrl,
-} from "../utils/apiweaveClient";
 import type { WorkflowExportImportTab } from "../types/WorkflowExportImportTab";
 import type { WorkflowExportImportProps } from "../types/WorkflowExportImportProps";
 import type { DryRunResult } from "../types/DryRunResult";
@@ -29,12 +24,10 @@ const exportImportLog = getLogger("WorkflowExportImport");
 
 // ponytail: surfaces zod `details` from the IPC validation error so the user
 // sees WHICH field failed, not just "request validation failed".
-function formatImportError(
-  errorData: { readonly detail?: string; readonly details?: unknown },
-  fallback: string,
-): string {
-  const base = (errorData.detail ?? "").trim() || fallback;
-  const details = errorData.details;
+function formatImportError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  const base = error.message.trim() || fallback;
+  const details = error instanceof IpcError ? error.details : undefined;
   if (!Array.isArray(details) || details.length === 0) return base;
   const lines: string[] = [];
   for (const issue of details) {
@@ -109,21 +102,11 @@ export function WorkflowExportImport({
 
     try {
       const targetWorkspaceId = await resolveWorkspaceId();
-      const response = await authenticatedFetch(
-        workflowExportUrl(targetWorkspaceId, workflowId, includeEnvironment),
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
+      const bundle = await apiweave.workflows.export(
+        targetWorkspaceId,
+        workflowId,
+        includeEnvironment,
       );
-
-      if (!response.ok) {
-        throw new Error("Export failed");
-      }
-
-      const bundle = await response.json();
 
       const blob = new Blob([JSON.stringify(bundle, null, 2)], {
         type: "application/json",
@@ -179,32 +162,14 @@ export function WorkflowExportImport({
     }
 
     try {
-      const bundle = JSON.parse(importJson);
+      const bundle: unknown = JSON.parse(importJson);
       const targetWorkspaceId = await resolveWorkspaceId();
-
-      const response = await authenticatedFetch(
-        workflowImportDryRunUrl(targetWorkspaceId),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(bundle),
-        },
+      setDryRunResult(
+        await apiweave.workflows.dryRun(targetWorkspaceId, bundle),
       );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(formatImportError(errorData, "Dry run failed"));
-      }
-
-      const result = await response.json();
-      setDryRunResult(result);
     } catch (err: unknown) {
       exportImportLog.error("Dry run error:", err);
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred",
-      );
+      setError(formatImportError(err, "Dry run failed"));
     }
   };
 
@@ -220,30 +185,15 @@ export function WorkflowExportImport({
     }
 
     try {
-      const bundle = JSON.parse(importJson);
+      const bundle: unknown = JSON.parse(importJson);
       const targetWorkspaceId = await resolveWorkspaceId();
 
-      const response = await authenticatedFetch(
-        workflowImportUrl(targetWorkspaceId),
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            bundle,
-            createMissingEnvironments: createMissingEnvs,
-            sanitize: true,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(formatImportError(errorData, "Import failed"));
-      }
-
-      const result = await response.json();
+      const result = await apiweave.workflows.import({
+        workspaceId: targetWorkspaceId,
+        bundle,
+        createMissingEnvironments: createMissingEnvs,
+        sanitize: true,
+      });
       setImportResult(result);
 
       if (onImportSuccess) {
@@ -253,9 +203,7 @@ export function WorkflowExportImport({
       }
     } catch (err: unknown) {
       exportImportLog.error("Import error:", err);
-      setError(
-        err instanceof Error ? err.message : "An unknown error occurred",
-      );
+      setError(formatImportError(err, "Import failed"));
     } finally {
       setImporting(false);
     }

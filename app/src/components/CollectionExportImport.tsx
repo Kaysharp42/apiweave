@@ -25,14 +25,13 @@ import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
-import {
-  projectExportUrl,
-  projectImportUrl,
-  projectsUrl,
-  workflowsUrl,
-} from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import type { Workflow } from "../types/Workflow";
+import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
+
+const errorText = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 type ProjectWithWorkflowCount = Project;
 
@@ -40,25 +39,6 @@ interface MessageState {
   type: "success" | "warning" | "error";
   title: string;
   text: string;
-}
-
-interface ValidationError {
-  loc?: string[];
-  msg: string;
-}
-
-interface ValidationStats {
-  workflows?: number;
-  environments?: number;
-  secretReferences?: number;
-  missingSecrets?: number;
-}
-
-interface ValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings?: string[];
-  stats?: ValidationStats;
 }
 
 interface ImportResult {
@@ -92,37 +72,6 @@ type TabId =
   | "import-openapi"
   | "import-curl";
 
-type ImportModeType = "linear" | "parallel";
-
-interface Position {
-  x: number;
-  y: number;
-}
-
-interface ImportedWorkflowNode {
-  nodeId: string;
-  type: string;
-  label: string;
-  data: Record<string, unknown>;
-  position: Position;
-}
-
-interface ImportedWorkflowEdge {
-  edgeId: string;
-  source: string;
-  target: string;
-}
-
-interface CreateWorkflowPayload {
-  name: string;
-  nodes: ImportedWorkflowNode[];
-  edges: ImportedWorkflowEdge[];
-  nodeTemplates: Record<string, unknown>[];
-  collectionId: string;
-  variables: Record<string, unknown>;
-  tags: string[];
-}
-
 export function CollectionExportImport({
   projectId,
   projectName,
@@ -137,9 +86,8 @@ export function CollectionExportImport({
   const [message, setMessage] = useState<MessageState | null>(null);
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [pastedJson, setPastedJson] = useState<string>("");
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [validation, setValidation] = useState<ProjectImportDryRunResult | null>(null);
   const [includeEnvironments, setIncludeEnvironments] = useState<boolean>(true);
-  const [importMode] = useState<ImportModeType>("linear");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const [createNewProject, setCreateNewProject] = useState<boolean>(true);
@@ -155,30 +103,6 @@ export function CollectionExportImport({
   const [sanitize, setSanitize] = useState<boolean>(true);
 
   const activeTab = selectedTab ?? mode;
-
-  const formatErrorMessage = (error: unknown): string => {
-    if (typeof error === "string") {
-      return error;
-    }
-    if (Array.isArray(error)) {
-      return error
-        .map((err: unknown) => {
-          if (typeof err === "object" && err !== null && "msg" in err) {
-            const errObj = err as ValidationError;
-            const location = errObj.loc ? errObj.loc.join(" -> ") : "";
-            return location ? `${location}: ${errObj.msg}` : errObj.msg;
-          }
-          return JSON.stringify(err);
-        })
-        .join("; ");
-    }
-    if (typeof error === "object" && error !== null && "msg" in error) {
-      const errObj = error as ValidationError;
-      const location = errObj.loc ? errObj.loc.join(" -> ") : "";
-      return location ? `${location}: ${errObj.msg}` : errObj.msg;
-    }
-    return "An unknown error occurred";
-  };
 
   // Refresh the shared project list whenever the modal opens, via the store's
   // activeWorkspaceId-scoped fetch — the same path that loads the sidebar.
@@ -202,43 +126,33 @@ export function CollectionExportImport({
     setMessage(null);
 
     try {
-      const response = await authenticatedFetch(
-        projectExportUrl(workspaceId, projectId, includeEnvironments),
+      const bundle = await apiweave.projects.export(
+        workspaceId,
+        projectId,
+        includeEnvironments,
       );
 
-      if (response.ok) {
-        const bundle: Record<string, unknown> = await response.json();
+      const dataStr = JSON.stringify(bundle, null, 2);
+      const dataBlob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
-        const dataStr = JSON.stringify(bundle, null, 2);
-        const dataBlob = new Blob([dataStr], { type: "application/json" });
-        const url = URL.createObjectURL(dataBlob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-
-        setMessage({
-          type: "success",
-          title: "Export Successful",
-          text: `Project "${projectName}" exported successfully.`,
-        });
-      } else {
-        const error: { detail?: unknown } = await response.json();
-        setMessage({
-          type: "error",
-          title: "Export Failed",
-          text: formatErrorMessage(error.detail) || "Failed to export project",
-        });
-      }
+      setMessage({
+        type: "success",
+        title: "Export Successful",
+        text: `Project "${projectName}" exported successfully.`,
+      });
     } catch (error: unknown) {
-      const err = error as Error;
       setMessage({
         type: "error",
-        title: "Export Error",
-        text: err.message,
+        title: "Export Failed",
+        text: errorText(error, "Failed to export project"),
       });
     } finally {
       setIsLoading(false);
@@ -273,43 +187,23 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await authenticatedFetch(
-        projectImportUrl(workspaceId, true),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bundle: bundleData,
-            createNewProject,
-            targetProjectId: selectedTargetProject,
-          }),
-        },
+      const result: ProjectImportDryRunResult = await apiweave.projects.dryRun(
+        workspaceId,
+        bundleData,
       );
-
-      if (response.ok) {
-        const result: ValidationResult = await response.json();
-        setValidation(result);
-        if (!result.valid) {
-          setMessage({
-            type: "error",
-            title: "Validation Failed",
-            text: result.errors.join(", "),
-          });
-        }
-      } else {
-        const error: { detail?: unknown } = await response.json();
+      setValidation(result);
+      if (!result.valid) {
         setMessage({
           type: "error",
           title: "Validation Failed",
-          text: formatErrorMessage(error.detail) || "Failed to validate bundle",
+          text: result.errors.join(", "),
         });
       }
     } catch (error: unknown) {
-      const err = error as Error;
       setMessage({
         type: "error",
-        title: "Parse Error",
-        text: err.message,
+        title: "Validation Failed",
+        text: errorText(error, "Failed to validate bundle"),
       });
     } finally {
       setIsLoading(false);
@@ -344,25 +238,10 @@ export function CollectionExportImport({
         return;
       }
 
-      const validationResponse = await authenticatedFetch(
-        projectImportUrl(workspaceId, true),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ bundle: bundleData }),
-        },
+      const validationResult: ProjectImportDryRunResult = await apiweave.projects.dryRun(
+        workspaceId,
+        bundleData,
       );
-      if (!validationResponse.ok) {
-        const error: { detail?: unknown } = await validationResponse.json();
-        setMessage({
-          type: "error",
-          title: "Validation Failed",
-          text: formatErrorMessage(error.detail) || "Failed to validate bundle",
-        });
-        scrollModalToTop(modalContentRef.current);
-        return;
-      }
-      const validationResult: ValidationResult = await validationResponse.json();
       setValidation(validationResult);
       if (!validationResult.valid) {
         setMessage({
@@ -374,55 +253,40 @@ export function CollectionExportImport({
         return;
       }
 
-      const response = await authenticatedFetch(projectImportUrl(workspaceId), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bundle: bundleData,
-          createNewProject,
-          newProjectName:
-            newProjectName ||
-            (bundleData.project as Record<string, unknown> | undefined)
-              ?.name,
-          targetProjectId: selectedTargetProject,
-          environmentMapping: {},
-        }),
+      const bundleName = (
+        bundleData.project as Record<string, unknown> | undefined
+      )?.name;
+      const projectName =
+        newProjectName.trim() ||
+        (typeof bundleName === "string" ? bundleName.trim() : "");
+      const result = (await apiweave.projects.import(workspaceId, bundleData, {
+        ...(!createNewProject && selectedTargetProject
+          ? { targetProjectId: selectedTargetProject }
+          : {}),
+        ...(createNewProject && projectName ? { projectName } : {}),
+      })) as ImportResult;
+      setMessage({
+        type: "success",
+        title: "Import Successful",
+        text: `Imported ${result.workflowCount} workflow(s) into project.`,
       });
 
-      if (response.ok) {
-        const result: ImportResult = await response.json();
-        setMessage({
-          type: "success",
-          title: "Import Successful",
-          text: `Imported ${result.workflowCount} workflow(s) into project.`,
-        });
+      setUploadedFile(null);
+      setPastedJson("");
+      setValidation(null);
+      setNewProjectName("");
 
-        setUploadedFile(null);
-        setPastedJson("");
-        setValidation(null);
-        setNewProjectName("");
+      useSidebarStore.getState().signalProjectsRefresh();
 
-        useSidebarStore.getState().signalProjectsRefresh();
-
-        setTimeout(() => {
-          onImportSuccess(result.projectId);
-          onClose();
-        }, 2000);
-      } else {
-        const error: { detail?: unknown } = await response.json();
-        setMessage({
-          type: "error",
-          title: "Import Failed",
-          text: formatErrorMessage(error.detail) || "Failed to import project",
-        });
-        scrollModalToTop(modalContentRef.current);
-      }
+      setTimeout(() => {
+        onImportSuccess(result.projectId);
+        onClose();
+      }, 2000);
     } catch (error: unknown) {
-      const err = error as Error;
       setMessage({
         type: "error",
-        title: "Import Error",
-        text: err.message,
+        title: "Import Failed",
+        text: errorText(error, "Failed to import project"),
       });
       scrollModalToTop(modalContentRef.current);
     } finally {
@@ -481,186 +345,109 @@ export function CollectionExportImport({
         detectedType = "har";
       }
 
-      let parseResponse: Response;
-      const formData = new FormData();
-
       if (detectedType === "workflow") {
-        const blob = new Blob([fileContent], { type: "application/json" });
-        formData.append("file", blob, "workflow.json");
-        parseResponse = await authenticatedFetch(
-          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}/import?project_id=${encodeURIComponent(selectedTargetProject)}`,
-          {
-            method: "POST",
-            body: formData,
-          },
+        const imported = await apiweave.workflows.import({
+          workspaceId,
+          bundle: bundleData,
+        });
+        await apiweave.projects.addWorkflow(
+          workspaceId,
+          selectedTargetProject,
+          imported.workflowId,
         );
+        setMessage({
+          type: "success",
+          title: "Import Successful",
+          text: "Workflow imported and assigned to project.",
+        });
 
-        if (parseResponse.ok) {
-          const importResult: { workflowId: string } =
-            await parseResponse.json();
-          const workflowId = importResult.workflowId;
+        setUploadedFile(null);
+        setPastedJson("");
+        setValidation(null);
+        setSelectedTargetProject(null);
 
-          const assignResponse = await authenticatedFetch(
-            `${projectsUrl(workspaceId, selectedTargetProject)}/workflows/${encodeURIComponent(workflowId)}/assign`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            },
-          );
+        useSidebarStore.getState().signalWorkflowsRefresh();
 
-          if (assignResponse.ok) {
-            setMessage({
-              type: "success",
-              title: "Import Successful",
-              text: "Workflow imported and assigned to project.",
-            });
-
-            setUploadedFile(null);
-            setPastedJson("");
-            setValidation(null);
-            setSelectedTargetProject(null);
-
-            useSidebarStore.getState().signalWorkflowsRefresh();
-
-            setTimeout(() => {
-              onClose();
-            }, 2000);
-          } else {
-            setMessage({
-              type: "error",
-              title: "Import Failed",
-              text: "Workflow imported but failed to assign to project",
-            });
-          }
-        } else {
-          const error: { detail?: unknown } = await parseResponse.json();
-          setMessage({
-            type: "error",
-            title: "Import Failed",
-            text:
-              formatErrorMessage(error.detail) || "Failed to import workflow",
-          });
-        }
-        setIsLoading(false);
+        setTimeout(() => {
+          onClose();
+        }, 2000);
         return;
-      } else if (detectedType === "openapi") {
-        const blob = new Blob([fileContent], { type: "application/json" });
-        formData.append("file", blob, "openapi.json");
-        parseResponse = await authenticatedFetch(
-          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}/import/openapi?sanitize=${sanitize}&parse_only=true`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
-      } else {
-        const blob = new Blob([fileContent], { type: "application/json" });
-        formData.append("file", blob, "har.json");
-        parseResponse = await authenticatedFetch(
-          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}/import/har?import_mode=${importMode}&sanitize=${sanitize}&parse_only=true`,
-          {
-            method: "POST",
-            body: formData,
-          },
-        );
       }
 
-      if (parseResponse.ok) {
-        const parseResult: { nodes?: Record<string, unknown>[] } =
-          await parseResponse.json();
-        const nodeTemplates = parseResult.nodes || [];
+      const parseResult = (
+        detectedType === "openapi"
+          ? await apiweave.workflows.importOpenapi({
+              workspaceId,
+              spec: fileContent,
+              sanitize,
+            })
+          : await apiweave.workflows.importHar({
+              workspaceId,
+              data: bundleData,
+              importMode: "linear",
+              sanitize,
+            })
+      ) as { nodes?: Workflow["nodeTemplates"] };
+      const nodeTemplates = parseResult.nodes ?? [];
 
-        const startNodeId = `start_${Date.now()}`;
-        const endNodeId = `end_${Date.now()}`;
+      const startNodeId = `start_${Date.now()}`;
+      const endNodeId = `end_${Date.now()}`;
 
-        const startNode: ImportedWorkflowNode = {
-          nodeId: startNodeId,
-          type: "start",
-          label: "Start",
-          data: {},
-          position: { x: 100, y: 100 },
-        };
-
-        const endNode: ImportedWorkflowNode = {
-          nodeId: endNodeId,
-          type: "end",
-          label: "End",
-          data: {},
-          position: { x: 100, y: 300 },
-        };
-
-        const workflowName =
+      await apiweave.workflows.create({
+        workspaceId,
+        collectionId: selectedTargetProject,
+        name:
           detectedType === "openapi"
             ? `Imported OpenAPI - ${new Date().toLocaleString()}`
-            : `Imported HAR - ${new Date().toLocaleString()}`;
-
-        const payload: CreateWorkflowPayload = {
-          name: workflowName,
-          nodes: [startNode, endNode],
-          edges: [
-            {
-              edgeId: `edge_${Date.now()}`,
-              source: startNodeId,
-              target: endNodeId,
-            },
-          ],
-          nodeTemplates: nodeTemplates,
-          collectionId: selectedTargetProject,
-          variables: {},
-          tags: ["imported"],
-        };
-
-        const createResponse = await authenticatedFetch(
-          `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}?project_id=${encodeURIComponent(selectedTargetProject)}`,
+            : `Imported HAR - ${new Date().toLocaleString()}`,
+        nodes: [
           {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            nodeId: startNodeId,
+            type: "start",
+            label: "Start",
+            position: { x: 100, y: 100 },
+            config: {},
           },
-        );
+          {
+            nodeId: endNodeId,
+            type: "end",
+            label: "End",
+            position: { x: 100, y: 300 },
+            config: {},
+          },
+        ],
+        edges: [
+          {
+            edgeId: `edge_${Date.now()}`,
+            source: startNodeId,
+            target: endNodeId,
+          },
+        ],
+        nodeTemplates,
+        variables: {},
+        tags: ["imported"],
+      });
+      setMessage({
+        type: "success",
+        title: "Import Successful",
+        text: `Workflow created in project with ${nodeTemplates.length} imported templates.`,
+      });
 
-        if (createResponse.ok) {
-          setMessage({
-            type: "success",
-            title: "Import Successful",
-            text: `Workflow created in project with ${nodeTemplates.length} imported templates.`,
-          });
+      setUploadedFile(null);
+      setPastedJson("");
+      setValidation(null);
+      setSelectedTargetProject(null);
 
-          setUploadedFile(null);
-          setPastedJson("");
-          setValidation(null);
-          setSelectedTargetProject(null);
+      useSidebarStore.getState().signalWorkflowsRefresh();
 
-          useSidebarStore.getState().signalWorkflowsRefresh();
-
-          setTimeout(() => {
-            onClose();
-          }, 2000);
-        } else {
-          const error: { detail?: unknown } = await createResponse.json();
-          setMessage({
-            type: "error",
-            title: "Create Failed",
-            text:
-              formatErrorMessage(error.detail) ||
-              "Failed to create workflow with templates",
-          });
-        }
-      } else {
-        const error: { detail?: unknown } = await parseResponse.json();
-        setMessage({
-          type: "error",
-          title: "Parse Failed",
-          text:
-            formatErrorMessage(error.detail) || "Failed to parse import file",
-        });
-      }
+      setTimeout(() => {
+        onClose();
+      }, 2000);
     } catch (error: unknown) {
-      const err = error as Error;
       setMessage({
         type: "error",
-        title: "Import Error",
-        text: err.message,
+        title: "Import Failed",
+        text: errorText(error, "Failed to import workflow"),
       });
     } finally {
       setIsLoading(false);
@@ -700,24 +487,12 @@ export function CollectionExportImport({
         return;
       }
 
-      const params = new URLSearchParams();
-      params.append("curl_command", pastedJson);
-      params.append("sanitize", String(sanitize));
-      params.append("collectionId", selectedTargetProject);
-
-      const response = await authenticatedFetch(
-        `${workflowsUrl(workspaceId, { skip: 0, limit: 20 }).split("?")[0]}/import/curl?${params}`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData: { detail?: string } = await response.json();
-        throw new Error(errorData.detail || "Import failed");
-      }
-
-      await response.json();
+      await apiweave.workflows.importCurl({
+        workspaceId,
+        curlCommand: pastedJson,
+        sanitize,
+        collectionId: selectedTargetProject,
+      });
 
       setMessage({
         type: "success",

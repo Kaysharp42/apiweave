@@ -2,7 +2,7 @@
  * Task 10 — Secret write-only and no-runtime-prompt security tests.
  *
  * Verifies:
- * (a) Secret value updates use the scoped write-only route.
+ * (a) Secret value updates use the write-only secrets domain.
  * (b) Workflow run does NOT prompt for runtime secrets.
  * (c) No plaintext or ciphertext fields appear in UI from backend responses.
  * (d) No sessionStorage usage for runtime secrets.
@@ -18,42 +18,34 @@ const SRC_DIR = path.resolve(__dirname, "..");
 // ─── (a) Scoped write-only route ─────────────────────────────────────────────
 
 describe("Task 10: Secret write-only route", () => {
-  it("useSecretValues.ts uses scoped POST route (not legacy /api/environments)", () => {
+  it("useSecretValues.ts goes through the write-only secrets IPC domain", () => {
     const hookPath = path.join(SRC_DIR, "hooks", "useSecretValues.ts");
     const content = fs.readFileSync(hookPath, "utf-8");
 
-    // Must use scoped route
-    expect(content).toContain("/api/scopes/");
-    // Must NOT use legacy environment route
-    expect(content).not.toContain("/api/environments/");
-    // Must use the scoped public-key route (via publicKeyUrl helper or directly)
-    expect(content).toMatch(/publicKeyUrl|\/api\/secrets\/public-key/);
+    expect(content).toContain("apiweave.secrets.set(");
+    expect(content).toContain("apiweave.secrets.publicKey(");
+    // Must NOT write secrets through the environment record
+    expect(content).not.toContain("apiweave.environments");
   });
 
-  it("postScopedEncryptedSecret sends only ciphertext, never plaintext", () => {
+  it("postScopedEncryptedSecret sends only sealed bytes, never plaintext", () => {
     const hookPath = path.join(SRC_DIR, "hooks", "useSecretValues.ts");
     const content = fs.readFileSync(hookPath, "utf-8");
 
-    // Body must contain ciphertext field
-    expect(content).toContain("ciphertext");
-    // Body must NOT contain encrypted_value field (old API)
-    expect(content).not.toMatch(/\bencrypted_value\b/);
-    // The JSON.stringify body must not include a 'value' or 'plaintext' key
-    // (comments mentioning 'plaintext' are OK — only the body matters)
-    const bodyMatch = content.match(/JSON\.stringify\(\{[^}]+\}/);
-    if (bodyMatch) {
-      expect(bodyMatch[0]).not.toMatch(/\bplaintext\b/);
-      expect(bodyMatch[0]).not.toMatch(/\bvalue:/);
-    }
+    const setCall = content.match(/apiweave\.secrets\.set\(\{[^}]+\}/);
+    expect(setCall).not.toBeNull();
+    expect(setCall?.[0]).toContain("sealed:");
+    expect(setCall?.[0]).not.toMatch(/\bplaintext\b/);
+    expect(setCall?.[0]).not.toMatch(/\bvalue:/);
   });
 
-  it("SecretForm.tsx uses scoped public-key route", () => {
+  it("SecretForm.tsx encrypts before storing through the scoped helpers", () => {
     const formPath = path.join(SRC_DIR, "components", "SecretForm.tsx");
     const content = fs.readFileSync(formPath, "utf-8");
 
-    expect(content).toContain("/api/secrets/public-key?scope=");
-    expect(content).toContain("/api/scopes/");
-    expect(content).not.toContain("/api/environments/");
+    expect(content).toContain("fetchScopedPublicKey(");
+    expect(content).toContain("postScopedEncryptedSecret(");
+    expect(content).toContain("encryptSecretValue(");
   });
 });
 

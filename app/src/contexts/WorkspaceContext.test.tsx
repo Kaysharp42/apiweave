@@ -8,16 +8,15 @@ import {
 } from "./WorkspaceContext";
 import type { Workspace } from "../types/Workspace";
 
-const authenticatedJson = vi.fn();
+const listWorkspaces = vi.fn();
 const onCloudStatusChanged = vi.fn(
   (_callback: () => void): (() => void) => () => undefined,
 );
 
 vi.mock("../utils/apiweaveClient", () => ({
-  authenticatedJson: (...args: unknown[]) => authenticatedJson(...args),
+  apiweave: { workspaces: { list: () => listWorkspaces() } },
   onCloudStatusChanged: (callback: () => void) =>
     onCloudStatusChanged(callback),
-  default: "ipc://apiweave",
 }));
 
 const workspaces: Workspace[] = [
@@ -69,7 +68,7 @@ function LocationProbe() {
 
 describe("WorkspaceContext routing", () => {
   it("resolves non-personal workspaces from the route and switches with a two-segment path", async () => {
-    authenticatedJson.mockResolvedValue({ workspaces, total: workspaces.length });
+    listWorkspaces.mockResolvedValue(workspaces);
     const user = userEvent.setup();
 
     render(
@@ -100,7 +99,7 @@ describe("WorkspaceContext routing", () => {
   });
 
   it("refreshes available workspaces when cloud sync changes local data", async () => {
-    authenticatedJson.mockResolvedValue({ workspaces, total: workspaces.length });
+    listWorkspaces.mockResolvedValue(workspaces);
 
     render(
       <MemoryRouter initialEntries={["/personal/workflows"]}>
@@ -125,10 +124,7 @@ describe("WorkspaceContext routing", () => {
       slug: "ws-cloud",
       name: "Cloud workspace",
     };
-    authenticatedJson.mockResolvedValue({
-      workspaces: [...workspaces, cloudWorkspace],
-      total: workspaces.length + 1,
-    });
+    listWorkspaces.mockResolvedValue([...workspaces, cloudWorkspace]);
 
     const listener = onCloudStatusChanged.mock.calls.at(-1)?.[0];
     expect(listener).toBeDefined();

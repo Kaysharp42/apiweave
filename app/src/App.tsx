@@ -16,7 +16,6 @@ import {
   Outlet,
 } from "react-router-dom";
 import LandingPage from "./pages/LandingPage";
-import SetupPage from "./pages/SetupPage";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
@@ -142,16 +141,12 @@ function DefaultWorkspaceRedirect() {
           getLastWorkspaceSlug(),
         );
         if (!workspace) {
-          if (isDesktopShell()) {
-            await apiweave.workspaces.create({
-              name: "Personal",
-              slug: "personal",
-              isPersonal: true,
-            });
-            setTargetPath("/personal/workflows");
-            return;
-          }
-          setTargetPath("/setup");
+          await apiweave.workspaces.create({
+            name: "Personal",
+            slug: "personal",
+            isPersonal: true,
+          });
+          setTargetPath("/personal/workflows");
           return;
         }
 
@@ -307,44 +302,6 @@ function AccountSessionReset() {
   return null;
 }
 
-function SetupEntry() {
-  const { status, isSingleUser, isAuthenticated, modeLoaded, error } =
-    useAuth();
-
-  if (status === "loading" || !modeLoaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
-        <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
-      </div>
-    );
-  }
-
-  if (isSingleUser) {
-    if (isAuthenticated) {
-      return <Navigate to="/app" replace />;
-    }
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
-            Auth bootstrap failed
-          </h1>
-          <p className="mt-2 text-sm text-text-secondary dark:text-text-secondary-dark">
-            Single-user mode requires <code>/api/auth/me</code> to succeed.
-          </p>
-          {error !== null && (
-            <p className="mt-3 text-xs font-mono text-text-tertiary dark:text-text-tertiary-dark break-words">
-              {error}
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return <SetupPage />;
-}
-
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
@@ -421,7 +378,6 @@ function App() {
                 }
               />
               <Route path="/login" element={<Navigate to="/app" replace />} />
-              <Route path="/setup" element={<SetupEntry />} />
 
               {/* Every signed-in route shares one auth + workspace parent, so
                   moving between them never remounts the providers. */}

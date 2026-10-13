@@ -26,9 +26,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import useTutorialStore from "../../stores/TutorialStore";
 import type { WorkspaceProps } from "../../types/WorkspaceProps";
 import type { TabItem } from "../../types/TabItem";
-import type { Workflow } from "../../types/Workflow";
-import { authenticatedFetch } from "../../utils/apiweaveClient";
-import { workflowsUrl } from "../../utils/apiweaveClient";
+import { apiweave } from "../../utils/apiweaveClient";
 import { getLogger } from "../../utils/logger";
 import { toast } from "sonner";
 
@@ -112,30 +110,24 @@ export function Workspace({ active = true }: WorkspaceProps) {
       }
 
       try {
-        const response = await authenticatedFetch(workflowsUrl(workspaceId), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            description: "",
-            nodes: [
-              {
-                nodeId: "start-1",
-                type: "start",
-                label: "Start",
-                position: { x: 100, y: 100 },
-                config: {},
-              },
-            ],
-            edges: [],
-            variables: {},
-          }),
+        const workflow = await apiweave.workflows.create({
+          workspaceId,
+          name,
+          description: "",
+          nodes: [
+            {
+              nodeId: "start-1",
+              type: "start",
+              label: "Start",
+              position: { x: 100, y: 100 },
+              config: {},
+            },
+          ],
+          edges: [],
+          variables: {},
         });
-        if (response.ok) {
-          const workflow = (await response.json()) as Workflow;
-          openTab(workflow);
-          useSidebarStore.getState().signalWorkflowsRefresh();
-        }
+        openTab(workflow);
+        useSidebarStore.getState().signalWorkflowsRefresh();
       } catch (error) {
         workspaceLog.error("Error creating workflow:", error);
       }

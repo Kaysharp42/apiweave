@@ -1,121 +1,96 @@
 /**
- * useSecretValues — API hook for scoped secret operations.
+ * Scoped secret operations over the write-only `secrets` IPC domain.
  *
- * POSTs sealed-box ciphertext (never plaintext) to the scoped backend.
- * DELETEs a secret by ID from the scope.
- * GETs metadata only — no ciphertext or plaintext is ever returned.
- *
- * All routes use `/api/scopes/{scope_type}/{scope_id}/secrets`.
+ * Writes carry sealed-box bytes (never plaintext); reads return metadata only —
+ * no sealed bytes or plaintext ever come back.
  */
 
-import { useCallback } from "react";
-import { authenticatedJson } from "../utils/apiweaveClient";
-import { secretsUrl, publicKeyUrl } from "../utils/apiweaveClient";
+import { apiweave, IpcError } from "../utils/apiweaveClient";
 import type {
   EncryptedSecretValue,
   PublicKey,
+  Secret,
   SecretScopeType,
-  SecretMetadata,
 } from "../types";
 
-const scopedParams = (
+/**
+ * The workspace a secret scope belongs to.
+ *
+ * A `workspace` scope IS its workspace. An `environment` scope is not, and
+ * there is no safe way to guess it: the workspace id is what every secret call
+ * is authorized against, so a placeholder would be an authorization check
+ * against a workspace nobody named. Fail closed and make the caller pass it.
+ */
+function scopeWorkspaceId(
   scopeType: SecretScopeType,
   scopeId: string,
   workspaceId?: string,
-) => ({ scopeType, scopeId, ...(workspaceId ? { workspaceId } : {}) });
+): string {
+  if (scopeType === "workspace") return scopeId;
+  if (workspaceId) return workspaceId;
+  throw new IpcError(
+    "validation",
+    "missing workspaceId for an environment scope",
+  );
+}
 
-/**
- * Fetch the scope's sealed-box public key.
- * Called lazily when the value editor modal opens.
- */
+/** The scope's sealed-box public key. */
 export async function fetchScopedPublicKey(
   scopeType: SecretScopeType,
   scopeId: string,
   workspaceId?: string,
 ): Promise<PublicKey> {
-  return authenticatedJson<PublicKey>(publicKeyUrl(scopeType, scopeId, workspaceId));
-}
-
-/**
- * POST an encrypted secret value to the scoped backend.
- * The body contains only ciphertext + keyId — never plaintext.
- */
-export async function postScopedEncryptedSecret(
-  payload: EncryptedSecretValue,
-): Promise<SecretMetadata> {
-  return authenticatedJson<SecretMetadata>(
-    secretsUrl(scopedParams(payload.scopeType, payload.scopeId, payload.workspaceId)),
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: payload.name,
-        ciphertext: payload.ciphertext,
-        keyId: payload.keyId,
-      }),
-    },
+  return apiweave.secrets.publicKey(
+    scopeWorkspaceId(scopeType, scopeId, workspaceId),
+    scopeType,
+    scopeId,
   );
 }
 
-/**
- * DELETE a secret by ID from the scope.
- */
-export async function deleteScopedSecret(
-  scopeType: SecretScopeType,
-  scopeId: string,
-  secretId: string,
-  workspaceId?: string,
-): Promise<void> {
-  await authenticatedJson(secretsUrl(scopedParams(scopeType, scopeId, workspaceId), secretId), {
-    method: "DELETE",
+/** Store a sealed secret value. Writing an existing name replaces its value. */
+export async function postScopedEncryptedSecret(
+  payload: EncryptedSecretValue,
+): Promise<Secret> {
+  return apiweave.secrets.set({
+    workspaceId: scopeWorkspaceId(
+      payload.scopeType,
+      payload.scopeId,
+      payload.workspaceId,
+    ),
+    scopeType: payload.scopeType,
+    scopeId: payload.scopeId,
+    name: payload.name,
+    sealed: payload.sealed,
+    keyId: payload.keyId,
   });
 }
 
-/**
- * GET secret metadata list for a scope.
- * Returns metadata only — no ciphertext or plaintext values.
- */
+/** Delete a secret by name from the scope. */
+export async function deleteScopedSecret(
+  scopeType: SecretScopeType,
+  scopeId: string,
+  name: string,
+  workspaceId?: string,
+): Promise<void> {
+  await apiweave.secrets.delete(
+    scopeWorkspaceId(scopeType, scopeId, workspaceId),
+    scopeType,
+    scopeId,
+    name,
+  );
+}
+
+/** Secret metadata for a scope — names only, never values. */
 export async function listScopedSecrets(
   scopeType: SecretScopeType,
   scopeId: string,
   workspaceId?: string,
-): Promise<SecretMetadata[]> {
-  const response = await authenticatedJson<{
-    secrets: SecretMetadata[];
-    total: number;
-  }>(secretsUrl(scopedParams(scopeType, scopeId, workspaceId)));
-  return response.secrets;
-}
-
-/**
- * React hook wrapping scoped secret API calls.
- */
-export function useSecretValues(
-  scopeType: SecretScopeType,
-  scopeId: string | undefined,
-  workspaceId?: string,
-) {
-  const setSecretValue = useCallback(async (payload: EncryptedSecretValue) => {
-    await postScopedEncryptedSecret(payload);
-  }, []);
-
-  const removeSecretValue = useCallback(
-    async (secretId: string) => {
-      if (!scopeId) throw new Error("No active scope");
-      await deleteScopedSecret(scopeType, scopeId, secretId, workspaceId);
-    },
-    [scopeType, scopeId, workspaceId],
-  );
-
-  const getPublicKey = useCallback(async () => {
-    if (!scopeId) throw new Error("No active scope");
-    return fetchScopedPublicKey(scopeType, scopeId, workspaceId);
-  }, [scopeType, scopeId, workspaceId]);
-
-  const listSecrets = useCallback(async () => {
-    if (!scopeId) throw new Error("No active scope");
-    return listScopedSecrets(scopeType, scopeId, workspaceId);
-  }, [scopeType, scopeId, workspaceId]);
-
-  return { setSecretValue, removeSecretValue, getPublicKey, listSecrets };
+): Promise<Secret[]> {
+  return [
+    ...(await apiweave.secrets.list(
+      scopeWorkspaceId(scopeType, scopeId, workspaceId),
+      scopeType,
+      scopeId,
+    )),
+  ];
 }

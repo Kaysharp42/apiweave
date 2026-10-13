@@ -5,14 +5,15 @@ import { Input } from "./atoms/Input";
 import { FormField } from "./molecules/FormField";
 import { Spinner } from "./atoms/Spinner";
 import { encryptSecretValue } from "../utils/encryptSecretValue";
-import { authenticatedJson } from "../utils/apiweaveClient";
-import API_BASE_URL from "../utils/apiweaveClient";
-import type { PublicKey } from "../types";
+import {
+  fetchScopedPublicKey,
+  postScopedEncryptedSecret,
+} from "../hooks/useSecretValues";
 import type { SecretFormProps } from "../types/SecretFormProps";
 
 /**
  * SecretForm — fetches the scope's public key, encrypts the value with
- * libsodium sealed-box, and POSTs the ciphertext.
+ * libsodium sealed-box, and stores the sealed bytes.
  *
  * The plaintext value is cleared from state immediately after submission.
  */
@@ -82,12 +83,10 @@ export function SecretForm({
 
       let step = "Failed to fetch encryption key";
       try {
-        const publicKeyInfo = await authenticatedJson<PublicKey>(
-          `${API_BASE_URL}/api/secrets/public-key?scope=${encodeURIComponent(scopeType)}&id=${encodeURIComponent(scopeId)}`,
-        );
+        const publicKeyInfo = await fetchScopedPublicKey(scopeType, scopeId);
 
         step = "Failed to encrypt secret value";
-        const ciphertext = await encryptSecretValue(value, {
+        const sealed = await encryptSecretValue(value, {
           keyId: publicKeyInfo.keyId,
           publicKey: publicKeyInfo.publicKey,
           algorithm: "libsodium-sealed-box",
@@ -96,18 +95,12 @@ export function SecretForm({
         setValue("");
 
         step = "Failed to save secret";
-        const url = isUpdate
-          ? `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets/${encodeURIComponent(existingSecretId)}`
-          : `${API_BASE_URL}/api/scopes/${encodeURIComponent(scopeType)}/${encodeURIComponent(scopeId)}/secrets`;
-
-        await authenticatedJson(url, {
-          method: isUpdate ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            ciphertext,
-            keyId: publicKeyInfo.keyId,
-          }),
+        await postScopedEncryptedSecret({
+          scopeType,
+          scopeId,
+          name: name.trim(),
+          sealed,
+          keyId: publicKeyInfo.keyId,
         });
 
         setName("");
@@ -126,8 +119,6 @@ export function SecretForm({
       scopeId,
       name,
       value,
-      isUpdate,
-      existingSecretId,
       onCreated,
     ],
   );

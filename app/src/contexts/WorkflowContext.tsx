@@ -9,8 +9,7 @@ import {
 } from "react";
 import { usePalette } from "./PaletteContext";
 import useSidebarStore from "../stores/SidebarStore";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import { projectsUrl } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import type { Project } from "../types/Project";
 import type { JsonValue } from "@shared/types/JsonValue";
 
@@ -199,14 +198,8 @@ export const WorkflowProvider = ({
       return;
     }
     try {
-      const response = await authenticatedFetch(projectsUrl(workspaceId));
-      if (response.ok) {
-        const data = (await response.json()) as {
-          projects: Project[];
-          total: number;
-        };
-        dispatch({ type: "set-collections", value: data.projects });
-      }
+      const data = await apiweave.projects.list(workspaceId);
+      dispatch({ type: "set-collections", value: [...data.items] });
     } catch {
       // ignore
     } finally {

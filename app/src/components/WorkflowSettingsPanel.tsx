@@ -13,12 +13,8 @@ import { Button } from "./atoms/Button";
 import { Spinner } from "./atoms/Spinner";
 import { Input } from "./atoms/Input";
 import { EmptyState } from "./molecules/EmptyState";
-import { authenticatedFetch } from "../utils/apiweaveClient";
+import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
-import {
-  projectWorkflowAssignUrl,
-  projectWorkflowRemoveUrl,
-} from "../utils/apiweaveClient";
 
 type BackgroundColor = string;
 
@@ -80,22 +76,10 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await authenticatedFetch(
-        projectWorkflowAssignUrl(workspaceId, projectId, workflowId),
-        { method: "POST" },
-      );
-
-      if (response.ok) {
-        setCurrentCollectionId(selectedProject.collectionId);
-        toast.success(`Workflow added to "${selectedProject.name}"`);
-
-        if (refreshCollectionsAndWorkflows) {
-          refreshCollectionsAndWorkflows();
-        }
-      } else {
-        const errorData = (await response.json()) as { message?: string };
-        toast.error(errorData.message ?? "Failed to add workflow to project");
-      }
+      await apiweave.projects.addWorkflow(workspaceId, projectId, workflowId);
+      setCurrentCollectionId(selectedProject.collectionId);
+      toast.success(`Workflow added to "${selectedProject.name}"`);
+      refreshCollectionsAndWorkflows?.();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to add workflow to project: ${message}`);
@@ -116,28 +100,14 @@ export function WorkflowSettingsPanel() {
 
     setAssignmentLoading(true);
     try {
-      const response = await authenticatedFetch(
-        projectWorkflowRemoveUrl(
-          workspaceId,
-          currentCollection.collectionId,
-          workflowId,
-        ),
-        { method: "DELETE" },
+      await apiweave.projects.removeWorkflow(
+        workspaceId,
+        currentCollection.collectionId,
+        workflowId,
       );
-
-      if (response.ok) {
-        setCurrentCollectionId(null);
-        toast.success(`Workflow removed from "${currentCollection.name}"`);
-
-        if (refreshCollectionsAndWorkflows) {
-          refreshCollectionsAndWorkflows();
-        }
-      } else {
-        const errorData = (await response.json()) as { message?: string };
-        toast.error(
-          errorData.message ?? "Failed to remove workflow from project",
-        );
-      }
+      setCurrentCollectionId(null);
+      toast.success(`Workflow removed from "${currentCollection.name}"`);
+      refreshCollectionsAndWorkflows?.();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to remove workflow from project: ${message}`);

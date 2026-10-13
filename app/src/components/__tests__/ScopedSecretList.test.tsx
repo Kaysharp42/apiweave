@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { ScopedSecretList } from "../ScopedSecretList";
-import { authenticatedJson } from "../../utils/apiweaveClient";
+import { listScopedSecrets } from "../../hooks/useSecretValues";
 
-vi.mock("../../utils/apiweaveClient", () => ({
-  default: "ipc://apiweave",
-  authenticatedJson: vi.fn(),
+vi.mock("../../hooks/useSecretValues", () => ({
+  listScopedSecrets: vi.fn(),
+  deleteScopedSecret: vi.fn(),
 }));
 
-const mocked = vi.mocked(authenticatedJson);
+const mocked = vi.mocked(listScopedSecrets);
 
 const secret = (name: string, scopeId: string) => ({
   secretId: `${scopeId}-${name}`,
@@ -30,12 +30,12 @@ beforeEach(() => mocked.mockReset());
  */
 describe("ScopedSecretList — one scope at a time", () => {
   it("drops a slow response for a scope it has already left", async () => {
-    let releaseFirst: (value: unknown) => void = () => {};
+    let releaseFirst: (value: ReturnType<typeof secret>[]) => void = () => {};
     mocked
       .mockImplementationOnce(
         () => new Promise((resolve) => (releaseFirst = resolve)),
       )
-      .mockResolvedValueOnce({ secrets: [secret("FROM_B", "ws-b")], total: 1 });
+      .mockResolvedValueOnce([secret("FROM_B", "ws-b")]);
 
     const { rerender } = render(
       <ScopedSecretList
@@ -53,7 +53,7 @@ describe("ScopedSecretList — one scope at a time", () => {
     );
     await screen.findByText("FROM_B");
 
-    releaseFirst({ secrets: [secret("FROM_A", "ws-a")], total: 1 });
+    releaseFirst([secret("FROM_A", "ws-a")]);
 
     await waitFor(() => expect(screen.queryByText("FROM_A")).toBeNull());
     expect(screen.getByText("FROM_B")).toBeTruthy();
@@ -61,7 +61,7 @@ describe("ScopedSecretList — one scope at a time", () => {
 
   it("empties the list on a failed fetch rather than keeping the last scope's", async () => {
     mocked
-      .mockResolvedValueOnce({ secrets: [secret("FROM_A", "ws-a")], total: 1 })
+      .mockResolvedValueOnce([secret("FROM_A", "ws-a")])
       .mockRejectedValueOnce(new Error("denied"));
 
     const { rerender } = render(
@@ -86,10 +86,7 @@ describe("ScopedSecretList — one scope at a time", () => {
   });
 
   it("hides Delete when read-only, but still offers copy and move", async () => {
-    mocked.mockResolvedValue({
-      secrets: [secret("API_KEY", "ws-b")],
-      total: 1,
-    });
+    mocked.mockResolvedValue([secret("API_KEY", "ws-b")]);
 
     render(
       <ScopedSecretList
