@@ -432,7 +432,7 @@ describe("Phase 4 — retriable creation does not double-enqueue", () => {
       waitMs: 5000,
       operationId: "op-gone",
     })
-    expect(runRepository.delete(first.runId)).toBe(true)
+    expect(runRepository.delete(first.runId, workspace.workspaceId)).toBe(true)
     // The idempotency key must still accept the retry: a not-found naming a run
     // nobody has is the opposite of what the key is for.
     const second = await dispatchOk<{ runId: string }>("runs", "create", {

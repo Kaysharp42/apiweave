@@ -170,7 +170,8 @@ const countCookies = (
 
   const setCookieHeader = getCaseInsensitiveHeader(headers, "set-cookie");
   if (!setCookieHeader) return 0;
-  return setCookieHeader.split(/,(?=\s*[^;,=]+=[^;,]+)/).filter(Boolean).length;
+  // The runner keeps every Set-Cookie header, one per line.
+  return setCookieHeader.split("\n").filter((line) => line.trim()).length;
 };
 
 export const createInspectorResponse = (

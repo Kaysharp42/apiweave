@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { initDatabase } from "../../db"
+import { initDatabase, RUN_HISTORY_RETENTION_PER_WORKFLOW, SIDE_TABLE_THRESHOLD_BYTES } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
@@ -210,7 +210,8 @@ describe("RunRepository", () => {
     expect(fetched?.length).toBe(body.length)
     expect(Buffer.isBuffer(fetched)).toBe(true)
 
-    runs.delete(runId)
+    runs.updateStatus(runId, "completed")
+    runs.delete(runId, db.kvStore.get<{ w: string }>("SELECT workspace_id AS w FROM runs WHERE id = ?", [runId])!.w)
     const after = db.kvStore.get<{ n: number }>("SELECT count(*) AS n FROM run_responses WHERE run_id = ?", [runId])
     expect(after?.n).toBe(0)
   })
@@ -248,16 +249,16 @@ describe("RunRepository", () => {
 
   it("adapts old run metadata defaults and aggregate assertion results on read", () => {
     const { runId } = seedRun()
-    db.kvStore.set("UPDATE runs SET response_metadata_json = ? WHERE id = ?", [
-      JSON.stringify({
-        results: [{
-          nodeId: "assert_1",
-          status: "failed",
-          duration: 4,
-          assertions: [{ outcome: "fail", message: "actual: sensitive-value" }],
-        }],
-      }),
+    db.kvStore.set("UPDATE runs SET response_metadata_json = '{}' WHERE id = ?", [runId])
+    db.kvStore.set("INSERT INTO run_node_results (run_id, node_id, result_json) VALUES (?, ?, ?)", [
       runId,
+      "assert_1",
+      JSON.stringify({
+        nodeId: "assert_1",
+        status: "failed",
+        duration: 4,
+        assertions: [{ outcome: "fail", message: "actual: sensitive-value" }],
+      }),
     ])
 
     const run = runs.getById(runId)
@@ -332,6 +333,102 @@ describe("RunRepository", () => {
     expect(rows.get(withResults)).toMatchObject({ trigger: "schedule", duration: 12, nodeCount: 2, failedNodeCount: 1 })
     expect(rows.get(empty)).toMatchObject({ trigger: "manual", duration: null, nodeCount: 0, failedNodes: [] })
     expect(rows.get(legacy)).toMatchObject({ trigger: "manual", duration: null, nodeCount: 0, failedNodes: [] })
+  })
+})
+
+describe("RunRepository storage and retention", () => {
+  function seedWorkflow(): { workspaceId: string; workflowId: string } {
+    const workspaceId = seedWorkspace()
+    return { workspaceId, workflowId: workflows.create({ workspaceId, name: "wf" }).workflowId }
+  }
+
+  function count(sql: string, params: readonly string[]): number {
+    return db.kvStore.get<{ n: number }>(sql, [...params])!.n
+  }
+
+  it("stores each node result as its own row: upserts replace in place and keep completion order", () => {
+    const { workspaceId, workflowId } = seedWorkflow()
+    const { runId } = runs.create({ workspaceId, workflowId })
+    runs.upsertNodeResult(runId, { nodeId: "a", status: "running", duration: 1 })
+    runs.upsertNodeResult(runId, { nodeId: "b", status: "passed", duration: 2 })
+    runs.upsertNodeResult(runId, { nodeId: "a", status: "failed", duration: 3 })
+
+    expect(runs.getById(runId)!.results.map((r) => [r.nodeId, r.status])).toEqual([["a", "failed"], ["b", "passed"]])
+    expect(count("SELECT count(*) AS n FROM run_node_results WHERE run_id = ?", [runId])).toBe(2)
+    // The metadata blob no longer carries results at all.
+    expect(db.kvStore.get<{ r: string | null }>("SELECT response_metadata_json -> '$.results' AS r FROM runs WHERE id = ?", [runId])!.r)
+      .toBeNull()
+
+    // Final evidence replaces the per-node rows with the executor's own list.
+    runs.updateExecutionEvidence(runId, {
+      results: [{ nodeId: "b", status: "passed", duration: 2 }],
+      extractedVariables: {},
+      failedNodes: [],
+      failureMessage: null,
+    })
+    expect(runs.getById(runId)!.results.map((r) => r.nodeId)).toEqual(["b"])
+  })
+
+  it("ignores a node result for a run that no longer exists", () => {
+    runs.upsertNodeResult("missing", { nodeId: "a", status: "passed", duration: 1 })
+    expect(count("SELECT count(*) AS n FROM run_node_results", [])).toBe(0)
+  })
+
+  it("keeps the newest runs per workflow when a run finishes, deleting older ones with their rows", () => {
+    const { workspaceId, workflowId } = seedWorkflow()
+    const other = workflows.create({ workspaceId, name: "other" }).workflowId
+    const otherRun = runs.create({ workspaceId, workflowId: other }).runId
+    runs.updateStatus(otherRun, "completed")
+
+    // A run still in progress is never pruned, but counts toward the newest N.
+    const live = runs.create({ workspaceId, workflowId }).runId
+    db.kvStore.set("UPDATE runs SET createdAt = '2031-01-01T00:00:00.000Z' WHERE id = ?", [live])
+    runs.updateStatus(live, "running")
+    const ids: string[] = []
+    for (let i = 0; i < RUN_HISTORY_RETENTION_PER_WORKFLOW + 2; i += 1) {
+      const runId = runs.create({ workspaceId, workflowId }).runId
+      // Distinct creation times: runs created within one millisecond tie.
+      db.kvStore.set("UPDATE runs SET createdAt = ? WHERE id = ?", [new Date(Date.UTC(2030, 0, 1, 0, 0, i)).toISOString(), runId])
+      runs.upsertNodeResult(runId, { nodeId: "n", status: "passed", duration: 1 })
+      runs.putNodeBody(runId, "n", Buffer.alloc(SIDE_TABLE_THRESHOLD_BYTES, "x"))
+      runs.updateStatus(runId, "completed")
+      ids.push(runId)
+    }
+
+    const kept = runs.listByWorkflow(workflowId, workspaceId).items.map((r) => r.runId)
+    // The live run is the newest, so one fewer finished run is kept.
+    expect(kept).toHaveLength(RUN_HISTORY_RETENTION_PER_WORKFLOW)
+    expect(kept).toContain(live)
+    expect(kept).toEqual(expect.arrayContaining(ids.slice(-(RUN_HISTORY_RETENTION_PER_WORKFLOW - 1))))
+    const pruned = ids.slice(0, ids.length - (RUN_HISTORY_RETENTION_PER_WORKFLOW - 1))
+    expect(pruned).toHaveLength(3)
+    for (const runId of pruned) {
+      expect(runs.getById(runId)).toBeUndefined()
+      expect(count("SELECT count(*) AS n FROM run_node_results WHERE run_id = ?", [runId])).toBe(0)
+      expect(count("SELECT count(*) AS n FROM run_responses WHERE run_id = ?", [runId])).toBe(0)
+    }
+    // Another workflow's history is untouched.
+    expect(runs.getById(otherRun)).toBeDefined()
+  })
+
+  it("deletes one finished run or clears a workflow's finished runs, scoped to the workspace, sparing live runs", () => {
+    const { workspaceId, workflowId } = seedWorkflow()
+    const done = runs.create({ workspaceId, workflowId }).runId
+    runs.updateStatus(done, "failed")
+    const live = runs.create({ workspaceId, workflowId }).runId
+    runs.updateStatus(live, "running")
+    const foreign = seedWorkspace()
+
+    expect(runs.delete(done, foreign)).toBe(false)
+    expect(runs.delete(live, workspaceId)).toBe(false)
+    expect(runs.delete(done, workspaceId)).toBe(true)
+    expect(runs.getById(done)).toBeUndefined()
+
+    const another = runs.create({ workspaceId, workflowId }).runId
+    runs.updateStatus(another, "completed")
+    expect(runs.deleteByWorkflow(workflowId, foreign)).toBe(0)
+    expect(runs.deleteByWorkflow(workflowId, workspaceId)).toBe(1)
+    expect(runs.listByWorkflow(workflowId, workspaceId).items.map((r) => r.runId)).toEqual([live])
   })
 })
 

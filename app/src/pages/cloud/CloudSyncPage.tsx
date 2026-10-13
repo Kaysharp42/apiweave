@@ -99,6 +99,23 @@ const SYNC_STATE_LABELS: Partial<Record<CloudSyncStatus["syncState"], string>> =
     offline: "Offline — will resume when you're back online",
   };
 
+/**
+ * What Disconnect throws away: it clears the outbox, so changes not yet synced
+ * and changes that failed to sync are gone for good. Empty when there are none.
+ */
+function describeDiscardedChanges(
+  unsynced: number,
+  failed: number,
+): string {
+  const plural = (count: number): string =>
+    count === 1 ? "change" : "changes";
+  const parts = [
+    ...(unsynced > 0 ? [`${unsynced} ${plural(unsynced)} not yet synced`] : []),
+    ...(failed > 0 ? [`${failed} failed ${plural(failed)}`] : []),
+  ];
+  return parts.length === 0 ? "" : ` ${parts.join(" and ")} will be discarded.`;
+}
+
 export function CloudSyncPage() {
   const navigate = useNavigate();
   const cloud = useCloudSync();
@@ -154,6 +171,9 @@ export function CloudSyncPage() {
   // work is settled first; Cancel there keeps the account linked.
   const openUnlinkDialog = async (): Promise<void> => {
     if (!(await confirmCloseAll())) return;
+    // Disconnecting discards the outbox, so the counts it warns about must be
+    // current, not whatever the page last rendered.
+    await cloud.refresh().catch(() => undefined);
     setPurgeLocalData(false);
     setConfirmUnlink(true);
   };
@@ -178,6 +198,12 @@ export function CloudSyncPage() {
       reportError(error);
     }
   };
+
+  const unsyncedCount = status?.pendingCount ?? 0;
+  const discardWarning = describeDiscardedChanges(
+    unsyncedCount,
+    status?.deadLetterCount ?? 0,
+  );
 
   const syncNow = (workspaceId: string) =>
     wrap(async () => {
@@ -454,9 +480,15 @@ export function CloudSyncPage() {
         onClose={() => setConfirmUnlink(false)}
         onConfirm={() => void doUnlink(false)}
         title="Disconnect cloud account?"
-        message="Sync stops and cloud credentials are removed from this device. Workspaces created locally are kept, including their workflows and secrets. Workspaces downloaded from Cloud or a shared Team are removed from this device. The device will be revoked in the cloud."
+        message={`Sync stops and cloud credentials are removed from this device. Workspaces created locally are kept, including their workflows and secrets. Workspaces downloaded from Cloud or a shared Team are removed from this device. The device will be revoked in the cloud.${discardWarning}`}
         confirmLabel={purgeLocalData ? "Disconnect and delete" : "Disconnect"}
         intent="error"
+        {...(unsyncedCount > 0 && !busy
+          ? {
+              secondaryLabel: "Sync now",
+              onSecondary: () => void wrap(() => cloud.push(), "Sync started")(),
+            }
+          : {})}
       >
         <label className="flex cursor-pointer items-start gap-2 rounded-lg bg-status-error/5 px-2.5 py-2">
           <input
@@ -481,9 +513,10 @@ export function CloudSyncPage() {
         onConfirm={() => void doUnlink(true)}
         title="Disconnect locally anyway?"
         message={
-          purgeLocalData
+          (purgeLocalData
             ? "The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnecting now still deletes this account's local workspaces from this device."
-            : "The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnect locally now?"
+            : "The cloud device could not be revoked (you may be offline). Cloud access may remain active until you revoke this device from another session. Disconnect locally now?") +
+          discardWarning
         }
         confirmLabel="Disconnect locally"
         intent="warning"

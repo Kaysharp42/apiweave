@@ -171,6 +171,23 @@ export function registerRunHandlers(router: IpcRouter, deps: HandlerDeps): void 
     handle: (i) => runs.cancel(i.workspaceId, i.runId),
   })
 
+  // Destructive history maintenance for the renderer's History panel. Not on
+  // the MCP whitelist (core/mcp/tools.ts): an agent never deletes run history.
+  router.register("runs", "delete", {
+    input: runIdInput,
+    output: z.null(),
+    handle: async (i) => {
+      await runs.deleteRun(i.workspaceId, i.runId)
+      return null
+    },
+  })
+
+  router.register("runs", "clearHistory", {
+    input: workflowIdInput,
+    output: z.object({ deleted: z.number().int().nonnegative() }).strict(),
+    handle: (i) => runs.clearHistory(i.workspaceId, i.workflowId),
+  })
+
   // --- Artifact IPC handlers (Task 16) ---
   //
   // Security: every artifact handler requires workspaceId and authorizes the run

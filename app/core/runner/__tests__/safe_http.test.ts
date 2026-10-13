@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { SafeHttp, SafeUrlError, MAX_REDIRECT_HOPS } from "../safe_http"
+import { SafeHttp, SafeUrlError, MAX_REDIRECT_HOPS, describeNetworkError } from "../safe_http"
 import type { RequestInit, Response } from "undici"
 
 const http = new SafeHttp()
@@ -112,8 +112,20 @@ describe("SafeHttp.safeFetch (no real network)", () => {
       return new Response("ok", { status: 200 }) as unknown as Response
     }
     const client = new SafeHttp({ fetchImpl: fetchImpl as never })
-    await expect(client.safeFetch("https://example.com/")).resolves.toMatchObject({ status: 200 })
-    expect(seen).toEqual(["https://example.com/", "http://192.168.1.10/api"])
+    await expect(client.safeFetch("http://example.com/")).resolves.toMatchObject({ status: 200 })
+    expect(seen).toEqual(["http://example.com/", "http://192.168.1.10/api"])
+  })
+
+  it("reuses one insecure-TLS dispatcher instead of creating one per request", async () => {
+    const dispatchers: unknown[] = []
+    const fetchImpl = async (_url: string, init: RequestInit): Promise<Response> => {
+      dispatchers.push(init.dispatcher)
+      return new Response("ok", { status: 200 }) as unknown as Response
+    }
+    const client = new SafeHttp({ fetchImpl: fetchImpl as never })
+    await client.safeFetch("https://self-signed.test/", {}, { rejectUnauthorized: false })
+    await client.safeFetch("https://self-signed.test/", {}, { rejectUnauthorized: false })
+    expect(dispatchers[0]).toBe(dispatchers[1])
   })
 
   it("too many redirects raises SafeUrlError", async () => {
@@ -155,5 +167,122 @@ describe("SafeHttp.safeFetch (no real network)", () => {
 
   it("exports MAX_REDIRECT_HOPS default 5", () => {
     expect(MAX_REDIRECT_HOPS).toBe(5)
+  })
+})
+
+describe("SafeHttp.safeFetch redirect semantics", () => {
+  type Hop = { url: string; method: string; headers: Headers; body: unknown }
+
+  /** A fetch that answers the first request with `status` → `location`, then 200. */
+  function redirectOnce(status: number, location: string) {
+    const hops: Hop[] = []
+    const fetchImpl = async (url: string, init: RequestInit): Promise<Response> => {
+      hops.push({ url, method: init.method ?? "GET", headers: new Headers(init.headers as HeadersInit), body: init.body })
+      if (hops.length === 1) return new Response("", { status, headers: { location } }) as unknown as Response
+      return new Response("ok", { status: 200 }) as unknown as Response
+    }
+    return { hops, client: new SafeHttp({ fetchImpl: fetchImpl as never }) }
+  }
+
+  const credentialed = {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer t0ken",
+      Cookie: "sid=abc",
+      "Proxy-Authorization": "Basic eA==",
+      "Content-Type": "application/json",
+      "X-Trace": "1",
+    },
+    body: '{"a":1}',
+  }
+
+  it("strips Authorization, Cookie and Proxy-Authorization on a cross-origin redirect", async () => {
+    const { hops, client } = redirectOnce(307, "https://other.example/next")
+    await client.safeFetch("https://api.example/start", credentialed)
+    const second = hops[1]!
+    expect(second.url).toBe("https://other.example/next")
+    expect(second.headers.get("authorization")).toBeNull()
+    expect(second.headers.get("cookie")).toBeNull()
+    expect(second.headers.get("proxy-authorization")).toBeNull()
+    expect(second.headers.get("x-trace")).toBe("1")
+  })
+
+  it("keeps credentials on a same-origin redirect", async () => {
+    const { hops, client } = redirectOnce(307, "/next")
+    await client.safeFetch("https://api.example/start", credentialed)
+    expect(hops[1]!.headers.get("authorization")).toBe("Bearer t0ken")
+    expect(hops[1]!.headers.get("cookie")).toBe("sid=abc")
+  })
+
+  it("refuses an HTTPS to HTTP downgrade", async () => {
+    const { hops, client } = redirectOnce(302, "http://api.example/plain")
+    await expect(client.safeFetch("https://api.example/start", credentialed)).rejects.toThrow(
+      "Refused redirect from HTTPS to HTTP: http://api.example/plain",
+    )
+    expect(hops).toHaveLength(1)
+  })
+
+  it.each([303, 301, 302])("%i turns a POST into a GET without a body or body headers", async (status) => {
+    const { hops, client } = redirectOnce(status, "/next")
+    await client.safeFetch("https://api.example/start", credentialed)
+    const second = hops[1]!
+    expect(second.method).toBe("GET")
+    expect(second.body).toBeUndefined()
+    expect(second.headers.get("content-type")).toBeNull()
+    expect(second.headers.get("authorization")).toBe("Bearer t0ken")
+  })
+
+  it("303 turns a PUT into a GET; 301 keeps a PUT", async () => {
+    const see = redirectOnce(303, "/next")
+    await see.client.safeFetch("https://api.example/start", { ...credentialed, method: "PUT" })
+    expect(see.hops[1]!.method).toBe("GET")
+    const moved = redirectOnce(301, "/next")
+    await moved.client.safeFetch("https://api.example/start", { ...credentialed, method: "PUT" })
+    expect(moved.hops[1]!.method).toBe("PUT")
+    expect(moved.hops[1]!.body).toBe('{"a":1}')
+  })
+
+  it.each([307, 308])("%i resends the method and body", async (status) => {
+    const { hops, client } = redirectOnce(status, "/next")
+    await client.safeFetch("https://api.example/start", credentialed)
+    expect(hops[1]!.method).toBe("POST")
+    expect(hops[1]!.body).toBe('{"a":1}')
+    expect(hops[1]!.headers.get("content-type")).toBe("application/json")
+  })
+})
+
+describe("SafeHttp.readBodyCapped", () => {
+  it("keeps the first maxBytes of an oversized body and flags it, even with a Content-Length", async () => {
+    const response = new Response("x".repeat(20), { headers: { "content-length": "20" } }) as unknown as Response
+    const { bytes, truncated } = await http.readBodyCapped(response, 8)
+    expect(truncated).toBe(true)
+    expect(bytes.toString()).toBe("x".repeat(8))
+  })
+
+  it("returns the whole body untouched under the cap", async () => {
+    const payload = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff])
+    const { bytes, truncated } = await http.readBodyCapped(new Response(payload) as unknown as Response, 1024)
+    expect(truncated).toBe(false)
+    expect(bytes.equals(payload)).toBe(true)
+  })
+})
+
+describe("describeNetworkError", () => {
+  const withCause = (cause: Error) => new TypeError("fetch failed", { cause })
+  const coded = (message: string, code: string) => Object.assign(new Error(message), { code })
+
+  it.each([
+    ["ENOTFOUND", "getaddrinfo ENOTFOUND nope.invalid", "Network error: could not resolve host nope.invalid (ENOTFOUND)"],
+    ["EAI_AGAIN", "getaddrinfo EAI_AGAIN nope.invalid", "Network error: could not resolve host nope.invalid (EAI_AGAIN)"],
+    ["ECONNRESET", "read ECONNRESET", "Network error: connection to nope.invalid was closed unexpectedly (ECONNRESET)"],
+    ["CERT_HAS_EXPIRED", "certificate has expired", "Network error: TLS handshake with nope.invalid failed: certificate has expired (CERT_HAS_EXPIRED)"],
+    ["DEPTH_ZERO_SELF_SIGNED_CERT", "self-signed certificate", "Network error: TLS handshake with nope.invalid failed: self-signed certificate (DEPTH_ZERO_SELF_SIGNED_CERT)"],
+    ["ERR_TLS_CERT_ALTNAME_INVALID", "Hostname/IP does not match certificate's altnames", "Network error: TLS handshake with nope.invalid failed: Hostname/IP does not match certificate's altnames (ERR_TLS_CERT_ALTNAME_INVALID)"],
+  ])("walks the cause chain to %s", (code, message, expected) => {
+    expect(describeNetworkError(withCause(coded(message, code)), "https://nope.invalid/x")).toBe(expected)
+  })
+
+  it("returns null for an error with no system code", () => {
+    expect(describeNetworkError(new Error("boom"), "https://nope.invalid/x")).toBeNull()
   })
 })

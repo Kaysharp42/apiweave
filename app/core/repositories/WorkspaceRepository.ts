@@ -4,6 +4,7 @@ import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
 import type { WorkspaceSyncMode } from "@shared/types/WorkspaceSyncMode"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
+import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> &
   Partial<Pick<Workspace, "description" | "isPersonal" | "origin" | "syncMode">>
@@ -34,6 +35,11 @@ interface WorkspaceSettings {
 
 export class WorkspaceRepository {
   public constructor(private readonly store: KVStore) {}
+
+  /** Same contract as `WorkflowRepository.transaction`. */
+  public transaction<T>(fn: () => T): T {
+    return holdNotificationsUntilCommit(this.store, () => this.store.transaction(fn))
+  }
 
   public create(input: WorkspaceCreate): Workspace {
     const id = generateId()

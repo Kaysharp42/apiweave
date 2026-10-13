@@ -13,6 +13,58 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Deleting a synced workspace now deletes it in Cloud.** The deletion was
+  queued in a table that the local delete emptied, so it never reached the
+  server. It is now kept in its own queue, survives restarts and network
+  failures, and is pushed even after the workspace's sync binding is gone.
+- **A local edit and its queued cloud change are saved together.** They were
+  two separate writes, so a failure between them could keep an edit that never
+  synced. Now both are saved, or neither is.
+- **Disconnect says what it throws away.** The confirmation now counts the
+  changes not yet synced and the failed changes that disconnecting discards,
+  and offers **Sync now** first while anything is unsynced.
+- **Linking a cloud account asks about unsaved tabs first.** Linking from the
+  signed-out state closes every tab, and it did so after the account changed,
+  losing unsaved edits. It now asks **Save**, **Discard**, or **Cancel** for
+  each such tab before signing in, and **Cancel** stops the link.
+- **A canvas save no longer overwrites an agent's edit.** Saves now carry the
+  revision the canvas loaded, and a workflow changed elsewhere since (over MCP,
+  cloud sync, another window) refuses the save instead of being silently
+  replaced. Your edits stay on the canvas, and a notice offers **Load latest**
+  or **Overwrite**. `workflows_update` accepts `expectedRevision` as well.
+
+- **Redirects no longer leak credentials or resend a POST.** A followed
+  redirect to another origin drops `Authorization`, `Cookie` and
+  `Proxy-Authorization`; a redirect from HTTPS to HTTP is refused; a 303, or a
+  301/302 answering a POST, is followed with a GET and no body. Previously every
+  hop resent the headers, method and body to wherever the server pointed.
+- **Every Set-Cookie header is kept.** A response setting several cookies kept
+  only the last one, so assertions and extractors on the others failed. The
+  `set-cookie` header now holds every cookie, one per line.
+- **A failed request says why.** DNS failures, refused or reset connections and
+  TLS errors (expired, self-signed or mismatched certificates) are now reported
+  with their cause and code, such as "Network error: connection refused by
+  localhost:8080 (ECONNREFUSED)", instead of "Node execution failed".
+- **Large and binary response bodies are kept honestly.** A body over 1 MiB is
+  stored up to 1 MiB and marked truncated with its full size, instead of being
+  left empty when the server sent a `Content-Length`. A body that is not UTF-8
+  text is stored as base64 instead of corrupted text.
+- Turning off TLS verification on a node no longer opens a new connection pool
+  for every request.
+- **A cancelled run is recorded as cancelled.** Cancelling a run, including one
+  waiting in a Delay or a Merge, now saves it as `cancelled` in History and in
+  Call Workflow sub-runs, with the interrupted node shown as skipped.
+  Previously it was saved as completed or failed, and a cancel during a Delay
+  showed the run as passed. A Merge waiting on its branches now stops on cancel
+  instead of waiting out its 30 s window.
+- **An HTTP request node's timeout is honoured above 30 s.** The node's timeout
+  is now the request's only deadline; a hidden 30 s cap cut longer timeouts
+  short. A timed-out request now says "Request timed out after Ns", and a
+  cancelled one is no longer reported as a timeout.
+- **Secrets used only inside a called workflow are resolved.** A
+  `{{secrets.*}}` placeholder that appears only in a Call Workflow target (at
+  any depth) was sent as literal text; secrets for the whole call tree are now
+  resolved when the run starts, and masked in its history like any other.
 - **Secret values no longer reach the run history.** Every secret a run
   resolves is now replaced with `<SECRET>` in what the run stores and streams:
   request URLs, response headers and bodies (including an API that echoes your
@@ -53,8 +105,20 @@ project adheres to [Semantic Versioning](https://semver.org/).
   the close button used to discard unapplied JSON. With changed text they now
   ask **Apply**, **Discard** or **Keep editing**.
 
+- **Run history no longer grows without limit or slows down long runs.** Each
+  workflow keeps its newest 100 runs; older finished runs are deleted, with
+  their node results and response bodies, whenever a run finishes. The History
+  panel loads compact run summaries a page at a time and fetches a run's full
+  results only when you open it. Storing each node's result no longer rewrites
+  every earlier result of the run, so a run with many nodes no longer gets
+  slower with every node that completes.
+
 ### Added
 
+- **Delete runs from History.** Each finished run in the History panel has a
+  delete button, and **Clear history** deletes every finished run of the
+  workflow. Runs still in progress are kept. Agents connected through MCP
+  cannot delete run history.
 - **Crash capture in the log.** Uncaught exceptions and unhandled rejections in
   the main process, renderer and child-process crashes (including the agent PTY
   host), failed loads and unresponsive windows are recorded in the daily log

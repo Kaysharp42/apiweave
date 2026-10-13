@@ -138,6 +138,31 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
     expect(list.total).toBeGreaterThanOrEqual(1)
   })
 
+  it("rejects a workflow update based on a stale revision instead of overwriting the newer one", async () => {
+    const workspace = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const created = await ok<{ workflowId: string; rev: number }>("workflows", "create", {
+      workspaceId: workspace.workspaceId,
+      name: "demo",
+    })
+    const ids = { workspaceId: workspace.workspaceId, workflowId: created.workflowId }
+    // An agent edits first; the canvas still holds the revision it loaded.
+    const agentEdit = await ok<{ rev: number }>("workflows", "update", { ...ids, variables: { from: "agent" } })
+
+    const stale = await router.dispatch({
+      domain: "workflows",
+      action: "update",
+      payload: { ...ids, variables: { from: "canvas" }, expectedRevision: created.rev },
+    })
+    expect(stale).toMatchObject({
+      ok: false,
+      error: { code: "conflict", details: { expectedRevision: created.rev, currentRevision: agentEdit.rev } },
+    })
+    expect(await ok("workflows", "get", ids)).toMatchObject({ variables: { from: "agent" } })
+
+    const current = await ok("workflows", "update", { ...ids, variables: { from: "canvas" }, expectedRevision: agentEdit.rev })
+    expect(current).toMatchObject({ variables: { from: "canvas" }, rev: agentEdit.rev + 1 })
+  })
+
   it("returns not_found for an unknown workspace (existence-hiding, never denied)", async () => {
     const res = await router.dispatch({
       domain: "workflows",
@@ -293,6 +318,41 @@ describe("IPC handlers — dispatch envelope + authorize + validate (QA: task-13
       },
     })
     expect(res).toMatchObject({ ok: false, error: { code: "validation" } })
+  })
+})
+
+describe("IPC handlers — run history maintenance", () => {
+  it("lists summaries without node results, deletes one finished run and clears a workflow's history", async () => {
+    const { workspaceId } = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const { workflowId } = await ok<{ workflowId: string }>("workflows", "create", { workspaceId, name: "demo" })
+    const create = () => ok<{ runId: string }>("runs", "create", { workspaceId, workflowId })
+    const first = await create()
+    const second = await create()
+    const live = await create()
+    new RunRepository(db.kvStore).upsertNodeResult(first.runId, {
+      nodeId: "http-1",
+      status: "passed",
+      duration: 1,
+      response: { body: "large-response-body" },
+    })
+    await ok("runs", "cancel", { workspaceId, runId: first.runId })
+    await ok("runs", "cancel", { workspaceId, runId: second.runId })
+
+    const page = await ok<{ items: Record<string, unknown>[] }>("runs", "history", { workspaceId, workflowId })
+    expect(page.items).toHaveLength(3)
+    expect(page.items.find((item) => item["runId"] === first.runId)).toMatchObject({ nodeCount: 1 })
+    expect(JSON.stringify(page)).not.toContain("large-response-body")
+    expect(page.items.every((item) => !("results" in item))).toBe(true)
+
+    // A run still pending or running is refused, not deleted under the scheduler.
+    const refused = await router.dispatch({ domain: "runs", action: "delete", payload: { workspaceId, runId: live.runId } })
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error.code).toBe("conflict")
+
+    expect(await ok("runs", "delete", { workspaceId, runId: first.runId })).toBeNull()
+    expect(await ok("runs", "clearHistory", { workspaceId, workflowId })).toEqual({ deleted: 1 })
+    const left = await ok<{ items: { runId: string }[] }>("runs", "history", { workspaceId, workflowId })
+    expect(left.items.map((item) => item.runId)).toEqual([live.runId])
   })
 })
 

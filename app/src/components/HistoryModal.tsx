@@ -1,11 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useReducer,
-  useRef,
-  useCallback,
-  useSyncExternalStore,
-} from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -19,92 +12,22 @@ import {
   Timer,
   Zap,
   Activity,
+  Trash2,
 } from "lucide-react";
-import { authenticatedFetch } from "../utils/apiweaveClient";
-import { workflowRunsListUrl } from "../utils/apiweaveClient";
+import type { RunSummary } from "@shared/types/RunSummary";
+import { apiweave } from "../utils/apiweaveClient";
 import { IconButton } from "./atoms/IconButton";
-import type { RunRecord, HistoryModalProps } from "../types";
+import { Button } from "./atoms/Button";
+import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import type { HistoryModalProps } from "../types";
 
-interface PaginationInfo {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrevious: boolean;
-}
+const PAGE_SIZE = 20;
+const LIVE_STATUSES: ReadonlySet<RunSummary["status"]> = new Set([
+  "pending",
+  "running",
+]);
 
-interface RunHistoryResponse {
-  runs: RunRecord[];
-  total: number;
-}
-
-type RequestStatus = "loading" | "idle";
-
-interface RequestState {
-  status: RequestStatus;
-}
-
-type RequestAction = { type: "start-loading" } | { type: "finish-loading" };
-
-interface HistoryModalStoreState {
-  runs: RunRecord[];
-  pagination: PaginationInfo;
-  isLoading: boolean;
-}
-
-const initialPagination: PaginationInfo = {
-  page: 1,
-  limit: 10,
-  total: 0,
-  totalPages: 0,
-  hasNext: false,
-  hasPrevious: false,
-};
-
-const historyModalStore: HistoryModalStoreState = {
-  runs: [],
-  pagination: initialPagination,
-  isLoading: true,
-};
-
-const historyModalListeners = new Set<() => void>();
-
-function emitHistoryModalStoreUpdate(): void {
-  historyModalListeners.forEach((listener) => listener());
-}
-
-function subscribeToHistoryModalStore(listener: () => void): () => void {
-  historyModalListeners.add(listener);
-  return () => historyModalListeners.delete(listener);
-}
-
-function setHistoryModalStoreState(
-  nextState: Partial<HistoryModalStoreState>,
-): void {
-  if (nextState.runs !== undefined) {
-    historyModalStore.runs = nextState.runs;
-  }
-  if (nextState.pagination !== undefined) {
-    historyModalStore.pagination = nextState.pagination;
-  }
-  if (nextState.isLoading !== undefined) {
-    historyModalStore.isLoading = nextState.isLoading;
-  }
-  emitHistoryModalStoreUpdate();
-}
-
-function requestReducer(
-  _state: RequestState,
-  action: RequestAction,
-): RequestState {
-  switch (action.type) {
-    case "start-loading":
-      return { status: "loading" };
-    case "finish-loading":
-      return { status: "idle" };
-  }
-}
+type PendingDelete = { kind: "run"; runId: string } | { kind: "clear" };
 
 export default function HistoryModal({
   workflowId,
@@ -114,69 +37,54 @@ export default function HistoryModal({
   onSelectRun,
   onShowTimeline,
 }: HistoryModalProps) {
-  const [requestState, dispatchRequest] = useReducer(requestReducer, {
-    status: "loading",
-  });
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(
+    null,
+  );
   const [isAnimating, setIsAnimating] = useState(true);
   const modalRef = useRef<HTMLDivElement>(null);
-  const loadingPageRef = useRef<number>(1);
-  const isLoading = requestState.status === "loading";
-  const snapshot = useSyncExternalStore(
-    subscribeToHistoryModalStore,
-    () => historyModalStore,
-    () => historyModalStore,
-  );
-  const { runs, pagination } = snapshot;
   const handleClose = useCallback(() => {
     setIsAnimating(false);
     setTimeout(onClose, 200);
   }, [onClose]);
 
+  // History rows are summaries — status, timing, failure counts. The full run,
+  // node results and bodies included, is fetched only when one is opened.
   const fetchRunHistory = useCallback(
-    async (page = 1) => {
-      dispatchRequest({ type: "start-loading" });
-      setHistoryModalStoreState({ isLoading: true });
+    async (cursor?: string) => {
+      setIsLoading(true);
+      setError(null);
       try {
-        const limit = 10;
-        const response = await authenticatedFetch(
-          workflowRunsListUrl(workspaceId, workflowId, page, limit),
+        const page = await apiweave.runs.history({
+          workspaceId,
+          workflowId,
+          limit: PAGE_SIZE,
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+        setRuns((current) =>
+          cursor === undefined ? page.items : [...current, ...page.items],
         );
-        if (response.ok) {
-          const data: RunHistoryResponse = await response.json();
-          // The runs route returns the full unpaginated set with a total
-          // count; paginate it client-side since the backend ignores
-          // page/limit query params.
-          const totalPages = Math.max(1, Math.ceil(data.total / limit));
-          const clampedPage = Math.min(Math.max(page, 1), totalPages);
-          const start = (clampedPage - 1) * limit;
-          setHistoryModalStoreState({
-            runs: data.runs.slice(start, start + limit),
-            pagination: {
-              page: clampedPage,
-              limit,
-              total: data.total,
-              totalPages,
-              hasNext: clampedPage < totalPages,
-              hasPrevious: clampedPage > 1,
-            },
-          });
-        }
+        setNextCursor(page.nextCursor);
       } catch {
-        // Silently fail - will retry on next fetch
+        setError("Could not load run history.");
       } finally {
-        dispatchRequest({ type: "finish-loading" });
-        setHistoryModalStoreState({ isLoading: false });
+        setIsLoading(false);
       }
     },
     [workspaceId, workflowId],
   );
 
   useEffect(() => {
-    fetchRunHistory(1);
+    void fetchRunHistory();
   }, [fetchRunHistory]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      // The confirm dialog renders in a portal outside this panel.
+      if (pendingDelete !== null) return;
       if (
         modalRef.current &&
         !modalRef.current.contains(event.target as Node)
@@ -189,15 +97,29 @@ export default function HistoryModal({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [handleClose]);
+  }, [handleClose, pendingDelete]);
 
-  const handlePageChange = (newPage: number) => {
-    fetchRunHistory(newPage);
-  };
-
-  const handleRunClick = (run: RunRecord) => {
+  const handleRunClick = (run: RunSummary) => {
     onSelectRun(run);
     handleClose();
+  };
+
+  const confirmDelete = async () => {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (target === null) return;
+    try {
+      if (target.kind === "run") {
+        await apiweave.runs.delete(workspaceId, target.runId);
+      } else {
+        await apiweave.runs.clearHistory(workspaceId, workflowId);
+      }
+    } catch {
+      setError("Could not delete run history.");
+      return;
+    }
+    // Deleting changes the history, so any cursor already issued is stale.
+    await fetchRunHistory();
   };
 
   const getStatusColor = (status: string): string => {
@@ -249,7 +171,7 @@ export default function HistoryModal({
     return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
-  const formatDuration = (duration?: number): string => {
+  const formatDuration = (duration: number | null | undefined): string => {
     if (!duration) return "--";
     if (duration < 1000) return `${duration}ms`;
     return `${(duration / 1000).toFixed(2)}s`;
@@ -288,21 +210,24 @@ export default function HistoryModal({
                   Run History
                 </h2>
                 <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                  {pagination.total} run{pagination.total !== 1 ? "s" : ""}{" "}
-                  total
-                  {pagination.totalPages > 1 && (
-                    <>
-                      {" • "}Showing{" "}
-                      {(pagination.page - 1) * pagination.limit + 1}-
-                      {Math.min(
-                        pagination.page * pagination.limit,
-                        pagination.total,
-                      )}
-                    </>
-                  )}
+                  {runs.length}
+                  {nextCursor !== null ? "+" : ""} run
+                  {runs.length !== 1 || nextCursor !== null ? "s" : ""}, newest
+                  first
                 </p>
               </div>
             </div>
+            {runs.length > 0 && (
+              <Button
+                variant="ghost"
+                intent="error"
+                size="xs"
+                icon={<Trash2 className="w-3.5 h-3.5" />}
+                onClick={() => setPendingDelete({ kind: "clear" })}
+              >
+                Clear history
+              </Button>
+            )}
             <button
               type="button"
               onClick={handleClose}
@@ -315,14 +240,20 @@ export default function HistoryModal({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
+          {error !== null && (
+            <p
+              role="alert"
+              className="px-5 py-2 text-xs text-status-error dark:text-status-error"
+            >
+              {error}
+            </p>
+          )}
+          {isLoading && runs.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="flex flex-col items-center gap-3">
                 <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
                 <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                  {loadingPageRef.current && loadingPageRef.current > 1
-                    ? "Loading page…"
-                    : "Loading history…"}
+                  Loading history…
                 </p>
               </div>
             </div>
@@ -396,39 +327,12 @@ export default function HistoryModal({
                         )}
                       </div>
 
-                      {run.status === "failed" && run.error && (
-                        <div className="mt-2 text-xs">
-                          {run.error.includes("Assertion failed") ? (
-                            <div className="text-status-error dark:text-status-error">
-                              <div className="font-semibold mb-1">
-                                {run.error.includes("/") &&
-                                run.error.match(/(\d+)\/(\d+)/)?.[0]
-                                  ? `Assertion: ${run.error.match(/(\d+)\/(\d+)/)?.[0]} failed`
-                                  : "Assertion failed"}
-                              </div>
-                              <div className="truncate">
-                                {run.error.split("\n")[0]}
-                              </div>
-                            </div>
-                          ) : run.error.includes("branches failed") ? (
-                            <div className="text-status-error dark:text-status-error">
-                              <div className="font-semibold">{run.error}</div>
-                            </div>
-                          ) : (
-                            <div className="text-status-error dark:text-status-error truncate">
-                              Error: {run.error}
-                            </div>
-                          )}
+                      {run.status === "failed" && run.failedNodeCount > 0 && (
+                        <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
+                          {run.failedNodeCount} node
+                          {run.failedNodeCount > 1 ? "s" : ""} failed
                         </div>
                       )}
-                      {run.status === "failed" &&
-                        run.failedNodes &&
-                        run.failedNodes.length > 0 && (
-                          <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
-                            {run.failedNodes.length} node
-                            {run.failedNodes.length > 1 ? "s" : ""} failed
-                          </div>
-                        )}
                     </div>
 
                     <div className="flex-shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
@@ -446,6 +350,21 @@ export default function HistoryModal({
                           <Activity className="w-4 h-4" />
                         </IconButton>
                       )}
+                      {!LIVE_STATUSES.has(run.status) && (
+                        <IconButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPendingDelete({ kind: "run", runId: run.runId });
+                          }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                          variant="ghost"
+                          size="xs"
+                          tooltip="Delete run"
+                          aria-label={`Delete run ${run.runId}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </IconButton>
+                      )}
                       <ChevronRight className="w-5 h-5" />
                     </div>
                   </div>
@@ -456,33 +375,35 @@ export default function HistoryModal({
         </div>
 
         <div className="flex-shrink-0 px-5 py-3 border-t border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
-          {!isLoading && runs.length > 0 && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={!pagination.hasPrevious || isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Previous
-              </button>
-
-              <span className="text-sm text-text-secondary dark:text-text-primary-dark">
-                Page {pagination.page} of {pagination.totalPages}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={!pagination.hasNext || isLoading}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-text-primary dark:text-text-primary-dark bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
-            </div>
+          {nextCursor !== null && (
+            <Button
+              variant="outline"
+              size="sm"
+              fullWidth
+              loading={isLoading}
+              onClick={() => void fetchRunHistory(nextCursor)}
+            >
+              Load more
+            </Button>
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
+        title={
+          pendingDelete?.kind === "clear" ? "Clear run history" : "Delete run"
+        }
+        message={
+          pendingDelete?.kind === "clear"
+            ? "Delete every finished run of this workflow, with its results? Runs still in progress are kept. This cannot be undone."
+            : "Delete this run and its results? This cannot be undone."
+        }
+        confirmLabel="Delete"
+        intent="error"
+      />
     </div>
   );
 }

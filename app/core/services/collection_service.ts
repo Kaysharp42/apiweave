@@ -37,8 +37,11 @@ export class CollectionService {
 
   async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId">): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_COLLECTIONS)
-    const created = this.collections.create({ ...input, workspaceId })
-    recordCollectionUpsert(this.syncProvider, this.withCount(created))
+    const created = this.collections.transaction(() => {
+      const collection = this.collections.create({ ...input, workspaceId })
+      recordCollectionUpsert(this.syncProvider, this.withCount(collection))
+      return collection
+    })
     await this.syncProvider.push()
     return created
   }
@@ -57,9 +60,12 @@ export class CollectionService {
   async update(workspaceId: string, collectionId: string, patch: CollectionUpdate): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
     this.mustGet(workspaceId, collectionId)
-    const updated = this.collections.update(collectionId, patch)
+    const updated = this.collections.transaction(() => {
+      const collection = this.collections.update(collectionId, patch)
+      if (collection !== undefined) recordCollectionUpsert(this.syncProvider, this.withCount(collection))
+      return collection
+    })
     if (updated === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
-    recordCollectionUpsert(this.syncProvider, this.withCount(updated))
     await this.syncProvider.push()
     return this.withCount(updated)
   }
@@ -72,8 +78,10 @@ export class CollectionService {
     if (count > 0) {
       throw new ConflictError(`Cannot delete collection. ${count} workflow(s) are still in it.`)
     }
-    recordCollectionTombstone(this.syncProvider, this.withCount(existing))
-    this.collections.delete(collectionId)
+    this.collections.transaction(() => {
+      recordCollectionTombstone(this.syncProvider, this.withCount(existing))
+      this.collections.delete(collectionId)
+    })
     await this.syncProvider.push()
   }
 
@@ -103,41 +111,38 @@ export class CollectionService {
     const members = this.workflows.listByCollection(workspaceId, collectionId).items
     const movingWorkflowIds = new Set(members.map((workflow) => workflow.workflowId))
 
-    // Keyed by workspace, so leaving reads as a deletion from the source — see
-    // the matching note in `WorkflowService.moveToWorkspace`.
-    recordCollectionTombstone(this.syncProvider, this.withCount(existing))
-    for (const member of members) recordWorkflowTombstone(this.syncProvider, member)
-
     const moved = this.collections.transaction(() => {
+      // Keyed by workspace, so leaving reads as a deletion from the source — see
+      // the matching note in `WorkflowService.moveToWorkspace`.
+      recordCollectionTombstone(this.syncProvider, this.withCount(existing))
+      for (const member of members) recordWorkflowTombstone(this.syncProvider, member)
+
       this.collections.setWorkspace(collectionId, targetWorkspaceId)
+      const relocated: Workflow[] = []
       for (const member of members) {
         this.workflows.setWorkspace(member.workflowId, targetWorkspaceId)
-        this.workflows.update(member.workflowId, {
+        const workflow = this.workflows.update(member.workflowId, {
           selectedEnvironmentId: null,
           nodes: clearDepartingCallTargets(member.nodes, movingWorkflowIds),
         })
+        if (workflow !== undefined) relocated.push(workflow)
       }
-      return this.collections.getById(collectionId)
+      const collection = this.collections.getById(collectionId)
+      if (collection === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
+      const withCount = this.withCount(collection)
+      recordCollectionUpsert(this.syncProvider, withCount)
+      for (const workflow of relocated) recordWorkflowUpsert(this.syncProvider, workflow)
+      return withCount
     })
-    if (moved === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
-
-    const withCount = this.withCount(moved)
-    recordCollectionUpsert(this.syncProvider, withCount)
-    for (const member of members) {
-      const relocated = this.workflows.getById(member.workflowId)
-      if (relocated !== undefined) recordWorkflowUpsert(this.syncProvider, relocated)
-    }
     await this.syncProvider.push()
-    return withCount
+    return moved
   }
 
   async addWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
     this.mustGet(workspaceId, collectionId)
     this.mustGetWorkflow(workspaceId, workflowId)
-    const updated = this.workflows.update(workflowId, { collectionId })
-    if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    recordWorkflowUpsert(this.syncProvider, updated)
+    const updated = this.updateWorkflow(workflowId, { collectionId })
     await this.syncProvider.push()
     return updated
   }
@@ -149,9 +154,7 @@ export class CollectionService {
     if (workflow.collectionId !== collectionId) {
       throw new NotFoundError(`workflow ${workflowId} is not in collection ${collectionId}`)
     }
-    const updated = this.workflows.update(workflowId, { collectionId: null })
-    if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    recordWorkflowUpsert(this.syncProvider, updated)
+    const updated = this.updateWorkflow(workflowId, { collectionId: null })
     await this.syncProvider.push()
     return updated
   }
@@ -167,6 +170,17 @@ export class CollectionService {
       ...collection,
       workflowCount: this.workflows.countByCollection(collection.workspaceId, collection.collectionId),
     }
+  }
+
+  /** A workflow write and its cloud outbox entry, committed together. */
+  private updateWorkflow(workflowId: string, patch: { readonly collectionId: string | null }): Workflow {
+    const updated = this.workflows.transaction(() => {
+      const workflow = this.workflows.update(workflowId, patch)
+      if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
+      return workflow
+    })
+    if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    return updated
   }
 
   private mustGet(workspaceId: string, collectionId: string): Collection {

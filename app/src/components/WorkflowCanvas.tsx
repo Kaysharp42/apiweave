@@ -304,9 +304,9 @@ export function WorkflowCanvas({
   > | null>;
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
-  const saveWorkflowRef = useRef<((silent: boolean) => Promise<void>) | null>(
-    null,
-  );
+  const saveWorkflowRef = useRef<
+    ((silent: boolean, overwrite?: boolean) => Promise<void>) | null
+  >(null);
   const hydrationVersionRef = useRef(0);
 
   // ── Canvas preferences ───────────────────────────────────────────────
@@ -1149,8 +1149,19 @@ export function WorkflowCanvas({
 
   // ── Save workflow ────────────────────────────────────────────────────
 
-  const saveWorkflow = useCallback(
-    async (silent = false) => {
+  // The revision the canvas's graph is based on: the last server snapshot it
+  // showed, or the answer to its last save. Every save asserts it, so a save
+  // never silently replaces an edit an agent or another device made since.
+  // Read when the save is sent, and saves are sent one at a time, so a save
+  // queued behind another asserts the revision that one produced.
+  const baseRevisionRef = useRef(workflow?.rev ?? 0);
+  useEffect(() => {
+    baseRevisionRef.current = workflow?.rev ?? 0;
+  }, [workflow?.rev]);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const sendSave = useCallback(
+    async (silent: boolean, overwrite: boolean) => {
       if (!scope.workspaceId || !workflow) return;
 
       try {
@@ -1196,12 +1207,20 @@ export function WorkflowCanvas({
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(workflowPayload),
+            body: JSON.stringify(
+              overwrite
+                ? workflowPayload
+                : {
+                    ...workflowPayload,
+                    expectedRevision: baseRevisionRef.current,
+                  },
+            ),
           },
         );
 
         if (response.ok) {
           const savedWorkflow = WorkflowSchema.parse(await response.json());
+          baseRevisionRef.current = savedWorkflow.rev;
           hydratedBaselineRef.current = { nodeCount, edgeCount };
           // This echo is our own graph coming back. Claim it before the tab
           // store hands it to `useHydration`, or the canvas re-hydrates from
@@ -1221,6 +1240,28 @@ export function WorkflowCanvas({
           // what to fix.
           const { detail, code, issues } =
             await readSaveFailureEnvelope(response);
+          if (code === "conflict") {
+            // Someone else's edit landed first. Neither side is thrown away
+            // on our own: the server keeps theirs, the canvas keeps ours
+            // (still unsaved), and the user picks.
+            canvasLog.warn("workflow-save-conflict", { workflowId });
+            toast.warning(
+              "This workflow was changed elsewhere — by an agent or another device — so your edits are not saved.",
+              {
+                id: `workflow-save-error-${workflowId}`,
+                duration: Infinity,
+                action: {
+                  label: "Load latest",
+                  onClick: () => void reloadWorkflowFromServer(),
+                },
+                cancel: {
+                  label: "Overwrite",
+                  onClick: () => void saveWorkflowRef.current?.(false, true),
+                },
+              },
+            );
+            return;
+          }
           const cause =
             detail ??
             issues[0] ??
@@ -1263,7 +1304,18 @@ export function WorkflowCanvas({
       selectedEnvironment,
       workflow,
       noteSavedWorkflow,
+      reloadWorkflowFromServer,
     ],
+  );
+
+  /** `overwrite` drops the revision check: the user chose to replace a newer server copy. */
+  const saveWorkflow = useCallback(
+    (silent = false, overwrite = false): Promise<void> => {
+      const sent = saveQueueRef.current.then(() => sendSave(silent, overwrite));
+      saveQueueRef.current = sent;
+      return sent;
+    },
+    [sendSave],
   );
 
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
@@ -1388,6 +1440,7 @@ export function WorkflowCanvas({
               nodes: editedWorkflow.nodes,
               edges: editedWorkflow.edges,
               variables: editedWorkflow.variables,
+              expectedRevision: workflow.rev,
             }),
           },
         );
@@ -1406,9 +1459,14 @@ export function WorkflowCanvas({
         } else {
           try {
             const errBody = (await response.json()) as {
+              code?: string;
               detail?: string | Array<{ loc?: string[]; msg?: string }>;
             };
-            if (errBody.detail && Array.isArray(errBody.detail)) {
+            if (errBody.code === "conflict") {
+              toast.error(
+                "This workflow was changed elsewhere since the editor opened — reopen it to edit the latest version",
+              );
+            } else if (errBody.detail && Array.isArray(errBody.detail)) {
               const messages = errBody.detail.map((d) => {
                 const loc = d.loc ? d.loc.slice(1).join(" → ") : "";
                 return `${loc}: ${d.msg}`;

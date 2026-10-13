@@ -213,6 +213,9 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "runs.getArtifacts",
       "runs.openArtifact",
       "runs.saveArtifactAs",
+      // Deleting run history is irreversible and the user's call alone.
+      "runs.delete",
+      "runs.clearHistory",
       // Phase 6: runs.history is the one run query (workspace/workflow/status
       // filtering, newest first, limit 1 for latest). The IPC handlers stay for
       // the renderer and debug-context; they are just not agent tools.

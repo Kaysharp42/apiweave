@@ -90,12 +90,14 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `cookies` | Structured key/value rows, each with an active toggle |
 | `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field |
-| `timeout` | Request timeout in seconds |
-| `follow redirects` | Whether redirect responses are followed (on by default) |
+| `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
+| `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Per-node override of the workflow's `continueOnFail` setting |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
+
+A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
 **Handles:** one input, one output.
 
@@ -225,14 +227,16 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | --- | --- |
 | **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
 | **History** | Opens run history for the workflow, with per-run timeline and detail views. |
-| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it. |
+| **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it: the run is recorded as `cancelled`, the node it interrupted (a request, a delay, a merge still waiting) shows as skipped, and nothing after it runs. |
 | **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. **Apply** (`Ctrl+S`) applies and saves them. Closing with unapplied changes (Escape, a click outside, or the close button) asks **Apply**, **Discard** or **Keep editing**; invalid JSON stays open with the error shown. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
 
 ### Unsaved changes
 
-A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and linking or disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, the link, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
+
+Every save is checked against the revision the canvas loaded. If the workflow changed elsewhere in the meantime — an agent over MCP, cloud sync, another window — the save is refused instead of overwriting that change, your edits stay on the canvas unsaved, and a notice offers **Load latest** (discard your edits and show the newer version) or **Overwrite** (save yours over it).
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 

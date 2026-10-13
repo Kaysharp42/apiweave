@@ -15,6 +15,8 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  *    exposing them would let an agent re-home a credential it is not allowed to read.
  *  - `runs.getArtifacts`, `runs.openArtifact`, `runs.saveArtifactAs` — Electron
  *    shell/dialog operations, not agent tools.
+ *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
+ *    history; the user's call from the History panel, never an agent's.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,
  *    `runs.getLatestFailed` (phase 6) — superseded by `runs.history`, which already
  *    filters by workspace/workflow/status with newest-first keyset pagination: the

@@ -249,8 +249,8 @@ export class WorkflowService {
     const nodes = options?.layout === true && input.nodes !== undefined
       ? layoutWorkflowNodes(input.nodes, input.edges ?? [])
       : input.nodes
-    const created = this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })
-    recordWorkflowUpsert(this.syncProvider, created)
+    const created = this.workflows.transaction(() =>
+      this.recorded(this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })))
     await this.syncProvider.push()
     return created
   }
@@ -326,9 +326,21 @@ export class WorkflowService {
   }
 
 // fallow-ignore-next-line complexity
-  async update(workspaceId: string, workflowId: string, patch: WorkflowUpdate, options?: { readonly layout?: boolean }): Promise<Workflow> {
+  /**
+   * Replace fields of a workflow. `expectedRevision` makes the write a
+   * compare-and-swap: the canvas sends the revision its graph is based on, so
+   * a save cannot silently overwrite an agent's or another device's edit that
+   * landed after the canvas last loaded.
+   */
+  async update(
+    workspaceId: string,
+    workflowId: string,
+    patch: WorkflowUpdate,
+    options?: { readonly layout?: boolean; readonly expectedRevision?: number },
+  ): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
+    assertRevision(existing, options?.expectedRevision)
     if ("collectionId" in patch) this.assertCollectionInWorkspace(patch.collectionId ?? null, workspaceId)
     if ("selectedEnvironmentId" in patch) {
       this.assertEnvironmentInWorkspace(patch.selectedEnvironmentId ?? null, workspaceId)
@@ -344,9 +356,7 @@ export class WorkflowService {
         next = { ...patch, nodes: layoutWorkflowNodes(nextNodes, nextEdges) }
       }
     }
-    const updated = this.workflows.update(workflowId, next)
-    if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    recordWorkflowUpsert(this.syncProvider, updated)
+    const updated = this.writeAtRevision(workspaceId, workflowId, options?.expectedRevision, next)
     await this.syncProvider.push()
     return updated
   }
@@ -366,12 +376,7 @@ export class WorkflowService {
   async patch(workspaceId: string, workflowId: string, patch: WorkflowGraphPatch): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
-    if (patch.expectedRevision !== undefined && existing.rev !== patch.expectedRevision) {
-      throw new ConflictError("workflow revision is stale", {
-        expectedRevision: patch.expectedRevision,
-        currentRevision: existing.rev,
-      })
-    }
+    assertRevision(existing, patch.expectedRevision)
 
     const next = mergeGraphPatch(existing, patch)
     this.assertCallWorkflowTargetsInWorkspace(next.nodes, workspaceId, workflowId)
@@ -392,18 +397,7 @@ export class WorkflowService {
     }
     const persist: WorkflowUpdate & { nodes: Workflow["nodes"] } = { ...next, nodes, edges }
 
-    const updated = patch.expectedRevision === undefined
-      ? this.workflows.update(workflowId, persist)
-      : this.workflows.updateAtRevision(workflowId, patch.expectedRevision, persist)
-    if (updated === undefined) {
-      const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
-      if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-      throw new ConflictError("workflow revision changed before the patch could be applied", {
-        expectedRevision: patch.expectedRevision,
-        currentRevision: current.rev,
-      })
-    }
-    recordWorkflowUpsert(this.syncProvider, updated)
+    const updated = this.writeAtRevision(workspaceId, workflowId, patch.expectedRevision, persist)
     await this.syncProvider.push()
     return updated
   }
@@ -429,13 +423,13 @@ export class WorkflowService {
     }
 
     const canonicalRules = AssertionItemSchema.array().parse(rules)
-    const updated = this.workflows.updateAssertionRules(
+    const updated = this.workflows.transaction(() => this.recorded(this.workflows.updateAssertionRules(
       workflowId,
       expectedRevision,
       assertionNodeId,
       mode,
       canonicalRules,
-    )
+    )))
     if (updated === undefined) {
       const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
       throw new ConflictError("workflow revision changed before assertions could be applied", {
@@ -443,7 +437,6 @@ export class WorkflowService {
         currentRevision: current?.rev,
       })
     }
-    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
@@ -451,8 +444,10 @@ export class WorkflowService {
   async delete(workspaceId: string, workflowId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_WORKFLOWS)
     const existing = this.mustGet(workspaceId, workflowId)
-    recordWorkflowTombstone(this.syncProvider, existing)
-    this.workflows.delete(workflowId)
+    this.workflows.transaction(() => {
+      recordWorkflowTombstone(this.syncProvider, existing)
+      this.workflows.delete(workflowId)
+    })
     await this.syncProvider.push()
   }
 
@@ -465,9 +460,8 @@ export class WorkflowService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
     this.assertCollectionInWorkspace(collectionId, workspaceId)
-    const updated = this.workflows.update(workflowId, { collectionId })
+    const updated = this.workflows.transaction(() => this.recorded(this.workflows.update(workflowId, { collectionId })))
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
   }
@@ -500,22 +494,20 @@ export class WorkflowService {
     }
     this.assertCollectionInWorkspace(targetCollectionId, targetWorkspaceId)
 
-    // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
-    // upsert under the destination would leave the source workspace still
-    // claiming the row. Leaving is a deletion from where it left.
-    recordWorkflowTombstone(this.syncProvider, existing)
-
     const moved = this.workflows.transaction(() => {
+      // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
+      // upsert under the destination would leave the source workspace still
+      // claiming the row. Leaving is a deletion from where it left.
+      recordWorkflowTombstone(this.syncProvider, existing)
       this.workflows.setWorkspace(workflowId, targetWorkspaceId)
-      return this.workflows.update(workflowId, {
+      return this.recorded(this.workflows.update(workflowId, {
         collectionId: targetCollectionId,
         selectedEnvironmentId: null,
         nodes: clearDepartingCallTargets(existing.nodes, new Set()),
-      })
+      }))
     })
     if (moved === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
 
-    recordWorkflowUpsert(this.syncProvider, moved)
     await this.syncProvider.push()
     return moved
   }
@@ -529,11 +521,44 @@ export class WorkflowService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
     this.assertEnvironmentInWorkspace(environmentId, workspaceId)
-    const updated = this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })
+    const updated = this.workflows.transaction(() =>
+      this.recorded(this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })))
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    recordWorkflowUpsert(this.syncProvider, updated)
     await this.syncProvider.push()
     return updated
+  }
+
+  /**
+   * Write `persist` — at `expectedRevision` when given — and queue its cloud
+   * upsert in the same transaction. A row that vanished is a 404; one whose
+   * revision moved between the caller's check and this write is a conflict.
+   */
+  private writeAtRevision(
+    workspaceId: string,
+    workflowId: string,
+    expectedRevision: number | undefined,
+    persist: WorkflowUpdate,
+  ): Workflow {
+    const updated = this.workflows.transaction(() => this.recorded(expectedRevision === undefined
+      ? this.workflows.update(workflowId, persist)
+      : this.workflows.updateAtRevision(workflowId, expectedRevision, persist)))
+    if (updated !== undefined) return updated
+    const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
+    if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
+    throw new ConflictError("workflow revision changed before the write could be applied", {
+      expectedRevision,
+      currentRevision: current.rev,
+    })
+  }
+
+  /**
+   * Queue the cloud upsert for a row just written. Callers run the write and
+   * this inside one `workflows.transaction`, so the edit and its outbox entry
+   * commit together or not at all.
+   */
+  private recorded<T extends Workflow | undefined>(workflow: T): T {
+    if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
+    return workflow
   }
 
   /** Existence-hiding read: a workflow outside `workspaceId` is reported as absent. */
@@ -587,5 +612,15 @@ export class WorkflowService {
         throw new NotFoundError(`target workflow ${targetWorkflowId} not found`)
       }
     }
+  }
+}
+
+/** A compare-and-swap precondition: `expectedRevision`, when given, must be the stored `rev`. */
+function assertRevision(existing: Workflow, expectedRevision: number | undefined): void {
+  if (expectedRevision !== undefined && existing.rev !== expectedRevision) {
+    throw new ConflictError("workflow revision is stale", {
+      expectedRevision,
+      currentRevision: existing.rev,
+    })
   }
 }

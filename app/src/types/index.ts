@@ -275,7 +275,6 @@ export type { AssertionEditorProps } from "./AssertionEditorProps";
 export type { SelectOption } from "./SelectOption";
 export type { ButtonSelectProps } from "./ButtonSelectProps";
 export type { FileUploadSectionProps } from "./FileUploadSectionProps";
-export type { RunRecord } from "./RunRecord";
 export type { HistoryModalProps } from "./HistoryModalProps";
 export type { RunTimelineProps } from "./RunTimelineProps";
 export type { TimelineRow } from "./TimelineRow";

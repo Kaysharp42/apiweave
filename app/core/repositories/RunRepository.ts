@@ -1,5 +1,5 @@
 import type { KVStore, SqliteRow, SqliteValue } from "../db"
-import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
+import { RUN_HISTORY_RETENTION_PER_WORKFLOW, SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
@@ -72,9 +72,13 @@ export interface RunSummaryPage {
 export type BodyStorage = "inline" | "side"
 
 const TERMINAL_STATUSES: ReadonlySet<Run["status"]> = new Set(["completed", "failed", "cancelled", "interrupted"])
+const TERMINAL_SQL = "status IN ('completed', 'failed', 'cancelled', 'interrupted')"
 
+// Node results live one row per node in `run_node_results`; a full-run read
+// stitches them back into one array in completion order.
 const COLUMNS =
-  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, rev, createdAt, updatedAt"
+  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, rev, createdAt, updatedAt, " +
+  "(SELECT '[' || coalesce(group_concat(result_json, ',' ORDER BY rowid), '') || ']' FROM run_node_results WHERE run_id = runs.id) AS results_json"
 
 interface RunRow extends SqliteRow {
   readonly id: string
@@ -89,13 +93,13 @@ interface RunRow extends SqliteRow {
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
+  readonly results_json: string
 }
 
-/** Everything on a Run that has no dedicated column rides in this blob. */
+/** Everything on a Run that has no dedicated column or table rides in this blob. */
 interface RunMetadata {
   readonly selectedEnvironmentId: string | null
   readonly trigger: Run["trigger"]
-  readonly results: readonly RunResult[]
   readonly duration: number | null
   readonly error: string | null
   readonly failedNodes: readonly string[] | null
@@ -114,7 +118,6 @@ export class RunRepository {
     const metadata: RunMetadata = {
       selectedEnvironmentId: input.selectedEnvironmentId ?? null,
       trigger: input.trigger ?? "manual",
-      results: [],
       duration: null,
       error: null,
       failedNodes: null,
@@ -192,12 +195,12 @@ export class RunRepository {
   /**
    * Bounded, per-node-result-free history query with deterministic keyset
    * ordering. Skips `node_statuses_json` and `extracted_variables_json`
-   * entirely, and lifts the four metadata leaves a history row needs
-   * (`trigger`, `duration`, `failedNodes`, `results` length) out of
-   * `response_metadata_json` in SQL — selecting the blob and parsing every
-   * historical per-node payload merely to discard it is the cost this surface
-   * removes. Absent keys read as SQL NULL and degrade to the same defaults the
-   * full-row path applies.
+   * entirely, lifts the three metadata leaves a history row needs
+   * (`trigger`, `duration`, `failedNodes`) out of `response_metadata_json` in
+   * SQL, and counts node results without reading them — selecting the blob and
+   * parsing every historical per-node payload merely to discard it is the cost
+   * this surface removes. Absent keys read as SQL NULL and degrade to the
+   * same defaults the full-row path applies.
    */
   public listRunSummaries(
     workspaceId: string,
@@ -219,7 +222,7 @@ export class RunRepository {
         // `->` (not json_extract) so a legacy scalar comes back as JSON text
         // rather than a bare value that would not parse.
         "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
-        "json_array_length(response_metadata_json, '$.results') AS node_count " +
+        "(SELECT count(*) FROM run_node_results WHERE run_id = runs.id) AS node_count " +
         `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
       params,
     )
@@ -283,11 +286,14 @@ export class RunRepository {
     const completedAt = terminal ? now : existing.completedAt ?? null
     const duration =
       terminal && startedAt != null ? Date.parse(completedAt ?? now) - Date.parse(startedAt) : existing.duration ?? null
-    this.store.set(
-      "UPDATE runs SET status = ?, startedAt = ?, completedAt = ?, " +
-        "response_metadata_json = json_set(response_metadata_json, '$.duration', ?, '$.error', ?) WHERE id = ?",
-      [status, startedAt, completedAt, duration, error ?? existing.error ?? null, runId],
-    )
+    this.store.transaction((tx) => {
+      tx.set(
+        "UPDATE runs SET status = ?, startedAt = ?, completedAt = ?, " +
+          "response_metadata_json = json_set(response_metadata_json, '$.duration', ?, '$.error', ?) WHERE id = ?",
+        [status, startedAt, completedAt, duration, error ?? existing.error ?? null, runId],
+      )
+      if (terminal) pruneWorkflowHistory(tx, existing.workflowId)
+    })
     return this.getById(runId)
   }
 
@@ -320,19 +326,18 @@ export class RunRepository {
     return this.update(runId, { results: [...results] })
   }
 
-  /** Store one completed node result without waiting for the rest of the run. */
-  public upsertNodeResult(runId: string, result: RunResult): Run | undefined {
-    const existing = this.getById(runId)
-    if (existing === undefined) return undefined
-    const results = [...existing.results]
-    const index = results.findIndex((candidate) => candidate.nodeId === result.nodeId)
-    if (index === -1) results.push(result)
-    else results[index] = result
+  /**
+   * Store one completed node result without waiting for the rest of the run:
+   * a single-row upsert, so a run of n nodes costs n writes rather than
+   * rewriting every earlier result on each completion. A run that no longer
+   * exists stores nothing.
+   */
+  public upsertNodeResult(runId: string, result: RunResult): void {
     this.store.set(
-      "UPDATE runs SET response_metadata_json = json_set(response_metadata_json, '$.results', json(?)) WHERE id = ?",
-      [toJson(results), runId],
+      "INSERT INTO run_node_results (run_id, node_id, result_json) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?) " +
+        "ON CONFLICT(run_id, node_id) DO UPDATE SET result_json = excluded.result_json",
+      [runId, result.nodeId, toJson(result), runId],
     )
-    return this.getById(runId)
   }
 
   /** Persist the executor's final evidence without rewriting per-node progress. */
@@ -345,17 +350,14 @@ export class RunRepository {
       readonly failureMessage: string | null
     },
   ): Run | undefined {
-    this.store.set(
-      "UPDATE runs SET extracted_variables_json = json(?), " +
-        "response_metadata_json = json_set(response_metadata_json, '$.results', json(?), '$.failedNodes', json(?), '$.failureMessage', ?) WHERE id = ?",
-      [
-        toJson(evidence.extractedVariables),
-        toJson(evidence.results),
-        toJson(evidence.failedNodes),
-        evidence.failureMessage,
-        runId,
-      ],
-    )
+    this.store.transaction((tx) => {
+      const updated = tx.set(
+        "UPDATE runs SET extracted_variables_json = json(?), " +
+          "response_metadata_json = json_set(response_metadata_json, '$.failedNodes', json(?), '$.failureMessage', ?) WHERE id = ?",
+        [toJson(evidence.extractedVariables), toJson(evidence.failedNodes), evidence.failureMessage, runId],
+      )
+      if (updated.changes > 0) replaceNodeResults(tx, runId, evidence.results)
+    })
     return this.getById(runId)
   }
 
@@ -372,12 +374,22 @@ export class RunRepository {
     ])
   }
 
-  public delete(runId: string): boolean {
-    return this.store.delete("DELETE FROM runs WHERE id = ?", [runId]).changes > 0
+  /**
+   * Delete one finished run of a workspace, with its node results and
+   * side-table bodies (FK cascade). A run still pending or running is left
+   * alone: the scheduler is writing to it.
+   */
+  public delete(runId: string, workspaceId: string): boolean {
+    return this.store.delete(`DELETE FROM runs WHERE id = ? AND workspace_id = ? AND ${TERMINAL_SQL}`, [runId, workspaceId])
+      .changes > 0
   }
 
-  public deleteByWorkflow(workflowId: string): number {
-    return this.store.delete("DELETE FROM runs WHERE workflow_id = ?", [workflowId]).changes
+  /** Clear a workflow's finished runs in a workspace; live runs are kept. Returns the count deleted. */
+  public deleteByWorkflow(workflowId: string, workspaceId: string): number {
+    return this.store.delete(`DELETE FROM runs WHERE workflow_id = ? AND workspace_id = ? AND ${TERMINAL_SQL}`, [
+      workflowId,
+      workspaceId,
+    ]).changes
   }
 
   /**
@@ -409,7 +421,6 @@ export class RunRepository {
     const metadata: RunMetadata = {
       selectedEnvironmentId: run.selectedEnvironmentId ?? null,
       trigger: run.trigger,
-      results: run.results,
       duration: run.duration ?? null,
       error: run.error ?? null,
       failedNodes: run.failedNodes ?? null,
@@ -419,23 +430,52 @@ export class RunRepository {
       resumeMode: run.resumeMode ?? null,
       resolvedSecrets: run.resolvedSecrets ?? [],
     }
-    this.store.set(
-      "UPDATE runs SET status = ?, node_statuses_json = ?, extracted_variables_json = ?, response_metadata_json = ?, startedAt = ?, completedAt = ? WHERE id = ?",
-      [
-        run.status,
-        toJson(run.nodeStatuses),
-        toJson(run.variables),
-        toJson(metadata),
-        run.startedAt ?? null,
-        run.completedAt ?? null,
-        run.runId,
-      ],
+    this.store.transaction((tx) => {
+      tx.set(
+        "UPDATE runs SET status = ?, node_statuses_json = ?, extracted_variables_json = ?, response_metadata_json = ?, startedAt = ?, completedAt = ? WHERE id = ?",
+        [
+          run.status,
+          toJson(run.nodeStatuses),
+          toJson(run.variables),
+          toJson(metadata),
+          run.startedAt ?? null,
+          run.completedAt ?? null,
+          run.runId,
+        ],
+      )
+      replaceNodeResults(tx, run.runId, run.results)
+    })
+  }
+}
+
+function replaceNodeResults(store: KVStore, runId: string, results: readonly RunResult[]): void {
+  store.delete("DELETE FROM run_node_results WHERE run_id = ?", [runId])
+  for (const result of results) {
+    store.set(
+      "INSERT INTO run_node_results (run_id, node_id, result_json) VALUES (?, ?, ?) " +
+        "ON CONFLICT(run_id, node_id) DO UPDATE SET result_json = excluded.result_json",
+      [runId, result.nodeId, toJson(result)],
     )
   }
 }
 
+/**
+ * Keep the newest {@link RUN_HISTORY_RETENTION_PER_WORKFLOW} runs of a
+ * workflow; delete older finished ones. Node results and side-table bodies go
+ * with them through the FK cascade. Live runs are never pruned, but they do
+ * count toward the newest N.
+ */
+function pruneWorkflowHistory(store: KVStore, workflowId: string): void {
+  store.delete(
+    `DELETE FROM runs WHERE workflow_id = ? AND ${TERMINAL_SQL} AND id NOT IN ` +
+      "(SELECT id FROM runs WHERE workflow_id = ? ORDER BY createdAt DESC, id DESC LIMIT ?)",
+    [workflowId, workflowId, RUN_HISTORY_RETENTION_PER_WORKFLOW],
+  )
+}
+
 function rowToRun(row: RunRow): Run {
   const metadata = normalizeRunMetadata(parseJson<unknown>(row.response_metadata_json))
+  const results = normalizeRunResults(parseJson<unknown>(row.results_json))
   return {
     runId: row.id,
     workspaceId: row.workspace_id,
@@ -444,7 +484,7 @@ function rowToRun(row: RunRow): Run {
     status: row.status as Run["status"],
     trigger: metadata.trigger,
     variables: parseJson<Record<string, JsonValue>>(row.extracted_variables_json),
-    results: [...metadata.results],
+    results,
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     duration: metadata.duration,
@@ -467,7 +507,6 @@ function normalizeRunMetadata(value: unknown): RunMetadata {
   return {
     selectedEnvironmentId: typeof metadata["selectedEnvironmentId"] === "string" ? metadata["selectedEnvironmentId"] : null,
     trigger: metadata["trigger"] === "schedule" ? "schedule" : "manual",
-    results: normalizeRunResults(metadata["results"]),
     duration: typeof metadata["duration"] === "number" ? metadata["duration"] : null,
     error: typeof metadata["error"] === "string" ? metadata["error"] : null,
     failedNodes: Array.isArray(metadata["failedNodes"])
@@ -543,7 +582,7 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
-  /** The four metadata leaves the summary needs, lifted in SQL; NULL when absent. */
+  /** The metadata leaves the summary needs, lifted in SQL; NULL when absent. */
   readonly trigger: SqliteValue
   readonly duration: SqliteValue
   readonly failed_nodes_json: string | null

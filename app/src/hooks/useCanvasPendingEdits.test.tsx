@@ -10,6 +10,7 @@ import usePendingEditsStore, {
 } from "../stores/PendingEditsStore";
 import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import useCanvasPendingEdits from "./useCanvasPendingEdits";
+import { toast } from "sonner";
 import { useHydration } from "./useHydration";
 
 const fetchMock = vi.hoisted(() => vi.fn());
@@ -127,11 +128,37 @@ describe("useCanvasPendingEdits", () => {
     expect(await quitting).toBe(true);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("PATCH");
-    expect(
-      (JSON.parse(init.body as string) as Workflow).nodes[0]?.label,
-    ).toBe("Edited label");
+    const body = JSON.parse(init.body as string) as Workflow & {
+      expectedRevision?: number;
+    };
+    expect(body.nodes[0]?.label).toBe("Edited label");
+    // Saved against the revision the draft was cut from.
+    expect(body.expectedRevision).toBe(1);
     expect(tab()?.draft).toBeUndefined();
     expect(tab()?.workflow?.rev).toBe(2);
+  });
+
+  it("keeps the draft when the workflow changed elsewhere since it was cut", async () => {
+    mountEditedCanvas(makeWorkflow(), true).unmount();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ code: "conflict", detail: "workflow revision is stale" }),
+        { status: 409 },
+      ),
+    );
+
+    const closing = confirmCloseTabs(["wf1"]);
+    await vi.waitFor(() =>
+      expect(usePendingEditsStore.getState().promptFor).toBe("Orders"),
+    );
+    usePendingEditsStore.getState().answer("save");
+
+    expect(await closing).toBe(false);
+    expect(tab()?.draft?.nodes[0]?.label).toBe("Edited label");
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      expect.stringContaining("changed elsewhere"),
+      expect.anything(),
+    );
   });
 
   it("keeps the tab open when its draft's save fails", async () => {

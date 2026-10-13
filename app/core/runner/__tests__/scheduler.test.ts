@@ -557,7 +557,7 @@ describe("RunScheduler", () => {
       expect(run?.variables).toMatchObject({ ref: "<SECRET>" })
     })
 
-    it("masks secret values in a Call Workflow sub-run's own history", async () => {
+    it("resolves and masks a secret used only inside a Call Workflow callee", async () => {
       const ws = seedWorkspace()
       const echo = await startEchoServer()
       const target = workflows.create({
@@ -587,7 +587,8 @@ describe("RunScheduler", () => {
             nodeId: "call1",
             type: "workflow",
             position: { x: 1, y: 0 },
-            config: { targetWorkflowId: target.workflowId, note: "{{secrets.api_token}}" },
+            // The secret appears only inside the callee: the caller's graph never names it.
+            config: { targetWorkflowId: target.workflowId },
           },
         ],
         edges: [{ edgeId: "e1", source: "start", target: "call1" }],
@@ -596,7 +597,8 @@ describe("RunScheduler", () => {
       const events: RunEvent[] = []
       const scheduler = makeScheduler({
         emitProgress: (_runId, event) => events.push(event),
-        resolveSecret: async () => ({ plaintext: SECRET, scopeType: "workspace" }),
+        resolveSecret: async (name) =>
+          name === "api_token" ? { plaintext: SECRET, scopeType: "workspace" } : { plaintext: null, scopeType: null },
       })
       scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
       await new Promise((resolve) => setTimeout(resolve, 500))
@@ -609,6 +611,73 @@ describe("RunScheduler", () => {
       })
       expectNoSecret(childRun)
       expectNoSecret(events)
+    })
+  })
+
+  describe("http-request timeout", () => {
+    it("persists how long a timed-out request waited", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer((_req, res) => {
+        setTimeout(() => res.end("{}"), 1000)
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "timeout-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: `http://127.0.0.1:${port}/slow`, timeout: 0.05 },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const runId = makeScheduler().enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      server.closeAllConnections()
+      server.close()
+
+      const run = runs.getById(runId)
+      expect(run?.status).toBe("failed")
+      expect(run?.results.find((r) => r.nodeId === "http_1")?.error).toBe("Request timed out after 0.05s")
+    })
+  })
+
+  describe("http-request network errors", () => {
+    it("persists the real cause of a refused connection, not a generic failure", async () => {
+      const ws = seedWorkspace()
+      const { createServer } = await import("node:http")
+      const server = createServer()
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      const port = (server.address() as { port: number }).port
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "refused-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: { method: "GET", url: `http://127.0.0.1:${port}/x` },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }).workflowId
+
+      const runId = makeScheduler().enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      expect(runs.getById(runId)?.results.find((r) => r.nodeId === "http_1")?.error).toBe(
+        `Network error: connection refused by 127.0.0.1:${port} (ECONNREFUSED)`,
+      )
     })
   })
 
@@ -689,10 +758,11 @@ describe("RunScheduler", () => {
       expect(runs.getById(r2)?.status).toBe("cancelled")
     })
 
-    it("cancels a running run mid-execution", async () => {
+    it("records a run cancelled during a delay as cancelled, not completed", async () => {
       const ws = seedWorkspace()
       const wf = seedWorkflow(ws, 2000)
-      const scheduler = makeScheduler()
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({ emitProgress: (_runId, event) => events.push(event) })
 
       const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf })
 
@@ -702,8 +772,35 @@ describe("RunScheduler", () => {
       scheduler.cancel(runId)
 
       await new Promise((resolve) => setTimeout(resolve, 500))
-      const status = runs.getById(runId)?.status
-      expect(["cancelled", "completed"].includes(status ?? "")).toBe(true)
+      const run = runs.getById(runId)
+      expect(run?.status).toBe("cancelled")
+      expect(run?.error ?? null).toBeNull()
+      expect(run?.results.find((r) => r.nodeId === "delay1")?.status).toBe("skipped")
+      expect(Object.keys(run?.nodeStatuses ?? {})).not.toContain("end")
+      expect(events.filter((e) => e.kind === "run.finished")).toEqual([{ kind: "run.finished", runId, status: "cancelled" }])
+    })
+
+    it("records a cancelled Call Workflow sub-run as cancelled too", async () => {
+      const ws = seedWorkspace()
+      const target = seedWorkflow(ws, 2000)
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          { nodeId: "call1", type: "workflow", position: { x: 1, y: 0 }, config: { targetWorkflowId: target } },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "call1" }],
+      }).workflowId
+      const scheduler = makeScheduler()
+
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      scheduler.cancel(runId)
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      expect(runs.getById(runId)?.status).toBe("cancelled")
+      expect(runs.listByWorkflow(target, ws).items.map((r) => r.status)).toEqual(["cancelled"])
     })
   })
 

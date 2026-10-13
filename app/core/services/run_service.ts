@@ -204,6 +204,24 @@ export class RunService {
     return updated
   }
 
+  /**
+   * Delete one finished run. A run still pending or running is refused rather
+   * than deleted under the scheduler: cancel it first.
+   */
+  async deleteRun(workspaceId: string, runId: string): Promise<void> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_RUNS)
+    const run = this.mustGet(workspaceId, runId)
+    if (!this.runs.delete(runId, workspaceId)) {
+      throw new ConflictError(`run ${runId} is ${run.status}; cancel it before deleting it`)
+    }
+  }
+
+  /** Delete every finished run of a workflow; live runs are kept. */
+  async clearHistory(workspaceId: string, workflowId: string): Promise<{ deleted: number }> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_RUNS)
+    return { deleted: this.runs.deleteByWorkflow(workflowId, workspaceId) }
+  }
+
   // --- Executor-internal progress writes (field-level, decision #6b) ---
 
   /** Patch one node's status entry into the run — targeted column write, not whole-row. */

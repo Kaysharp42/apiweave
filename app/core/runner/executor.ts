@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
-import { SafeHttp, SafeUrlError } from "./safe_http"
+import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
@@ -113,6 +113,31 @@ interface SseFinishCondition {
   readonly expectedValue?: unknown
 }
 
+/**
+ * Response headers as a name → value record. Set-Cookie is the one header that
+ * cannot be comma-joined (an Expires date contains a comma), and `forEach`
+ * would keep only the last one, so every Set-Cookie is kept, one per line —
+ * a header value can never contain a newline itself.
+ */
+function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
+  const record: Record<string, string> = {}
+  headers.forEach((value, key) => {
+    record[key] = value
+  })
+  const setCookies = headers.getSetCookie()
+  if (setCookies.length > 0) record["set-cookie"] = setCookies.join("\n")
+  return record
+}
+
+/** The bytes as UTF-8 text, or null when they are not valid UTF-8 (a binary body). A sequence cut off by truncation is fine. */
+function decodeUtf8(bytes: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: true })
+  } catch {
+    return null
+  }
+}
+
 function appendQueryParams(url: string, queryParams: Readonly<Record<string, string>>): string {
   if (Object.keys(queryParams).length === 0) return url
   const [base = url, existingQuery] = url.split("?")
@@ -153,7 +178,12 @@ export interface NodeResult {
     readonly body: unknown
     readonly headers: Record<string, string>
     readonly statusCode: number
+    /** The body is the first SIDE_TABLE_THRESHOLD_BYTES bytes only. */
     readonly truncated?: boolean
+    /** The body is not UTF-8 text and is stored base64-encoded. */
+    readonly bodyEncoding?: "base64"
+    /** Full body size, when known (always, unless truncated without a Content-Length). */
+    readonly responseSizeBytes?: number
   }
   readonly mergedByOther?: boolean
   readonly startedAt?: string
@@ -167,7 +197,7 @@ export interface NodeResult {
     readonly workflowId: string
     /** The sub-execution's own run row, when one was persisted — the callee's History entry for this call. */
     readonly runId?: string
-    readonly status: "passed" | "failed"
+    readonly status: ExecutorOutput["status"]
     readonly nodeCount: number
     readonly failedNodeCount: number
     readonly outputVariableNames: readonly string[]
@@ -177,7 +207,8 @@ export interface NodeResult {
 
 export interface ExecutorOutput {
   readonly caseName?: string
-  readonly status: "passed" | "failed"
+  /** `cancelled` whenever the run's cancel signal fired, whatever the nodes did before it. */
+  readonly status: "passed" | "failed" | "cancelled"
   readonly startedAt: string
   readonly seed?: string
   readonly nodeStatuses: Readonly<Record<string, RunnerNodeStatus>>
@@ -224,6 +255,7 @@ export class WorkflowExecutor {
   private readonly sseTasks = new Set<Promise<void>>()
   private workflowNodes = new Map<string, WorkflowNode>()
   private activeRunId = "harness"
+  private cancelSignal: AbortSignal | undefined
   private stepCount = 0
   private maxSteps = 0
   // Set by a parent executor on a child it creates for a Call Workflow node.
@@ -245,6 +277,7 @@ export class WorkflowExecutor {
   ): Promise<ExecutorOutput> {
     const startedAt = this.deps.clock.isoNow()
     this.activeRunId = options.runId ?? "harness"
+    this.cancelSignal = options.cancelSignal
 
     if (workflow.variables) {
       for (const [key, value] of Object.entries(workflow.variables)) {
@@ -489,6 +522,7 @@ export class WorkflowExecutor {
     } else {
       this.updateNodeStatus(nodeId, "passed")
     }
+    if (cancelSignal?.aborted) return
 
     // Find next nodes
     let nextEdges = edges.filter((e) => e.source === nodeId)
@@ -638,11 +672,18 @@ export class WorkflowExecutor {
       } else if (nodeType === "assertion") {
         result = await this.executeAssertion(node, edges)
       } else if (nodeType === "merge") {
-        result = await this.executeMerge(node, edges)
+        result = await this.executeMerge(node, edges, cancelSignal)
       } else if (nodeType === "workflow") {
         result = await this.executeCallWorkflow(node, cancelSignal)
       } else {
         result = { status: "skipped", message: `Unknown node type: ${nodeType}` }
+      }
+
+      // A node the cancel cut short is neither passed nor failed: it never got
+      // to finish. One that finished before the cancel landed keeps its result.
+      if (cancelSignal?.aborted && result.status !== "success" && result.status !== "redirect") {
+        this.recordCancelledNode(nodeId, { ...result, type: nodeType, startedAt: nodeStartedAt, secretRefs })
+        return { shouldContinue: false }
       }
 
       // Determine execution status
@@ -684,6 +725,10 @@ export class WorkflowExecutor {
       return { shouldContinue: true }
     } catch (error) {
       if (error instanceof StopBranch) throw error
+      if (cancelSignal?.aborted) {
+        this.recordCancelledNode(nodeId, { status: "cancelled", type: nodeType, startedAt: nodeStartedAt, secretRefs })
+        return { shouldContinue: false }
+      }
       const errorResult: NodeResult = {
         status: "error",
         error: String(error),
@@ -699,6 +744,18 @@ export class WorkflowExecutor {
       if (!effectiveContinueOnFail) throw new StopBranch(errorResult.error ?? `Node ${nodeId} failed`)
       throw error
     }
+  }
+
+  /**
+   * Record a node the run's cancel cut short. `skipped` is the node vocabulary
+   * for "did not run to completion, and is not a failure" — the run itself is
+   * what carries `cancelled`. The caller stops the branch without failing it.
+   */
+  private recordCancelledNode(nodeId: string, result: NodeResult): NodeResult {
+    const cancelled: NodeResult = { ...result, status: "cancelled", completedAt: this.deps.clock.isoNow() }
+    this.results.set(nodeId, cancelled)
+    this.updateNodeStatus(nodeId, "skipped", cancelled)
+    return cancelled
   }
 
   // -------------------- HTTP request --------------------
@@ -780,22 +837,33 @@ export class WorkflowExecutor {
     try {
       this.deps.http.validateUrl(url)
 
+      // The node's timeout is the only deadline: SafeHttp composes it with the
+      // cancel signal, and its own default applies to callers that set none.
       const fetchInit: UndiciRequestInit = {
         method,
         headers,
-        signal: cancelSignal ? AbortSignal.any([AbortSignal.timeout(timeout * 1000), cancelSignal]) : AbortSignal.timeout(timeout * 1000),
+        ...(cancelSignal ? { signal: cancelSignal } : {}),
       }
       if (fetchBody !== undefined && method !== "GET") {
         fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit, { followRedirects, rejectUnauthorized: sslVerify })
-      const { text: responseText, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
+      const response = await this.deps.http.safeFetch(url, fetchInit, {
+        followRedirects,
+        rejectUnauthorized: sslVerify,
+        timeoutMs: timeout * 1000,
+      })
+      const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
+      const responseText = decodeUtf8(bytes)
+      const declaredSize = Number(response.headers.get("content-length") ?? "")
+      const responseSizeBytes = !truncated ? bytes.byteLength : Number.isFinite(declaredSize) && declaredSize > 0 ? declaredSize : undefined
 
       let responseBody: unknown
-      if (truncated) {
+      if (responseText === null) {
+        responseBody = bytes.toString("base64")
+      } else if (truncated) {
         responseBody = responseText
       } else {
         try {
@@ -820,10 +888,7 @@ export class WorkflowExecutor {
         status = expectedList.includes(statusCode) ? "success" : "error"
       }
 
-      const responseHeaders: Record<string, string> = {}
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value
-      })
+      const responseHeaders = toHeaderRecord(response.headers)
 
       const result: NodeResult = {
         status,
@@ -839,6 +904,8 @@ export class WorkflowExecutor {
           headers: responseHeaders,
           statusCode,
           ...(truncated ? { truncated: true } : {}),
+          ...(responseText === null ? { bodyEncoding: "base64" as const } : {}),
+          ...(responseSizeBytes !== undefined ? { responseSizeBytes } : {}),
         },
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
@@ -858,7 +925,11 @@ export class WorkflowExecutor {
       }
       return withExtractorOutcomes({
         status: "error",
-        error: String(error),
+        error: cancelSignal?.aborted
+          ? "Request cancelled"
+          : error instanceof Error && error.name === "TimeoutError"
+            ? `Request timed out after ${timeout}s`
+            : (describeNetworkError(error, url) ?? String(error)),
         method,
         url,
         duration: Date.now() - startTime,
@@ -920,8 +991,7 @@ export class WorkflowExecutor {
         { method: "GET", headers, signal },
         { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000 },
       )
-      const responseHeaders: Record<string, string> = {}
-      response.headers.forEach((value, key) => { responseHeaders[key] = value })
+      const responseHeaders = toHeaderRecord(response.headers)
       const statusCode = response.status
       if (statusCode < 200 || statusCode >= 300) {
         const { text, truncated } = await this.deps.http.readTextCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
@@ -958,7 +1028,9 @@ export class WorkflowExecutor {
       return true
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
+        status: "error",
+        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
+        method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs)
@@ -1018,7 +1090,9 @@ export class WorkflowExecutor {
       }
     } catch (error) {
       this.completeSseNode(node, {
-        status: "error", error: error instanceof SafeUrlError ? error.message : String(error), method: "GET", url,
+        status: "error",
+        error: error instanceof SafeUrlError ? error.message : (describeNetworkError(error, url) ?? String(error)),
+        method: "GET", url,
         duration: Date.now() - startTime,
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }, startedAt, secretRefs, extractors)
@@ -1032,6 +1106,9 @@ export class WorkflowExecutor {
     secretRefs: readonly string[],
     extractors?: Record<string, string>,
   ): NodeResult {
+    if (this.cancelSignal?.aborted && result.status !== "success") {
+      return this.recordCancelledNode(node.nodeId, { ...result, type: "sse", startedAt, secretRefs })
+    }
     const withExtractors = extractors
       ? { ...result, extractorOutcomes: this.extractVariables(node.nodeId, extractors, result) }
       : result
@@ -1387,15 +1464,12 @@ export class WorkflowExecutor {
     return undefined
   }
 
-  /** Value of a Set-Cookie cookie by name, from the last response. */
+  /** Value of a Set-Cookie cookie by name, from the last response (one Set-Cookie per line, see `toHeaderRecord`). */
   private getResponseCookie(result: NodeResult, name: string): string | undefined {
     const raw = this.getResponseHeader(result, "set-cookie")
     if (!raw) return undefined
     const target = name.trim()
-    // ponytail: split multiple cookies on the comma that precedes the next
-    // `name=` pair; good enough for typical Set-Cookie. Swap for a real
-    // set-cookie parser if Expires/edge attributes ever misparse.
-    for (const part of raw.split(/,(?=\s*[^=;,\s]+=)/)) {
+    for (const part of raw.split("\n")) {
       const pair = part.split(";")[0] ?? ""
       const eq = pair.indexOf("=")
       if (eq === -1) continue
@@ -1474,7 +1548,7 @@ export class WorkflowExecutor {
 
   // -------------------- Merge --------------------
 
-  private async executeMerge(node: WorkflowNode, edges: readonly WorkflowEdge[]): Promise<NodeResult> {
+  private async executeMerge(node: WorkflowNode, edges: readonly WorkflowEdge[], cancelSignal?: AbortSignal): Promise<NodeResult> {
     const config = node.config ?? {}
     const mergeStrategy = (config["mergeStrategy"] as string | undefined) ?? "all"
     const nodeId = node.nodeId
@@ -1492,11 +1566,12 @@ export class WorkflowExecutor {
         const maxWait = 30000
         const waitInterval = 100
         let elapsed = 0
-        while (missing.length > 0 && elapsed < maxWait) {
+        while (missing.length > 0 && elapsed < maxWait && !cancelSignal?.aborted) {
           await new Promise((resolve) => setTimeout(resolve, waitInterval))
           elapsed += waitInterval
           missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
         }
+        if (cancelSignal?.aborted) throw new Error("Merge cancelled")
         if (missing.length > 0) {
           throw new Error(`Timeout waiting for predecessors: ${missing.join(", ")}`)
         }
@@ -2077,7 +2152,7 @@ export class WorkflowExecutor {
     status: "passed" | "failed",
   ): ExecutorOutput {
     const result: ExecutorOutput = {
-      status,
+      status: this.cancelSignal?.aborted ? "cancelled" : status,
       startedAt,
       nodeStatuses: Object.fromEntries(this.nodeStatuses),
       extractedVariables: { ...this.workflowVariables },

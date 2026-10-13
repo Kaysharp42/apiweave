@@ -312,7 +312,7 @@ test("ResponseInspector renders legacy response shapes without metadata", () => 
     headers: {
       "Content-Type": "text/plain",
       "Set-Cookie":
-        "sid=abc; Secure; HttpOnly; Path=/, theme=dark; SameSite=Lax",
+        "sid=abc; Secure; HttpOnly; Path=/\ntheme=dark; SameSite=Lax",
     },
     body: "legacy body",
     responseTime: 17,

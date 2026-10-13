@@ -17,6 +17,10 @@ import {
   sealEnvelope,
 } from "../../../core/secrets/workspace_key"
 import { recordWorkflowUpsert } from "../../../core/sync/cloud-mutations"
+import { WorkflowRepository, WorkspaceRepository } from "../../../core/repositories"
+import { ScopeResolver, type ScopeExistence } from "../../../core/services/scope_resolver"
+import { WorkspaceService } from "../../../core/services/workspace_service"
+import { SwitchableSyncProvider } from "../../../core/sync"
 import { CloudSyncProvider } from "../cloud-transport"
 import { CloudClient, DeviceTokenStore, ErrCloudConflictStale, ErrCloudRequestFailed } from "../cloud-client"
 import { transportErrorMessage } from "../cloud-error-messages"
@@ -1063,6 +1067,85 @@ describe("CloudSyncProvider", () => {
 
       await expect(provider.pull()).rejects.toThrow("unauthorized")
 
+      expect(nock.isDone()).toBe(true)
+    })
+  })
+
+  describe("workspace deletion", () => {
+    // The outbox cascades away with its workspace, so a workspace tombstone
+    // queued there was deleted by the very delete it recorded.
+    const deleteBoundWorkspace = async (target: CloudSyncProvider): Promise<void> => {
+      const workspaces = new WorkspaceRepository(store)
+      const existence: ScopeExistence = {
+        workspaceExists: (id) => workspaces.getById(id) !== undefined,
+        environmentExists: () => false,
+      }
+      // Wrapped as in production, which swallows a failed push after the local commit.
+      const sync = new SwitchableSyncProvider(target)
+      const service = new WorkspaceService(workspaces, new WorkflowRepository(store), sync, new ScopeResolver(existence))
+      await service.delete(WORKSPACE_ID)
+    }
+
+    beforeEach(() => {
+      const repository = new CloudSyncRepository(store)
+      repository.upsertWorkspaceBinding({
+        workspaceId: WORKSPACE_ID,
+        cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+        cloudWorkspaceName: "Doomed",
+        syncMode: "bi-directional",
+        deviceId: "device-123",
+        initializationState: "initialized",
+      })
+      // The cloud last acknowledged rev 4; an unpushed rename is still queued.
+      store.set(
+        "INSERT INTO cloud_record_state (workspace_id, kind, record_id, server_rev, local_rev) VALUES (?, 'workspace', ?, 4, 4)",
+        [WORKSPACE_ID, WORKSPACE_ID],
+      )
+      provider = new CloudSyncProvider(client, tokenStore, store, {
+        workspaceBindings: [{ workspaceId: WORKSPACE_ID, cloudWorkspaceId: CLOUD_WORKSPACE_ID }],
+      })
+    })
+
+    it("pushes the tombstone after the local workspace and its binding are gone", async () => {
+      const deltas: unknown[] = []
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas", (body) => {
+          deltas.push(...((body as { deltas?: unknown[] }).deltas ?? []))
+          return true
+        })
+        .reply(200, { outcomes: [{ deltaIndex: 0, status: 1, newRev: "5", rejectionReason: 0, conflictId: "" }] })
+
+      await deleteBoundWorkspace(provider)
+
+      expect(store.get("SELECT id FROM workspaces WHERE id = ?", [WORKSPACE_ID])).toBeUndefined()
+      expect(deltas).toEqual([expect.objectContaining({
+        workspaceId: { value: CLOUD_WORKSPACE_ID },
+        kind: "RECORD_KIND_WORKSPACE",
+        recordId: CLOUD_WORKSPACE_ID,
+        expectedRev: "4",
+        op: "CHANGE_OP_TOMBSTONE",
+      })])
+      expect(new CloudSyncRepository(store).listWorkspaceTombstones()).toEqual([])
+      expect(nock.isDone()).toBe(true)
+    })
+
+    it("keeps the tombstone through a failed push and a restart with no binding left", async () => {
+      nock(API_BASE).post("/apiweave.v1.SyncService/PushDeltas").replyWithError("network error")
+      await deleteBoundWorkspace(provider)
+
+      const repository = new CloudSyncRepository(store)
+      expect(repository.listWorkspaceTombstones()).toHaveLength(1)
+      expect(repository.countPendingOutbox()).toBe(1)
+      store.set("UPDATE cloud_workspace_tombstones SET next_retry_at = 0")
+
+      // After a restart the binding no longer exists, so nothing is configured.
+      const restarted = new CloudSyncProvider(client, tokenStore, store, { workspaceBindings: [] })
+      nock(API_BASE)
+        .post("/apiweave.v1.SyncService/PushDeltas")
+        .reply(200, { outcomes: [{ deltaIndex: 0, status: 1, newRev: "5", rejectionReason: 0, conflictId: "" }] })
+      await restarted.push()
+
+      expect(repository.listWorkspaceTombstones()).toEqual([])
       expect(nock.isDone()).toBe(true)
     })
   })

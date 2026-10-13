@@ -882,7 +882,12 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
           workspaceId: binding.workspaceId,
           cloudWorkspaceId: binding.cloudWorkspaceId,
         })),
-      catalog: () => this.workspaceCatalog as readonly ReconcilerCatalogEntry[],
+      // A workspace deleted here whose tombstone has not reached the cloud yet
+      // is still in the catalog; it must not come back as "cloud-only".
+      catalog: () => {
+        const deleted = new Set(this.repository.listWorkspaceTombstones().map((tombstone) => tombstone.cloudWorkspaceId))
+        return this.workspaceCatalog.filter((entry) => !deleted.has(entry.workspaceId)) as readonly ReconcilerCatalogEntry[]
+      },
       encryptionPlan: (workspaceId) => this.encryptionPlan(workspaceId),
       // Retried once without the bundle when the server refuses it, so one user
       // action reaches the right end state instead of waiting for a later pass:
@@ -984,7 +989,10 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   private resolveActivationConfig(
     workspaceBindings: readonly CloudWorkspaceBinding[],
   ): DesktopCloudConfig | undefined {
-    if (!this.tokenStore.hasTokens() || workspaceBindings.length === 0 || this.activeConfig === null) {
+    // A queued workspace tombstone needs a provider to push it even after the
+    // last bound workspace is gone — it is that workspace's deletion.
+    const nothingToSync = workspaceBindings.length === 0 && this.repository.listWorkspaceTombstones().length === 0
+    if (!this.tokenStore.hasTokens() || nothingToSync || this.activeConfig === null) {
       return undefined
     }
     return this.activeConfig

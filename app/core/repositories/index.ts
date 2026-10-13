@@ -43,6 +43,7 @@ export type {
   CloudOutboxOp,
   CloudOutboxRow,
   CloudWorkspaceBinding,
+  CloudWorkspaceTombstone,
   CloudWorkspaceBindingUpsert,
   CloudPushConflictInput,
 }

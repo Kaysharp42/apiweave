@@ -42,7 +42,7 @@ export class EnvironmentService {
     if (input.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, undefined, input.baseEnvironmentId)
     }
-    return this.pushUpsert(this.environments.create({ ...input, workspaceId }))
+    return this.commitUpsert(() => this.environments.create({ ...input, workspaceId }))
   }
 
   async get(workspaceId: string, environmentId: string): Promise<Environment> {
@@ -61,19 +61,18 @@ export class EnvironmentService {
     if (patch.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, environmentId, patch.baseEnvironmentId)
     }
-    return this.pushUpsert(this.requireUpdated(this.environments.update(environmentId, patch), environmentId))
+    return this.commitUpsert(() => this.requireUpdated(this.environments.update(environmentId, patch), environmentId))
   }
 
   async delete(workspaceId: string, environmentId: string): Promise<void> {
     await this.authorize(workspaceId, "delete")
     const existing = this.mustGet(workspaceId, environmentId)
-    recordEnvironmentTombstone(this.syncProvider, existing)
-    const detached = this.environments.transaction(() => {
-      const cleared = this.detachReferences(workspaceId, environmentId)
+    this.environments.transaction(() => {
+      recordEnvironmentTombstone(this.syncProvider, existing)
+      const detached = this.detachReferences(workspaceId, environmentId)
       this.environments.delete(environmentId)
-      return cleared
+      this.recordDetached(detached)
     })
-    this.recordDetached(detached)
     await this.syncProvider.push()
   }
 
@@ -107,7 +106,7 @@ export class EnvironmentService {
     const source = this.mustGet(workspaceId, environmentId)
 
     const sameWorkspace = destination === workspaceId
-    const created = this.environments.create({
+    return this.commitUpsert(() => this.environments.create({
       workspaceId: destination,
       name: name?.trim() || `${source.name} (copy)`,
       description: source.description,
@@ -116,8 +115,7 @@ export class EnvironmentService {
       variables: { ...source.variables },
       secrets: {},
       isDefault: false,
-    })
-    return this.pushUpsert(created)
+    }))
   }
 
   /**
@@ -148,21 +146,18 @@ export class EnvironmentService {
       throw new ValidationError("environment is already in this workspace")
     }
 
-    // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
-    // upsert under the destination would leave the source workspace still
-    // claiming the row. Leaving is a deletion from where it left.
-    recordEnvironmentTombstone(this.syncProvider, existing)
-
-    const { moved, detached } = this.environments.transaction(() => {
-      const cleared = this.detachReferences(workspaceId, environmentId)
+    return this.commitUpsert(() => {
+      // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
+      // upsert under the destination would leave the source workspace still
+      // claiming the row. Leaving is a deletion from where it left.
+      recordEnvironmentTombstone(this.syncProvider, existing)
+      const detached = this.detachReferences(workspaceId, environmentId)
       this.environments.update(environmentId, { baseEnvironmentId: null, isDefault: false })
       this.environments.setWorkspace(environmentId, targetWorkspaceId)
       this.secrets?.reassignWorkspace("environment", environmentId, targetWorkspaceId)
-      return { moved: this.environments.getById(environmentId), detached: cleared }
+      this.recordDetached(detached)
+      return this.requireUpdated(this.environments.getById(environmentId), environmentId)
     })
-
-    this.recordDetached(detached)
-    return this.pushUpsert(this.requireUpdated(moved, environmentId))
   }
 
   async setVariable(
@@ -194,7 +189,7 @@ export class EnvironmentService {
   ): Promise<Environment> {
     await this.authorize(workspaceId, "update")
     this.mustGet(workspaceId, environmentId)
-    return this.pushUpsert(this.requireUpdated(write(environmentId, name), environmentId))
+    return this.commitUpsert(() => this.requireUpdated(write(environmentId, name), environmentId))
   }
 
   /**
@@ -205,9 +200,17 @@ export class EnvironmentService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_ENVIRONMENTS)
   }
 
-  /** Queue the sync upsert for a written row, push the outbox, hand the row back. */
-  private async pushUpsert(environment: Environment): Promise<Environment> {
-    recordEnvironmentUpsert(this.syncProvider, environment)
+  /**
+   * Run a write and queue the sync upsert for the row it returns in one
+   * transaction — the edit and its outbox entry commit together or not at
+   * all — then push the outbox and hand the row back.
+   */
+  private async commitUpsert(write: () => Environment): Promise<Environment> {
+    const environment = this.environments.transaction(() => {
+      const written = write()
+      recordEnvironmentUpsert(this.syncProvider, written)
+      return written
+    })
     await this.syncProvider.push()
     return environment
   }
