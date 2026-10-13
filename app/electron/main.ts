@@ -1,5 +1,5 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
@@ -67,11 +67,16 @@ import {
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
+  WINDOW_CLOSE_ACK_CHANNEL,
+  WINDOW_CLOSE_REPLY_CHANNEL,
+  WINDOW_CLOSE_REQUEST_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
 import { getLogger } from "../core/logging/logger"
-import { initLogging, ipcLog, revealLogFile } from "./logging"
+import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
+import { startupFailureMessage } from "./startup_failure"
+import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
@@ -127,6 +132,47 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * The window's side of the quit handshake. A direct `webContents` channel, not
+ * the router: only this window's own document may answer, and no MCP client can.
+ */
+function closeRequestTarget(win: BrowserWindow): CloseRequestTarget {
+  const contents = win.webContents
+  return {
+    alive: () => !win.isDestroyed() && !contents.isCrashed(),
+    request: () => contents.send(WINDOW_CLOSE_REQUEST_CHANNEL),
+    listen: ({ ack, reply, gone }) => {
+      const onAck = (event: Electron.IpcMainEvent): void => {
+        if (isTrustedSender(event)) ack()
+      }
+      const onReply = (event: Electron.IpcMainEvent, proceed: unknown): void => {
+        if (isTrustedSender(event)) reply(proceed === true)
+      }
+      contents.ipc.on(WINDOW_CLOSE_ACK_CHANNEL, onAck)
+      contents.ipc.on(WINDOW_CLOSE_REPLY_CHANNEL, onReply)
+      contents.on("render-process-gone", gone)
+      contents.on("destroyed", gone)
+      return () => {
+        contents.ipc.removeListener(WINDOW_CLOSE_ACK_CHANNEL, onAck)
+        contents.ipc.removeListener(WINDOW_CLOSE_REPLY_CHANNEL, onReply)
+        if (contents.isDestroyed()) return
+        contents.removeListener("render-process-gone", gone)
+        contents.removeListener("destroyed", gone)
+      }
+    },
+  }
+}
+
+// Closing the window quits the app (`window-all-closed`), so both routes share
+// one gate: the renderer flushes pending saves and settles unsaved work first.
+const mayQuit = createQuitGate(
+  () =>
+    mainWindow === null
+      ? Promise.resolve(true)
+      : askRendererToClose(closeRequestTarget(mainWindow)),
+  () => app.quit(),
+)
 
 const APP_ORIGIN = "app://local"
 
@@ -215,6 +261,9 @@ async function createWindow(): Promise<void> {
     win.maximize()
   })
   ipcMain.on("window:close", () => win.close())
+  win.on("close", (event) => {
+    if (!mayQuit()) event.preventDefault()
+  })
 
   win.on("maximize", () => win.webContents.send("window:maximizeChanged", true))
   win.on("unmaximize", () => win.webContents.send("window:maximizeChanged", false))
@@ -222,11 +271,26 @@ async function createWindow(): Promise<void> {
     mainWindow = null
   })
 
-  win.webContents.on("did-fail-load", (_event, code, description, url) => {
-    rendererLog.error(`did-fail-load ${code} ${description} ${url}`)
-  })
+  // The crash itself is logged by electron-log's event logger (initLogging).
+  // Without this the window stays open on a blank page with nothing to click.
   win.webContents.on("render-process-gone", (_event, details) => {
-    rendererLog.error("render-process-gone", details)
+    if (details.reason === "clean-exit" || isQuitting || win.isDestroyed()) return
+    void dialog
+      .showMessageBox(win, {
+        type: "error",
+        message: "The APIWeave window crashed",
+        detail: `Reason: ${details.reason}. Changes made in the last moment before the crash may not have been saved.`,
+        buttons: ["Reload", "Quit"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0 && !win.isDestroyed()) {
+          win.reload()
+          return
+        }
+        app.quit()
+      })
   })
 
   // Never let the privileged app:// document navigate to attacker-controlled
@@ -833,6 +897,18 @@ if (!hasSingleInstanceLock) {
         void createWindow()
       }
     })
+  }).catch((error: unknown) => {
+    // Without this a throw above leaves a windowless process holding the
+    // single-instance lock, so every relaunch is silently rejected.
+    bootstrapLog.error("startup failed", error)
+    dialog.showErrorBox(
+      "APIWeave could not start",
+      startupFailureMessage(error, { logFile: logFilePath(), userData: app.getPath("userData") }),
+    )
+    database?.close()
+    database = null
+    // exit, not quit: no run or agent session can exist yet for before-quit to drain.
+    app.exit(1)
   })
 }
 
@@ -842,6 +918,12 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", (event) => {
   if (isQuitting) return
+  // Nothing below may start — the database closes at the end of it — until
+  // the renderer has saved, or the user has chosen to discard or cancel.
+  if (!mayQuit()) {
+    event.preventDefault()
+    return
+  }
   isQuitting = true
 
   void mcpHost?.stop()

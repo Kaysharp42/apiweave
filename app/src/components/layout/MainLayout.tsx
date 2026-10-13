@@ -25,6 +25,7 @@ import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
 import { CloudAttentionBanner } from "./CloudAttentionBanner";
 import { TutorialCompanionHost } from "../TutorialCompanionHost";
+import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
 
@@ -130,14 +131,20 @@ export function MainLayout({ children }: MainLayoutProps) {
             `display: none` cannot be overridden from below, and ReactFlow holds its
             transform across the round trip, so the viewport comes back exactly
             where it was left rather than refitting. */}
+        {/* A canvas or page that fails to render costs the content area, not
+            the nav, the sidebar or the agent dock's live sessions. */}
         <div
           className="absolute inset-0"
           style={isCanvasCovered ? { display: "none" } : undefined}
         >
-          <Workspace active={!isCanvasCovered} />
+          <ErrorBoundary name="canvas">
+            <Workspace active={!isCanvasCovered} />
+          </ErrorBoundary>
         </div>
 
-        {children}
+        <ErrorBoundary name="page">
+          {children}
+        </ErrorBoundary>
       </div>
 
       <TutorialCompanionHost contentRef={contentRegionRef} />

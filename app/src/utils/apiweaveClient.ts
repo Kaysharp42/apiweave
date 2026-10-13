@@ -99,6 +99,7 @@ type DesktopBridge = {
   readonly onMaximizeChange: (
     callback: (isMaximized: boolean) => void,
   ) => () => void;
+  readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void;
   readonly screenReader?: boolean;
 };
 
@@ -770,6 +771,9 @@ export const desktop = {
   close: () => getDesktopBridge()?.close(),
   onMaximizeChange: (callback: (isMaximized: boolean) => void) =>
     getDesktopBridge()?.onMaximizeChange(callback) ?? (() => undefined),
+  /** Main's quit handshake: the handler resolves whether the window may close. */
+  onCloseRequested: (handler: () => Promise<boolean>) =>
+    getDesktopBridge()?.onCloseRequested(handler) ?? (() => undefined),
   /**
    * Whether the OS reports a screen reader, as main saw it at window creation.
    * False outside Electron, which is also the right answer for the web preview:

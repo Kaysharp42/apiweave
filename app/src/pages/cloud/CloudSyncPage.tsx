@@ -25,6 +25,7 @@ import { WorkspaceEncryptionDialog } from "./WorkspaceEncryptionDialog";
 import { useCloudSync } from "../../hooks/useCloudSync";
 import type { UseCloudSync } from "../../types/UseCloudSync";
 import { IpcError } from "../../utils/apiweaveClient";
+import { confirmCloseAll } from "../../stores/PendingEditsStore";
 import type { ContractErrorCode } from "@shared/contract/errors";
 import type {
   CloudFailedRecord,
@@ -149,7 +150,10 @@ export function CloudSyncPage() {
       });
   };
 
-  const openUnlinkDialog = (): void => {
+  // Disconnecting closes every open tab (useAccountSessionReset), so unsaved
+  // work is settled first; Cancel there keeps the account linked.
+  const openUnlinkDialog = async (): Promise<void> => {
+    if (!(await confirmCloseAll())) return;
     setPurgeLocalData(false);
     setConfirmUnlink(true);
   };
@@ -362,7 +366,7 @@ export function CloudSyncPage() {
                   intent="error"
                   size="sm"
                   icon={<Unlink className="h-4 w-4" />}
-                  onClick={openUnlinkDialog}
+                  onClick={() => void openUnlinkDialog()}
                 >
                   Disconnect
                 </Button>

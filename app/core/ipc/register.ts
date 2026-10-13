@@ -23,7 +23,7 @@ export function emitRunProgress(webContents: WebContents, event: RunProgressEven
  * retained the preload (defense in depth alongside the main-process
  * navigation/window-open guards).
  */
-export function isTrustedSender(event: IpcMainInvokeEvent): boolean {
+export function isTrustedSender(event: Pick<IpcMainInvokeEvent, "senderFrame">): boolean {
   const senderUrl = event.senderFrame?.url
   if (!senderUrl) return false
   try {

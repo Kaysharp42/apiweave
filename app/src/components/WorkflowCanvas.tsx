@@ -72,6 +72,7 @@ import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
+import useCanvasPendingEdits from "../hooks/useCanvasPendingEdits";
 import useRunCamera from "../hooks/useRunCamera";
 import { useClipboardActions } from "../hooks/useClipboardActions";
 import {
@@ -233,6 +234,7 @@ const initialNodes: Node<WorkflowCanvasNodeData>[] = [
 export function WorkflowCanvas({
   workflowId,
   workflow,
+  draft,
   showVariablesPanel = false,
   onShowVariablesPanel = () => {},
 }: WorkflowCanvasProps) {
@@ -438,8 +440,10 @@ export function WorkflowCanvas({
     isEditorOverlayOpen,
   });
 
+  // A draft is what this canvas held, unsaved, when the user switched away
+  // from the tab; it wins over the saved workflow until a save clears it.
   const { isHydrated, hydratedBaselineRef, noteSavedWorkflow } = useHydration({
-    workflow,
+    workflow: draft ?? workflow,
     setNodes,
     setEdges,
   });
@@ -1049,9 +1053,12 @@ export function WorkflowCanvas({
 
   const handleModalSave = useCallback(
     (updatedNode: Node<WorkflowCanvasNodeData>) => {
-      setNodes((nds) =>
-        nds.map((n) => (n.id === updatedNode.id ? updatedNode : n)),
-      );
+      const replace = (nds: CanvasNode[]) =>
+        nds.map((n) => (n.id === updatedNode.id ? updatedNode : n));
+      // Ctrl+S in the node editor saves right after applying, before the
+      // re-render that refreshes `nodesRef` — which is what the save reads.
+      nodesRef.current = replace(nodesRef.current);
+      setNodes(replace);
     },
     [setNodes],
   );
@@ -1200,10 +1207,13 @@ export function WorkflowCanvas({
           // store hands it to `useHydration`, or the canvas re-hydrates from
           // its own save and drops the run it is displaying.
           noteSavedWorkflow(savedWorkflow);
-          useTabStore.getState().markClean(workflowId ?? "");
+          // Workflow first, then clean: markClean drops a restored draft, and
+          // hydration must never see the draft gone while the tab still
+          // holds the pre-save workflow, or it re-hydrates from that.
           useTabStore
             .getState()
             .updateTabWorkflow(workflowId ?? "", savedWorkflow);
+          useTabStore.getState().markClean(workflowId ?? "");
         } else {
           // The server says WHY it refused (a missing environment, a stale
           // workspace, a rejected node). Both the toast and the console log
@@ -1431,7 +1441,7 @@ export function WorkflowCanvas({
 
   // ── Auto-save ────────────────────────────────────────────────────────
 
-  useAutoSave({
+  const flushAutoSave = useAutoSave({
     workflowId,
     autoSaveEnabled: autoSaveEnabled && !isRunning && !isSwaggerRefreshing,
     isHydrated,
@@ -1440,6 +1450,18 @@ export function WorkflowCanvas({
     workflowVariables,
     resetSnapshotKey: hydrationVersionRef.current,
     saveWorkflow,
+  });
+
+  useCanvasPendingEdits({
+    workflowId,
+    isHydrated,
+    flush: flushAutoSave,
+    save: () => saveWorkflowRef.current?.(false) ?? Promise.resolve(),
+    readCanvas: () => ({
+      nodes: nodesRef.current,
+      edges: edgesRef.current,
+      variables: workflowVariablesRef.current,
+    }),
   });
 
   // ── Minimap & visual config ─────────────────────────────────────────
@@ -1899,6 +1921,7 @@ export function WorkflowCanvas({
           onSave={(node) =>
             handleModalSave(node as Node<WorkflowCanvasNodeData>)
           }
+          onSaveWorkflow={() => void saveWorkflow(false)}
           workspaceId={scope.workspaceId ?? ""}
           currentWorkflowId={workflowId ?? ""}
         />

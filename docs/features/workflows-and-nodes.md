@@ -226,9 +226,15 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
 | **History** | Opens run history for the workflow, with per-run timeline and detail views. |
 | **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it. |
-| **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. |
+| **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. **Apply** (`Ctrl+S`) applies and saves them. Closing with unapplied changes (Escape, a click outside, or the close button) asks **Apply**, **Discard** or **Keep editing**; invalid JSON stays open with the error shown. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
 | **Refresh** | Re-fetches Swagger or OpenAPI templates from the active environment's base URL. |
+
+### Unsaved changes
+
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
+
+The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
 Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
 
@@ -239,7 +245,7 @@ Resume-after-failure (run from failed node, rerun failed branches) is planned bu
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+N` | New workflow |
-| `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms) |
+| `Ctrl+S` | Flush to disk now (auto-save still runs in the background every 700ms). Inside the node editor, applies its edits first |
 | `Ctrl+R` or `F5` | Run the active workflow |
 | `Ctrl+J` | Open the JSON editor |
 | `Ctrl+C` | Copy the selected node (canvas context only) |

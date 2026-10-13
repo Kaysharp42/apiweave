@@ -1,5 +1,6 @@
 # Setup APIWeave (single-process Electron desktop app) on Windows.
-# Installs the single app dependency graph and rebuilds native Electron modules.
+# Installs the single app dependency graph. Native addons are N-API and are
+# never rebuilt for Electron's ABI, so installation is all that is needed.
 $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -20,9 +21,6 @@ Write-Host
 Write-Host "Installing app dependencies..."
 Push-Location $appDir
 npm install
-Write-Host
-Write-Host "Rebuilding native modules for Electron..."
-npm run rebuild:electron
 Pop-Location
 
 Write-Host

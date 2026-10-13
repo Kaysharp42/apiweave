@@ -9,6 +9,62 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Secret values no longer reach the run history.** Every secret a run
+  resolves is now replaced with `<SECRET>` in what the run stores and streams:
+  request URLs, response headers and bodies (including an API that echoes your
+  `Authorization` header), extracted variables and messages, in Call Workflow
+  sub-runs too. URL-encoded and JSON-escaped forms and `Basic` credentials are
+  caught as well. Previously only the URL query string was hidden, so a secret
+  echoed in a response was stored in plain text. Secrets shorter than four
+  characters are not masked.
+- **A failed start no longer leaves a dead process behind.** When startup fails
+  before the window opens (a database from a newer build, a failed migration, an
+  unreadable keyfile), APIWeave shows an error naming the cause, the log file and
+  the data folder, then exits. Previously the process stayed running without a
+  window and held the single-instance lock, so every relaunch silently did
+  nothing.
+- **Recent edits are no longer lost on tab close or quit.** The pending 700 ms
+  auto-save is sent when a tab is switched or closed and before the app quits,
+  instead of being dropped. Closing a tab or quitting with changes that are still
+  unsaved (auto-save off, or a failed save) now asks **Save**, **Discard** or
+  **Cancel** instead of discarding them silently.
+- **Switching tabs no longer discards unsaved edits.** With auto-save off (or
+  after a failed save), a tab you switch away from keeps its unsaved changes,
+  shows the unsaved dot, and brings them back when you return to it. Closing
+  that tab, quitting, or disconnecting the cloud account asks **Save**,
+  **Discard** or **Cancel** about it, and **Cancel** keeps the account linked.
+- **The node editor no longer throws away edits.** Escape, a click outside the
+  editor and its close button now keep the edits, as Previous and Next already
+  did; only **Cancel** discards them. `Ctrl+S` (`Cmd+S` on macOS) inside the
+  editor, including in its text fields, applies the edits to the node and saves
+  the workflow, and the editor stays open.
+- **A crashed window can be recovered.** If the renderer process dies, a dialog
+  offers **Reload** or **Quit** instead of leaving a blank window.
+- **A render error no longer blanks the window.** A view that fails to draw
+  (a page, the canvas, or the response inspector in the node editor) is replaced
+  by a message with the error and **Try again**, **Reload** and **Copy error
+  details**; the rest of the app keeps working, and the error is written to the
+  log.
+- **The JSON editor no longer throws away edits.** Escape, a click outside and
+  the close button used to discard unapplied JSON. With changed text they now
+  ask **Apply**, **Discard** or **Keep editing**.
+
+### Added
+
+- **Crash capture in the log.** Uncaught exceptions and unhandled rejections in
+  the main process, renderer and child-process crashes (including the agent PTY
+  host), failed loads and unresponsive windows are recorded in the daily log
+  file, and each session's log opens with the app, Electron and OS versions.
+
+### Removed
+
+- The renderer's startup gate, left over from the retired HTTP backend. Its
+  spinner never showed and its error screen was unreachable.
+
 ## [0.11.0] — 2026-09-23
 
 ### Added

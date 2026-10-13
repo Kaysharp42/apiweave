@@ -73,6 +73,24 @@ function localContentSignature(
   }
 }
 
+/**
+ * Whether the canvas holds edits the given server workflow does not have —
+ * the same comparison that holds a live snapshot behind unsaved edits. A canvas
+ * that cannot be serialised right now counts as unsaved. Runs a full schema
+ * round-trip, so it is for one-off checks (closing a tab), not per render.
+ */
+export function canvasDiffersFromWorkflow(
+  nodes: Node<WorkflowCanvasNodeData>[],
+  edges: Edge<WorkflowCanvasEdgeData>[],
+  variables: Record<string, JsonValue>,
+  workflow: Workflow,
+): boolean {
+  return (
+    localContentSignature(nodes, edges, variables, workflow) !==
+    normalizedContentSignature(workflow)
+  );
+}
+
 /** Only two events let the apply pass re-examine a snapshot it once deferred. */
 function applyPassIsDue(
   coalesceTimerFired: boolean,

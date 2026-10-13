@@ -1,16 +1,22 @@
-name: Frontend Quality
+# The full quality gate: renderer, desktop and shared tests, both TypeScript
+# configs, lint across every source tree, the renderer E2E suite and a renderer
+# build. Runs on every push and PR, and desktop-release.yml calls it before any
+# installer is built — one definition, so a release can never ship past a gate
+# that PRs are held to.
+name: Quality
 
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: ["**"]
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  frontend-quality:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -23,16 +29,16 @@ jobs:
         run: npm ci
         working-directory: app
       - name: Run tests
-        run: npm run test:renderer
+        run: npm test
         working-directory: app
       - name: Audit type organization
         run: npm run audit:types
         working-directory: app
       - name: Type check
-        run: npm run typecheck:renderer
+        run: npm run typecheck
         working-directory: app
       - name: Lint
-        run: npm run lint:renderer
+        run: npm run lint
         working-directory: app
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

@@ -25,6 +25,9 @@ import {
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
+  WINDOW_CLOSE_ACK_CHANNEL,
+  WINDOW_CLOSE_REPLY_CHANNEL,
+  WINDOW_CLOSE_REQUEST_CHANNEL,
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 
@@ -98,6 +101,11 @@ type DesktopBridge = {
   /** True when main detected assistive technology — see `screenReaderArgs` there. */
   readonly screenReader: boolean
   readonly onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void
+  /**
+   * Main asks before the window closes or the app quits. The handler resolves
+   * whether that may go ahead; until it does, main waits.
+   */
+  readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void
 }
 
 const desktopBridge: DesktopBridge = {
@@ -112,6 +120,18 @@ const desktopBridge: DesktopBridge = {
 
     ipcRenderer.on("window:maximizeChanged", handler)
     return () => ipcRenderer.removeListener("window:maximizeChanged", handler)
+  },
+  onCloseRequested: (handler) => {
+    const listener = (): void => {
+      ipcRenderer.send(WINDOW_CLOSE_ACK_CHANNEL)
+      // A handler that throws must not trap the user in an app they cannot quit.
+      void handler().then(
+        (proceed) => ipcRenderer.send(WINDOW_CLOSE_REPLY_CHANNEL, proceed),
+        () => ipcRenderer.send(WINDOW_CLOSE_REPLY_CHANNEL, true),
+      )
+    }
+    ipcRenderer.on(WINDOW_CLOSE_REQUEST_CHANNEL, listener)
+    return () => ipcRenderer.removeListener(WINDOW_CLOSE_REQUEST_CHANNEL, listener)
   },
 }
 

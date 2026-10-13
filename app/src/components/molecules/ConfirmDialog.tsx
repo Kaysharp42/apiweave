@@ -17,6 +17,8 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   intent = "error",
+  secondaryLabel,
+  onSecondary,
   children,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -105,6 +107,12 @@ export function ConfirmDialog({
                 >
                   {cancelLabel}
                 </Button>
+
+                {secondaryLabel && onSecondary && (
+                  <Button variant="outline" size="sm" onClick={onSecondary}>
+                    {secondaryLabel}
+                  </Button>
+                )}
 
                 <Button
                   variant="primary"

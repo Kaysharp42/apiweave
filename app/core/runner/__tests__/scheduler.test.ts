@@ -453,6 +453,165 @@ describe("RunScheduler", () => {
     })
   })
 
+  describe("secret masking", () => {
+    const SECRET = "tok 9f8e7d6c"
+
+    // Echoes the path, headers and body back, and hands out SECRET from /issue —
+    // the worst case: an API that reflects credentials into what gets stored.
+    async function startEchoServer(): Promise<{ port: number; requests: { url: string; headers: Record<string, unknown>; body: string }[]; close: () => void }> {
+      const { createServer } = await import("node:http")
+      const requests: { url: string; headers: Record<string, unknown>; body: string }[] = []
+      const server = createServer((req, res) => {
+        let body = ""
+        req.on("data", (c) => (body += c))
+        req.on("end", () => {
+          requests.push({ url: req.url ?? "", headers: { ...req.headers }, body })
+          res.setHeader("content-type", "application/json")
+          res.setHeader("x-echo-token", SECRET)
+          res.end(JSON.stringify({ path: req.url, headers: req.headers, body, issued: SECRET }))
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      return { port: (server.address() as { port: number }).port, requests, close: () => server.close() }
+    }
+
+    function expectNoSecret(value: unknown): void {
+      const text = JSON.stringify(value)
+      expect(text).not.toContain(SECRET)
+      expect(text).not.toContain(encodeURIComponent(SECRET))
+      expect(text).not.toContain(Buffer.from(`admin:${SECRET}`).toString("base64"))
+    }
+
+    it("masks resolved secret values in persisted results, node snapshots and events, while the request carries the real value", async () => {
+      const ws = seedWorkspace()
+      const echo = await startEchoServer()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "masking-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "issue",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "POST",
+              url: `http://127.0.0.1:${echo.port}/issue`,
+              headers: [{ key: "X-Api-Token", value: "{{secrets.api_token}}" }],
+              auth: { type: "basic", basic: { username: "admin", password: "{{secrets.api_token}}" } },
+              body: JSON.stringify({ token: "{{secrets.api_token}}" }),
+              extractors: { ref: "body.issued" },
+            } as never,
+          },
+          {
+            // The secret reaches the URL path through an extracted variable.
+            nodeId: "lookup",
+            type: "http-request",
+            position: { x: 2, y: 0 },
+            config: { method: "GET", url: `http://127.0.0.1:${echo.port}/users/{{variables.ref}}` },
+          },
+          {
+            // ...and an error: an unreachable host named after the secret.
+            nodeId: "broken",
+            type: "http-request",
+            position: { x: 3, y: 0 },
+            config: { method: "GET", url: "http://{{variables.ref}}.invalid/" },
+          },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "issue" },
+          { edgeId: "e2", source: "issue", target: "lookup" },
+          { edgeId: "e3", source: "lookup", target: "broken" },
+        ],
+      }).workflowId
+
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+        resolveSecret: async (name) =>
+          name === "api_token" ? { plaintext: SECRET, scopeType: "workspace" } : { plaintext: null, scopeType: null },
+      })
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      echo.close()
+
+      // The wire carries the real value: header, Basic credential, body, and path.
+      expect(echo.requests[0]?.headers["x-api-token"]).toBe(SECRET)
+      expect(echo.requests[0]?.headers["authorization"]).toBe(`Basic ${Buffer.from(`admin:${SECRET}`).toString("base64")}`)
+      expect(echo.requests[0]?.body).toBe(JSON.stringify({ token: SECRET }))
+      expect(echo.requests[1]?.url).toBe(`/users/${encodeURIComponent(SECRET)}`)
+
+      const run = runs.getById(runId)
+      expect(run?.results.map((r) => r.nodeId)).toEqual(["issue", "lookup", "broken"])
+      expectNoSecret(run)
+      expectNoSecret(events)
+
+      const issue = run?.results.find((r) => r.nodeId === "issue")
+      expect(issue?.response).toMatchObject({
+        headers: { "x-echo-token": "<SECRET>" },
+        body: { issued: "<SECRET>", body: JSON.stringify({ token: "<SECRET>" }), headers: { authorization: "Basic <SECRET>", "x-api-token": "<SECRET>" } },
+      })
+      expect(run?.results.find((r) => r.nodeId === "lookup")?.request).toMatchObject({
+        url: `http://127.0.0.1:${echo.port}/users/<SECRET>`,
+      })
+      expect(run?.variables).toMatchObject({ ref: "<SECRET>" })
+    })
+
+    it("masks secret values in a Call Workflow sub-run's own history", async () => {
+      const ws = seedWorkspace()
+      const echo = await startEchoServer()
+      const target = workflows.create({
+        workspaceId: ws,
+        name: "target-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "sub_http",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "POST",
+              url: `http://127.0.0.1:${echo.port}/issue`,
+              body: JSON.stringify({ token: "{{secrets.api_token}}" }),
+            },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "sub_http" }],
+      })
+      const callerId = workflows.create({
+        workspaceId: ws,
+        name: "caller-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "call1",
+            type: "workflow",
+            position: { x: 1, y: 0 },
+            config: { targetWorkflowId: target.workflowId, note: "{{secrets.api_token}}" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "call1" }],
+      }).workflowId
+
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+        resolveSecret: async () => ({ plaintext: SECRET, scopeType: "workspace" }),
+      })
+      scheduler.enqueue({ workspaceId: ws, workflowId: callerId })
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      echo.close()
+
+      expect(echo.requests[0]?.body).toBe(JSON.stringify({ token: SECRET }))
+      const childRun = runs.listByWorkflow(target.workflowId, ws).items[0]
+      expect(childRun?.results.find((r) => r.nodeId === "sub_http")?.response).toMatchObject({
+        body: { issued: "<SECRET>" },
+      })
+      expectNoSecret(childRun)
+      expectNoSecret(events)
+    })
+  })
+
   describe("workspace ownership", () => {
     it("rejects enqueue of a workflow from another workspace and creates no run", async () => {
       const wsA = seedWorkspace()

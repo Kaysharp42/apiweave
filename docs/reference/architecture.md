@@ -81,7 +81,7 @@ A user clicking **Run** in the canvas triggers this sequence:
 1. The renderer sends a typed IPC call to the main process with the workflow id and the selected environment id.
 2. The main process validates the workflow and the environment, creates a `Run` record with a `pending` status, and enqueues the run with the `RunScheduler`.
 3. The `RunScheduler` claims the run, the `WorkflowExecutor` walks the node graph from Start, and `safe_http` makes the outbound HTTP calls.
-4. Each completed node is persisted through the run repository. The masking layer scrubs every resolved secret value before persistence, so the run history never holds plaintext.
+4. Each completed node is persisted through the run repository. The scheduler builds a masker per run from the secret values it resolved and applies it to every node result, node snapshot, final variable set, and progress event before it is stored or emitted, for the run and its Call Workflow sub-runs alike. Each occurrence becomes `<SECRET>`, including URL-encoded and JSON-escaped forms and a `Basic` credential that decodes to a secret. Values shorter than four characters are not masked, since masking them would rewrite unrelated text across the history. The executor keeps the real values, so downstream nodes still send them.
 5. Progress events are streamed from the main process to the renderer over IPC. The renderer updates node colors and result payloads in real time. No polling.
 6. When the run reaches a terminal state, the run repository records the final status and the renderer marks the run complete.
 
@@ -96,7 +96,7 @@ A single node execution follows a predictable lifecycle inside the engine:
 - **Resolve placeholders**: substitute dynamic functions, secrets, environment variables, workflow variables, and previous node results in the node's configuration.
 - **Execute**: perform the node's action (an HTTP call, a delay, an assertion check, and so on).
 - **Extract**: capture values from the response into workflow variables for downstream nodes.
-- **Mask and persist**: scrub every resolved secret value from the result, then store the scrubbed node result so the renderer can render it.
+- **Mask and persist**: replace every resolved secret value (four characters or longer) in the result with `<SECRET>`, then store and emit only the masked copy.
 
 If a node fails, the engine records the failure and consults the workflow's `continueOnFail` setting to decide whether to stop or move on to the next branch.
 

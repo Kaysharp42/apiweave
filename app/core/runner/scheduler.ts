@@ -11,7 +11,8 @@ import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorO
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp } from "./safe_http"
 import { NotFoundError } from "../ipc/errors"
-import { sanitizeVariablesForExport } from "../services/secret_utils"
+import { SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "../services/secret_utils"
+import { createSecretMasker } from "./secret_masker"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
@@ -205,6 +206,11 @@ export class RunScheduler {
       if (secretResolution.resolvedSecrets.length > 0) {
         void this.deps.runs.setResolvedSecrets(runId, secretResolution.resolvedSecrets)
       }
+      // Every value this run resolved is scrubbed from whatever leaves the
+      // executor — persisted results, node snapshots, progress events — for the
+      // run and its Call Workflow sub-runs alike. The executor keeps the real
+      // values; only the stored/emitted copy is masked.
+      const mask = createSecretMasker(Object.values(secretResolution.secrets ?? {}))
 
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
@@ -219,7 +225,7 @@ export class RunScheduler {
             }
           : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
-        emitProgress: (event) => this.handleProgress(runId, event),
+        emitProgress: (event) => this.handleProgress(runId, mask(event)),
         resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => {
           const target = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)
           if (!target) return undefined
@@ -247,11 +253,11 @@ export class RunScheduler {
               runId: child.runId,
               // Spreading `executorDeps` carries `subRun` itself down, so a
               // sub-workflow that calls a sub-workflow is recorded too.
-              deps: { ...executorDeps, emitProgress: (event) => this.handleProgress(child.runId, event) },
+              deps: { ...executorDeps, emitProgress: (event) => this.handleProgress(child.runId, mask(event)) },
             }
           },
           finish: (childRunId, childOutput) => {
-            if (childOutput) this.recordOutcome(childRunId, childOutput)
+            if (childOutput) this.recordOutcome(childRunId, mask(childOutput))
             else this.deps.runs.updateStatus(childRunId, "failed", "Workflow execution failed")
           },
         },
@@ -264,7 +270,7 @@ export class RunScheduler {
         ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
       })
 
-      this.emitFinished(runId, this.recordOutcome(runId, output))
+      this.emitFinished(runId, this.recordOutcome(runId, mask(output)))
     } catch {
       if (controller.signal.aborted) {
         this.deps.runs.updateStatus(runId, "cancelled")
@@ -288,7 +294,10 @@ export class RunScheduler {
     }
   }
 
-  /** Persist an executor output as a run's terminal evidence + status. Shared by top-level runs and Call Workflow sub-runs. */
+  /**
+   * Persist an executor output as a run's terminal evidence + status. Shared by
+   * top-level runs and Call Workflow sub-runs. `output` must already be masked.
+   */
   private recordOutcome(runId: string, output: ExecutorOutput): "completed" | "failed" {
     const failureMessage = safeFailureMessage(output.failedNodes)
     this.deps.runs.updateExecutionEvidence(runId, {
@@ -346,6 +355,7 @@ export class RunScheduler {
     return { ...(Object.keys(secrets).length > 0 ? { secrets } : {}), resolvedSecrets }
   }
 
+  /** `event` must already be masked: it goes straight to run history and to subscribers. */
   private handleProgress(runId: string, event: ExecutorProgressEvent): void {
     if (event.kind === "node.result") {
       this.handleNodeResult(runId, event)
@@ -413,7 +423,9 @@ function sanitizeRequestMetadata(request: JsonValue | undefined): JsonValue {
   if (typeof url !== "string") return request
   try {
     const parsed = new URL(url)
-    const safeUrl = `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search ? "?<REDACTED>" : ""}`
+    // The URL parser percent-encodes a masked path segment; keep it legible.
+    const pathname = parsed.pathname.replaceAll(encodeURIComponent(SECRET_PLACEHOLDER), SECRET_PLACEHOLDER)
+    const safeUrl = `${parsed.protocol}//${parsed.host}${pathname}${parsed.search ? "?<REDACTED>" : ""}`
     return { ...request, url: safeUrl }
   } catch {
     return { ...request, url: "<URL>" }
