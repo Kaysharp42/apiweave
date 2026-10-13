@@ -1,44 +1,11 @@
 import { z } from "zod"
-import { WorkflowSchema, JsonValueSchema, KeyValuePairSchema } from "@shared/zod-schemas"
+import { WorkflowSchema, KeyValuePairSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import type { WorkflowBundle } from "../../services/import_service"
+import { WorkflowBundleSchema } from "../../services/import_service"
 import type { CurlParseOptions, HarParseOptions, ImportedNode } from "../../services/import_parsers"
 
 const ws = z.string().min(1)
-
-const WorkflowBundleInput: z.ZodType<WorkflowBundle> = z
-  .object({
-    workflow: z.object({
-      workflowId: z.string().optional(),
-      name: z.string(),
-      description: z.string().optional(),
-      nodes: z.array(JsonValueSchema),
-      edges: z.array(JsonValueSchema),
-      variables: z.record(z.string(), JsonValueSchema),
-      tags: z.array(z.string()).optional(),
-      environmentId: z.string().nullable().optional(),
-      selectedEnvironmentId: z.string().nullable().optional(),
-    }).passthrough(),
-    environments: z.array(z.object({
-      environmentId: z.string(),
-      name: z.string(),
-      description: z.string().nullable().optional(),
-      variables: z.record(z.string(), JsonValueSchema),
-      swaggerDocUrl: z.string().nullable().optional(),
-    }).passthrough()).optional(),
-    secretReferences: z.array(z.union([
-      z.object({ name: z.string(), scopeType: z.string(), scopeId: z.string() }).strict(),
-      z.string(), // ponytail: backward compat with old exports that stored secret names as strings
-    ])).optional(),
-    metadata: z.object({
-      exportedAt: z.string(),
-      workflowCount: z.number().optional(),
-      environmentCount: z.number().optional(),
-      secretReferenceCount: z.number().optional(),
-    }).optional(),
-  })
-  .passthrough()
 
 const WorkflowImportResultSchema = z
   .object({
@@ -153,9 +120,11 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
   router.register("workflows", "import", {
     input: z.object({
       workspaceId: ws,
-      bundle: WorkflowBundleInput,
+      bundle: WorkflowBundleSchema,
       createMissingEnvironments: z.boolean().optional(),
       sanitize: z.boolean().optional(),
+      /** The project the imported workflow joins, in the same write. */
+      collectionId: z.string().min(1).optional(),
     }).strict(),
     output: WorkflowImportResultSchema,
     handle: (i) => imports.importWorkflow(
@@ -163,13 +132,14 @@ export function registerImportHandlers(router: IpcRouter, deps: HandlerDeps): vo
       i.bundle,
       i.createMissingEnvironments ?? false,
       i.sanitize ?? true,
+      i.collectionId,
     ),
   })
 
   router.register("workflows", "dryRun", {
     input: z.object({
       workspaceId: ws,
-      bundle: WorkflowBundleInput,
+      bundle: WorkflowBundleSchema,
     }).strict(),
     output: WorkflowDryRunResultSchema,
     handle: (i) => imports.dryRunWorkflow(i.workspaceId, i.bundle),

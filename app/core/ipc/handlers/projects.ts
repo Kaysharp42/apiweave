@@ -1,9 +1,12 @@
 import { z } from "zod"
-import { CollectionSchema, JsonValueSchema, WorkflowSchema, WorkflowOrderItemSchema } from "@shared/zod-schemas"
+import { CollectionSchema, JsonValueSchema, ProjectRunSchema, WorkflowSchema, WorkflowOrderItemSchema } from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { ProjectBundle } from "../../services/project_export_service"
+import type { ProjectRunService } from "../../services/project_run_service"
+import { NotFoundError } from "../errors"
+import { buildReport } from "../../runner/reporters"
 import type { HandlerDeps } from "./common"
-import { listResult } from "./common"
+import { ifFound, listResult } from "./common"
 
 const ws = z.string().min(1)
 
@@ -15,7 +18,6 @@ const createInput = z
     color: z.string().nullable().optional(),
     projectId: z.string().nullable().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-    continueOnFail: z.boolean().optional(),
   })
   .strict()
 
@@ -29,7 +31,6 @@ const updateInput = z
     projectId: z.string().nullable().optional(),
     workflowCount: z.number().int().nonnegative().optional(),
     workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-    continueOnFail: z.boolean().optional(),
   })
   .strict()
 
@@ -78,7 +79,6 @@ const ProjectBundleSchema = z
         description: z.string(),
         color: z.string(),
         workflowOrder: z.array(WorkflowOrderItemSchema).optional(),
-        continueOnFail: z.boolean().optional(),
       })
       .strict(),
     workflows: z.array(ExportedWorkflowSchema),
@@ -142,8 +142,14 @@ const BundleInputSchema = z
   })
   .passthrough()
 
+const projectRunIdInput = z.object({ workspaceId: ws, projectRunId: z.string().min(1) }).strict()
+
 export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { collections, projects } = deps
+  const projectRuns = (): ProjectRunService => {
+    if (deps.projectRuns === undefined) throw new NotFoundError("Project runs are not available in this process")
+    return deps.projectRuns
+  }
 
   router.register("projects", "create", {
     input: createInput,
@@ -203,6 +209,62 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
     input: idInput,
     output: z.array(WorkflowSchema),
     handle: (i) => collections.listWorkflows(i.workspaceId, i.collectionId),
+  })
+
+  // --- Project runs: the enabled workflows, in order, against one environment ---
+
+  router.register("projects", "run", {
+    input: z
+      .object({
+        workspaceId: ws,
+        projectId: z.string().min(1),
+        environmentId: z.string().min(1).nullable().describe("Every workflow runs against this environment; null runs them with none."),
+      })
+      .strict(),
+    output: ProjectRunSchema,
+    handle: (i, context) => projectRuns().start(i.workspaceId, i.projectId, i.environmentId, context?.agent),
+  })
+
+  router.register("projects", "getRun", {
+    input: projectRunIdInput,
+    output: ProjectRunSchema,
+    handle: (i) => projectRuns().get(i.workspaceId, i.projectRunId),
+  })
+
+  router.register("projects", "listRuns", {
+    input: z.object({ workspaceId: ws, projectId: z.string().min(1) }).strict(),
+    output: listResult(ProjectRunSchema),
+    handle: (i) => projectRuns().list(i.workspaceId, i.projectId),
+  })
+
+  // Renderer only (not on the MCP whitelist): the whole report as one string,
+  // which the renderer saves where the user picks.
+  router.register("projects", "runReport", {
+    input: projectRunIdInput.extend({ format: z.enum(["junit", "html"]) }).strict(),
+    output: z.string(),
+    handle: async ({ workspaceId, projectRunId, format }) => {
+      const projectRun = await projectRuns().get(workspaceId, projectRunId)
+      const project = await collections.get(workspaceId, projectRun.projectId)
+      const runIds = projectRun.items.flatMap((item) => (item.runId === null ? [] : [item.runId]))
+      const workflowIds = [...new Set(projectRun.items.map((item) => item.workflowId))]
+      const [runs, workflows] = await Promise.all([
+        Promise.all(runIds.map((runId) => ifFound(deps.runs.get(workspaceId, runId)))),
+        Promise.all(workflowIds.map((workflowId) => ifFound(deps.workflows.get(workspaceId, workflowId)))),
+      ])
+      return buildReport(format, {
+        kind: "project",
+        projectName: project.name,
+        projectRun,
+        runs: runs.filter((run) => run !== null),
+        workflows: workflows.filter((workflow) => workflow !== null),
+      })
+    },
+  })
+
+  router.register("projects", "cancelRun", {
+    input: projectRunIdInput,
+    output: ProjectRunSchema,
+    handle: (i) => projectRuns().cancel(i.workspaceId, i.projectRunId),
   })
 
   router.register("projects", "export", {

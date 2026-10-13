@@ -80,6 +80,14 @@ export const AGENT_CHANNELS = {
 export const RUN_STARTED_CHANNEL = "apiweave:run-started"
 
 /**
+ * A project run's record changed — carries the whole `ProjectRun`, which is
+ * small and holds ids and statuses only. Unkeyed for the same reason as
+ * {@link RUN_STARTED_CHANNEL}: an agent can start a project run the renderer
+ * never asked for, and the project page should still show it.
+ */
+export const PROJECT_RUN_CHANGED_CHANNEL = "apiweave:project-run-changed"
+
+/**
  * An MCP write landed — one channel for every domain, carrying only what
  * changed in the broadest terms: `{domain, action}` plus the `workspaceId` the
  * call named, when it named one.

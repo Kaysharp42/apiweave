@@ -27,6 +27,7 @@ import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
+import { downloadTextFile } from "../utils/downloadFile";
 import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
 import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
@@ -152,16 +153,11 @@ export function CollectionExportImport({
         includeEnvironments,
       );
 
-      const dataStr = JSON.stringify(bundle, null, 2);
-      const dataBlob = new Blob([dataStr], { type: "application/json" });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadTextFile(
+        `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`,
+        JSON.stringify(bundle, null, 2),
+        "application/json",
+      );
 
       setMessage({
         type: "success",
@@ -364,15 +360,11 @@ export function CollectionExportImport({
       }
 
       if (detectedType === "workflow") {
-        const imported = await apiweave.workflows.import({
+        await apiweave.workflows.import({
           workspaceId,
           bundle: bundleData,
+          collectionId: selectedTargetProject,
         });
-        await apiweave.projects.addWorkflow(
-          workspaceId,
-          selectedTargetProject,
-          imported.workflowId,
-        );
         setMessage({
           type: "success",
           title: "Import Successful",

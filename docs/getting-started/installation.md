@@ -168,7 +168,7 @@ A quick checklist after first launch:
 | Database backups (before each schema upgrade, newest 5) | `<userData>/backups/apiweave-<time>-v<schema>.db` |
 | Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
-| Run reports (JUnit, HTML) | Not produced yet: runs are kept in the database and shown in History |
+| Run reports (JUnit, HTML) | Not stored: built on demand from History or a project run, saved where you choose |
 | Log (main, renderer, updates, crashes) | `<logs>/apiweave-main-YYYY-MM-DD.log`, one file per day, kept 14 days |
 
 `<userData>` is the OS-standard user data path for the app:

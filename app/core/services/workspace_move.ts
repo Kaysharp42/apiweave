@@ -21,13 +21,35 @@ export function clearDepartingCallTargets(
   nodes: Workflow["nodes"],
   keptWorkflowIds: ReadonlySet<string>,
 ): Workflow["nodes"] {
+  return retargetCallWorkflows(nodes, (targetWorkflowId) => keptWorkflowIds.has(targetWorkflowId) ? targetWorkflowId : null)
+}
+
+/**
+ * Point every Call Workflow node at `retarget(targetWorkflowId)`; `null` clears
+ * the target (and its denormalized name). A node whose target comes back
+ * unchanged is returned as is. Shared by workspace moves (keep or clear) and
+ * imports (re-point at the imported copy, keep, or clear).
+ */
+export function retargetCallWorkflows(
+  nodes: Workflow["nodes"],
+  retarget: (targetWorkflowId: string, node: Workflow["nodes"][number]) => string | null,
+): Workflow["nodes"] {
   return nodes.map((node) => {
     if (node.type !== "workflow") return node
     const targetWorkflowId = node.config?.targetWorkflowId
-    if (!targetWorkflowId || keptWorkflowIds.has(targetWorkflowId)) return node
+    if (!targetWorkflowId) return node
+    const next = retarget(targetWorkflowId, node)
+    if (next === targetWorkflowId) return node
     return {
       ...node,
-      config: { ...node.config, targetWorkflowId: null, targetWorkflowName: null },
+      config: next === null
+        ? { ...node.config, targetWorkflowId: null, targetWorkflowName: null }
+        : { ...node.config, targetWorkflowId: next },
     }
   })
+}
+
+/** The import warning for a Call Workflow target that is neither in the bundle nor in the destination workspace. */
+export function callTargetClearedWarning(nodeLabel: string, workflowName: string, targetWorkflowId: string): string {
+  return `Call Workflow node '${nodeLabel}' in workflow '${workflowName}' targeted workflow '${targetWorkflowId}', which is not in the import or this workspace; its target was cleared`
 }

@@ -48,7 +48,7 @@ An edge is the connection between two nodes that defines the order of execution.
 
 ## Project
 
-A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Projects replace the older collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.awecollection` bundles, which carry references only (no secret values, no private keys). One-click ordered project runs are on the roadmap; today you run each workflow on its own from the canvas.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Projects replace the older collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.awecollection` bundles, which carry references only (no secret values, no private keys). **Run project** on the project page runs every enabled workflow in that order against one environment, stopping at a failed workflow whose `continueOnFail` is false.
 
 ```text
 Project: "Checkout API"
@@ -89,7 +89,7 @@ New secret values are submitted through a Libsodium sealed box encrypted against
 
 ## Run
 
-A run is a single execution of a workflow. A workflow run uses exactly one environment: the one you select for that workflow. One-click ordered project runs are planned but not yet available. The run captures the status of every node, the variables and responses produced, the timing, and any errors. The runner writes the run to the database and the UI subscribes to a progress event stream over IPC.
+A run is a single execution of a workflow. A workflow run uses exactly one environment: the one you select for that workflow. A project run runs each enabled workflow of a project in order, every one against the same environment, and each of those is an ordinary run. The run captures the status of every node, the variables and responses produced, the timing, and any errors. The runner writes the run to the database and the UI subscribes to a progress event stream over IPC.
 
 ```text
 Run  run_4f9c  workflow "Login flow"  env: Staging

@@ -64,6 +64,23 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Imported Call Workflow nodes call the imported workflows.** Importing a
+  project, in the app or with `apiweave run`, left each Call Workflow node
+  pointing at the original workflow, so it failed. It now points at the
+  imported copy. A target outside the bundle is kept when it exists in the
+  destination workspace and cleared otherwise, and the import lists each
+  cleared target. A failing Call Workflow node now says why, such as
+  `Called workflow <id> not found`, instead of `Node execution failed`.
+
+- **A workflow imported into a project lands in it, or not at all.** The
+  project's **Import Workflows** tab imported the workflow and then added it to
+  the project in a second step; if that step failed, the workflow was left
+  outside the project. Both now happen in one write.
+
+- **Cancelling a run during a Delay node stops it.** A cancel that landed just
+  before a Delay node began was missed, and the run waited out the whole delay
+  while still showing as running.
+
 - **Importing cURL commands as nodes no longer creates a workflow.** Adding
   pasted cURL commands to the **Add Nodes** panel also created a stray workflow
   in the sidebar. The commands are now only parsed, as HAR and OpenAPI
@@ -252,6 +269,32 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Run tests in CI with `apiweave run`.** A headless command runs an exported
+  workflow or `.awecollection` project under plain Node, with no Electron and
+  no window, and exits 0 when every run passes, 1 when a test fails and 2 on a
+  usage or configuration error. Pick an environment from the file with
+  `--env`, layer values on it with `--env-file` and `--var`, and supply
+  secrets as `APIWEAVE_SECRET_<NAME>` variables, `--secret` or
+  `--secrets-file`; a missing secret stops the run before any request, and
+  secret values are masked in all output. It prints a per-step console report
+  and writes the JUnit and HTML reports (`--reporter cli,junit,html`), with
+  `--bail`, `--timeout-request` and `--insecure`. Build it from `app/` with
+  `npm run build:cli`; see the new CI guide for a GitHub Actions job.
+- **Run a whole project.** The project page has a **Run project** button: pick
+  an environment and every enabled workflow runs in the project's order, each
+  as an ordinary run with its own History entry. A failed workflow stops the
+  project unless its row says **Continue**; the workflows after a stop are
+  skipped. The card follows the run live, opens any workflow's run, cancels,
+  and lists earlier project runs (the newest 50 per project are kept). Agents
+  can do the same over MCP with `projects_run`, `projects_getRun`,
+  `projects_listRuns` and `projects_cancelRun`; an agent's project run still
+  asks before any workflow sends secrets.
+- **JUnit and HTML run reports.** Export a finished run from History, or a
+  finished project run from its card, as JUnit XML for CI or as one
+  self-contained HTML page; APIWeave asks where to save it. A project run
+  report has one test suite per workflow. Reports are built from the stored,
+  masked run and leave out headers, bodies and variables. The unused
+  temp-folder report artifacts and their handlers are gone.
 - **Delete runs from History.** Each finished run in the History panel has a
   delete button, and **Clear history** deletes every finished run of the
   workflow. Runs still in progress are kept. Agents connected through MCP
@@ -270,6 +313,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- **The project-wide Continue on Failure toggle** in Manage Workflows. Project
+  runs follow each workflow row's own Continue/Stop flag, so the project-wide
+  switch had nothing to decide. The setting behind it is gone too: projects no
+  longer store it, export it in `.awecollection` bundles or sync it. A bundle
+  or a synced project that still carries it imports as before, without it.
 - **The workflow-level Continue on Fail toggle.** It was never saved and the
   runner never read it, so it had no effect. Failure handling is per node:
   each node's **Continue on failure** toggle in its Settings tab.

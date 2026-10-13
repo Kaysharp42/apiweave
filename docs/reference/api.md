@@ -20,8 +20,8 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 |-------|---------------|----------------|
 | Workspaces | `workspaces.*` | CRUD for local workspaces |
 | Workflows | `workflows.*` | CRUD, project attachment, selected environment, plus OpenAPI/HAR/cURL import and `.awecollection` export/import/dry-run |
-| Runs | `runs.*` | Create, wait, metadata/results, per-node result, paged history, lists, latest, cancel, delete and clear history (renderer only), renderer artifact actions |
-| Projects | `projects.*` | CRUD, workflow membership, `.awecollection` export/import/dry-run |
+| Runs | `runs.*` | Create, wait, metadata/results, per-node result, paged history, lists, latest, cancel, plus delete, clear history and JUnit/HTML report (renderer only) |
+| Projects | `projects.*` | CRUD, workflow membership, project runs, JUnit/HTML project-run report (renderer only), `.awecollection` export/import/dry-run |
 | Environments | `environments.*` | CRUD and variable mutation, including the `baseEnvironmentId` inheritance link |
 | Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
 | Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
@@ -36,8 +36,8 @@ The renderer never calls services directly. Every renderer call routes through a
 |-------|------|----------------|
 | Workflows | `app/core/ipc/handlers/workflows.ts` | List, get, create, update, patch, delete, diagnose, project attachment, selected environment |
 | Imports | `app/core/ipc/handlers/imports.ts` | OpenAPI/Swagger/HAR/cURL import, `.awecollection` export/import/dry-run, template saving |
-| Runs | `app/core/ipc/handlers/runs.ts` | Create, wait, get, getNodeResult, history, list, latest, latest failed, cancel, delete, clearHistory, renderer artifact actions |
-| Projects | `app/core/ipc/handlers/projects.ts` | CRUD, workflow membership, export, import, import dry-run |
+| Runs | `app/core/ipc/handlers/runs.ts` | Create, wait, get, getNodeResult, history, list, latest, latest failed, cancel, delete, clearHistory, report |
+| Projects | `app/core/ipc/handlers/projects.ts` | CRUD, workflow membership, project runs, runReport, export, import, import dry-run |
 | Environments | `app/core/ipc/handlers/environments.ts` | List, get, create, update, delete, setVariable, deleteVariable |
 | Node presets | `app/core/ipc/handlers/node-presets.ts` | Create, list, update, delete; config canonicalised and validated per node type |
 | Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |

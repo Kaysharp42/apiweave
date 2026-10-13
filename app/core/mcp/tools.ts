@@ -13,8 +13,9 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  *    mutations; MCP secret surface is read-only metadata (`list`, `resolve`), matching the
  *    Python "metadata-only" posture. Duplicate/move carry sealed BYTES between scopes, so
  *    exposing them would let an agent re-home a credential it is not allowed to read.
- *  - `runs.getArtifacts`, `runs.openArtifact`, `runs.saveArtifactAs` — Electron
- *    shell/dialog operations, not agent tools.
+ *  - `runs.report`, `projects.runReport` — a whole JUnit or HTML report as one
+ *    unbounded string for the renderer to save; an agent reads the same facts,
+ *    bounded, through `runs_get`, `runs_getNodeResult` and `projects_getRun`.
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,
@@ -117,6 +118,10 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("projects", "create", "write", "Create a project."),
   tool("projects", "update", "write", "Update a project.", { idempotent: true }),
   tool("projects", "delete", "write", "Delete an empty project.", { destructive: true, idempotent: true }),
+  tool("projects", "run", "write", "Run a project: its enabled workflows one after another, in the project's saved order, all against one environment (`environmentId`, or null for none). Returns at once with the project run `running`; read progress with projects_getRun. Each workflow is an ordinary run — inspect one with runs_get using its item's runId. A failed workflow stops the project unless its row has continueOnFail, and the workflows after a stop are skipped; any failure fails the project. Variables do not pass between workflows. A workflow run that would send stored secrets first waits for the user to approve it in APIWeave, exactly as runs_create does; a denial fails that workflow — tell the user, do not retry.", { openWorld: true }),
+  tool("projects", "getRun", "read", "Get a project run: its status, and each workflow's status (pending, running, completed, failed, cancelled, interrupted, skipped), runId and duration, in run order."),
+  tool("projects", "listRuns", "read", "List a project's runs, newest first. The newest 50 finished runs of a project are kept."),
+  tool("projects", "cancelRun", "write", "Cancel a running project run: its current workflow run is cancelled and the workflows after it are skipped.", { destructive: true, idempotent: true }),
   tool("projects", "moveToWorkspace", "write", "Move a project and every workflow in it into another workspace. Each moved workflow's selected environment is cleared, and calls out to a workflow left behind lose their target; calls between workflows in this project survive. Confirm with the user before calling.", { destructive: true }),
 
   // Environments

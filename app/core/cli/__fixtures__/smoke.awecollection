@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "2.0",
+  "type": "awecollection",
+  "project": {
+    "projectId": "prj_cli_smoke",
+    "name": "CLI smoke",
+    "description": "Fixture for the headless runner: one GET and one assertion.",
+    "color": "#6366f1",
+    "workflowOrder": [{ "workflowId": "wf_health", "order": 0, "enabled": true, "continueOnFail": true }]
+  },
+  "workflows": [
+    {
+      "workflowId": "wf_health",
+      "name": "Health check",
+      "description": "",
+      "nodes": [
+        { "nodeId": "start", "type": "start", "position": { "x": 0, "y": 0 } },
+        {
+          "nodeId": "get-health",
+          "type": "http-request",
+          "label": "GET /health.json",
+          "position": { "x": 240, "y": 0 },
+          "config": {
+            "method": "GET",
+            "url": "{{env.baseUrl}}/health.json",
+            "headers": [{ "key": "Authorization", "value": "Bearer {{secrets.API_TOKEN}}" }]
+          }
+        },
+        {
+          "nodeId": "check-status",
+          "type": "assertion",
+          "label": "Status is ok",
+          "position": { "x": 480, "y": 0 },
+          "config": {
+            "assertions": [{ "source": "prev", "path": "response.body.status", "operator": "equals", "expectedValue": "ok" }]
+          }
+        },
+        { "nodeId": "end", "type": "end", "position": { "x": 720, "y": 0 } }
+      ],
+      "edges": [
+        { "edgeId": "e1", "source": "start", "target": "get-health" },
+        { "edgeId": "e2", "source": "get-health", "target": "check-status" },
+        { "edgeId": "e3", "source": "check-status", "target": "end", "sourceHandle": "pass" }
+      ],
+      "variables": {},
+      "tags": [],
+      "selectedEnvironmentId": "env_ci"
+    }
+  ],
+  "environments": [
+    {
+      "environmentId": "env_ci",
+      "name": "CI",
+      "description": null,
+      "scopeType": "workspace",
+      "scopeId": "ws_fixture",
+      "variables": { "baseUrl": "http://127.0.0.1:8787" },
+      "swaggerDocUrl": null
+    }
+  ],
+  "secretReferences": [{ "name": "API_TOKEN", "scopeType": "workspace", "scopeId": "ws_fixture" }],
+  "metadata": {
+    "exportedAt": "2026-10-07T00:00:00.000Z",
+    "schemaVersion": "2.0",
+    "workflowCount": 1,
+    "environmentCount": 1,
+    "secretReferenceCount": 1
+  }
+}

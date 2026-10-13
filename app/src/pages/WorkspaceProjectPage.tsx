@@ -7,6 +7,8 @@ import { Badge } from "../components/atoms/Badge";
 import { Spinner } from "../components/atoms/Spinner";
 import { EmptyState } from "../components/molecules/EmptyState";
 import { PromptDialog } from "../components/molecules/PromptDialog";
+import { ProjectRunPanel } from "../components/organisms/ProjectRunPanel";
+import useCanvasStore from "../stores/CanvasStore";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import { apiweave } from "../utils/apiweaveClient";
 import useAgentWriteRefresh from "../hooks/useAgentWriteRefresh";
@@ -256,8 +258,24 @@ export function WorkspaceProjectPage() {
         </div>
       </div>
 
+      {workflows.length > 0 && projectId && (
+        <div className="px-6 pt-6">
+          <ProjectRunPanel
+            workspaceId={wsId}
+            projectId={projectId}
+            onOpenRun={(workflowId, runId) => {
+              // The workflow's canvas mounts on navigation and opens History on this run.
+              useCanvasStore.getState().openWorkflowHistory(workflowId, runId);
+              navigate(
+                `/${orgSlugValue}/${wsSlugValue}/workflows/${workflowId}`,
+              );
+            }}
+          />
+        </div>
+      )}
+
       {/* Workflow list */}
-      <div className="px-6 pb-6">
+      <div className="px-6 py-6">
         {workflows.length === 0 ? (
           <Card className="p-8">
             <EmptyState

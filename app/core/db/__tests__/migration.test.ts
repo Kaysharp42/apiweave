@@ -37,6 +37,7 @@ describe("database migrations", () => {
         "collections",
         "environments",
         "node_presets",
+        "project_runs",
         "run_node_results",
         "run_responses",
         "runs",

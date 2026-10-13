@@ -1669,7 +1669,7 @@ export class WorkflowExecutor {
     }
     const target = this.deps.resolveWorkflow(targetWorkflowId)
     if (!target) {
-      return { status: "error", error: `Target workflow ${targetWorkflowId} not found` }
+      return { status: "error", error: `Called workflow ${targetWorkflowId} not found` }
     }
 
     // The child executor shares `this.deps` (same run, same environment/secrets

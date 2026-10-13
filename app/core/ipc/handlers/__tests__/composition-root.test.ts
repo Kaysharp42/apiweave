@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase } from "../../../db"
 import type { InitializedDatabase } from "../../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
+  ProjectRunRepository,
   RunRepository,
   SecretRepository,
   WorkflowRepository,
@@ -21,6 +22,8 @@ import { AssertionAuthoringService } from "../../../services/assertion_authoring
 import { EnvironmentService } from "../../../services/environment_service"
 import { NodePresetService } from "../../../services/node_preset_service"
 import { RunService } from "../../../services/run_service"
+import { ProjectRunService } from "../../../services/project_run_service"
+import { ProjectRunner } from "../../../runner/project_runner"
 import { SecretService } from "../../../services/secret_service"
 import { ProjectExportService } from "../../../services/project_export_service"
 import { RunScheduler } from "../../../runner/scheduler"
@@ -43,6 +46,7 @@ let db: InitializedDatabase
 let router: IpcRouter
 let workflows: WorkflowRepository
 let runs: RunRepository
+let projectRuns: ProjectRunRepository
 let scheduler: RunScheduler | null = null
 
 beforeEach(() => {
@@ -54,6 +58,7 @@ beforeEach(() => {
   const nodePresets = new NodePresetRepository(db.kvStore)
   const collections = new CollectionRepository(db.kvStore)
   const secretStore = new SecretRepository(db.kvStore)
+  projectRuns = new ProjectRunRepository(db.kvStore)
   const existence: ScopeExistence = {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
@@ -88,6 +93,13 @@ beforeEach(() => {
       scopeResolver,
       secretStore,
       () => clock.isoNow(),
+    ),
+    projectRuns: new ProjectRunService(
+      new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler }),
+      projectRuns,
+      collections,
+      permissions,
+      scopeResolver,
     ),
   }
   router = new IpcRouter()
@@ -220,5 +232,75 @@ describe("composition root — the wiring main.ts performs", () => {
         scopeId: ws.workspaceId,
       }),
     ).toHaveLength(0)
+  })
+
+  it("projects.run runs the enabled workflows in order; getRun, listRuns and cancelRun read and stop it", async () => {
+    const ws = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
+    const project = await ok<{ collectionId: string }>("projects", "create", { workspaceId: ws.workspaceId, name: "Checkout" })
+    const first = seedWorkflow(ws.workspaceId)
+    const second = seedWorkflow(ws.workspaceId)
+    for (const workflowId of [first, second]) {
+      await ok("projects", "addWorkflow", { workspaceId: ws.workspaceId, collectionId: project.collectionId, workflowId })
+    }
+    await ok("projects", "update", {
+      workspaceId: ws.workspaceId,
+      collectionId: project.collectionId,
+      workflowOrder: [
+        { workflowId: second, order: 0, enabled: true, continueOnFail: true },
+        { workflowId: first, order: 1, enabled: true, continueOnFail: true },
+      ],
+    })
+    const enqueue = vi.spyOn(scheduler!, "enqueue")
+
+    const started = await router.dispatch(
+      { domain: "projects", action: "run", payload: { workspaceId: ws.workspaceId, projectId: project.collectionId, environmentId: null } },
+      { agent: "claude-code" },
+    )
+    if (!started.ok) throw new Error(JSON.stringify(started.error))
+    const { projectRunId } = started.data as { projectRunId: string }
+
+    const deadline = Date.now() + 2000
+    let current = await ok<{ status: string; items: { workflowId: string; status: string; runId: string | null }[] }>(
+      "projects", "getRun", { workspaceId: ws.workspaceId, projectRunId },
+    )
+    while (current.status === "running" && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      current = await ok("projects", "getRun", { workspaceId: ws.workspaceId, projectRunId })
+    }
+    expect(current.status).toBe("completed")
+    expect(current.items.map((item) => [item.workflowId, item.status])).toEqual([[second, "completed"], [first, "completed"]])
+    // An agent's project run starts each workflow run as that agent, so its secrets need the user's approval.
+    expect(enqueue.mock.calls.map(([request]) => request.agent)).toEqual(["claude-code", "claude-code"])
+
+    const listed = await ok<{ items: { projectRunId: string }[]; total: number }>(
+      "projects", "listRuns", { workspaceId: ws.workspaceId, projectId: project.collectionId },
+    )
+    expect(listed.items.map((run) => run.projectRunId)).toEqual([projectRunId])
+    // Cancelling a finished project run is a no-op that returns it unchanged.
+    expect(await ok("projects", "cancelRun", { workspaceId: ws.workspaceId, projectRunId })).toEqual(current)
+
+    const other = await ok<{ workspaceId: string }>("workspaces", "create", { name: "Other", isPersonal: false })
+    const foreign = await router.dispatch({ domain: "projects", action: "getRun", payload: { workspaceId: other.workspaceId, projectRunId } })
+    expect(foreign.ok ? null : foreign.error.code).toBe("not_found")
+    const missingEnvironment = await router.dispatch({
+      domain: "projects", action: "run", payload: { workspaceId: ws.workspaceId, projectId: project.collectionId },
+    })
+    expect(missingEnvironment.ok ? null : missingEnvironment.error.code).toBe("validation")
+    expect(projectRuns.listByProject(project.collectionId)).toHaveLength(1)
+
+    // Reports: one testsuite per workflow of the project run, in run order.
+    const junit = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "junit" })
+    expect([...junit.matchAll(/<testsuite name="wf" id="(\d)"/g)].map((match) => match[1])).toEqual(["0", "1"])
+    const html = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "html" })
+    expect(html).toContain("<h1>Checkout</h1>")
+    const runReport = await ok<string>("runs", "report", { workspaceId: ws.workspaceId, runId: current.items[0]!.runId, format: "junit" })
+    expect(runReport).toContain('<testsuites name="wf" tests="0" failures="0"')
+    // Deleting a workflow deletes its runs; the project report still has its suite.
+    await ok("workflows", "delete", { workspaceId: ws.workspaceId, workflowId: second })
+    const afterDelete = await ok<string>("projects", "runReport", { workspaceId: ws.workspaceId, projectRunId, format: "junit" })
+    expect(afterDelete.match(/<testsuite /g)).toHaveLength(2)
+    expect(afterDelete).toContain('<skipped message="Its run was deleted from history"/>')
+    const foreignReport = await router.dispatch({ domain: "projects", action: "runReport", payload: { workspaceId: other.workspaceId, projectRunId, format: "junit" } })
+    expect(foreignReport.ok ? null : foreignReport.error.code).toBe("not_found")
   })
 })

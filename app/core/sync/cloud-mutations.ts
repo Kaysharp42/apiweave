@@ -75,7 +75,6 @@ export function recordCollectionUpsert(syncProvider: SyncProvider, collection: C
       workflowCount: collection.workflowCount,
       workflowOrder: collection.workflowOrder.map((item) => item.workflowId),
       workflowOrderItems: collection.workflowOrder,
-      continueOnFail: collection.continueOnFail,
       rev: collection.rev,
       createdAt: collection.createdAt,
       updatedAt: collection.updatedAt,

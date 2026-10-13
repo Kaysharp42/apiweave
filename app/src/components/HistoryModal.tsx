@@ -11,9 +11,13 @@ import {
   Zap,
   Activity,
   Trash2,
+  FileCode,
+  FileText,
 } from "lucide-react";
+import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { RunSummary } from "@shared/types/RunSummary";
 import { apiweave } from "../utils/apiweaveClient";
+import { downloadReport } from "../utils/downloadFile";
 import { IconButton } from "./atoms/IconButton";
 import { Button } from "./atoms/Button";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
@@ -95,6 +99,16 @@ export default function HistoryModal({
     }
     // Deleting changes the history, so any cursor already issued is stale.
     await fetchRunHistory();
+  };
+
+  // Built from the stored, masked run on demand; nothing is kept on disk.
+  const exportReport = async (runId: string, format: ReportFormat) => {
+    try {
+      const report = await apiweave.runs.report(workspaceId, runId, format);
+      downloadReport(`apiweave-run-${runId}`, format, report);
+    } catch {
+      setError("Could not export the run report.");
+    }
   };
 
   const getStatusColor = (status: string): string => {
@@ -298,6 +312,36 @@ export default function HistoryModal({
                     >
                       <Activity className="w-4 h-4" />
                     </IconButton>
+                  )}
+                  {!LIVE_STATUSES.has(run.status) && (
+                    <>
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void exportReport(run.runId, "junit");
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        variant="ghost"
+                        size="xs"
+                        tooltip="Export JUnit XML report"
+                        aria-label={`Export JUnit XML report for run ${run.runId}`}
+                      >
+                        <FileCode className="w-4 h-4" />
+                      </IconButton>
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void exportReport(run.runId, "html");
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        variant="ghost"
+                        size="xs"
+                        tooltip="Export HTML report"
+                        aria-label={`Export HTML report for run ${run.runId}`}
+                      >
+                        <FileText className="w-4 h-4" />
+                      </IconButton>
+                    </>
                   )}
                   {!LIVE_STATUSES.has(run.status) && (
                     <IconButton

@@ -10,7 +10,7 @@ Work is organized locally into **workspaces**: a personal workspace is created f
 
 Optional APIWeave Cloud sync and collaboration turn on when you sign in with an optional Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) and lets multiple machines collaborate in shared **Cloud Workspaces**, which belong to a **Cloud Team** from the Cloud account; secret values and run history stay local and are rejected from sync payloads. Cloud never builds or runs tests — all execution stays on the desktop.
 
-There is no SSO and no webhook for local use. You run a workflow by clicking **Run** in the app, or by having a local AI agent drive the app through the loopback MCP bridge. (Locally scheduled runs are on the roadmap.)
+There is no SSO and no webhook for local use. You run a workflow by clicking **Run** in the app, by having a local AI agent drive the app through the loopback MCP bridge, or from a CI pipeline with the headless [`apiweave run`](guides/ci.md) command. (Locally scheduled runs are on the roadmap.)
 
 If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. An optional Cloud account adds sync and collaboration across machines, but the desktop app is fully usable without it.
 
@@ -42,6 +42,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
 - [Swagger and OpenAPI Import](features/swagger-import.md): turn a spec into reusable request templates.
+- [Run Tests in CI](guides/ci.md): run exported workflows and projects headless with `apiweave run`, with exit codes and JUnit/HTML reports.
 
 **I'm having trouble (something broke or behaves wrong).**
 
@@ -73,6 +74,10 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the loopback HTTP bridge for local AI agents.
 - [Swagger and OpenAPI Import](features/swagger-import.md): import endpoints from a spec.
+
+## Guides
+
+- [Run Tests in CI](guides/ci.md): the headless `apiweave run` command, secrets from CI variables, and a GitHub Actions job.
 
 ## Reference
 

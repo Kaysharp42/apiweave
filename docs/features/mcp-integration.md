@@ -170,12 +170,21 @@ the written workflow comes back in the response, for clients on a token budget.
 - `projects_create`
 - `projects_update`
 - `projects_delete`
-- `projects_addWorkflow`
-- `projects_removeWorkflow`
-- `projects_listWorkflows`
+- `projects_run`
+- `projects_getRun`
+- `projects_listRuns`
+- `projects_cancelRun`
 - `projects_export`
 - `projects_dryRun`
 - `projects_import`
+
+`projects_run` runs a project's enabled workflows one after another, in the
+project's order, against one `environmentId` (or `null` for none), and returns
+at once with the project run `running`. Each workflow's run is an ordinary run
+that `runs_get` reads by the item's `runId`, and one that would send stored
+secrets waits for the user's approval like any run an agent starts. Project
+membership itself is read with `workflows_search` and written with
+`workflows_attachToCollection`.
 
 ### Environments
 

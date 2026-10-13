@@ -7,6 +7,8 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { ProjectRun } from "@shared/types/ProjectRun";
+import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
 import type { AgentScope } from "@shared/types/AgentScope";
@@ -82,6 +84,9 @@ type IpcBridge = {
   ) => () => void;
   readonly onRunStarted?: (
     callback: (event: RunStartedEvent) => void,
+  ) => () => void;
+  readonly onProjectRunChanged?: (
+    callback: (projectRun: ProjectRun) => void,
   ) => () => void;
   readonly onAgentWrite?: (
     callback: (event: AgentWriteEvent) => void,
@@ -334,6 +339,7 @@ export const apiweave = {
       readonly bundle: unknown;
       readonly createMissingEnvironments?: boolean;
       readonly sanitize?: boolean;
+      readonly collectionId?: string;
     }) => invoke<ImportResult>("workflows", "import", input),
     dryRun: (workspaceId: string, bundle: unknown) =>
       invoke<DryRunResult>("workflows", "dryRun", { workspaceId, bundle }),
@@ -568,20 +574,8 @@ export const apiweave = {
       invoke<null>("runs", "delete", { workspaceId, runId }),
     clearHistory: (workspaceId: string, workflowId: string) =>
       invoke<{ deleted: number }>("runs", "clearHistory", { workspaceId, workflowId }),
-    getArtifacts: (workspaceId: string, runId: string) =>
-      invoke<unknown>("runs", "getArtifacts", { workspaceId, runId }),
-    openArtifact: (
-      workspaceId: string,
-      runId: string,
-      artifactName: "junit.xml" | "report.html",
-    ) =>
-      invoke<string>("runs", "openArtifact", { workspaceId, runId, artifactName }),
-    saveArtifactAs: (
-      workspaceId: string,
-      runId: string,
-      artifactName: "junit.xml" | "report.html",
-    ) =>
-      invoke<string | null>("runs", "saveArtifactAs", { workspaceId, runId, artifactName }),
+    report: (workspaceId: string, runId: string, format: ReportFormat) =>
+      invoke<string>("runs", "report", { workspaceId, runId, format }),
   },
   secrets: {
     set: (input: {
@@ -717,6 +711,35 @@ export const apiweave = {
         workspaceId,
         collectionId,
       }),
+    /** Run the project's enabled workflows in order against one environment (null for none). */
+    run: (workspaceId: string, projectId: string, environmentId: string | null) =>
+      invoke<ProjectRun>("projects", "run", {
+        workspaceId,
+        projectId,
+        environmentId,
+      }),
+    getRun: (workspaceId: string, projectRunId: string) =>
+      invoke<ProjectRun>("projects", "getRun", { workspaceId, projectRunId }),
+    listRuns: (workspaceId: string, projectId: string) =>
+      invoke<ListResult<ProjectRun>>("projects", "listRuns", {
+        workspaceId,
+        projectId,
+      }),
+    runReport: (
+      workspaceId: string,
+      projectRunId: string,
+      format: ReportFormat,
+    ) =>
+      invoke<string>("projects", "runReport", {
+        workspaceId,
+        projectRunId,
+        format,
+      }),
+    cancelRun: (workspaceId: string, projectRunId: string) =>
+      invoke<ProjectRun>("projects", "cancelRun", {
+        workspaceId,
+        projectRunId,
+      }),
     export: (
       workspaceId: string,
       projectId: string,
@@ -810,6 +833,16 @@ export function onRunStarted(
   callback: (event: RunStartedEvent) => void,
 ): () => void {
   return getIpcBridge().onRunStarted?.(callback) ?? (() => undefined);
+}
+
+/**
+ * Subscribe to every change to any project run, whoever started it. Each event
+ * carries the whole record; see `PROJECT_RUN_CHANGED_CHANNEL`.
+ */
+export function onProjectRunChanged(
+  callback: (projectRun: ProjectRun) => void,
+): () => void {
+  return getIpcBridge().onProjectRunChanged?.(callback) ?? (() => undefined);
 }
 
 /**

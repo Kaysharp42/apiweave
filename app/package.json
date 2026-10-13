@@ -7,15 +7,20 @@
   "author": "Kaysharp42 <kaysharp42@users.noreply.github.com>",
   "homepage": "https://github.com/Kaysharp42/apiweave",
   "main": "dist/desktop/main.cjs",
+  "bin": {
+    "apiweave": "dist/cli/apiweave.cjs"
+  },
   "scripts": {
     "setup": "npm install",
     "dev": "node scripts/dev.mjs",
     "dev:renderer": "vite --host 127.0.0.1",
     "start": "electron .",
     "build": "npm run build:app && electron-builder",
-    "build:app": "npm run build:renderer && npm run build:electron",
+    "build:app": "npm run build:renderer && npm run build:electron && npm run build:cli",
     "build:renderer": "vite build",
     "build:electron": "node esbuild.config.cjs",
+    "build:cli": "node esbuild.config.cjs --cli",
+    "cli": "npm run --silent build:cli && node dist/cli/apiweave.cjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:renderer": "vitest run src",

@@ -1467,7 +1467,6 @@ export class CloudSyncRepository {
       description: payload["description"] ?? null,
       color: payload["color"] ?? null,
       workflowCount: payload["workflowCount"] ?? 0,
-      continueOnFail: payload["continueOnFail"] ?? true,
     })
     this.store.set(
       `INSERT INTO collections (id, workspace_id, scopeId, name, slug, workflow_ids_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

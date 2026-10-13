@@ -19,6 +19,8 @@ export type {
   RunSummaryPage,
   RunSummaryRow,
 } from "./RunRepository"
+export { ProjectRunRepository } from "./ProjectRunRepository"
+export type { ProjectRunCreate } from "./ProjectRunRepository"
 export { EnvironmentRepository } from "./EnvironmentRepository"
 export type { EnvironmentCreate, EnvironmentUpdate } from "./EnvironmentRepository"
 export { CollectionRepository } from "./CollectionRepository"

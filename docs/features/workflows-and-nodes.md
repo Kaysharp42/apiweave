@@ -287,6 +287,7 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in the selected environment or the workspace scope. Open **Secrets**, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 - **If a Call Workflow node fails with "no target workflow configured"**, the node was dropped but never pointed at a workflow. Open it and pick a target from the picker.
+- **If a Call Workflow node fails with "Called workflow … not found"**, its target workflow was deleted. Open the node and pick another target.
 - **If a Call Workflow node fails with "recursion depth exceeded"**, the call graph loops (A calls B, B calls A) or nests deeper than 8 levels. Open the target chain and break the loop.
 - **If a variable the sub-workflow produced is missing in the caller**, it was not in the output mapping, or the name on the right-hand side does not match the variable the sub-workflow actually ends with. Run the sub-workflow on its own and check its final variables.
 

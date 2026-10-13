@@ -772,9 +772,8 @@ describe("Phase 3 — redaction and whitelist", () => {
       "secrets.delete",
       "secrets.duplicate",
       "secrets.moveToScope",
-      "runs.getArtifacts",
-      "runs.openArtifact",
-      "runs.saveArtifactAs",
+      "runs.report",
+      "projects.runReport",
     ]) {
       expect(excluded.has(name), name).toBe(false)
     }

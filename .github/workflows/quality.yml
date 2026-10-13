@@ -40,6 +40,21 @@ jobs:
       - name: Lint
         run: npm run lint
         working-directory: app
+      # The headless runner, built and run under plain Node the way a user's
+      # CI runs it, against a fixture bundle served from a local server.
+      - name: Build CLI
+        run: npm run build:cli
+        working-directory: app
+      - name: Run CLI against the fixture
+        working-directory: app
+        env:
+          APIWEAVE_SECRET_API_TOKEN: ci-fixture-token
+        run: |
+          python3 -m http.server 8787 --bind 127.0.0.1 --directory core/cli/__fixtures__ >/dev/null 2>&1 &
+          for _ in $(seq 20); do curl -sf http://127.0.0.1:8787/health.json >/dev/null && break; sleep 0.5; done
+          node dist/cli/apiweave.cjs run core/cli/__fixtures__/smoke.awecollection --env CI \
+            --reporter cli,junit --reporter-junit-export "$RUNNER_TEMP/apiweave-junit.xml"
+          grep -q 'failures="0"' "$RUNNER_TEMP/apiweave-junit.xml"
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
         working-directory: app

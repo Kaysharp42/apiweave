@@ -16,6 +16,7 @@ import {
   EnvironmentRepository,
   NodePresetRepository,
   RunRepository,
+  ProjectRunRepository,
   SecretRepository,
   WorkflowRepository,
   WorkspaceRepository,
@@ -34,13 +35,14 @@ import {
   EnvironmentService,
   NodePresetService,
   RunService,
+  ProjectRunService,
   SecretService,
   ProjectExportService,
   ImportService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
-import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions } from "../core/runner"
+import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
 import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
@@ -67,6 +69,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
+  PROJECT_RUN_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
   UPDATE_STATUS_CHANGED_CHANNEL,
@@ -550,6 +553,27 @@ if (!hasSingleInstanceLock) {
       bootstrapLog.info(`reconciled ${interrupted} stuck run(s) to interrupted`)
     }
 
+    // Project runs drive the same scheduler, one workflow run at a time. Every
+    // change to a project run's record goes to the renderer whole.
+    const projectRuns = new ProjectRunRepository(database.kvStore)
+    const projectRunner = new ProjectRunner({
+      projectRuns,
+      collections,
+      workflows,
+      environments,
+      runs,
+      scheduler,
+      onChange: (projectRun) => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(PROJECT_RUN_CHANGED_CHANNEL, projectRun)
+        }
+      },
+    })
+    const interruptedProjectRuns = projectRunner.reconcileOnStartup()
+    if (interruptedProjectRuns > 0) {
+      bootstrapLog.info(`reconciled ${interruptedProjectRuns} stuck project run(s) to interrupted`)
+    }
+
     // Services over the scoped repos; RunService drives the scheduler so
     // runs.create actually executes and runs.cancel aborts a live run. The
     // run-event broker gives runs.create/wait their event-driven observation
@@ -578,6 +602,7 @@ if (!hasSingleInstanceLock) {
       ),
       imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver, http),
       cloud,
+      projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, permissions, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)
     // Conflict/loser-retrieval IPC lives in a separate bridge (repository-backed

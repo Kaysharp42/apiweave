@@ -5,12 +5,14 @@ import type { WorkflowService } from "../../services/workflow_service"
 import type { EnvironmentService } from "../../services/environment_service"
 import type { NodePresetService } from "../../services/node_preset_service"
 import type { RunService } from "../../services/run_service"
+import type { ProjectRunService } from "../../services/project_run_service"
 import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
 import type { ImportService } from "../../services/import_service"
 import type { CloudSyncControl } from "../../services/cloud_sync_control"
 import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
+import { NotFoundError } from "../errors"
 
 /**
  * The service bundle every handler module registers against. Constructed once at
@@ -31,6 +33,8 @@ export interface HandlerDeps {
   readonly projects: ProjectExportService
   readonly imports: ImportService
   readonly cloud?: CloudSyncControl
+  /** Absent where nothing executes runs (a test router without a scheduler). */
+  readonly projectRuns?: ProjectRunService
 }
 
 /** A method taking no payload — the renderer sends `undefined`, so accept it. */
@@ -39,4 +43,14 @@ export const NoInput = z.object({}).strict().optional()
 /** `{ items, total }` — the shared list envelope every `list*` service returns. */
 export function listResult<T extends z.ZodType>(item: T) {
   return z.object({ items: z.array(item), total: z.number().int().nonnegative() }).strict()
+}
+
+/** The read's value, or null when what it names is gone. Any other failure still throws. */
+export async function ifFound<T>(read: Promise<T>): Promise<T | null> {
+  try {
+    return await read
+  } catch (error: unknown) {
+    if (error instanceof NotFoundError) return null
+    throw error
+  }
 }

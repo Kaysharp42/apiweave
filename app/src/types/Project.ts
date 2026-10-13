@@ -20,8 +20,6 @@ export interface Project {
   workflowCount: number;
   /** Ordered list of workflow IDs for sequential execution. */
   workflowOrder?: Array<{ workflowId: string; continueOnFail?: boolean }>;
-  /** Whether to continue execution when a workflow fails. */
-  continueOnFail?: boolean;
   /** ID of the workspace this project belongs to. */
   workspaceId?: string;
   /** Workflow IDs attached to this project. */

@@ -33,7 +33,7 @@ Project: "Checkout API"
   3. Pay         (workflow)  continueOnFail: false
 ```
 
-One-click ordered project runs are on the roadmap; today you run each workflow on its own from the canvas.
+Click **Run project** on the project page to run every enabled workflow in that order against one environment. See [Project Run Behavior](#project-run-behavior).
 
 ## Use Cases
 
@@ -103,7 +103,7 @@ Project: "Checkout API" (saved order)
 
 ## continueOnFail per Workflow
 
-Each row in the project's workflow list carries a `continueOnFail` flag. It records the intent for when ordered project runs ship: continue to the next workflow after this one fails (true, the default), or stop the project (false). It is independent of the per-node **Continue on failure** toggles inside the workflow, which decide whether a failing node stops that workflow's run.
+Each row in the project's workflow list carries a `continueOnFail` flag. It decides what a project run does when that workflow fails: go on to the next workflow (true, the default), or stop the project run there (false). It is independent of the per-node **Continue on failure** toggles inside the workflow, which decide whether a failing node stops that workflow's run.
 
 You usually want the flag set to `true` for diagnostic workflows and `false` for critical paths. Example:
 
@@ -114,13 +114,36 @@ Project: "Checkout API"
   3. Pay         continueOnFail: false
 ```
 
-You can change the project-level flag row by row in the project settings.
+Change it row by row in **Manage Workflows**: each row's **Continue** / **Stop** button flips it. Click **Save order** to keep the change.
 
 ## Project Run Behavior
 
-One-click project runs are planned but not available in this release: there is no runner that executes a whole project in order. The project list defines the order, the enabled/disabled state, and the per-workflow `continueOnFail` intent; until the project runner ships, run each workflow from its own canvas, in project order, using the environment you want.
+To run a project:
 
-Variable and secret state does not pass between workflows. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
+1. Open the project page from the sidebar.
+2. In **Project runs**, pick the **Environment** every workflow runs against. The workspace default is preselected; **No environment** runs them with none.
+3. Click **Run project**.
+
+The project run executes the enabled workflows one at a time, in the saved order. Each workflow's run is an ordinary run: it appears in that workflow's History, masks secrets, and stops when cancelled, exactly like a run started from the canvas. The card lists every workflow of the run with its status (pending, running, passed, failed, cancelled, interrupted or skipped) and duration. **Open run** opens that workflow's canvas with History on its run.
+
+What happens when a workflow does not pass:
+
+- **Failed, row set to Continue**: the project run goes on to the next workflow. The project run still ends **Failed**.
+- **Failed, row set to Stop**: the project run stops. The workflows after it are **Skipped**.
+- **Cancelled**: **Cancel** on the card (or cancelling the workflow's own run from its canvas) cancels the running workflow, skips the rest, and ends the project run **Cancelled**.
+- **Interrupted**: quitting APIWeave mid-run ends the project run **Interrupted**. It is not resumed on the next launch.
+
+The order comes from **Manage Workflows**. A workflow added to the project after the order was last saved runs after the ordered ones. Disabled workflows are not run and do not appear in the project run.
+
+Once a project run has finished, **JUnit XML** and **HTML report** on the card export it, with one test suite per workflow; see [Run reports](visualization-and-debugging.md#5-run-reports-junit-and-html).
+
+The card also lists the project's earlier runs; click one to see its workflows. APIWeave keeps the newest 50 finished project runs per project. Each workflow's own run follows that workflow's History retention, so an old project run can point at a workflow run that has since been pruned.
+
+Variable and secret state does not pass between workflows: each workflow starts from its own variables and the chosen environment, as it would from the canvas. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
+
+A CI pipeline can run an exported `.awecollection` the same way, without the app: `apiweave run project.awecollection --env Staging`. See [Run Tests in CI](../guides/ci.md).
+
+An agent connected over MCP can start a project run with `projects_run` and follow it with `projects_getRun`. A workflow in an agent's project run that would send stored secrets waits for your approval first, as any agent-started run does. See [MCP Integration](mcp-integration.md).
 
 ## Export and Import (.awecollection)
 
@@ -144,6 +167,8 @@ To import:
 4. Click **Import** to commit.
 
 Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
+
+A Call Workflow node follows its target into the import: when the target is in the same bundle, the node points at the imported copy. A target outside the bundle is kept when it exists in the destination workspace, and cleared otherwise; the import result lists every cleared target so you can pick a new one. A single workflow export carries none of its targets, so the same rule applies to each of its Call Workflow nodes.
 
 ## Dry-Run Validation
 
@@ -194,7 +219,7 @@ This is intentional. Each instance has its own Libsodium keypair and its own enc
 - **If a workflow row in the project will not go away**, click **Remove** on the row, or open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
 - **If the project runs in the wrong order after a drag-and-drop edit**, click **Save order** in the project settings. Drag-and-drop updates the list in memory but does not persist until you save. Reload the page to confirm the new order.
 - **If secrets are missing after import**, open **Secrets** for the destination environment or workspace and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
-- **If an imported workflow fails with `workflow not found` errors when another workflow references it**, the bundle exported with a stale internal ID. Re-export the project from the source instance, then re-import.
+- **If a Call Workflow node fails with `no target workflow configured` after an import**, its target was neither in the bundle nor in the destination workspace, so the import cleared it. Import the target too, or pick another target.
 
 ## Related
 

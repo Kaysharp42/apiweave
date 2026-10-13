@@ -14,6 +14,7 @@ import { TextArea } from "./atoms/TextArea";
 import { Modal } from "./molecules/Modal";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave, IpcError } from "../utils/apiweaveClient";
+import { downloadTextFile } from "../utils/downloadFile";
 import { getLogger } from "../utils/logger";
 import type { WorkflowExportImportTab } from "../types/WorkflowExportImportTab";
 import type { WorkflowExportImportProps } from "../types/WorkflowExportImportProps";
@@ -108,17 +109,11 @@ export function WorkflowExportImport({
         includeEnvironment,
       );
 
-      const blob = new Blob([JSON.stringify(bundle, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${workflowName || "workflow"}_${new Date().toISOString().split("T")[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      downloadTextFile(
+        `${workflowName || "workflow"}_${new Date().toISOString().split("T")[0]}.json`,
+        JSON.stringify(bundle, null, 2),
+        "application/json",
+      );
     } catch (err: unknown) {
       exportImportLog.error("Export error:", err);
       setError(
