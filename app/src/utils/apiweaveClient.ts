@@ -34,6 +34,7 @@ import type {
   AgentsBridge,
 } from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
+import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 import type { OAuthBridge } from "@shared/types/OAuthBridge";
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
 import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
@@ -132,6 +133,8 @@ type McpBridge = {
   readonly enable: () => Promise<McpStatus>;
   readonly disable: () => Promise<McpStatus>;
   readonly regenerateToken: () => Promise<McpStatus>;
+  readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>;
+  readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>;
   readonly listTools: () => Promise<readonly MCPTool[]>;
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
   readonly listResources: () => Promise<readonly MCPResource[]>;
@@ -995,6 +998,10 @@ export const mcp = {
   regenerateToken: (): Promise<McpStatus> =>
     getMcpBridge()?.regenerateToken() ??
     Promise.resolve({ running: false, config: null }),
+  listAgentApprovals: (): Promise<readonly AgentRunApproval[]> =>
+    getMcpBridge()?.listAgentApprovals() ?? Promise.resolve([]),
+  revokeAgentApproval: (approvalId: string): Promise<boolean> =>
+    getMcpBridge()?.revokeAgentApproval(approvalId) ?? Promise.resolve(false),
   listTools: (): Promise<readonly MCPTool[]> =>
     getMcpBridge()?.listTools() ?? Promise.resolve([]),
   listPrompts: (): Promise<readonly MCPPrompt[]> =>

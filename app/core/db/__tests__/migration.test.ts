@@ -32,6 +32,7 @@ describe("database migrations", () => {
       expect(tableNames(store)).toEqual([
         "agent_definitions",
         "agent_local_paths",
+        "agent_run_approvals",
         "agent_sessions",
         "app_settings",
         "cloud_conflicts",

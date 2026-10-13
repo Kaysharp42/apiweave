@@ -10,6 +10,8 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
+import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
+import type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "../repositories/AgentRunApprovalRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
 import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
@@ -29,6 +31,25 @@ const DEFAULT_CONCURRENCY_CAP = 4
  */
 export const AGENT_RUN_DENIED_ERROR =
   "Not run: an agent started this run and it was not allowed to send secrets"
+
+/**
+ * What the user answered when an agent-started run asked to send secrets.
+ * "once" allows that one run; "session" and "always" also skip the question
+ * for later runs of the same agent, workflow, secrets and destinations — in
+ * memory until the app exits, and in the store, respectively.
+ */
+export type AgentRunApprovalDecision = "once" | "session" | "always" | "deny"
+
+/**
+ * The slice of the approval store the scheduler reads and writes. The
+ * repository satisfies it; absent, "Never ask again" holds for the app session
+ * only. A remembered answer stops matching — and the question returns — the
+ * moment the secrets, destinations or scripts change.
+ */
+export interface AgentRunApprovalStore {
+  find(lookup: AgentRunApprovalLookup): AgentRunApproval | undefined
+  save(input: AgentRunApprovalCreate): AgentRunApproval
+}
 
 /** What the user is asked before an agent-started run may use secrets. */
 export interface AgentRunApprovalRequest {
@@ -51,6 +72,12 @@ export interface AgentRunApprovalRequest {
   readonly runsScripts: boolean
 }
 
+/** An approval request plus the identity the answer would be remembered by. */
+interface AgentRunApprovalAttempt extends AgentRunApprovalRequest {
+  readonly workspaceId: string
+  readonly workflowId: string
+}
+
 export interface SchedulerDeps {
   readonly runs: RunRepository
   readonly workflows: WorkflowRepository
@@ -70,11 +97,17 @@ export interface SchedulerDeps {
   ) => Promise<{ plaintext: string | null; scopeType: "environment" | "workspace" | null }>
   /**
    * Ask the user, over a path no MCP client can reach, whether an
-   * agent-started run may send the secrets it resolved. Resolves false on
-   * deny, timeout or `signal` (the run was cancelled). Absent means no one can
-   * be asked, so such a run is refused.
+   * agent-started run may send the secrets it resolved. Resolves what they
+   * answered; "deny" on timeout or `signal` (the run was cancelled). Absent
+   * means no one can be asked, so such a run is refused.
    */
-  readonly approveAgentRun?: (request: AgentRunApprovalRequest, signal: AbortSignal) => Promise<boolean>
+  readonly approveAgentRun?: (request: AgentRunApprovalRequest, signal: AbortSignal) => Promise<AgentRunApprovalDecision>
+  /**
+   * Answers the user chose to remember ("Never ask again"). A matching row
+   * skips the dialog; an edit to the approved shape changes the fingerprint
+   * and asks again. Absent: remembered answers hold for the app session only.
+   */
+  readonly agentRunApprovals?: AgentRunApprovalStore
   /** OAuth 2.0 tokens kept across runs (the app session, a CLI process). Absent: each run fetches its own. */
   readonly oauthTokens?: OAuthTokenCache
   /**
@@ -119,6 +152,13 @@ export class RunScheduler {
   private readonly activeRuns = new Map<string, AbortController>()
   /** runId → agent name, for runs an agent started. In memory: a restart interrupts every run anyway. */
   private readonly agentRuns = new Map<string, string>()
+  /**
+   * "Allow for this session" answers, keyed like {@link AgentRunApprovalStore}
+   * rows (workspace, agent, workflow, fingerprint). In memory on purpose: a
+   * restart is a fresh yes, and the shape key means an edit to the approved
+   * secrets, destinations or scripts asks again even before one.
+   */
+  private readonly sessionApprovals = new Set<string>()
   /** runId → its iteration's data row. In memory for the same reason, and so a data file's values are never written to history. */
   private readonly runData = new Map<string, Readonly<Record<string, JsonValue>>>()
   private readonly queue: string[] = []
@@ -320,8 +360,17 @@ export class RunScheduler {
       let http = this.deps.http
       if (agent !== undefined && secretNames.length > 0) {
         const destinations = requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {})
-        const approved = await this.askApproval(
-          { runId, agent, workflowName: workflow.name, secretNames, destinations, runsScripts: reachable.nodes.some(hasScript) },
+        const approved = await this.authorizeAgentRun(
+          {
+            runId,
+            agent,
+            workspaceId: run.workspaceId,
+            workflowId: workflow.workflowId,
+            workflowName: workflow.name,
+            secretNames,
+            destinations,
+            runsScripts: reachable.nodes.some(hasScript),
+          },
           controller.signal,
         )
         if (!approved) {
@@ -550,14 +599,56 @@ export class RunScheduler {
     }
   }
 
-  /** A missing approver means no one can be asked, which is a no. A throwing one is too. */
-  private async askApproval(request: AgentRunApprovalRequest, signal: AbortSignal): Promise<boolean> {
-    if (this.deps.approveAgentRun === undefined) return false
+  /**
+   * The approval gate. A remembered answer — this session's or a persisted
+   * "Never ask again" — skips the dialog; otherwise the user is asked, and
+   * "session"/"always" also remember what they allowed: the agent, the
+   * workflow, and the fingerprint of the secrets, destinations and script
+   * presence that run would have had. Edit any of those and the question
+   * returns. A missing approver means no one can be asked, which is a no. A
+   * throwing one is too.
+   */
+  private async authorizeAgentRun(attempt: AgentRunApprovalAttempt, signal: AbortSignal): Promise<boolean> {
+    const fingerprint = agentRunApprovalFingerprint(attempt.secretNames, attempt.destinations, attempt.runsScripts)
+    const key = JSON.stringify([attempt.workspaceId, attempt.agent, attempt.workflowId, fingerprint])
+    if (this.sessionApprovals.has(key)) return true
+    const store = this.deps.agentRunApprovals
+    const remembered = store?.find({
+      workspaceId: attempt.workspaceId,
+      agent: attempt.agent,
+      workflowId: attempt.workflowId,
+      fingerprint,
+    })
+    if (remembered !== undefined) {
+      this.sessionApprovals.add(key)
+      return true
+    }
+    const decide = this.deps.approveAgentRun
+    if (decide === undefined) return false
+    const { runId, agent, workflowName, secretNames, destinations, runsScripts } = attempt
+    let decision: AgentRunApprovalDecision
     try {
-      return await this.deps.approveAgentRun(request, signal)
+      decision = await decide({ runId, agent, workflowName, secretNames, destinations, runsScripts }, signal)
     } catch {
       return false
     }
+    if (decision === "deny") return false
+    if (decision !== "once") {
+      this.sessionApprovals.add(key)
+      if (decision === "always") {
+        store?.save({
+          workspaceId: attempt.workspaceId,
+          agent: attempt.agent,
+          workflowId: attempt.workflowId,
+          workflowName: attempt.workflowName,
+          fingerprint,
+          secretNames: attempt.secretNames,
+          destinations: attempt.destinations,
+          runsScripts: attempt.runsScripts,
+        })
+      }
+    }
+    return true
   }
 
   /**
@@ -716,6 +807,20 @@ export function requestDestinations(
 function hasScript(node: WorkflowGraph["nodes"][number]): boolean {
   const scripts = node.config?.["scripts"] as { readonly preRequest?: unknown; readonly postResponse?: unknown } | undefined
   return [scripts?.preRequest, scripts?.postResponse].some((source) => typeof source === "string" && source.trim() !== "")
+}
+
+/**
+ * What an approval stands for, reduced to one stable string: the secrets that
+ * would be sent, the hosts they would reach, and whether scripts that can
+ * read them run. Sorted, so mere reordering does not invalidate an answer;
+ * any real change to that shape asks again.
+ */
+function agentRunApprovalFingerprint(
+  secretNames: readonly string[],
+  destinations: readonly string[],
+  runsScripts: boolean,
+): string {
+  return JSON.stringify([[...secretNames].sort(), [...destinations].sort(), runsScripts])
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {

@@ -1,7 +1,35 @@
-import type { AgentRunApprovalRequest } from "../core/runner/scheduler"
+import type { AgentRunApprovalDecision, AgentRunApprovalRequest } from "../core/runner/scheduler"
 
 /** How long the question stays open. Unanswered is a no. */
 export const AGENT_RUN_APPROVAL_TIMEOUT_MS = 2 * 60 * 1000
+
+/**
+ * The dialog's buttons, in order — the index is what `showMessageBox` answers
+ * with. Deny is first so it is both the default and the cancel action.
+ */
+export const AGENT_RUN_APPROVAL_BUTTONS = [
+  "Deny",
+  "Allow once",
+  "Allow for this session",
+  "Never ask again",
+] as const
+
+/**
+ * What a dialog response index means. Anything that is not a listed button —
+ * including an abort on timeout or run cancellation — is a denial.
+ */
+export function agentRunApprovalDecision(response: number): AgentRunApprovalDecision {
+  switch (response) {
+    case 1:
+      return "once"
+    case 2:
+      return "session"
+    case 3:
+      return "always"
+    default:
+      return "deny"
+  }
+}
 
 /** Long lists are cut so the buttons stay on screen; the count says what was cut. */
 const MAX_LISTED = 8
@@ -35,6 +63,7 @@ export function agentRunApprovalText(request: AgentRunApprovalRequest): { messag
           ]
         : []),
       "Allow only if you trust the agent and these destinations. Once allowed, a request to any host not listed here fails — including one whose URL is shown as written, or is changed while the run executes.",
+      '"Allow once" answers for this run. "Allow for this session" also answers for later runs of this workflow from this agent until APIWeave restarts. "Never ask again" remembers the answer across restarts — until the secrets, destinations or scripts change, and you can revoke it in Settings > MCP Server.',
       `If you do not answer within ${AGENT_RUN_APPROVAL_TIMEOUT_MS / 60000} minutes, the run is refused.`,
     ].join("\n"),
   }

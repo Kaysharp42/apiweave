@@ -3,6 +3,7 @@ export type { AgentDefinition, AgentPromptMode, StoredAgentDefinition } from "./
 export { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "./AgentOutputEvent"
 export type { AgentOutputEvent } from "./AgentOutputEvent"
 export type { AgentLaunchMode, AgentSession, AgentSessionStatus } from "./AgentSession"
+export type { AgentRunApproval } from "./AgentRunApproval"
 export type { AgentEvent, AgentSessionEvent } from "./AgentSessionEvent"
 export { AGENT_SCOPE_KINDS, isAgentScopeKind } from "./AgentScope"
 export type { AgentScope, AgentScopeKind } from "./AgentScope"

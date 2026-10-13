@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest"
-import { agentRunApprovalText } from "../agent_run_approval"
+import {
+  AGENT_RUN_APPROVAL_BUTTONS,
+  agentRunApprovalDecision,
+  agentRunApprovalText,
+} from "../agent_run_approval"
+
+describe("agentRunApprovalDecision", () => {
+  it("maps each button to its answer and anything else to deny", () => {
+    expect(AGENT_RUN_APPROVAL_BUTTONS).toEqual([
+      "Deny",
+      "Allow once",
+      "Allow for this session",
+      "Never ask again",
+    ])
+    expect(agentRunApprovalDecision(0)).toBe("deny")
+    expect(agentRunApprovalDecision(1)).toBe("once")
+    expect(agentRunApprovalDecision(2)).toBe("session")
+    expect(agentRunApprovalDecision(3)).toBe("always")
+    // An abort on timeout or cancellation resolves with the cancel index; any
+    // index that is not a listed button is a no.
+    expect(agentRunApprovalDecision(-1)).toBe("deny")
+    expect(agentRunApprovalDecision(4)).toBe("deny")
+  })
+})
 
 describe("agentRunApprovalText", () => {
   it("names the agent, the workflow, every secret and every destination", () => {
@@ -40,6 +63,21 @@ describe("agentRunApprovalText", () => {
     expect(agentRunApprovalText({ ...request, runsScripts: true }).detail).toContain(
       "This workflow runs scripts. A pre-request script can change a request's URL",
     )
+  })
+
+  it("explains what each remembered answer means and where to revoke it", () => {
+    const { detail } = agentRunApprovalText({
+      runId: "run-1",
+      agent: "a",
+      workflowName: "w",
+      secretNames: ["K"],
+      destinations: ["api.example.com"],
+      runsScripts: false,
+    })
+
+    expect(detail).toContain('"Allow for this session"')
+    expect(detail).toContain('"Never ask again"')
+    expect(detail).toContain("Settings > MCP Server")
   })
 
   it("cuts a long list and says how much was cut", () => {

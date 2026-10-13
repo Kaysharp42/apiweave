@@ -9,6 +9,18 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **The agent approval dialog can stop asking.** A run an agent starts that
+  would send secrets still asks the first time, but the dialog now also offers
+  **Allow for this session** — no more asking for that workflow until APIWeave
+  restarts — and **Never ask again**, which remembers the answer across
+  restarts. Both stop matching, and the question returns, as soon as the
+  workflow's secrets, destinations or scripts change, and remembered answers
+  are listed, with a revoke action, under Settings > MCP Server.
+
 ## [0.12.0] — 2026-10-13
 
 ### Security

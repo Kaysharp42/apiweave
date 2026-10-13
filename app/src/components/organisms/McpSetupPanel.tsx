@@ -5,6 +5,7 @@ import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { mcp } from "../../utils/apiweaveClient";
 import type { McpStatus } from "@shared/types/McpStatus";
+import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 
 /** The `mcpServers` config snippet an MCP client pastes to reach the local server.
  * HTTP transport (not stdio) with the per-install bearer token. */
@@ -42,11 +43,28 @@ export function McpSetupPanel() {
   });
   const [busy, setBusy] = useState(false);
   const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
+  const [approvals, setApprovals] = useState<readonly AgentRunApproval[]>([]);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
   const [copied, copy] = useCopy();
 
   useEffect(() => {
     void mcp.getStatus().then(setStatus);
+    void mcp.listAgentApprovals().then(setApprovals);
   }, []);
+
+  const onRevoke = (approvalId: string): void => {
+    setRevokingId(approvalId);
+    void mcp
+      .revokeAgentApproval(approvalId)
+      .then((removed) => {
+        if (removed) {
+          setApprovals((current) =>
+            current.filter((approval) => approval.approvalId !== approvalId),
+          );
+        }
+      })
+      .finally(() => setRevokingId(null));
+  };
 
   const onToggle = (): void => {
     setBusy(true);
@@ -150,6 +168,52 @@ export function McpSetupPanel() {
               Regenerate token
             </Button>
           </div>
+        </div>
+      )}
+
+      {approvals.length > 0 && (
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+            Remembered approvals
+          </span>
+          <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+            Runs of these workflows answer the secrets question without asking.
+            Revoke one to be asked again. An edit to its secrets, destinations
+            or scripts asks again on its own.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {approvals.map((approval) => (
+              <li
+                key={approval.approvalId}
+                className="rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs text-text-primary dark:text-text-primary-dark">
+                      <span className="font-medium">{approval.workflowName}</span>
+                      <span className="text-text-secondary dark:text-text-secondary-dark">
+                        {" "}— {approval.agent}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+                      Secrets: {approval.secretNames.join(", ")}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+                      To: {approval.destinations.join(", ") || "(no request URLs found)"}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={revokingId === approval.approvalId}
+                    onClick={() => onRevoke(approval.approvalId)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

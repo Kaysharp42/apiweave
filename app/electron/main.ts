@@ -11,6 +11,7 @@ import { canonicalizeExistingWorkflows } from "../core/db/canonicalize_existing_
 import { initDatabase, type InitializedDatabase } from "../core/db"
 import {
   AgentRepository,
+  AgentRunApprovalRepository,
   AppSettingsRepository,
   CollectionRepository,
   EnvironmentRepository,
@@ -93,7 +94,12 @@ import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
 import { runSmokeTest, SMOKE_TEST_SWITCH } from "./smoke_test"
-import { AGENT_RUN_APPROVAL_TIMEOUT_MS, agentRunApprovalText } from "./agent_run_approval"
+import {
+  AGENT_RUN_APPROVAL_BUTTONS,
+  AGENT_RUN_APPROVAL_TIMEOUT_MS,
+  agentRunApprovalDecision,
+  agentRunApprovalText,
+} from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
@@ -460,6 +466,7 @@ if (!hasSingleInstanceLock) {
     const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
     const appSettings = new AppSettingsRepository(database.kvStore)
+    const agentRunApprovals = new AgentRunApprovalRepository(database.kvStore)
 
     // Auth + sync seams: single-owner always-allow, local-only no-op.
     const existence: ScopeExistence = {
@@ -550,9 +557,10 @@ if (!hasSingleInstanceLock) {
         await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
       },
       emitProgress: (runId, event) => runEvents.publish(runId, event),
+      agentRunApprovals,
       approveAgentRun: async (request, signal) => {
         const win = mainWindow
-        if (win === null || win.isDestroyed()) return false
+        if (win === null || win.isDestroyed()) return "deny"
         if (!win.isFocused()) win.flashFrame(true)
         const { message, detail } = agentRunApprovalText(request)
         const { response } = await dialog.showMessageBox(win, {
@@ -560,7 +568,7 @@ if (!hasSingleInstanceLock) {
           title: "Allow an agent to use your secrets?",
           message,
           detail,
-          buttons: ["Deny", "Allow once"],
+          buttons: [...AGENT_RUN_APPROVAL_BUTTONS],
           defaultId: 0,
           cancelId: 0,
           noLink: true,
@@ -568,8 +576,11 @@ if (!hasSingleInstanceLock) {
           signal: AbortSignal.any([signal, AbortSignal.timeout(AGENT_RUN_APPROVAL_TIMEOUT_MS)]),
         })
         if (!win.isDestroyed()) win.flashFrame(false)
-        mcpLog.info(`agent run ${request.runId}: secrets ${response === 1 ? "allowed" : "denied"} by the user`)
-        return response === 1
+        const decision = agentRunApprovalDecision(response)
+        mcpLog.info(
+          `agent run ${request.runId}: secrets ${decision === "deny" ? "denied" : `allowed (${decision})`} by the user`,
+        )
+        return decision
       },
     })
 
@@ -710,6 +721,14 @@ if (!hasSingleInstanceLock) {
         await mcpHost.regenerateToken()
         return mcpStatus()
       }),
+    )
+    // "Never ask again" answers, listed and revoked from the MCP settings
+    // panel. Off the router like every other mcp:* channel: whether an agent
+    // may send secrets without asking is the user's decision alone.
+    ipcMain.handle("mcp:listAgentApprovals", requireTrustedSender(() => agentRunApprovals.list()))
+    ipcMain.handle(
+      "mcp:revokeAgentApproval",
+      requireTrustedSender((approvalId: string) => agentRunApprovals.delete(approvalId)),
     )
     ipcMain.handle(
       "mcp:listTools",

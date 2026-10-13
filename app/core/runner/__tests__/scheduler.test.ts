@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
-import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
+import { AgentRunApprovalRepository, EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, safeErrorClass, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
@@ -1257,7 +1257,7 @@ describe("agent-started runs that use secrets", () => {
       resolveSecret,
       approveAgentRun: async (request) => {
         asked.push(request)
-        return false
+        return "deny"
       },
     })
 
@@ -1301,7 +1301,7 @@ describe("agent-started runs that use secrets", () => {
       resolveSecret,
       approveAgentRun: async (request) => {
         asked.push(request)
-        return false
+        return "deny"
       },
     })
 
@@ -1340,7 +1340,7 @@ describe("agent-started runs that use secrets", () => {
       resolveSecret: async () => ({ plaintext: "value", scopeType: "workspace" }),
       approveAgentRun: async (request) => {
         asked.push(request)
-        return false
+        return "deny"
       },
     })
 
@@ -1355,7 +1355,7 @@ describe("agent-started runs that use secrets", () => {
     const server = await startServer()
     const ws = seedWorkspace()
     const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
-    const scheduler = makeScheduler({ resolveSecret, approveAgentRun: async () => true })
+    const scheduler = makeScheduler({ resolveSecret, approveAgentRun: async () => "once" })
 
     const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
     await settle()
@@ -1389,7 +1389,7 @@ describe("agent-started runs that use secrets", () => {
       resolveSecret,
       approveAgentRun: async () => {
         asked += 1
-        return false
+        return "deny"
       },
     })
 
@@ -1430,7 +1430,7 @@ describe("agent-started runs that use secrets", () => {
               : node,
           ),
         })
-        return true
+        return "once"
       },
     })
 
@@ -1474,7 +1474,7 @@ describe("agent-started runs that use secrets", () => {
       resolveSecret,
       approveAgentRun: async (request) => {
         expect(request.destinations).toEqual([`127.0.0.1:${approved.port}`])
-        return true
+        return "once"
       },
     })
 
@@ -1492,6 +1492,112 @@ describe("agent-started runs that use secrets", () => {
       duration: 0,
       request: { url: `http://127.0.0.1:${attacker.port}/collect` },
     })
+  })
+
+  it("stops asking for the rest of the session after Allow for this session", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    let asked = 0
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async () => {
+        asked += 1
+        return "session"
+      },
+    })
+
+    const first = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(first)
+    const second = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(second)
+    server.close()
+
+    expect(asked).toBe(1)
+    expect(server.bodies).toEqual(["s3cr3t", "s3cr3t"])
+    expect(runs.getById(first)?.status).toBe("completed")
+    expect(runs.getById(second)?.status).toBe("completed")
+  })
+
+  it("asks again on the next run after Allow once", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    let asked = 0
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async () => {
+        asked += 1
+        return "once"
+      },
+    })
+
+    const first = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(first)
+    const second = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(second)
+    server.close()
+
+    expect(asked).toBe(2)
+    expect(runs.getById(second)?.status).toBe("completed")
+    expect(server.bodies).toEqual(["s3cr3t", "s3cr3t"])
+  })
+
+  it("remembers Never ask again across sessions — and asks again when the approved shape changes", async () => {
+    const approved = await startServer()
+    const attacker = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${approved.port}/collect`)
+    const approvals = new AgentRunApprovalRepository(db.kvStore)
+    let asked = 0
+    const first = makeScheduler({
+      resolveSecret,
+      agentRunApprovals: approvals,
+      approveAgentRun: async () => {
+        asked += 1
+        return "always"
+      },
+    })
+
+    const runId = first.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await first.whenFinished(runId)
+    await first.shutdown(500)
+
+    // A later app session: a fresh scheduler with an empty session cache. The
+    // stored row is what skips the dialog.
+    const second = makeScheduler({
+      resolveSecret,
+      agentRunApprovals: approvals,
+      approveAgentRun: async () => {
+        asked += 1
+        return "deny"
+      },
+    })
+    const remembered = second.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await second.whenFinished(remembered)
+
+    expect(asked).toBe(1)
+    expect(approvals.list()).toHaveLength(1)
+    expect(approved.bodies).toEqual(["s3cr3t", "s3cr3t"])
+
+    // The agent retargets the workflow to a new host: same secret, new
+    // destination — a different shape, so it is asked about afresh.
+    const current = workflows.getById(wf)!
+    workflows.update(wf, {
+      nodes: current.nodes.map((node) =>
+        node.nodeId === "http_1"
+          ? ({ ...node, config: { ...node.config, url: `http://127.0.0.1:${attacker.port}/collect` } } as WorkflowNode)
+          : node,
+      ),
+    })
+    const retargeted = second.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await second.whenFinished(retargeted)
+    approved.close()
+    attacker.close()
+
+    expect(asked).toBe(2)
+    expect(runs.getById(retargeted)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+    expect(attacker.bodies).toEqual([])
   })
 })
 
