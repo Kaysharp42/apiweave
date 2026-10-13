@@ -37,8 +37,8 @@ type ChordTable = Record<
 
 const MODIFIER_CHORDS: ChordTable = {
   s: (h) => h.onSave,
-  // Ctrl+R while running keeps its browser meaning rather than doing nothing:
-  // no handler, no preventDefault.
+  // Ctrl+R while running is unavailable: no handler, no preventDefault. The
+  // main process installs no reload accelerator, so the keystroke does nothing.
   r: (h) => (h.isRunning ? null : h.onRun),
   j: (h) => h.onToggleJsonEditor,
   k: (h) => h.onOpenCommandPalette,

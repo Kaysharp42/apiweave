@@ -96,7 +96,7 @@ The local MCP bridge is opt-in. To enable it for a local AI agent:
 
 1. Open **Settings** from the left navigation rail.
 2. Toggle **Enable MCP bridge**.
-3. The app binds a loopback HTTP server on `127.0.0.1` and writes a static per-install token to a file in the data directory. The **MCP** panel in the app shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
+3. The app binds a loopback HTTP server on `127.0.0.1` and writes a per-install token to a file in the data directory. **Regenerate token** in the MCP settings replaces it and closes sessions opened with the old one. The **MCP** panel in the app shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
 
@@ -167,7 +167,7 @@ A quick checklist after first launch:
 | Database (SQLite) | `<userData>/apiweave.db` |
 | Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
-| Run artifacts (JUnit, HTML) | `<userData>/artifacts/` |
+| Run reports (JUnit, HTML) | Not produced yet: runs are kept in the database and shown in History |
 | Log (main, renderer, updates, crashes) | `<logs>/apiweave-main-YYYY-MM-DD.log`, one file per day, kept 14 days |
 
 `<userData>` is the OS-standard user data path for the app:

@@ -206,7 +206,7 @@ Makes an API call. The most commonly used node.
 | body | string | \`null\` | Request body (usually JSON string). Set to \`null\` for GET/DELETE |
 | timeout | int | \`30\` | Request timeout in seconds |
 | followRedirects | bool | \`true\` | Whether to follow HTTP redirects |
-| extractors | object | \`{}\` | Extract values from responses into workflow variables. Key = variable name, Value = JSONPath |
+| extractors | object | \`{}\` | Extract values from responses into workflow variables. Key = variable name, Value = dot path such as \`response.body.id\` (not JSONPath) |
 
 **Extractor paths:**
 - \`response.body.field\` — JSON body field
@@ -285,7 +285,7 @@ Validates API responses. Has **two output handles**: Pass (✓) and Fail (✗) f
 | Field | Type | Description |
 |-------|------|-------------|
 | source | string | \`"prev"\` (previous node response), \`"status"\` (HTTP status code), \`"variables"\` (workflow variable), \`"headers"\` (response headers), \`"cookies"\` (cookies) |
-| path | string | JSONPath from source. Empty for \`status\`. e.g. \`body.user.name\`, \`Set-Cookie\` |
+| path | string | Dot path from source (\`key[0]\` for arrays; not JSONPath). Empty for \`status\`. e.g. \`body.user.name\`, \`Set-Cookie\` |
 | operator | string | See operator table below |
 | expectedValue | string | Value to compare against. Empty for \`exists\`/\`notExists\` |
 

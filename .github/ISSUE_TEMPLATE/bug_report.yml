@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in APIWeave does not work as it should.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: APIWeave version
+      description: Shown in Settings → Updates.
+      placeholder: "0.11.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-details
+    attributes:
+      label: OS version and package
+      description: For example "Windows 11 23H2, zip installer" or "Arch, .pacman" or "Ubuntu 24.04, AppImage".
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a workflow with …
+        2. Click Run …
+        3. …
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: |
+        The app writes one log file per day, `apiweave-main-YYYY-MM-DD.log`
+        (Settings → Updates → Show update log opens its folder):
+        - Windows: `%APPDATA%\APIWeave\logs`
+        - macOS: `~/Library/Logs/APIWeave`
+        - Linux: `~/.config/APIWeave/logs`
+        Paste the lines around the problem. Check them for URLs, hosts or data you do not want public first.
+      render: text

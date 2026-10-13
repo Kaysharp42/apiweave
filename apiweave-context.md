@@ -270,7 +270,7 @@ APIWeave exposes a local MCP (Model Context Protocol) server so AI agents on the
 |-----------|----------|-------------|
 | **Loopback HTTP** | Local AI agents on the same machine | `app/core/mcp/host.ts` |
 
-The server is bound to `127.0.0.1` only. It is opt-in (a setting in the desktop app) and authenticates with a static per-install token written to a file under the user's app data directory. There is no `stdio` transport in the desktop app; loopback HTTP is the single MCP entry point. There is no Streamable HTTP across the network — the desktop app has no exposed ports.
+The server is bound to `127.0.0.1` only. It is opt-in (a setting in the desktop app) and authenticates with a per-install bearer token written to a file under the user's app data directory. There is no `stdio` transport in the desktop app; loopback HTTP is the single MCP entry point. There is no Streamable HTTP across the network — the desktop app has no exposed ports.
 
 ### File Structure
 
@@ -279,7 +279,7 @@ app/core/mcp/
   host.ts        HTTP server bound to 127.0.0.1
   bridge.ts      Maps MCP tool calls to IPC handler invocations
   server.ts      MCP server setup
-  token-file.ts  Static token, written to a per-install file
+  token-file.ts  Per-install token file (regenerable from Settings)
   tools.ts       Tool inventory
 ```
 
@@ -289,7 +289,7 @@ app/core/mcp/
 - The MCP bridge MUST NOT call any HTTP endpoint. It calls IPC handlers directly.
 - Both the renderer and the MCP bridge go through the same service layer. The MCP bridge never has its own service implementations.
 - Secrets are NEVER returned by MCP read tools. Read and export tools redact persisted secrets at the response layer.
-- The token file persists per installation and is reused when the bridge is re-enabled. The static token is the only auth surface.
+- The token file persists per installation and is reused when the bridge is re-enabled, until the user regenerates it from Settings. The token is the only auth surface; requests whose Host is not the loopback listener are refused.
 
 ### Testing/Verification Baseline
 
@@ -306,7 +306,7 @@ After MCP changes:
 - **TypeScript** — strict mode, no `any`
 - **Tailwind CSS** 3.3 — utility-first styling
 - **DaisyUI** 5.5 — component base classes (used alongside custom atoms)
-- **ReactFlow** 11.10 — workflow canvas
+- **React Flow** 12 (`@xyflow/react`) — workflow canvas
 - **Zustand** 5.0 — state management
 - **Headless UI** 2.2 — unstyled accessible components (Modal, Popover, Transition)
 - **Lucide React** — icon library
@@ -315,8 +315,8 @@ After MCP changes:
 - **Allotment** — split pane layout
 - **Monaco Editor** — JSON/code editor
 - **Floating UI** — tooltip positioning (the `Tooltip` atom)
-- **Electron** 33 — desktop shell
-- **better-sqlite3** 12 — embedded local store
+- **Electron** 44 — desktop shell
+- **better-sqlite3** 13 — embedded local store
 - **libsodium-wrappers** — sealed-box secret encryption
 - **esbuild** — main process bundler
 - **electron-builder** — installer packaging

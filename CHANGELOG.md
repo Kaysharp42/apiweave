@@ -64,6 +64,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **Ctrl+R during a run no longer reloads the window.** Electron's default
+  menu was still installed behind the frameless window, and its Reload
+  (Ctrl+R) and Close (Ctrl+W) accelerators answered any keystroke the app did
+  not claim, so Ctrl+R while a run was going reloaded the window. Windows and
+  Linux now have no application menu; macOS has only the App, Edit and Window
+  menus, so Cmd+C, Cmd+V and Cmd+Q keep working.
 - **Deleting a synced workspace now deletes it in Cloud.** The deletion was
   queued in a table that the local delete emptied, so it never reached the
   server. It is now kept in its own queue, survives restarts and network
@@ -295,6 +301,95 @@ project adheres to [Semantic Versioning](https://semver.org/).
   a real scroller only on `focus-within`, preserving caret, wheel, and resize
   behavior while editing.
 
+## [0.10.0] — 2026-09-11
+
+### Added
+
+- **SSE Stream node.** A bounded Server-Sent Events listener for contract
+  tests. Its **Ready** output fires once the handshake succeeds, so a
+  downstream trigger cannot race the subscription; **Complete** fires with the
+  collected events after an event cap, a matching finish trigger, a timeout or
+  cancellation.
+- **Right-click to add a node.** The canvas context menu is now the node
+  palette anchored at the cursor, with search, saved presets and imported
+  OpenAPI groups. A clicked or Enter-selected node lands at the cursor.
+- A workflow can have more than one End node.
+
+### Changed
+
+- **Leaner MCP bridge for edit-and-debug loops.** The tool catalogue shrank
+  from about 528 KB to 300 KB across 54 tools, seven superseded tools were
+  removed, and new focused reads and a debug context replace whole-workflow
+  dumps. Patch schemas are strict, so an unknown key is rejected.
+- The conflict merge view is a three-pane layout with per-field accept and
+  reset controls.
+- Call Workflow nodes show the target workflow's name instead of its id.
+
+### Fixed
+
+- Cloud sync heals a missing cached config on the next launch instead of
+  stopping with "not linked to any workspace", and a paused sync shows a
+  readable reason.
+- MCP previews truncate on UTF-8 boundaries and no longer overrun their byte
+  budget; debug context no longer reports unreached End nodes and untaken
+  branches as blocked.
+- Run creation over MCP survives a deleted idempotency replay target.
+
+## [0.9.1] — 2026-09-08
+
+### Added
+
+- **End-to-end encryption for Cloud workspaces.** A Cloud workspace can be
+  encrypted with a passphrase, so the server stores only ciphertext.
+- **Cloud attention.** Locked workspaces, conflicts, encryption choices, sync
+  errors and expired sign-ins are surfaced in one banner, on the account menu
+  and in the workspace switcher. A workflow with an unresolved conflict shows a
+  banner on its canvas.
+- **Opening prompt for agents.** The agent launch menu takes a prompt that is
+  sent to the agent it starts. Agent sessions show their start time, and the
+  stdin prompt mode can be chosen in agent settings.
+- The update banner also announces available and downloading updates.
+
+### Fixed
+
+- The unlock dialog no longer blames a wrong passphrase for a network,
+  sign-in or access problem, and names a passphrase rotation by an admin as a
+  possible cause.
+- A record that is still sealed is never written to local tables.
+- The login-shell PATH merge no longer collapses PATH on Windows test runs.
+
+## [0.9.0] — 2026-09-04
+
+### Added
+
+- **Group frames and notes.** Frames group nodes on the canvas and move them
+  together; notes hold free text. Neither runs, and both round-trip through
+  export and Cloud sync.
+- **Undo and redo** for canvas edits.
+- **Command palette and focus mode.** Search actions and nodes from the
+  keyboard, and step through a workflow's nodes one at a time.
+- **Canvas navigation.** Drag modes, camera lock, snap to grid, a pane
+  overview and per-node focus.
+- **Partial MCP edits.** `workflows_patch` merges node fields instead of
+  replacing the node, `workflows_get` can return a subset of nodes, and node
+  results can be read while a run is still going. Unknown dynamic functions
+  are flagged before a run.
+
+### Changed
+
+- The canvas moved from React Flow 11 to React Flow 12 (`@xyflow/react`).
+- A warmer light theme, and node chrome that shows each node's kind on a cap.
+- Each node renders inside its own error boundary, so one broken node no
+  longer blanks the canvas.
+- Periodic background work pauses while the window is hidden.
+
+### Fixed
+
+- Text no longer blurs while the canvas camera moves.
+- Auto-layout reads each node's measured size, and lays framed nodes out
+  inside their frame.
+- Swagger refresh caches are bounded.
+
 ## [0.8.6] — 2026-08-31
 
 ### Added
@@ -372,6 +467,64 @@ project adheres to [Semantic Versioning](https://semver.org/).
   merges its PATH into the process's before any agent detection, embedded PTY
   launch, or external-terminal launch resolves an executable.
 
+## [0.8.2] — 2026-08-27
+
+### Added
+
+- **Daily log files.** Main-process and renderer output goes to one
+  structured log file per day instead of the console.
+- **MCP auto-layout.** Graph writes over MCP lay out the nodes they add, and a
+  `workflows_layout` tool lays out a whole workflow.
+
+### Changed
+
+- App-wide settings open as routed pages instead of modals.
+
+### Fixed
+
+- The run camera follows the nearer branch at a fan-out instead of the first
+  one to report.
+- The `environments_setVariable` tool description says which namespace it
+  writes and points at the secrets tools.
+
+## [0.8.1] — 2026-08-23
+
+### Fixed
+
+- Packaged builds failed to load the database: better-sqlite3 is rebuilt for
+  Electron before packaging.
+
+## [0.8.0] — 2026-08-23
+
+### Added
+
+- **Embedded agents.** Launch a local coding agent (Claude Code, Codex,
+  OpenCode, Gemini and others) attached to a workflow or project, in a
+  terminal docked in the app or in an external terminal. Sessions run in a
+  separate PTY host process, survive a window reload, show whether the agent
+  is working or idle, and can be resumed after they finish. Each agent is
+  briefed on the workflow it is attached to and wired to the MCP bridge.
+- **Live updates from agent writes.** A workflow an agent changes over MCP
+  refreshes on the open canvas.
+- **Move workflows and projects between workspaces.**
+- Swagger UI pages that list several API definitions can be imported.
+- The Windows installer is also published as a `.zip` for manual download.
+
+### Changed
+
+- The canvas toolbar adapts to its own width instead of the window's.
+- Cloud conflict resolution defers the push until you confirm, with a revised
+  merge view.
+
+### Fixed
+
+- The last selected workspace is remembered across restarts, and open tabs
+  are scoped to their workspace.
+- Toasts can be closed: the close button sat under the window drag region.
+- A stale default environment id from local storage no longer breaks a run.
+- Autosave no longer fires right after a workflow loads.
+- Minimap display glitches.
+
 ## [0.7.8] — 2026-08-14
 
 ### Added
@@ -424,6 +577,61 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 - The renderer CSP now pins `wasm-unsafe-eval`, closing a vector on the
   packaged renderer.
+
+## [0.7.7] — 2026-08-13
+
+### Added
+
+- **Expected status on HTTP Request nodes** and the
+  `assertion_fail_wired_on_all` analyzer notice (both described under 0.7.8).
+- MCP authoring improvements: run results list each node's unresolved
+  placeholders, `runs_getNodeResult` returns node-level diagnostics, and write
+  tools take a `return` option (`summary`, `diagnosis` or `full`).
+
+### Changed
+
+- The window title bar is merged into the app header.
+
+### Fixed
+
+- The analyzer diagnoses a failure from the runner's verdict, not the raw
+  status code.
+
+## [0.7.6] — 2026-08-09
+
+### Fixed
+
+- The account menu crashed when the avatar URL was missing, and showed a
+  rectangular avatar.
+
+## [0.7.5] — 2026-08-09
+
+### Added
+
+- **Store response values as variables** by picking them in the response
+  tree of an HTTP Request node.
+- Workflow authoring over MCP is discoverable and can be verified by the
+  agent.
+
+### Changed
+
+- Side-panel tips open as an on-demand sheet instead of a footer.
+
+### Fixed
+
+- Start and End nodes and branch edges are painted with the run status.
+- Switching Cloud accounts scopes the workspace list to the new account.
+
+## [0.7.0] — 2026-08-06
+
+### Added
+
+- **Auto-update** from GitHub Releases on a pinned update channel.
+- The app icon is set for the installer, taskbar and Start menu.
+
+### Fixed
+
+- Update errors are shown as a short message instead of a raw error dump.
 
 ## Current — local-first desktop
 

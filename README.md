@@ -4,7 +4,7 @@ Visual API Test Story Builder. Build, run, and inspect API test workflows on a c
 
 ## What Is APIWeave?
 
-APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a ReactFlow canvas from drag-and-drop nodes (HTTP request, assertion, delay, merge, call workflow, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group workflows into ordered runs. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
+APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a React Flow canvas from drag-and-drop nodes (HTTP request, SSE stream, assertion, delay, merge, call workflow, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group related workflows in a fixed order. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
@@ -26,7 +26,7 @@ Download the installer for your OS from the [latest release](https://github.com/
 
 ### Windows
 
-Run `APIWeave-<version>-win-x64.exe`. It installs per-user (no admin prompt) and adds a Start-menu entry. The installer and binaries are unsigned, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
+Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. The installer and binaries are not code-signed, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
@@ -52,7 +52,7 @@ The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newe
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the seven node types, toolbar actions, expected-status negative tests.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight node types, toolbar actions, expected-status negative tests.
 - [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
@@ -69,11 +69,11 @@ There is no operations section in the desktop app: no authentication to set up f
 
 ## Tech Stack
 
-- Frontend (renderer): React 18, ReactFlow 11, Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
+- Frontend (renderer): React 18, React Flow 12 (`@xyflow/react`), Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
 - Desktop shell: Electron 44, esbuild, electron-builder, electron-updater.
 - Local store: better-sqlite3 (embedded SQLite, single file).
 - IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.
-- Secrets: Libsodium sealed-box write-only ingress, opened at run time with the per-install keyfile. No plaintext on the wire, no read API for stored values.
+- Secrets: Libsodium sealed-box write-only ingress, opened at run time with the per-install keyfile, which is sealed by the OS keychain where one is available. Resolved values are masked in run history. No plaintext on the wire, no read API for stored values.
 - Execution: an in-process `RunScheduler` driven by IPC events streamed to the renderer.
 
 ## Project Layout

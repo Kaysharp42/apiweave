@@ -10,7 +10,7 @@ API developers, QA engineers, and DevOps professionals who need to build, run, a
 
 ## Product Purpose
 
-APIWeave is a self-hostable, open-source visual workspace for API testing. Users assemble test workflows on a ReactFlow canvas from drag-and-drop nodes, chain requests with extracted variables and dynamic functions, run them against scoped environments, and inspect results node by node. Projects group workflows into ordered runs. The product exists to make API testing visual, scriptable, and CI-friendly — replacing ad-hoc Postman collections and brittle shell scripts with a repeatable, inspectable test graph.
+APIWeave is an open-source, local-first desktop app for visual API testing. It runs as a single Electron app on the user's machine, with its data in a local SQLite file; no server to host and no account required, with optional APIWeave Cloud sync for teams. Users assemble test workflows on a React Flow canvas from drag-and-drop nodes, chain requests with extracted variables and dynamic functions, run them against scoped environments, and inspect results node by node. Projects group workflows in a fixed order. The product exists to make API testing visual, scriptable, and CI-friendly — replacing ad-hoc Postman collections and brittle shell scripts with a repeatable, inspectable test graph.
 
 ## Brand Personality
 
@@ -26,7 +26,7 @@ The existing DESIGN_SYSTEM.md (app/DESIGN_SYSTEM.md) defines 10 explicit forbidd
 
 1. No hardcoded hex/rgb in components — all colors reference design tokens
 2. No `any` type — TypeScript strict mode is non-negotiable
-3. No manual save buttons — 700ms debounced auto-save only
+3. No extra save paths — 700ms debounced auto-save, plus the one Save button and Ctrl+S that flush it immediately
 4. No WorkflowContext bypass — all canvas state flows through WorkflowContext
 5. No emoji UI icons — Lucide icons exclusively
 6. No color-only status — multi-channel encoding (color + icon + text + border)

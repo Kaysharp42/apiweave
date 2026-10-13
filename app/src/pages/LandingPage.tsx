@@ -403,7 +403,7 @@ const FEATURES = [
   {
     Icon: Globe,
     title: "HTTP Request nodes",
-    body: "All methods, headers, body, extractors, and file uploads. JSONPath variable extraction from responses.",
+    body: "All methods, headers, body, extractors, and file uploads. Dot-path variable extraction from responses.",
   },
   {
     Icon: CheckCircle2,

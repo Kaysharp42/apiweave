@@ -1,5 +1,6 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron"
+import type { MenuItemConstructorOptions } from "electron"
 import path from "node:path"
 import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
@@ -106,7 +107,7 @@ if (hydratedPath !== null) {
 // The single request channel. The composition root (whenReady) constructs the
 // services and calls registerAllHandlers onto it before attaching; the MCP host
 // exposes the same router as a second transport. Every rejected dispatch is
-// reported to the main.log file transport, so a refused workflow save leaves a
+// reported to the daily log file, so a refused workflow save leaves a
 // line that names the domain, action, error code and message.
 const ipcRouter = new IpcRouter({
   reportError: ({ domain, action, code, message, details }) => {
@@ -213,6 +214,25 @@ function screenReaderArgs(): string[] {
     app.isAccessibilitySupportEnabled() ||
     app.commandLine.hasSwitch("force-renderer-accessibility")
   return present ? [SCREEN_READER_ARG] : []
+}
+
+/**
+ * Replaces Electron's default menu. Its accelerators answer any keystroke the
+ * renderer does not claim, so Ctrl+R during a run reloaded the window and threw
+ * the run's progress away, and Ctrl+W could close the window instead of a tab.
+ * The window is frameless, so Windows and Linux never showed that menu anyway:
+ * they get none. macOS keeps the role-based minimum it needs for Cmd+C/V/Z,
+ * Hide and Quit; none of those roles carries a reload or close accelerator.
+ * A development build adds Toggle Developer Tools (Ctrl/Cmd+Shift+I).
+ */
+function installApplicationMenu(): void {
+  const developer: MenuItemConstructorOptions[] = app.isPackaged
+    ? []
+    : [{ label: "Developer", submenu: [{ role: "toggleDevTools" }] }]
+  const template: MenuItemConstructorOptions[] = process.platform === "darwin"
+    ? [{ role: "appMenu" }, { role: "editMenu" }, { role: "windowMenu" }, ...developer]
+    : developer
+  Menu.setApplicationMenu(template.length > 0 ? Menu.buildFromTemplate(template) : null)
 }
 
 /** Resolves whether the window loaded app://local/. */
@@ -380,6 +400,7 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    installApplicationMenu()
     restrictPermissions(session.defaultSession)
     database = initDatabase({ userDataPath: app.getPath("userData") })
     // One-shot in-place rewrite: any workflow row persisted before the

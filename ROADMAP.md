@@ -7,7 +7,7 @@ separate Cloud control plane. Priorities shift based on user feedback.
 ## Shipped
 
 The local-first desktop rewrite. Single Electron process: ReactFlow canvas,
-seven node types, workflow variables and extractors, projects with `.awecollection`
+eight node types, workflow variables and extractors, projects with `.awecollection`
 export (references only), explicit per-run environment selection, the encrypted
 local secret store with `environment > workspace` scope chain, in-process runner,
 the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL import, optional APIWeave

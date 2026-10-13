@@ -88,7 +88,7 @@ A worked round trip:
 
 1. Open `/personal/personal/tutorials/variables-extractors`.
 2. Choose **Mark complete**; the badge reads **Completed**.
-3. Reload the window; the badge still reads **Completed** and the header count still includes the lesson.
+3. Restart the app; the badge still reads **Completed** and the header count still includes the lesson.
 
 The library shows a resume card once you have opened a lesson: **Start here** for the first incomplete lesson, **Continue where you left off** for the lesson you last read, and **You've finished every lesson** with a **Revisit lesson** action once all lessons are complete.
 
