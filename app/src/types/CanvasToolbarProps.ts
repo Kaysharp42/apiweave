@@ -11,6 +11,8 @@ export interface CanvasToolbarProps {
   canGroup: boolean;
   canUngroup: boolean;
   onHistory: () => void;
+  /** Open the workflow's earlier versions. */
+  onVersionHistory: () => void;
   onJsonEditor: () => void;
   onImport: () => void;
   onCommandPalette: () => void;
@@ -18,8 +20,9 @@ export interface CanvasToolbarProps {
   /** Run once per row of a picked CSV or JSON data file. */
   onRunWithData?: (file: File) => void;
   onCancel?: () => void;
-  onRunFromLastFailed?: () => void;
-  onRunAllFailed?: () => void;
+  /** Rerun the latest failed run's failed steps and what follows them. */
+  onRerunFailed?: () => void;
+  /** Run from one of the latest failed run's failed steps. */
   onRunFromFailedNode?: (nodeId: string) => void;
   isRunning?: boolean;
   /** The data-driven run iteration on screen, shown beside Run while it runs. */

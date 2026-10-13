@@ -8,6 +8,7 @@ import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
 import { KeyValueEditor } from "../molecules/KeyValueEditor";
 import ButtonSelect from "../ButtonSelect";
+import { AssertionOperatorSchema } from "@shared/zod-schemas/AssertionOperatorSchema";
 import type { KeyValuePair, NodeModalSseConfig, SseConfigPanelProps, SelectOption } from "../../types";
 import type { SseFinishCondition } from "@shared/types/SseFinishCondition";
 
@@ -53,9 +54,9 @@ function numberInput(min: number, max: number, value: number, onChange: (value: 
   return <Input type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} className="max-w-40 font-mono" />;
 }
 
-const FINISH_OPERATOR_OPTIONS: SelectOption[] = [
-  "equals", "notEquals", "contains", "notContains", "gt", "gte", "lt", "lte", "count", "exists", "notExists",
-].map((operator) => ({ label: operator, value: operator }));
+const FINISH_OPERATOR_OPTIONS: SelectOption[] = AssertionOperatorSchema.options.map(
+  (operator) => ({ label: operator, value: operator }),
+);
 
 function emptyFinishCondition(): SseFinishCondition {
   return { path: "data.status", operator: "equals", expectedValue: "" };

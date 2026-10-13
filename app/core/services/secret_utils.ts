@@ -9,6 +9,7 @@
  */
 
 import type { JsonValue } from "@shared/types/JsonValue"
+import { containsCredentialMaterial, isSecretKey, REF_SPAN_RE } from "@shared/credentials/credentials"
 
 /** Placeholder written in place of a redacted secret value (byte-compat with Python). */
 export const SECRET_PLACEHOLDER = "<SECRET>"
@@ -25,39 +26,6 @@ export const SECRET_PLACEHOLDER = "<SECRET>"
  *   wrote against what was stored.
  */
 export type SanitizeMode = "export" | "agent-read"
-
-/**
- * Key-name patterns deciding whether a dict key *holds* a secret. Ported verbatim
- * from Python `SECRET_KEY_PATTERNS` — the set of keys redacted must match so an
- * exported bundle sanitizes identically across stacks. Scoped to key names (not
- * values) to avoid over-redacting non-secret data like request-token ids.
- */
-const SECRET_KEY_PATTERNS: readonly RegExp[] = [
-  /^api[_-]?key$/i,
-  /^secret$/i,
-  /^token$/i,
-  /^password$/i,
-  /^authorization$/i,
-  /^auth[_-]/i,
-  /[_-]?api[_-]?key$/i,
-  /[_-]?secret$/i,
-  /[_-]?token$/i,
-  /[_-]?password$/i,
-  /^access[_-]?token$/i,
-  /^refresh[_-]?token$/i,
-  /^private[_-]?key$/i,
-  /^client[_-]?secret$/i,
-  /[_-]key$/i,
-  /[_-]auth$/i,
-  /[_-]credential[s]?$/i,
-  /[_-]private[_-]key$/i,
-  /[_-]client[_-]secret$/i,
-]
-
-/** True if a dict key name suggests it holds a secret value. */
-export function isSecretKey(key: string): boolean {
-  return SECRET_KEY_PATTERNS.some((pattern) => pattern.test(key))
-}
 
 /**
  * Value-level secret heuristic — ported from Python `SECRET_PATTERNS`. Used by
@@ -138,7 +106,13 @@ export function mapForbiddenKeyFilteredEntries<V, T>(
   return out
 }
 
-const SECRET_REF_RE = /\{\{secrets\.([A-Za-z_][A-Za-z0-9_]*)\}\}/g
+// Same grammar `substituteVariables` resolves: it trims the placeholder, so `{{ secrets.NAME }}` is a reference too.
+const SECRET_REF_RE = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+
+/** True when a string is exactly one `{{secrets.NAME}}` reference, in the same grammar the runner resolves. */
+export function isSecretReference(value: string): boolean {
+  return new RegExp(`^${SECRET_REF_RE.source}$`).test(value)
+}
 
 /**
  * Any `{{...}}` placeholder a runtime interpolates against `env`/`variables`/
@@ -222,14 +196,6 @@ export function isSyncSensitiveKey(key: string): boolean {
   return isSecretKey(key) || SYNC_SENSITIVE_NAME_RE.test(normalized) || SYNC_SENSITIVE_EXACT.has(normalized)
 }
 
-// Credential shapes that must never leave the machine. Deliberately narrow:
-// request bodies and header values are workflow config, and a broad heuristic
-// (anything containing "token") empties the config it is meant to protect.
-const BEARER_CREDENTIAL_PATTERN = /\bbearer\s+[a-zA-Z0-9_.-]*[0-9_.-][a-zA-Z0-9_.-]*/i
-const JWT_CREDENTIAL_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
-const STRIPE_LIVE_KEY_PATTERN = /\b(?:sk|pk)_live_[A-Za-z0-9_-]+\b/i
-const REF_SPAN_RE = /\{\{[^{}]*\}\}/g
-
 /**
  * Lowercase stem a per-call placeholder is built from. Lowercase on purpose: a
  * reference in a URL *host* is normalised to lowercase by `URL`, and a
@@ -238,19 +204,6 @@ const REF_SPAN_RE = /\{\{[^{}]*\}\}/g
  * stem.
  */
 const URL_REFERENCE_TOKEN_STEM = "apiweave-ref-"
-
-/**
- * True if a string carries credential material once its `{{...}}` references
- * are removed. Stripping first is what makes `Authorization: Bearer
- * {{secrets.TOKEN}}` a keeper while `{{env.SCHEME}} eyJhbGci...` is not: a
- * value is not laundered by having a reference somewhere else in it.
- */
-export function containsCredentialMaterial(value: string): boolean {
-  const literal = value.replace(REF_SPAN_RE, "")
-  return BEARER_CREDENTIAL_PATTERN.test(literal)
-    || JWT_CREDENTIAL_PATTERN.test(literal)
-    || STRIPE_LIVE_KEY_PATTERN.test(literal)
-}
 
 /**
  * What all three components count as "already empty", and therefore always
@@ -426,13 +379,31 @@ function isRecord(value: unknown): value is Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-/** Extract secret names from `{{secrets.NAME}}` placeholders in a string. */
+/**
+ * Extract secret names from `{{secrets.NAME}}` placeholders in a string, and
+ * from an http-request script's `aw.secrets.get("NAME")` calls.
+ */
 export function extractSecretRefsFromString(value: string): string[] {
   const names: string[] = []
   for (const match of value.matchAll(SECRET_REF_RE)) {
     if (match[1] !== undefined) names.push(match[1])
   }
-  return names
+  return [...names, ...scriptSecretNames(value)]
+}
+
+/**
+ * Secret names a script reads with a literal `aw.secrets.get("NAME")`. A run
+ * resolves its secrets before it starts — that is what the agent approval
+ * prompt lists and what the masker scrubs — so a name computed at run time
+ * reads `undefined`. Also matches the JSON-escaped form (`\"NAME\"`), so a
+ * serialised node config can be scanned.
+ */
+export function scriptSecretNames(source: string): string[] {
+  const names = new Set<string>()
+  for (const match of source.matchAll(/\baw\.secrets\.get\(\s*\\?["'`]([A-Za-z_][A-Za-z0-9_]*)\\?["'`]\s*\)/g)) {
+    names.add(match[1]!)
+  }
+  return [...names]
 }
 
 /**
@@ -521,6 +492,14 @@ const KEY_VALUE_EXPORT_FIELDS: ReadonlySet<string> = new Set([
  * slot, not the secret, so another user re-importing the bundle keeps their own
  * `{{variables.token}}` wiring instead of finding `<SECRET>` in its place.
  */
+/** Auth sub-configs whose secret fields are `{{secrets.NAME}}` references only, by auth type. */
+export const SECRET_REFERENCE_AUTH_FIELDS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["oauth2", ["clientSecret", "tokenSecret"]],
+  ["awsSigV4", ["secretAccessKey", "sessionToken"]],
+  ["digest", ["password"]],
+  ["jwt", ["secret"]],
+]
+
 function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<string, JsonValue> {
   const sanitized: Record<string, JsonValue> = { ...auth }
   const { bearer, basic, apiKey } = sanitized
@@ -534,15 +513,14 @@ function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<st
   if (isRecord(apiKey) && typeof apiKey["value"] === "string") {
     sanitized["apiKey"] = { ...apiKey, value: leaf(apiKey["value"]) }
   }
-  // OAuth 2.0 holds only `{{secrets.NAME}}` references (the schema refuses a
-  // literal); anything else blanks to "" so the bundle still imports.
-  const { oauth2 } = sanitized
-  if (isRecord(oauth2)) {
-    sanitized["oauth2"] = {
-      ...oauth2,
-      ...(oauth2["clientSecret"] === undefined ? {} : { clientSecret: referenceOrBlank(oauth2["clientSecret"], "") }),
-      ...(oauth2["tokenSecret"] === undefined ? {} : { tokenSecret: referenceOrBlank(oauth2["tokenSecret"], "") }),
-    }
+  // These secret fields hold only `{{secrets.NAME}}` references (the schema
+  // refuses a literal); anything else blanks to "" so the bundle still imports.
+  for (const [type, fields] of SECRET_REFERENCE_AUTH_FIELDS) {
+    const config = sanitized[type]
+    if (!isRecord(config)) continue
+    const redacted = { ...config }
+    for (const field of fields) if (config[field] !== undefined) redacted[field] = referenceOrBlank(config[field], "")
+    sanitized[type] = redacted
   }
   return sanitized
 }
@@ -868,6 +846,13 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
   body: (value, mode) => {
     if (typeof value !== "string" || value.trim().length === 0) return undefined
     return mode === "export" ? redactBodyLeaves(value, SECRET_PLACEHOLDER) : sanitizeBodyForAgentRead(value)
+  },
+  // A GraphQL request's variables are JSON text, redacted the way a body is.
+  graphql: (value, mode) => {
+    if (!isRecord(value)) return undefined
+    const sanitized = sanitizeValue(value, mode) as Record<string, JsonValue>
+    const variables = FIELD_SANITIZERS["body"]!(value["variables"] ?? "", mode)
+    return variables === undefined ? sanitized : { ...sanitized, variables }
   },
 }
 

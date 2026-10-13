@@ -4,15 +4,19 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import { withoutCanvasOnlyNodes } from "@shared/graph/frames"
 import type { RunResult } from "@shared/types/RunResult"
 import type { RunIteration } from "@shared/types/RunIteration"
+import type { Run } from "@shared/types/Run"
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
+import type { Workflow } from "@shared/types/Workflow"
 import type { RunRepository } from "../repositories/RunRepository"
 import type { WorkflowRepository } from "../repositories/WorkflowRepository"
 import type { EnvironmentRepository } from "../repositories/EnvironmentRepository"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
+import { RERUN_REFUSED, WorkflowExecutor, type WorkflowGraph, type ExecutorDeps, type ExecutorOutput, type ExecutorProgressEvent, type NodeResultEvent, type ResolvedSubWorkflow } from "./executor"
 import { DynamicFunctions } from "./dynamic_functions"
 import { HTTPS_DOWNGRADE_MESSAGE, NETWORK_ERROR_PREFIX, SafeHttp } from "./safe_http"
-import { NotFoundError } from "../ipc/errors"
-import { SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "../services/secret_utils"
+import { NotFoundError, ValidationError } from "../ipc/errors"
+import { downstreamOf, maskedVariablesRead, resumeEntries, seedResults, seedVariables, type ResumeSeed } from "./resume"
+import { SECRET_PLACEHOLDER, extractSecretRefsFromString, sanitizeVariablesForExport } from "../services/secret_utils"
 import { createSecretMasker } from "./secret_masker"
 import type { OAuthTokenCache } from "./oauth"
 
@@ -37,8 +41,14 @@ export interface AgentRunApprovalRequest {
   /**
    * Where the run's requests go: the host where a URL resolves statically
    * (literal, `{{env.*}}`, `{{variables.*}}`), the URL as written otherwise.
+   * Once allowed, a request to any host not listed here fails.
    */
   readonly destinations: readonly string[]
+  /**
+   * The run includes http-request scripts. A pre-request script can rewrite a
+   * request (within `destinations`), and reads secrets by name.
+   */
+  readonly runsScripts: boolean
 }
 
 export interface SchedulerDeps {
@@ -81,7 +91,8 @@ export interface SchedulerDeps {
 export interface EnqueueRequest {
   readonly workspaceId: string
   readonly workflowId: string
-  readonly startNodeIds?: readonly string[]
+  /** Rerun part of the workflow from an earlier run of it — see core/runner/resume.ts. */
+  readonly resume?: RunResumeRequest
   readonly variables?: Readonly<Record<string, unknown>>
   readonly selectedEnvironmentId?: string | null
   /** Set when an agent started the run over MCP: the client's name. */
@@ -142,20 +153,27 @@ export class RunScheduler {
     // placeholder goes out as literal text — a 401 from the target that is
     // indistinguishable from wrong credentials. `undefined` means "use the
     // workflow's default"; an explicit `null` means "run with no environment".
-    // The execute-time fallback (`run.selectedEnvironmentId ?? workflow.selectedEnvironmentId`)
-    // is kept as defense-in-depth, but the run row now reflects what will
-    // actually run, so the echo and the run agree.
+    // This is the only place the default is applied: `executeRun` reads the
+    // run row as is, so a stored null really runs with none.
     const inheritedEnvironmentId =
       request.selectedEnvironmentId === undefined
         ? workflow.selectedEnvironmentId ?? null
         : request.selectedEnvironmentId
+    // A rerun starts from the source run's variables; the caller's own win.
+    const resume = request.resume ? this.planResume(workflow, request.resume, request.variables ?? {}) : undefined
+    const variables = resume
+      ? { ...resume.variables, ...(request.variables as Record<string, JsonValue> | undefined) }
+      : request.variables as Record<string, JsonValue> | undefined
     const run = this.deps.runs.create({
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
       status: "pending",
-      ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
+      ...(variables ? { variables } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
       ...(request.iteration ? { iteration: request.iteration } : {}),
+      ...(resume
+        ? { resumeFromRunId: resume.sourceRunId, resumeFromNodeIds: resume.entries, resumeMode: request.resume?.nodeId ? "single" : "all-failed" }
+        : {}),
     })
     if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
     if (request.data !== undefined) this.runData.set(run.runId, request.data)
@@ -271,7 +289,7 @@ export class RunScheduler {
         ...(Object.keys(mergedVariables).length > 0 ? { variables: mergedVariables as Record<string, unknown> } : {}),
       }
 
-      const selectedEnvironmentId = run.selectedEnvironmentId ?? workflow.selectedEnvironmentId ?? null
+      const selectedEnvironmentId = run.selectedEnvironmentId ?? null
       const environments = this.deps.environments
       const environment = selectedEnvironmentId ? environments?.getById(selectedEnvironmentId) : undefined
       if (selectedEnvironmentId && (environment === undefined || environment.workspaceId !== run.workspaceId)) {
@@ -299,21 +317,23 @@ export class RunScheduler {
       const agent = this.agentRuns.get(runId)
       const data = this.runData.get(runId)
       const secretNames = Object.keys(secretResolution.secrets ?? {})
+      let http = this.deps.http
       if (agent !== undefined && secretNames.length > 0) {
+        const destinations = requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {})
         const approved = await this.askApproval(
-          {
-            runId,
-            agent,
-            workflowName: workflow.name,
-            secretNames,
-            destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables, data ?? {}),
-          },
+          { runId, agent, workflowName: workflow.name, secretNames, destinations, runsScripts: reachable.nodes.some(hasScript) },
           controller.signal,
         )
         if (!approved) {
           if (controller.signal.aborted) throw new Error("cancelled")
           throw new AgentRunDenied()
         }
+        // The listed hosts are a prediction: an extractor or script can
+        // rewrite a variable mid-run, a Call Workflow child has variables of
+        // its own, and path variables are filled in after the host. So the
+        // approval is enforced where requests leave — every hop of every
+        // request this run and its sub-runs send must reach a listed host.
+        http = http.restrictedTo(destinations)
       }
       // Every value this run resolved is scrubbed from whatever leaves the
       // executor — persisted results, node snapshots, progress events — for the
@@ -334,7 +354,7 @@ export class RunScheduler {
       const executorDeps: ExecutorDeps = {
         clock: this.deps.clock,
         rng: this.deps.rng,
-        http: this.deps.http,
+        http,
         functions: this.deps.functions,
         ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
@@ -385,7 +405,9 @@ export class RunScheduler {
       const output = await executor.executeWorkflow(graph, {
         runId,
         cancelSignal: controller.signal,
-        ...(run.resumeFromNodeIds ? { startNodeIds: run.resumeFromNodeIds } : {}),
+        ...(run.resumeFromRunId && run.resumeFromNodeIds
+          ? { startNodeIds: run.resumeFromNodeIds, resume: this.resumeSeed(run, run.resumeFromRunId, run.resumeFromNodeIds, graph, workflow.variables) }
+          : {}),
       })
 
       this.emitFinished(runId, this.recordOutcome(runId, mask(output)))
@@ -443,6 +465,89 @@ export class RunScheduler {
     const waiters = this.finishWaiters.get(runId)
     this.finishWaiters.delete(runId)
     for (const resolve of waiters ?? []) resolve(status)
+  }
+
+  /**
+   * Check a rerun request against the stored source run and the current graph,
+   * before any run row exists: where it starts, and the variables it reuses.
+   * Refused when the source is not a finished run of this workflow, names no
+   * step, or would need a variable its history only holds masked and the
+   * caller did not pass.
+   */
+  private planResume(
+    workflow: Workflow,
+    request: RunResumeRequest,
+    given: Readonly<Record<string, unknown>>,
+  ): { readonly sourceRunId: string; readonly entries: string[]; readonly variables: Record<string, JsonValue> } {
+    const source = request.fromRunId === undefined
+      ? this.deps.runs.getLatestRun(workflow.workflowId, workflow.workspaceId)
+      : this.deps.runs.getById(request.fromRunId)
+    if (source === undefined || source.workflowId !== workflow.workflowId || source.workspaceId !== workflow.workspaceId) {
+      throw request.fromRunId === undefined
+        ? new ValidationError("This workflow has no run to rerun from yet; run it first")
+        : new NotFoundError(`run ${request.fromRunId} not found`)
+    }
+    if (source.status === "pending" || source.status === "running") {
+      throw new ValidationError(`Run ${source.runId} is still ${source.status}; rerun from it once it has finished`)
+    }
+    const nodes = withoutCanvasOnlyNodes(workflow.nodes) as unknown as WorkflowGraph["nodes"]
+    const edges = workflow.edges as unknown as WorkflowGraph["edges"]
+    let requested: string[]
+    if (request.nodeId !== undefined) {
+      const node = nodes.find((candidate) => candidate.nodeId === request.nodeId)
+      if (node === undefined) throw new ValidationError(`node ${request.nodeId} is not a step of this workflow`)
+      if (node.type === "start" || node.type === "end") {
+        throw new ValidationError(`a rerun starts at a step, not at the ${node.type} node; run the whole workflow instead`)
+      }
+      requested = [node.nodeId]
+    } else {
+      requested = (source.failedNodes ?? []).filter((id) => nodes.some((node) => node.nodeId === id))
+      if (requested.length === 0) throw new ValidationError(`Run ${source.runId} has no failed step to rerun`)
+    }
+    const entries = resumeEntries(edges, requested)
+    const scope = downstreamOf(edges, entries)
+    const { variables, masked } = seedVariables(source.variables, workflow.variables, nodes, scope)
+    const needed = maskedVariablesRead(nodes, scope, masked).filter((name) => !(name in given))
+    if (needed.length > 0) {
+      const names = needed.map((name) => `{{variables.${name}}}`).join(", ")
+      throw new ValidationError(
+        `Cannot rerun: ${names} ${needed.length === 1 ? "is" : "are"} stored masked in run ${source.runId} ` +
+          "(run history never keeps a secret or credential-like value). Rerun from the node that sets " +
+          `${needed.length === 1 ? "it" : "them"}, or run the whole workflow.`,
+        { maskedVariables: needed },
+      )
+    }
+    return { sourceRunId: source.runId, entries, variables }
+  }
+
+  /**
+   * What a rerun's source run settled, read when the rerun starts: the source,
+   * then the run it resumed, and so on, so a rerun of a rerun still has the
+   * results its source only inherited.
+   */
+  private resumeSeed(
+    run: Run,
+    sourceRunId: string,
+    entries: readonly string[],
+    graph: WorkflowGraph,
+    defined: Readonly<Record<string, unknown>>,
+  ): ResumeSeed {
+    const chain: Run[] = []
+    const seen = new Set<string>()
+    for (let id: string | null | undefined = sourceRunId; id && !seen.has(id); ) {
+      seen.add(id)
+      const source = this.deps.runs.getById(id)
+      if (source === undefined || source.workflowId !== run.workflowId) break
+      chain.push(source)
+      id = source.resumeFromRunId
+    }
+    if (chain.length === 0) throw new Error(`source run ${sourceRunId} of run ${run.runId} not found`)
+    const scope = downstreamOf(graph.edges, entries)
+    return {
+      scope,
+      results: seedResults(chain, graph.edges, scope),
+      maskedVariables: seedVariables(chain[0]!.variables, defined, graph.nodes, scope).masked,
+    }
   }
 
   /** A missing approver means no one can be asked, which is a no. A throwing one is too. */
@@ -508,10 +613,9 @@ export class RunScheduler {
     if (!resolver) return { resolvedSecrets: [] }
 
     const names = new Set<string>()
-    const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
     for (const node of nodes) {
       for (const value of collectStrings(node.config)) {
-        for (const m of value.matchAll(pattern)) names.add(m[1]!)
+        for (const name of extractSecretRefsFromString(value)) names.add(name)
       }
     }
     if (names.size === 0) return { resolvedSecrets: [] }
@@ -570,7 +674,8 @@ export class RunScheduler {
 class AgentRunDenied extends Error {}
 
 /**
- * Where a run's requests go, for the approval prompt: every node's `url`,
+ * Where a run's requests go, for the approval prompt and the hosts the
+ * approved run is then held to: every node's `url`,
  * with `{{env.*}}`, `{{variables.*}}` and `{{data.*}}` filled in where they are known before
  * the run, reduced to its host when it then parses. A URL built from values
  * the run itself produces stays as written — the user sees that it is not
@@ -605,6 +710,12 @@ export function requestDestinations(
     }
   }
   return [...destinations]
+}
+
+/** A node with a non-empty pre-request or post-response script. */
+function hasScript(node: WorkflowGraph["nodes"][number]): boolean {
+  const scripts = node.config?.["scripts"] as { readonly preRequest?: unknown; readonly postResponse?: unknown } | undefined
+  return [scripts?.preRequest, scripts?.postResponse].some((source) => typeof source === "string" && source.trim() !== "")
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {
@@ -656,10 +767,15 @@ const CALL_WORKFLOW_ERRORS: readonly RegExp[] = [
 
 const RETRY_VERDICT = /^((?:Condition not met|Failed) after \d+ attempts)(?:: ([\s\S]*))?$/
 
-function safeErrorClass(error: string): string {
+export function safeErrorClass(error: string): string {
   // A retrying node's verdict carries only its attempt count; its cause is classed on its own.
   const retry = RETRY_VERDICT.exec(error)
   if (retry) return retry[2] === undefined ? retry[1]! : `${retry[1]}: ${safeErrorClass(retry[2])}`
+  return runnerDiagnosis(error) ?? genericErrorClass(error)
+}
+
+/** The runner's own messages that carry no input values, as they may be stored; undefined for any other error. */
+function runnerDiagnosis(error: string): string | undefined {
   // The status a retry gave up on.
   if (/^HTTP \d{3}$/.test(error)) return error
   // The runner's own network diagnosis names only the host, the system error
@@ -668,8 +784,21 @@ function safeErrorClass(error: string): string {
   if (error.startsWith(HTTPS_DOWNGRADE_MESSAGE)) return HTTPS_DOWNGRADE_MESSAGE
   // The executor's own Call Workflow diagnoses carry at most the target's id.
   if (CALL_WORKFLOW_ERRORS.some((pattern) => pattern.test(error))) return error
-  // OAuth 2.0 diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/oauth.ts).
-  if (error.startsWith("OAuth 2.0")) return error
+  // Auth diagnoses name secrets, hosts, statuses and OAuth error codes, never values (see core/runner/auth_error.ts).
+  if (/^(OAuth 2\.0|AWS Signature V4|Digest auth|JWT)\b/.test(error)) return error
+  // A script's own error or failed-test count: the user's script wrote it, and
+  // secret values in it were masked before this point, as in its console output.
+  if (/^(Pre-request|Post-response) script\b/.test(error)) return error
+  // A rerun refusing a seeded value names the placeholder and node, never the value.
+  const unwrapped = error.replace(/^Error: /, "")
+  if (unwrapped.startsWith(RERUN_REFUSED)) return unwrapped
+  // A responseSchemas verdict names only the status key; the violations are in the result's assertions.
+  if (/^Response does not match the schema for status (?:[1-5](?:\d\d|XX)|default)$/.test(error)) return error
+  return undefined
+}
+
+/** Any other error, reduced to a class that cannot carry what the request sent or received. */
+function genericErrorClass(error: string): string {
   const normalized = error.toLowerCase()
   if (normalized.includes("redirect")) return "Redirect not followed"
   if (normalized.includes("cancelled")) return "Cancelled"

@@ -18,6 +18,8 @@ import {
   Lock,
   Target,
   Terminal,
+  FolderInput,
+  FolderOutput,
 } from "lucide-react";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
@@ -26,7 +28,7 @@ import type { TabItem } from "../types";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
-import { apiweave } from "../utils/apiweaveClient";
+import { apiweave, projectFolders } from "../utils/apiweaveClient";
 import { downloadTextFile } from "../utils/downloadFile";
 import { PostmanImportPanel } from "./PostmanImportPanel";
 import type { Project } from "../types/Project";
@@ -175,6 +177,76 @@ export function CollectionExportImport({
         title: "Export Failed",
         text: errorText(error, "Failed to export project"),
       });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExportToFolder = async (): Promise<void> => {
+    if (!workspaceId || !projectId) {
+      setMessage({
+        type: "error",
+        title: "Export Error",
+        text: "Workspace or project scope is not ready",
+      });
+      return;
+    }
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      const result = await projectFolders.exportProject(workspaceId, projectId);
+      if (result === null) return;
+      const changes =
+        result.written.length === 0 && result.removed.length === 0
+          ? "Every file was already up to date."
+          : `${result.written.length} file(s) written, ${result.removed.length} removed.`;
+      setMessage({
+        type: "success",
+        title: "Exported to Folder",
+        text: `${result.workflowCount} workflow(s) and ${result.environmentCount} environment(s) in ${result.folder}. ${changes}`,
+      });
+    } catch (error: unknown) {
+      setMessage({
+        type: "error",
+        title: "Export Failed",
+        text: errorText(error, "Failed to export project to folder"),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleImportFromFolder = async (): Promise<void> => {
+    if (!workspaceId) {
+      setMessage({
+        type: "error",
+        title: "Import Error",
+        text: "Workspace scope is not ready",
+      });
+      return;
+    }
+    setIsLoading(true);
+    setMessage(null);
+    try {
+      const result = await projectFolders.importProject(workspaceId);
+      if (result === null) return;
+      const summary = `${result.created} created, ${result.updated} updated, ${result.unchanged} unchanged${
+        result.detached > 0 ? `, ${result.detached} moved out of the project` : ""
+      }.`;
+      setMessage({
+        type: result.warnings.length > 0 ? "warning" : "success",
+        title: "Imported from Folder",
+        text: [summary, ...result.warnings].join(" "),
+      });
+      useSidebarStore.getState().signalProjectsRefresh();
+      onImportSuccess(result.projectId);
+    } catch (error: unknown) {
+      setMessage({
+        type: "error",
+        title: "Import Failed",
+        text: errorText(error, "Failed to import project folder"),
+      });
+      scrollModalToTop(modalContentRef.current);
     } finally {
       setIsLoading(false);
     }
@@ -668,11 +740,39 @@ export function CollectionExportImport({
             >
               {isLoading ? "Exporting..." : "Download Project Bundle"}
             </Button>
+
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+              Or keep the project in a git repository: one JSON file per
+              workflow and environment, rewritten in place on every export.
+              Secret values are never written.
+            </p>
+            <Button
+              onClick={handleExportToFolder}
+              disabled={isLoading}
+              fullWidth
+              variant="outline"
+              icon={<FolderOutput size={18} />}
+            >
+              Export to Folder…
+            </Button>
           </div>
         )}
 
         {activeTab === "import-collection" && (
           <div className="space-y-4">
+            <Button
+              onClick={handleImportFromFolder}
+              disabled={isLoading}
+              fullWidth
+              variant="outline"
+              icon={<FolderInput size={18} />}
+            >
+              Import from Folder…
+            </Button>
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+              A folder written by Export to Folder creates or updates its
+              project in place, matched by id. Or import a bundle:
+            </p>
             {/* Upload */}
             <button
               type="button"

@@ -28,6 +28,7 @@ const useCanvasStore = create<CanvasState>()((set) => ({
   reloadWorkflowId: null,
   reloadVersion: 0,
   pendingHistory: null,
+  pendingFocus: null,
 
   duplicateNode: (nodeId: string) => {
     const action = {
@@ -65,6 +66,16 @@ const useCanvasStore = create<CanvasState>()((set) => ({
     notifyPendingActionHandlers(action);
   },
 
+  runFromNode: (nodeId: string) => {
+    const action = {
+      type: "run-from" as CanvasActionType,
+      nodeId,
+      timestamp: Date.now(),
+    };
+    set({ pendingAction: action });
+    notifyPendingActionHandlers(action);
+  },
+
   clearPendingAction: () => set({ pendingAction: null }),
 
   // sessionStorage carries the clipboard across the tabs of this window.
@@ -90,6 +101,11 @@ const useCanvasStore = create<CanvasState>()((set) => ({
     set({ pendingHistory: { workflowId, runId } }),
 
   clearPendingHistory: () => set({ pendingHistory: null }),
+
+  focusNode: (workflowId: string, nodeId: string) =>
+    set({ pendingFocus: { workflowId, nodeId } }),
+
+  clearPendingFocus: () => set({ pendingFocus: null }),
 
   signalWorkflowReload: (workflowId: string) => {
     set((s) => ({

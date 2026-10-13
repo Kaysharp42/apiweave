@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canApplyBackgroundRefresh,
   shouldActOnDetach,
+  writeFollowsBaseRevision,
 } from "./canvasRefreshGuards";
 
 describe("shouldActOnDetach", () => {
@@ -54,5 +55,16 @@ describe("canApplyBackgroundRefresh", () => {
         tabIsDirty: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("writeFollowsBaseRevision", () => {
+  it("adopts a write that is the next revision after the base", () => {
+    expect(writeFollowsBaseRevision(5, 6)).toBe(true);
+  });
+
+  it("leaves the base alone when another write landed in between", () => {
+    // Rev 6 came from an agent; adopting 7 would let the next save overwrite it.
+    expect(writeFollowsBaseRevision(5, 7)).toBe(false);
   });
 });

@@ -73,6 +73,28 @@ export const OAUTH_CHANNELS = {
 } as const
 
 /**
+ * Settings > Network. Privileged and off the router like `OAUTH_CHANNELS`: it
+ * decides where every request goes and which servers are trusted, and makes
+ * main read files from disk — no local agent may reach it over MCP.
+ */
+export const NETWORK_CHANNELS = {
+  get: "network:get",
+  save: "network:save",
+  chooseFile: "network:chooseFile",
+} as const
+
+/**
+ * Export a project to a folder of JSON files, and import one back. Privileged
+ * and off the router like `NETWORK_CHANNELS`: main writes and deletes files on
+ * disk, so no local agent may reach it over MCP. The folder always comes from
+ * the native dialog main opens, never from the caller.
+ */
+export const PROJECT_FOLDER_CHANNELS = {
+  exportProject: "projectFolder:export",
+  importProject: "projectFolder:import",
+} as const
+
+/**
  * A run began — broadcast for EVERY run, whoever started it (the canvas's own
  * Run button, or an agent through the MCP `runs_create` tool).
  *

@@ -5,6 +5,7 @@ import {
   Copy,
   Files,
   MoreHorizontal,
+  Play,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -15,6 +16,7 @@ import {
 import type { NodeActionMenuProps } from "../../../types/NodeActionMenuProps";
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
+  "run-from": Play,
   duplicate: Files,
   copy: Copy,
   "save-preset": BookmarkPlus,
@@ -26,6 +28,8 @@ export function NodeActionMenu({
   collapsible = false,
   isExpanded = false,
   presetable = false,
+  runnable = false,
+  onRunFrom,
   onDuplicate,
   onCopy,
   onSaveAsPreset,
@@ -38,8 +42,9 @@ export function NodeActionMenu({
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const menuItems = useMemo(
-    () => buildNodeActionMenuItems({ collapsible, isExpanded, presetable }),
-    [collapsible, isExpanded, presetable],
+    () =>
+      buildNodeActionMenuItems({ collapsible, isExpanded, presetable, runnable }),
+    [collapsible, isExpanded, presetable, runnable],
   );
 
   useEffect(() => {
@@ -97,7 +102,9 @@ export function NodeActionMenu({
   ) => {
     event.stopPropagation();
 
-    if (actionKey === "duplicate") {
+    if (actionKey === "run-from") {
+      onRunFrom?.(nodeId);
+    } else if (actionKey === "duplicate") {
       onDuplicate?.(nodeId);
     } else if (actionKey === "copy") {
       onCopy?.(nodeId);

@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { CfWorkerJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/cfworker"
 import { z } from "zod"
 import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
@@ -25,7 +26,12 @@ export function createMcpServer(router: IpcRouter, version: string, broker?: Run
   // documentation a client receives without asking for it. Most of the agent
   // roster has no flag for standing instructions, so for those agents this is
   // the whole of what they are told about APIWeave before their first call.
-  const server = new McpServer({ name: MCP_SERVER_NAME, version }, { instructions: MCP_INSTRUCTIONS })
+  // The SDK's default validator is Ajv, which compiles schemas with `new Function`;
+  // cfworker interprets them, so the host never runs generated code.
+  const server = new McpServer(
+    { name: MCP_SERVER_NAME, version },
+    { instructions: MCP_INSTRUCTIONS, jsonSchemaValidator: new CfWorkerJsonSchemaValidator() },
+  )
 
   registerBridgeTools(server, router)
   registerResources(server, router, broker)

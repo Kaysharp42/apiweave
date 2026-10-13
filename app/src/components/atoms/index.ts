@@ -12,6 +12,7 @@ export { IconSwitch } from "./IconSwitch";
 export { Spinner } from "./Spinner";
 export { Skeleton } from "./Skeleton";
 export { Toast } from "./Toast";
+export { HighlightedText } from "./HighlightedText";
 
 // Flow atoms — ReactFlow primitives
 export { BaseNode } from "./flow/BaseNode";

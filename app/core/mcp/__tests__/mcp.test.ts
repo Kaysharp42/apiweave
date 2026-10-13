@@ -242,6 +242,13 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "projects.listWorkflows",
       "projects.addWorkflow",
       "projects.removeWorkflow",
+      // Version history: an agent sees which revisions exist, but reading one
+      // is the whole unredacted graph and restoring one replaces the workflow.
+      // Both are the user's, from the Version history dialog.
+      "workflows.getRevision",
+      "workflows.restoreRevision",
+      // The palette's workspace-wide node search; agents use search + searchNodes.
+      "workflows.searchWorkspaceNodes",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }
@@ -277,6 +284,31 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     const names = new Set(MCP_TOOLS.map((t) => `${t.domain}.${t.action}`))
     for (const excluded of ["agents.launchExternal", "agents.chooseLocalPath", "agents.saveCustomAgent"]) {
       expect(names.has(excluded), excluded).toBe(false)
+    }
+  })
+
+  /**
+   * Settings > Network decides where every request goes (the proxy), which
+   * servers are trusted (CAs) and makes main read files from disk. An agent
+   * able to change it could route a run's secrets through a proxy it controls,
+   * so it lives off the router (NETWORK_CHANNELS, a privileged preload world).
+   */
+  it("exposes no network settings tools — the proxy and trust store are not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("network")
+      expect(spec.domain).not.toBe("settings")
+    }
+  })
+
+  /**
+   * Export to folder / Import from folder make main write and delete files on
+   * disk; they live off the router (PROJECT_FOLDER_CHANNELS, a privileged
+   * preload world), so no local agent can reach them.
+   */
+  it("exposes no project folder tools — writing files on disk is not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("projectFolder")
+      expect(spec.action.toLowerCase()).not.toContain("folder")
     }
   })
 

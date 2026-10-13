@@ -1,5 +1,9 @@
+import type { Collection } from "@shared/types/Collection"
+import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
 import type { Workflow } from "@shared/types/Workflow"
+import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -19,14 +23,17 @@ import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
+import { environmentFileText, stableJson, workflowFileText } from "./project_folder"
 import {
   assertNoSecretValues,
   collectSecretRefs,
-  isSecretKey,
+  findRedactedPlaceholders,
+  SECRET_PLACEHOLDER,
   sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
+import { isSecretKey } from "@shared/credentials/credentials"
 
 /** Schema version for project bundles. Existing v2 files remain importable. */
 export const SCHEMA_VERSION = "2.0"
@@ -105,6 +112,40 @@ export interface DryRunResult {
   }
 }
 
+/** A workflow as a bundle (and a project folder) carries it: credentials withheld, ids kept. */
+function exportWorkflow(workflow: Workflow): ExportedWorkflow {
+  return {
+    workflowId: workflow.workflowId,
+    name: workflow.name,
+    description: workflow.description ?? "",
+    nodes: workflow.nodes.map(exportNode),
+    edges: workflow.edges.map((edge) => toPlain(edge)),
+    variables: sanitizeVariablesForExport(asRecord(toPlain(workflow.variables))),
+    tags: workflow.tags,
+    selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
+    nodeTemplates: workflow.nodeTemplates.map((template) => sanitizeExportValue(toPlain(template))),
+  }
+}
+
+function exportNode(node: WorkflowNode): JsonValue {
+  const plain = asRecord(toPlain(node))
+  if (plain["config"] !== undefined) plain["config"] = sanitizeExportValue(plain["config"])
+  return plain
+}
+
+/** An environment as a bundle carries it: variables only (secret-named ones withheld), never secrets. */
+function exportEnvironment(environment: Environment, workspaceId: string): ExportedEnvironment {
+  return {
+    environmentId: environment.environmentId,
+    name: environment.name,
+    description: environment.description ?? null,
+    scopeType: "workspace",
+    scopeId: workspaceId,
+    variables: sanitizeVariablesForExport(asRecord(toPlain(environment.variables))),
+    swaggerDocUrl: environment.swaggerDocUrl ?? null,
+  }
+}
+
 function toPlain(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value ?? null)) as JsonValue
 }
@@ -148,27 +189,11 @@ export class ProjectExportService {
     const seen = new Set<string>()
 
     const workflowsExport: ExportedWorkflow[] = workflows.map((workflow) => {
-      const rawVariables = toPlain(workflow.variables)
-      collectSecretRefs(rawVariables, "workspace", workspaceId, secretReferences, seen)
-      const nodes = workflow.nodes.map((node) => {
-        const plain = asRecord(toPlain(node))
-        if (plain["config"] !== undefined) {
-          collectSecretRefs(plain["config"], "workspace", workspaceId, secretReferences, seen)
-          plain["config"] = sanitizeExportValue(plain["config"])
-        }
-        return plain as JsonValue
-      })
-      return {
-        workflowId: workflow.workflowId,
-        name: workflow.name,
-        description: workflow.description ?? "",
-        nodes,
-        edges: workflow.edges.map((edge) => toPlain(edge)),
-        variables: sanitizeVariablesForExport(asRecord(rawVariables)),
-        tags: workflow.tags,
-        selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
-        nodeTemplates: workflow.nodeTemplates.map((template) => sanitizeExportValue(toPlain(template))),
+      collectSecretRefs(toPlain(workflow.variables), "workspace", workspaceId, secretReferences, seen)
+      for (const node of workflow.nodes) {
+        if (node.config !== undefined) collectSecretRefs(toPlain(node.config), "workspace", workspaceId, secretReferences, seen)
       }
+      return exportWorkflow(workflow)
     })
 
     const environmentIds = new Set<string>()
@@ -192,15 +217,7 @@ export class ProjectExportService {
           }
         }
       }
-      environmentsExport.push({
-        environmentId: environment.environmentId,
-        name: environment.name,
-        description: environment.description ?? null,
-        scopeType: "workspace",
-        scopeId: workspaceId,
-        variables: sanitizeVariablesForExport(rawVars),
-        swaggerDocUrl: environment.swaggerDocUrl ?? null,
-      })
+      environmentsExport.push(exportEnvironment(environment, workspaceId))
     }
 
     const bundle: ProjectBundle = {
@@ -356,6 +373,154 @@ export class ProjectExportService {
       missingSecrets,
       warnings,
     }
+  }
+
+  /**
+   * Make a project match a bundle read from a project folder, matching by id:
+   * the project, its environments and its workflows keep the ids the folder
+   * names, so the folder can be imported again (after a `git pull`) and update
+   * the same rows. A workflow that changed is rewritten through the
+   * repository's update, which keeps its previous version in its history
+   * (source "import"); an unchanged one is not touched. A workflow in the
+   * project but not in the folder is moved out of the project, never deleted.
+   *
+   * The folder carries no credentials. Where a node's config, a variable or
+   * the node templates read the same as the stored value's exported form, the
+   * stored value is kept, so a literal credential the export withheld survives
+   * a round trip; only a value changed in the folder replaces it.
+   */
+  async upsertProject(workspaceId: string, bundle: ProjectBundle): Promise<Omit<ProjectFolderImportResult, "folder">> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "import", RESOURCE_COLLECTIONS)
+    const errors = validateBundle(bundle)
+    if (errors.length > 0) throw new ValidationError(errors.join("; "))
+
+    const projectId = bundle.project.projectId
+    const elsewhere = [
+      ...[this.collections.getById(projectId)].map((row) => row && { kind: "project", id: row.collectionId, workspaceId: row.workspaceId }),
+      ...bundle.environments.map((environment) => this.environments.getById(environment.environmentId))
+        .map((row) => row && { kind: "environment", id: row.environmentId, workspaceId: row.workspaceId }),
+      ...bundle.workflows.map((workflow) => this.workflows.getById(workflow.workflowId))
+        .map((row) => row && { kind: "workflow", id: row.workflowId, workspaceId: row.workspaceId }),
+    ].filter((row) => row !== undefined && row.workspaceId !== workspaceId)
+    if (elsewhere.length > 0) {
+      throw new ValidationError(
+        `this folder's ${elsewhere.map((row) => `${row!.kind} ${row!.id}`).join(", ")} already belong${elsewhere.length === 1 ? "s" : ""} to another workspace. `
+          + "A project folder maps to one workspace; to copy the project, export it as a bundle (.awecollection) and import that.",
+      )
+    }
+
+    const warnings: string[] = []
+    const missingSecrets: string[] = []
+    for (const ref of bundle.secretReferences) {
+      if (!(await this.secretExists(ref.name, workspaceId))) {
+        missingSecrets.push(ref.name)
+        warnings.push(`Secret '${ref.name}' is not set in this workspace; add it before running the project`)
+      }
+    }
+
+    const counts = this.collections.transaction(() => {
+      const project = this.upsertFolderProject(workspaceId, bundle.project)
+      for (const incoming of bundle.environments) this.upsertFolderEnvironment(workspaceId, incoming)
+
+      const folderIds = new Set(bundle.workflows.map((workflow) => workflow.workflowId))
+      const previousProjects = new Set<string>()
+      const tally = { created: 0, updated: 0, unchanged: 0 }
+      for (const incoming of bundle.workflows) {
+        tally[this.upsertFolderWorkflow(workspaceId, projectId, incoming, folderIds, previousProjects, warnings)] += 1
+      }
+      const detached = this.detachWorkflowsNotInFolder(workspaceId, projectId, folderIds, warnings)
+
+      for (const collectionId of previousProjects) {
+        const previous = this.collections.update(collectionId, { workflowCount: this.workflows.countByCollection(workspaceId, collectionId) })
+        if (previous !== undefined) recordCollectionUpsert(this.syncProvider, previous)
+      }
+      const final = this.collections.update(projectId, {
+        workflowCount: this.workflows.countByCollection(workspaceId, projectId),
+        workflowOrder: buildImportedWorkflowOrder(bundle, new Map([...folderIds].map((id) => [id, id]))),
+      }) ?? project
+      recordCollectionUpsert(this.syncProvider, final)
+      return { ...tally, detached }
+    })
+
+    await this.syncProvider.push()
+    return {
+      projectId,
+      ...counts,
+      environmentCount: bundle.environments.length,
+      missingSecrets,
+      warnings,
+    }
+  }
+
+  private upsertFolderProject(workspaceId: string, incoming: ProjectBundle["project"]): Collection {
+    const existingProject = this.collections.getById(incoming.projectId)
+    const projectFields = {
+      name: incoming.name,
+      description: incoming.description || null,
+      color: incoming.color || null,
+    }
+    return existingProject === undefined
+      ? this.collections.create({ collectionId: incoming.projectId, workspaceId, ...projectFields })
+      : this.collections.update(incoming.projectId, projectFields) ?? existingProject
+  }
+
+  private upsertFolderEnvironment(workspaceId: string, incoming: ExportedEnvironment): void {
+    const stored = this.environments.getById(incoming.environmentId)
+    if (stored !== undefined && environmentFileText(exportEnvironment(stored, workspaceId)) === environmentFileText(incoming)) return
+    const fields = {
+      name: incoming.name,
+      description: incoming.description ?? null,
+      swaggerDocUrl: incoming.swaggerDocUrl ?? null,
+      variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
+    }
+    const written = stored === undefined
+      ? this.environments.create({ environmentId: incoming.environmentId, workspaceId, ...fields, secrets: {} })
+      : this.environments.update(stored.environmentId, fields) ?? stored
+    recordEnvironmentUpsert(this.syncProvider, written)
+  }
+
+  private upsertFolderWorkflow(
+    workspaceId: string,
+    projectId: string,
+    incoming: ExportedWorkflow,
+    folderIds: ReadonlySet<string>,
+    previousProjects: Set<string>,
+    warnings: string[],
+  ): "created" | "updated" | "unchanged" {
+    const stored = this.workflows.getById(incoming.workflowId)
+    if (stored !== undefined && stored.collectionId === projectId
+      && workflowFileText(exportWorkflow(stored)) === workflowFileText(incoming)) {
+      return "unchanged"
+    }
+    const nodes = retargetCallWorkflows(
+      incoming.nodes.map((node) => keepWithheldConfig(WorkflowNodeSchema.parse(node), stored)),
+      (targetWorkflowId, node) => {
+        if (folderIds.has(targetWorkflowId) || this.workflows.getByIdInWorkspace(targetWorkflowId, workspaceId)) return targetWorkflowId
+        warnings.push(callTargetClearedWarning(node.label ?? node.nodeId, incoming.name, targetWorkflowId))
+        return null
+      },
+    )
+    const fields = folderWorkflowFields(incoming, stored, projectId, nodes)
+    const placeholderWarning = withheldPlaceholderWarning(incoming.name, stored, fields)
+    if (placeholderWarning !== undefined) warnings.push(placeholderWarning)
+    if (stored?.collectionId && stored.collectionId !== projectId) previousProjects.add(stored.collectionId)
+    const written = stored === undefined
+      ? this.workflows.create({ workflowId: incoming.workflowId, workspaceId, ...fields })
+      : this.workflows.update(stored.workflowId, fields, "import") ?? stored
+    recordWorkflowUpsert(this.syncProvider, written)
+    return stored === undefined ? "created" : "updated"
+  }
+
+  private detachWorkflowsNotInFolder(workspaceId: string, projectId: string, folderIds: ReadonlySet<string>, warnings: string[]): number {
+    let detached = 0
+    for (const member of this.workflows.listByCollection(workspaceId, projectId).items) {
+      if (folderIds.has(member.workflowId)) continue
+      const moved = this.workflows.update(member.workflowId, { collectionId: null }, "import")
+      if (moved !== undefined) recordWorkflowUpsert(this.syncProvider, moved)
+      warnings.push(`Workflow '${member.name}' is not in the folder; it was moved out of the project (not deleted)`)
+      detached += 1
+    }
+    return detached
   }
 
   async dryRunImport(targetWorkspaceId: string, bundle: ProjectBundle): Promise<DryRunResult> {
@@ -562,6 +727,57 @@ function validateBundle(bundle: ProjectBundle): string[] {
   }
   assertNoSecretValues(toPlain(bundle))
   return errors
+}
+
+/** A variable whose folder value reads as the stored value's exported form is unchanged: keep the stored (unredacted) value. */
+/** The fields a project folder's workflow is written with, keeping node templates the export left unchanged. */
+function folderWorkflowFields(incoming: ExportedWorkflow, stored: Workflow | undefined, projectId: string, nodes: Workflow["nodes"]) {
+  return {
+    name: incoming.name,
+    description: incoming.description || null,
+    nodes,
+    edges: incoming.edges.map((edge) => WorkflowEdgeSchema.parse(edge)),
+    variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
+    tags: [...incoming.tags],
+    collectionId: projectId,
+    selectedEnvironmentId: incoming.selectedEnvironmentId,
+    nodeTemplates: stored !== undefined && stableJson(exportWorkflow(stored).nodeTemplates ?? []) === stableJson(incoming.nodeTemplates ?? [])
+      ? stored.nodeTemplates
+      : [...(incoming.nodeTemplates ?? [])],
+  }
+}
+
+function withheldPlaceholderWarning(
+  workflowName: string,
+  stored: Workflow | undefined,
+  fields: Pick<Workflow, "nodes" | "variables" | "nodeTemplates">,
+): string | undefined {
+  const placeholders = findRedactedPlaceholders(toPlain({ nodes: fields.nodes, variables: fields.variables, nodeTemplates: fields.nodeTemplates }))
+  if (placeholders.length === 0) return undefined
+  return `Workflow '${workflowName}' has the placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}: `
+    + "the export withheld a credential there. Use a {{secrets.NAME}} reference instead"
+    + (stored === undefined ? "" : "; the version before this import is in the workflow's history")
+}
+
+function keepWithheldVariables(
+  stored: Record<string, JsonValue>,
+  incoming: Record<string, JsonValue>,
+): Record<string, JsonValue> {
+  const exported = sanitizeVariablesForExport(asRecord(toPlain(stored)))
+  return Object.fromEntries(Object.entries(incoming).map(([key, value]) => [
+    key,
+    key in exported && stableJson(exported[key]) === stableJson(value) ? stored[key]! : value,
+  ]))
+}
+
+/** A node whose config reads as the stored node's exported config keeps the stored (unredacted) config. */
+function keepWithheldConfig(node: WorkflowNode, stored: Workflow | undefined): WorkflowNode {
+  const previous = stored?.nodes.find((candidate) => candidate.nodeId === node.nodeId)
+  if (previous === undefined || previous.type !== node.type) return node
+  const exportedConfig = asRecord(exportNode(previous))["config"] ?? null
+  return stableJson(exportedConfig) === stableJson(toPlain(node.config ?? null))
+    ? ({ ...node, config: previous.config } as WorkflowNode)
+    : node
 }
 
 function emptyStats(bundle: ProjectBundle): DryRunResult["stats"] {

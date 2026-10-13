@@ -14,7 +14,10 @@ import {
   getNumberValue,
 } from "./nodeModalUtils";
 import { buildCurlCommand, buildFetchCommand } from "./copyAsCurl";
+import { ScriptOutcomes } from "./ScriptOutcomes";
 import type { HttpAttempt } from "@shared/types/HttpAttempt";
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome";
+import type { AssertionEvaluation } from "@shared/types/AssertionEvaluation";
 import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo";
 import type { BadgeProps, HttpRequestOutputPanelProps } from "../../types";
 
@@ -76,6 +79,18 @@ export function HttpRequestOutputPanel({
   const attempts = Array.isArray(outputRecord?.attempts)
     ? (outputRecord!.attempts as readonly HttpAttempt[])
     : undefined;
+
+  // Set only on a node with scripts: what each one did on this run.
+  const scripts = Array.isArray(outputRecord?.scripts)
+    ? (outputRecord!.scripts as readonly ScriptOutcome[])
+    : [];
+
+  // Set only on a node with responseSchemas: where the body broke the schema for its status.
+  const schemaErrors = Array.isArray(outputRecord?.assertions)
+    ? (outputRecord!.assertions as readonly AssertionEvaluation[]).flatMap(
+        (rule) => rule.schemaErrors ?? [],
+      )
+    : [];
 
   const commands = useMemo(
     () => ({
@@ -194,6 +209,22 @@ export function HttpRequestOutputPanel({
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
+        {schemaErrors.length > 0 && (
+          <ul
+            aria-label="Schema violations"
+            className="mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded-sm border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
+          >
+            {schemaErrors.map((violation, index) => (
+              <li key={index} className="text-text-primary dark:text-text-primary-dark">
+                <span className="text-status-error dark:text-status-error-dark">
+                  {violation.path === "" ? "(root)" : violation.path}
+                </span>{" "}
+                {violation.message}
+              </li>
+            ))}
+          </ul>
+        )}
+        {scripts.length > 0 && <ScriptOutcomes scripts={scripts} />}
         {/* A response the inspector cannot draw must not close the node
             editor and its unapplied draft. */}
         <ErrorBoundary name="response inspector">

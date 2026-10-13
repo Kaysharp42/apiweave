@@ -10,7 +10,7 @@ interface UseAutoSaveParams {
   nodes: unknown[];
   edges: unknown[];
   workflowVariables: Record<string, unknown>;
-  saveWorkflow: (silent: boolean) => Promise<void>;
+  saveWorkflow: (silent: boolean) => Promise<unknown>;
 }
 
 interface Snapshot {
@@ -136,7 +136,7 @@ export default function useAutoSave({
       if (pendingSnapshotRef.current) {
         lastSnapshotRef.current = pendingSnapshotRef.current;
       }
-      inFlightRef.current = saveRef.current(true);
+      inFlightRef.current = saveRef.current(true).then(() => undefined);
     }
     return inFlightRef.current;
   }, []);

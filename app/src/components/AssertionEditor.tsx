@@ -115,6 +115,10 @@ export default function AssertionEditor({
           <option value="count">Count (array length)</option>
           <option value="exists">Exists</option>
           <option value="notExists">Does Not Exist</option>
+          <option value="matches">Matches regex</option>
+          <option value="notMatches">Does Not Match regex</option>
+          <option value="type">Is of type</option>
+          <option value="matchesSchema">Matches JSON Schema</option>
         </select>
 
         {!["exists", "notExists"].includes(operator) ? (

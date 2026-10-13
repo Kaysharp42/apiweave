@@ -53,9 +53,11 @@
   "devDependencies": {
     "@apiweave/proto": "https://github.com/Kaysharp42/apiweave-proto/archive/refs/tags/v0.9.1.tar.gz",
     "@bufbuild/protobuf": "^2.12.1",
+    "@cfworker/json-schema": "^4.1.1",
     "@dagrejs/dagre": "^3.1.1",
     "@floating-ui/react": "^0.26.28",
     "@headlessui/react": "^2.2.9",
+    "@jitl/quickjs-singlefile-cjs-release-sync": "^0.32.0",
     "@modelcontextprotocol/sdk": "^1.23.0",
     "@monaco-editor/react": "^4.6.0",
     "@playwright/test": "^1.60.0",
@@ -85,7 +87,6 @@
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "fallow": "^2.98.0",
-    "framer-motion": "^12.40.0",
     "jose": "6.2.3",
     "jsdom": "^25.0.1",
     "json-edit-react": "^1.30.1",
@@ -94,12 +95,14 @@
     "nock": "^14.0.16",
     "postcss": "^8.4.0",
     "prettier": "^3.1.0",
+    "quickjs-emscripten-core": "^0.32.0",
     "react": "^18.2.0",
     "react-doctor": "^0.2.10",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "sonner": "^2.0.7",
     "tailwindcss": "^3.3.0",
+    "tough-cookie": "^5.1.2",
     "tsx": "^4.22.0",
     "typescript": "^6.0.3",
     "undici": "^7.16.0",
@@ -151,7 +154,8 @@
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*",
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "dist/desktop/script-worker.cjs"
     ],
     "win": {
       "target": [

@@ -27,10 +27,8 @@ export class DynamicFunctions {
   /** Random number as a string with `size` digits. Default 6. */
   public randomNumber(size: unknown): string {
     const sz = coerceGeneratedLength("randomNumber", size, 6)
-    const max = Number("9".repeat(sz))
-    const min = sz > 1 ? Number("1" + "0".repeat(sz - 1)) : 1
-    const n = Math.floor(this.rng.next() * (max - min + 1)) + min
-    return String(n)
+    // Digit by digit, not via `Number`: past 15 digits a double loses precision, then turns into exponent notation.
+    return sampleAlphabet(this.rng, "123456789", 1) + sampleAlphabet(this.rng, "0123456789", sz - 1)
   }
 
   /** Random email: `<randomString(10)>@example.com`. */

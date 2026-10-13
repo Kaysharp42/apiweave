@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { RunSchema } from "../../zod-schemas/RunSchema"
 import { WorkflowSchema } from "../../zod-schemas/WorkflowSchema"
 import type { Workflow } from "../../types/Workflow"
-import { analyzeVariableProvenance, analyzeWorkflowGraph, findCycles, successorMap, wouldCreateCycle } from "../workflow_graph_analyzer"
+import { analyzeVariableProvenance, analyzeWorkflowGraph, cycleNodeIds, findCycles, successorMap, wouldCreateCycle } from "../workflow_graph_analyzer"
 
 const timestamp = "2026-07-27T12:00:00.000Z"
 
@@ -499,6 +499,28 @@ describe("workflow graph analyzer", () => {
       .toContain("assertion_expected_missing")
   })
 
+  it("flags assertion_expected_invalid for a value with the wrong shape for its operator", () => {
+    const workflow = healthyWorkflow()
+    const withInvalid = {
+      ...workflow,
+      nodes: workflow.nodes.map((node) => node.nodeId === "assert-login"
+        ? {
+            ...node,
+            config: {
+              assertions: [
+                { source: "prev", path: "response.body.id", operator: "type", expectedValue: "text" },
+                { source: "prev", path: "response.body.id", operator: "matches", expectedValue: "^ord_" },
+              ],
+            },
+          }
+        : node),
+    } as unknown as Workflow
+
+    const invalid = analyzeWorkflowGraph(withInvalid).diagnostics.filter((item) => item.code === "assertion_expected_invalid")
+    expect(invalid).toHaveLength(1)
+    expect(invalid[0]!.message).toMatch(/"type" expects one of/)
+  })
+
   // Regression: parallel fan-out from one assertion outcome IS supported by
   // the runtime (`matching` edges branch in parallel via Promise.allSettled),
   // so routing three "pass" edges off an assertion is a legitimate shape.
@@ -694,6 +716,20 @@ describe("cycle helpers", () => {
     expect(findCycles(successorMap(chain))).toEqual([])
     expect(findCycles(successorMap([...chain, { source: "c", target: "b" }]))).toEqual([["b", "c"]])
     expect(findCycles(successorMap([{ source: "a", target: "a" }]))).toEqual([["a"]])
+  })
+
+  it("lists every node on a cycle, including ones the depth-first search never closes a cycle through", () => {
+    const edges = [
+      { source: "a", target: "b" },
+      { source: "b", target: "c" },
+      { source: "c", target: "a" },
+      { source: "a", target: "d" },
+      { source: "d", target: "c" },
+      { source: "c", target: "e" },
+    ]
+    expect(cycleNodeIds(successorMap(edges))).toEqual(["a", "b", "c", "d"])
+    expect(cycleNodeIds(successorMap(chain))).toEqual([])
+    expect(cycleNodeIds(successorMap([{ source: "a", target: "a" }]))).toEqual(["a"])
   })
 
   it("says whether a new edge would close a cycle", () => {

@@ -8,7 +8,7 @@ import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ProjectExportService } from "../project_export_service"
-import { convertPostmanCollection, convertTestScript, isPostmanCollection, safeName } from "../postman_import"
+import { convertPostmanCollection, convertTestScript, isPostmanCollection } from "../postman_import"
 
 const FIXTURES = path.join(__dirname, "__fixtures__")
 const readFixture = (name: string): Record<string, unknown> =>
@@ -98,11 +98,11 @@ describe("Postman collection conversion", () => {
       formDataEntries: [{ key: "note", value: "monthly", type: "text", active: true }],
     })
     const graphql = request("Search products")
-    expect(graphql["bodyType"]).toBe("json")
-    expect(JSON.parse((graphql["body"] as string).replace("{{env.searchTerm}}", "shoes"))).toEqual({
-      query: "query Search($term: String!) { products(term: $term) { id name } }",
-      variables: { term: "shoes" },
-    })
+    expect(graphql["bodyType"]).toBe("graphql")
+    expect(graphql["body"]).toBeUndefined()
+    const { query, variables } = graphql["graphql"] as { query: string; variables: string }
+    expect(query).toBe("query Search($term: String!) { products(term: $term) { id name } }")
+    expect(JSON.parse(variables.replace("{{env.searchTerm}}", "shoes"))).toEqual({ term: "shoes" })
     expect(request("Ping")).toMatchObject({ bodyType: "raw", body: "ping", headers: [{ key: "Content-Type", value: "text/plain" }] })
     // An explicit Content-Type wins over the language's.
     expect(request("Import feed")["headers"]).toEqual([{ key: "Content-Type", value: "application/vnd.shop+xml" }])
@@ -212,6 +212,49 @@ describe("Postman collection conversion", () => {
     expect(preview.warnings).toContain("Collection-level scripts are not converted; they are kept in the project description")
   })
 
+  it("falls back on unsupported methods and bodies, and withholds a raw body that is a credential", () => {
+    const edge = {
+      info: { name: "Edge", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+      item: [
+        {
+          name: "Purge",
+          request: { method: "purge", url: "https://edge.test/cache", header: [{ key: "X-Trace", value: "Bearer abc.def-123456" }], body: { mode: "file" } },
+          event: [{ listen: "test", script: { exec: ['console.log("hi")'] } }],
+        },
+        { name: "Plain", request: "https://edge.test/plain" },
+        { name: "Off", request: { method: "POST", url: "https://edge.test/off", body: { mode: "raw", raw: "x", disabled: true } } },
+        {
+          name: "Token",
+          request: { method: "POST", url: "https://edge.test/t", body: { mode: "raw", raw: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln", options: { raw: { language: "yaml" } } } },
+          event: [{ listen: "test", script: { exec: ["pm.response.to.have.status(200);", "pm.response.to.have.status(201);"] } }],
+        },
+        { name: "Gql", request: { method: "POST", url: "https://edge.test/gql", body: { mode: "graphql", graphql: { query: "{ a }" } } } },
+        { name: "None", request: { method: "POST", url: "https://edge.test/n", body: { mode: "none" } } },
+      ],
+    }
+    const { bundle, preview } = convertPostmanCollection(edge, { workspaceId: "ws" })
+    const nodes = bundle.workflows[0]!.nodes as unknown as Node[]
+    const config = (label: string): Record<string, JsonValue> => nodes.find((node) => node.label === label)!.config
+    const base = { headers: [], queryParams: [], cookies: [], timeout: 30, followRedirects: true, extractors: {} }
+    expect(config("Purge")).toEqual({ ...base, method: "GET", url: "https://edge.test/cache", headers: [{ key: "X-Trace", value: "Bearer {{secrets.PURGE_X_TRACE}}" }] })
+    expect(config("Plain")).toEqual({ ...base, method: "GET", url: "https://edge.test/plain" })
+    expect(config("Off")).toEqual({ ...base, method: "POST", url: "https://edge.test/off" })
+    expect(config("None")).toEqual({ ...base, method: "POST", url: "https://edge.test/n" })
+    expect(config("Gql")).toEqual({ ...base, method: "POST", url: "https://edge.test/gql", bodyType: "graphql", graphql: { query: "{ a }" } })
+    const token = config("Token")
+    expect(token).toEqual({ ...base, method: "POST", url: "https://edge.test/t", body: "{{secrets.TOKEN_BODY}}", bodyType: "raw", expectedStatus: [200, 201] })
+    expect(Object.keys(token)).toEqual([
+      "method", "url", "headers", "queryParams", "cookies", "timeout", "followRedirects", "body", "bodyType", "expectedStatus", "extractors",
+    ])
+    expect(nodes.find((node) => node.type === "note")!.config["content"]).toContain('### Purge — test script\n```js\nconsole.log("hi")\n```')
+    expect(preview.requiredSecrets).toEqual([{ name: "PURGE_X_TRACE", usedBy: "Purge X-Trace" }, { name: "TOKEN_BODY", usedBy: "Token body" }])
+    expect(preview.warnings).toEqual([
+      '"Edge" › "Purge": method PURGE is not supported; imported as GET',
+      '"Edge" › "Purge": file body is not supported; imported without a body',
+      '"Edge" › "Purge": test script not converted; its text is kept in a note on the canvas',
+    ])
+  })
+
   it("rejects Collection v1 and v2.0 files with a clear message", () => {
     const v1 = { id: "x", name: "Old", order: [], requests: [] }
     expect(isPostmanCollection(v1)).toBe(true)
@@ -238,11 +281,6 @@ describe("convertTestScript", () => {
     // An expression that is not a response JSON path stays a script.
     expect(convertTestScript('pm.environment.set("t", Date.now());')).toMatchObject({ extractors: new Map(), complete: false })
     expect(convertTestScript('pm.expect(pm.response.code).to.equal(404);\nconsole.log("x")')).toMatchObject({ expectedStatus: [404], complete: false })
-  })
-
-  it("normalizes names to letters, digits and underscores", () => {
-    expect(safeName("base-url")).toBe("base_url")
-    expect(safeName("1st")).toBe("_1st")
   })
 })
 

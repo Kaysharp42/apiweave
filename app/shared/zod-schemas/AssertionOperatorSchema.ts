@@ -12,4 +12,8 @@ export const AssertionOperatorSchema = z.enum([
   "count",
   "exists",
   "notExists",
+  "matches",
+  "notMatches",
+  "type",
+  "matchesSchema",
 ])

@@ -353,6 +353,10 @@ export function BaseNode({
                   collapsible={collapsible}
                   isExpanded={isExpanded}
                   presetable={presetNodeType !== undefined}
+                  runnable={presetNodeType !== undefined}
+                  onRunFrom={(id: string) =>
+                    useCanvasStore.getState().runFromNode(id)
+                  }
                   onDuplicate={(id: string) =>
                     useCanvasStore.getState().duplicateNode(id)
                   }

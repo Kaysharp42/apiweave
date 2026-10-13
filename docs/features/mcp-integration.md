@@ -27,8 +27,14 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
   no answer within two minutes, fails it before any request is sent, and the
   agent sees `deniedByUser: true`. The run executes the workflows as they were
   when you were asked: an edit made while the dialog is open does not change
-  where an approved secret goes. Runs you start yourself, and agent runs that
-  use no secret, are not affected.
+  where an approved secret goes. An allowed run may only reach the hosts the
+  dialog listed: a request whose host turns out different when it is sent —
+  a URL shown as written, a variable an extractor or script rewrote, a
+  redirect — fails instead. Runs you start yourself, and agent runs that
+  use no secret, are not affected. A secret a [script](scripting.md) reads
+  with `aw.secrets.get("NAME")` counts, and when the workflow runs scripts the
+  dialog says so: a pre-request script can change a request, though not send
+  it to a host the dialog did not list.
 - Run tools return metadata-only projections: request and response bodies,
   headers, cookies, URLs, variable values, and assertion actual values stay in
   the local desktop UI. The one exception is `runs_getNodeResult`, which returns
@@ -129,6 +135,11 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `workspaces_update`
 - `workspaces_delete`
 
+`workspaces_delete` deletes local and personal workspaces, and with cloud sync
+linked the delete reaches the cloud copy too. It refuses (`denied`) a workspace
+bound to a shared cloud team, because that delete would remove the workspace
+for every member of the team.
+
 ### Workflows
 
 - `workflows_list`
@@ -140,6 +151,7 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `workflows_delete`
 - `workflows_attachToCollection`
 - `workflows_setEnvironment`
+- `workflows_listRevisions`
 
 `workflows_update` replaces the `nodes`, `edges` and `variables` lists wholesale.
 `workflows_patch` changes a subset instead: `upsertNodes` and `upsertEdges`
@@ -151,6 +163,11 @@ revision the caller last read, so a concurrent desktop edit produces a conflict
 rather than being overwritten. The desktop canvas saves the same way: an agent's
 edit that lands while the canvas has unsaved changes is never overwritten by the
 canvas's next save.
+
+Every agent write keeps the workflow as it was just before it as a version
+(see [Version history](workflows-and-nodes.md#version-history)), so the user can
+undo it. `workflows_listRevisions` lists those versions, metadata only; reading
+a version's content and restoring one are not agent tools.
 
 `workflows_create`, `workflows_update` and `workflows_patch` each return
 `{ result, diagnosis }`, where `diagnosis` is the same report `workflow_diagnose`
@@ -223,6 +240,13 @@ environment this one inherits plain variables from; `null` clears it. See
 - `runs_getLatest`
 - `runs_getLatestFailed`
 - `runs_cancel`
+
+`runs_create` also reruns part of a workflow: `resume: { nodeId }` starts at
+that step, `resume: {}` reruns the steps the latest run failed, and `fromRunId`
+picks another source run. Upstream steps are not sent again; their stored
+results and variables are reused, and a rerun that would need a value stored
+masked is refused. See
+[Rerun from a node](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
 
 `runs_getNodeResult` is the exception to the metadata-only rule: it returns one
 node's stored request and response from a run, body included, after the same

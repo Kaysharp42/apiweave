@@ -63,6 +63,14 @@ describe("DynamicFunctions (seeded)", () => {
     expect(n).toBeLessThanOrEqual(999_999)
   })
 
+  it("randomNumber stays an exact digit string of the requested size past double precision", () => {
+    for (const size of [1, 16, 22, 10_000]) {
+      const out = fn.randomNumber(size)
+      expect(out).toHaveLength(size)
+      expect(out).toMatch(/^[1-9][0-9]*$/)
+    }
+  })
+
   it("randomEmail() ends with @example.com and has 10-char local part", () => {
     const out = fn.randomEmail()
     expect(out).toMatch(/^[A-Za-z0-9]{10}@example\.com$/)

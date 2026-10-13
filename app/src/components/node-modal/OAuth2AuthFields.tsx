@@ -2,9 +2,9 @@ import { useContext, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import ButtonSelect from "../ButtonSelect";
 import { Button } from "../atoms/Button";
-import { Input } from "../atoms/Input";
 import { FormField } from "../molecules/FormField";
 import { TemplateInput } from "../molecules/TemplateAutocomplete";
+import { SecretNameField } from "./SecretNameField";
 import WorkflowContext from "../../contexts/WorkflowContext";
 import WorkspaceContext from "../../contexts/WorkspaceContext";
 import useEnvironmentStore, {
@@ -13,6 +13,9 @@ import useEnvironmentStore, {
 import { oauth } from "../../utils/apiweaveClient";
 import type {
   OAuth2AuthConfig,
+  OAuth2AuthFieldsProps,
+  OAuth2Field,
+  OAuth2TokenControlsProps,
   OAuthTokenStatus,
   SelectOption,
 } from "../../types";
@@ -26,26 +29,6 @@ const CLIENT_AUTH_OPTIONS: SelectOption[] = [
   { label: "Basic auth header", value: "basic" },
   { label: "Client ID and secret in body", value: "body" },
 ];
-
-const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/;
-
-/** The NAME in `{{secrets.NAME}}`, or "" when unset. */
-export function secretNameOf(reference: string | undefined): string {
-  return SECRET_REFERENCE.exec(reference ?? "")?.[1] ?? "";
-}
-
-/**
- * The reference stored for a typed secret name. Characters a secret name cannot
- * hold are dropped as they are typed, so the field can never hold a literal
- * credential — only a reference, or nothing.
- */
-export function secretReferenceFor(typed: string): string {
-  const name = typed.replace(/[^A-Za-z0-9_]/g, "").replace(/^[0-9]+/, "");
-  return name ? `{{secrets.${name}}}` : "";
-}
-
-type OAuth2Field =
-  "tokenUrl" | "clientId" | "clientSecret" | "authorizationUrl" | "tokenSecret";
 
 /** What each field is missing before a token can be fetched; "" when it is fine. */
 export function oauth2Problems(
@@ -68,34 +51,6 @@ export function oauth2Problems(
         ? ""
         : "Name the secret to store the token in",
   };
-}
-
-function SecretNameField({
-  label,
-  hint,
-  error,
-  reference,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  hint: string;
-  error: string;
-  reference: string | undefined;
-  onChange: (reference: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <FormField label={label} hint={hint} error={error}>
-      <Input
-        value={secretNameOf(reference)}
-        onChange={(event) => onChange(secretReferenceFor(event.target.value))}
-        placeholder={placeholder}
-        className="font-mono"
-        aria-label={`${label} secret name`}
-      />
-    </FormField>
-  );
 }
 
 function formatStatus(status: OAuthTokenStatus): string {
@@ -131,13 +86,7 @@ function useTokenScope(): {
   };
 }
 
-function TokenControls({
-  config,
-  ready,
-}: {
-  config: OAuth2AuthConfig;
-  ready: boolean;
-}) {
+function TokenControls({ config, ready }: OAuth2TokenControlsProps) {
   const { workspaceId, environmentId } = useTokenScope();
   const [status, setStatus] = useState<OAuthTokenStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -219,11 +168,7 @@ export function OAuth2AuthFields({
   config,
   onChange,
   buttonClass,
-}: {
-  config: OAuth2AuthConfig;
-  onChange: (patch: Partial<OAuth2AuthConfig>) => void;
-  buttonClass: string;
-}) {
+}: OAuth2AuthFieldsProps) {
   const problems = oauth2Problems(config);
   const authorizationCode = config.grantType === "authorization_code";
   return (

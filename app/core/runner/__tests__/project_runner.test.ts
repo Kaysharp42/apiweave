@@ -161,6 +161,21 @@ describe("ProjectRunner", () => {
     expect(projectRuns.getById(projectRun.projectRunId)).toEqual(final)
   })
 
+  it("runs with no environment on null, and with each workflow's saved one when the environment is omitted", async () => {
+    const { projectId, workflowIds } = seedProject([{ kind: "pass" }])
+    const prod = environments.create({ workspaceId, name: "prod", variables: {} }).environmentId
+    workflows.update(workflowIds[0]!, { selectedEnvironmentId: prod })
+    const runner = makeRunner()
+
+    const none = await runner.start({ workspaceId, projectId, environmentId: null }).done
+    expect(none.environmentId).toBeNull()
+    expect(runs.getById(none.items[0]!.runId!)!.selectedEnvironmentId).toBeNull()
+
+    const saved = await runner.start({ workspaceId, projectId }).done
+    expect(saved.environmentId).toBeNull()
+    expect(runs.getById(saved.items[0]!.runId!)!.selectedEnvironmentId).toBe(prod)
+  })
+
   it("stops at a failed workflow whose row says stop, and skips the rest", async () => {
     const { projectId } = seedProject([{ kind: "pass" }, { kind: "fail", continueOnFail: false }, { kind: "pass" }])
     const final = await makeRunner().start({ workspaceId, projectId, environmentId: null }).done

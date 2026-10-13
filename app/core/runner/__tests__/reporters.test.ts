@@ -264,6 +264,24 @@ describe("buildJUnitReport — project run", () => {
     expect(all(all(suites[2]!, "testcase")[0]!, "skipped")[0]!.attrs["message"]).toMatch(/deleted from history/)
   })
 
+  it("fails a failed workflow whose run is not stored, in every format", () => {
+    const failedRun: ProjectRun = {
+      ...projectRun,
+      items: [
+        { workflowId: "wf_1", workflowName: "Pruned run", continueOnFail: true, runId: "run_pruned", status: "failed", durationMs: 5000 },
+        { workflowId: "wf_2", workflowName: "Workflow gone", continueOnFail: false, runId: null, status: "failed", durationMs: null },
+      ],
+    }
+    const input: ReportInput = { kind: "project", projectName: "Checkout", projectRun: failedRun, runs: [], workflows: [] }
+    const root = parseXml(buildJUnitReport(input))
+    expect(root.attrs).toMatchObject({ tests: "2", failures: "2", skipped: "0" })
+    for (const suite of all(root, "testsuite")) {
+      expect(all(all(suite, "testcase")[0]!, "failure")[0]!.attrs["message"]).toMatch(/Workflow failed; its run record is unavailable/)
+    }
+    expect(buildHtmlReport(input)).toContain("<div><b>2</b>failed</div>")
+    expect(buildConsoleReport(input, false)).toMatch(/Workflows\s+2\s+0\s+2\s+0/)
+  })
+
   it("renders the same suites as HTML", () => {
     const html = buildHtmlReport({ kind: "project", projectName: "Checkout", projectRun, runs: [FAILED_RUN], workflows: [WORKFLOW] })
     expect(html.match(/<section>/g)).toHaveLength(3)
@@ -288,6 +306,159 @@ describe("buildHtmlReport", () => {
     const html = buildHtmlReport({ kind: "run", run: makeRun({ nodeStatuses: { n: "passed" } }), workflow: { ...WORKFLOW, name: hostile, nodes: [{ nodeId: "n", type: "delay", label: hostile, position: { x: 0, y: 0 } }] } })
     expect(html).not.toContain("<img")
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;")
+  })
+})
+
+// -------------------- Exact output --------------------
+
+describe("exact report text", () => {
+  const SCRIPTED_WORKFLOW: ReportWorkflow = {
+    ...WORKFLOW,
+    nodes: [...WORKFLOW.nodes, { nodeId: "wait", type: "delay", position: { x: 4, y: 0 } }],
+  }
+  const rule = {
+    sourceNodeId: "http_1", expectedState: "literal", expectedType: "object", actualState: "present", actualType: "object",
+  } as const
+
+  const SCRIPTED_RUN = makeRun({
+    status: "running",
+    error: null,
+    nodeStatuses: { http_1: { status: "passed" }, check: { status: "failed" }, wait: "idle" },
+    results: [
+      result("http_1", {
+        request: { url: "https://api.example.com/users" },
+        response: { statusCode: 201 },
+        assertions: [
+          { ...rule, ruleIndex: 0, source: "status", path: "", operator: "equals", outcome: "pass", reasonCode: "passed", detail: "201" },
+        ],
+        scripts: [
+          {
+            phase: "preRequest", duration: 1, logs: ["before 1", "before 2"], error: "TypeError: x is undefined",
+            tests: [{ name: "has id", passed: true }, { name: "quoted \"name\"", passed: false, error: "expected 1" }],
+          },
+          { phase: "postResponse", duration: 1, logs: ["after"], tests: [] },
+        ],
+      }),
+      result("check", {
+        status: "failed",
+        error: null,
+        assertions: [
+          { ...rule, ruleIndex: 0, source: "prev", path: "body", operator: "matchesSchema", outcome: "fail", reasonCode: "schema-mismatch", schemaErrors: [{ path: "", message: "must be object" }, { path: "/id", message: "must be string" }] },
+          { ...rule, ruleIndex: 1, source: "prev", path: "body.ok", operator: "equals", outcome: "pass", reasonCode: "passed" },
+        ],
+        scripts: [
+          { phase: "postResponse", duration: 1, logs: ["checked"], error: "boom", tests: [{ name: "ok", passed: true }, { name: "bad", passed: false }] },
+        ],
+      }),
+      result("orphan", { status: "skipped", duration: 0 }),
+    ],
+  })
+
+  it("renders details, scripts, logs and schema errors byte for byte", () => {
+    const input: ReportInput = { kind: "run", run: SCRIPTED_RUN, workflow: SCRIPTED_WORKFLOW }
+    expect(buildJUnitReport(input)).toMatchInlineSnapshot(`
+      "<?xml version="1.0" encoding="UTF-8"?>
+      <testsuites name="Users API" tests="4" failures="1" errors="0" skipped="2" time="5.000">
+        <testsuite name="Users API" id="0" tests="4" failures="1" errors="0" skipped="2" time="5.000" timestamp="2026-07-06T10:00:00.000Z">
+          <testcase classname="Users API" name="GET /users" time="0.120">
+            <system-out>before 1
+      before 2
+      after</system-out>
+          </testcase>
+          <testcase classname="Users API" name="Check users" time="0.120">
+            <failure message="1 of 2 assertion rules failed" type="AssertionError">1 of 2 assertion rules failed
+      Rule 1: prev body matchesSchema — fail (schema-mismatch)
+        (root): must be object
+        /id: must be string
+      Post-response script error: boom
+      Test "bad": failed — </failure>
+            <system-out>checked</system-out>
+          </testcase>
+          <testcase classname="Users API" name="wait" time="0.000">
+            <skipped message="Did not finish (idle)"/>
+          </testcase>
+          <testcase classname="Users API" name="orphan" time="0.000">
+            <skipped/>
+          </testcase>
+        </testsuite>
+      </testsuites>
+      "
+    `)
+    expect(buildConsoleReport(input, false)).toMatchInlineSnapshot(`
+      "Users API · running
+
+      Users API · running · 5.000s
+        ✔ GET /users   0.120s
+        ✖ Check users  0.120s
+            1 of 2 assertion rules failed
+            Rule 1: prev body matchesSchema — fail (schema-mismatch)
+              (root): must be object
+              /id: must be string
+            Post-response script error: boom
+            Test "bad": failed — 
+            > checked
+        ○ wait         0.000s
+            Did not finish (idle)
+        ○ orphan       0.000s
+
+                 total  passed  failed  skipped
+      Workflows      1       0       1        0
+      Steps          4       1       1        2
+      Duration 5.000s
+      "
+    `)
+    // HTML lists every case's details, so a passed node's show here.
+    expect([...buildHtmlReport(input).matchAll(/<div class="(?:message|detail)">([^<]*)<\/div>|<pre class="logs">([^<]*)<\/pre>/g)].map((m) => m[1] ?? m[2])).toMatchInlineSnapshot(`
+      [
+        "https://api.example.com/users",
+        "Status 201",
+        "Rule 1: status equals — pass (passed: 201)",
+        "Pre-request script error: TypeError: x is undefined",
+        "Test &quot;has id&quot;: passed",
+        "Test &quot;quoted \\&quot;name\\&quot;&quot;: failed — expected 1",
+        "before 1
+      before 2
+      after",
+        "1 of 2 assertion rules failed",
+        "Rule 1: prev body matchesSchema — fail (schema-mismatch)",
+        "  (root): must be object",
+        "  /id: must be string",
+        "Post-response script error: boom",
+        "Test &quot;bad&quot;: failed — ",
+        "checked",
+        "Did not finish (idle)",
+      ]
+    `)
+  })
+
+  it("adds a skipped Run case to a live run with no failed node", () => {
+    const input: ReportInput = { kind: "run", run: makeRun({ status: "pending", error: "Queued", duration: undefined, nodeStatuses: { http_1: "passed" } }), workflow: WORKFLOW }
+    expect(buildJUnitReport(input)).toMatchInlineSnapshot(`
+      "<?xml version="1.0" encoding="UTF-8"?>
+      <testsuites name="Users API" tests="2" failures="0" errors="0" skipped="1" time="0.000">
+        <testsuite name="Users API" id="0" tests="2" failures="0" errors="0" skipped="1" time="0.000" timestamp="2026-07-06T10:00:00.000Z">
+          <testcase classname="Users API" name="GET /users" time="0.000"/>
+          <testcase classname="Users API" name="Run" time="0.000">
+            <skipped message="Queued"/>
+          </testcase>
+        </testsuite>
+      </testsuites>
+      "
+    `)
+    expect(buildConsoleReport(input, false)).toMatchInlineSnapshot(`
+      "Users API · pending
+
+      Users API · pending · 0.000s
+        ✔ GET /users  0.000s
+        ○ Run         0.000s
+            Queued
+
+                 total  passed  failed  skipped
+      Workflows      1       0       1        0
+      Steps          2       1       0        1
+      Duration 0.000s
+      "
+    `)
   })
 })
 

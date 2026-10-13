@@ -6,7 +6,7 @@ import { mustExist, parseJson, slugify, toJson } from "./helpers"
 import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &
-  Partial<Pick<Collection, "projectId" | "description" | "color" | "workflowOrder">>
+  Partial<Pick<Collection, "collectionId" | "projectId" | "description" | "color" | "workflowOrder">>
 
 export type CollectionUpdate = Partial<
   Pick<Collection, "name" | "projectId" | "description" | "color" | "workflowCount" | "workflowOrder">
@@ -47,7 +47,7 @@ export class CollectionRepository {
   }
 
   public create(input: CollectionCreate): Collection {
-    const id = generateId()
+    const id = input.collectionId ?? generateId()
     const settings: CollectionSettings = {
       projectId: input.projectId ?? null,
       description: input.description ?? null,

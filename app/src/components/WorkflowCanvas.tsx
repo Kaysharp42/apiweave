@@ -51,6 +51,8 @@ import HistoryModal from "./HistoryModal";
 import ImportToNodesPanel from "./ImportToNodesPanel";
 import WorkflowJsonEditor from "./WorkflowJsonEditor";
 import { PromptDialog } from "./molecules/PromptDialog";
+import { ContextMenu } from "./molecules/ContextMenu";
+import { VersionHistoryDialog } from "./organisms/VersionHistoryDialog";
 import { RunFollowPill } from "./molecules/RunFollowPill";
 import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
@@ -88,6 +90,7 @@ import { isLocalWorkflowRemoval } from "../utils/localWorkflowRemovals";
 import {
   canApplyBackgroundRefresh,
   shouldActOnDetach,
+  writeFollowsBaseRevision,
 } from "../utils/canvasRefreshGuards";
 import { canvasToWorkflow, workflowToCanvas } from "../adapters/workflowCanvas";
 import {
@@ -110,6 +113,7 @@ import {
   readSaveFailure,
 } from "../utils/workflowSaveFailure";
 import { apiweave, IpcError } from "../utils/apiweaveClient";
+import { restoreAfterSave } from "../utils/restoreAfterSave";
 import { autoLayoutRootNodes } from "../utils/autoLayout";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
@@ -117,7 +121,7 @@ import type { FocusDirection } from "../types/FocusDirection";
 import type { FocusModeDirection } from "../types/FocusModeDirection";
 import { adjacentFocusModeNode, isEditableNode } from "../utils/focusModeOrder";
 import { asPresetNodeType } from "../utils/nodePresets";
-import { Wand2 } from "lucide-react";
+import { Copy, Files, Play, Wand2 } from "lucide-react";
 import { useScopeContext } from "../hooks/useScopeContext";
 import type { Workflow } from "@shared/types/Workflow";
 import type { CanvasWorkflowState } from "../types/CanvasWorkflowState";
@@ -138,6 +142,7 @@ import { resolveTutorialScope } from "../utils/tutorialScope";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
+import type { StepContextMenuState } from "../types/StepContextMenuState";
 
 const canvasLog = getLogger("WorkflowCanvas");
 
@@ -305,7 +310,7 @@ export function WorkflowCanvas({
   // Holds the latest saveWorkflow (defined below); the run hook awaits it to
   // flush pending edits before executing so it never runs a stale graph.
   const saveWorkflowRef = useRef<
-    ((silent: boolean, overwrite?: boolean) => Promise<void>) | null
+    ((silent: boolean, overwrite?: boolean) => Promise<boolean>) | null
   >(null);
   const hydrationVersionRef = useRef(0);
 
@@ -388,6 +393,7 @@ export function WorkflowCanvas({
   const [modalNode, setModalNode] =
     useState<Node<WorkflowCanvasNodeData> | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [historyRunId, setHistoryRunId] = useState<string | null>(null);
   const pendingHistory = useCanvasStore((state) => state.pendingHistory);
   const [showImportToNodes, setShowImportToNodes] = useState(false);
@@ -395,6 +401,7 @@ export function WorkflowCanvas({
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [nodeContextMenu, setNodeContextMenu] =
     useState<CanvasNodeContextMenuState | null>(null);
+  const [stepMenu, setStepMenu] = useState<StepContextMenuState | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [timelineRunId, setTimelineRunId] = useState<string | null>(null);
   // The node a pending "Save as preset" action is naming, held here (not in
@@ -471,9 +478,8 @@ export function WorkflowCanvas({
     runWorkflow,
     runWorkflowWithData,
     cancelRun,
-    runFromLastFailed,
-    runAllFailed,
-    runFromFailedNodes,
+    runFromNode,
+    rerunFailed,
     resumeOptions,
     resumeSourceRunId,
     isResumeLoading,
@@ -741,6 +747,18 @@ export function WorkflowCanvas({
     });
   }, []);
 
+  // "Run from here" — a node's action menu or its right-click menu — reaches the
+  // canvas the same way. Only the canvas holding that node answers it.
+  const runFromNodeRef = useRef(runFromNode);
+  runFromNodeRef.current = runFromNode;
+  useEffect(() => {
+    return useCanvasStore.getState().registerPendingActionHandler((action) => {
+      if (action.type !== "run-from" || !action.nodeId) return;
+      if (!nodesRef.current.some((n) => n.id === action.nodeId)) return;
+      runFromNodeRef.current(action.nodeId);
+    });
+  }, []);
+
   const handleSavePreset = useCallback(
     (name: string) => {
       const node = presetSource;
@@ -825,6 +843,17 @@ export function WorkflowCanvas({
     selectedNodeRef.current = null;
     setNodeContextMenu(null);
   }, []);
+
+  // A step's right-click menu: rerun from it, or the node actions its own menu has.
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: CanvasNode) => {
+      if (asPresetNodeType(node.type) === null) return;
+      event.preventDefault();
+      setNodeContextMenu(null);
+      setStepMenu({ x: event.clientX, y: event.clientY, nodeId: node.id });
+    },
+    [],
+  );
 
   const onPaneContextMenu = useCallback(
     (event: MouseEvent | React.MouseEvent) => {
@@ -919,15 +948,8 @@ export function WorkflowCanvas({
    * canvas's only keyboard access, so it also has to be able to get *into* the
    * graph from nothing selected. See `nearestInDirection` for the scoring.
    */
-  const focusDirection = useCallback(
-    (direction: FocusDirection) => {
-      const targetId = nearestInDirection(
-        flatNodesRef.current,
-        selectedNodeRef.current?.id ?? null,
-        direction,
-      );
-      if (targetId === null) return;
-
+  const selectAndFrame = useCallback(
+    (targetId: string) => {
       selectedNodeRef.current =
         nodesRef.current.find((n) => n.id === targetId) ?? null;
       setNodes((nds) =>
@@ -947,6 +969,34 @@ export function WorkflowCanvas({
     },
     [setNodes, suspendFollow],
   );
+
+  const focusDirection = useCallback(
+    (direction: FocusDirection) => {
+      const targetId = nearestInDirection(
+        flatNodesRef.current,
+        selectedNodeRef.current?.id ?? null,
+        direction,
+      );
+      if (targetId !== null) selectAndFrame(targetId);
+    },
+    [selectAndFrame],
+  );
+
+  // A palette search result asked for a node of this workflow. Like
+  // `pendingHistory`, the request usually predates this canvas's mount, so it
+  // is read from the store once the graph is hydrated.
+  const pendingFocus = useCanvasStore((state) => state.pendingFocus);
+  useEffect(() => {
+    if (!isHydrated || !workflowId || pendingFocus?.workflowId !== workflowId) {
+      return;
+    }
+    useCanvasStore.getState().clearPendingFocus();
+    if (nodesRef.current.some((n) => n.id === pendingFocus.nodeId)) {
+      selectAndFrame(pendingFocus.nodeId);
+    } else {
+      toast.info("That node is no longer in this workflow.");
+    }
+  }, [isHydrated, pendingFocus, selectAndFrame, workflowId]);
 
   /**
    * Frame the current selection.
@@ -1162,11 +1212,13 @@ export function WorkflowCanvas({
   useEffect(() => {
     baseRevisionRef.current = workflow?.rev ?? 0;
   }, [workflow?.rev]);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
 
+  // Resolves true once the graph is on the server (or there is no workflow to
+  // save), false when the save was refused; every failure is toasted here.
   const sendSave = useCallback(
-    async (silent: boolean, overwrite: boolean) => {
-      if (!scope.workspaceId || !workflow) return;
+    async (silent: boolean, overwrite: boolean): Promise<boolean> => {
+      if (!scope.workspaceId || !workflow) return true;
 
       try {
         const canonicalWorkflow = canvasToWorkflow(
@@ -1203,7 +1255,7 @@ export function WorkflowCanvas({
             nodeCount,
             edgeCount,
           });
-          return;
+          return false;
         }
 
         let savedWorkflow: Workflow;
@@ -1247,7 +1299,7 @@ export function WorkflowCanvas({
                 },
               },
             );
-            return;
+            return false;
           }
           const cause =
             detail ??
@@ -1265,7 +1317,7 @@ export function WorkflowCanvas({
               : "Failed to save workflow — your changes are not saved",
             { id: `workflow-save-error-${workflowId}` },
           );
-          return;
+          return false;
         }
         baseRevisionRef.current = savedWorkflow.rev;
         hydratedBaselineRef.current = { nodeCount, edgeCount };
@@ -1280,6 +1332,7 @@ export function WorkflowCanvas({
           .getState()
           .updateTabWorkflow(workflowId ?? "", savedWorkflow);
         useTabStore.getState().markClean(workflowId ?? "");
+        return true;
       } catch (error) {
         // The save never reached the server: the canvas state failed local
         // validation, or the IPC call itself threw. Log the full error for the
@@ -1296,6 +1349,7 @@ export function WorkflowCanvas({
             : "Failed to save workflow — your changes are not saved",
           { id: `workflow-save-error-${workflowId}` },
         );
+        return false;
       }
     },
     [
@@ -1308,9 +1362,30 @@ export function WorkflowCanvas({
     ],
   );
 
+  // Import to nodes writes only `nodeTemplates`, which no canvas save sends,
+  // yet it bumps the revision every save asserts. Left untracked, the user's
+  // next save fails as a conflict blamed on someone else, and "Load latest"
+  // throws their unsaved edits away.
+  const handleTemplatesSaved = useCallback(
+    (savedWorkflow: Workflow) => {
+      if (
+        !workflowId ||
+        !writeFollowsBaseRevision(baseRevisionRef.current, savedWorkflow.rev)
+      ) {
+        return;
+      }
+      baseRevisionRef.current = savedWorkflow.rev;
+      // Its graph is the one the canvas was hydrated from; claim it, or
+      // hydration repaints the canvas over the user's unsaved edits.
+      noteSavedWorkflow(savedWorkflow);
+      useTabStore.getState().updateTabWorkflow(workflowId, savedWorkflow);
+    },
+    [workflowId, noteSavedWorkflow],
+  );
+
   /** `overwrite` drops the revision check: the user chose to replace a newer server copy. */
   const saveWorkflow = useCallback(
-    (silent = false, overwrite = false): Promise<void> => {
+    (silent = false, overwrite = false): Promise<boolean> => {
       const sent = saveQueueRef.current.then(() => sendSave(silent, overwrite));
       saveQueueRef.current = sent;
       return sent;
@@ -1320,6 +1395,29 @@ export function WorkflowCanvas({
 
   // Keep the run hook's flush pointer at the latest saveWorkflow closure.
   saveWorkflowRef.current = saveWorkflow;
+
+  // Version history restore: unsaved edits are saved first, so the restore
+  // keeps them as a version too, then the revision is written back at the
+  // revision this canvas is on and the canvas shows the result.
+  const restoreRevision = useCallback(
+    async (revisionId: string): Promise<void> => {
+      const workspaceId = scope.workspaceId;
+      if (!workspaceId || !workflowId) return;
+      await restoreAfterSave(
+        () => saveWorkflow(false),
+        () =>
+          apiweave.workflows.restoreRevision({
+            workspaceId,
+            workflowId,
+            revisionId,
+            expectedRevision: baseRevisionRef.current,
+          }),
+        () => reloadWorkflowFromServer(),
+      );
+      toast.success("Version restored");
+    },
+    [scope.workspaceId, workflowId, saveWorkflow, reloadWorkflowFromServer],
+  );
 
   // ── Undo / redo ──────────────────────────────────────
 
@@ -1491,7 +1589,9 @@ export function WorkflowCanvas({
     workflowId,
     isHydrated,
     flush: flushAutoSave,
-    save: () => saveWorkflowRef.current?.(false) ?? Promise.resolve(),
+    save: async () => {
+      await saveWorkflowRef.current?.(false);
+    },
     readCanvas: () => ({
       nodes: nodesRef.current,
       edges: edgesRef.current,
@@ -1716,6 +1816,7 @@ export function WorkflowCanvas({
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}
+        onNodeContextMenu={onNodeContextMenu}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -1833,6 +1934,7 @@ export function WorkflowCanvas({
         canGroup={canvasTipContext.canGroup}
         canUngroup={canvasTipContext.canUngroup}
         onHistory={() => setShowHistory(true)}
+        onVersionHistory={() => setShowVersionHistory(true)}
         onJsonEditor={() => {
           if (!isHydrated) {
             toast.info(
@@ -1847,13 +1949,10 @@ export function WorkflowCanvas({
         onRun={runWorkflow}
         onRunWithData={(file) => void runWorkflowWithData(file)}
         onCancel={cancelRun}
-        onRunFromLastFailed={runFromLastFailed}
-        onRunAllFailed={runAllFailed}
-        onRunFromFailedNode={(nodeId) => {
-          if (resumeSourceRunId) {
-            runFromFailedNodes([nodeId], resumeSourceRunId, "single");
-          }
-        }}
+        onRerunFailed={() => rerunFailed()}
+        onRunFromFailedNode={(nodeId) =>
+          runFromNode(nodeId, resumeSourceRunId ?? undefined)
+        }
         isRunning={isRunning}
         iteration={currentIteration}
         environments={environments}
@@ -1898,6 +1997,36 @@ export function WorkflowCanvas({
         />
       )}
 
+      {stepMenu && (
+        <ContextMenu
+          x={stepMenu.x}
+          y={stepMenu.y}
+          label="Step actions"
+          onClose={() => setStepMenu(null)}
+          items={[
+            {
+              key: "run-from",
+              icon: Play,
+              label: "Run from here",
+              onSelect: () => useCanvasStore.getState().runFromNode(stepMenu.nodeId),
+            },
+            {
+              key: "duplicate",
+              icon: Files,
+              label: "Duplicate",
+              separated: true,
+              onSelect: () => useCanvasStore.getState().duplicateNode(stepMenu.nodeId),
+            },
+            {
+              key: "copy",
+              icon: Copy,
+              label: "Copy",
+              onSelect: () => useCanvasStore.getState().copyNode(stepMenu.nodeId),
+            },
+          ]}
+        />
+      )}
+
       {canvasPrefs.tipsEnabled && canvasTip && (
         <CanvasTip
           tip={canvasTip}
@@ -1911,6 +2040,7 @@ export function WorkflowCanvas({
       <CommandPalette
         open={isCommandPaletteOpen}
         commands={commands}
+        workspaceId={scope.workspaceId ?? null}
         onClose={() => setIsCommandPaletteOpen(false)}
       />
 
@@ -1976,10 +2106,20 @@ export function WorkflowCanvas({
           }}
           {...(historyRunId ? { highlightRunId: historyRunId } : {})}
           onSelectRun={loadHistoricalRun}
+          onRerunFailed={(runId) => rerunFailed(runId)}
           onShowTimeline={(runId) => {
             setTimelineRunId(runId);
             setShowHistory(false);
           }}
+        />
+      )}
+
+      {showVersionHistory && scope.workspaceId && workflowId && (
+        <VersionHistoryDialog
+          workspaceId={scope.workspaceId}
+          workflowId={workflowId}
+          onClose={() => setShowVersionHistory(false)}
+          onRestore={restoreRevision}
         />
       )}
 
@@ -1995,6 +2135,7 @@ export function WorkflowCanvas({
           isOpen={showImportToNodes}
           onClose={() => setShowImportToNodes(false)}
           workflowId={workflowId ?? ""}
+          onTemplatesSaved={handleTemplatesSaved}
         />
       )}
 

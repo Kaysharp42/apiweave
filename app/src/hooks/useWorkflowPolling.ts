@@ -16,6 +16,7 @@ import {
 } from "../utils/apiweaveClient";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
 import {
   MAX_ITERATION_DATA_BYTES,
   parseIterationData,
@@ -228,11 +229,8 @@ interface FailedNodeOption {
 interface RunOptions {
   /** Run once per row: a data-driven run. */
   rows?: readonly IterationRow[];
-  resume?: {
-    mode: string;
-    sourceRunId: string | null;
-    startNodeIds: string[];
-  };
+  /** Rerun part of the workflow — see core/runner/resume.ts. */
+  resume?: RunResumeRequest;
 }
 
 interface UseWorkflowPollingParams {
@@ -259,7 +257,7 @@ interface UseWorkflowPollingParams {
   // is called in WorkflowCanvas. Awaited before a run so the scheduler loads
   // the current graph, not a copy stale by up to one autosave debounce.
   saveWorkflowRef?: MutableRefObject<
-    ((silent: boolean) => Promise<void>) | null
+    ((silent: boolean) => Promise<unknown>) | null
   > | null;
   /**
    * Optional run camera. It is told about the run from here rather than from the
@@ -279,13 +277,10 @@ interface UseWorkflowPollingResult {
   /** Parse a CSV or JSON data file and run the workflow once per row. */
   runWorkflowWithData: (file: File) => Promise<void>;
   cancelRun: () => Promise<void>;
-  runFromLastFailed: () => Promise<void>;
-  runAllFailed: () => void;
-  runFromFailedNodes: (
-    nodeIds: string[],
-    sourceRunId: string,
-    mode?: string,
-  ) => void;
+  /** Run from `nodeId` on, reusing `fromRunId`'s results upstream (default: the latest run). */
+  runFromNode: (nodeId: string, fromRunId?: string) => void;
+  /** Rerun the steps `fromRunId` failed, and what follows them (default: the latest failed run). */
+  rerunFailed: (fromRunId?: string) => void;
   resumeOptions: FailedNodeOption[];
   resumeSourceRunId: string | null;
   isResumeLoading: boolean;
@@ -348,6 +343,9 @@ export default function useWorkflowPolling({
   // — it is handed to a live playback timer and to an IPC subscription.
   const cameraRef = useRef(camera);
   cameraRef.current = camera;
+  // Read for failed-node labels, without making the failed-run lookup depend on every repaint.
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
 
   const resumeOptions = useMemo(
     () => latestFailedRun?.failedNodes ?? [],
@@ -379,11 +377,15 @@ export default function useWorkflowPolling({
         return { runId: null, failedNodes: [] };
       }
 
-      const failedNodes = (run.failedNodes ?? []).map((nodeId) => ({
-        nodeId,
-        label: nodeId,
-        type: "unknown",
-      }));
+      const failedNodes = (run.failedNodes ?? []).map((nodeId) => {
+        const node = nodesRef.current.find((candidate) => candidate.id === nodeId);
+        const label = (node?.data as { label?: unknown } | undefined)?.label;
+        return {
+          nodeId,
+          label: typeof label === "string" && label.trim() ? label : nodeId,
+          type: node?.type ?? "unknown",
+        };
+      });
 
       const nextLatest = { runId: run.runId, failedNodes };
       latestFailedRunRef.current = nextLatest;
@@ -511,7 +513,7 @@ export default function useWorkflowPolling({
    * Extracted because a run this canvas did not start needs exactly this too —
    * see `adoptRun`. Nothing here depends on *who* started the run.
    */
-  const clearCanvasForRun = useCallback(() => {
+  const clearCanvasForRun = useCallback((resumed = false) => {
     stopStream();
     // Anything the previous run's playback had not finished telling is not
     // context for this one.
@@ -519,9 +521,12 @@ export default function useWorkflowPolling({
     runFinishedRef.current = false;
     // Recomputed per run, and before the subscription exists, so the filter
     // in `handleEvent` is already in place for the first event that lands.
-    entryNodeIdsRef.current = new Set(
-      nodes.filter((node) => node.type === "start").map((node) => node.id),
-    );
+    // A rerun never passes through Start: its entries report themselves.
+    entryNodeIdsRef.current = resumed
+      ? new Set()
+      : new Set(
+          nodes.filter((node) => node.type === "start").map((node) => node.id),
+        );
     setNodes((nds) =>
       nds.map((node) => ({
         ...node,
@@ -680,7 +685,7 @@ export default function useWorkflowPolling({
       isStartingRef.current = true;
 
       try {
-        clearCanvasForRun();
+        clearCanvasForRun(runOptions.resume !== undefined);
 
         const runEnvId =
           selectedEnvironment && selectedEnvironment.trim()
@@ -693,10 +698,6 @@ export default function useWorkflowPolling({
         // the stale graph against external systems.
         await saveWorkflowRef?.current?.(false);
 
-        // ponytail: resume (run-from-failed) is not forwarded — `runs.create`'s
-        // input schema is .strict() and the scheduler's resume path isn't wired
-        // yet, so this triggers a full run. Restore once the composition-root
-        // enqueue handler + resume plumbing land (deferred Task 13/21 wiring).
         const request = {
           workspaceId,
           workflowId,
@@ -707,7 +708,9 @@ export default function useWorkflowPolling({
         // from the run-started broadcast like any run it did not start.
         const run = runOptions.rows
           ? await apiweave.runs.createIterations({ ...request, rows: runOptions.rows })
-          : await apiweave.runs.create(request);
+          : await apiweave.runs.create(
+              runOptions.resume ? { ...request, resume: runOptions.resume } : request,
+            );
 
         attachToRun(run.runId, run.iteration ?? null);
       } catch (error) {
@@ -870,68 +873,26 @@ export default function useWorkflowPolling({
     }
   }, [workspaceId, choreography]);
 
-  const runFromFailedNodes = useCallback(
-    (nodeIds: string[], sourceRunId: string, mode = "single") => {
-      if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
-        toast.error("No failed node is available to resume");
-        return;
-      }
-
-      const resume = {
-        mode,
-        sourceRunId,
-        startNodeIds: nodeIds,
-      };
-
-      if (mode === "all-failed") {
-        toast.info(`Running from ${nodeIds.length} failed node(s)`);
-      } else {
-        toast.info(`Running from failed node: ${nodeIds[0] ?? ""}`);
-      }
-
-      executeWorkflow({ resume });
+  const runFromNode = useCallback(
+    (nodeId: string, fromRunId?: string) => {
+      void executeWorkflow({
+        resume: fromRunId ? { fromRunId, nodeId } : { nodeId },
+      });
     },
     [executeWorkflow],
   );
 
-  const runFromLastFailed = useCallback(async () => {
-    const latest = latestFailedRunRef.current;
-    let options = latest?.failedNodes ?? [];
-    let sourceRunId = latest?.runId ?? null;
-
-    if (!sourceRunId || options.length === 0) {
-      const latest = await refreshLatestFailedRun();
-      options = latest.failedNodes;
-      sourceRunId = latest.runId;
-    }
-
-    if (!sourceRunId || options.length === 0) {
-      toast.error("No failed run available to resume");
-      return;
-    }
-
-    const firstNode = options[0];
-    if (firstNode) {
-      runFromFailedNodes([firstNode.nodeId], sourceRunId, "single");
-    }
-  }, [refreshLatestFailedRun, runFromFailedNodes]);
-
-  const runAllFailed = useCallback(() => {
-    const latest = latestFailedRunRef.current;
-    const sourceRunId = latest?.runId ?? null;
-    const options = latest?.failedNodes ?? [];
-
-    if (!sourceRunId || options.length === 0) {
-      toast.error("No failed run available to resume");
-      return;
-    }
-
-    runFromFailedNodes(
-      options.map((opt) => opt.nodeId),
-      sourceRunId,
-      "all-failed",
-    );
-  }, [runFromFailedNodes]);
+  const rerunFailed = useCallback(
+    (fromRunId?: string) => {
+      const source = fromRunId ?? latestFailedRunRef.current?.runId;
+      if (!source) {
+        toast.error("No failed run to rerun");
+        return;
+      }
+      void executeWorkflow({ resume: { fromRunId: source } });
+    },
+    [executeWorkflow],
+  );
 
   const loadHistoricalRun = useCallback(
     async (run: { runId: string }) => {
@@ -971,9 +932,8 @@ export default function useWorkflowPolling({
     runWorkflow,
     runWorkflowWithData,
     cancelRun,
-    runFromLastFailed,
-    runAllFailed,
-    runFromFailedNodes,
+    runFromNode,
+    rerunFailed,
     resumeOptions,
     resumeSourceRunId,
     isResumeLoading,

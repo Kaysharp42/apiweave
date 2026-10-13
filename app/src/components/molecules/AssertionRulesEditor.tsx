@@ -2,6 +2,8 @@ import { CheckCircle2, Info, Plus, Trash2 } from "lucide-react";
 import ButtonSelect from "../ButtonSelect";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
+import { TextArea } from "../atoms/TextArea";
+import { ASSERTION_VALUE_TYPES } from "@shared/analysis/assertion_expected";
 import { Card } from "./Card";
 import { FormField } from "./FormField";
 import type {
@@ -16,6 +18,7 @@ const QUICK_ADD_OPTIONS: SelectOption[] = [
   { label: "Response time < 1000ms", value: "response-time-1000" },
   { label: "Body contains field", value: "body-contains-field" },
   { label: "Body field equals", value: "body-field-equals" },
+  { label: "Body matches JSON Schema", value: "body-matches-schema" },
 ];
 
 const QUICK_ADD_RULES: Record<string, AssertionItem[]> = {
@@ -50,6 +53,14 @@ const QUICK_ADD_RULES: Record<string, AssertionItem[]> = {
       expectedValue: "",
     },
   ],
+  "body-matches-schema": [
+    {
+      source: "prev",
+      path: "response.body",
+      operator: "matchesSchema",
+      expectedValue: '{\n  "type": "object",\n  "required": []\n}',
+    },
+  ],
 };
 
 const OPERATORS: AssertionItem["operator"][] = [
@@ -64,8 +75,30 @@ const OPERATORS: AssertionItem["operator"][] = [
   "count",
   "exists",
   "notExists",
+  "matches",
+  "notMatches",
+  "type",
+  "matchesSchema",
 ];
 const VALUELESS_OPERATORS: AssertionItem["operator"][] = ["exists", "notExists"];
+const TYPE_OPTIONS: SelectOption[] = ASSERTION_VALUE_TYPES.map((type) => ({
+  label: type,
+  value: type,
+}));
+
+/** The hint under Expected value: what each operator wants there. */
+function getExpectedHint(operator: AssertionItem["operator"]): string {
+  if (operator === "matches" || operator === "notMatches")
+    return "A regular expression: ^ord_\\d+$, or /pattern/flags such as /^ok$/i. Values over 100,000 characters fail the rule.";
+  if (operator === "matchesSchema")
+    return "A JSON Schema (draft 2020-12, or the draft its $schema names). Point the path at response.body to check the whole body.";
+  return "Strings, numbers, booleans, and template variables are accepted.";
+}
+
+/** The rule editor works in strings; a schema written by an agent or an import may be an object. */
+function expectedText(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
 
 const SELECT_BUTTON_CLASS =
   "flex h-10 w-full items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark";
@@ -88,7 +121,12 @@ function getRuleSummary(rule: AssertionItem): string {
     rule.source === "status"
       ? "status"
       : `${rule.source}${rule.path ? `.${rule.path}` : ""}`;
-  const expected = rule.expectedValue ? ` ${rule.expectedValue}` : "";
+  const expected =
+    rule.operator === "matchesSchema"
+      ? ""
+      : rule.expectedValue
+        ? ` ${rule.expectedValue}`
+        : "";
   return `${target} ${rule.operator}${expected}`;
 }
 
@@ -138,7 +176,8 @@ export function AssertionRulesEditor({
       <div className="space-y-3">
         {rules.map((rule, index) => (
           <Card
-            key={`${rule.source}-${rule.path}-${rule.operator}-${rule.expectedValue}-${index}`}
+            // By position: a key built from the rule's fields changed on every keystroke and remounted the card mid-edit.
+            key={index}
             title={getRuleSummary(rule)}
             icon={CheckCircleCardIcon}
             collapsible
@@ -218,17 +257,46 @@ export function AssertionRulesEditor({
               </div>
             </FormField>
 
-            {!VALUELESS_OPERATORS.includes(rule.operator) && (
+            {rule.operator === "type" && (
+              <FormField label="Expected type">
+                <ButtonSelect
+                  options={TYPE_OPTIONS}
+                  value={rule.expectedValue}
+                  placeholder="Choose a type"
+                  onChange={(value) => updateRule(index, { expectedValue: value })}
+                  buttonClass={SELECT_BUTTON_CLASS}
+                />
+              </FormField>
+            )}
+
+            {rule.operator === "matchesSchema" && (
+              <FormField label="JSON Schema" hint={getExpectedHint(rule.operator)}>
+                <TextArea
+                  aria-label="JSON Schema"
+                  value={expectedText(rule.expectedValue)}
+                  onChange={(event) =>
+                    updateRule(index, { expectedValue: event.target.value })
+                  }
+                  rows={10}
+                  spellCheck={false}
+                  className="font-mono"
+                />
+              </FormField>
+            )}
+
+            {!VALUELESS_OPERATORS.includes(rule.operator) &&
+              rule.operator !== "type" &&
+              rule.operator !== "matchesSchema" && (
               <FormField
                 label="Expected value"
-                hint="Strings, numbers, booleans, and template variables are accepted."
+                hint={getExpectedHint(rule.operator)}
               >
                 <Input
                   value={rule.expectedValue}
                   onChange={(event) =>
                     updateRule(index, { expectedValue: event.target.value })
                   }
-                  placeholder="200"
+                  placeholder={rule.operator.endsWith("atches") ? "^ord_\\d+$" : "200"}
                   className="font-mono"
                 />
               </FormField>

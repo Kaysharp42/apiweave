@@ -158,4 +158,26 @@ describe("ResponseInspector large bodies", () => {
     render(<ResponseInspector response={{ ...response, body }} />);
     expect(screen.queryByText(/row-0/)).not.toBeInTheDocument();
   });
+
+  test("filtering reaches matches inside size-collapsed collections", () => {
+    const body = Array.from({ length: 150 }, (_, i) => ({ name: `user-${i}` }));
+    render(<ResponseInspector response={{ ...response, body }} filterQuery="user-142" />);
+    expect(screen.getByText(/user-142/)).toBeInTheDocument();
+    expect(screen.queryByText(/user-7"/)).not.toBeInTheDocument();
+  });
+
+  test("starting a filter on a large body mounts only the matches", () => {
+    const body = Object.fromEntries(
+      Array.from({ length: 50 }, (_, group) => [
+        `group${group}`,
+        Array.from({ length: 100 }, (_, i) => ({ name: `item ${group * 100 + i}`, padding: "x".repeat(200) })),
+      ]),
+    );
+    const { container, rerender } = render(<ResponseInspector response={{ ...response, body }} />);
+    rerender(<ResponseInspector response={{ ...response, body }} filterQuery="item 4999" />);
+    // Swapping the collapse rule before the debounced search applied would
+    // mount all 5000 items here.
+    expect(container.querySelectorAll("*").length).toBeLessThan(2000);
+    expect(screen.getByText(/item 4999/)).toBeInTheDocument();
+  });
 });

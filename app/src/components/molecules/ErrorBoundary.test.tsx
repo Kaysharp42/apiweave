@@ -1,7 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { confirmCloseAll } from "../../stores/PendingEditsStore";
+
+vi.mock("../../stores/PendingEditsStore", () => ({
+  confirmCloseAll: vi.fn(),
+}));
 
 function Boom(): never {
   throw new Error("inspector exploded");
@@ -31,27 +36,45 @@ describe("ErrorBoundary", () => {
     );
   });
 
-  it("reloads the window from the Reload action", async () => {
+  describe("Reload", () => {
     const reload = vi.fn();
     const original = window.location;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...original, reload },
+    beforeAll(() => {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: { ...original, reload },
+      });
     });
-    try {
-      render(
-        <ErrorBoundary name="app">
-          <Boom />
-        </ErrorBoundary>,
-      );
-      await userEvent.click(screen.getByRole("button", { name: "Reload" }));
-      expect(reload).toHaveBeenCalledTimes(1);
-    } finally {
+    afterAll(() => {
       Object.defineProperty(window, "location", {
         configurable: true,
         value: original,
       });
+    });
+    beforeEach(() => reload.mockClear());
+
+    async function clickReload(): Promise<void> {
+      render(
+        <ErrorBoundary name="page">
+          <Boom />
+        </ErrorBoundary>,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Reload" }));
     }
+
+    it("reloads once unsaved work is settled", async () => {
+      vi.mocked(confirmCloseAll).mockResolvedValue(true);
+      await clickReload();
+      expect(confirmCloseAll).toHaveBeenCalled();
+      await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    });
+
+    it("stays put when the unsaved-changes prompt is cancelled", async () => {
+      vi.mocked(confirmCloseAll).mockResolvedValue(false);
+      await clickReload();
+      expect(confirmCloseAll).toHaveBeenCalled();
+      expect(reload).not.toHaveBeenCalled();
+    });
   });
 
   it("copies the error details", async () => {

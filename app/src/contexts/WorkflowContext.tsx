@@ -6,38 +6,18 @@ import {
   useEffect,
   useMemo,
   useRef,
-  type ReactNode,
 } from "react";
 import { usePalette } from "./PaletteContext";
 import useSidebarStore from "../stores/SidebarStore";
 import { apiweave } from "../utils/apiweaveClient";
-import type { Project } from "../types/Project";
 import type { JsonValue } from "@shared/types/JsonValue";
-
-interface WorkflowVariables {
-  [key: string]: JsonValue;
-}
-
-interface WorkflowContextValue {
-  workflowId: string | undefined;
-  variables: WorkflowVariables;
-  collections: Project[];
-  isLoadingCollections: boolean;
-  currentCollectionId: string | null;
-  currentCollection: Project | null;
-  setVariables: React.Dispatch<React.SetStateAction<WorkflowVariables>>;
-  setCurrentCollectionId: React.Dispatch<React.SetStateAction<string | null>>;
-  updateVariable: (varName: string, varValue: JsonValue) => void;
-  deleteVariable: (varName: string) => void;
-  deleteVariablesWithCleanup: (varNames: string[]) => void;
-  updateVariables: (newVariables: WorkflowVariables) => void;
-  registerExtractors: (extractors: WorkflowVariables) => void;
-  fetchCollections: () => Promise<void>;
-  refreshCollectionsAndWorkflows: () => void;
-  onVariablesDeletedRef: React.MutableRefObject<
-    ((varNames: string[]) => void) | null
-  >;
-}
+import type {
+  WorkflowAction,
+  WorkflowContextValue,
+  WorkflowProviderProps,
+  WorkflowState,
+  WorkflowVariables,
+} from "../types";
 
 const WorkflowContext = createContext<WorkflowContextValue | null>(null);
 
@@ -48,12 +28,6 @@ export const useWorkflow = (): WorkflowContextValue => {
   }
   return context;
 };
-
-interface WorkflowProviderProps {
-  children: ReactNode;
-  workflowId: string | undefined;
-  initialWorkflow?: unknown;
-}
 
 const shallowEqual = (
   left: Record<string, unknown>,
@@ -68,33 +42,6 @@ const shallowEqual = (
   }
   return true;
 };
-
-type WorkflowState = {
-  variables: WorkflowVariables;
-  /**
-   * The variables the canvas's extractors defined last time they were
-   * registered. Kept in state, not a ref, so the reducer stays pure: the next
-   * registration needs them to tell extractor variables from manual ones.
-   */
-  extractorVariables: WorkflowVariables;
-  collections: Project[];
-  isLoadingCollections: boolean;
-  currentCollectionId: string | null;
-};
-
-type WorkflowAction =
-  | { type: "set-variables"; value: React.SetStateAction<WorkflowVariables> }
-  | { type: "set-collections"; value: Project[] }
-  | { type: "set-loading-collections"; value: boolean }
-  | {
-      type: "set-current-collection-id";
-      value: React.SetStateAction<string | null>;
-    }
-  | { type: "update-variable"; varName: string; varValue: JsonValue }
-  | { type: "delete-variable"; varName: string }
-  | { type: "delete-variables"; varNames: string[] }
-  | { type: "update-variables"; value: WorkflowVariables }
-  | { type: "register-extractors"; value: WorkflowVariables };
 
 const resolveSetStateAction = <T,>(
   currentValue: T,
@@ -198,6 +145,7 @@ export const WorkflowProvider = ({
             cookies?: string;
             timeout?: number;
             openapiMeta?: unknown;
+            responseSchemas?: Record<string, JsonValue>;
           };
         }[];
       }
@@ -264,6 +212,9 @@ export const WorkflowProvider = ({
       cookies: node.config?.cookies ?? "",
       timeout: node.config?.timeout ?? 30,
       openapiMeta: node.config?.openapiMeta ?? null,
+      ...(node.config?.responseSchemas
+        ? { responseSchemas: node.config.responseSchemas }
+        : {}),
     }));
 
     addImportedGroup({

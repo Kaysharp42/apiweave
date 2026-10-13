@@ -1,3 +1,5 @@
+import type { JsonValue } from "@shared/types/JsonValue";
+
 export interface PreviewNode {
   type?: string;
   label?: string;
@@ -10,5 +12,6 @@ export interface PreviewNode {
     pathVariables?: string;
     body?: string;
     timeout?: number;
+    responseSchemas?: Record<string, JsonValue>;
   };
 }

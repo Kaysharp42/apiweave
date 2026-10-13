@@ -46,6 +46,41 @@ describe("sanitizeExportValue", () => {
     expect((auth["basic"] as Record<string, unknown>)["password"]).toBe("{{env.PASSWORD}}")
   })
 
+  it("redacts a credential leaf in GraphQL variables the way it does in a body", () => {
+    const sanitized = sanitizeExportValue({
+      bodyType: "graphql",
+      graphql: { query: "mutation Login($password: String!) { login(password: $password) }", variables: '{"user": "alice", "password": "hunter2", "otp": "{{variables.otp}}"}' },
+    }) as { graphql: { query: string; variables: string } }
+    expect(sanitized.graphql.query).toBe("mutation Login($password: String!) { login(password: $password) }")
+    expect(sanitized.graphql.variables).not.toContain("hunter2")
+    expect(sanitized.graphql.variables).toContain("alice")
+    expect(sanitized.graphql.variables).toContain("{{variables.otp}}")
+  })
+
+  it("keeps an AWS Signature V4 config's secret references and blanks a literal in their place", () => {
+    const sanitized = sanitizeExportValue({
+      auth: {
+        type: "awsSigV4",
+        awsSigV4: { accessKeyId: "AKID", secretAccessKey: "literal-secret-key", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" },
+      },
+    }) as { auth: { awsSigV4: Record<string, unknown> } }
+    expect(sanitized.auth.awsSigV4).toEqual({ accessKeyId: "AKID", secretAccessKey: "", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" })
+  })
+
+  it("keeps a JWT signing key's secret reference and blanks a literal", () => {
+    const exported = (secret: string) =>
+      (sanitizeExportValue({ auth: { type: "jwt", jwt: { algorithm: "RS256", secret, payload: '{"sub": "ci"}' } } }) as { auth: { jwt: unknown } }).auth.jwt
+    expect(exported("{{secrets.JWT_KEY}}")).toEqual({ algorithm: "RS256", secret: "{{secrets.JWT_KEY}}", payload: '{"sub": "ci"}' })
+    expect(exported("-----BEGIN PRIVATE KEY-----abc-----END PRIVATE KEY-----")).toEqual({ algorithm: "RS256", secret: "", payload: '{"sub": "ci"}' })
+  })
+
+  it("keeps a Digest password's secret reference and blanks a literal", () => {
+    const exported = (password: string) =>
+      (sanitizeExportValue({ auth: { type: "digest", digest: { username: "alice", password } } }) as { auth: { digest: unknown } }).auth.digest
+    expect(exported("{{secrets.PASS}}")).toEqual({ username: "alice", password: "{{secrets.PASS}}" })
+    expect(exported("hunter2")).toEqual({ username: "alice", password: "" })
+  })
+
   it("keeps an OAuth 2.0 config's secret references and blanks anything else in their place", () => {
     const sanitized = sanitizeExportValue({
       auth: {

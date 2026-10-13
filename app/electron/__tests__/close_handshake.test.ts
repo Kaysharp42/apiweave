@@ -100,4 +100,17 @@ describe("createQuitGate", () => {
     expect(mayQuit()).toBe(false)
     expect(ask).toHaveBeenCalledTimes(2)
   })
+
+  it("runs the caller's own quit instead once the renderer agrees", async () => {
+    const quit = vi.fn()
+    const install = vi.fn()
+    const mayQuit = createQuitGate(() => Promise.resolve(true), quit)
+
+    expect(mayQuit(install)).toBe(false)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(quit).not.toHaveBeenCalled()
+    expect(mayQuit()).toBe(true)
+  })
 })

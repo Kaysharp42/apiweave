@@ -7,7 +7,6 @@ import type { Workspace } from "@shared/types/Workspace"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import {
   assertNoSecretValues,
-  containsCredentialMaterial,
   isCredentialFreeReference,
   isEmptySyncValue,
   isForbiddenSecretStorageKey,
@@ -16,9 +15,11 @@ import {
   mapForbiddenKeyFilteredEntries,
   redactBodyLeaves,
   referenceOrBlank,
+  SECRET_REFERENCE_AUTH_FIELDS,
   sanitizeExtractorValues,
   sanitizeUrlWithReferences,
 } from "../services/secret_utils"
+import { containsCredentialMaterial } from "@shared/credentials/credentials"
 import type { SyncProvider } from "./SyncProvider"
 
 const textEncoder = new TextEncoder()
@@ -267,6 +268,14 @@ const sanitizeKeyValueField: ConfigFieldSanitizer = (value) =>
 
 const CONFIG_FIELD_SANITIZERS: Readonly<Record<string, ConfigFieldSanitizer>> = {
   body: (value) => (typeof value === "string" ? sanitizeBodyText(value) : undefined),
+  // A GraphQL request's variables are JSON text, judged the way a body is.
+  graphql: (value) =>
+    isRecord(value)
+      ? {
+          ...(sanitizeValue(value, true) as Record<string, JsonValue>),
+          ...(typeof value["variables"] === "string" ? { variables: sanitizeBodyText(value["variables"]) } : {}),
+        }
+      : undefined,
   url: (value) => (typeof value === "string" ? sanitizeUrl(value) : undefined),
   auth: (value) => (isRecord(value) ? sanitizeAuthConfig(value) : undefined),
   fileUploads: (value) => (Array.isArray(value) ? sanitizeFileUploads(value) : undefined),
@@ -315,7 +324,12 @@ function sanitizeFileUploads(items: readonly unknown[]): JsonValue[] {
 // key-name heuristic happened to fire while walking the copy.
 function sanitizeAuthConfig(auth: Record<string, unknown>): JsonValue {
   const sanitized = sanitizeValue(auth, true) as Record<string, JsonValue>
-  const leaves = [["bearer", ["token"]], ["basic", ["password"]], ["apiKey", ["value"]], ["oauth2", ["clientSecret", "tokenSecret"]]] as const
+  const leaves: ReadonlyArray<readonly [string, readonly string[]]> = [
+    ["bearer", ["token"]],
+    ["basic", ["password"]],
+    ["apiKey", ["value"]],
+    ...SECRET_REFERENCE_AUTH_FIELDS,
+  ]
   for (const [parent, names] of leaves) {
     const raw = auth[parent]
     if (!isRecord(raw)) continue

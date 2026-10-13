@@ -16,7 +16,7 @@ export interface ProjectRunScheduler {
   enqueue(request: {
     readonly workspaceId: string
     readonly workflowId: string
-    readonly selectedEnvironmentId: string | null
+    readonly selectedEnvironmentId?: string | null
     readonly agent?: string
     readonly data?: Readonly<Record<string, JsonValue>>
   }): string
@@ -38,8 +38,8 @@ export interface ProjectRunnerDeps {
 export interface ProjectRunRequest {
   readonly workspaceId: string
   readonly projectId: string
-  /** Every workflow runs against this environment; null runs them with none. */
-  readonly environmentId: string | null
+  /** Every workflow runs against this environment; null runs them with none; omitted, each runs against its own saved one. */
+  readonly environmentId?: string | null
   /** Set when an agent started the project run over MCP: each workflow's run then needs the user's approval to send secrets. */
   readonly agent?: string
   /** A data row every workflow of this project run reads as `{{data.<column>}}`: one iteration of a data-driven project run. */
@@ -113,7 +113,7 @@ export class ProjectRunner {
     if (project === undefined || project.workspaceId !== request.workspaceId) {
       throw new NotFoundError(`project ${request.projectId} not found`)
     }
-    if (request.environmentId !== null) {
+    if (typeof request.environmentId === "string") {
       const environment = this.deps.environments.getById(request.environmentId)
       if (environment === undefined || environment.workspaceId !== request.workspaceId) {
         throw new NotFoundError(`environment ${request.environmentId} not found`)
@@ -123,7 +123,7 @@ export class ProjectRunner {
     const items = planProjectRun(project, members)
     if (items.length === 0) throw new ValidationError("This project has no enabled workflows to run.")
 
-    const projectRun = this.deps.projectRuns.create({ projectId: project.collectionId, environmentId: request.environmentId, items })
+    const projectRun = this.deps.projectRuns.create({ projectId: project.collectionId, environmentId: request.environmentId ?? null, items })
     const active: ActiveProjectRun = { controller: new AbortController(), currentRunId: null }
     this.active.set(projectRun.projectRunId, active)
     this.deps.onChange?.(projectRun)
@@ -166,7 +166,7 @@ export class ProjectRunner {
           const runId = this.deps.scheduler.enqueue({
             workspaceId: request.workspaceId,
             workflowId: item.workflowId,
-            selectedEnvironmentId: request.environmentId,
+            ...(request.environmentId !== undefined ? { selectedEnvironmentId: request.environmentId } : {}),
             ...(request.agent !== undefined ? { agent: request.agent } : {}),
             ...(request.data !== undefined ? { data: request.data } : {}),
           })

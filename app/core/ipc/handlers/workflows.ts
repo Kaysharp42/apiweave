@@ -11,6 +11,9 @@ import {
   WorkflowSearchPageSchema,
   WorkflowGetViewSchema,
   NodeSearchPageSchema,
+  WorkspaceNodeSearchPageSchema,
+  WorkflowRevisionSchema,
+  WorkflowRevisionSummarySchema,
 } from "@shared/zod-schemas"
 import type { WorkflowSummaryFilters } from "../../repositories/WorkflowRepository"
 import {
@@ -30,7 +33,7 @@ import { DebugContextService } from "../../services/debug_context"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
-import { listResult } from "./common"
+import { listResult, writeSource } from "./common"
 
 const ws = z.string().min(1)
 
@@ -183,6 +186,12 @@ const searchNodesInput = z.object({
   }
 })
 
+const searchWorkspaceNodesInput = z.object({
+  workspaceId: ws,
+  query: z.string().trim().min(1).max(200),
+  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional(),
+}).strict()
+
 const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
 
 // MCP-only meta field (stripped before it reaches the repository): the service
@@ -279,16 +288,23 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
     }),
   })
 
+  router.register("workflows", "searchWorkspaceNodes", {
+    input: searchWorkspaceNodesInput,
+    output: WorkspaceNodeSearchPageSchema,
+    handle: (i) => workflows.searchWorkspaceNodes(i.workspaceId, i.query, i.limit ?? NODE_SEARCH_DEFAULT_LIMIT),
+  })
+
   router.register("workflows", "update", {
     input: updateInput.extend({ layout: layoutFlag }).strict(),
     output: WorkflowSchema,
-    handle: ({ workspaceId, workflowId, layout, expectedRevision, ...patch }) => workflows.update(
+    handle: ({ workspaceId, workflowId, layout, expectedRevision, ...patch }, context) => workflows.update(
       workspaceId,
       workflowId,
       patch,
       {
         ...(layout === undefined ? {} : { layout }),
         ...(expectedRevision === undefined ? {} : { expectedRevision }),
+        source: writeSource(context),
       },
     ),
   })
@@ -296,21 +312,42 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   router.register("workflows", "patch", {
     input: patchInput.extend({ layout: layoutFlag }).strict(),
     output: WorkflowSchema,
-    handle: ({ workspaceId, workflowId, layout, ...patch }) => workflows.patch(
+    handle: ({ workspaceId, workflowId, layout, ...patch }, context) => workflows.patch(
       workspaceId,
       workflowId,
       layout === true ? { ...patch, layout: true } : layout === false ? { ...patch, layout: false } : patch,
+      writeSource(context),
     ),
   })
 
   router.register("workflows", "layout", {
     input: idInput.extend({ direction: layoutDirection }).strict(),
     output: WorkflowSchema,
-    handle: async ({ workspaceId, workflowId, direction }) => {
+    handle: async ({ workspaceId, workflowId, direction }, context) => {
       const existing = await workflows.get(workspaceId, workflowId)
       const nodes = layoutWorkflowNodes(existing.nodes, existing.edges, direction ?? "LR")
-      return workflows.update(workspaceId, workflowId, { nodes })
+      return workflows.update(workspaceId, workflowId, { nodes }, { source: writeSource(context) })
     },
+  })
+
+  // Version history. The list is metadata only and on the MCP whitelist; the
+  // content read and the restore are the renderer's (see core/mcp/tools.ts).
+  router.register("workflows", "listRevisions", {
+    input: idInput,
+    output: z.array(WorkflowRevisionSummarySchema),
+    handle: (i) => workflows.listRevisions(i.workspaceId, i.workflowId),
+  })
+
+  router.register("workflows", "getRevision", {
+    input: idInput.extend({ revisionId: z.string().min(1) }).strict(),
+    output: WorkflowRevisionSchema,
+    handle: (i) => workflows.getRevision(i.workspaceId, i.workflowId, i.revisionId),
+  })
+
+  router.register("workflows", "restoreRevision", {
+    input: idInput.extend({ revisionId: z.string().min(1), expectedRevision: RevisionSchema }).strict(),
+    output: WorkflowSchema,
+    handle: (i) => workflows.restoreRevision(i.workspaceId, i.workflowId, i.revisionId, i.expectedRevision),
   })
 
   router.register("workflows", "delete", {

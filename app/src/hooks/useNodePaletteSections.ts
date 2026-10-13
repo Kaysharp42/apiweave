@@ -183,22 +183,31 @@ export function useNodePaletteSections(
           label: item.label ?? item.url ?? "Request",
           description: item.url ?? "",
           method: item.method ?? "GET",
-          config: {
-            method: item.method ?? "GET",
-            url: item.url ?? "",
-            queryParams: item.queryParams ?? "",
-            pathVariables: item.pathVariables ?? "",
-            headers: item.headers ?? "",
-            cookies: item.cookies ?? "",
-            body: item.body ?? "",
-            timeout: item.timeout ?? 30,
-            openapiMeta: item.openapiMeta ?? null,
-          },
+          config: importedItemConfig(item),
         })),
       });
     });
     return sections;
   }, [importedGroups, loadedWorkspaceId, presets, workspaceId]);
+}
+
+/**
+ * The node config an imported request drops as. Only keys the node schema
+ * accepts: a `null` openapiMeta made the dropped node fail every save.
+ */
+export function importedItemConfig(item: Partial<ImportedItem>): Record<string, unknown> {
+  return {
+    method: item.method ?? "GET",
+    url: item.url ?? "",
+    queryParams: item.queryParams ?? "",
+    pathVariables: item.pathVariables ?? "",
+    headers: item.headers ?? "",
+    cookies: item.cookies ?? "",
+    body: item.body ?? "",
+    timeout: item.timeout ?? 30,
+    ...(item.openapiMeta ? { openapiMeta: item.openapiMeta } : {}),
+    ...(item.responseSchemas ? { responseSchemas: item.responseSchemas } : {}),
+  };
 }
 
 /** Keep only nodes whose label, method or description matches `query`. */

@@ -18,6 +18,7 @@ import {
   Frame,
   Ungroup,
   FileSpreadsheet,
+  FileClock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "../atoms/Badge";
@@ -38,13 +39,6 @@ const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
 const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps["resumeOptions"]> =
   [];
 
-// ponytail: resume (run-from-failed) UI is hidden — executeWorkflow ignores the
-// resume payload and always triggers a FULL run, so these controls would re-run
-// destructive/expensive API calls while telling the user otherwise. Flip to true
-// once the scheduler resume path is wired (deferred Task 13/21). See the matching
-// note in app/src/hooks/useWorkflowPolling.ts (executeWorkflow).
-const RESUME_ENABLED = false;
-
 export function CanvasToolbar({
   onSave,
   onUndo,
@@ -56,14 +50,14 @@ export function CanvasToolbar({
   canGroup,
   canUngroup,
   onHistory,
+  onVersionHistory,
   onJsonEditor,
   onImport,
   onCommandPalette,
   onRun,
   onRunWithData,
   onCancel,
-  onRunFromLastFailed,
-  onRunAllFailed,
+  onRerunFailed,
   onRunFromFailedNode,
   isRunning = false,
   iteration = null,
@@ -234,6 +228,17 @@ export function CanvasToolbar({
               showLabel={showLabels}
             />
           )}
+          {/* Icon-only at every density, like undo: it is the undo for what
+              undo cannot reach — a save, an agent's edit, a sync. */}
+          <IconButton
+            onClick={onVersionHistory}
+            tooltip="Version history"
+            aria-label="Version history"
+            variant="ghost"
+            size="sm"
+          >
+            <FileClock className="w-4 h-4" />
+          </IconButton>
           <ToolbarButton
             icon={Code}
             label="JSON"
@@ -413,11 +418,7 @@ export function CanvasToolbar({
             size="sm"
             onClick={isRunning && onCancel ? onCancel : onRun}
             disabled={isRunning && !onCancel}
-            className={
-              RESUME_ENABLED
-                ? "rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
-                : "h-8 whitespace-nowrap font-semibold"
-            }
+            className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
             icon={
               isRunning ? (
                 onCancel ? (
@@ -433,8 +434,6 @@ export function CanvasToolbar({
             {isRunning ? (onCancel ? "Cancel" : "Running…") : "Run"}
           </Button>
 
-          {RESUME_ENABLED && (
-          <>
           <IconButton
             onClick={() => setIsRunMenuOpen((prev) => !prev)}
             disabled={isRunning}
@@ -455,26 +454,14 @@ export function CanvasToolbar({
             <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node overflow-hidden z-50">
               <Button
                 onClick={() => {
-                  onRunFromLastFailed?.();
+                  onRerunFailed?.();
                   setIsRunMenuOpen(false);
                 }}
                 disabled={isRunning || !hasResumeOptions || isResumeLoading}
                 variant="ghost"
                 className="w-full rounded-none justify-start px-3 py-2 text-sm"
               >
-                Run from last failed node
-              </Button>
-
-              <Button
-                onClick={() => {
-                  onRunAllFailed?.();
-                  setIsRunMenuOpen(false);
-                }}
-                disabled={isRunning || !hasResumeOptions || isResumeLoading}
-                variant="ghost"
-                className="w-full rounded-none justify-start px-3 py-2 text-sm"
-              >
-                Run all failed nodes and continue
+                Rerun failed branches
               </Button>
 
               <div className="w-full h-px bg-border dark:bg-border-dark" />
@@ -505,12 +492,10 @@ export function CanvasToolbar({
                     className="w-full rounded-none justify-start px-3 py-2 text-sm"
                     title={opt.nodeId}
                   >
-                    {opt.label}
+                    Run from {opt.label}
                   </Button>
                 ))}
             </div>
-          )}
-          </>
           )}
         </div>
       </div>

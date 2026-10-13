@@ -64,6 +64,25 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **The environment editor lists the environment's secrets.** Its Secrets panel
+  read a field the app no longer fills, so it always said there were none. It
+  now lists the secrets stored for the environment.
+
+- **Node search no longer reads a password written into a URL.** The URL path
+  that node search matches (`workflows_searchNodes`) kept the whole URL when it
+  could not be parsed, such as `https://user:pass@{{env.HOST}}/login`, so a
+  literal password in it was searchable. Search now drops the scheme and
+  authority, and matches placeholders as written rather than percent-encoded.
+
+- **A request dragged from an imported OpenAPI group saves.** Its node carried
+  `openapiMeta`, which the workflow schema did not accept, so every save of the
+  workflow failed afterwards. The field is now part of the HTTP Request node, so
+  the `Check API` drift badge also survives a reload.
+
+- **Typing in an assertion rule no longer loses focus after each character.**
+  Each rule card was keyed by its own contents and remounted on every
+  keystroke.
+
 - **Imported Call Workflow nodes call the imported workflows.** Importing a
   project, in the app or with `apiweave run`, left each Call Workflow node
   pointing at the original workflow, so it failed. It now points at the
@@ -269,11 +288,130 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Import environment variables from a file.** **Import variables…** in the
+  environment editor reads a `.env` file, a flat JSON object or a Postman
+  environment export, previews each key as new, changed or unchanged, and keeps
+  or overwrites existing values as you choose. Keys that look like credentials
+  are imported as secrets by default: sealed into the environment's secret
+  store and never shown or written as plain variables. **Export .env** saves
+  the plain variables.
+
+- **Search workflows and nodes from the command palette.** `Ctrl+K` now finds
+  workflows by name and nodes in any workflow by label, method, URL path or
+  extractor name, with the match highlighted. Choosing a node opens its
+  workflow and centres the canvas on it.
+
+- **Keep tests in a git repository.** **Export to Folder** writes a project
+  as plain JSON: `project.json` (order, enabled / continue on fail, secret
+  names), one file per workflow under `workflows/` and one per environment
+  under `environments/`. Files are written deterministically (sorted keys,
+  nodes and edges by id, whole-pixel positions, no timestamps or revisions),
+  so a one-node change diffs as one line and teammates merge cleanly.
+  Exporting again updates the folder in place and removes only the files it
+  wrote for deleted or renamed workflows. **Import from Folder** creates or
+  updates the project by id; a changed workflow keeps its previous version in
+  history, an unchanged one is not touched, and one missing from the folder
+  is moved out of the project, not deleted. `apiweave run <folder>` runs the
+  folder in CI. Secret values are never written. See
+  `docs/guides/git-workflows.md`.
+- **Version history.** Every workflow keeps its earlier versions — the
+  workflow as it was before a change replaced it — so a bad auto-save, an
+  agent's edit, an import or a cloud sync can be undone. A version is kept at
+  most every 10 minutes of canvas editing and always before any other change;
+  the newest 50 are kept, for up to 90 days. **Version history** on the
+  toolbar shows what restoring a version would change and restores it, as a
+  change you can undo the same way. Versions stay on this computer. Agents can
+  list them (`workflows_listRevisions`); restoring is the user's.
+
+- **Rerun from a node, or rerun failed branches.** After fixing a failed step,
+  rerun only that part of the workflow: **Run from here** on a step (its node
+  menu or right-click), or **Rerun failed branches** from the Run menu or a
+  failed run in History. Upstream steps are not sent again — their stored
+  results and variables are reused, merges join the branches that passed, and
+  a rerun that would need a value history only holds masked is refused instead
+  of sending `<SECRET>`. The new run is marked **Rerun of** its source in
+  History. Agents pass `resume` to `runs_create`.
+
+- **JWT Bearer auth.** HTTP nodes can sign a fresh JWT for every request
+  (HS256, RS256 or ES256) from a payload template with placeholders, adding
+  `iat` and, by default, a five-minute `exp`, and send it as a bearer token or
+  in a header of your choice. The signing key is a `{{secrets.NAME}}`
+  reference (a PEM key that lost its line breaks still works), and every
+  signed token is masked in run history and reports.
+- **HTTP Digest auth.** HTTP nodes can authenticate with Digest (RFC 7616,
+  MD5 or SHA-256 and their `-sess` variants, `qop=auth`): the request is sent,
+  and answered once more with credentials when the server challenges it. The
+  password is a `{{secrets.NAME}}` reference.
+- **AWS Signature V4 auth.** HTTP nodes can sign their requests for AWS APIs
+  with an access key ID, a secret access key and an optional session token
+  (both `{{secrets.NAME}}` references), a region and a service. The request is
+  signed last, after the pre-request script, and again on every retry attempt;
+  a signed request does not follow redirects. Works in the CLI with secrets
+  from the environment.
+- **GraphQL requests.** HTTP nodes gain a GraphQL body type with a
+  highlighted query editor, a JSON variables editor and an optional operation
+  name. It is sent as `{query, variables, operationName}` JSON, or as query
+  parameters for a `GET`. Placeholders work in all three; the variables are a
+  JSON template, so a standalone `{{variables.id}}` can be a number. Postman
+  GraphQL bodies now import as GraphQL. To fail on a `200` that carries GraphQL
+  `errors`, assert `response.body.errors` **not exists**.
+- **Proxy, private CAs and client certificates (mTLS).** Settings > Network
+  sends every request through an http(s) proxy (with a bypass list and Basic
+  credentials), trusts the operating system's certificate store (on by
+  default, so a corporate root installed there just works in the packaged app,
+  which ignores `NODE_EXTRA_CA_CERTS`) and extra PEM CA files, and presents a
+  client certificate (PEM certificate and key, or PFX) to the hosts it names.
+  Files are checked when saved; the proxy password and passphrases are stored
+  encrypted and never shown again. The settings are not reachable over MCP. The
+  CLI gains `--proxy` (and honours `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`),
+  `--ca-cert`, `--use-system-ca` and `--client-cert host=cert,key[,SECRET]`.
+- **Automatic cookies.** Each run keeps a cookie jar: a cookie a response sets,
+  including on a redirect, is sent by every later request of the run that it
+  matches by domain, path, `Secure` and expiry, so a session-cookie login works
+  across nodes without extracting the cookie. A Call Workflow child shares its
+  caller's jar. A node's own cookie rows override the jar's cookie of the same
+  name, and **Use cookie jar** (on by default) turns it off for one request.
+- **Response validation: regex, type and JSON Schema operators.** Assertion
+  rules (and Retry `until` rules and SSE finish conditions) gain `matches` and
+  `notMatches` (a regular expression, bare or `/pattern/flags`), `type`
+  (`string`, `number`, `integer`, `boolean`, `object`, `array`, `null`) and
+  `matchesSchema` (an inline JSON Schema, draft 2020-12 by default, or draft-07,
+  2019-09 or draft-04 by its `$schema`). A failed schema rule lists its first 10
+  violations with where in the value and why, in the node's result, JUnit and
+  HTML reports and the CLI console. A regex match runs in the QuickJS sandbox
+  and is stopped after 100 ms, so a backtracking pattern cannot freeze the app;
+  values over 100,000 characters fail the rule. Schemas are interpreted by
+  `@cfworker/json-schema`, never compiled to code. A value of the wrong shape
+  for its operator is flagged before the run (`assertion_expected_invalid`).
+- **Contract checks from OpenAPI.** An HTTP Request node can carry
+  `responseSchemas`: a JSON Schema per status (`200`, `2XX`, `default`) that the
+  response body must match, or the node fails with the violations. OpenAPI and
+  Swagger import fills it from each operation's JSON responses, with every
+  `$ref` resolved into the schema and OpenAPI 3.0's `nullable` and Swagger's
+  dialect converted; **Add schema assertions** in the import dialog turns it
+  off. **Settings → Response schemas** lists and removes them.
+- **Scripts on HTTP requests.** An HTTP Request node has a **Scripts** tab
+  with a pre-request script, which runs on the resolved request just before it
+  is sent and can change its method, URL, headers and body (sign it with
+  `aw.crypto.hmacSha256`), and a post-response script, which reads the
+  response, sets workflow variables and runs custom checks with
+  `aw.test(name, fn)` and `aw.expect(value)`; a failed test or a thrown error
+  fails the node, naming the script's line and column. Scripts are synchronous
+  JavaScript in a sandbox (QuickJS compiled to WebAssembly) with no network,
+  file system or timers, a time limit (1 s by default, up to 30 s) and a 32 MB
+  memory limit. They read secrets only by literal name, `aw.secrets.get("NAME")`,
+  so those secrets are resolved up front, masked in console output and results,
+  required by `apiweave run`, and covered by the approval an agent's run needs;
+  the approval dialog now also says when a workflow runs scripts. Console
+  output and test results appear in the node's output, run history, JUnit
+  (`<system-out>`), HTML and console reports. Imported Postman scripts are
+  still kept as notes, and can now be ported by hand. See
+  [Scripting](docs/features/scripting.md).
 - **Import Postman collections.** **Projects → Import → Postman** turns a
   Postman Collection v2.1, and optionally a Postman environment, into a new
   project: one workflow per folder (nested folders named `Parent / Child`) or
   one per request, each request with its method, URL, query, path variables,
-  headers, body (raw, urlencoded, form-data text fields, GraphQL as JSON) and
+  headers, body (raw, urlencoded, form-data text fields, GraphQL) and
   inherited auth (bearer, basic, API key, OAuth 2.0). Variables go to one
   **Postman: …** environment, dynamic variables such as `{{$guid}}` to
   APIWeave's dynamic functions, and test scripts that check the status or
@@ -738,10 +876,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `app_settings` (`http.allow_private_networks`) through new
   `settings.get` / `settings.setPrivateNetworks` handlers, and takes effect
   immediately.
-- **Auto-update.** The desktop app checks GitHub Releases for newer versions
-  under the policy chosen in **Settings → Updates** (notify by default;
-  automatic only where the platform can self-install), with staged rollouts and
-  a kill switch for bad releases.
 - **Sync failure visibility.** `cloud.listFailedRecords` plus an in-app Failed
   Records dialog surface dead-lettered sync records; rejected IPC dispatches are
   logged to `main.log`; the real server rejection reason reaches save toasts
@@ -811,7 +945,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Auto-update** from GitHub Releases on a pinned update channel.
+- **Auto-update** from GitHub Releases on a pinned update channel, under the
+  policy chosen in **Settings → Updates** (notify by default; automatic only
+  where the platform can self-install), with staged rollouts and a kill switch
+  for bad releases.
 - The app icon is set for the installer, taskbar and Start menu.
 
 ### Fixed

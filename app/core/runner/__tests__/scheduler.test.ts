@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
+import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, safeErrorClass, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { buildHtmlReport, buildJUnitReport } from "../reporters"
@@ -11,6 +11,7 @@ import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import { startFakeOAuthServer } from "./oauth_fake_server"
+import { startServer as startAuthServer } from "./auth_test_servers"
 import { encodeStoredToken } from "../oauth"
 
 let db: InitializedDatabase
@@ -156,8 +157,14 @@ describe("RunScheduler", () => {
       }).workflowId
       const scheduler = makeScheduler()
 
+      // The saved environment is gone: any attempt to load it fails the run.
+      environments.delete(env.environmentId)
+      workflows.update(workflowId, { selectedEnvironmentId: env.environmentId })
+
       const runId = scheduler.enqueue({ workspaceId: ws, workflowId, selectedEnvironmentId: null })
       expect(runs.getById(runId)?.selectedEnvironmentId).toBeNull()
+      // It runs with none: the saved environment is not picked up at execute time either.
+      expect(await scheduler.whenFinished(runId)).toBe("completed")
     })
 
     it("substitutes selected environment variables in HTTP request URLs", async () => {
@@ -563,6 +570,55 @@ describe("RunScheduler", () => {
       const workflow = workflows.getById(workflowId) ?? null
       expectNoSecret(buildJUnitReport({ kind: "run", run: run!, workflow }))
       expectNoSecret(buildHtmlReport({ kind: "run", run: run!, workflow }))
+    })
+
+    it("resolves a secret a script reads by name, and masks it in the script's console output and errors", async () => {
+      const ws = seedWorkspace()
+      const echo = await startEchoServer()
+      const workflowId = workflows.create({
+        workspaceId: ws,
+        name: "script-secret-wf",
+        nodes: [
+          { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+          {
+            nodeId: "signed",
+            type: "http-request",
+            position: { x: 1, y: 0 },
+            config: {
+              method: "GET",
+              url: `http://127.0.0.1:${echo.port}/signed`,
+              scripts: {
+                preRequest: 'aw.request.headers["X-Key"] = aw.secrets.get("script_key")\nconsole.log("key is", aw.secrets.get("script_key"))',
+                postResponse: 'aw.test("leaks", () => aw.expect(aw.secrets.get("script_key")).toBe("other"))\nthrow new Error("bad " + aw.secrets.get("script_key"))',
+              },
+            } as never,
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "signed" }],
+      }).workflowId
+
+      const events: RunEvent[] = []
+      const scheduler = makeScheduler({
+        emitProgress: (_runId, event) => events.push(event),
+        resolveSecret: async (name) =>
+          name === "script_key" ? { plaintext: SECRET, scopeType: "workspace" } : { plaintext: null, scopeType: null },
+      })
+      const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+      await scheduler.whenFinished(runId)
+      echo.close()
+
+      expect(echo.requests[0]?.headers["x-key"]).toBe(SECRET)
+      const run = runs.getById(runId)
+      expectNoSecret(run)
+      expectNoSecret(events)
+      const result = run?.results.find((r) => r.nodeId === "signed")
+      expect(result?.secretRefs).toEqual(["script_key"])
+      expect(result?.error).toBe("Post-response script failed: Error: bad <SECRET> (line 2, column 16)")
+      expect(result?.scripts?.map((script) => [script.logs, script.tests])).toEqual([
+        [["key is <SECRET>"], []],
+        [[], [{ name: "leaks", passed: false, error: 'AssertionError: expected "<SECRET>" to be "other"' }]],
+      ])
+      expect(run?.resolvedSecrets).toEqual([{ name: "script_key", scopeType: "workspace", resolved: true }])
     })
 
     it("resolves and masks a secret used only inside a Call Workflow callee", async () => {
@@ -1154,7 +1210,7 @@ describe("RunScheduler", () => {
  * only after the user has been shown which ones and where they go.
  */
 describe("agent-started runs that use secrets", () => {
-  async function startServer(): Promise<{ port: number; bodies: string[]; close: () => void }> {
+  async function startServer(reply = "{}"): Promise<{ port: number; bodies: string[]; close: () => void }> {
     const { createServer } = await import("node:http")
     const bodies: string[] = []
     const server = createServer((req, res) => {
@@ -1162,7 +1218,8 @@ describe("agent-started runs that use secrets", () => {
       req.on("data", (c) => (body += c))
       req.on("end", () => {
         bodies.push(body)
-        res.end("{}")
+        res.setHeader("Content-Type", "application/json")
+        res.end(reply)
       })
     })
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -1215,9 +1272,82 @@ describe("agent-started runs that use secrets", () => {
         workflowName: "exfil",
         secretNames: ["API_KEY"],
         destinations: [`127.0.0.1:${server.port}`],
+        runsScripts: false,
       },
     ])
     expect(server.bodies).toEqual([])
+    expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+  })
+
+  it("asks before a script reads a secret, and says the workflow runs scripts", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "scripted",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http_1",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: { method: "POST", url: `http://127.0.0.1:${server.port}/collect`, scripts: { preRequest: 'aw.request.body = aw.secrets.get("API_KEY")' } },
+        },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+    }).workflowId
+    const asked: AgentRunApprovalRequest[] = []
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        asked.push(request)
+        return false
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
+    await scheduler.whenFinished(runId)
+    server.close()
+
+    expect(asked).toMatchObject([{ secretNames: ["API_KEY"], runsScripts: true }])
+    expect(server.bodies).toEqual([])
+    expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+  })
+
+  it("asks before a signed auth scheme uses its secrets, naming every one", async () => {
+    const ws = seedWorkspace()
+    const auths = [
+      { type: "awsSigV4", awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", sessionToken: "{{secrets.AWS_TOKEN}}", region: "us-east-1", service: "s3" } },
+      { type: "digest", digest: { username: "u", password: "{{secrets.DIGEST_PASSWORD}}" } },
+      { type: "jwt", jwt: { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: "{}" } },
+    ]
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "signed",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        ...auths.map((auth, index) => ({
+          nodeId: `http_${index}`,
+          type: "http-request",
+          position: { x: index + 1, y: 0 },
+          config: { url: "https://api.example.com/x", auth },
+        })),
+      ] as WorkflowNode[],
+      edges: auths.map((_auth, index) => ({ edgeId: `e${index}`, source: index === 0 ? "start" : `http_${index - 1}`, target: `http_${index}` })),
+    }).workflowId
+    const asked: AgentRunApprovalRequest[] = []
+    const scheduler = makeScheduler({
+      resolveSecret: async () => ({ plaintext: "value", scopeType: "workspace" }),
+      approveAgentRun: async (request) => {
+        asked.push(request)
+        return false
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
+    await scheduler.whenFinished(runId)
+
+    expect([...asked[0]!.secretNames].sort()).toEqual(["AWS_SECRET", "AWS_TOKEN", "DIGEST_PASSWORD", "JWT_KEY"])
     expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
   })
 
@@ -1311,6 +1441,57 @@ describe("agent-started runs that use secrets", () => {
 
     expect(attacker.bodies).toEqual([])
     expect(approved.bodies).toEqual(["s3cr3t"])
+  })
+  it("fails a request whose host an extractor changed after the user approved the listed ones", async () => {
+    const attacker = await startServer()
+    const approved = await startServer(JSON.stringify({ host: `127.0.0.1:${attacker.port}` }))
+    const ws = seedWorkspace()
+    const wf = workflows.create({
+      workspaceId: ws,
+      name: "rewritten",
+      variables: { host: `127.0.0.1:${approved.port}` },
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http_1",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: { method: "GET", url: `http://127.0.0.1:${approved.port}/first`, extractors: { host: "body.host" } },
+        },
+        {
+          nodeId: "http_2",
+          type: "http-request",
+          position: { x: 2, y: 0 },
+          config: { method: "POST", url: "http://{{variables.host}}/collect", body: "{{secrets.API_KEY}}" },
+        },
+      ] as WorkflowNode[],
+      edges: [
+        { edgeId: "e1", source: "start", target: "http_1" },
+        { edgeId: "e2", source: "http_1", target: "http_2" },
+      ],
+    }).workflowId
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        expect(request.destinations).toEqual([`127.0.0.1:${approved.port}`])
+        return true
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await scheduler.whenFinished(runId)
+    approved.close()
+    attacker.close()
+
+    expect(attacker.bodies).toEqual([])
+    expect(approved.bodies).toEqual([""])
+    expect(runs.getById(runId)?.status).toBe("failed")
+    // Refused before sending (a stored error is reduced to its class, so the request shape says it).
+    expect(runs.getById(runId)?.results?.find((result) => result.nodeId === "http_2")).toMatchObject({
+      status: "failed",
+      duration: 0,
+      request: { url: `http://127.0.0.1:${attacker.port}/collect` },
+    })
   })
 })
 
@@ -1418,5 +1599,102 @@ describe("OAuth 2.0 runs", () => {
     expect(saved[0]).toMatchObject({ name: "API_TOKEN", scope: { workspaceId: ws, scopeType: "workspace", scopeId: ws } })
     expect(JSON.parse(saved[0]!.value)).toMatchObject({ accessToken: "tok-1-abcdef", refreshToken: "refresh-1" })
     expect(JSON.stringify(runs.getById(runId))).not.toContain("tok-1-abcdef")
+  })
+})
+
+describe("signed auth runs", () => {
+  function seedAuthWorkflow(ws: string, url: string, auth: Record<string, unknown>): string {
+    return workflows.create({
+      workspaceId: ws,
+      name: "signed-wf",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call", type: "http-request", position: { x: 1, y: 0 }, config: { url, auth, extractors: { echoed: "response.body.youSent" } } },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    }).workflowId
+  }
+
+  it("keeps a signing failure's message in history, since it names the secret and not its value", async () => {
+    const ws = seedWorkspace()
+    const workflowId = seedAuthWorkflow(ws, "http://127.0.0.1:9/x", {
+      type: "awsSigV4",
+      awsSigV4: { accessKeyId: "AKID", secretAccessKey: "{{secrets.AWS_SECRET}}", region: "us-east-1", service: "execute-api" },
+    })
+    const scheduler = makeScheduler({ resolveSecret: async () => ({ plaintext: null, scopeType: null }) })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    await scheduler.whenFinished(runId)
+
+    const call = runs.getById(runId)!.results.find((result) => result.nodeId === "call")
+    expect(call?.error).toBe("AWS Signature V4: secret AWS_SECRET is not set")
+  })
+
+  it("never stores a signed JWT, even when the API echoes it back", async () => {
+    const api = await startAuthServer((request, response) =>
+      response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ youSent: request.headers["authorization"] })))
+    const ws = seedWorkspace()
+    const workflowId = seedAuthWorkflow(ws, `${api.base}/me`, {
+      type: "jwt",
+      jwt: { algorithm: "HS256", secret: "{{secrets.JWT_KEY}}", payload: '{"sub": "ci"}', expiresInSeconds: 60 },
+    })
+    const events: RunEvent[] = []
+    const scheduler = makeScheduler({
+      emitProgress: (_runId, event) => events.push(event),
+      resolveSecret: async () => ({ plaintext: "jwt-signing-key", scopeType: "workspace" }),
+    })
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId })
+    expect(await scheduler.whenFinished(runId)).toBe("completed")
+    await api.close()
+
+    const token = String(api.received[0]!.headers["authorization"]).slice("Bearer ".length)
+    expect(token.split(".")).toHaveLength(3)
+    const stored = JSON.stringify(runs.getById(runId))
+    expect(stored).not.toContain(token)
+    expect(stored).toContain("Bearer <SECRET>")
+    expect(JSON.stringify(events)).not.toContain(token)
+  })
+})
+
+describe("safeErrorClass", () => {
+  it("keeps the runner's own diagnoses and reduces everything else to a class, first match winning", () => {
+    const cases: readonly (readonly [string, string])[] = [
+      ["Condition not met after 3 attempts", "Condition not met after 3 attempts"],
+      ["Failed after 2 attempts: connect ECONNREFUSED s3cr3t", "Failed after 2 attempts: Node execution failed"],
+      ["Failed after 2 attempts: HTTP 503", "Failed after 2 attempts: HTTP 503"],
+      ["HTTP 404", "HTTP 404"],
+      ["HTTP 404 s3cr3t", "Node execution failed"],
+      ["Network error: api.example.com ECONNREFUSED (ECONNREFUSED)", "Network error: api.example.com ECONNREFUSED (ECONNREFUSED)"],
+      ["Refused redirect from HTTPS to HTTP: http://x?token=s3cr3t", "Refused redirect from HTTPS to HTTP"],
+      ["Called workflow wf_1 not found", "Called workflow wf_1 not found"],
+      ["Called workflow wf 1 not found", "Node execution failed"],
+      ["Call Workflow node has no target workflow configured", "Call Workflow node has no target workflow configured"],
+      ["Call Workflow recursion depth exceeded", "Call Workflow recursion depth exceeded"],
+      ["OAuth 2.0 token request failed: 401 timeout", "OAuth 2.0 token request failed: 401 timeout"],
+      ["AWS Signature V4 needs a region", "AWS Signature V4 needs a region"],
+      ["Digest auth challenge missing", "Digest auth challenge missing"],
+      ["JWT signing failed", "JWT signing failed"],
+      ["JWTx timeout", "Request timed out"],
+      ["Pre-request script failed: s3cr3t", "Pre-request script failed: s3cr3t"],
+      ["Post-response script: 2 tests failed", "Post-response script: 2 tests failed"],
+      ["Pre-request scripting cancelled", "Cancelled"],
+      ["Error: Not rerun: {{prev.token}} in node http_1", "Not rerun: {{prev.token}} in node http_1"],
+      ["Not rerun: {{prev.token}}", "Not rerun: {{prev.token}}"],
+      ["Response does not match the schema for status 2XX", "Response does not match the schema for status 2XX"],
+      ["Response does not match the schema for status 200", "Response does not match the schema for status 200"],
+      ["Response does not match the schema for status default", "Response does not match the schema for status default"],
+      ["Response does not match the schema for status 600", "Node execution failed"],
+      ["Redirect loop at https://x?k=s3cr3t", "Redirect not followed"],
+      ["redirect cancelled", "Redirect not followed"],
+      ["Request cancelled by user", "Cancelled"],
+      ["Request timed out after 2.5s", "Request timed out after 2.5s"],
+      ["Request timed out after 2.5s at s3cr3t", "Request timed out"],
+      ["socket timeout", "Request timed out"],
+      ["The operation was aborted", "Request timed out"],
+      ["URL is required", "Request configuration invalid"],
+      ["Failed to build request: s3cr3t", "Request configuration invalid"],
+      ["s3cr3t is not a requestable URL", "Request configuration invalid"],
+      ["Error: Bearer s3cr3t", "Node execution failed"],
+    ]
+    for (const [input, expected] of cases) expect(safeErrorClass(input), input).toBe(expected)
   })
 })

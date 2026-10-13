@@ -28,7 +28,13 @@ export function agentRunApprovalText(request: AgentRunApprovalRequest): { messag
       "To:",
       ...listed(request.destinations.length > 0 ? request.destinations : ["(no request URLs found)"]),
       "",
-      "Allow only if you trust the agent and these destinations. A URL shown as written is built while the run executes, so where it goes is not fixed in advance.",
+      ...(request.runsScripts
+        ? [
+            "This workflow runs scripts. A pre-request script can change a request's URL, headers and body, and can read the secrets above.",
+            "",
+          ]
+        : []),
+      "Allow only if you trust the agent and these destinations. Once allowed, a request to any host not listed here fails — including one whose URL is shown as written, or is changed while the run executes.",
       `If you do not answer within ${AGENT_RUN_APPROVAL_TIMEOUT_MS / 60000} minutes, the run is refused.`,
     ].join("\n"),
   }

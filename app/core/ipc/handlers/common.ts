@@ -45,6 +45,11 @@ export function listResult<T extends z.ZodType>(item: T) {
   return z.object({ items: z.array(item), total: z.number().int().nonnegative() }).strict()
 }
 
+/** Who is writing, for the workflow revision a write keeps: the MCP agent that called, or the user in the app. */
+export function writeSource(context?: { readonly agent?: string }): string {
+  return context?.agent !== undefined ? `agent:${context.agent}` : "canvas"
+}
+
 /** The read's value, or null when what it names is gone. Any other failure still throws. */
 export async function ifFound<T>(read: Promise<T>): Promise<T | null> {
   try {

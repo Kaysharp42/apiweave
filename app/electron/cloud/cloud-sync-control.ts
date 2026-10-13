@@ -687,6 +687,19 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
    * cloud is linked, reconcile it (provision + bind + push). No-op when
    * unlinked. Fire-and-forget — local creation must not block on the network.
    */
+  /**
+   * Whether the workspace is bound to a cloud team other than the account's
+   * personal one, i.e. shared with other members. Keyed on the team, not the
+   * local `origin`: workspaces provisioned from local land in the personal
+   * team. A team missing from the catalog counts as shared — refusing a
+   * personal delete is recoverable, deleting a team's workspace is not.
+   */
+  public isSharedTeamWorkspace(workspaceId: string): boolean {
+    const teamId = this.repository.getWorkspaceBinding(workspaceId)?.teamId ?? null
+    if (teamId === null) return false
+    return this.teamCatalog.find((team) => team.teamId === teamId)?.isPersonal !== true
+  }
+
   public syncNewWorkspace(): void {
     if (!this.tokenStore.hasTokens() || this.activeConfig === null) {
       return

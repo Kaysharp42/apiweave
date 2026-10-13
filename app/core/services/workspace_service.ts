@@ -2,7 +2,7 @@ import type { Workspace } from "@shared/types/Workspace"
 import type { WorkflowRepository, WorkspaceRepository, WorkspaceUpdate } from "../repositories"
 import type { SyncProvider } from "../sync/SyncProvider"
 import { recordWorkspaceTombstone, recordWorkspaceUpsert } from "../sync/cloud-mutations"
-import { ConflictError, NotFoundError } from "../ipc/errors"
+import { ConflictError, DeniedError, NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
 
 /** Input for creating a workspace. `slug` is derived from `name` when omitted. */
@@ -31,6 +31,9 @@ export class WorkspaceService {
     // Called after a workspace is created so cloud sync can provision + bind it
     // when linked. No-op when unlinked; fire-and-forget (never blocks create).
     private readonly onWorkspaceCreated?: () => void,
+    // True when the workspace is bound to a cloud team other than the account's
+    // personal one. Absent when there is no cloud (CLI, tests): nothing is shared.
+    private readonly isSharedTeamWorkspace?: (workspaceId: string) => boolean,
   ) {}
 
   async list(): Promise<readonly Workspace[]> {
@@ -89,6 +92,14 @@ export class WorkspaceService {
     await this.mustResolve(workspaceId)
     const existing = this.workspaces.getById(workspaceId)
     if (existing === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
+    // The tombstone below deletes the cloud workspace for every member, and the
+    // only caller is an agent over MCP with nobody confirming. Shared team
+    // workspaces are therefore not this path's to delete.
+    if (this.isSharedTeamWorkspace?.(workspaceId) === true) {
+      throw new DeniedError(
+        `workspace ${workspaceId} belongs to a shared cloud team; deleting it would remove it for every member, so it cannot be deleted here`,
+      )
+    }
     // One transaction: the tombstone is queued exactly when the workspace is
     // really gone, never for a delete that rolled back.
     this.workspaces.transaction(() => {

@@ -23,11 +23,11 @@ import type { ScopeResolver } from "./scope_resolver"
 import {
   assertNoSecretValues,
   collectSecretRefs,
-  isSecretKey,
   sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
+import { isSecretKey } from "@shared/credentials/credentials"
 import { SafeHttp, describeNetworkError } from "../runner/safe_http"
 
 // ponytail: fixed 10 MiB knob for remote OpenAPI/Swagger doc fetches — large
@@ -154,6 +154,7 @@ export interface RemoteOpenApiOptions {
   readonly baseUrl?: string
   readonly tagFilter?: readonly string[]
   readonly sanitize?: boolean
+  readonly schemaAssertions?: boolean
 }
 
 export class ImportService {
@@ -724,7 +725,7 @@ export class ImportService {
 
       const workflowId = opts.workflowId
       const updated = this.workflows.transaction(() =>
-        this.recorded(this.workflows.update(workflowId, { nodes: mergedNodes, edges: mergedEdges })))
+        this.recorded(this.workflows.update(workflowId, { nodes: mergedNodes, edges: mergedEdges }, "import")))
       if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
       await this.syncProvider.push()
       return updated
@@ -760,7 +761,7 @@ export class ImportService {
     const newTemplates = templates.map((t) => JSON.parse(JSON.stringify(t)) as JsonValue)
     const merged = [...existingTemplates, ...newTemplates]
 
-    const updated = this.workflows.transaction(() => this.recorded(this.workflows.update(workflowId, { nodeTemplates: merged })))
+    const updated = this.workflows.transaction(() => this.recorded(this.workflows.update(workflowId, { nodeTemplates: merged }, "import")))
     if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
     await this.syncProvider.push()
     return updated
@@ -818,6 +819,7 @@ function buildParseOpts(opts: RemoteOpenApiOptions): OpenApiParseOptions {
   if (opts.baseUrl !== undefined) result["baseUrl"] = opts.baseUrl
   if (opts.tagFilter !== undefined) result["tagFilter"] = opts.tagFilter
   if (opts.sanitize !== undefined) result["sanitize"] = opts.sanitize
+  if (opts.schemaAssertions !== undefined) result["schemaAssertions"] = opts.schemaAssertions
   return result as OpenApiParseOptions
 }
 

@@ -1,5 +1,12 @@
+import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig";
+import { MAX_JWT_LIFETIME_SECONDS } from "@shared/zod-schemas/AuthConfigSchema";
+import {
+  DEFAULT_SCRIPT_TIMEOUT_MS,
+  MAX_SCRIPT_TIMEOUT_MS,
+} from "@shared/zod-schemas/HttpScriptsConfigSchema";
 import type {
   AssertionItem,
+  GraphqlBody,
   AuthConfig,
   FormDataEntry,
   HTTPRequestBodyType,
@@ -152,45 +159,19 @@ export function normalizeUrlEncodedEntries(value: unknown): UrlEncodedEntry[] {
   return parseKeyValuePairs(value).map((pair) => ({ ...pair, active: true }));
 }
 
-export function normalizeAuthConfig(value: unknown): AuthConfig {
-  if (!isRecord(value)) return DEFAULT_AUTH;
+function subConfig(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
 
-  const type =
-    value.type === "bearer" ||
-    value.type === "basic" ||
-    value.type === "apiKey" ||
-    value.type === "oauth2"
-      ? value.type
-      : "none";
-  const authConfig: AuthConfig = { type };
-
-  // Only keep the sub-config matching the selected type — otherwise stale
-  // token/password/API-key material from a previously selected auth type
-  // survives in the saved workflow config after switching to "none" or
-  // another type.
-  if (type === "bearer") {
-    const bearer = isRecord(value.bearer) ? value.bearer : undefined;
-    authConfig.bearer = { token: bearer ? getString(bearer.token) : "" };
-  } else if (type === "basic") {
-    const basic = isRecord(value.basic) ? value.basic : undefined;
-    authConfig.basic = {
-      username: basic ? getString(basic.username) : "",
-      password: basic ? getString(basic.password) : "",
-    };
-  } else if (type === "apiKey") {
-    const apiKey = isRecord(value.apiKey) ? value.apiKey : undefined;
-    authConfig.apiKey = {
-      key: apiKey ? getString(apiKey.key) : "",
-      value: apiKey ? getString(apiKey.value) : "",
-      addTo: apiKey?.addTo === "query" ? "query" : "header",
-    };
-  } else if (type === "oauth2") {
-    const oauth2 = isRecord(value.oauth2) ? value.oauth2 : {};
-    const grantType =
-      oauth2.grantType === "authorization_code"
-        ? "authorization_code"
-        : "client_credentials";
-    authConfig.oauth2 = {
+function normalizeOAuth2Auth(value: Record<string, unknown>): AuthConfig {
+  const oauth2 = subConfig(value.oauth2);
+  const grantType =
+    oauth2.grantType === "authorization_code"
+      ? "authorization_code"
+      : "client_credentials";
+  return {
+    type: "oauth2",
+    oauth2: {
       grantType,
       tokenUrl: getString(oauth2.tokenUrl),
       clientId: getString(oauth2.clientId),
@@ -205,10 +186,116 @@ export function normalizeAuthConfig(value: unknown): AuthConfig {
             tokenSecret: getString(oauth2.tokenSecret),
           }
         : {}),
-    };
-  }
+    },
+  };
+}
 
-  return authConfig;
+function normalizeAwsSigV4Auth(value: Record<string, unknown>): AuthConfig {
+  const aws = subConfig(value.awsSigV4);
+  const sessionToken = getString(aws.sessionToken);
+  return {
+    type: "awsSigV4",
+    awsSigV4: {
+      accessKeyId: getString(aws.accessKeyId),
+      secretAccessKey: getString(aws.secretAccessKey),
+      region: getString(aws.region),
+      service: getString(aws.service),
+      ...(sessionToken ? { sessionToken } : {}),
+    },
+  };
+}
+
+function normalizeJwtAuth(value: Record<string, unknown>): AuthConfig {
+  // A token that expires in five minutes, unless the saved config says otherwise.
+  const jwt = isRecord(value.jwt) ? value.jwt : { expiresInSeconds: 300 };
+  const header = getString(jwt.header);
+  const expiresInSeconds = getNumber(jwt.expiresInSeconds, 0);
+  return {
+    type: "jwt",
+    jwt: {
+      algorithm:
+        jwt.algorithm === "RS256" || jwt.algorithm === "ES256"
+          ? jwt.algorithm
+          : "HS256",
+      secret: getString(jwt.secret),
+      payload: getString(jwt.payload) || "{}",
+      ...(header ? { header } : {}),
+      ...(expiresInSeconds > 0
+        ? {
+            expiresInSeconds: clampInteger(
+              expiresInSeconds,
+              300,
+              1,
+              MAX_JWT_LIFETIME_SECONDS,
+            ),
+          }
+        : {}),
+      ...(typeof jwt.headerName === "string"
+        ? { headerName: jwt.headerName }
+        : {}),
+      ...(typeof jwt.prefix === "string" ? { prefix: jwt.prefix } : {}),
+    },
+  };
+}
+
+// Each normalizer builds only the sub-config matching its type — otherwise
+// stale token/password/API-key material from a previously selected auth type
+// survives in the saved workflow config after switching to "none" or another
+// type.
+const AUTH_NORMALIZERS: Record<
+  Exclude<AuthConfig["type"], "none">,
+  (value: Record<string, unknown>) => AuthConfig
+> = {
+  bearer: (value) => ({
+    type: "bearer",
+    bearer: { token: getString(subConfig(value.bearer).token) },
+  }),
+  basic: (value) => {
+    const basic = subConfig(value.basic);
+    return {
+      type: "basic",
+      basic: {
+        username: getString(basic.username),
+        password: getString(basic.password),
+      },
+    };
+  },
+  apiKey: (value) => {
+    const apiKey = subConfig(value.apiKey);
+    return {
+      type: "apiKey",
+      apiKey: {
+        key: getString(apiKey.key),
+        value: getString(apiKey.value),
+        addTo: apiKey.addTo === "query" ? "query" : "header",
+      },
+    };
+  },
+  oauth2: normalizeOAuth2Auth,
+  awsSigV4: normalizeAwsSigV4Auth,
+  digest: (value) => {
+    const digest = subConfig(value.digest);
+    return {
+      type: "digest",
+      digest: {
+        username: getString(digest.username),
+        password: getString(digest.password),
+      },
+    };
+  },
+  jwt: normalizeJwtAuth,
+};
+
+function isConfigurableAuthType(
+  type: unknown,
+): type is keyof typeof AUTH_NORMALIZERS {
+  return typeof type === "string" && Object.hasOwn(AUTH_NORMALIZERS, type);
+}
+
+export function normalizeAuthConfig(value: unknown): AuthConfig {
+  if (!isRecord(value)) return DEFAULT_AUTH;
+  if (!isConfigurableAuthType(value.type)) return { type: "none" };
+  return AUTH_NORMALIZERS[value.type](value);
 }
 
 function isStatusCode(value: unknown): value is number {
@@ -267,6 +354,37 @@ export function normalizeRetry(value: unknown): NodeModalHttpRetryConfig | undef
   };
 }
 
+/**
+ * An empty script is dropped, and `scripts` with it when both are, so
+ * clearing an editor leaves no key behind (whitespace is kept: it may be the
+ * first keystroke). The time limit is clamped to what HttpScriptsConfigSchema
+ * accepts and dropped at its default.
+ */
+export function normalizeScripts(value: unknown): HttpScriptsConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const preRequest = getString(value.preRequest);
+  const postResponse = getString(value.postResponse);
+  if (!preRequest && !postResponse) return undefined;
+  const timeoutMs = clampInteger(value.timeoutMs, DEFAULT_SCRIPT_TIMEOUT_MS, 1, MAX_SCRIPT_TIMEOUT_MS);
+  return {
+    ...(preRequest ? { preRequest } : {}),
+    ...(postResponse ? { postResponse } : {}),
+    ...(timeoutMs !== DEFAULT_SCRIPT_TIMEOUT_MS ? { timeoutMs } : {}),
+  };
+}
+
+/** Empty variables and operation name are dropped, so the request leaves them out. */
+export function normalizeGraphql(value: unknown): GraphqlBody | undefined {
+  if (!isRecord(value)) return undefined;
+  const variables = getString(value.variables);
+  const operationName = getString(value.operationName);
+  return {
+    query: getString(value.query),
+    ...(variables ? { variables } : {}),
+    ...(operationName ? { operationName } : {}),
+  };
+}
+
 function normalizeBodyType(value: unknown): HTTPRequestBodyType {
   if (
     value === "none" ||
@@ -274,7 +392,8 @@ function normalizeBodyType(value: unknown): HTTPRequestBodyType {
     value === "raw" ||
     value === "form-data" ||
     value === "x-www-form-urlencoded" ||
-    value === "binary"
+    value === "binary" ||
+    value === "graphql"
   ) {
     return value;
   }
@@ -294,14 +413,17 @@ export function normalizeHttpRequestConfig(
     cookies: parseKeyValuePairs(config.cookies),
     body: bodyToString(config.body),
     bodyType: normalizeBodyType(config.bodyType),
+    graphql: normalizeGraphql(config.graphql),
     timeout: Math.min(Math.max(getNumber(config.timeout, 30), 1), 300),
     fileUploads: config.fileUploads || [],
     auth: normalizeAuthConfig(config.auth),
     followRedirects: getBoolean(config.followRedirects, true),
     sslVerify: getBoolean(config.sslVerify, true),
+    useCookieJar: getBoolean(config.useCookieJar, true),
     continueOnFail: getBoolean(config.continueOnFail, false),
     expectedStatus: normalizeExpectedStatus(config.expectedStatus),
     retry: normalizeRetry(config.retry),
+    scripts: normalizeScripts(config.scripts),
     formDataEntries: normalizeFormDataEntries(config.formDataEntries),
     urlEncodedEntries: normalizeUrlEncodedEntries(config.urlEncodedEntries),
   };

@@ -8,6 +8,11 @@ import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
+import type { RunResumeRequest } from "@shared/types/RunResumeRequest";
+import type { WorkflowRevision } from "@shared/types/WorkflowRevision";
+import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSummary";
+import type { WorkflowSearchPage } from "@shared/types/WorkflowSearchPage";
+import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage";
 import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
 import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
@@ -32,6 +37,12 @@ import type { McpStatus } from "@shared/types/McpStatus";
 import type { OAuthBridge } from "@shared/types/OAuthBridge";
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
 import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
+import type { NetworkBridge } from "@shared/types/NetworkBridge";
+import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
+import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
+import type { ProjectFolderBridge } from "@shared/types/ProjectFolderBridge";
+import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult";
+import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -135,6 +146,8 @@ declare global {
     __APIWEAVE_UPDATES__?: UpdatesBridge;
     __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_OAUTH__?: OAuthBridge;
+    __APIWEAVE_NETWORK__?: NetworkBridge;
+    __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
     apiweave?: typeof apiweave;
   }
 
@@ -152,6 +165,8 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_UPDATES__?: UpdatesBridge;
   __APIWEAVE_AGENTS__?: AgentsBridge;
   __APIWEAVE_OAUTH__?: OAuthBridge;
+  __APIWEAVE_NETWORK__?: NetworkBridge;
+  __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -306,6 +321,39 @@ export const apiweave = {
       }),
     delete: (workspaceId: string, workflowId: string) =>
       invoke<null>("workflows", "delete", { workspaceId, workflowId }),
+    /** Workflows whose name contains `query`, newest first, graph-free. */
+    search: (workspaceId: string, query: string, limit: number) =>
+      invoke<WorkflowSearchPage>("workflows", "search", {
+        workspaceId,
+        query,
+        limit,
+      }),
+    /** Nodes in any workflow of the workspace, by label, method, URL path or extractor. */
+    searchWorkspaceNodes: (workspaceId: string, query: string, limit: number) =>
+      invoke<WorkspaceNodeSearchPage>("workflows", "searchWorkspaceNodes", {
+        workspaceId,
+        query,
+        limit,
+      }),
+    /** Earlier versions, newest first, without their content. */
+    listRevisions: (workspaceId: string, workflowId: string) =>
+      invoke<WorkflowRevisionSummary[]>("workflows", "listRevisions", {
+        workspaceId,
+        workflowId,
+      }),
+    getRevision: (workspaceId: string, workflowId: string, revisionId: string) =>
+      invoke<WorkflowRevision>("workflows", "getRevision", {
+        workspaceId,
+        workflowId,
+        revisionId,
+      }),
+    /** Write a revision's content back; `conflict` when `expectedRevision` is stale. */
+    restoreRevision: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly revisionId: string;
+      readonly expectedRevision: number;
+    }) => invoke<Workflow>("workflows", "restoreRevision", input),
     attachToCollection: (
       workspaceId: string,
       workflowId: string,
@@ -372,6 +420,7 @@ export const apiweave = {
       readonly baseUrl?: string;
       readonly tagFilter?: readonly string[];
       readonly sanitize?: boolean;
+      readonly schemaAssertions?: boolean;
       readonly dryRun?: boolean;
     }) => invoke<unknown>("workflows", "importOpenapi", input),
     importOpenapiUrl: (input: {
@@ -552,6 +601,8 @@ export const apiweave = {
         readonly workflowId: string;
         readonly waitMs?: number;
         readonly operationId?: string;
+        /** Rerun part of the workflow, reusing an earlier run's upstream results. */
+        readonly resume?: RunResumeRequest;
       } & Partial<IpcRun>,
     ) => invoke<IpcRun>("runs", "create", input),
     /** A data-driven run: the workflow once per row. Returns iteration 1's run. */
@@ -1167,4 +1218,68 @@ export const oauth = {
     getOAuthBridge()?.status(request) ?? oauthDesktopOnly(),
   clear: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
     getOAuthBridge()?.clear(request) ?? oauthDesktopOnly(),
+} as const;
+
+function getNetworkBridge(): NetworkBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_NETWORK__ ??
+    globalApiweave.__APIWEAVE_NETWORK__
+  );
+}
+
+const networkDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Network settings are only available in the desktop app"),
+  );
+
+/** Electron wraps an error thrown in main as "Error invoking remote method 'x': Error: <message>". */
+function unwrapRemoteError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  throw new Error(
+    message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, ""),
+  );
+}
+
+/** Settings > Network. A sibling of `oauth`, off the router facade: see `NetworkBridge`. */
+export const network = {
+  get: (): Promise<NetworkSettingsState> =>
+    getNetworkBridge()?.get() ?? networkDesktopOnly(),
+  save: (update: NetworkSettingsUpdate): Promise<NetworkSettingsState> =>
+    getNetworkBridge()?.save(update).catch(unwrapRemoteError) ??
+    networkDesktopOnly(),
+  chooseFile: (): Promise<string | null> =>
+    getNetworkBridge()?.chooseFile() ?? networkDesktopOnly(),
+} as const;
+
+function getProjectFolderBridge(): ProjectFolderBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_PROJECT_FOLDERS__ ??
+    globalApiweave.__APIWEAVE_PROJECT_FOLDERS__
+  );
+}
+
+const projectFoldersDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Project folders are only available in the desktop app"),
+  );
+
+/**
+ * Export a project to a folder / import one back. Each opens the native folder
+ * picker in main and resolves to null when it is cancelled. A sibling of
+ * `network`, off the router facade: see `ProjectFolderBridge`.
+ */
+export const projectFolders = {
+  exportProject: (
+    workspaceId: string,
+    projectId: string,
+  ): Promise<ProjectFolderExportResult | null> =>
+    getProjectFolderBridge()
+      ?.exportProject({ workspaceId, projectId })
+      .catch(unwrapRemoteError) ?? projectFoldersDesktopOnly(),
+  importProject: (
+    workspaceId: string,
+  ): Promise<ProjectFolderImportResult | null> =>
+    getProjectFolderBridge()
+      ?.importProject({ workspaceId })
+      .catch(unwrapRemoteError) ?? projectFoldersDesktopOnly(),
 } as const;

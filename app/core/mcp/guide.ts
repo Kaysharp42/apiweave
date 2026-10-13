@@ -173,6 +173,8 @@ or array order.
 
 - \`headers\`, \`queryParams\`, \`cookies\` are **arrays of \`{key, value}\`**, not maps.
 - \`body\` is a **string**, not an object. A JSON body is its serialized text.
+- GraphQL: \`"bodyType": "graphql"\` with \`"graphql": {"query": "...", "variables": "<JSON text>"}\`
+  instead of \`body\`. A GraphQL error answers 200: assert \`response.body.errors\` notExists.
 - \`extractors\` is a map of variable name to response path. After this node runs,
   later nodes read \`{{variables.token}}\`. Paths start at the response object:
   \`response.body.*\`, \`response.headers.*\`, \`response.statusCode\`.
@@ -195,6 +197,19 @@ or array order.
   capped by \`maxIntervalMs\`. The node's result is the last attempt plus an
   \`attempts\` list; it fails with "Condition not met after N attempts" when the
   condition never holds.
+- \`scripts\` — \`{"preRequest": "...", "postResponse": "...", "timeoutMs": 1000}\`:
+  synchronous JavaScript in a sandbox (no network, files or timers). Pre-request
+  sees the resolved request as mutable \`aw.request\` {method, url, headers, body} —
+  sign it with \`aw.crypto.hmacSha256(key, text)\`. Post-response reads
+  \`aw.response\` (status, headers, body, json(), text()), sets
+  \`aw.variables.set(name, value)\`, and checks with \`aw.test(name, () =>
+  aw.expect(x).toBe(y))\`; a failed test or a thrown error fails the node.
+  Secrets only as \`aw.secrets.get("NAME")\` with a literal name. Prefer
+  extractors and assertion nodes when they can express it.
+- \`responseSchemas\` — JSON Schemas keyed by status (\`"200"\`, \`"2XX"\`,
+  \`"default"\`); the body must match the most specific one for the actual
+  status or the node fails, with the violations in its result's \`assertions\`.
+  OpenAPI import fills it from the spec.
 
 ### sse
 
@@ -457,12 +472,21 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
 ## operators
 
 \`equals\`, \`notEquals\`, \`contains\`, \`notContains\`, \`gt\`, \`gte\`, \`lt\`,
-\`lte\`, \`count\`, \`exists\`, \`notExists\`.
+\`lte\`, \`count\`, \`exists\`, \`notExists\`, \`matches\`, \`notMatches\`,
+\`type\`, \`matchesSchema\`.
 
 - \`exists\` and \`notExists\` take no \`expectedValue\`; every other operator
   requires one.
 - \`count\` compares the length of an array or string and needs a non-negative
   integer.
+- \`matches\` / \`notMatches\` take a regular expression: bare (\`"^ord_"\`) or a
+  literal with flags (\`"/^ok$/i"\`). Values over 100,000 characters and matches
+  running past 100 ms fail the rule.
+- \`type\` takes \`string\`, \`number\`, \`integer\`, \`boolean\`, \`object\`,
+  \`array\` or \`null\`.
+- \`matchesSchema\` takes a JSON Schema object (draft 2020-12 unless \`$schema\`
+  says draft-07, 2019-09 or draft-04); a failed rule lists its first 10
+  violations as \`schemaErrors\` ({path, message}).
 - \`status\` accepts only \`equals\`, \`notEquals\`, \`gt\`, \`gte\`, \`lt\`, \`lte\`.
 
 ## Worked examples
@@ -474,6 +498,9 @@ For \`headers\`, \`cookies\` and \`variables\` the path is just the name — no
 { "source": "prev", "path": "response.duration", "operator": "lte", "expectedValue": 500 }
 { "source": "headers", "path": "content-type", "operator": "contains", "expectedValue": "application/json" }
 { "source": "variables", "path": "token", "operator": "exists" }
+{ "source": "prev", "path": "response.body.id", "operator": "matches", "expectedValue": "^ord_[0-9a-f]{8}$" }
+{ "source": "prev", "path": "response.body.total", "operator": "type", "expectedValue": "integer" }
+{ "source": "prev", "path": "response.body", "operator": "matchesSchema", "expectedValue": { "type": "object", "required": ["id"] } }
 \`\`\`
 
 ## Authoring flow
@@ -536,6 +563,7 @@ Clear every \`error\` before running.
 | \`assertion_source_path_invalid\` | the path cannot address a value for that source — see \`apiweave://guide/assertions\` |
 | \`assertion_source_unknown\` / \`assertion_operator_unknown\` | not a member of the enum |
 | \`assertion_expected_missing\` | the operator needs an \`expectedValue\` (present, not truthy; \`false\`, \`0\` and \`""\` are valid) |
+| \`assertion_expected_invalid\` | the \`expectedValue\` has the wrong shape for its operator: an unknown \`type\` name, a regular expression that does not compile, a \`matchesSchema\` value that is not a schema object |
 | \`assertion_rules_missing\` | the node has no rules and always passes |
 | \`continue_on_fail_status_check_migratable\` | a \`continueOnFail\` request with a downstream assertion pinning a non-2xx status — \`expectedStatus\` says the same thing and lets the run go green (notice) |
 

@@ -40,6 +40,7 @@ import {
   ProjectExportService,
   ImportService,
   OAuthService,
+  NetworkSettingsService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
@@ -63,6 +64,9 @@ import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
+import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult"
+import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
+import { exportProjectFolder, importProjectFolder } from "../core/services/project_folder"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
@@ -71,7 +75,9 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
+  NETWORK_CHANNELS,
   OAUTH_CHANNELS,
+  PROJECT_FOLDER_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
@@ -229,7 +235,7 @@ function screenReaderArgs(): string[] {
  * The window is frameless, so Windows and Linux never showed that menu anyway:
  * they get none. macOS keeps the role-based minimum it needs for Cmd+C/V/Z,
  * Hide and Quit; none of those roles carries a reload or close accelerator.
- * A development build adds Toggle Developer Tools (Ctrl/Cmd+Shift+I).
+ * A development build adds Toggle Developer Tools (Ctrl+Shift+I, or Alt+Cmd+I on macOS).
  */
 function installApplicationMenu(): void {
   const developer: MenuItemConstructorOptions[] = app.isPackaged
@@ -495,6 +501,15 @@ if (!hasSingleInstanceLock) {
     const clock = new WallClockProvider()
     const rng = new CryptoRandomProvider()
     const http = new SafeHttp()
+    // Settings > Network (proxy, trusted CAs, client certificates). A saved
+    // setting that no longer loads (a certificate file moved) leaves the
+    // defaults in place; the Network page shows the problem.
+    const networkSettings = new NetworkSettingsService(appSettings, keyfile.masterKek)
+    try {
+      http.configure(networkSettings.config())
+    } catch (error) {
+      bootstrapLog.warn(`network settings not applied: ${error instanceof Error ? error.message : String(error)}`)
+    }
     const functions = new DynamicFunctions(clock, rng)
     // Single run-event broker: the scheduler publishes raw transitions; the
     // broker stamps seq/ts and fans out to the renderer (IPC) and MCP sessions.
@@ -591,7 +606,14 @@ if (!hasSingleInstanceLock) {
     const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
     const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
-      workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver, () => cloud.syncNewWorkspace()),
+      workspaces: new WorkspaceService(
+        workspaces,
+        workflows,
+        sync,
+        scopeResolver,
+        () => cloud.syncNewWorkspace(),
+        (workspaceId) => cloud.isSharedTeamWorkspace(workspaceId),
+      ),
       collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
@@ -822,7 +844,13 @@ if (!hasSingleInstanceLock) {
     )
     ipcMain.handle(
       "updates:restartAndInstall",
-      requireTrustedSender((): void => updates.restartAndInstall()),
+      // The installer is launched before electron-updater calls `app.quit()`,
+      // so asking about unsaved work in `before-quit` would be too late: the
+      // installer can kill the app under the prompt and Cancel stops nothing.
+      // Ask first; on Cancel the update stays downloaded and can be retried.
+      requireTrustedSender((): void => {
+        if (mayQuit(() => updates.restartAndInstall())) updates.restartAndInstall()
+      }),
     )
     ipcMain.handle(
       "updates:openReleasePage",
@@ -854,6 +882,65 @@ if (!hasSingleInstanceLock) {
     )
     ipcMain.handle(OAUTH_CHANNELS.status, requireTrustedSender((request: OAuthTokenRequest) => oauthService.status(request)))
     ipcMain.handle(OAUTH_CHANNELS.clear, requireTrustedSender((request: OAuthTokenRequest) => oauthService.clear(request)))
+
+    // Settings > Network. Off the router like oauth:*: where every request
+    // goes and which servers are trusted is the user's call, never an agent's.
+    // Certificate paths come from the native picker below.
+    ipcMain.handle(NETWORK_CHANNELS.get, requireTrustedSender(() => networkSettings.state()))
+    ipcMain.handle(
+      NETWORK_CHANNELS.save,
+      requireTrustedSender((update: unknown) => {
+        http.configure(networkSettings.save(update))
+        return networkSettings.state()
+      }),
+    )
+    ipcMain.handle(
+      NETWORK_CHANNELS.chooseFile,
+      requireTrustedSender(async (): Promise<string | null> => {
+        const options: Electron.OpenDialogOptions = {
+          properties: ["openFile"],
+          filters: [
+            { name: "Certificates and keys", extensions: ["pem", "crt", "cer", "key", "pfx", "p12"] },
+            { name: "All files", extensions: ["*"] },
+          ],
+        }
+        const win = mainWindow
+        const result = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+        return result.canceled ? null : (result.filePaths[0] ?? null)
+      }),
+    )
+
+    // Project folders. Off the router like network:*: main writes and deletes
+    // files on disk, which no local agent may trigger. The folder is the one
+    // the user picks here, never a path the caller passes.
+    const chooseFolder = async (title: string, buttonLabel: string): Promise<string | null> => {
+      const options: Electron.OpenDialogOptions = { title, buttonLabel, properties: ["openDirectory", "createDirectory"] }
+      const win = mainWindow
+      const result = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+      return result.canceled ? null : (result.filePaths[0] ?? null)
+    }
+    const requireString = (request: unknown, key: string): string => {
+      const value = typeof request === "object" && request !== null ? (request as Record<string, unknown>)[key] : undefined
+      if (typeof value !== "string" || value === "") throw new Error(`${key} is required`)
+      return value
+    }
+    ipcMain.handle(
+      PROJECT_FOLDER_CHANNELS.exportProject,
+      requireTrustedSender(async (request: unknown): Promise<ProjectFolderExportResult | null> => {
+        const workspaceId = requireString(request, "workspaceId")
+        const projectId = requireString(request, "projectId")
+        const folder = await chooseFolder("Export project to folder", "Export here")
+        return folder === null ? null : exportProjectFolder(deps.projects, workspaceId, projectId, folder)
+      }),
+    )
+    ipcMain.handle(
+      PROJECT_FOLDER_CHANNELS.importProject,
+      requireTrustedSender(async (request: unknown): Promise<ProjectFolderImportResult | null> => {
+        const workspaceId = requireString(request, "workspaceId")
+        const folder = await chooseFolder("Import project from folder", "Import")
+        return folder === null ? null : importProjectFolder(deps.projects, workspaceId, folder)
+      }),
+    )
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

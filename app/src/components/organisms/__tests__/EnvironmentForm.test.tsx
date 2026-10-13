@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EnvironmentForm } from "../EnvironmentForm";
 import type { ScopedEnvironment } from "../../../types/ScopedEnvironment";
+import { downloadTextFile } from "../../../utils/downloadFile";
 
 /**
  * The base-environment picker's option set is computed by
@@ -15,6 +16,7 @@ import type { ScopedEnvironment } from "../../../types/ScopedEnvironment";
 // The form always mounts SecretsPanel (closed unless asked for). It reaches
 // IPC, and nothing under test here goes near secrets.
 vi.mock("../../SecretsPanel", () => ({ default: () => null }));
+vi.mock("../../../utils/downloadFile", () => ({ downloadTextFile: vi.fn() }));
 
 function env(overrides: Partial<ScopedEnvironment> = {}): ScopedEnvironment {
   return {
@@ -211,5 +213,23 @@ describe("EnvironmentForm — editing a variable", () => {
 
     expect(screen.getByText("a@kyra.local")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("Edit value")).not.toBeInTheDocument();
+  });
+});
+
+describe("EnvironmentForm .env export", () => {
+  it("downloads the form's plain variables as dotenv text", async () => {
+    const user = userEvent.setup();
+    renderForm({
+      environment: env({ variables: { BASE_URL: "https://dev.test", GREETING: "hello world" } }),
+      availableEnvironments: [],
+    });
+
+    await user.click(screen.getByRole("button", { name: /Export \.env/ }));
+
+    expect(downloadTextFile).toHaveBeenCalledWith(
+      "Development.env",
+      'BASE_URL=https://dev.test\nGREETING="hello world"\n',
+      "text/plain",
+    );
   });
 });

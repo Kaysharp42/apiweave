@@ -9,6 +9,7 @@ import type { WorkflowCanvasNodeData } from "../types/WorkflowCanvasNodeData";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { ImportedItem } from "../types/ImportedItem";
 import type { SwaggerRefreshResult } from "../types/SwaggerRefreshResult";
+import type { JsonValue } from "@shared/types/JsonValue";
 
 interface SwaggerImportPayload {
   nodes?: Array<{ label?: string; config?: Record<string, unknown> }>;
@@ -255,6 +256,9 @@ export function useSwaggerRefresh({
             cookies: (config.cookies as string) || "",
             timeout: (config.timeout as number) || 30,
             openapiMeta: (config.openapiMeta as unknown) || null,
+            ...(config.responseSchemas
+              ? { responseSchemas: config.responseSchemas as Record<string, JsonValue> }
+              : {}),
           };
         });
 

@@ -1,4 +1,6 @@
-import { Agent, Headers, fetch, type Dispatcher, type RequestInit, type Response } from "undici"
+import type { CookieJar } from "tough-cookie"
+import { Headers, fetch, type RequestInit, type Response } from "undici"
+import { NetworkDispatchers, type NetworkConfig } from "./network"
 
 /**
  * The outbound HTTP client for the runner (HTTP request nodes) and URL imports.
@@ -30,6 +32,8 @@ export type SafeHttpOptions = {
   readonly maxRedirectHops?: number
   readonly fetchImpl?: typeof fetch
   readonly timeoutMs?: number
+  /** Proxy, trusted CAs and client certificates; `configure` replaces it. */
+  readonly network?: NetworkConfig
 }
 
 export type SafeFetchOptions = {
@@ -39,17 +43,56 @@ export type SafeFetchOptions = {
   readonly rejectUnauthorized?: boolean
   /** Override the default response/body timeout. Set to zero only for a caller-managed stream lifetime. */
   readonly timeoutMs?: number
+  /**
+   * The run's cookie jar. Each hop sends the cookies it holds for that URL
+   * (RFC 6265 domain, path, Secure and expiry matching) and stores what the
+   * response sets, so a cookie set by a 302 reaches the next hop. A cookie the
+   * request names itself wins over the jar's cookie of the same name.
+   */
+  readonly cookieJar?: CookieJar
 }
 
 export class SafeHttp {
   private readonly maxRedirectHops: number
   private readonly fetchImpl: typeof fetch
   private readonly timeoutMs: number
+  private network: NetworkDispatchers
+  /** Set only on a `restrictedTo` view: the hosts (with port) any hop may reach. */
+  private allowedHosts: ReadonlySet<string> | undefined
 
   public constructor(opts: SafeHttpOptions = {}) {
     this.maxRedirectHops = opts.maxRedirectHops ?? MAX_REDIRECT_HOPS
     this.fetchImpl = opts.fetchImpl ?? fetch
     this.timeoutMs = opts.timeoutMs ?? 30_000
+    this.network = new NetworkDispatchers(opts.network)
+  }
+
+  /**
+   * Switch to a new network config for the next request. Requests already
+   * sent finish on the old connection pools, which close once they drain —
+   * not awaited, since an SSE listener without a deadline may hold one open
+   * for as long as its run lasts.
+   */
+  public configure(config: NetworkConfig): void {
+    const previous = this.network
+    this.network = new NetworkDispatchers(config)
+    previous.close().catch(() => undefined)
+  }
+
+  /**
+   * This client, refusing every request and redirect hop to a host (with
+   * port) outside `hosts`. The view inherits from this instance through its
+   * prototype, so it shares the connection pools and sees a later `configure`.
+   */
+  public restrictedTo(hosts: Iterable<string>): SafeHttp {
+    const restricted = Object.create(this) as SafeHttp
+    restricted.allowedHosts = new Set(hosts)
+    return restricted
+  }
+
+  /** Close the connection pools a network config opened (the global agent is not ours). */
+  public close(): Promise<void> {
+    return this.network.close()
   }
 
   // -------------------- Pure validation (no I/O) --------------------
@@ -111,10 +154,19 @@ export class SafeHttp {
     const signal = composeAbortSignal(opts.timeoutMs ?? this.timeoutMs, init.signal)
     const followRedirects = opts.followRedirects ?? true
     const maxHops = followRedirects ? this.maxRedirectHops : 0
-    let requestInit: RequestInit = withDispatcher({ ...init, redirect: "manual", signal }, opts.rejectUnauthorized)
+    let requestInit: RequestInit = { ...init, redirect: "manual", signal }
     let currentUrl = url
     for (let hop = 0; hop <= maxHops; hop++) {
-      const response = await this.fetchImpl(currentUrl, requestInit)
+      const host = new URL(currentUrl).host
+      if (this.allowedHosts && !this.allowedHosts.has(host)) {
+        throw new SafeUrlError(`Refused: ${host} is not among the hosts this run was allowed to reach`)
+      }
+      const jar = opts.cookieJar
+      // Per hop: a redirect to another host may need another client certificate, or bypass the proxy.
+      const dispatcher = this.network.dispatcherFor(currentUrl, opts.rejectUnauthorized ?? true)
+      const hopInit = jar ? withJarCookies(requestInit, jar, currentUrl) : requestInit
+      const response = await this.fetchImpl(currentUrl, dispatcher ? { ...hopInit, dispatcher } : hopInit)
+      if (jar) storeCookies(jar, response, currentUrl)
       const hopResult = this.resolveHop(currentUrl, response, followRedirects, hop)
       if (hopResult.done) return hopResult.response
       await response.body?.cancel()
@@ -252,16 +304,30 @@ function stripIpv6Brackets(hostname: string): string {
   return hostname
 }
 
-let insecureTlsDispatcher: Dispatcher | undefined
-
 /**
- * Dispatcher for the per-node "accept a self-signed certificate" opt-out. One
- * shared pool, like undici's global agent: a fresh Agent per request would
- * leak its sockets.
+ * `init` with the jar's cookies for `url` added to its Cookie header. The
+ * jar's cookies are added per hop and never written back into the init the
+ * redirect chain carries, so a cross-origin hop drops the user's own Cookie
+ * header and still gets the jar's cookies for the new host.
  */
-function getInsecureTlsDispatcher(): Dispatcher {
-  insecureTlsDispatcher ??= new Agent({ connect: { rejectUnauthorized: false } })
-  return insecureTlsDispatcher
+function withJarCookies(init: RequestInit, jar: CookieJar, url: string): RequestInit {
+  const headers = new Headers(init.headers)
+  const own = headers.get("cookie")
+  const ownNames = new Set((own ?? "").split(";").map((pair) => pair.split("=")[0]!.trim()))
+  const fromJar = jar
+    .getCookiesSync(url)
+    .filter((cookie) => !ownNames.has(cookie.key))
+    .map((cookie) => cookie.cookieString())
+  if (fromJar.length === 0) return init
+  headers.set("cookie", [...fromJar, ...(own ? [own] : [])].join("; "))
+  return { ...init, headers }
+}
+
+/** Store every Set-Cookie of `response`; one the jar refuses (another domain, a public suffix) is dropped. */
+function storeCookies(jar: CookieJar, response: Response, url: string): void {
+  for (const setCookie of response.headers.getSetCookie()) {
+    jar.setCookieSync(setCookie, url, { ignoreError: true })
+  }
 }
 
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"]
@@ -304,13 +370,4 @@ function composeAbortSignal(timeoutMs: number, callerSignal: AbortSignal | null 
   if (timeoutMs > 0) signals.push(AbortSignal.timeout(timeoutMs))
   if (callerSignal) signals.push(callerSignal)
   return signals.length === 1 ? signals[0]! : AbortSignal.any(signals)
-}
-
-/**
- * Attach the per-node "accept a self-signed certificate" dispatcher when
- * requested. Everything else rides undici's default global agent, which
- * pools connections across requests.
- */
-function withDispatcher(init: RequestInit, rejectUnauthorized: boolean | undefined): RequestInit {
-  return rejectUnauthorized === false ? { ...init, dispatcher: getInsecureTlsDispatcher() } : init
 }

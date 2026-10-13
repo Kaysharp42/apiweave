@@ -4,8 +4,10 @@ import { generateId } from "../id"
 import { getLogger } from "../logging/logger"
 import { deleteSetting, getSetting, setSetting, slugify } from "./helpers"
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
+import { WorkflowRepository } from "./WorkflowRepository"
 import { sanitizeCloudSnapshotPayload } from "../sync/cloud-mutations"
-import { containsCredentialMaterial, isSyncSensitiveKey, isWithheldSyncValue } from "../services/secret_utils"
+import { containsCredentialMaterial } from "@shared/credentials/credentials"
+import { isSyncSensitiveKey, isWithheldSyncValue } from "../services/secret_utils"
 import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
 import { canonicalizeSyncPayload } from "@shared/conflict-diff"
@@ -1482,6 +1484,11 @@ export class CloudSyncRepository {
     const graphJson = this.buildWorkflowGraphJson(payload)
     const variablesJson = JSON.stringify(payload["variables"] ?? {})
     const settingsJson = this.buildWorkflowSettingsJson(payload)
+    // A pulled change replaces the local workflow: keep what it replaces as a
+    // revision first, as any non-canvas write does. Revisions stay local.
+    const local = new WorkflowRepository(this.store)
+    const existing = local.getById(id)
+    if (existing !== undefined && (force || rev > BigInt(existing.rev))) local.revisions.capture(existing, "cloud")
     const result = this.store.set(
       `INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, scopeId = excluded.scopeId, name = excluded.name,

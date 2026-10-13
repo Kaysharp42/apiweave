@@ -133,7 +133,7 @@ describe("conflict-ui-bridge", () => {
     insertConflict("conflict-cloud")
     store.set(
       "INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json, variables_json, settings_json, rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ["workflow-1", WORKSPACE_ID, WORKSPACE_ID, "Newer Local", "newer-local", "{}", "{}", "{}", 12],
+      ["workflow-1", WORKSPACE_ID, WORKSPACE_ID, "Newer Local", "newer-local", '{"nodes":[],"edges":[]}', "{}", '{"tags":[],"nodeTemplates":[]}', 12],
     )
     store.set(
       "INSERT INTO cloud_record_state (workspace_id, kind, record_id, server_rev, local_rev, dirty, conflict_id) VALUES (?, ?, ?, ?, ?, ?, ?)",

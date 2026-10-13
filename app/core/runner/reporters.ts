@@ -4,6 +4,7 @@ import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { ReportFormat } from "@shared/types/ReportFormat"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
 import type { Workflow } from "@shared/types/Workflow"
 
 /**
@@ -16,14 +17,16 @@ import type { Workflow } from "@shared/types/Workflow"
  * It goes further than run history on purpose, because a report is a file that
  * leaves the app: it carries no request or response headers or bodies and no
  * variables — only names, statuses, timings, request method and URL (already
- * stripped of its query), response status codes and assertion rules.
+ * stripped of its query), response status codes and assertion rules, plus a
+ * script's test results and the console output its author chose to print.
  *
  * Mapping: one `<testsuite>` per workflow run (a single run gives one, a
  * project run one per workflow in run order) and one `<testcase>` per executed
  * node, Start and End excluded. An assertion node is one test case; its failed
  * rules are listed in the failure text. A run that failed, was cancelled or was
  * interrupted with no failed node gets a `Run` test case that fails, so CI never
- * reads it as green. A project workflow that never ran is one skipped test case.
+ * reads it as green. A project workflow whose run is not stored is one test
+ * case: failed when its item failed, was cancelled or interrupted, else skipped.
  * A data-driven run is its iterations' suites in order, each suite name
  * suffixed ` [iteration N]`.
  */
@@ -52,7 +55,7 @@ export type SingleReportInput =
       readonly kind: "project"
       readonly projectName: string
       readonly projectRun: ProjectRun
-      /** The runs its items name; an item whose run is missing is reported as not run. */
+      /** The runs its items name; an item whose run is missing is reported from its own status. */
       readonly runs: readonly Run[]
       readonly workflows: readonly ReportWorkflow[]
     }
@@ -70,6 +73,8 @@ interface ReportCase {
   readonly details: readonly string[]
   /** Requests a retrying node sent; null when it has no retry. */
   readonly attempts: number | null
+  /** What the node's scripts printed with console.log, in order. */
+  readonly logs: readonly string[]
 }
 
 interface ReportSuite {
@@ -125,8 +130,11 @@ function toReport(input: ReportInput): Report {
     suites: input.projectRun.items.map((item) => {
       const run = item.runId === null ? undefined : runs.get(item.runId)
       if (run !== undefined) return runSuite(item.workflowName, run, workflows.get(item.workflowId) ?? null)
-      const reason =
-        item.runId !== null
+      // The item's own status still says how it ended, even with its run gone.
+      const failed = item.status === "failed" || item.status === "cancelled" || item.status === "interrupted"
+      const reason = failed
+        ? `Workflow ${item.status}; its run record is unavailable`
+        : item.runId !== null
           ? "Its run was deleted from history"
           : item.status === "skipped"
             ? "Not run: the project run stopped before this workflow"
@@ -137,7 +145,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
       }
     }),
   }
@@ -153,37 +161,9 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
     const node = nodes.get(nodeId)
     const type = node?.type ?? "node"
     if (NOT_TEST_NODES.has(type)) continue
-    const result = results.get(nodeId)
-    const entry = run.nodeStatuses[nodeId]
-    const recorded = statusOf(entry) ?? result?.status ?? "idle"
-    const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
-    cases.push({
-      name: node?.label || nodeId,
-      type,
-      outcome,
-      durationMs: result?.duration ?? 0,
-      message:
-        outcome === "failed"
-          ? failureMessage(result, entry)
-          : outcome === "skipped" && recorded !== "skipped"
-            ? `Did not finish (${recorded})`
-            : null,
-      details: details(result, outcome),
-      attempts: result?.attempts?.length ?? null,
-    })
+    cases.push(nodeCase(node?.label || nodeId, type, results.get(nodeId), run.nodeStatuses[nodeId]))
   }
-  if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) {
-    const live = run.status === "pending" || run.status === "running"
-    cases.push({
-      name: "Run",
-      type: "run",
-      outcome: live ? "skipped" : "failed",
-      durationMs: run.duration ?? 0,
-      message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
-      details: [],
-      attempts: null,
-    })
-  }
+  if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) cases.push(runCase(run))
   return {
     name,
     runId: run.runId,
@@ -191,6 +171,41 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
     startedAt: run.startedAt ?? null,
     durationMs: run.duration ?? 0,
     cases,
+  }
+}
+
+function nodeCase(name: string, type: string, result: RunResult | undefined, entry: unknown): ReportCase {
+  const recorded = statusOf(entry) ?? result?.status ?? "idle"
+  const outcome: Outcome = recorded === "passed" || recorded === "failed" ? recorded : "skipped"
+  return {
+    name,
+    type,
+    outcome,
+    durationMs: result?.duration ?? 0,
+    message:
+      outcome === "failed"
+        ? failureMessage(result, entry)
+        : outcome === "skipped" && recorded !== "skipped"
+          ? `Did not finish (${recorded})`
+          : null,
+    details: details(result, outcome),
+    attempts: result?.attempts?.length ?? null,
+    logs: (result?.scripts ?? []).flatMap((script) => script.logs),
+  }
+}
+
+/** Stands in for a run that did not complete with no failed node to show for it. */
+function runCase(run: Run): ReportCase {
+  const live = run.status === "pending" || run.status === "running"
+  return {
+    name: "Run",
+    type: "run",
+    outcome: live ? "skipped" : "failed",
+    durationMs: run.duration ?? 0,
+    message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
+    details: [],
+    attempts: null,
+    logs: [],
   }
 }
 
@@ -214,7 +229,8 @@ function statusCodeOf(result: RunResult | undefined): number | undefined {
 
 function failureMessage(result: RunResult | undefined, entry: unknown): string {
   const failedRules = (result?.assertions ?? []).filter((rule) => rule.outcome === "fail").length
-  if (failedRules > 0) {
+  // An http-request node that failed its responseSchemas says so in its error.
+  if (failedRules > 0 && !result?.error) {
     return `${failedRules} of ${result?.assertions?.length ?? 0} assertion rules failed`
   }
   const code = statusCodeOf(result)
@@ -227,13 +243,26 @@ function failureMessage(result: RunResult | undefined, entry: unknown): string {
   return typeof message === "string" && message !== "" ? message : "Node failed"
 }
 
-function describeRule(rule: AssertionEvaluation): string {
+/** The rule, then why it could not be compared or each schema violation, indented under it. */
+function describeRule(rule: AssertionEvaluation): string[] {
   const subject = rule.path === "" ? rule.source : `${rule.source} ${rule.path}`
-  return `Rule ${rule.ruleIndex + 1}: ${subject} ${rule.operator} — ${rule.outcome} (${rule.reasonCode})`
+  return [
+    `Rule ${rule.ruleIndex + 1}: ${subject} ${rule.operator} — ${rule.outcome} (${rule.reasonCode}${rule.detail ? `: ${rule.detail}` : ""})`,
+    ...(rule.schemaErrors ?? []).map((violation) => `  ${violation.path === "" ? "(root)" : violation.path}: ${violation.message}`),
+  ]
 }
 
 function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (result === undefined) return []
+  return [
+    ...requestLines(result),
+    ...(result.assertions ?? []).filter((rule) => outcome !== "failed" || rule.outcome === "fail").flatMap((rule) => describeRule(rule)),
+    ...(result.scripts ?? []).flatMap((script) => scriptLines(script, result.error ?? "", outcome)),
+  ]
+}
+
+/** The request line, the response status code, and each attempt a retrying node made. */
+function requestLines(result: RunResult): string[] {
   const lines: string[] = []
   const method = field(result.request, "method")
   const url = field(result.request, "url")
@@ -243,8 +272,18 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (result.attempts !== undefined) {
     lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
   }
-  for (const rule of result.assertions ?? []) {
-    if (outcome !== "failed" || rule.outcome === "fail") lines.push(describeRule(rule))
+  return lines
+}
+
+function scriptLines(script: ScriptOutcome, nodeError: string, outcome: Outcome): string[] {
+  const lines: string[] = []
+  const label = script.phase === "preRequest" ? "Pre-request" : "Post-response"
+  // The node's own error already says it when the script is why the node failed.
+  if (script.error !== undefined && !nodeError.includes(script.error)) lines.push(`${label} script error: ${script.error}`)
+  for (const test of script.tests) {
+    if (outcome !== "failed" || !test.passed) {
+      lines.push(`Test ${JSON.stringify(test.name)}: ${test.passed ? "passed" : `failed — ${test.error ?? ""}`}`)
+    }
   }
   return lines
 }
@@ -304,14 +343,15 @@ function attrs(values: Readonly<Record<string, string | number | null>>): string
 function junitCase(suite: ReportSuite, testCase: ReportCase): string {
   const head = `    <testcase${attrs({ classname: suite.name, name: testCase.name, time: seconds(testCase.durationMs) })}`
   const text = [testCase.message ?? "", ...testCase.details].filter((line) => line !== "").join("\n")
+  const children: string[] = []
   if (testCase.outcome === "failed") {
     const type = testCase.type === "assertion" ? "AssertionError" : "NodeFailure"
-    return `${head}>\n      <failure${attrs({ message: testCase.message, type })}>${escapeXmlText(text)}</failure>\n    </testcase>`
+    children.push(`      <failure${attrs({ message: testCase.message, type })}>${escapeXmlText(text)}</failure>`)
+  } else if (testCase.outcome === "skipped") {
+    children.push(`      <skipped${attrs({ message: testCase.message })}/>`)
   }
-  if (testCase.outcome === "skipped") {
-    return `${head}>\n      <skipped${attrs({ message: testCase.message })}/>\n    </testcase>`
-  }
-  return `${head}/>`
+  if (testCase.logs.length > 0) children.push(`      <system-out>${escapeXmlText(testCase.logs.join("\n"))}</system-out>`)
+  return children.length === 0 ? `${head}/>` : `${head}>\n${children.join("\n")}\n    </testcase>`
 }
 
 /** JUnit XML: `<testsuites>` → one `<testsuite>` per workflow run → `<testcase>` per node. */
@@ -357,7 +397,7 @@ function htmlSuite(suite: ReportSuite): string {
           <td class="num">${seconds(testCase.durationMs)}s</td>
           <td>${testCase.message === null ? "" : `<div class="message">${escapeHtml(testCase.message)}</div>`}${testCase.details
             .map((line) => `<div class="detail">${escapeHtml(line)}</div>`)
-            .join("")}</td>
+            .join("")}${testCase.logs.length === 0 ? "" : `<pre class="logs">${escapeHtml(testCase.logs.join("\n"))}</pre>`}</td>
         </tr>`,
     )
     .join("\n")
@@ -406,6 +446,7 @@ export function buildHtmlReport(input: ReportInput): string {
   .badge { font-size: 0.75rem; font-weight: 600; }
   .badge.passed { color: var(--pass); } .badge.failed { color: var(--fail); } .badge.skipped { color: var(--skip); }
   .message { color: var(--fail); } tr.skipped .message { color: var(--skip); }
+  .logs { margin: 4px 0 0; white-space: pre-wrap; font-size: 0.78rem; color: var(--muted); }
   .detail { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 </style>
 </head>
@@ -434,6 +475,11 @@ const CONSOLE_MARK: Record<Outcome, { mark: string; color: string }> = {
   skipped: { mark: "○", color: ANSI.yellow },
 }
 
+/** A project workflow that never ran: no run, and no failed case standing in for one. */
+function notRun(suite: ReportSuite): boolean {
+  return suite.runId === null && !suite.cases.some((testCase) => testCase.outcome === "failed")
+}
+
 /**
  * Plain text for a terminal or a CI log: one block per workflow run with a
  * line per step, failure messages and details under failed steps, then a
@@ -445,7 +491,7 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
   const report = toReport(input)
   const lines: string[] = [paint(ANSI.bold, report.title) + paint(ANSI.dim, ` · ${report.status}`), ""]
   for (const suite of report.suites) {
-    const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : suite.runId === null ? "skipped" : "failed"
+    const suiteOutcome: Outcome = suite.status === "completed" ? "passed" : notRun(suite) ? "skipped" : "failed"
     lines.push(
       `${paint(CONSOLE_MARK[suiteOutcome].color, suite.name)}${paint(ANSI.dim, ` · ${suite.status} · ${seconds(suite.durationMs)}s`)}`,
     )
@@ -457,12 +503,13 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
       if (testCase.outcome === "passed") continue
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
+      if (testCase.outcome === "failed") for (const line of testCase.logs) lines.push(`      ${paint(ANSI.dim, `> ${line}`)}`)
     }
     lines.push("")
   }
   const cases = counts(report.suites.flatMap((suite) => suite.cases))
   const passedSuites = report.suites.filter((suite) => suite.status === "completed").length
-  const skippedSuites = report.suites.filter((suite) => suite.runId === null).length
+  const skippedSuites = report.suites.filter(notRun).length
   const rows: (string | number)[][] = [
     ["", "total", "passed", "failed", "skipped"],
     ["Workflows", report.suites.length, passedSuites, report.suites.length - passedSuites - skippedSuites, skippedSuites],

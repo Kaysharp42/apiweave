@@ -15,6 +15,8 @@ import { TextArea } from "./atoms/TextArea";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { getLogger } from "../utils/logger";
+import type { JsonValue } from "@shared/types/JsonValue";
+import type { Workflow } from "@shared/types/Workflow";
 
 const importPanelLog = getLogger("ImportToNodesPanel");
 
@@ -34,6 +36,7 @@ interface NodeConfig {
   cookies?: string;
   timeout?: number;
   openapiMeta?: unknown | null;
+  responseSchemas?: Record<string, JsonValue>;
 }
 
 interface Node {
@@ -52,6 +55,7 @@ interface PaletteItem {
   cookies: string;
   timeout: number;
   openapiMeta: unknown | null;
+  responseSchemas?: Record<string, JsonValue>;
 }
 
 interface ImportedGroupPayload {
@@ -64,6 +68,8 @@ interface ImportToNodesPanelProps {
   isOpen: boolean;
   onClose: () => void;
   workflowId: string;
+  /** The workflow as the template write left it, revision included. */
+  onTemplatesSaved: (workflow: Workflow) => void;
 }
 
 type ActiveTab = "openapi" | "har" | "curl";
@@ -203,6 +209,7 @@ export function ImportToNodesPanel({
   isOpen,
   onClose,
   workflowId,
+  onTemplatesSaved,
 }: ImportToNodesPanelProps) {
   const { workspaceId } = useScopeContext();
   const { addImportedGroup } = usePalette();
@@ -274,10 +281,12 @@ export function ImportToNodesPanel({
     _sourceType: string,
   ): Promise<void> => {
     try {
-      await apiweave.workflows.saveTemplates(
-        workspaceId || "",
-        workflowId,
-        templates,
+      onTemplatesSaved(
+        await apiweave.workflows.saveTemplates(
+          workspaceId || "",
+          workflowId,
+          templates,
+        ),
       );
     } catch (error) {
       importPanelLog.error("Error saving templates to workflow:", error);
@@ -297,6 +306,9 @@ export function ImportToNodesPanel({
       cookies: node.config?.cookies || "",
       timeout: node.config?.timeout || 30,
       openapiMeta: node.config?.openapiMeta || null,
+      ...(node.config?.responseSchemas
+        ? { responseSchemas: node.config.responseSchemas }
+        : {}),
     }));
   };
 

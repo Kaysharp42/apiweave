@@ -25,6 +25,19 @@ if (typeof window !== "undefined") {
   }
 }
 
+// jsdom's Blob has no `text()`, which Electron's renderer does; give it one
+// through jsdom's own FileReader so components can read a picked file natively.
+if (typeof Blob !== "undefined" && typeof Blob.prototype.text !== "function") {
+  Blob.prototype.text = function text(this: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+      reader.readAsText(this);
+    });
+  };
+}
+
 // ponytail: Map-backed, not jsdom's Storage — no index access (`store.foo`),
 // no StorageEvent, no quota. Swap in jsdom's real one if a test needs those.
 function memoryStorage(): Storage {

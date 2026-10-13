@@ -8,9 +8,11 @@ import type { RunResult } from "@shared/types/RunResult"
 import type { Workflow } from "@shared/types/Workflow"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { isValidRuntimePath } from "@shared/analysis/workflow_graph_analyzer"
+import { assertionExpectedProblem } from "@shared/analysis/assertion_expected"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { isSecretKey, looksLikeSecretValue } from "./secret_utils"
+import { isSecretKey } from "@shared/credentials/credentials"
+import { isSecretReference, looksLikeSecretValue } from "./secret_utils"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
 
@@ -188,6 +190,7 @@ export class AssertionAuthoringService {
     mode: "append" | "replace",
     drafts: readonly unknown[],
     runId?: string,
+    source?: string,
   ): Promise<AssertionApplyResult> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
     const sourceNodeId = resolveAssertionSource(workflow, assertionNodeId)
@@ -205,6 +208,7 @@ export class AssertionAuthoringService {
       assertionNodeId,
       mode,
       validation.rules,
+      source,
     )
     return { workflow: updated, revision: updated.rev }
   }
@@ -340,6 +344,10 @@ const RULE_CHECKS: readonly ((rule: AssertionItem) => Omit<ValidationIssue, "rul
     rule.operator === "count" && (!Number.isInteger(rule.expectedValue) || Number(rule.expectedValue) < 0)
       ? { code: "invalid_count", severity: "error", message: "Count assertions require a non-negative integer." }
       : undefined,
+  (rule) => {
+    const problem = assertionExpectedProblem(rule.operator, rule.expectedValue)
+    return problem === null ? undefined : { code: "invalid_expected", severity: "error", message: problem }
+  },
   (rule) =>
     isUnsafeLiteral(rule)
       ? {
@@ -422,10 +430,6 @@ function findHeader(headers: Record<string, JsonValue> | undefined, name: string
   if (!headers) return undefined
   const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())
   return typeof entry?.[1] === "string" ? entry[1] : undefined
-}
-
-function isSecretReference(value: string): boolean {
-  return /^\{\{secrets\.[A-Za-z_][A-Za-z0-9_]*\}\}$/.test(value)
 }
 
 function isPathSegment(value: string): boolean {

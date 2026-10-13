@@ -1,3 +1,5 @@
+import type { JsonValue } from "@shared/types/JsonValue";
+
 export interface ImportedItem {
   label: string;
   url: string;
@@ -9,4 +11,6 @@ export interface ImportedItem {
   cookies: string;
   timeout: number;
   openapiMeta: unknown;
+  /** OpenAPI import: the response body schema per status, checked when the request runs. */
+  responseSchemas?: Record<string, JsonValue> | undefined;
 }

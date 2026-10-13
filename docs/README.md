@@ -79,6 +79,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 ## Guides
 
 - [Run Tests in CI](guides/ci.md): the headless `apiweave run` command, secrets from CI variables, and a GitHub Actions job.
+- [Keep Tests in a Git Repository](guides/git-workflows.md): export a project to a diff-friendly folder, commit it, import teammates' changes, and run it in CI.
 
 ## Reference
 

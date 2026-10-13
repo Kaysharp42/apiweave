@@ -5,10 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import nock from "nock"
 import type { Database, KVStore } from "../../../core/db"
 import { initDatabase } from "../../../core/db"
-import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/repositories"
+import {
+  CLOUD_OUTBOX_MAX_RETRIES,
+  CloudSyncRepository,
+  WorkflowRepository,
+  WorkspaceRepository,
+} from "../../../core/repositories"
+import { DeniedError } from "../../../core/ipc/errors"
+import { ScopeResolver } from "../../../core/services/scope_resolver"
+import { WorkspaceService } from "../../../core/services/workspace_service"
 import { createKeyfile } from "../../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
-import type { SyncProvider } from "../../../core/sync"
+import { LocalOnlySyncProvider, type SyncProvider } from "../../../core/sync"
 import { DeviceTokenStore } from "../cloud-client"
 import { ErrLinkCancelled } from "../cloud-link"
 import { DesktopCloudSyncControl } from "../cloud-sync-control"
@@ -103,6 +111,45 @@ describe("DesktopCloudSyncControl", () => {
       ...overrides,
     })
   }
+
+  it("refuses to delete a workspace bound to a shared team, but deletes personal-team and local ones", async () => {
+    const repository = new CloudSyncRepository(store)
+    repository.setSetting("cloud.team_catalog", JSON.stringify([
+      { teamId: "team-personal", teamName: "Personal", isPersonal: true, canCreateWorkspaces: true },
+      { teamId: "team-shared", teamName: "Acme", isPersonal: false, canCreateWorkspaces: true },
+    ]))
+    const control = linkedControlFixture(repository, "account-1")
+    const workspaces = new WorkspaceRepository(store)
+    const service = new WorkspaceService(
+      workspaces,
+      new WorkflowRepository(store),
+      new LocalOnlySyncProvider(),
+      new ScopeResolver({ workspaceExists: (id) => workspaces.getById(id) !== undefined, environmentExists: () => false }),
+      undefined,
+      (workspaceId) => control.isSharedTeamWorkspace(workspaceId),
+    )
+    const bindTo = (teamId: string): void => repository.upsertWorkspaceBinding({
+      workspaceId: WORKSPACE_ID,
+      cloudWorkspaceId: CLOUD_WORKSPACE_ID,
+      cloudWorkspaceName: "Cloud Workspace",
+      teamId,
+      syncMode: "bi-directional",
+      deviceId: "device-1",
+      initializationState: "initialized",
+    })
+
+    bindTo("team-shared")
+    await expect(service.delete(WORKSPACE_ID)).rejects.toBeInstanceOf(DeniedError)
+    expect(workspaces.getById(WORKSPACE_ID)).toBeDefined()
+
+    bindTo("team-personal")
+    await service.delete(WORKSPACE_ID)
+    expect(workspaces.getById(WORKSPACE_ID)).toBeUndefined()
+
+    const local = await service.create({ name: "Scratch", isPersonal: false })
+    await service.delete(local.workspaceId)
+    expect(workspaces.getById(local.workspaceId)).toBeUndefined()
+  })
 
   it("revokes the device before removing account-scoped local state on unlink", async () => {
     const repository = new CloudSyncRepository(store)

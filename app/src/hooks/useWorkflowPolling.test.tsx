@@ -8,15 +8,17 @@ const onRunStartedMock = vi.hoisted(() => vi.fn());
 const onRunProgressMock = vi.hoisted(() => vi.fn());
 const getLatestMock = vi.hoisted(() => vi.fn());
 const createIterationsMock = vi.hoisted(() => vi.fn());
+const createMock = vi.hoisted(() => vi.fn());
+const getLatestFailedMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/apiweaveClient", () => ({
   apiweave: {
     runs: {
       getLatest: getLatestMock,
-      getLatestFailed: vi.fn().mockResolvedValue(undefined),
+      getLatestFailed: getLatestFailedMock,
       get: vi.fn().mockResolvedValue({ runId: "r", results: [] }),
-      create: vi.fn(),
+      create: createMock,
       createIterations: createIterationsMock,
     },
   },
@@ -48,7 +50,7 @@ function captureRunStarted(): () => Listener {
 
 const NODES: Node[] = [
   { id: "start-1", type: "start", position: { x: 0, y: 0 }, data: {} },
-  { id: "http-1", type: "http-request", position: { x: 200, y: 0 }, data: {} },
+  { id: "http-1", type: "http-request", position: { x: 200, y: 0 }, data: { label: "Get user" } },
 ];
 
 function setup() {
@@ -205,5 +207,45 @@ describe("useWorkflowPolling — running with data", () => {
 
     expect(createIterationsMock).not.toHaveBeenCalled();
     expect(toastErrorMock).toHaveBeenCalledWith(expect.stringContaining("array of objects"));
+  });
+});
+
+describe("useWorkflowPolling — rerunning part of a workflow", () => {
+  beforeEach(() => {
+    captureRunStarted();
+    onRunProgressMock.mockReset();
+    onRunProgressMock.mockReturnValue(() => undefined);
+    getLatestMock.mockReset();
+    getLatestMock.mockResolvedValue(undefined);
+    createMock.mockReset();
+    createMock.mockResolvedValue({ runId: "rerun-1", iteration: null });
+    getLatestFailedMock.mockReset();
+    getLatestFailedMock.mockResolvedValue({ runId: "failed-1", failedNodes: ["http-1"] });
+  });
+
+  it("runs from a node, reusing the latest run unless told which", async () => {
+    const { result } = setup();
+
+    await act(async () => {
+      result.current.runFromNode("http-1");
+    });
+    await waitFor(() =>
+      expect(createMock).toHaveBeenCalledWith({ workspaceId: "ws1", workflowId: "wf1", resume: { nodeId: "http-1" } }),
+    );
+    expect(result.current.currentRunId).toBe("rerun-1");
+  });
+
+  it("offers the latest failed run's failed steps by label and reruns them from that run", async () => {
+    const { result } = setup();
+    await waitFor(() =>
+      expect(result.current.resumeOptions).toEqual([{ nodeId: "http-1", label: "Get user", type: "http-request" }]),
+    );
+
+    await act(async () => {
+      result.current.rerunFailed();
+    });
+    await waitFor(() =>
+      expect(createMock).toHaveBeenCalledWith({ workspaceId: "ws1", workflowId: "wf1", resume: { fromRunId: "failed-1" } }),
+    );
   });
 });

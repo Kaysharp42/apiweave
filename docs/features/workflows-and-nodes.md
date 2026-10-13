@@ -23,6 +23,7 @@
   - [Call Workflow](#call-workflow)
 - [Reusing a Node Configuration](#reusing-a-node-configuration)
 - [Canvas Actions](#canvas-actions)
+  - [Version history](#version-history)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Recommended Build Pattern](#recommended-build-pattern)
 
@@ -87,20 +88,86 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `query params` | Structured key/value rows, each with an active toggle |
 | `path variables` | Named segments of the URL path (`/users/:id`) with their values |
 | `headers` | Structured key/value rows, each with an active toggle |
-| `cookies` | Structured key/value rows, each with an active toggle |
-| `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
-| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
+| `cookies` | Structured key/value rows, each with an active toggle. A row wins over a cookie of the same name from the cookie jar |
+| `use cookie jar` | On by default: the request sends the cookies earlier responses in this run set, and keeps the ones its own response sets (see [Cookies](#cookies)). Off sends only the node's own cookie rows and stores nothing |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, [OAuth 2.0](#oauth-20), [AWS Signature V4](#aws-signature-v4), [Digest](#digest) or [JWT Bearer](#jwt-bearer). Supports placeholders |
+| `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, binary, or GraphQL (see [GraphQL](#graphql)). Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Whether a failed request lets the run continue down the outgoing edge |
 | `retry` | Optional: send the request again until a condition holds, or after a network error or 5xx (see [Retry and polling](#retry-and-polling)) |
+| `response schemas` | Optional JSON Schemas the response body must match, keyed by status (`200`, `2XX`, `default`) — see [Response schemas](#response-schemas). Filled by [OpenAPI import](swagger-import.md#response-schema-checks) |
+| `scripts` | Optional JavaScript, on the **Scripts** tab: a pre-request script that can sign or rewrite the request, and a post-response script that can set variables and run custom tests (see [Scripting](scripting.md)) |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
 
 **Handles:** one input, one output.
+
+#### Cookies
+
+Every run has its own cookie jar. A `Set-Cookie` on any response, including a
+redirect, is stored, and every later request in the run — the next hop of a
+redirect, the next node, an SSE Stream — sends the cookies that match its URL,
+the way a browser does: by domain (a host-only cookie goes only to the host
+that set it, a `Domain` cookie to its subdomains too), by path, `Secure` only
+over HTTPS (or to localhost), and never after it expires or is deleted with
+`Max-Age=0`. `HttpOnly` and `SameSite` do not apply outside a browser. A login
+node that receives a session cookie therefore signs in every request after it,
+without extracting and re-sending it.
+
+The jar starts empty with each run. A Call Workflow node shares its caller's
+jar both ways, so a login sub-workflow leaves the caller signed in. Each
+workflow of a project run and each iteration of a data-driven run is its own
+run, with its own jar. Turn **Use cookie jar** off on a node to send it
+without the session, for a negative test.
+
+#### Response schemas
+
+`responseSchemas` maps a status to the JSON Schema its body must match. After
+the response arrives, the node picks the most specific key for the actual
+status — the exact code (`201`), then its class (`2XX`), then `default` — and
+validates the body against it. A status with no key is not checked. A mismatch
+fails the node with "Response does not match the schema for status 200", and
+its result lists each violation with where in the body it is and why, in the
+output panel, in run reports and on the CLI console. The check runs on negative
+tests too: a request expecting `404` is checked against the `404` (or `4XX`)
+schema.
+
+[OpenAPI import](swagger-import.md#response-schema-checks) fills this from the
+spec. On the **Settings** tab, **Response schemas** lists the statuses and
+removes one; edit a schema itself in the workflow's JSON. To check a schema
+from an Assertion node instead, use the `matchesSchema` operator.
+
+#### GraphQL
+
+Choose **GraphQL** as the body type to write a query, its variables and,
+optionally, an operation name, in separate editors. The request is sent the way
+[GraphQL over HTTP](https://graphql.github.io/graphql-over-http/) describes:
+
+- Any method but `GET` sends a JSON body, `{"query": "...", "variables": {...}, "operationName": "..."}`,
+  with `Content-Type: application/json` unless you set one. Empty variables and
+  operation name are left out.
+- `GET` sends them as the `query`, `variables` (JSON text) and `operationName`
+  query parameters, and no body.
+
+Placeholders work in all three fields. The variables are a JSON template, like a
+JSON body: a placeholder inside a string (`"name": "{{variables.name}}"`) is
+escaped, and one standing alone (`"id": {{variables.userId}}`) is inserted as
+is, so it can be a number, a boolean or an object. Variables that are not a JSON
+object once filled fail the node with "GraphQL variables are not valid JSON"
+(or "must be a JSON object").
+
+A GraphQL server usually answers `200` even when the operation failed, and puts
+the failures in an `errors` array. To fail on that, add an Assertion node rule
+`prev` · `response.body.errors` · **not exists**, or the same rule in a retry's
+`until`. Check the data with ordinary rules on `response.body.data.*`.
+
+Postman collections import their GraphQL bodies as GraphQL. To turn a JSON
+body that already holds `{"query": ..., "variables": ...}` into one, copy the
+two values into the GraphQL editors.
 
 ### SSE Stream
 
@@ -141,6 +208,39 @@ During a run:
 - A run never opens a browser. When no token has been fetched, or it expired with no refresh token, the node fails with a message saying to use **Get token**. This also applies to runs an agent starts over MCP.
 
 Token endpoint failures fail the node with the status and the OAuth error code, for example "OAuth 2.0 token request failed: HTTP 401 (invalid_client)". The token endpoint is listed among the destinations when an agent-started run asks to use your secrets.
+
+#### AWS Signature V4
+
+Choose **AWS Signature V4** on the **Auth** tab to sign requests to AWS APIs (API Gateway with IAM auth, Lambda function URLs, S3, OpenSearch...) the way the AWS SDKs do. Set the access key ID, the secret access key, the region and the service's signing name (`execute-api`, `s3`, `lambda`, `es`...), and for temporary credentials the session token, sent as `X-Amz-Security-Token`.
+
+The secret access key and the session token are secret *names*, stored as `{{secrets.NAME}}`; a literal is refused. The access key ID, region and service accept placeholders, so the key ID can come from `{{env.AWS_ACCESS_KEY_ID}}`.
+
+The request is signed last, over exactly what is sent: after placeholders, the other auth fields and the [pre-request script](scripting.md) have done their work, and again on every [retry](#retry-and-polling) attempt. The signature covers the method, the path, the query string (sent in the sorted, percent-encoded form it was signed in), the body's SHA-256 and every header the node sets (not `Cookie` or `User-Agent`). `X-Amz-Date` is added; for `s3`, so is `X-Amz-Content-Sha256`. A form-data body is encoded before it is signed. A signed request does not follow redirects, since a signature is only good for the URL it was made for: a 3xx comes back as the node's response.
+
+A missing secret fails the node before anything is sent, for example "AWS Signature V4: secret AWS_SECRET_ACCESS_KEY is not set". In the [CLI](../guides/ci.md), supply the secrets like any other.
+
+#### Digest
+
+Choose **Digest** on the **Auth** tab for servers that use HTTP Digest authentication ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)). Set the username (placeholders work) and the password, a secret *name* stored as `{{secrets.NAME}}`.
+
+The request goes out without credentials first. When the server answers `401` with a `WWW-Authenticate: Digest` challenge, the node computes the answer and sends the request once more with the `Authorization` header; the second response is the node's. A wrong password therefore ends in the server's second `401`. MD5 and SHA-256 are supported, with their `-sess` variants, with `qop=auth` (or no qop, for old servers); a server that offers only `qop=auth-int` fails the node with a message saying so. Every request, and every retry attempt, is challenged afresh, so a Digest request costs two round trips and sends its body twice. Like a signed request, it does not follow redirects.
+
+Digest is not available on SSE Stream nodes.
+
+#### JWT Bearer
+
+Choose **JWT Bearer** on the **Auth** tab when an API accepts a token you sign yourself (a service account, a test identity provider, an API that verifies a shared secret). The node signs a fresh JWT for every request, and every retry attempt, and sends it as `Authorization: Bearer <token>`.
+
+| Field | What it does |
+| --- | --- |
+| Algorithm | `HS256` (HMAC with a shared secret), `RS256` (RSA private key) or `ES256` (P-256 EC private key) |
+| Shared secret / Private key | A secret *name*, stored as `{{secrets.NAME}}`; a literal is refused. A private key is PEM (PKCS#8, PKCS#1 or SEC1). A key whose line breaks were lost when it was pasted into the one-line secret field, or that spells them `\n` (common in CI variables), is read correctly |
+| Payload | The claims, a JSON object. Placeholders work as in a JSON body: inside a string the value is escaped, standing alone (`"sub": {{variables.userId}}`) it is inserted as a value. `iat` is set to the current time unless the payload sets it |
+| Extra header fields | Optional JSON object, for example `{"kid": "key-1"}`. `alg` is always the chosen algorithm, `typ` defaults to `JWT` |
+| Expires in | Seconds, five minutes for a new config. Adds `exp` = `iat` + this, unless the payload sets `exp`. Empty: no `exp` |
+| Header / Prefix | Where the token goes: `Authorization` and `Bearer` by default. Another header (`X-Token`) and an empty prefix send the bare token |
+
+Every signed token is masked as `<SECRET>` in run history, events and reports, like a secret, so an API that echoes it back does not leak it. A payload or header that is not a JSON object, a key that is not a PEM private key of the right kind, or a missing secret fails the node before anything is sent, for example "JWT: ES256 needs a P-256 EC private key".
 
 #### Retry and polling
 
@@ -189,7 +289,7 @@ Each assertion rule:
 | --- | --- |
 | `source` | Where the value comes from: `prev` (the upstream response object), `status`, `headers`, `cookies`, or `variables` |
 | `path` | What it means depends on `source` — see the table below |
-| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists` |
+| `operator` | Comparison: `equals`, `notEquals`, `contains`, `notContains`, `gt`, `gte`, `lt`, `lte`, `count`, `exists`, `notExists`, `matches`, `notMatches`, `type`, `matchesSchema` — see [Validation operators](#validation-operators) |
 | `expectedValue` | Value to compare against (omitted for `exists` and `notExists`) |
 
 | `source` | `path` |
@@ -201,6 +301,47 @@ Each assertion rule:
 A bare field name is not a path: the value at the top of a JSON body is
 `response.body.id`, not `id`. `count` takes a non-negative integer and compares
 the length of an array or string; `status` accepts only the numeric comparison
+operators.
+
+#### Validation operators
+
+| Operator | `expectedValue` | Passes when |
+| --- | --- | --- |
+| `matches` | A regular expression: bare (`^ord_[0-9a-f]{8}$`) or a literal with flags (`/^ok$/i`) | the value matches it. A number or boolean is tested as its text, an object or array as its JSON |
+| `notMatches` | Same | the value does not match it |
+| `type` | `string`, `number`, `integer`, `boolean`, `object`, `array` or `null` | the value has that JSON type; `integer` is a number with no fraction, and also a `number` |
+| `matchesSchema` | A JSON Schema | the value is valid against it. Point `path` at `response.body` to check the whole body |
+
+A missing value fails all four, including `notMatches`. A string that starts
+and ends with `/` is read as a literal: `/api/v1/` is the pattern `api/v1`,
+which still matches any text containing it; write `^/api/v1/` to anchor a
+leading slash. The pattern syntax is JavaScript's.
+
+**Runaway patterns.** A pattern like `^(a+)+$` backtracks exponentially on
+some inputs, and V8, the engine the app runs on, has no time limit for a
+regular expression: one such match would freeze the whole app. So a match runs
+in the [script sandbox](scripting.md)'s engine, QuickJS, whose regex engine can
+be interrupted, and is stopped after 100 ms. The rule then fails with "Regular
+expression timed out after 100 ms". A value longer than 100,000 characters
+fails the rule too, rather than being tested in part.
+
+**JSON Schema.** Draft 2020-12 by default; a schema whose `$schema` names
+draft-07 (or 06), 2019-09 or draft-04 is validated by that draft. Formats such
+as `email`, `date-time` and `uuid` are checked; unknown keywords and formats
+are ignored. `$ref` resolves within the schema (`#/$defs/...`), not to other
+files. The schema is interpreted as data by
+[@cfworker/json-schema](https://github.com/cfworker/cfworker/tree/main/packages/json-schema)
+— nothing is generated or evaluated from it. A failed rule lists its first 10
+violations, each with a JSON Pointer to the value (`/items/0/qty`, empty for
+the value itself) and the reason, in the node's result, the reports and the CLI
+console, masked like everything else in a run.
+
+A value of the wrong shape — an unknown type name, a pattern that does not
+compile, a `matchesSchema` value that is not a schema object — is flagged
+before the run (`assertion_expected_invalid`), and at run time fails the rule
+with `comparison-error` and the reason.
+
+The Retry `until` rules and an SSE node's finish conditions take the same
 operators.
 
 **Handles:** one input, two outputs. `pass` fires when every rule passes; `fail` fires when at least one rule fails.
@@ -278,6 +419,7 @@ The top toolbar exposes the actions that operate on the whole workflow.
 | --- | --- |
 | **Save** | Flushes the workflow to disk immediately, bypassing the 700ms auto-save debounce (`Ctrl+S`). |
 | **History** | Opens run history for the workflow, with per-run timeline and detail views. |
+| **Version history** | Lists earlier versions of the workflow and restores one. See [Version history](#version-history). |
 | **Run** | Executes the full workflow from the Start node. Picks the environment selected in the toolbar. Click **Cancel** while a run is in flight to stop it: the run is recorded as `cancelled`, the node it interrupted (a request, a delay, a merge still waiting) shows as skipped, and nothing after it runs. |
 | **JSON editor** | Opens the workflow's `nodes`, `edges`, and `variables` in a raw JSON view for targeted edits. **Apply** (`Ctrl+S`) applies and saves them. Closing with unapplied changes (Escape, a click outside, or the close button) asks **Apply**, **Discard** or **Keep editing**; invalid JSON stays open with the error shown. |
 | **Import** | Opens the import panel (OpenAPI/Swagger, HAR, cURL) to add nodes to the current workflow. |
@@ -291,9 +433,62 @@ Every save is checked against the revision the canvas loaded. If the workflow ch
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
-Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
+To rerun only part of a workflow after fixing a step, use **Run from here** on a step (its node menu, or right-click it) or **Rerun failed branches** from the arrow beside **Run** or a failed run in History. The steps upstream are not sent again: their results and variables from an earlier run are reused. See [Rerun from a node, or rerun failed branches](visualization-and-debugging.md#6-rerun-from-a-node-or-rerun-failed-branches).
 
 Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
+
+### Version history
+
+Undo (`Ctrl+Z`) covers the edits on the canvas since it opened. **Version history**
+(the clock-on-a-page icon on the toolbar) goes further back, and covers changes
+that did not come from the canvas: a bad auto-save, an agent's edit over MCP, an
+import into the workflow, a cloud sync that replaced it.
+
+Each version is the workflow as it was just **before** a change replaced it,
+labelled with that change — *Before canvas edits*, *Before agent Claude Code*,
+*Before cloud sync*, *Before import*, *Before restore*. A version is kept:
+
+- while you edit on the canvas, at most once every 10 minutes (auto-save runs
+  every 700 ms, and a version per save would bury the useful ones);
+- always before an agent, an import, a cloud sync or a restore changes the
+  workflow, and before the first canvas save after one of those;
+- never twice in a row with the same content.
+
+Each workflow keeps its newest 50 versions, none older than 90 days. Versions are
+deleted with their workflow.
+
+Pick a version to see what restoring it would change — how many nodes it adds
+back, removes and changes — then **Restore**. Restoring writes the version's
+name, description, nodes, edges, variables, tags and node templates back over
+the workflow; its project and selected environment stay as they are. Your
+unsaved edits are saved first, and the workflow as it was before the restore is
+kept as a version itself, so a restore can be undone the same way. A restore is
+checked against the revision the canvas is on, like any save: if the workflow
+changed elsewhere in the meantime it is refused and nothing is overwritten.
+
+Versions stay on this computer: they are never synced to APIWeave Cloud and
+never exported. They hold the same configuration as the workflow itself —
+`{{secrets.NAME}}` references, never secret values. An agent can list a
+workflow's versions (`workflows_listRevisions`, metadata only); reading one and
+restoring one are yours, in this dialog.
+
+## Search
+
+The command palette (`Ctrl+K`, or **Open command palette** in the canvas
+toolbar) searches the whole workspace as well as the canvas commands. Type two
+characters or more and, after a short pause, it lists:
+
+- **Workflows** whose name contains the text (up to 5).
+- **Nodes** in any workflow, project-attached ones included, whose label, node
+  id, type, request method, URL path or extractor name contains it (up to 10,
+  most recently edited workflows first). Each row shows the node's method and
+  URL path and the workflow it is in.
+
+The matching text is highlighted. Arrow keys move through the results and
+`Enter` opens one: a workflow opens in its tab, and a node opens its workflow,
+selects the node and centres the canvas on it. Search never looks at request
+bodies, headers, auth, query strings or variable values, so it cannot match a
+secret.
 
 ## Keyboard Shortcuts
 

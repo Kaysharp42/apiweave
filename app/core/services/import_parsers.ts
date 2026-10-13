@@ -1,6 +1,9 @@
 import { parse as parseYaml } from "yaml"
 import type { KeyValuePair } from "@shared/zod-schemas/KeyValuePairSchema"
+import type { JsonValue } from "@shared/types/JsonValue"
+import type { OpenApiNodeMeta } from "@shared/types/OpenApiNodeMeta"
 import { detectSecretsInValue, isCredentialFreeReference, isReferenceOnlyValue, redactBodyLeaves } from "./secret_utils"
+import { openApiResponseSchemas } from "./openapi_response_schemas"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
 
@@ -33,20 +36,9 @@ export interface HttpRequestNode {
     readonly followRedirects: boolean
     readonly extractors: Record<string, string>
     readonly openapiMeta?: OpenApiNodeMeta | undefined
+    /** The spec's JSON body schema per documented status (see openapi_response_schemas.ts). */
+    readonly responseSchemas?: Record<string, JsonValue> | undefined
   }
-}
-
-/** Endpoint identity carried on OpenAPI-imported nodes, used to detect spec drift on refresh. */
-export interface OpenApiNodeMeta {
-  readonly source: "openapi"
-  readonly method: string
-  readonly path: string
-  readonly operationId: string | null
-  readonly fingerprint: string
-  readonly definitionName?: string | undefined
-  readonly definitionSpecUrl?: string | undefined
-  readonly definitionScope?: string | undefined
-  readonly sourceUiUrl?: string | undefined
 }
 
 export interface EndNode {
@@ -77,6 +69,8 @@ export interface OpenApiParseOptions {
   readonly baseUrl?: string
   readonly tagFilter?: readonly string[]
   readonly sanitize?: boolean
+  /** Attach each operation's response body schemas as `responseSchemas` (default true). */
+  readonly schemaAssertions?: boolean
   /** Which discovered Swagger definition this spec came from (multi-definition UIs). */
   readonly source?: OpenApiSourceContext
 }
@@ -651,6 +645,7 @@ export function parseOpenApiSpec(
       const src = opts.source ?? {}
       const scope = src.definitionScope ?? ""
 
+      const responseSchemas = opts.schemaAssertions === false ? undefined : openApiResponseSchemas(operation, spec)
       const config: HttpRequestNode["config"] = {
         method: normalizeMethod(method),
         url: fullUrl,
@@ -661,6 +656,7 @@ export function parseOpenApiSpec(
         followRedirects: true,
         extractors: {},
         ...(body !== undefined ? { body } : {}),
+        ...(responseSchemas !== undefined ? { responseSchemas } : {}),
         openapiMeta: {
           source: "openapi",
           method: method.toUpperCase(),

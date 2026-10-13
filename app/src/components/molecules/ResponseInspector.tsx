@@ -652,10 +652,18 @@ export function ResponseInspector({
   // data first would renumber array elements under the user's feet and produce
   // extractor paths pointing at the wrong item.
   const treeData = (response.body ?? null) as JsonEditorProps["data"];
+  // json-edit-react's search never expands a collapsed ancestor, so a match
+  // inside a size-collapsed collection would stay hidden: while filtering,
+  // nothing is collapsed and only matching rows mount. The editor applies
+  // `searchText` after a debounce but a new `collapse` at once, which would
+  // briefly mount the whole unfiltered body; remounting when filtering starts
+  // or stops applies both in the same first render instead.
+  const searching = filterQuery !== "";
+  const treeKey = searching ? "search" : "browse";
   const treeProps = {
     searchText: filterQuery,
     searchFilter: "all",
-    collapse: treeCollapse,
+    collapse: searching ? false : treeCollapse,
   } as const;
   const metricRows = getMetricRows(response, effectiveMetadata, bodyText);
   const showJsonPreview = isJsonContent(contentType, response.body, bodyFormat);
@@ -802,6 +810,7 @@ export function ResponseInspector({
         >
           <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
             <JsonEditor
+              key={treeKey}
               data={treeData}
               restrictEdit={true}
               restrictAdd={true}
@@ -942,6 +951,7 @@ export function ResponseInspector({
               className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
             >
               <JsonEditor
+                key={treeKey}
                 data={treeData}
                 icons={JSON_TREE_ICONS}
                 restrictEdit={true}

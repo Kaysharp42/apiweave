@@ -1,17 +1,17 @@
 {
-  "unused_files": [],
+  "unused_files": [
+    "scripts/precommit-eslint.mjs"
+  ],
   "unused_exports": [],
   "unused_types": [],
   "private_type_leaks": [],
-  "unused_dependencies": [
-    "package.json:@monaco-editor/react"
+  "unused_dependencies": [],
+  "unused_dev_dependencies": [
+    "package.json:baseline-browser-mapping"
   ],
-  "unused_dev_dependencies": [],
   "circular_dependencies": [
     "src/App.tsx->src/components/layout/MainHeader.tsx->src/components/layout/MainLayout.tsx",
-    "src/App.tsx->src/components/WorkflowCanvas.tsx->src/components/layout/MainLayout.tsx->src/components/layout/Workspace.tsx",
-    "src/App.tsx->src/components/layout/MainHeader.tsx->src/components/layout/MainLayout.tsx->src/pages/Home.tsx",
-    "src/App.tsx->src/components/WorkflowCanvas.tsx->src/components/layout/MainLayout.tsx->src/components/layout/Workspace.tsx->src/pages/Home.tsx"
+    "src/App.tsx->src/components/WorkflowCanvas.tsx->src/components/layout/MainLayout.tsx->src/components/layout/Workspace.tsx"
   ],
   "re_export_cycles": [],
   "unused_optional_dependencies": [],
@@ -27,23 +27,11 @@
   "unused_svelte_events": [],
   "unused_server_actions": [],
   "unused_load_data_keys": [],
-  "unresolved_imports": [
-    "src/components/__tests__/SecretForm.test.tsx:../utils/authenticatedApi",
-    "src/components/__tests__/SecretForm.test.tsx:../utils/api",
-    "src/components/__tests__/SecretForm.test.tsx:../utils/encryptSecretValue",
-    "src/components/__tests__/ServiceTokenCreateForm.test.tsx:../utils/authenticatedApi",
-    "src/components/__tests__/ServiceTokenCreateForm.test.tsx:../utils/api",
-    "src/components/organisms/__tests__/WorkspaceEnvironmentsPage.test.tsx:../../pages/WorkspaceEnvironmentsPage",
-    "src/components/organisms/__tests__/WorkspaceEnvironmentsPage.test.tsx:../utils/authenticatedApi",
-    "src/components/organisms/__tests__/WorkspaceEnvironmentsPage.test.tsx:../utils/api",
-    "src/components/organisms/__tests__/WorkspaceEnvironmentsPage.test.tsx:../auth/useAuth",
-    "src/pages/__tests__/AuditPage.test.tsx:../utils/authenticatedApi",
-    "src/pages/__tests__/AuditPage.test.tsx:../utils/api"
-  ],
+  "unresolved_imports": [],
   "unlisted_dependencies": [],
   "duplicate_exports": [],
   "type_only_dependencies": [],
-  "test_only_dependencies": ["package.json:daisyui"],
+  "test_only_dependencies": [],
   "boundary_violations": [],
   "boundary_coverage_violations": [],
   "boundary_call_violations": [],

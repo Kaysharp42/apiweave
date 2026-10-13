@@ -1,11 +1,24 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import fs from "node:fs/promises"
 import type { ClockProvider, RngProvider } from "./harness/providers"
-import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
+import { FormData as UndiciFormData, Response as UndiciResponse, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
+import { CookieJar } from "tough-cookie"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
 import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
+import { AuthError } from "./auth_error"
+import { signAwsSigV4 } from "./aws_sigv4"
+import { digestAuthorization, parseDigestChallenge } from "./digest_auth"
+import { signJwt } from "./jwt"
 import { collectSseEvents, type SseEvent } from "./sse"
-import { extractSecretRefsFromString } from "../services/secret_utils"
+import { runScript, type ScriptRequest, type ScriptResponse, type ScriptRunResult } from "./script_sandbox"
+import { RegexSandbox } from "./regex_sandbox"
+import { compileSchema, MAX_SCHEMA_VIOLATIONS, schemaViolations } from "./json_schema"
+import type { Validator } from "@cfworker/json-schema"
+import { ASSERTION_VALUE_TYPES, parseSchemaValue } from "@shared/analysis/assertion_expected"
+import type { SchemaViolation } from "@shared/types/SchemaViolation"
+import { SECRET_PLACEHOLDER, extractSecretRefsFromString, scriptSecretNames } from "../services/secret_utils"
+import type { ResumeSeed } from "./resume"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
 import type { RunEvent } from "@shared/types/RunProgressEvent"
 import type { RunnerNodeStatus } from "@shared/types/RunnerNodeStatus"
@@ -19,6 +32,13 @@ import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
 import type { HttpAttempt } from "@shared/types/HttpAttempt"
 import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
 import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
+import type { AwsSigV4AuthConfig } from "@shared/types/AwsSigV4AuthConfig"
+import type { DigestAuthConfig } from "@shared/types/DigestAuthConfig"
+import type { JwtAuthConfig } from "@shared/types/JwtAuthConfig"
+import type { HttpScriptsConfig } from "@shared/types/HttpScriptsConfig"
+import type { GraphqlBody } from "@shared/types/GraphqlBody"
+import type { ScriptOutcome } from "@shared/types/ScriptOutcome"
+import { DEFAULT_SCRIPT_TIMEOUT_MS } from "@shared/zod-schemas/HttpScriptsConfigSchema"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -59,11 +79,14 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2" | "awsSigV4" | "digest" | "jwt"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
   readonly oauth2?: OAuth2AuthConfig
+  readonly awsSigV4?: AwsSigV4AuthConfig
+  readonly digest?: DigestAuthConfig
+  readonly jwt?: JwtAuthConfig
 }
 
 /** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
@@ -76,6 +99,11 @@ interface AuthRequestContext {
 }
 
 const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/
+
+/** The NAME of a whole `{{secrets.NAME}}` reference, the only form an auth secret field holds. */
+function secretNameOf(reference: string | undefined): string | undefined {
+  return reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
+}
 
 interface FormDataEntryLike {
   readonly key: string
@@ -109,6 +137,12 @@ export interface ExecutorDeps {
   /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
   readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
+  /**
+   * The run's cookie jar: cookies a response sets are sent by later requests
+   * of the same run. Absent: per executor. A Call Workflow child always shares
+   * its caller's, so a login sub-workflow leaves the caller signed in.
+   */
+  readonly cookieJar?: CookieJar
   /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
   readonly oauthTokens?: OAuthTokenCache
   /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
@@ -199,10 +233,26 @@ function toHeaderRecord(headers: UndiciHeaders): Record<string, string> {
   return record
 }
 
-/** The bytes as UTF-8 text, or null when they are not valid UTF-8 (a binary body). A sequence cut off by truncation is fine. */
-function decodeUtf8(bytes: Buffer): string | null {
+/**
+ * The body as text, or null when it is binary (stored base64). A textual
+ * Content-Type (text/*, JSON, XML, form) is always text, decoded with its
+ * declared charset or lossily as UTF-8; any other type is text only when it is
+ * valid UTF-8. A sequence cut off by truncation is fine.
+ */
+function decodeBody(bytes: Buffer, contentType: string, truncated: boolean): string | null {
+  const [mime = "", ...params] = contentType.toLowerCase().split(";").map((part) => part.trim())
+  if (/^text\/|[/+](json|xml)$|^application\/x-www-form-urlencoded$/.test(mime)) {
+    const charset = params.find((param) => param.startsWith("charset="))?.slice("charset=".length).replace(/"/g, "")
+    let decoder: TextDecoder
+    try {
+      decoder = new TextDecoder(charset || "utf-8")
+    } catch {
+      decoder = new TextDecoder("utf-8")
+    }
+    return decoder.decode(bytes, { stream: truncated })
+  }
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: true })
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: truncated })
   } catch {
     return null
   }
@@ -230,7 +280,12 @@ export interface ExecuteOptions {
   readonly runId?: string
   readonly startNodeIds?: readonly string[]
   readonly cancelSignal?: AbortSignal
+  /** A rerun: what the source run already settled. `startNodeIds` are its entries. */
+  readonly resume?: ResumeSeed
 }
+
+/** How every refusal to read a rerun's seeded value starts; the scheduler passes it through to history. */
+export const RERUN_REFUSED = "Not rerun:"
 
 export interface NodeResult {
   readonly status: string
@@ -252,7 +307,7 @@ export interface NodeResult {
     readonly truncated?: boolean
     /** The body is not UTF-8 text and is stored base64-encoded. */
     readonly bodyEncoding?: "base64"
-    /** Full body size, when known (always, unless truncated without a Content-Length). */
+    /** Full body size, when known (always, unless truncated without an unencoded Content-Length). */
     readonly responseSizeBytes?: number
   }
   readonly mergedByOther?: boolean
@@ -264,6 +319,8 @@ export interface NodeResult {
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
   /** Every request a retrying http-request node sent; the rest of the result is the last one's. */
   readonly attempts?: readonly HttpAttempt[]
+  /** What the node's pre-request and post-response scripts did, in the order they ran. */
+  readonly scripts?: readonly ScriptOutcome[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
@@ -309,6 +366,22 @@ function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> 
     }, ms)
     signal?.addEventListener("abort", onAbort, { once: true })
   })
+}
+
+/** One attempt as `attempts` lists it. */
+function toHttpAttempt(attempt: NodeResult): HttpAttempt {
+  return {
+    ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
+    duration: Math.max(0, Math.round(attempt.duration ?? 0)),
+    ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
+  }
+}
+
+/** The node's error once the last attempt failed; `hasCondition` is whether `until` set the bar. */
+function retryExhaustedError(attempt: NodeResult, attemptCount: number, hasCondition: boolean): string {
+  const verdict = hasCondition ? "Condition not met" : "Failed"
+  const cause = attempt.error ?? (hasCondition ? undefined : `HTTP ${attempt.statusCode}`)
+  return `${verdict} after ${attemptCount} attempts${cause ? `: ${cause}` : ""}`
 }
 
 /** The wait after attempt number `attempt` (1-based): `intervalMs`, doubled per attempt when exponential, capped by `maxIntervalMs`. */
@@ -359,10 +432,30 @@ export class WorkflowExecutor {
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
   private readonly oauthTokens: OAuthTokenCache
+  private readonly cookieJar: CookieJar
+  /** Loaded on the first rule that needs it (see `prepareRules`); `matches` and `matchesSchema` are synchronous after that. */
+  private regex: RegexSandbox | null = null
+  /** Compiled "matchesSchema" schemas, keyed by the configured value: a polling node compiles its schema once. */
+  private readonly schemaValidators = new Map<unknown, Validator>()
+  /** On a rerun, the nodes it executes; every other node holds the source run's result. */
+  private resumeScope: ReadonlySet<string> | null = null
+  /** Nodes whose result was seeded from the source run rather than produced here. */
+  private readonly seededNodeIds = new Set<string>()
+  /** Source-run variables that were stored masked, so were not seeded. */
+  private readonly maskedSeedVariables = new Set<string>()
+  /** On a rerun, the nodes it starts at. */
+  private resumeEntryIds: ReadonlySet<string> = new Set()
+  /**
+   * `{{prev}}` for the node executing in this async context: a rerun entry's
+   * seeded predecessor (`null` when it has none, see `seededPrev`); `undefined`
+   * for every other node, which reads the latest result.
+   */
+  private readonly entryPrev = new AsyncLocalStorage<readonly [string, NodeResult] | null | undefined>()
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
     this.oauthTokens = deps.oauthTokens ?? new Map()
+    this.cookieJar = deps.cookieJar ?? new CookieJar()
   }
 
   public async executeWorkflow(
@@ -396,6 +489,7 @@ export class WorkflowExecutor {
     this.nodeRuns.clear()
     this.sseListeners.clear()
     this.sseTasks.clear()
+    if (options.resume) this.seedResume(options.resume, nodes, edges)
 
     // Workflows have no loops: a cycle would send its requests until something
     // gave out. The canvas refuses to draw one, and a graph that has one anyway
@@ -424,6 +518,7 @@ export class WorkflowExecutor {
       }
       entryNodeIds = [startNode.nodeId]
     }
+    this.resumeEntryIds = new Set(options.resume ? entryNodeIds : [])
 
     if (options.cancelSignal?.aborted) {
       return this.buildOutput(caseName, startedAt, seed, "failed")
@@ -468,6 +563,38 @@ export class WorkflowExecutor {
       this.abortSseListeners()
       await this.waitForSseTasks()
     }
+  }
+
+  /**
+   * Lay down what the source run of a rerun settled: the results of every node
+   * outside the scope (see core/runner/resume.ts), and the branches each such
+   * merge joined, which `{{prev[i]...}}` reads after it. Seeded results are
+   * read like any other but never reported as this run's.
+   */
+  private seedResume(seed: ResumeSeed, nodes: ReadonlyMap<string, WorkflowNode>, edges: readonly WorkflowEdge[]): void {
+    this.resumeScope = seed.scope
+    for (const name of seed.maskedVariables) this.maskedSeedVariables.add(name)
+    for (const stored of seed.results) {
+      const node = nodes.get(stored.nodeId)
+      if (!node || seed.scope.has(stored.nodeId)) continue
+      this.results.set(stored.nodeId, seededNodeResult(stored, node.type))
+      this.seededNodeIds.add(stored.nodeId)
+    }
+    for (const id of this.seededNodeIds) {
+      if (nodes.get(id)?.type === "merge") this.branchResults.set(id, this.mergeBranchResults(id, edges))
+    }
+  }
+
+  /**
+   * The result a rerun entry's `{{prev}}` reads. In a normal run a node starts
+   * as its first predecessor lands, so the latest result is that
+   * predecessor's. An entry starts with every seeded result laid down in the
+   * source run's completion order, where the latest may be on another branch:
+   * it reads instead its predecessor that completed first in the source run.
+   */
+  private seededPrev(nodeId: string, edges: readonly WorkflowEdge[]): readonly [string, NodeResult] | null {
+    const predecessors = new Set(edges.filter((e) => e.target === nodeId).map((e) => e.source))
+    return [...this.results.entries()].find(([id]) => predecessors.has(id)) ?? null
   }
 
   // -------------------- Node execution --------------------
@@ -587,15 +714,19 @@ export class WorkflowExecutor {
       }
     }
 
+    // Run every node in its own `entryPrev` context, so one an entry's SSE
+    // consumer reaches does not inherit the entry's.
+    const prev = this.resumeEntryIds.has(nodeId) ? this.seededPrev(nodeId, edges) : undefined
+
     // SSE has two phases. The Ready path continues after its handshake; its
     // Complete path is scheduled by the background consumer when it closes.
     if (node.type === "sse") {
-      const ready = await this.startSseListener(node, nodes, edges, cancelSignal)
+      const ready = await this.entryPrev.run(prev, () => this.startSseListener(node, nodes, edges, cancelSignal))
       if (!ready) return
     // Execute node (skip start)
     } else if (node.type !== "start") {
       try {
-        const nodeExecResult = await this.executeNode(node, edges, cancelSignal)
+        const nodeExecResult = await this.entryPrev.run(prev, () => this.executeNode(node, edges, cancelSignal))
         if (nodeExecResult !== null && nodeExecResult.shouldContinue === false) {
           return
         }
@@ -743,7 +874,7 @@ export class WorkflowExecutor {
       let result: NodeResult
 
       if (nodeType === "http-request") {
-        result = await this.executeHttpRequestWithRetry(node, cancelSignal)
+        result = await this.executeHttpRequestNode(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -839,16 +970,19 @@ export class WorkflowExecutor {
 
   private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
-    const method = (config["method"] as string | undefined) ?? "GET"
+    let method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headersField = config["headers"] as KVField
     const body = config["body"] as string | Record<string, unknown> | undefined
     const bodyType = config["bodyType"] as string | undefined
     const timeout = (config["timeout"] as number | undefined) ?? 30
-    const followRedirects = (config["followRedirects"] as boolean | undefined) ?? true
-    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
     const auth = config["auth"] as HttpAuthConfig | undefined
+    // A signature covers one URL: a redirect would carry it somewhere it does not fit.
+    const signed = auth?.type === "awsSigV4" || auth?.type === "digest"
+    const followRedirects = !signed && ((config["followRedirects"] as boolean | undefined) ?? true)
+    const sslVerify = (config["sslVerify"] as boolean | undefined) ?? true
+    const useCookieJar = (config["useCookieJar"] as boolean | undefined) ?? true
     const formDataEntries = config["formDataEntries"] as readonly FormDataEntryLike[] | undefined
     const urlEncodedEntries = config["urlEncodedEntries"] as KVField
     const fileUploads = config["fileUploads"] as readonly FileUploadLike[] | undefined
@@ -873,7 +1007,7 @@ export class WorkflowExecutor {
       url = url.split(`{${key}}`).join(encodeURIComponent(value))
     }
 
-    const headers = this.normalizeKeyValueField(headersField)
+    let headers = this.normalizeKeyValueField(headersField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
     const cookies = this.normalizeKeyValueField(config["cookies"] as KVField)
 
@@ -885,22 +1019,63 @@ export class WorkflowExecutor {
       headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
     }
 
+    let digest: { readonly username: string; readonly password: string } | undefined
     try {
       await this.applyAuthConfig(auth, headers, queryParams, {
         signal: cancelSignal, timeoutMs: timeout * 1000, sslVerify, forceRefresh: forceRefreshToken,
       })
+      if (auth?.type === "digest") {
+        digest = {
+          username: this.substituteVariables(auth.digest?.username ?? ""),
+          password: this.authSecret("Digest auth", "password", auth.digest?.password, true)!,
+        }
+      }
     } catch (authError) {
-      if (!(authError instanceof OAuthError)) throw authError
+      if (!(authError instanceof AuthError)) throw authError
       return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
+    }
+
+    let fetchBody: string | Buffer | UndiciFormData | undefined
+    try {
+      fetchBody = bodyType === "graphql"
+        ? this.buildGraphqlRequest(config["graphql"] as GraphqlBody | undefined, method, headers, queryParams)
+        : await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
+    } catch (bodyError) {
+      return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url: appendQueryParams(url, queryParams), duration: 0 })
     }
 
     url = appendQueryParams(url, queryParams)
 
-    let fetchBody: string | Buffer | UndiciFormData | undefined
-    try {
-      fetchBody = await this.buildHttpRequestBody(bodyType, body, headers, formDataEntries, urlEncodedEntries, fileUploads)
-    } catch (bodyError) {
-      return withExtractorOutcomes({ status: "error", error: `Failed to build request body: ${String(bodyError)}`, method, url, duration: 0 })
+    // The pre-request script sees the request exactly as it would be sent —
+    // placeholders resolved, auth applied — so it can sign it, and may change
+    // any of it. Whatever it leaves still goes through SafeHttp's URL checks.
+    const scripts = config["scripts"] as HttpScriptsConfig | undefined
+    let preRequest: ScriptOutcome | undefined
+    if (scripts?.preRequest?.trim()) {
+      const textBody = typeof fetchBody === "string" ? fetchBody : null
+      const run = await this.runNodeScript("preRequest", scripts.preRequest, scripts, {
+        request: { method, url, headers: { ...headers }, body: textBody },
+      }, cancelSignal)
+      preRequest = run.outcome
+      if (!run.request) {
+        return withExtractorOutcomes({ status: "error", error: scriptFailure(run.outcome) ?? "Pre-request script failed", method, url, duration: 0, scripts: [run.outcome] })
+      }
+      method = run.request.method
+      url = run.request.url
+      headers = run.request.headers
+      if (run.request.body !== textBody) fetchBody = run.request.body ?? undefined
+    }
+    const withScripts = (result: NodeResult): NodeResult =>
+      withExtractorOutcomes(preRequest ? { ...result, scripts: [preRequest] } : result)
+
+    // Signed last, over exactly what is sent — after the script, on every attempt.
+    if (auth?.type === "awsSigV4") {
+      try {
+        ({ url, headers, body: fetchBody } = await this.signAwsRequest(auth.awsSigV4, method, url, headers, fetchBody))
+      } catch (authError) {
+        if (!(authError instanceof AuthError)) throw authError
+        return withScripts({ status: "error", error: authError.message, method, url, duration: 0 })
+      }
     }
 
     // A placeholder `substituteVariables` could not resolve is left in the
@@ -932,11 +1107,22 @@ export class WorkflowExecutor {
         fetchInit.body = fetchBody
       }
 
-      const response = await this.deps.http.safeFetch(url, fetchInit, {
+      const fetchOptions = {
         followRedirects,
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
-      })
+        ...(useCookieJar ? { cookieJar: this.cookieJar } : {}),
+      }
+      let response = await this.deps.http.safeFetch(url, fetchInit, fetchOptions)
+      // Digest: the server's 401 carries the challenge; answer it once.
+      const challenge = digest && response.status === 401 ? parseDigestChallenge(response.headers.get("www-authenticate") ?? "") : null
+      if (digest && challenge) {
+        await response.body?.cancel()
+        const target = new URL(url)
+        const authorization = digestAuthorization(challenge, { ...digest, method, uri: `${target.pathname}${target.search}` })
+        const answered = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== "authorization"))
+        response = await this.deps.http.safeFetch(url, { ...fetchInit, headers: { ...answered, Authorization: authorization } }, fetchOptions)
+      }
       // An OAuth token the API no longer accepts (revoked, rotated, or expired
       // early): fetch a fresh one and send the request once more.
       if (response.status === 401 && auth?.type === "oauth2" && !forceRefreshToken) {
@@ -946,8 +1132,11 @@ export class WorkflowExecutor {
       const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
-      const responseText = decodeUtf8(bytes)
-      const declaredSize = Number(response.headers.get("content-length") ?? "")
+      const responseText = decodeBody(bytes, response.headers.get("content-type") ?? "", truncated)
+      // fetch decodes gzip/br/deflate, but Content-Length counts the encoded
+      // bytes, so it is only the body's size when nothing was decoded.
+      const encoding = response.headers.get("content-encoding")
+      const declaredSize = !encoding || encoding === "identity" ? Number(response.headers.get("content-length") ?? "") : Number.NaN
       const responseSizeBytes = !truncated ? bytes.byteLength : Number.isFinite(declaredSize) && declaredSize > 0 ? declaredSize : undefined
 
       let responseBody: unknown
@@ -1000,10 +1189,10 @@ export class WorkflowExecutor {
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       }
 
-      return withExtractorOutcomes(result)
+      return withScripts(result)
     } catch (error) {
-      if (error instanceof SafeUrlError) {
-        return withExtractorOutcomes({
+      if (error instanceof SafeUrlError || error instanceof AuthError) {
+        return withScripts({
           status: "error",
           error: error.message,
           method,
@@ -1013,7 +1202,7 @@ export class WorkflowExecutor {
           ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
         })
       }
-      return withExtractorOutcomes({
+      return withScripts({
         status: "error",
         // Sent but unanswered (refused, reset, timed out): a retry may get through.
         networkError: true,
@@ -1032,6 +1221,69 @@ export class WorkflowExecutor {
   }
 
   /**
+   * The node's request (retried per `config.retry`), then its post-response
+   * script, once, on the response the node ends with. A request that got no
+   * response has nothing for the script to read, so the script does not run.
+   */
+  private async executeHttpRequestNode(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const result = await this.executeHttpRequestWithScript(node, cancelSignal)
+    const schemas = node.config?.["responseSchemas"] as Readonly<Record<string, unknown>> | undefined
+    const key = schemas && result.statusCode !== undefined && !cancelSignal?.aborted ? responseSchemaKey(schemas, result.statusCode) : undefined
+    if (schemas === undefined || key === undefined) return result
+    const rule = { source: "prev", path: "response.body", operator: "matchesSchema", expectedValue: schemas[key] } as const
+    await this.prepareRules([rule])
+    const evaluation = this.evaluateAssertion(0, rule, () => ({ state: "resolved", nodeId: node.nodeId, result }))
+    const checked: NodeResult = { ...result, assertionEvaluations: [evaluation] }
+    if (evaluation.outcome === "pass") return checked
+    // A request that already failed keeps its own reason; the violations are in `assertions`.
+    return { ...checked, status: "error", error: result.error ?? `Response does not match the schema for status ${key}` }
+  }
+
+  private async executeHttpRequestWithScript(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const result = await this.executeHttpRequestWithRetry(node, cancelSignal)
+    const scripts = node.config?.["scripts"] as HttpScriptsConfig | undefined
+    if (!scripts?.postResponse?.trim() || result.statusCode === undefined || cancelSignal?.aborted) return result
+    const response: ScriptResponse = {
+      status: result.statusCode,
+      headers: result.headers ?? {},
+      body: result.body,
+      responseTime: result.duration ?? 0,
+    }
+    const run = await this.runNodeScript("postResponse", scripts.postResponse, scripts, { response }, cancelSignal)
+    const outcomes = [...(result.scripts ?? []), run.outcome]
+    const failure = scriptFailure(run.outcome)
+    if (failure === undefined) return { ...result, scripts: outcomes }
+    // A request that already failed keeps its own reason; the script's is in `scripts`.
+    return { ...result, status: "error", error: result.error ?? failure, scripts: outcomes }
+  }
+
+  /** Runs one of a node's scripts against this run's variables, environment, data row and the secrets it names. */
+  private runNodeScript(
+    phase: ScriptOutcome["phase"],
+    source: string,
+    scripts: HttpScriptsConfig,
+    subject: { readonly request: ScriptRequest } | { readonly response: ScriptResponse },
+    cancelSignal: AbortSignal | undefined,
+  ): Promise<ScriptRunResult> {
+    const secrets: Record<string, string> = {}
+    for (const name of scriptSecretNames(source)) {
+      const value = this.deps.secrets?.[name]
+      if (value !== undefined) secrets[name] = value
+    }
+    return runScript({
+      phase,
+      source,
+      timeoutMs: scripts.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
+      variables: this.workflowVariables,
+      env: this.environmentVariables,
+      data: this.deps.data ?? {},
+      secrets,
+      ...subject,
+      uuid: () => this.deps.functions.uuid(),
+    }, cancelSignal)
+  }
+
+  /**
    * The node's request, sent again per `config.retry` — the structured way to
    * poll, since a workflow has no loops. Each attempt is a full request
    * (placeholders and extractors re-run), and the node's result is the last
@@ -1042,34 +1294,32 @@ export class WorkflowExecutor {
     const retry = node.config?.["retry"] as HttpRetryConfig | undefined
     if (!retry) return this.executeHttpRequest(node, cancelSignal)
     const until = retry.until ?? []
+    await this.prepareRules(until)
     const attempts: HttpAttempt[] = []
     for (;;) {
       const attempt = await this.executeHttpRequest(node, cancelSignal)
-      attempts.push({
-        ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
-        duration: Math.max(0, Math.round(attempt.duration ?? 0)),
-        ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
-      })
+      attempts.push(toHttpAttempt(attempt))
       const result: NodeResult = { ...attempt, attempts }
       if (cancelSignal?.aborted) return { ...result, status: "cancelled" }
-
-      const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
-      const done = !sent || (until.length > 0
-        ? until.every((rule, index) =>
-            this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId: node.nodeId, result: attempt })).outcome === "pass")
-        : attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500)
-      if (done) return result
+      if (this.retryDone(node.nodeId, attempt, until)) return result
 
       if (attempts.length >= retry.maxAttempts) {
         // The scheduler keeps this verdict and classes the cause like any other error.
-        const verdict = until.length > 0 ? "Condition not met" : "Failed"
-        const cause = attempt.error ?? (until.length > 0 ? undefined : `HTTP ${attempt.statusCode}`)
-        return { ...result, status: "error", error: `${verdict} after ${attempts.length} attempts${cause ? `: ${cause}` : ""}` }
+        return { ...result, status: "error", error: retryExhaustedError(attempt, attempts.length, until.length > 0) }
       }
       // Harness mode collapses waits, as it does for Delay.
       const waitMs = this.deps.baseUrl ? 0 : retryDelayMs(retry, attempts.length)
       if (!(await waitFor(waitMs, cancelSignal))) return { ...result, status: "cancelled" }
     }
+  }
+
+  /** Whether `attempt` ends the retries: it was never sent, or it meets `until` (with no condition, any response below 500). */
+  private retryDone(nodeId: string, attempt: NodeResult, until: NonNullable<HttpRetryConfig["until"]>): boolean {
+    const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
+    if (!sent) return true
+    if (until.length === 0) return attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500
+    return until.every((rule, index) =>
+      this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId, result: attempt })).outcome === "pass")
   }
 
   // -------------------- Server-Sent Events --------------------
@@ -1104,21 +1354,26 @@ export class WorkflowExecutor {
     url = this.substituteVariables(url, { allowSecrets: false })
     if (this.deps.baseUrl && !url.startsWith("http")) url = `${this.deps.baseUrl}${url}`
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
-    const headers = this.normalizeKeyValueField(config["headers"] as KVField)
+    let headers = this.normalizeKeyValueField(config["headers"] as KVField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
+    const followSseRedirects = followRedirects && auth?.type !== "awsSigV4"
     try {
       await this.applyAuthConfig(auth, headers, queryParams, {
         // A zero SSE timeout means "no deadline" for the stream, not for the token request.
         signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
       })
+      if (auth?.type === "digest") throw new AuthError("Digest auth: not supported on SSE Stream nodes")
+      for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
+      headers["Accept"] = "text/event-stream"
+      url = appendQueryParams(url, queryParams)
+      if (auth?.type === "awsSigV4") {
+        ({ url, headers } = await this.signAwsRequest(auth.awsSigV4, "GET", url, headers, undefined))
+      }
     } catch (authError) {
-      if (!(authError instanceof OAuthError)) throw authError
+      if (!(authError instanceof AuthError)) throw authError
       this.completeSseNode(node, { status: "error", error: authError.message, method: "GET", url, duration: 0 }, startedAt, secretRefs)
       return false
     }
-    for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
-    headers["Accept"] = "text/event-stream"
-    url = appendQueryParams(url, queryParams)
     const unresolvedPlaceholders = collectUnresolvedPlaceholders([url, ...Object.values(headers), ...Object.values(queryParams)])
     const abortController = new AbortController()
     const signal = cancelSignal ? AbortSignal.any([abortController.signal, cancelSignal]) : abortController.signal
@@ -1129,7 +1384,7 @@ export class WorkflowExecutor {
       const response = await this.deps.http.safeFetch(
         url,
         { method: "GET", headers, signal },
-        { followRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000 },
+        { followRedirects: followSseRedirects, rejectUnauthorized: sslVerify, timeoutMs: timeout * 1000, cookieJar: this.cookieJar },
       )
       const responseHeaders = toHeaderRecord(response.headers)
       const statusCode = response.status
@@ -1199,6 +1454,7 @@ export class WorkflowExecutor {
   }): Promise<void> {
     const { node, response, statusCode, responseHeaders, url, startedAt, secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders } = input
     try {
+      await this.prepareRules(finishConditions)
       const collected = await collectSseEvents(response, {
         maxEvents,
         ...(eventType === undefined ? {} : { eventType }),
@@ -1368,6 +1624,7 @@ export class WorkflowExecutor {
       }
     }
 
+    await this.prepareRules(assertions)
     const evaluations: AssertionEvaluation[] = []
     const failureMode = config["failureMode"] === "all" ? "all" : "first"
     let stopped = false
@@ -1458,39 +1715,72 @@ export class WorkflowExecutor {
       }
 
       sourceNodeId = resolution.nodeId
-      if (source === "prev") {
-        const cleanPath = path.startsWith("response.") ? path.slice(9) : path
-        actual = this.getNestedValue(resolution.result, cleanPath)
-      } else if (source === "headers") {
-        actual = this.getResponseHeader(resolution.result, path)
-      } else if (source === "cookies") {
-        actual = this.getResponseCookie(resolution.result, path)
-      } else {
-        actual = resolution.result.statusCode
-      }
+      actual = this.readAssertionActual(source, path, resolution.result)
     }
 
-    const actualState = actual === undefined ? "missing" : "present"
+    const evaluated = { ...base, sourceNodeId, actualState: actual === undefined ? "missing" : "present", actualType: jsonValueType(actual) } as const
+    return this.compareAssertion(evaluated, actual, expected.value)
+  }
+
+  /** The verdict on `actual` once it was read; `evaluated` is everything else the evaluation reports. */
+  private compareAssertion(
+    evaluated: Omit<AssertionEvaluation, "outcome" | "reasonCode" | "detail" | "schemaErrors">,
+    actual: unknown,
+    expected: unknown,
+  ): AssertionEvaluation {
+    const operator = evaluated.operator
     try {
-      const passed = this.compareValues(actual, operator, expected.value)
+      const violations = operator === "matchesSchema" ? this.schemaCheck(actual, expected) : null
+      const passed = violations ? violations.length === 0 : this.compareValues(actual, operator, expected)
       return {
-        ...base,
-        sourceNodeId,
-        actualState,
-        actualType: jsonValueType(actual),
+        ...evaluated,
         outcome: passed ? "pass" : "fail",
         reasonCode: passed ? "passed" : "comparison-failed",
+        ...(violations && violations.length > 0
+          ? {
+              detail: `${violations.length} schema violation${violations.length === 1 ? "" : "s"}`,
+              schemaErrors: violations.slice(0, MAX_SCHEMA_VIOLATIONS),
+            }
+          : {}),
       }
-    } catch {
+    } catch (error) {
       return {
-        ...base,
-        sourceNodeId,
-        actualState,
-        actualType: jsonValueType(actual),
+        ...evaluated,
         outcome: "fail",
         reasonCode: "comparison-error",
+        // The engine's own words for a bad pattern or schema; they carry the rule's text, not the response's.
+        ...(error instanceof Error ? { detail: error.message.slice(0, 300) } : {}),
       }
     }
+  }
+
+  /** The value a rule on a response `source` reads from `result`. */
+  private readAssertionActual(source: AssertionSource, path: string, result: NodeResult): unknown {
+    if (source === "prev") return this.getNestedValue(result, path.startsWith("response.") ? path.slice(9) : path)
+    if (source === "headers") return this.getResponseHeader(result, path)
+    if (source === "cookies") return this.getResponseCookie(result, path)
+    return result.statusCode
+  }
+
+  /** Loads the regex sandbox when one of `rules` matches a regular expression (a schema may hold `pattern`s). */
+  private async prepareRules(rules: readonly { readonly operator?: string }[]): Promise<void> {
+    if (this.regex === null && rules.some((rule) => rule.operator === "matches" || rule.operator === "notMatches" || rule.operator === "matchesSchema")) {
+      this.regex = await RegexSandbox.load()
+    }
+  }
+
+  /** Where `actual` breaks `schema`; empty when it matches. A missing value is one violation. Throws on a schema that is not one. */
+  private schemaCheck(actual: unknown, schema: unknown): SchemaViolation[] {
+    if (actual === undefined) return [{ path: "", message: "Value is missing." }]
+    if (this.regex === null) throw new Error("Regular expressions were not loaded for this rule")
+    let validator = this.schemaValidators.get(schema)
+    if (validator === undefined) {
+      const parsed = parseSchemaValue(schema)
+      if (parsed === null) throw new Error("Expected value is not a JSON Schema object")
+      validator = compileSchema(parsed)
+      this.schemaValidators.set(schema, validator)
+    }
+    return schemaViolations(validator, actual, this.regex)
   }
 
   private buildSkippedAssertionEvaluation(
@@ -1601,6 +1891,15 @@ export class WorkflowExecutor {
   private compareValues(actual: unknown, operator: string, expected: unknown): boolean {
     if (operator === "exists") return actual !== null && actual !== undefined
     if (operator === "notExists") return actual === null || actual === undefined
+    if (operator === "matches" || operator === "notMatches") {
+      // A missing value neither matches nor fails to: the rule fails either way.
+      if (actual === null || actual === undefined) return false
+      if (this.regex === null) throw new Error("Regular expressions were not loaded for this rule")
+      const text = typeof actual === "object" ? JSON.stringify(actual) : String(actual)
+      return this.regex.test(String(expected), text) === (operator === "matches")
+    }
+    if (operator === "type") return valueHasType(actual, expected)
+    if (operator === "matchesSchema") return this.schemaCheck(actual, expected).length === 0
     if (operator === "equals" && (actual == null || expected == null)) return actual === expected
     if (operator === "notEquals" && (actual == null || expected == null)) return actual !== expected
 
@@ -1679,9 +1978,14 @@ export class WorkflowExecutor {
 
     const incomingEdges = edges.filter((e) => e.target === nodeId)
     const predecessorNodeIds = incomingEdges.map((e) => e.source)
+    // On a rerun a predecessor outside the scope never runs: its seeded result
+    // is all it will ever have, and without a passing one it counts as failed.
+    const settledBySource = (id: string): boolean => this.resumeScope !== null && !this.resumeScope.has(id)
+    const waitingOn = (): string[] =>
+      predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id) && !settledBySource(id))
 
     if (mergeStrategy === "all" || mergeStrategy === "conditional") {
-      let missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
+      let missing = waitingOn()
       if (missing.length > 0) {
         const maxWait = 30000
         const waitInterval = 100
@@ -1689,7 +1993,7 @@ export class WorkflowExecutor {
         while (missing.length > 0 && elapsed < maxWait && !cancelSignal?.aborted) {
           await new Promise((resolve) => setTimeout(resolve, waitInterval))
           elapsed += waitInterval
-          missing = predecessorNodeIds.filter((id) => !this.results.has(id) && !this.failedNodes.has(id))
+          missing = waitingOn()
         }
         if (cancelSignal?.aborted) throw new Error("Merge cancelled")
         if (missing.length > 0) {
@@ -1697,7 +2001,8 @@ export class WorkflowExecutor {
         }
       }
 
-      const failed = predecessorNodeIds.filter((id) => this.failedNodes.has(id))
+      const failed = predecessorNodeIds.filter((id) =>
+        this.failedNodes.has(id) || (settledBySource(id) && this.results.get(id)?.status !== "success"))
       if (failed.length > 0) {
         throw new Error(`Cannot merge: ${failed.length} predecessor(s) failed`)
       }
@@ -1714,15 +2019,7 @@ export class WorkflowExecutor {
 
     this.mergeCompleted.add(nodeId)
 
-    const predecessorResults: Array<readonly [string, NodeResult]> = []
-    for (const predId of predecessorNodeIds) {
-      const dataNodeId = this.findDataProducingAncestor(predId, edges)
-      const result = this.results.get(dataNodeId)
-      if (result && (result.type === "http-request" || result.type === "sse")) {
-        predecessorResults.push([dataNodeId, result])
-      }
-    }
-
+    const predecessorResults = this.mergeBranchResults(nodeId, edges)
     this.branchResults.set(nodeId, predecessorResults)
 
     return {
@@ -1786,7 +2083,7 @@ export class WorkflowExecutor {
     }
 
     const sub = this.deps.subRun?.begin(targetWorkflowId)
-    const childExecutor = new WorkflowExecutor(sub?.deps ?? this.deps)
+    const childExecutor = new WorkflowExecutor({ ...(sub?.deps ?? this.deps), cookieJar: this.cookieJar })
     childExecutor.callDepth = this.callDepth + 1
     let output: ExecutorOutput | undefined
     try {
@@ -1875,6 +2172,18 @@ export class WorkflowExecutor {
     }
   }
 
+  /** The response each branch into a merge carried, in incoming-edge order. */
+  private mergeBranchResults(nodeId: string, edges: readonly WorkflowEdge[]): Array<readonly [string, NodeResult]> {
+    const branches: Array<readonly [string, NodeResult]> = []
+    for (const edge of edges) {
+      if (edge.target !== nodeId) continue
+      const dataNodeId = this.findDataProducingAncestor(edge.source, edges)
+      const result = this.results.get(dataNodeId)
+      if (result && (result.type === "http-request" || result.type === "sse")) branches.push([dataNodeId, result])
+    }
+    return branches
+  }
+
   private findDataProducingAncestor(nodeId: string, edges: readonly WorkflowEdge[]): string {
     const visited = new Set<string>()
     const visit = (id: string): string => {
@@ -1903,93 +2212,93 @@ export class WorkflowExecutor {
     const resolve = (match: string, rawPath: string): string => {
       const varPath = rawPath.trim()
 
-      // Function call
-      const funcMatch = varPath.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$/)
-      if (funcMatch) {
-        const funcName = funcMatch[1]!
-        const params = funcMatch[2]!.trim()
-        const func = this.deps.functions.getFunction(funcName)
-        if (func) {
-          // A function that rejects its arguments fails the node with its own
-          // message rather than sending the placeholder text verbatim.
-          const paramList = params
-            ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
-            : []
-          return String(func(...paramList))
-        }
-      }
+      const called = this.callPlaceholderFunction(varPath)
+      if (called !== undefined) return called
 
       // Secrets
       if (varPath.startsWith("secrets.")) {
         if (!allowSecrets) {
           throw new Error("Secret substitution not allowed in URL/query/path contexts")
         }
-        const secretName = varPath.slice(8)
-        const value = this.deps.secrets?.[secretName]
+        const value = this.deps.secrets?.[varPath.slice(8)]
         return value !== undefined ? value : match
       }
 
       // Environment variables, workflow variables, the iteration's data row
       const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
-      if (scope) {
-        let value: unknown =
-          scope[1] === "env" ? this.environmentVariables : scope[1] === "variables" ? this.workflowVariables : this.deps.data
-        for (const part of scope[2]!.split(".")) {
-          if (typeof value === "object" && value !== null) {
-            value = (value as Record<string, unknown>)[part]
-          } else {
-            return match
-          }
-        }
-        return value !== undefined && value !== null ? placeholderText(value) : match
-      }
+      if (scope) return this.resolveScopedPlaceholder(scope[1]!, scope[2]!, match)
 
-      // Previous results
-      if (varPath.startsWith("prev")) {
-        const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
-        if (indexMatch) {
-          const branchIndex = Number.parseInt(indexMatch[1]!, 10)
-          const pathAfterIndex = indexMatch[2]!
-
-          if (this.currentBranchContext.length > 0) {
-            if (branchIndex >= 0 && branchIndex < this.currentBranchContext.length) {
-              const entry = this.currentBranchContext[branchIndex]!
-              const [, prevResult] = entry
-              const pathParts = pathAfterIndex.split(".")
-              return this.resolveDottedPath(prevResult, pathParts, match)
-            }
-            return match
-          }
-
-          const resultsList = [...this.results.values()]
-          if (branchIndex >= 0 && branchIndex < resultsList.length) {
-            const prevResult = resultsList[branchIndex]!
-            const pathParts = pathAfterIndex.split(".")
-            return this.resolveDottedPath(prevResult, pathParts, match)
-          }
-          return match
-        }
-
-        if (this.results.size > 0) {
-          const prevResult = [...this.results.values()].pop()!
-          const pathParts = varPath.slice(5).split(".")
-          return this.resolveDottedPath(prevResult, pathParts, match)
-        }
-        return match
-      }
+      if (varPath.startsWith("prev")) return this.resolvePrevPlaceholder(varPath, match)
 
       // Direct node ID access
       const firstPart = varPath.split(".")[0]!
       const nodeResult = this.results.get(firstPart)
-      if (nodeResult) {
-        const pathParts = varPath.split(".").slice(1)
-        return this.resolveDottedPath(nodeResult, pathParts, match)
-      }
-
-      return match
+      return nodeResult ? this.readResult(firstPart, nodeResult, varPath.split(".").slice(1), match) : match
     }
 
     return options.json ? substituteJsonTemplate(text, resolve) : text.replace(PLACEHOLDER_RE, resolve)
+  }
+
+  /** A `name(args)` placeholder's value; undefined when `varPath` is no call to a known function. */
+  private callPlaceholderFunction(varPath: string): string | undefined {
+    const funcMatch = varPath.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\((.*)\)$/)
+    if (!funcMatch) return undefined
+    const func = this.deps.functions.getFunction(funcMatch[1]!)
+    if (!func) return undefined
+    // A function that rejects its arguments fails the node with its own
+    // message rather than sending the placeholder text verbatim.
+    const params = funcMatch[2]!.trim()
+    const paramList = params
+      ? params.split(",").map((p) => p.trim().replace(/^["']|["']$/g, ""))
+      : []
+    return String(func(...paramList))
+  }
+
+  /** `{{env.…}}`, `{{variables.…}}` or `{{data.…}}`: `path` walked from the named scope. */
+  private resolveScopedPlaceholder(scopeName: string, path: string, match: string): string {
+    const name = path.split(".")[0]!
+    if (scopeName === "variables" && this.maskedSeedVariables.has(name) && !(name in this.workflowVariables)) {
+      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from the node that sets it, or run the whole workflow.`)
+    }
+    let value: unknown =
+      scopeName === "env" ? this.environmentVariables : scopeName === "variables" ? this.workflowVariables : this.deps.data
+    for (const part of path.split(".")) {
+      if (typeof value !== "object" || value === null) return match
+      value = (value as Record<string, unknown>)[part]
+    }
+    return value !== undefined && value !== null ? placeholderText(value) : match
+  }
+
+  /** `{{prev.…}}` reads the last result (a rerun entry's own predecessor); `{{prev[i].…}}` the i-th of the merged branches, else of all results. */
+  private resolvePrevPlaceholder(varPath: string, match: string): string {
+    const indexMatch = varPath.match(/^prev\[(\d+)\]\.(.+)$/)
+    if (indexMatch) {
+      const branchIndex = Number.parseInt(indexMatch[1]!, 10)
+      const entries = this.currentBranchContext.length > 0 ? this.currentBranchContext : [...this.results.entries()]
+      const entry = branchIndex >= 0 ? entries[branchIndex] : undefined
+      return entry ? this.readResult(entry[0], entry[1], indexMatch[2]!.split("."), match) : match
+    }
+
+    const entryPrev = this.entryPrev.getStore()
+    const last = entryPrev === undefined ? [...this.results.entries()].pop() : entryPrev
+    return last ? this.readResult(last[0], last[1], varPath.slice(5).split("."), match) : match
+  }
+
+  /**
+   * A path into a node's result. A result seeded from a rerun's source run is
+   * the stored copy, so a value that was masked or cut short there is refused
+   * rather than sent as `<SECRET>` or as half a body.
+   */
+  private readResult(nodeId: string, result: NodeResult, pathParts: string[], match: string): string {
+    const text = this.resolveDottedPath(result, pathParts, match)
+    if (!this.seededNodeIds.has(nodeId)) return text
+    if (result.response?.truncated === true) {
+      throw new Error(`${RERUN_REFUSED} ${match} reads node ${nodeId}'s response, which was too large to store whole in the source run`)
+    }
+    if (text.includes(SECRET_PLACEHOLDER)) {
+      throw new Error(`${RERUN_REFUSED} ${match} was masked in the source run. Rerun from node ${nodeId}, or run the whole workflow.`)
+    }
+    return text
   }
 
   private resolveDottedPath(value: unknown, pathParts: string[], fallback: string): string {
@@ -2133,34 +2442,51 @@ export class WorkflowExecutor {
       headers["Authorization"] = `Bearer ${await this.oauthToken(auth.oauth2, context)}`
       return
     }
-    if (auth.type === "bearer" && auth.bearer?.token) {
+    if (auth.type === "jwt") {
+      this.applyJwtAuth(auth.jwt, headers)
+    } else if (auth.type === "bearer" && auth.bearer?.token) {
       headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
     } else if (auth.type === "basic" && auth.basic) {
       const username = this.substituteVariables(auth.basic.username ?? "")
       const password = this.substituteVariables(auth.basic.password ?? "")
       headers["Authorization"] = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
-    } else if (auth.type === "apiKey" && auth.apiKey?.key) {
-      const key = this.substituteVariables(auth.apiKey.key)
-      const value = this.substituteVariables(auth.apiKey.value ?? "")
-      if (auth.apiKey.addTo === "query") {
-        queryParams[key] = value
-      } else {
-        headers[key] = value
-      }
+    } else if (auth.type === "apiKey") {
+      this.applyApiKeyAuth(auth.apiKey, headers, queryParams)
     }
+  }
+
+  private applyApiKeyAuth(
+    apiKey: HttpAuthConfig["apiKey"],
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): void {
+    if (!apiKey?.key) return
+    const key = this.substituteVariables(apiKey.key)
+    const value = this.substituteVariables(apiKey.value ?? "")
+    if (apiKey.addTo === "query") {
+      queryParams[key] = value
+    } else {
+      headers[key] = value
+    }
+  }
+
+  private applyJwtAuth(jwt: JwtAuthConfig | undefined, headers: Record<string, string>): void {
+    const token = this.signedJwt(jwt)
+    // A fresh token per request, and as good as a password until it expires.
+    this.deps.maskValue?.(token)
+    const prefix = jwt?.prefix ?? "Bearer"
+    headers[jwt?.headerName?.trim() || "Authorization"] = prefix ? `${prefix} ${token}` : token
   }
 
   private async oauthToken(oauth2: OAuth2AuthConfig, context: AuthRequestContext): Promise<string> {
     // The client secret and the token are the only places secrets may go, and
     // only as whole `{{secrets.NAME}}` references (the schema enforces it).
-    const secretName = (reference: string | undefined): string | undefined =>
-      reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
-    const clientSecretName = secretName(oauth2.clientSecret)
+    const clientSecretName = secretNameOf(oauth2.clientSecret)
     const clientSecret = clientSecretName === undefined ? undefined : this.deps.secrets?.[clientSecretName]
     if (clientSecretName !== undefined && clientSecret === undefined) {
       throw new OAuthError(`OAuth 2.0: secret ${clientSecretName} is not set`)
     }
-    const tokenSecretName = secretName(oauth2.tokenSecret)
+    const tokenSecretName = secretNameOf(oauth2.tokenSecret)
     const storedToken = tokenSecretName === undefined ? undefined : this.deps.secrets?.[tokenSecretName]
     const fill = (text: string | undefined): string | undefined =>
       text ? this.substituteVariables(text, { allowSecrets: false }) : undefined
@@ -2188,6 +2514,78 @@ export class WorkflowExecutor {
       },
       context.forceRefresh,
     )
+  }
+
+  /**
+   * The value of a `{{secrets.NAME}}` auth field; `scheme` names the auth in
+   * the error. Absent and optional: undefined.
+   */
+  private authSecret(scheme: string, label: string, reference: string | undefined, required: boolean): string | undefined {
+    const name = secretNameOf(reference)
+    if (name === undefined) {
+      if (required) throw new AuthError(`${scheme}: no ${label} secret is set on the node`)
+      return undefined
+    }
+    const value = this.deps.secrets?.[name]
+    if (value === undefined) throw new AuthError(`${scheme}: secret ${name} is not set`)
+    return value
+  }
+
+  /** The JWT for one request: the payload and header filled as JSON templates, `iat` and `exp` added when absent. */
+  private signedJwt(jwt: JwtAuthConfig | undefined): string {
+    const key = this.authSecret("JWT", "signing key", jwt?.secret, true)!
+    const object = (label: string, text: string | undefined): Record<string, unknown> => {
+      if (!text?.trim()) return {}
+      let value: unknown
+      try {
+        value = JSON.parse(this.substituteVariables(text, { json: true }))
+      } catch {
+        throw new AuthError(`JWT: the ${label} is not valid JSON`)
+      }
+      if (typeof value !== "object" || value === null || Array.isArray(value)) throw new AuthError(`JWT: the ${label} must be a JSON object`)
+      return value as Record<string, unknown>
+    }
+    const claims = object("payload", jwt?.payload)
+    const iat = typeof claims["iat"] === "number" ? claims["iat"] : Math.floor(this.deps.clock.now().getTime() / 1000)
+    const payload = {
+      ...claims,
+      iat,
+      ...(jwt?.expiresInSeconds !== undefined && claims["exp"] === undefined ? { exp: iat + jwt.expiresInSeconds } : {}),
+    }
+    return signJwt(jwt?.algorithm ?? "HS256", key, object("header", jwt?.header), payload)
+  }
+
+  /** Sign the request as it will be sent. A form-data body is encoded first, since the signature covers its bytes. */
+  private async signAwsRequest(
+    config: AwsSigV4AuthConfig | undefined,
+    method: string,
+    url: string,
+    headers: Record<string, string>,
+    body: string | Buffer | UndiciFormData | undefined,
+  ): Promise<{ url: string; headers: Record<string, string>; body: string | Buffer | undefined }> {
+    const scheme = "AWS Signature V4"
+    const fill = (text: string | undefined): string => this.substituteVariables(text ?? "", { allowSecrets: false }).trim()
+    const accessKeyId = this.substituteVariables(config?.accessKeyId ?? "").trim()
+    const region = fill(config?.region)
+    const service = fill(config?.service)
+    if (!accessKeyId || !region || !service) throw new AuthError(`${scheme}: the access key ID, region and service are required`)
+    const secretAccessKey = this.authSecret(scheme, "secret access key", config?.secretAccessKey, true)!
+    const sessionToken = this.authSecret(scheme, "session token", config?.sessionToken, false)
+    let bytes: string | Buffer | undefined
+    const sent = { ...headers }
+    if (body instanceof UndiciFormData) {
+      const encoded = new UndiciResponse(body)
+      bytes = Buffer.from(await encoded.arrayBuffer())
+      for (const name of Object.keys(sent)) if (name.toLowerCase() === "content-type") delete sent[name]
+      sent["Content-Type"] = encoded.headers.get("content-type") ?? ""
+    } else {
+      bytes = body
+    }
+    const signed = signAwsSigV4(
+      { method, url, headers: sent, body: method.toUpperCase() === "GET" ? undefined : bytes, region, service, now: this.deps.clock.now() },
+      { accessKeyId, secretAccessKey, ...(sessionToken === undefined ? {} : { sessionToken }) },
+    )
+    return { url: signed.url, headers: signed.headers, body: bytes }
   }
 
   /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */
@@ -2251,14 +2649,58 @@ export class WorkflowExecutor {
       default: {
         // Back-compat default for nodes saved before `bodyType` existed.
         if (body === undefined || body === null) return undefined
-        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: true })
+        // With no Content-Type the body is sent as application/json (below).
+        const typed = Object.keys(headers).some((name) => name.toLowerCase() === "content-type")
+        // An untyped string body (cURL and HAR imports) may be XML or a form:
+        // escape for JSON only when it will be sent as JSON, as `raw` does.
+        const isJson = bodyType === "json" || typeof body !== "string" || !typed || hasJsonContentType(headers)
+        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: isJson })
         // An empty field is no body at all, and claims no type.
-        if (json.trim() !== "" && !Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+        if (json.trim() !== "" && !typed) {
           headers["Content-Type"] = "application/json"
         }
         return json
       }
     }
+  }
+
+  /**
+   * A GraphQL request per GraphQL over HTTP: a GET carries `query`,
+   * `variables` (JSON) and `operationName` as query parameters; any other
+   * method POSTs them as a JSON object. The variables are a JSON template, so
+   * a placeholder inside a string is escaped and one standing alone can be a
+   * number or an object.
+   */
+  private buildGraphqlRequest(
+    graphql: GraphqlBody | undefined,
+    method: string,
+    headers: Record<string, string>,
+    queryParams: Record<string, string>,
+  ): string | undefined {
+    const query = this.substituteVariables(graphql?.query ?? "")
+    const variablesText = this.substituteVariables(graphql?.variables ?? "", { json: true })
+    let variables: unknown
+    if (variablesText.trim() !== "") {
+      try {
+        variables = JSON.parse(variablesText)
+      } catch {
+        throw new Error("GraphQL variables are not valid JSON")
+      }
+      if (typeof variables !== "object" || variables === null || Array.isArray(variables)) {
+        throw new Error("GraphQL variables must be a JSON object")
+      }
+    }
+    const operationName = graphql?.operationName?.trim() ? this.substituteVariables(graphql.operationName.trim()) : undefined
+    if (method.toUpperCase() === "GET") {
+      queryParams["query"] = query
+      if (variables !== undefined) queryParams["variables"] = JSON.stringify(variables)
+      if (operationName !== undefined) queryParams["operationName"] = operationName
+      return undefined
+    }
+    if (!Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+      headers["Content-Type"] = "application/json"
+    }
+    return JSON.stringify({ query, ...(variables === undefined ? {} : { variables }), ...(operationName === undefined ? {} : { operationName }) })
   }
 
   /** Resolve a file upload's bytes per its `type` — base64-decoded, read from disk, or a resolved variable. */
@@ -2340,6 +2782,7 @@ export class WorkflowExecutor {
   private buildRunResults(): RunResult[] {
     const results: RunResult[] = []
     for (const [nodeId, result] of this.results.entries()) {
+      if (this.seededNodeIds.has(nodeId)) continue
       const status = this.nodeStatuses.get(nodeId) ?? (result.status === "success" ? "passed" : "failed")
       results.push(buildRunResult(nodeId, status, result))
     }
@@ -2349,6 +2792,7 @@ export class WorkflowExecutor {
   private buildOutputs(): Record<string, unknown> {
     const outputs: Record<string, unknown> = {}
     for (const [nodeId, result] of this.results.entries()) {
+      if (this.seededNodeIds.has(nodeId)) continue
       if (result.type === "http-request" || result.type === "sse") {
         outputs[nodeId] = { status: result.statusCode, body: result.body }
       } else if (result.type === "assertion") {
@@ -2362,6 +2806,37 @@ export class WorkflowExecutor {
     }
     return outputs
   }
+}
+
+/** A node result rebuilt from its stored copy, for a rerun to read as it read the original. */
+function seededNodeResult(stored: RunResult, type: WorkflowNode["type"]): NodeResult {
+  const response = isJsonRecord(stored.response) ? stored.response : {}
+  const request = isJsonRecord(stored.request) ? stored.request : {}
+  const passed = stored.status === "passed"
+  const statusCode = typeof response["statusCode"] === "number" ? response["statusCode"] : undefined
+  return {
+    status: passed ? "success" : "error",
+    type,
+    duration: stored.duration,
+    ...(statusCode !== undefined
+      ? {
+          statusCode,
+          headers: (isJsonRecord(response["headers"]) ? response["headers"] : {}) as Record<string, string>,
+          body: response["body"],
+          response: response as unknown as NonNullable<NodeResult["response"]>,
+        }
+      : {}),
+    ...(typeof request["method"] === "string" ? { method: request["method"] } : {}),
+    ...(typeof request["url"] === "string" ? { url: request["url"] } : {}),
+    ...(typeof stored.error === "string" ? { error: stored.error } : {}),
+    ...(type === "assertion"
+      ? { assertionOutcome: passed ? "pass" as const : "fail" as const, assertionEvaluations: stored.assertions ?? [] }
+      : {}),
+  }
+}
+
+function isJsonRecord(value: JsonValue | null | undefined): value is { readonly [key: string]: JsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function toJsonValue(value: unknown): JsonValue {
@@ -2387,7 +2862,7 @@ function buildRunResultResponse(result: NodeResult): JsonValue {
 }
 
 type RunResultDiagnostics = Partial<
-  Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow">
+  Pick<RunResult, "secretRefs" | "unresolvedPlaceholders" | "extractorOutcomes" | "subWorkflow" | "scripts">
 >
 
 function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
@@ -2397,6 +2872,9 @@ function buildRunResultDiagnostics(result: NodeResult): RunResultDiagnostics {
       ? { unresolvedPlaceholders: [...result.unresolvedPlaceholders] }
       : {}),
     ...(result.extractorOutcomes ? { extractorOutcomes: [...result.extractorOutcomes] } : {}),
+    ...(result.scripts
+      ? { scripts: result.scripts.map((script) => ({ ...script, logs: [...script.logs], tests: script.tests.map((test) => ({ ...test })) })) }
+      : {}),
     ...(result.subWorkflow
       ? { subWorkflow: { ...result.subWorkflow, outputVariableNames: [...result.subWorkflow.outputVariableNames] } }
       : {}),
@@ -2419,8 +2897,14 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),
     error: typeof result.error === "string" ? result.error : null,
-    assertions: result.type === "assertion" ? [...(result.assertionEvaluations ?? [])] : null,
+    // An http-request node has them only when it checked `responseSchemas`.
+    assertions: result.type === "assertion" || result.assertionEvaluations ? [...(result.assertionEvaluations ?? [])] : null,
   }
+}
+
+/** The `responseSchemas` key that applies to `status`: exact ("201"), then its class ("2XX"), then "default". */
+export function responseSchemaKey(schemas: Readonly<Record<string, unknown>>, status: number): string | undefined {
+  return [String(status), `${Math.floor(status / 100)}XX`, "default"].find((key) => schemas[key] !== undefined)
 }
 
 function toAssertionSource(value: string | undefined): AssertionSource {
@@ -2448,11 +2932,25 @@ function toAssertionOperator(value: string): AssertionOperator {
     case "count":
     case "exists":
     case "notExists":
+    case "matches":
+    case "notMatches":
+    case "type":
+    case "matchesSchema":
       return value
     case "equals":
     default:
       return "equals"
   }
+}
+
+/** The "type" operator: JSON's types, plus integer. A missing value has none. */
+function valueHasType(actual: unknown, expected: unknown): boolean {
+  if (!(ASSERTION_VALUE_TYPES as readonly unknown[]).includes(expected)) {
+    throw new Error(`Unknown type ${JSON.stringify(expected)}; use one of ${ASSERTION_VALUE_TYPES.join(", ")}`)
+  }
+  if (actual === undefined) return false
+  if (expected === "integer") return Number.isInteger(actual)
+  return jsonValueType(actual) === expected
 }
 
 function jsonValueType(value: unknown): JsonValueType | null {
@@ -2468,7 +2966,18 @@ function jsonValueType(value: unknown): JsonValueType | null {
   }
 }
 
-/** Collect every {{secrets.NAME}} referenced by a node's config (names only). */
+/**
+ * Why a script fails its node: the error that stopped it, or its failed
+ * `aw.test`s. The prefix is what the scheduler's error classing lets through.
+ */
+function scriptFailure(outcome: ScriptOutcome): string | undefined {
+  const label = outcome.phase === "preRequest" ? "Pre-request script" : "Post-response script"
+  if (outcome.error !== undefined) return `${label} failed: ${outcome.error}`
+  const failed = outcome.tests.filter((test) => !test.passed).length
+  return failed > 0 ? `${label}: ${failed} of ${outcome.tests.length} tests failed` : undefined
+}
+
+/** Collect every {{secrets.NAME}} (and script `aw.secrets.get("NAME")`) referenced by a node's config (names only). */
 function collectSecretRefs(config: Record<string, unknown> | undefined): readonly string[] {
   if (!config) return []
   const names = new Set<string>()

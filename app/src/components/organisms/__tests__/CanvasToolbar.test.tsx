@@ -16,6 +16,7 @@ function renderToolbar(props: Partial<CanvasToolbarProps> = {}) {
       canGroup={false}
       canUngroup={false}
       onHistory={vi.fn()}
+      onVersionHistory={vi.fn()}
       onJsonEditor={vi.fn()}
       onImport={vi.fn()}
       onCommandPalette={vi.fn()}
@@ -47,6 +48,31 @@ describe("CanvasToolbar", () => {
 
     expect(toolbar).toHaveClass("flex-nowrap");
     expect(toolbar).not.toHaveClass("flex-wrap");
+  });
+
+  it("offers the latest failed run's failed branches, and each failed step, from the Run menu", () => {
+    const onRerunFailed = vi.fn();
+    const onRunFromFailedNode = vi.fn();
+    renderToolbar({
+      onRerunFailed,
+      onRunFromFailedNode,
+      resumeOptions: [{ nodeId: "http-1", label: "Get user" }],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Run options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rerun failed branches" }));
+    expect(onRerunFailed).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run options" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run from Get user" }));
+    expect(onRunFromFailedNode).toHaveBeenCalledWith("http-1");
+  });
+
+  it("opens Version history", () => {
+    const onVersionHistory = vi.fn();
+    renderToolbar({ onVersionHistory });
+    fireEvent.click(screen.getByRole("button", { name: "Version history" }));
+    expect(onVersionHistory).toHaveBeenCalled();
   });
 
   it("runs with the data file the user picks", () => {

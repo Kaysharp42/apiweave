@@ -32,11 +32,11 @@ export function backupDatabase(database: Database, databasePath: string, schemaV
   return backupPath
 }
 
-/** Throws the first problem `PRAGMA quick_check` reports. */
+/** Throws the first problem `PRAGMA quick_check` reports, coded like SQLite's own corruption error. */
 export function assertIntact(database: Database): void {
   const result = database.pragma<string>("quick_check", { simple: true })
   if (result !== "ok") {
-    throw new Error(result)
+    throw Object.assign(new Error(result), { code: "SQLITE_CORRUPT" })
   }
 }
 

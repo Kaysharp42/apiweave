@@ -4,4 +4,5 @@ export type HTTPRequestBodyType =
   | "raw"
   | "form-data"
   | "x-www-form-urlencoded"
-  | "binary";
+  | "binary"
+  | "graphql";

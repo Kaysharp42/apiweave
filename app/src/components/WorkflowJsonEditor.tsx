@@ -307,6 +307,10 @@ Validates API responses. Has **two output handles**: Pass (✓) and Fail (✗) f
 | \`exists\` | Field exists (not null) | body.token \`exists\` |
 | \`notExists\` | Field is null/missing | body.error \`notExists\` |
 | \`count\` | Array/string length equals | body.items \`count\` "5" |
+| \`matches\` | Matches a regex, bare or \`/pattern/flags\` | body.id \`matches\` "^ord_\\\\d+$" |
+| \`notMatches\` | Does not match a regex | body.msg \`notMatches\` "/error/i" |
+| \`type\` | Is string, number, integer, boolean, object, array or null | body.total \`type\` "integer" |
+| \`matchesSchema\` | Matches a JSON Schema (object) | body \`matchesSchema\` {"type": "object"} |
 
 **Pass/Fail routing:**
 - If ALL assertions pass → routes through the **"pass"** sourceHandle

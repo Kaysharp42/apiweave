@@ -98,20 +98,28 @@ const buildDesktop = () => Promise.all([
     entryPoints: ["electron/pty_host.ts"],
     outfile: "dist/desktop/pty-host.cjs",
   }),
+  // The script worker runs one user script on a worker thread, resolved by
+  // core/runner/script_sandbox.ts from `__dirname` next to main.cjs, so a
+  // script that spins until its deadline cannot stall main (see
+  // build.asarUnpack in package.json: it is loaded from app.asar.unpacked).
+  esbuild.build({
+    ...common,
+    entryPoints: ["core/runner/script_worker.ts"],
+    outfile: "dist/desktop/script-worker.cjs",
+  }),
 ]).then(() => copyMigrations()).then(copyIcon)
 
+const cli = { ...common, external: Object.keys(dependencies), plugins: [noElectron], logLevel: "warning" }
 const buildCli = () =>
-  esbuild
-    .build({
-      ...common,
-      external: Object.keys(dependencies),
-      plugins: [noElectron],
-      logLevel: "warning",
+  Promise.all([
+    esbuild.build({
+      ...cli,
       banner: { js: "#!/usr/bin/env node" },
       entryPoints: ["core/cli/bin.ts"],
       outfile: "dist/cli/apiweave.cjs",
-    })
-    .then(() => copyMigrations("cli"))
+    }),
+    esbuild.build({ ...cli, entryPoints: ["core/runner/script_worker.ts"], outfile: "dist/cli/script-worker.cjs" }),
+  ]).then(() => copyMigrations("cli"))
 
 ;(process.argv.includes("--cli") ? buildCli() : buildDesktop())
   .catch((error) => {

@@ -56,6 +56,49 @@ Common patterns:
 
 Variables are not encrypted. They are suitable for non-sensitive configuration. Anything that should stay secret belongs in a secret, not a variable.
 
+### Import and export variables
+
+When editing an environment, **Import variables…** reads a file and shows what
+it would change before anything is written. It accepts:
+
+- **A .env file**: `KEY=value` lines, with an optional `export ` prefix,
+  `#` comments (on their own line, or after an unquoted value), and single,
+  double or backtick quotes. Quoted values may span several lines; inside
+  double quotes `\n`, `\r`, `\t`, `\"` and `\\` are escapes. When a key
+  appears twice, the last value wins. The CLI's `--env-file` and
+  `--secrets-file` read dotenv files with the same rules.
+- **A flat JSON object**, such as `{ "BASE_URL": "https://api.test", "PORT": 8080 }`.
+  Numbers and booleans become text and `null` becomes an empty value. A nested
+  object or array is refused with the key that holds it, because a variable is
+  one text value: flatten the file first.
+- **A Postman environment export** (`*.postman_environment.json`). Disabled
+  entries are skipped.
+
+Names are imported as a placeholder can reference them: every character other
+than a letter, digit or underscore becomes `_`, and a name starting with a
+digit gets a leading `_` (`api-key` → `api_key`, `1st` → `_1st`). The preview
+shows the final name. This is the same renaming the Postman collection import
+applies, so a collection and its environment agree. When two keys end up with
+the same name, the last one wins.
+
+Each row is marked **New**, **Changed**, **Unchanged** or, for a secret this
+environment already stores, **Replaces secret**. Existing values are kept
+unless you turn on **Overwrite existing values**.
+
+Each key can be imported as a plain variable or as a secret. Keys that look
+like credentials (`API_KEY`, `DB_PASSWORD`, `CLIENT_SECRET`, `*_TOKEN`, and so
+on), values that look like bearer tokens, JWTs or live API keys, and Postman
+entries of type `secret` start as secrets. A secret's value is not shown in the
+preview. On import it is sealed into this environment's secret store
+(`{{secrets.KEY}}`), never written as a plain variable, and never shown again.
+Secrets are stored at once; imported plain variables are added to the form, so
+click **Save Changes** to keep them.
+
+**Export .env** downloads the environment's plain variables as a `.env` file
+that imports back unchanged. Secrets are never exported. A key that is not a
+valid `.env` name (letters, digits, `_`, `.` and `-`, not starting with a digit)
+is left out with a comment saying so.
+
 ## Environment Inheritance
 
 Ten environments that share 90% of their variables do not need ten copies of those variables. An environment can extend a **base environment** in the same workspace and define only what differs.

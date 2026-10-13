@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useEffect,
   useMemo,
@@ -19,6 +18,7 @@ import {
   Plus,
   Puzzle,
   Repeat,
+  ShieldCheck,
   Trash2,
   Type,
   Variable,
@@ -55,6 +55,12 @@ import { AssertionRulesEditor } from "../molecules/AssertionRulesEditor";
 import { tryFormatJson } from "../../utils/jsonFormat";
 import { normalizeHttpRequestConfig } from "./httpRequestConfigCompat";
 import { OAuth2AuthFields } from "./OAuth2AuthFields";
+import { AwsSigV4AuthFields } from "./AwsSigV4AuthFields";
+import { DigestAuthFields } from "./DigestAuthFields";
+import { JwtAuthFields } from "./JwtAuthFields";
+import { HttpScriptsEditor } from "./HttpScriptsEditor";
+import { GraphqlBodyEditor } from "./GraphqlBodyEditor";
+import { loadMonaco, MonacoEditor } from "./lazyMonaco";
 import type {
   AuthConfig,
   FileUpload,
@@ -68,27 +74,15 @@ import type {
   UrlEncodedEntry,
 } from "../../types";
 
-// Both chunks are independent (the config module only sets MonacoEnvironment /
-// loader.config, which the editor reads at mount, not at import), so fetch them
-// in parallel. Module imports are cached, so calling this again is free — the
-// panel warms it on mount so the ~MB editor chunk is ready before the user
-// reaches the Body tab instead of stalling on "Loading editor…".
-const loadMonaco = async () => {
-  const [, editorModule] = await Promise.all([
-    import("@/config/monaco"),
-    import("@monaco-editor/react"),
-  ]);
-  return editorModule;
-};
-
-const MonacoEditor = lazy(loadMonaco);
-
 const AUTH_OPTIONS: SelectOption[] = [
   { label: "None", value: "none" },
   { label: "Bearer Token", value: "bearer" },
   { label: "Basic Auth", value: "basic" },
   { label: "API Key", value: "apiKey" },
   { label: "OAuth 2.0", value: "oauth2" },
+  { label: "AWS Signature V4", value: "awsSigV4" },
+  { label: "Digest", value: "digest" },
+  { label: "JWT Bearer", value: "jwt" },
 ];
 
 function SecretRevealInput({
@@ -260,6 +254,7 @@ const BODY_TYPES: SelectOption[] = [
   { label: "Form-data", value: "form-data" },
   { label: "x-www-form-urlencoded", value: "x-www-form-urlencoded" },
   { label: "Binary", value: "binary" },
+  { label: "GraphQL", value: "graphql" },
 ];
 
 function JsonBodyEditor({
@@ -346,6 +341,7 @@ const KeyRoundCardIcon = createCardIcon(KeyRound);
 const Link2CardIcon = createCardIcon(Link2);
 const PuzzleCardIcon = createCardIcon(Puzzle);
 const RepeatCardIcon = createCardIcon(Repeat);
+const ShieldCheckCardIcon = createCardIcon(ShieldCheck);
 const TypeCardIcon = createCardIcon(Type);
 
 function buildPreviewUrl(url: string, pairs: KeyValuePair[]): string {
@@ -462,6 +458,59 @@ function ExtractorRow({
 }
 
 const DEFAULT_RETRY: NodeModalHttpRetryConfig = { maxAttempts: 5, intervalMs: 2000 };
+
+/**
+ * The response body schemas OpenAPI import attached, by status. They are
+ * checked on every run; a status can be dropped here, and a schema edited in
+ * the workflow's JSON.
+ */
+function ResponseSchemaSettings({
+  schemas,
+  onChange,
+}: {
+  schemas: NonNullable<NodeModalHTTPRequestConfig["responseSchemas"]>;
+  onChange: (schemas: NodeModalHTTPRequestConfig["responseSchemas"]) => void;
+}) {
+  const keys = Object.keys(schemas);
+  const remove = (key: string) => {
+    const rest = Object.fromEntries(
+      Object.entries(schemas).filter(([status]) => status !== key),
+    );
+    onChange(Object.keys(rest).length > 0 ? rest : undefined);
+  };
+  return (
+    <Card title="Response schemas" icon={ShieldCheckCardIcon}>
+      <p className="mb-3 text-xs text-text-secondary dark:text-text-secondary-dark">
+        The response body must match the JSON Schema for its status code (the
+        exact code, then its class such as 2XX, then default), or the request
+        fails and lists where the body differs. A status not listed is not
+        checked.
+      </p>
+      <ul className="space-y-2">
+        {keys.map((key) => (
+          <li
+            key={key}
+            className="flex items-center justify-between gap-2 rounded-sm border border-border px-3 py-2 dark:border-border-dark"
+          >
+            <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark">
+              Status {key}
+            </span>
+            <Button
+              variant="ghost"
+              intent="error"
+              size="xs"
+              aria-label={`Stop checking the status ${key} schema`}
+              onClick={() => remove(key)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
 
 /**
  * Send the request again: poll until the "until" rules pass, or, with none,
@@ -771,6 +820,31 @@ export function HTTPRequestConfigPanel({
               buttonClass={SELECT_BUTTON_CLASS}
             />
           )}
+          {auth.type === "awsSigV4" && auth.awsSigV4 && (
+            <AwsSigV4AuthFields
+              config={auth.awsSigV4}
+              onChange={(patch) =>
+                updateAuth({ awsSigV4: { ...auth.awsSigV4!, ...patch } })
+              }
+            />
+          )}
+          {auth.type === "digest" && auth.digest && (
+            <DigestAuthFields
+              config={auth.digest}
+              onChange={(patch) =>
+                updateAuth({ digest: { ...auth.digest!, ...patch } })
+              }
+            />
+          )}
+          {auth.type === "jwt" && auth.jwt && (
+            <JwtAuthFields
+              config={auth.jwt}
+              onChange={(patch) =>
+                updateAuth({ jwt: { ...auth.jwt!, ...patch } })
+              }
+              buttonClass={SELECT_BUTTON_CLASS}
+            />
+          )}
         </div>
       </Card>
     );
@@ -808,6 +882,14 @@ export function HTTPRequestConfigPanel({
             error={jsonError}
             isDarkMode={isDarkMode}
             updateConfig={updateConfig}
+          />
+        )}
+
+        {draftConfig.bodyType === "graphql" && (
+          <GraphqlBodyEditor
+            graphql={draftConfig.graphql}
+            isDarkMode={isDarkMode}
+            onChange={(graphql) => updateConfig({ graphql })}
           />
         )}
 
@@ -895,6 +977,17 @@ export function HTTPRequestConfigPanel({
             />
           </FormField>
           <FormField
+            label="Use cookie jar"
+            hint="Send the cookies earlier responses in this run set, and keep the ones this response sets. Off sends only this request's own cookies."
+          >
+            <Toggle
+              checked={draftConfig.useCookieJar ?? true}
+              onChange={(event) =>
+                updateConfig({ useCookieJar: event.target.checked })
+              }
+            />
+          </FormField>
+          <FormField
             label="Continue on failure"
             hint="Overrides the workflow's Continue on Fail setting for this node only — on, it keeps the run going past this request even if the workflow-level setting is off."
           >
@@ -924,6 +1017,14 @@ export function HTTPRequestConfigPanel({
         retry={draftConfig.retry}
         onChange={(retry) => updateConfig({ retry })}
       />
+
+      {draftConfig.responseSchemas &&
+        Object.keys(draftConfig.responseSchemas).length > 0 && (
+          <ResponseSchemaSettings
+            schemas={draftConfig.responseSchemas}
+            onChange={(responseSchemas) => updateConfig({ responseSchemas })}
+          />
+        )}
 
       <Card title="Store response as variables" icon={PuzzleCardIcon}>
         <div className="mb-3 space-y-2">
@@ -1013,6 +1114,13 @@ export function HTTPRequestConfigPanel({
             />
           </FormField>
         </Card>
+      )}
+      {activeTab === "scripts" && (
+        <HttpScriptsEditor
+          scripts={draftConfig.scripts}
+          isDarkMode={isDarkMode}
+          onChange={(scripts) => updateConfig({ scripts })}
+        />
       )}
       {activeTab === "settings" && renderSettings()}
       {jsonError && activeTab === "body" && (

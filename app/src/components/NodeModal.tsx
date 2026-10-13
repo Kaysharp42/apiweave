@@ -11,6 +11,7 @@ import {
   Radio,
   Settings,
   SlidersHorizontal,
+  SquareCode,
   Timer,
 } from "lucide-react";
 import { Badge } from "./atoms/Badge";
@@ -77,6 +78,7 @@ const HTTP_TABS: NodeModalShellTab[] = [
   { key: "headers", label: "Headers", icon: FileText },
   { key: "body", label: "Body", icon: SlidersHorizontal },
   { key: "cookies", label: "Cookies", icon: Cookie },
+  { key: "scripts", label: "Scripts", icon: SquareCode },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 

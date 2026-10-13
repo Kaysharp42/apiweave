@@ -14,6 +14,8 @@ import {
   FileCode,
   FileText,
   FileSpreadsheet,
+  RotateCcw,
+  CornerDownRight,
 } from "lucide-react";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { RunSummary } from "@shared/types/RunSummary";
@@ -40,6 +42,7 @@ export default function HistoryModal({
   onClose,
   onSelectRun,
   onShowTimeline,
+  onRerunFailed,
 }: HistoryModalProps) {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -289,6 +292,15 @@ export default function HistoryModal({
                         <span className="capitalize">{run.trigger}</span>
                       </div>
                     )}
+                    {run.resumeFromRunId && (
+                      <div
+                        className="flex items-center gap-1"
+                        title={`Reused results from run ${run.resumeFromRunId}`}
+                      >
+                        <CornerDownRight className="w-3.5 h-3.5" />
+                        <span>Rerun of {run.resumeFromRunId.slice(0, 8)}</span>
+                      </div>
+                    )}
                     {run.iteration && (
                       <div className="flex items-center gap-1">
                         <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -322,6 +334,24 @@ export default function HistoryModal({
                       <Activity className="w-4 h-4" />
                     </IconButton>
                   )}
+                  {onRerunFailed &&
+                    run.status === "failed" &&
+                    run.failedNodeCount > 0 && (
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRerunFailed(run.runId);
+                          onClose();
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        variant="ghost"
+                        size="xs"
+                        tooltip="Rerun failed branches"
+                        aria-label={`Rerun the failed branches of run ${run.runId}`}
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                      </IconButton>
+                    )}
                   {!LIVE_STATUSES.has(run.status) && (
                     <>
                       <IconButton

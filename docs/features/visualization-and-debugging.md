@@ -1,6 +1,6 @@
 # Visualization and Debugging
 
-*Three read-mostly views that turn APIWeave's implicit dataflow and run data into
+*Read-mostly views that turn APIWeave's implicit dataflow and run data into
 something you can see: a per-run timeline, variable provenance, and masked-secret
 resolution confidence. Every one is additive — no change to the local-first,
 secret-safe contract, and no secret value is ever shown.*
@@ -27,8 +27,9 @@ Open **Run history** (the history button on the canvas toolbar) and click the
 **activity** icon on any run row. The timeline opens as a modal over the canvas.
 
 Run history lists the newest runs first, 20 at a time (**Load more** fetches
-the next page). Each workflow keeps its newest 100 runs; when a run finishes,
-older finished runs are deleted. The trash icon on a row deletes that run, and
+the next page). Each workflow keeps its newest 100 runs, counting all the
+iterations of a data-driven run as one; when a run finishes, older finished
+runs are deleted. The trash icon on a row deletes that run, and
 **Clear history** deletes every finished run of the workflow. Runs still in
 progress are never deleted. Agents connected through MCP can read run history
 but cannot delete it.
@@ -222,6 +223,63 @@ Because it is a file meant to leave the app, it goes further than run history:
 it carries no request or response headers or bodies and no variables, and URLs
 keep only their path (the query string reads `<REDACTED>`). Open the run in
 APIWeave for the full evidence.
+
+## 6. Rerun from a node, or rerun failed branches
+
+After a step fails, fix it and rerun only that part of the workflow. The steps
+upstream are not sent again: the rerun reuses the results and variables an
+earlier run stored for them.
+
+### Where to find it
+
+- **Run from here**: a step's **⋯** node menu, or right-click the step. Runs
+  that step and everything downstream of it, reusing the **latest run** of the
+  workflow for everything upstream.
+- **Rerun failed branches**: the arrow beside **Run** on the toolbar, and the
+  rerun icon on a failed run in **Run history**. Reruns every step the run
+  failed, and everything downstream of them, reusing that run for the rest. The
+  toolbar menu also lists each failed step of the latest failed run as **Run
+  from <step>**.
+- **Agents**: `runs_create` takes `resume: { nodeId }` (run from a node) or
+  `resume: {}` (rerun failed steps), with `fromRunId` to pick the run to reuse.
+  The usual approval prompt applies when the rerun would send secrets.
+
+A rerun is an ordinary run in History, marked **Rerun of <run>**, and the run
+records the run it reused (`resumeFromRunId`). Its results are only the steps it
+ran; the canvas shows those. A rerun of a rerun works: it also reuses what its
+source run had itself reused.
+
+### What runs, and what is reused
+
+- The entry steps and everything downstream of them run. When one entry is
+  downstream of another, it runs in order as part of the first one's branch,
+  not twice.
+- Every step outside that set keeps its result from the source run, so
+  `{{prev...}}` and `{{<nodeId>...}}` read what they read then, and the source
+  run's variables are the starting variables (the workflow's own defaults are
+  overridden by them; `variables` passed with the run override both).
+- A **Merge** in the rerun joins branches it does not rerun with their stored
+  results. A branch that did not pass in the source run counts as failed, so
+  `Rerun failed branches` (which reruns it) is the way to retry a merge.
+- `{{secrets.*}}` and `{{env.*}}` resolve fresh, as in any run.
+
+### What cannot be reused
+
+Run history never stores a secret: a secret's value, and any variable whose name
+or value looks like a credential (`token`, `password`, a bearer token…), is
+stored as `<SECRET>`, and response bodies over 1 MiB are stored cut short. A
+rerun never sends either:
+
+- A rerun that reads a masked variable the steps it runs do not set themselves
+  is refused before it starts, naming the variable — for example
+  `Cannot rerun: {{variables.authToken}} is stored masked in run …`. Rerun from
+  the step that sets it (the login step), or run the whole workflow.
+- A step that reads a stored result that was masked or cut short fails with
+  `Not rerun: {{login.body.token}} was masked in the source run…`, before its
+  request is sent.
+
+The source run must have finished, and a rerun starts at a step, not at Start
+or End.
 
 ## Related
 

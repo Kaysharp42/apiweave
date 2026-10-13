@@ -89,3 +89,12 @@ test("getNextNodeActionMenuFocusIndex handles keyboard navigation", () => {
     2,
   );
 });
+
+test("buildNodeActionMenuItems leads with Run from here on a step a rerun can start at", () => {
+  const items = buildNodeActionMenuItems({ runnable: true });
+  assert.deepEqual(
+    items.map((item) => item.key),
+    ["run-from", "duplicate", "copy"],
+  );
+  assert.equal(items[0]!.label, "Run from here");
+});

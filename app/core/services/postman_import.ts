@@ -5,7 +5,8 @@ import type { PostmanRequiredSecret } from "@shared/types/PostmanRequiredSecret"
 import { ValidationError } from "../ipc/errors"
 import { chainEdges, makeEndNode, makeStartNode, positionForIndex } from "./import_parsers"
 import { SCHEMA_VERSION, type ExportedEnvironment, type ExportedWorkflow, type ProjectBundle } from "./project_export_service"
-import { containsCredentialMaterial, isSecretKey } from "./secret_utils"
+import { containsCredentialMaterial, isSecretKey } from "@shared/credentials/credentials"
+import { safeName } from "@shared/env-file/envFile"
 
 /**
  * Postman Collection v2.1 → APIWeave project bundle. Pure: it builds the same
@@ -144,11 +145,6 @@ export function isPostmanCollection(value: unknown): boolean {
   const info = value["info"]
   if (isRecord(info) && typeof info["schema"] === "string") return info["schema"].includes("getpostman.com")
   return isPostmanV1(value)
-}
-
-/** True for a Postman environment export (`{ name, values: [...] }`). */
-export function isPostmanEnvironment(value: unknown): boolean {
-  return isRecord(value) && Array.isArray(value["values"]) && typeof value["name"] === "string"
 }
 
 function isPostmanV1(value: Record<string, unknown>): boolean {
@@ -494,18 +490,9 @@ class PostmanConverter {
     const request = typeof planned.item.request === "string" ? { url: planned.item.request } : planned.item.request ?? {}
     const where = `"${workflowName}" › "${name}"`
 
-    const rawMethod = (request.method ?? "GET").toUpperCase()
-    const method = METHODS.has(rawMethod) ? rawMethod : "GET"
-    if (method !== rawMethod) this.warnings.add(`${where}: method ${rawMethod} is not supported; imported as GET`)
-
+    const method = this.convertMethod(request.method, where)
     const { url, queryParams, pathVariables } = this.convertUrl(request.url ?? "", name)
-    const headers: KeyValuePair[] = []
-    for (const header of Array.isArray(request.header) ? request.header : []) {
-      if (header.disabled === true || !header.key) continue
-      const value = stringValue(header.value)
-      const credential = isSecretKey(header.key) || containsCredentialMaterial(value)
-      headers.push({ key: header.key, value: credential ? this.credential(value, `${name} ${header.key}`, true) : value })
-    }
+    const headers = this.convertHeaders(request.header, name)
 
     const config: Record<string, JsonValue> = { method, url, headers, queryParams, cookies: [], timeout: 30, followRedirects: true }
     if (pathVariables.length > 0) config["pathVariables"] = pathVariables
@@ -516,33 +503,75 @@ class PostmanConverter {
       if (auth !== null) config["auth"] = auth
     }
 
-    const extractors: Record<string, string> = {}
-    for (const event of planned.item.event ?? []) {
-      const script = eventScript(event)
-      if (script === "") continue
-      if (event.listen === "test") {
-        const converted = convertTestScript(script)
-        if (converted.expectedStatus.length > 0) {
-          config["expectedStatus"] = converted.expectedStatus.length === 1 ? converted.expectedStatus[0]! : [...converted.expectedStatus]
-        }
-        for (const [variable, path] of converted.extractors) {
-          extractors[safeName(variable)] = path
-          setVariables.add(variable)
-        }
-        if (converted.complete) continue
-        this.warnings.add(`${where}: test script ${converted.expectedStatus.length + converted.extractors.size > 0 ? "partly converted" : "not converted"}; its text is kept in a note on the canvas`)
-      } else {
-        this.warnings.add(`${where}: ${event.listen} script not converted; its text is kept in a note on the canvas`)
-      }
-      notes.push(`### ${name} — ${event.listen} script\n\`\`\`js\n${keptScript(script)}\n\`\`\``)
-    }
-    config["extractors"] = extractors
+    this.convertScripts(planned.item.event ?? [], name, where, setVariables, notes, config)
 
     const nodeId = this.nextNodeId()
     return {
       nodeId,
       node: { nodeId, type: "http-request", label: name, position: positionForIndex(index), config },
     }
+  }
+
+  private convertMethod(method: string | undefined, where: string): string {
+    const rawMethod = (method ?? "GET").toUpperCase()
+    if (METHODS.has(rawMethod)) return rawMethod
+    this.warnings.add(`${where}: method ${rawMethod} is not supported; imported as GET`)
+    return "GET"
+  }
+
+  private convertHeaders(header: readonly PostmanKeyValue[] | string | undefined, name: string): KeyValuePair[] {
+    const headers: KeyValuePair[] = []
+    for (const row of Array.isArray(header) ? header : []) {
+      if (row.disabled === true || !row.key) continue
+      const value = stringValue(row.value)
+      const credential = isSecretKey(row.key) || containsCredentialMaterial(value)
+      headers.push({ key: row.key, value: credential ? this.credential(value, `${name} ${row.key}`, true) : value })
+    }
+    return headers
+  }
+
+  /** Test scripts become `expectedStatus` and extractors where they can; whatever is left is kept in a note. */
+  private convertScripts(
+    events: readonly PostmanEvent[],
+    name: string,
+    where: string,
+    setVariables: Set<string>,
+    notes: string[],
+    config: Record<string, JsonValue>,
+  ): void {
+    const extractors: Record<string, string> = {}
+    for (const event of events) {
+      const script = eventScript(event)
+      if (script === "") continue
+      if (event.listen !== "test") {
+        this.warnings.add(`${where}: ${event.listen} script not converted; its text is kept in a note on the canvas`)
+      } else if (this.convertTest(script, where, setVariables, extractors, config)) {
+        continue
+      }
+      notes.push(`### ${name} — ${event.listen} script\n\`\`\`js\n${keptScript(script)}\n\`\`\``)
+    }
+    config["extractors"] = extractors
+  }
+
+  /** Whether the test script converted completely; a partial one is warned about. */
+  private convertTest(
+    script: string,
+    where: string,
+    setVariables: Set<string>,
+    extractors: Record<string, string>,
+    config: Record<string, JsonValue>,
+  ): boolean {
+    const converted = convertTestScript(script)
+    if (converted.expectedStatus.length > 0) {
+      config["expectedStatus"] = converted.expectedStatus.length === 1 ? converted.expectedStatus[0]! : [...converted.expectedStatus]
+    }
+    for (const [variable, path] of converted.extractors) {
+      extractors[safeName(variable)] = path
+      setVariables.add(variable)
+    }
+    if (converted.complete) return true
+    this.warnings.add(`${where}: test script ${converted.expectedStatus.length + converted.extractors.size > 0 ? "partly converted" : "not converted"}; its text is kept in a note on the canvas`)
+    return false
   }
 
   private convertUrl(source: PostmanUrl, requestName: string): { url: string; queryParams: KeyValuePair[]; pathVariables: KeyValuePair[] } {
@@ -578,22 +607,9 @@ class PostmanConverter {
   private convertBody(body: PostmanBody | undefined, name: string, where: string, headers: KeyValuePair[], config: Record<string, JsonValue>): void {
     if (body === undefined || body.disabled === true || body.mode === undefined || body.mode === "none") return
     switch (body.mode) {
-      case "raw": {
-        const language = body.options?.raw?.language ?? "text"
-        const text = this.secureJsonText(body.raw ?? "", name)
-        // A credential the key names did not reveal (a bearer token, a JWT): the whole body is withheld.
-        config["body"] = containsCredentialMaterial(text) ? `{{secrets.${this.secretForLiteral(body.raw ?? "", `${name} body`)}}}` : text
-        if (language === "json") {
-          config["bodyType"] = "json"
-          return
-        }
-        config["bodyType"] = "raw"
-        const contentType = RAW_CONTENT_TYPES[language]
-        if (contentType !== undefined && !headers.some((header) => header.key.toLowerCase() === "content-type")) {
-          headers.push({ key: "Content-Type", value: contentType })
-        }
+      case "raw":
+        this.convertRawBody(body, name, headers, config)
         return
-      }
       case "urlencoded":
         config["bodyType"] = "x-www-form-urlencoded"
         config["urlEncodedEntries"] = this.formEntries(body.urlencoded ?? [], name, where).map(({ key, value }) => ({ key, value, active: true }))
@@ -602,16 +618,34 @@ class PostmanConverter {
         config["bodyType"] = "form-data"
         config["formDataEntries"] = this.formEntries(body.formdata ?? [], name, where).map(({ key, value }) => ({ key, value, type: "text", active: true }))
         return
-      case "graphql": {
-        // APIWeave has no GraphQL body type: send what a GraphQL server expects over HTTP.
-        const variables = this.secureJsonText(body.graphql?.variables?.trim() || "{}", name)
-        config["bodyType"] = "json"
-        config["body"] = `{\n  "query": ${JSON.stringify(body.graphql?.query ?? "")},\n  "variables": ${variables}\n}`
+      case "graphql":
+        this.convertGraphqlBody(body, name, config)
         return
-      }
       default:
         this.warnings.add(`${where}: ${body.mode} body is not supported; imported without a body`)
     }
+  }
+
+  private convertRawBody(body: PostmanBody, name: string, headers: KeyValuePair[], config: Record<string, JsonValue>): void {
+    const language = body.options?.raw?.language ?? "text"
+    const text = this.secureJsonText(body.raw ?? "", name)
+    // A credential the key names did not reveal (a bearer token, a JWT): the whole body is withheld.
+    config["body"] = containsCredentialMaterial(text) ? `{{secrets.${this.secretForLiteral(body.raw ?? "", `${name} body`)}}}` : text
+    if (language === "json") {
+      config["bodyType"] = "json"
+      return
+    }
+    config["bodyType"] = "raw"
+    const contentType = RAW_CONTENT_TYPES[language]
+    if (contentType !== undefined && !headers.some((header) => header.key.toLowerCase() === "content-type")) {
+      headers.push({ key: "Content-Type", value: contentType })
+    }
+  }
+
+  private convertGraphqlBody(body: PostmanBody, name: string, config: Record<string, JsonValue>): void {
+    const variables = this.secureJsonText(body.graphql?.variables?.trim() ?? "", name)
+    config["bodyType"] = "graphql"
+    config["graphql"] = { query: body.graphql?.query ?? "", ...(variables ? { variables } : {}) }
   }
 
   private formEntries(entries: readonly PostmanKeyValue[], name: string, where: string): KeyValuePair[] {
@@ -819,12 +853,6 @@ class PostmanConverter {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** A Postman name as an APIWeave variable or secret name: letters, digits and underscores. */
-export function safeName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9_]/g, "_")
-  return /^[A-Za-z_]/.test(safe) ? safe : `_${safe}`
-}
 
 function placeholderNames(text: string): string[] {
   return [...text.matchAll(PLACEHOLDER_RE)].map((match) => match[1]!.trim()).filter((name) => !name.startsWith("$"))
