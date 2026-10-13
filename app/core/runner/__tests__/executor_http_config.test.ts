@@ -148,6 +148,20 @@ describe("WorkflowExecutor — HTTP request config panel contract", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/x-www-form-urlencoded")
   })
 
+  it("labels a JSON body typed as text application/json unless a Content-Type is set", async () => {
+    const send = async (config: Record<string, unknown>) => {
+      const { executor, captured } = makeExecutorWithCapture(() => new Response("{}", { status: 200 }))
+      await executor.executeWorkflow(singleHttpNodeWorkflow({ method: "POST", url: "http://localhost/r", bodyType: "json", ...config }))
+      return captured[0]!.init.headers as Record<string, string>
+    }
+
+    expect((await send({ body: '{"a": 1}' }))["Content-Type"]).toBe("application/json")
+    const own = await send({ body: '{"a": 1}', headers: [{ key: "content-type", value: "application/vnd.api+json" }] })
+    expect(own["content-type"]).toBe("application/vnd.api+json")
+    expect(own["Content-Type"]).toBeUndefined()
+    expect((await send({ body: "" }))["Content-Type"]).toBeUndefined()
+  })
+
   it("builds a multipart form-data body from formDataEntries", async () => {
     const { executor, captured } = makeExecutorWithCapture(() => new Response("{}", { status: 200 }))
     await executor.executeWorkflow(
@@ -229,6 +243,21 @@ describe("WorkflowExecutor — placeholders in JSON bodies", () => {
     )
     expect(JSON.parse(body)).toEqual({ password: secret })
     expect(createSecretMasker([secret])(body)).toBe('{"password": "<SECRET>"}')
+  })
+
+  it("writes an object or array value as JSON, never [object Object]", async () => {
+    const user = { name: awkward, tags: ["a", "b"] }
+    const body = await sentBody(
+      { bodyType: "json", body: '{"user": {{variables.user}}, "tags": {{variables.user.tags}}, "note": "{{variables.user}}"}' },
+      { user },
+    )
+    expect(JSON.parse(body)).toEqual({ user, tags: ["a", "b"], note: JSON.stringify(user) })
+
+    const text = await sentBody(
+      { bodyType: "raw", body: "user={{variables.user}}", headers: [{ key: "Content-Type", value: "text/plain" }] },
+      { user },
+    )
+    expect(text).toBe(`user=${JSON.stringify(user)}`)
   })
 
   it("escapes placeholders in an object body", async () => {

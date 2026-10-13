@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { runMigrations } from "./migrations"
+import { assertIntact, backupDatabase, backupsDirectory, vacuumIfFragmented } from "./maintenance"
 import { SyncStore } from "./kvstore"
 import type { Database, BetterSqlite3Factory } from "./sqlite-types"
 
@@ -32,22 +33,51 @@ export function openDatabase(options: InitDatabaseOptions | string): Database {
 
 export function initDatabase(options: InitDatabaseOptions | string): InitializedDatabase {
   const databasePath = resolveDatabasePath(options)
-  const database = openDatabase(options)
+  const onDisk = databasePath !== ":memory:"
   const migrationsPath = typeof options === "string" ? undefined : options.migrationsPath
+  let database: Database | undefined
+  let backupPath: string | undefined
   try {
-    const schemaVersion = runMigrations(database, migrationsPath)
-    const kvStore = new SyncStore(database)
+    try {
+      database = openDatabase(options)
+      assertIntact(database)
+    } catch (error) {
+      throw new Error(
+        `The database ${databasePath} is damaged and cannot be opened: ${errorMessage(error)}. ` +
+          `Copies taken before past upgrades are in ${backupsDirectory(databasePath)}.`,
+      )
+    }
+    const opened = database
+    let schemaVersion: number
+    try {
+      schemaVersion = runMigrations(opened, migrationsPath, (currentVersion) => {
+        // A fresh file (version 0) has nothing to lose.
+        if (onDisk && currentVersion > 0) {
+          backupPath = backupDatabase(opened, databasePath, currentVersion)
+        }
+      })
+    } catch (error) {
+      if (backupPath === undefined) throw error
+      throw new Error(`${errorMessage(error)}. The database was backed up before the upgrade to ${backupPath}.`)
+    }
+    if (onDisk) {
+      vacuumIfFragmented(opened)
+    }
     return {
-      database,
+      database: opened,
       databasePath,
-      kvStore,
+      kvStore: new SyncStore(opened),
       schemaVersion,
-      close: () => database.close(),
+      close: () => opened.close(),
     }
   } catch (error) {
-    database.close()
+    database?.close()
     throw error
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function resolveDatabasePath(options: InitDatabaseOptions | string): string {

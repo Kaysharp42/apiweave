@@ -48,7 +48,6 @@ export interface WorkflowGraph {
   readonly nodes: readonly WorkflowNode[]
   readonly edges: readonly WorkflowEdge[]
   readonly variables?: Readonly<Record<string, unknown>>
-  readonly settings?: { readonly continueOnFail?: boolean }
 }
 
 // -------------------- HTTP request config shapes --------------------
@@ -138,6 +137,16 @@ function substituteJsonTemplate(text: string, resolve: (match: string, rawPath: 
     last = placeholder.index + placeholder[0].length
   }
   return out + text.slice(last)
+}
+
+/**
+ * The text a resolved placeholder becomes. An object or array is written as
+ * JSON — in a JSON template a standalone placeholder then inserts it as a
+ * value, and one inside a string literal gets the JSON text escaped — never
+ * as `[object Object]`.
+ */
+function placeholderText(value: unknown): string {
+  return typeof value === "object" && value !== null ? JSON.stringify(value) : String(value)
 }
 
 function hasJsonContentType(headers: Readonly<Record<string, string>>): boolean {
@@ -318,7 +327,6 @@ export class WorkflowExecutor {
       }
     }
 
-    const continueOnFail = workflow.settings?.continueOnFail ?? false
     this.hasFailures = false
     this.firstErrorMessage = null
 
@@ -369,10 +377,10 @@ export class WorkflowExecutor {
 
     try {
       if (entryNodeIds.length === 1) {
-        await this.executeFromNode(entryNodeIds[0]!, nodes, edges, options.cancelSignal, continueOnFail)
+        await this.executeFromNode(entryNodeIds[0]!, nodes, edges, options.cancelSignal)
       } else {
         const tasks = entryNodeIds.map((id) =>
-          this.executeFromNode(id, nodes, edges, options.cancelSignal, continueOnFail),
+          this.executeFromNode(id, nodes, edges, options.cancelSignal),
         )
         const settled = await Promise.allSettled(tasks)
         for (const result of settled) {
@@ -381,9 +389,7 @@ export class WorkflowExecutor {
             if (!this.firstErrorMessage) {
               this.firstErrorMessage = String(result.reason)
             }
-            if (!continueOnFail) {
-              throw result.reason
-            }
+            throw result.reason
           }
         }
       }
@@ -413,22 +419,22 @@ export class WorkflowExecutor {
   // -------------------- Node execution --------------------
 
   /**
-   * Record that `nodeId` failed and decide whether the branch keeps going.
+   * Record that `nodeId` failed and stop the branch.
    *
    * Shared by every call site that catches a node's own error and a
    * downstream one propagating through it, so the bookkeeping — first error
-   * message, failed-node set, continue-on-fail — stays in one place. Always
-   * rethrows `StopBranch` (a signal, not a failure) and rethrows the original
-   * `error` when the branch isn't allowed to continue past it.
+   * message, failed-node set — stays in one place. A node that may continue
+   * past its own failure (`config.continueOnFail`) never throws to here.
+   * Rethrows `StopBranch` (a signal, not a failure) without recording it.
    */
-  private recordNodeFailure(nodeId: string, error: unknown, continueOnFail: boolean): void {
+  private recordNodeFailure(nodeId: string, error: unknown): never {
     if (error instanceof StopBranch) throw error
     this.hasFailures = true
     this.failedNodes.add(nodeId)
     if (!this.firstErrorMessage) {
       this.firstErrorMessage = String(error)
     }
-    if (!continueOnFail) throw error
+    throw error
   }
 
   /**
@@ -470,14 +476,13 @@ export class WorkflowExecutor {
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<void> {
     const node = nodes.get(nodeId)
     if (!node) return
     if (cancelSignal?.aborted) return
 
     if (node.type === "merge" || node.type === "start") {
-      return this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail)
+      return this.traverseFromNode(node, nodes, edges, cancelSignal)
     }
 
     if (await this.joinInFlightRun(nodeId)) return
@@ -490,7 +495,7 @@ export class WorkflowExecutor {
 
     let outcome: unknown = null
     try {
-      await this.traverseFromNode(node, nodes, edges, cancelSignal, continueOnFail)
+      await this.traverseFromNode(node, nodes, edges, cancelSignal)
     } catch (error) {
       outcome = error
       throw error
@@ -507,7 +512,6 @@ export class WorkflowExecutor {
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<void> {
     const nodeId = node.nodeId
 
@@ -532,17 +536,17 @@ export class WorkflowExecutor {
     // SSE has two phases. The Ready path continues after its handshake; its
     // Complete path is scheduled by the background consumer when it closes.
     if (node.type === "sse") {
-      const ready = await this.startSseListener(node, nodes, edges, cancelSignal, continueOnFail)
+      const ready = await this.startSseListener(node, nodes, edges, cancelSignal)
       if (!ready) return
     // Execute node (skip start)
     } else if (node.type !== "start") {
       try {
-        const nodeExecResult = await this.executeNode(node, edges, cancelSignal, continueOnFail)
+        const nodeExecResult = await this.executeNode(node, edges, cancelSignal)
         if (nodeExecResult !== null && nodeExecResult.shouldContinue === false) {
           return
         }
       } catch (error) {
-        this.recordNodeFailure(nodeId, error, continueOnFail)
+        this.recordNodeFailure(nodeId, error)
       }
     } else {
       this.updateNodeStatus(nodeId, "passed")
@@ -563,7 +567,7 @@ export class WorkflowExecutor {
       const assertionContinueOnFail =
         typeof node.config?.["continueOnFail"] === "boolean"
           ? node.config["continueOnFail"]
-          : continueOnFail
+          : false
 
       const handleEdges = nextEdges.filter((e) => e.sourceHandle === "pass" || e.sourceHandle === "fail")
       const legacyEdges = nextEdges.filter((e) => !e.sourceHandle)
@@ -606,7 +610,7 @@ export class WorkflowExecutor {
           if (nextNode.type === "end") {
             this.updateNodeStatus(nextNodeId, "passed")
           } else {
-            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal, continueOnFail))
+            tasks.push(this.executeBranch(nextNodeId, nodes, edges, cancelSignal))
           }
         }
       }
@@ -631,7 +635,7 @@ export class WorkflowExecutor {
           }
         }
 
-        if (failedCount > 0 && failedCount === tasks.length && !continueOnFail) {
+        if (failedCount > 0 && failedCount === tasks.length) {
           throw new Error(`All ${tasks.length} branches failed`)
         }
       }
@@ -644,9 +648,9 @@ export class WorkflowExecutor {
           this.updateNodeStatus(nextNodeId, "passed")
         } else {
           try {
-            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal, continueOnFail)
+            await this.executeFromNode(nextNodeId, nodes, edges, cancelSignal)
           } catch (error) {
-            this.recordNodeFailure(nextNodeId, error, continueOnFail)
+            this.recordNodeFailure(nextNodeId, error)
           }
         }
       }
@@ -658,27 +662,22 @@ export class WorkflowExecutor {
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<void> {
-    await this.executeFromNode(nodeId, nodes, edges, cancelSignal, continueOnFail)
+    await this.executeFromNode(nodeId, nodes, edges, cancelSignal)
   }
 
   private async executeNode(
     node: WorkflowNode,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<{ shouldContinue: boolean } | null> {
     const nodeId = node.nodeId
     const nodeType = node.type
-    // A node's own `continueOnFail` (http-request/delay/merge all expose one)
-    // overrides the workflow-level default — the same override `traverseFromNode`
-    // already applies for assertion nodes. Reading only the traversal-level
-    // parameter here was the root cause of continueOnFail being ignored for
-    // every other node type: a per-node `continueOnFail: true` did nothing
-    // unless the workflow also set it globally.
+    // Failure handling is per node: its own `continueOnFail` (http-request,
+    // delay and merge all expose one; assertions read theirs in
+    // `traverseFromNode`). There is no workflow-level default.
     const effectiveContinueOnFail =
-      typeof node.config?.["continueOnFail"] === "boolean" ? (node.config["continueOnFail"] as boolean) : continueOnFail
+      typeof node.config?.["continueOnFail"] === "boolean" ? (node.config["continueOnFail"] as boolean) : false
 
     this.updateNodeStatus(nodeId, "running")
     // Stamp the node's execution window on the injected clock so the run
@@ -971,7 +970,6 @@ export class WorkflowExecutor {
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<boolean> {
     const config = node.config ?? {}
     const timeout = (config["timeout"] as number | undefined) ?? 30
@@ -1041,7 +1039,7 @@ export class WorkflowExecutor {
       this.sseListeners.set(node.nodeId, abortController)
       let task: Promise<void>
       task = this.consumeSseListener({
-        node, nodes, edges, cancelSignal, continueOnFail, response, statusCode, responseHeaders, url, startedAt,
+        node, nodes, edges, cancelSignal, response, statusCode, responseHeaders, url, startedAt,
         secretRefs, startTime, maxEvents, eventType, finishConditions, extractors, unresolvedPlaceholders,
       }).finally(() => {
         this.sseListeners.delete(node.nodeId)
@@ -1067,7 +1065,6 @@ export class WorkflowExecutor {
     readonly nodes: Map<string, WorkflowNode>
     readonly edges: readonly WorkflowEdge[]
     readonly cancelSignal: AbortSignal | undefined
-    readonly continueOnFail: boolean
     readonly response: import("undici").Response
     readonly statusCode: number
     readonly responseHeaders: Record<string, string>
@@ -1108,7 +1105,7 @@ export class WorkflowExecutor {
           }
       const completed = this.completeSseNode(node, result, startedAt, secretRefs, extractors)
       if (completed.status === "success") {
-        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal, input.continueOnFail)
+        await this.traverseSseCompleteEdges(node, input.nodes, input.edges, input.cancelSignal)
       }
     } catch (error) {
       this.completeSseNode(node, {
@@ -1170,7 +1167,6 @@ export class WorkflowExecutor {
     nodes: Map<string, WorkflowNode>,
     edges: readonly WorkflowEdge[],
     cancelSignal: AbortSignal | undefined,
-    continueOnFail: boolean,
   ): Promise<void> {
     const completeEdges = edges.filter((edge) => edge.source === node.nodeId && edge.sourceHandle === "complete")
     const tasks = completeEdges.map(async (edge) => {
@@ -1180,7 +1176,7 @@ export class WorkflowExecutor {
         this.updateNodeStatus(target.nodeId, "passed")
         return
       }
-      await this.executeFromNode(target.nodeId, nodes, edges, cancelSignal, continueOnFail)
+      await this.executeFromNode(target.nodeId, nodes, edges, cancelSignal)
     })
     await Promise.allSettled(tasks)
   }
@@ -1209,6 +1205,9 @@ export class WorkflowExecutor {
     if (this.deps.baseUrl) {
       return { status: "success", duration: 0, message: "Delayed for 0 ms (harness mode)" }
     }
+
+    // An abort that landed before this node started never fires the listener below.
+    if (cancelSignal?.aborted) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
 
     return new Promise<NodeResult>((resolve) => {
       const timer = setTimeout(() => {
@@ -1841,7 +1840,7 @@ export class WorkflowExecutor {
             return match
           }
         }
-        return value !== undefined && value !== null ? String(value) : match
+        return value !== undefined && value !== null ? placeholderText(value) : match
       }
 
       // Workflow variables
@@ -1855,7 +1854,7 @@ export class WorkflowExecutor {
             return match
           }
         }
-        return value !== undefined && value !== null ? String(value) : match
+        return value !== undefined && value !== null ? placeholderText(value) : match
       }
 
       // Previous results
@@ -1929,7 +1928,7 @@ export class WorkflowExecutor {
         return fallback
       }
     }
-    return current !== undefined && current !== null ? String(current) : fallback
+    return current !== undefined && current !== null ? placeholderText(current) : fallback
   }
 
   // -------------------- Extraction --------------------
@@ -2115,9 +2114,9 @@ export class WorkflowExecutor {
       default: {
         // Back-compat default for nodes saved before `bodyType` existed.
         if (body === undefined || body === null) return undefined
-        if (typeof body === "string") return this.substituteVariables(body, { json: true })
-        const json = this.substituteVariables(JSON.stringify(body), { json: true })
-        if (!headers["Content-Type"] && !headers["content-type"]) {
+        const json = this.substituteVariables(typeof body === "string" ? body : JSON.stringify(body), { json: true })
+        // An empty field is no body at all, and claims no type.
+        if (json.trim() !== "" && !Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
           headers["Content-Type"] = "application/json"
         }
         return json

@@ -96,6 +96,23 @@ describe("SecretRepository", () => {
     expect(secrets.getByScopeAndName("environment", env.environmentId, "TOKEN")).toBeNull()
   })
 
+  it("deletes an environment's secrets with the environment, and only those", () => {
+    const workspaceId = seedWorkspace()
+    const doomed = environments.create({ workspaceId, name: "Doomed" })
+    const kept = environments.create({ workspaceId, name: "Kept" })
+    const sealed = new TextEncoder().encode("sealed-bytes")
+    for (const scopeId of [doomed.environmentId, kept.environmentId]) {
+      secrets.put({ name: "TOKEN", scopeType: "environment", scopeId, workspaceId, keyId: "k1", sealed })
+    }
+    secrets.put({ name: "TOKEN", scopeType: "workspace", scopeId: workspaceId, workspaceId, keyId: "k1", sealed })
+
+    environments.delete(doomed.environmentId)
+
+    expect(secrets.listByScope("environment", doomed.environmentId)).toEqual([])
+    expect(secrets.listByScope("environment", kept.environmentId)).toHaveLength(1)
+    expect(secrets.listByScope("workspace", workspaceId)).toHaveLength(1)
+  })
+
   it("counts sealed secrets across scopes, and deleteAll removes every one", () => {
     const workspaceId = seedWorkspace()
     expect(secrets.countSealed()).toBe(0)

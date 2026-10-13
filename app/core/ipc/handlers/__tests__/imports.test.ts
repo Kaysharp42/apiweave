@@ -43,11 +43,12 @@ class FakeSecretStore implements SecretWriteStore {
 let db: InitializedDatabase
 let router: IpcRouter
 let wsId: string
+let workflows: WorkflowRepository
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
   const workspaces = new WorkspaceRepository(db.kvStore)
-  const workflows = new WorkflowRepository(db.kvStore)
+  workflows = new WorkflowRepository(db.kvStore)
   const runs = new RunRepository(db.kvStore)
   const environments = new EnvironmentRepository(db.kvStore)
   const nodePresets = new NodePresetRepository(db.kvStore)
@@ -186,6 +187,17 @@ describe("IPC import handlers — cURL", () => {
       curlCommand: 'curl "https://api.example.com/users"',
     })
     expect(result.workflowId).toBeTruthy()
+  })
+
+  it("parseOnly returns the parsed nodes without creating a workflow", async () => {
+    const before = workflows.listByWorkspace(wsId).total
+    const result = await ok<{ nodes: { type: string }[] }>("workflows", "importCurl", {
+      workspaceId: wsId,
+      curlCommand: 'curl "https://a.com"\ncurl "https://b.com"',
+      parseOnly: true,
+    })
+    expect(result.nodes.filter((node) => node.type === "http-request")).toHaveLength(2)
+    expect(workflows.listByWorkspace(wsId).total).toBe(before)
   })
 
   it("dryRun returns stats without creating", async () => {

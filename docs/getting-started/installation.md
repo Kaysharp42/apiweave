@@ -86,7 +86,7 @@ When APIWeave opens for the first time:
   - **Windows**: `%APPDATA%\APIWeave`
   - **macOS**: `~/Library/Application Support/APIWeave`
   - **Linux**: `~/.config/APIWeave`
-- A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied.
+- A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied. On every launch the database gets a quick integrity check. Before an update changes the database schema, a copy of the database is saved to `backups/` in the same directory; the five newest copies are kept. When deletes such as run-history pruning leave a quarter of the file empty, it is compacted at launch.
 - The keyfile for the encrypted secret store is generated and written to the data directory as `keyfile.json`. Its key is sealed by the operating system keychain (Keychain on macOS, DPAPI on Windows, GNOME Keyring or KWallet on Linux), so the file opens only for the same user on the same machine. On Linux without a running keyring it is stored unsealed, and the log says so; it is sealed in place the first time a keyring is available. If you delete it, the secret store is gone for good. If it is missing but the database holds secrets, APIWeave does not silently make a new one: it asks whether to quit (so you can restore `keyfile.json` from the same backup as the database) or to delete the secrets it can no longer open and continue.
 - The app lands directly on the workflows list. No login is required to use the app; an optional Cloud account adds sync and collaboration later.
 
@@ -165,6 +165,7 @@ A quick checklist after first launch:
 | What | Where |
 |------|-------|
 | Database (SQLite) | `<userData>/apiweave.db` |
+| Database backups (before each schema upgrade, newest 5) | `<userData>/backups/apiweave-<time>-v<schema>.db` |
 | Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
 | Run reports (JUnit, HTML) | Not produced yet: runs are kept in the database and shown in History |
@@ -192,7 +193,7 @@ Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the c
 - **If macOS Gatekeeper blocks the first launch**, right-click the app in **Applications** and choose **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 - **If the Linux AppImage fails with a FUSE error** (common on Arch), install FUSE 2 (`sudo pacman -S fuse2`) or run with `--appimage-extract-and-run`. The `.pacman` package has no such requirement.
 - **If the app opens to a blank window**, your GPU driver may not be compatible with the renderer's WebGL canvas. Launch with `apiweave --disable-gpu` to use the software rasterizer.
-- **If the app shows "APIWeave could not start"**, startup failed before a window could open — for example the database was written by a newer APIWeave build, or the keyfile is unreadable. The dialog names the error, the log file, and the data folder; the app then exits, so it can be relaunched once the cause is fixed. Attach the log file to a bug report.
+- **If the app shows "APIWeave could not start"**, startup failed before a window could open — for example the database was written by a newer APIWeave build, the database fails its integrity check, a schema upgrade failed, or the keyfile is unreadable. The dialog names the error, the log file, and the data folder, and for a damaged database or a failed upgrade it names the backup to restore: quit, replace `apiweave.db` with the backup copy, and relaunch; the app then exits, so it can be relaunched once the cause is fixed. Attach the log file to a bug report.
 - **If the window crashes**, a dialog offers **Reload** or **Quit**. The crash reason is recorded in the log, along with any uncaught error in the main process; each session's log opens with the app version, Electron version, and OS.
 - **If the data directory is read-only**, the OS user account does not have write permission to the user data path. Check the OS-level permission on the path and the disk's free space.
 - **If the MCP bridge refuses to start**, another process is already bound to the preferred loopback port. APIWeave automatically selects a free fallback port; check the live URL in the **MCP** panel, or stop the conflicting process to reclaim `47271`.

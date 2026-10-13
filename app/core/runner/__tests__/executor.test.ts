@@ -1039,7 +1039,6 @@ describe("WorkflowExecutor", () => {
           { edgeId: "e1", source: "start", target: "http_1" },
           { edgeId: "e2", source: "http_1", target: "end" },
         ],
-        settings: { continueOnFail: true },
       }
       const executor = new WorkflowExecutor(makeDeps({ secrets: { API_KEY: "secret-value" } }))
       const output = await executor.executeWorkflow(workflow)
@@ -1048,6 +1047,30 @@ describe("WorkflowExecutor", () => {
       expect(httpResult?.secretRefs).toEqual(["API_KEY"])
       expect(httpResult?.startedAt).toBe("2026-01-02T03:04:05.000Z")
       expect(httpResult?.completedAt).toBe("2026-01-02T03:04:05.000Z")
+    })
+  })
+
+  describe("delay cancellation", () => {
+    it("stops a delay whose run was cancelled before the delay node started", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          { nodeId: "wait", type: "delay", config: { duration: 5000 } },
+          { nodeId: "end", type: "end" },
+        ],
+        edges: [
+          { edgeId: "e1", source: "start", target: "wait" },
+          { edgeId: "e2", source: "wait", target: "end" },
+        ],
+      }
+      const controller = new AbortController()
+      const started = Date.now()
+      const pending = new WorkflowExecutor(makeDeps()).executeWorkflow(workflow, { cancelSignal: controller.signal })
+      // Past the executor's up-front abort check, before the delay registers its listener.
+      controller.abort()
+      const output = await pending
+      expect(Date.now() - started).toBeLessThan(1000)
+      expect(output.results.find((result) => result.nodeId === "wait")?.status).not.toBe("passed")
     })
   })
 

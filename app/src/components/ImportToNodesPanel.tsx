@@ -450,13 +450,11 @@ export function ImportToNodesPanel({
         return;
       }
 
-      // ponytail: there is no parse-only curl handler, so this creates a
-      // workflow from the command just to read its nodes back. Add a parse
-      // action to the importCurl handler if that stray workflow matters.
       const result = (await apiweave.workflows.importCurl({
         workspaceId: workspaceId || "",
         curlCommand: pastedText,
         sanitize,
+        parseOnly: true,
       })) as { nodes?: Node[] };
 
       const nodes = result.nodes || [];

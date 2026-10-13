@@ -311,6 +311,95 @@ describe("database migrations", () => {
     }
   })
 
+  it("backs up the database before migrating it and keeps the newest five copies", () => {
+    const tempRoot = makeTempRoot()
+    const oldMigrationsPath = copyMigrations(tempRoot, 1)
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    initDatabase({ databasePath, migrationsPath: oldMigrationsPath }).close()
+    const backups = path.join(tempRoot, "backups")
+    expect(fs.existsSync(backups)).toBe(false)
+    fs.mkdirSync(backups)
+    for (let index = 0; index < 6; index += 1) {
+      fs.writeFileSync(path.join(backups, `apiweave-2020-01-0${index + 1}T00-00-00-000Z-v1.db`), "")
+    }
+
+    const upgraded = initDatabase({ databasePath })
+    upgraded.close()
+
+    const kept = fs.readdirSync(backups).sort()
+    expect(kept).toHaveLength(5)
+    const fresh = kept.at(-1)!
+    expect(fresh).toMatch(/^apiweave-\d{4}-.+-v1\.db$/)
+    const copy = initDatabase({ databasePath: path.join(backups, fresh), migrationsPath: oldMigrationsPath })
+    try {
+      expect(copy.schemaVersion).toBe(1)
+    } finally {
+      copy.close()
+    }
+  })
+
+  it("names the backup when a migration fails", () => {
+    const tempRoot = makeTempRoot()
+    const migrationsPath = copyMigrations(tempRoot, 1)
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    initDatabase({ databasePath, migrationsPath }).close()
+    fs.writeFileSync(path.join(migrationsPath, "002_bad.sql"), "INSERT INTO missing_table (id) VALUES ('x');\n")
+
+    expect(() => initDatabase({ databasePath, migrationsPath })).toThrow(
+      new RegExp(`migration failed: 002_bad\\.sql.*backed up before the upgrade to ${escapeRegExp(path.join(tempRoot, "backups"))}`),
+    )
+  })
+
+  it("refuses a damaged database file and points at the backups folder", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    fs.writeFileSync(databasePath, "this is not an sqlite file".repeat(200))
+
+    expect(() => initDatabase({ databasePath })).toThrow(
+      new RegExp(`damaged.*${escapeRegExp(path.join(tempRoot, "backups"))}`),
+    )
+  })
+
+  it("compacts the file at startup once a quarter of it is free", () => {
+    const db = openTempDatabase()
+    db.database.exec("CREATE TABLE filler (b BLOB)")
+    db.database.exec(
+      "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 12) INSERT INTO filler SELECT randomblob(1024 * 1024) FROM n",
+    )
+    db.database.exec("DELETE FROM filler")
+    expect(db.database.pragma("freelist_count", { simple: true })).toBeGreaterThan(0)
+    db.close()
+
+    const reopened = initDatabase({ databasePath: db.databasePath })
+    try {
+      expect(reopened.database.pragma("freelist_count", { simple: true })).toBe(0)
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it("removes secrets orphaned by environments deleted before the cascade existed", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "apiweave.db")
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 18) })
+    old.kvStore.set("INSERT INTO workspaces (id, name, slug) VALUES ('ws', 'W', 'w')")
+    old.kvStore.set("INSERT INTO environments (id, workspace_id, scopeId, name, slug) VALUES ('env', 'ws', 'ws', 'E', 'e')")
+    for (const [id, scopeType, scopeId] of [["live", "environment", "env"], ["orphan", "environment", "gone"], ["ws", "workspace", "ws"]]) {
+      old.kvStore.set(
+        "INSERT INTO secrets_metadata (id, workspace_id, scopeType, scopeId, key, label) VALUES (?, 'ws', ?, ?, 'K', '')",
+        [id!, scopeType!, scopeId!],
+      )
+    }
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.kvStore.query("SELECT id FROM secrets_metadata ORDER BY id")).toEqual([{ id: "live" }, { id: "ws" }])
+    } finally {
+      upgraded.close()
+    }
+  })
+
   it("rejects destructive migration files before execution", () => {
     const tempRoot = makeTempRoot()
     const migrationsPath = path.join(tempRoot, "migrations")
@@ -348,4 +437,20 @@ function seedRunParentRows(db: InitializedDatabase): void {
       "smoke",
     ])
   })
+}
+
+function copyMigrations(tempRoot: string, upToVersion: number): string {
+  const target = path.join(tempRoot, `migrations-v${upToVersion}`)
+  fs.mkdirSync(target)
+  for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
+    const version = Number.parseInt(fileName, 10)
+    if (fileName.endsWith(".sql") && version <= upToVersion) {
+      fs.copyFileSync(path.join(__dirname, "..", "migrations", fileName), path.join(target, fileName))
+    }
+  }
+  return target
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }

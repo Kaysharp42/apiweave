@@ -1,13 +1,15 @@
 /**
  * Local keyfile — the root of the desktop secrets subsystem.
  *
- * Holds the master Key Encryption Key (KEK) that unwraps every per-scope DEK.
+ * Holds the master Key Encryption Key (KEK). Every stored secret is a sealed box
+ * whose keypair derives from it (`SecretService`: seed = sha256(KEK)), and the
+ * cloud client wraps the key that encrypts its refresh token with it.
  * Stored as JSON under Electron's `userData` (path injected, so tests point at a
  * temp dir). The KEK itself is sealed by a {@link KeyProtector} — Electron's
  * `safeStorage`, i.e. the OS keychain — whenever one is available, so the file
  * beside the database is useless without the user's OS login. Without one
- * (Linux with no keyring) it is stored as-is and the caller warns. Per-scope keypairs live in the `scoped_keys` table, their private
- * keys wrapped by this KEK — lose the keyfile and every stored secret is orphaned.
+ * (Linux with no keyring) it is stored as-is and the caller warns. Lose the
+ * keyfile and every stored secret is orphaned.
  *
  * INVARIANT (ported from the strategy doc, Key Decision #4): NEVER regenerate the
  * KEK on a corrupt or unreadable keyfile. A missing keyfile is first-run only
