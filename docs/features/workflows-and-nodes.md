@@ -37,7 +37,7 @@ Workflows are members of a project. A workflow can be inside one project at a ti
 1. Open the workflows list from the sidebar.
 2. Click **New Workflow**. A Start node is placed for you.
 3. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas) and drag nodes onto the canvas.
-4. Connect nodes by dragging from the output handle of one node to the input handle of the next.
+4. Connect nodes by dragging from the output handle of one node to the input handle of the next. A connection that leads back to an earlier node is refused: workflows have no loops.
 5. Double-click any node to open its editor, or use the inline body for quick edits. Changes auto-save after 700ms.
 6. Pick the environment for the run from the canvas toolbar.
 7. Click **Run** to execute the full graph.
@@ -94,7 +94,7 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
-| `continue on fail` | Per-node override of the workflow's `continueOnFail` setting |
+| `continue on fail` | Whether a failed request lets the run continue down the outgoing edge |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
@@ -114,7 +114,7 @@ A request that never gets a response fails with its network cause, such as "Netw
 | `finish trigger` | Assertion-like rules evaluated against each matching event. All rules must match one event to close it. Paths support `event`, `id`, raw `data`, and JSON `data.*` fields. |
 | `timeout` | Maximum time to wait, in seconds. Set to `0` only with a finish trigger to wait until that state arrives. |
 | `follow redirects` / `verify TLS` | HTTP transport controls, both enabled by default. |
-| `continue on fail` | Per-node override of the workflow's `continueOnFail` setting. |
+| `continue on fail` | Whether a failed stream test lets the run continue. |
 
 The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
 
@@ -197,7 +197,7 @@ How the call behaves:
 - **The sub-workflow shares the run's environment and secrets.** It resolves `{{env.*}}` and `{{secrets.*}}` on its own, so those need no mapping. Only workflow variables (`{{variables.*}}`) have to be passed, because each execution keeps its own variable map.
 - **Secrets cannot be passed through an input mapping.** A `{{secrets.NAME}}` on the right-hand side fails the node rather than copying a secret value into a plain child variable. Let the sub-workflow read the secret directly.
 - **The caller's variables only change where you asked.** An output mapping entry is applied when the sub-workflow actually produced that variable; anything you did not map stays inside the sub-workflow.
-- **A failed sub-workflow fails the calling node**, which then follows the workflow's `continueOnFail` setting like any other failure.
+- **A failed sub-workflow fails the calling node**, which then follows its own **Continue on failure** setting like any other failure.
 
 A login flow reused by a checkout flow:
 
@@ -242,7 +242,7 @@ The node editor holds its edits until they are applied to the node. **Save**, th
 
 Resume-after-failure (run from failed node, rerun failed branches) is planned but not available in this release: **Run** always executes the full workflow from the Start node.
 
-`continueOnFail` is a per-workflow setting in the workflow settings panel. With `continueOnFail = false` (default), the runner stops at the first error. With `continueOnFail = true`, the runner logs the error and keeps going. Individual HTTP Request and Assertion nodes can override the workflow setting.
+Failure handling is per node. By default a failed node stops the run along its path; other parallel branches still finish, and the run is marked failed. Turn on a node's **Continue on failure** (in its Settings tab) to let the run carry on past that node; the run is still marked failed.
 
 ## Keyboard Shortcuts
 
@@ -270,6 +270,7 @@ The copy and paste shortcuts are context-aware. When the cursor is inside a text
 ## Troubleshooting
 
 - **If a node never runs**, the canvas has no edge from an upstream node into its input handle. Drag a connection from the previous node's output handle to this node's input handle.
+- **If a run fails with "Workflow contains a cycle: A → B → A"**, the graph loops back on itself, usually from an edit in the JSON editor or by an agent. Remove one of the edges it names.
 - **If a `{{secrets.X}}` placeholder shows up as plain text in the request**, the key is not declared in the selected environment or the workspace scope. Open **Secrets**, add the key through the Libsodium write flow, and re-run.
 - **If paste drops a node on top of the source**, copy and paste are canvas-only; click on the canvas first so the focus is not in a text field.
 - **If a Call Workflow node fails with "no target workflow configured"**, the node was dropped but never pointed at a workflow. Open it and pick a target from the picker.

@@ -141,6 +141,26 @@ describe("WorkflowExecutor", () => {
       expect(result?.unresolvedPlaceholders).toEqual(["env.BASE_URL"])
     })
 
+    it("fails the node with the function's own error when a dynamic function rejects its argument", async () => {
+      const workflow: WorkflowGraph = {
+        nodes: [
+          { nodeId: "start", type: "start" },
+          {
+            nodeId: "http_1",
+            type: "http-request",
+            config: { method: "GET", url: "http://127.0.0.1:1/{{randomString(1000000000)}}" },
+          },
+        ],
+        edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+      }
+
+      const output = await new WorkflowExecutor(makeDeps()).executeWorkflow(workflow)
+      expect(output.status).toBe("failed")
+      expect(output.results.find((r) => r.nodeId === "http_1")?.error).toContain(
+        "randomString(1000000000) exceeds the maximum length of 10000",
+      )
+    })
+
     // `prev` (unlike env./variables./secrets.) has no trailing dot of its own — the
     // dot lives in the reference body, e.g. `{{prev.response.body.id}}`. It must be
     // kept as the join separator, not stripped as if it belonged to `env.`/etc.
@@ -1032,22 +1052,31 @@ describe("WorkflowExecutor", () => {
   })
 
   describe("cycle protection", () => {
-    it("returns structured failure evidence for a cyclic graph instead of hanging", async () => {
+    it("fails a cyclic graph before sending any request, naming the cycle", async () => {
+      let requests = 0
+      const http = new SafeHttp({
+        fetchImpl: (async () => {
+          requests += 1
+          return new Response("{}", { status: 200 })
+        }) as never,
+      })
       const workflow: WorkflowGraph = {
         nodes: [
           { nodeId: "start", type: "start" },
-          { nodeId: "delay", type: "delay", config: { duration: 0 } },
+          { nodeId: "http", type: "http-request", label: "Fetch", config: { method: "GET", url: "http://localhost/x" } },
+          { nodeId: "delay", type: "delay", label: "Wait", config: { duration: 0 } },
         ],
         edges: [
-          { edgeId: "e1", source: "start", target: "delay" },
-          { edgeId: "e2", source: "delay", target: "start" },
+          { edgeId: "e1", source: "start", target: "http" },
+          { edgeId: "e2", source: "http", target: "delay" },
+          { edgeId: "e3", source: "delay", target: "http" },
         ],
       }
-      const executor = new WorkflowExecutor({ ...makeDeps(), baseUrl: "http://harness" })
-      const output = await executor.executeWorkflow(workflow)
+      const output = await new WorkflowExecutor({ ...makeDeps(), http }).executeWorkflow(workflow)
       expect(output.status).toBe("failed")
-      expect(output.failedNodes).toContain("start")
-      expect(output.failureMessage).toMatch(/cycle detected/i)
+      expect(output.failureMessage).toBe("Workflow contains a cycle: Fetch → Wait → Fetch")
+      expect(output.failedNodes).toEqual(["http", "delay"])
+      expect(requests).toBe(0)
     })
   })
 

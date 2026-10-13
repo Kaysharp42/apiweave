@@ -70,6 +70,7 @@ import useAutoSave from "../hooks/useAutoSave";
 import useCanvasHistory from "../hooks/useCanvasHistory";
 import type { CanvasHistoryEntry } from "../types/CanvasHistoryEntry";
 import useCanvasDrop, { createCanvasNode } from "../hooks/useCanvasDrop";
+import { useAcyclicConnections } from "../hooks/useAcyclicConnections";
 import useWorkflowPolling from "../hooks/useWorkflowPolling";
 import useWorkflowLiveUpdates from "../hooks/useWorkflowLiveUpdates";
 import useCanvasPendingEdits from "../hooks/useCanvasPendingEdits";
@@ -1072,6 +1073,8 @@ export function WorkflowCanvas({
 
   // ── Connect handler ─────────────────────────────────────────────────
 
+  const { isValidConnection, onConnectEnd } = useAcyclicConnections(edgesRef);
+
   const onConnect = useCallback(
     (params: Connection) => {
       setEdges((eds) => {
@@ -1734,6 +1737,8 @@ export function WorkflowCanvas({
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
+        isValidConnection={isValidConnection}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onPaneContextMenu={onPaneContextMenu}

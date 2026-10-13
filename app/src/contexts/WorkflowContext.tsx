@@ -18,26 +18,19 @@ interface WorkflowVariables {
   [key: string]: JsonValue;
 }
 
-interface WorkflowSettings {
-  [key: string]: unknown;
-}
-
 interface WorkflowContextValue {
   workflowId: string | undefined;
   variables: WorkflowVariables;
-  settings: WorkflowSettings;
   collections: Project[];
   isLoadingCollections: boolean;
   currentCollectionId: string | null;
   currentCollection: Project | null;
   setVariables: React.Dispatch<React.SetStateAction<WorkflowVariables>>;
-  setSettings: React.Dispatch<React.SetStateAction<WorkflowSettings>>;
   setCurrentCollectionId: React.Dispatch<React.SetStateAction<string | null>>;
   updateVariable: (varName: string, varValue: JsonValue) => void;
   deleteVariable: (varName: string) => void;
   deleteVariablesWithCleanup: (varNames: string[]) => void;
   updateVariables: (newVariables: WorkflowVariables) => void;
-  updateSettings: (newSettings: WorkflowSettings) => void;
   registerExtractors: (extractors: WorkflowVariables) => void;
   fetchCollections: () => Promise<void>;
   refreshCollectionsAndWorkflows: () => void;
@@ -84,7 +77,6 @@ export const WorkflowProvider = ({
   const wf = initialWorkflow as
     | {
         variables?: WorkflowVariables;
-        settings?: WorkflowSettings;
         collectionId?: string | null;
         nodeTemplates?: {
           label?: string;
@@ -110,7 +102,6 @@ export const WorkflowProvider = ({
 
   type WorkflowState = {
     variables: WorkflowVariables;
-    settings: WorkflowSettings;
     collections: Project[];
     isLoadingCollections: boolean;
     currentCollectionId: string | null;
@@ -118,7 +109,6 @@ export const WorkflowProvider = ({
 
   type WorkflowAction =
     | { type: "set-variables"; value: WorkflowVariables }
-    | { type: "set-settings"; value: WorkflowSettings }
     | { type: "set-collections"; value: Project[] }
     | { type: "set-loading-collections"; value: boolean }
     | { type: "set-current-collection-id"; value: string | null }
@@ -126,7 +116,6 @@ export const WorkflowProvider = ({
     | { type: "delete-variable"; varName: string }
     | { type: "delete-variables"; varNames: string[] }
     | { type: "update-variables"; value: WorkflowVariables }
-    | { type: "update-settings"; value: WorkflowSettings }
     | { type: "register-extractors"; value: WorkflowVariables };
 
   const [state, dispatch] = useReducer(
@@ -134,8 +123,6 @@ export const WorkflowProvider = ({
       switch (action.type) {
         case "set-variables":
           return { ...current, variables: action.value };
-        case "set-settings":
-          return { ...current, settings: action.value };
         case "set-collections":
           return { ...current, collections: action.value };
         case "set-loading-collections":
@@ -162,11 +149,6 @@ export const WorkflowProvider = ({
         }
         case "update-variables":
           return { ...current, variables: action.value };
-        case "update-settings":
-          return {
-            ...current,
-            settings: { ...current.settings, ...action.value },
-          };
         case "register-extractors": {
           const prevExtractorVarNames = Object.keys(
             extractorVariablesRef.current,
@@ -201,7 +183,6 @@ export const WorkflowProvider = ({
     },
     {
       variables: wf?.variables ?? {},
-      settings: wf?.settings ?? {},
       collections: [],
       isLoadingCollections: false,
       currentCollectionId: wf?.collectionId ?? null,
@@ -302,10 +283,6 @@ export const WorkflowProvider = ({
     dispatch({ type: "update-variables", value: newVariables });
   }, []);
 
-  const updateSettings = useCallback((newSettings: WorkflowSettings) => {
-    dispatch({ type: "update-settings", value: newSettings });
-  }, []);
-
   const registerExtractors = useCallback((extractors: WorkflowVariables) => {
     dispatch({ type: "register-extractors", value: extractors });
   }, []);
@@ -332,7 +309,6 @@ export const WorkflowProvider = ({
   const contextValue: WorkflowContextValue = {
     workflowId,
     variables: state.variables,
-    settings: state.settings,
     collections: state.collections,
     isLoadingCollections: state.isLoadingCollections,
     currentCollectionId: state.currentCollectionId,
@@ -341,11 +317,6 @@ export const WorkflowProvider = ({
       dispatch({
         type: "set-variables",
         value: resolveSetStateAction(state.variables, value),
-      }),
-    setSettings: (value) =>
-      dispatch({
-        type: "set-settings",
-        value: resolveSetStateAction(state.settings, value),
       }),
     setCurrentCollectionId: (value) =>
       dispatch({
@@ -356,7 +327,6 @@ export const WorkflowProvider = ({
     deleteVariable,
     deleteVariablesWithCleanup,
     updateVariables,
-    updateSettings,
     registerExtractors,
     fetchCollections,
     refreshCollectionsAndWorkflows,

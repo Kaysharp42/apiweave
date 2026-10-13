@@ -2,18 +2,14 @@ import { useState } from "react";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import {
-  ToggleLeft,
-  Check,
   X,
   RefreshCw,
   Plus,
-  Info,
   ChevronDown,
   LayoutGrid,
   Search,
 } from "lucide-react";
 import { Button } from "./atoms/Button";
-import { Toggle } from "./atoms/Toggle";
 import { Spinner } from "./atoms/Spinner";
 import { Input } from "./atoms/Input";
 import { EmptyState } from "./molecules/EmptyState";
@@ -36,8 +32,6 @@ interface LocalProject {
 
 export function WorkflowSettingsPanel() {
   const {
-    settings,
-    updateSettings,
     workflowId,
     collections,
     isLoadingCollections,
@@ -54,15 +48,6 @@ export function WorkflowSettingsPanel() {
   const matchesSearch = (value: string): boolean =>
     !normalizedQuery || value.toLowerCase().includes(normalizedQuery);
 
-  const executionSectionMatch = matchesSearch(
-    "execution settings continue on fail",
-  );
-  const continueOnFailItemMatch = matchesSearch(
-    "continue on fail stops at first api failure continues even if api fails",
-  );
-  const showExecutionSection = executionSectionMatch || continueOnFailItemMatch;
-  const showExecutionItem = executionSectionMatch || continueOnFailItemMatch;
-
   const collectionsSectionMatch = matchesSearch(
     "projects project assignment add remove",
   );
@@ -73,19 +58,7 @@ export function WorkflowSettingsPanel() {
     collectionsSectionMatch || collectionAssignmentItemMatch;
   const showCollectionsItem =
     collectionsSectionMatch || collectionAssignmentItemMatch;
-
-  const infoSectionMatch = matchesSearch(
-    "about continue on fail useful for testing error scenarios conditional workflows",
-  );
-  const showInfoSection = infoSectionMatch;
-  const hasSearchMatches =
-    showExecutionSection || showCollectionsSection || showInfoSection;
-
-  const handleContinueOnFailChange = (value: boolean): void => {
-    updateSettings({
-      continueOnFail: value,
-    });
-  };
+  const hasSearchMatches = showCollectionsSection;
 
   const handleAssignToProject = async (projectId: string): Promise<void> => {
     if (!workflowId) {
@@ -187,51 +160,6 @@ export function WorkflowSettingsPanel() {
             aria-label="Search settings"
           />
         </div>
-
-        {/* Continue on Fail Option */}
-        {showExecutionSection && (
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 min-w-0">
-              <ToggleLeft className="w-4 h-4 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
-              <span className="min-w-0 truncate">Execution Settings</span>
-            </div>
-
-            {showExecutionItem && (
-              <div className="p-3 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded space-y-3">
-                <div className="flex items-center justify-between min-w-0">
-                  <div className="flex-1 min-w-0">
-                    <Toggle
-                      label="Continue on Fail"
-                      checked={(settings.continueOnFail as boolean) ?? false}
-                      onChange={(e) =>
-                        handleContinueOnFailChange(e.target.checked)
-                      }
-                      size="sm"
-                      variant="primary"
-                    />
-                    <p className="text-[10px] text-text-secondary dark:text-text-secondary-dark mt-1 min-w-0">
-                      {settings.continueOnFail ? (
-                        <span className="flex items-center gap-1 min-w-0">
-                          <Check className="w-3 h-3 text-status-success dark:text-[var(--aw-status-success)] flex-shrink-0" />
-                          <span className="min-w-0 truncate">
-                            Workflow continues even if an API fails
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 min-w-0">
-                          <X className="w-3 h-3 text-status-error dark:text-[var(--aw-status-error)] flex-shrink-0" />
-                          <span className="min-w-0 truncate">
-                            Workflow stops at the first API failure
-                          </span>
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {showCollectionsSection && (
           <div className="space-y-2">
@@ -375,36 +303,6 @@ export function WorkflowSettingsPanel() {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Info Section */}
-        {showInfoSection && (
-          <div className="p-2 bg-[var(--aw-status-info)]/5 dark:bg-[var(--aw-status-info)]/10 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded text-[10px] text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] space-y-1">
-            <p className="flex items-center gap-1 min-w-0">
-              <Info className="w-3 h-3 flex-shrink-0" />
-              <span className="font-semibold min-w-0 truncate">
-                About Continue on Fail
-              </span>
-            </p>
-            <ul className="list-disc list-inside space-y-0.5 pl-1">
-              <li>
-                When <strong>disabled (default)</strong>: Stops workflow at
-                first failed API call
-              </li>
-              <li>
-                When <strong>enabled</strong>: Continues to next API even if
-                current one fails
-              </li>
-              <li>
-                Useful for testing error scenarios or conditional workflows
-              </li>
-              <li>
-                A node's own <strong>Continue on failure</strong> toggle (in
-                that node's Settings tab) overrides this setting for that
-                node only
-              </li>
-            </ul>
           </div>
         )}
 

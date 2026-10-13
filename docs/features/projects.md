@@ -5,7 +5,7 @@
 ## Prerequisites
 
 - At least one saved workflow. See [Workflows and Nodes](workflows-and-nodes.md).
-- Familiarity with the `continueOnFail` toggle, covered in [Workflows and Nodes](workflows-and-nodes.md#canvas-actions) and revisited below.
+- Familiarity with the per-node **Continue on failure** toggle, covered in [Workflows and Nodes](workflows-and-nodes.md#canvas-actions).
 
 ## Table of Contents
 
@@ -103,18 +103,15 @@ Project: "Checkout API" (saved order)
 
 ## continueOnFail per Workflow
 
-Each row in the project's workflow list carries a `continueOnFail` flag. The flag is independent from the workflow's own `continueOnFail` setting on the canvas:
+Each row in the project's workflow list carries a `continueOnFail` flag. It records the intent for when ordered project runs ship: continue to the next workflow after this one fails (true, the default), or stop the project (false). It is independent of the per-node **Continue on failure** toggles inside the workflow, which decide whether a failing node stops that workflow's run.
 
-- **Workflow-level `continueOnFail`** applies to nodes inside that workflow. When false (default), the first failing node stops the workflow.
-- **Project-level `continueOnFail`** records the intent for when ordered project runs ship: continue to the next workflow after a failure (true, the default), or stop the project (false).
-
-You usually want the project-level flag set to `true` for diagnostic workflows and `false` for critical paths. Example:
+You usually want the flag set to `true` for diagnostic workflows and `false` for critical paths. Example:
 
 ```text
 Project: "Checkout API"
-  1. Auth        workflow continueOnFail: false  project continueOnFail: true
-  2. Add to cart workflow continueOnFail: false  project continueOnFail: true
-  3. Pay         workflow continueOnFail: true   project continueOnFail: false
+  1. Auth        continueOnFail: true
+  2. Add to cart continueOnFail: true
+  3. Pay         continueOnFail: false
 ```
 
 You can change the project-level flag row by row in the project settings.

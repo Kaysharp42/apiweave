@@ -19,14 +19,14 @@ export class DynamicFunctions {
 
   /** Random alphanumeric string (a-zA-Z0-9). Default length 10. */
   public randomString(length: unknown): string {
-    const len = coerceLength(length, 10)
+    const len = coerceGeneratedLength("randomString", length, 10)
     const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     return sampleAlphabet(this.rng, alphabet, len)
   }
 
   /** Random number as a string with `size` digits. Default 6. */
   public randomNumber(size: unknown): string {
-    const sz = coerceLength(size, 6)
+    const sz = coerceGeneratedLength("randomNumber", size, 6)
     const max = Number("9".repeat(sz))
     const min = sz > 1 ? Number("1" + "0".repeat(sz - 1)) : 1
     const n = Math.floor(this.rng.next() * (max - min + 1)) + min
@@ -87,21 +87,21 @@ export class DynamicFunctions {
 
   /** Random alphabetic string (a-zA-Z). Default length 10. */
   public randomAlpha(length: unknown): string {
-    const len = coerceLength(length, 10)
+    const len = coerceGeneratedLength("randomAlpha", length, 10)
     const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     return sampleAlphabet(this.rng, alphabet, len)
   }
 
   /** Random numeric string (0-9). Default length 10. */
   public randomNumeric(length: unknown): string {
-    const len = coerceLength(length, 10)
+    const len = coerceGeneratedLength("randomNumeric", length, 10)
     const alphabet = "0123456789"
     return sampleAlphabet(this.rng, alphabet, len)
   }
 
   /** Random hexadecimal string (0-9a-f). Default length 16. */
   public randomHex(length: unknown): string {
-    const len = coerceLength(length, 16)
+    const len = coerceGeneratedLength("randomHex", length, 16)
     const alphabet = "0123456789abcdef"
     return sampleAlphabet(this.rng, alphabet, len)
   }
@@ -118,7 +118,9 @@ export class DynamicFunctions {
       date: (a) => this.date(a),
       futureDate: (a, b) => this.futureDate(a, b),
       pastDate: (a, b) => this.pastDate(a, b),
-      randomChoice: (a) => this.randomChoice(a),
+      // The template parser splits call arguments on commas, so
+      // `randomChoice(a,b,c)` arrives as three arguments: rejoin them.
+      randomChoice: (...options) => this.randomChoice(options.join(",")),
       randomAlpha: (a) => this.randomAlpha(a),
       randomNumeric: (a) => this.randomNumeric(a),
       randomHex: (a) => this.randomHex(a),
@@ -136,6 +138,17 @@ function coerceLength(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : NaN
   if (!Number.isFinite(n) || n < 1) return fallback
   return Math.floor(n)
+}
+
+/** Longest string a generator produces, so `randomString(1e9)` fails instead of exhausting memory. */
+const MAX_GENERATED_LENGTH = 10_000
+
+function coerceGeneratedLength(name: string, value: unknown, fallback: number): number {
+  const n = coerceLength(value, fallback)
+  if (n > MAX_GENERATED_LENGTH) {
+    throw new Error(`${name}(${n}) exceeds the maximum length of ${MAX_GENERATED_LENGTH}`)
+  }
+  return n
 }
 
 function sampleAlphabet(rng: RngProvider, alphabet: string, length: number): string {
