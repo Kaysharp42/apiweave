@@ -10,7 +10,7 @@ import { WindowControls, dragStyle } from "./WindowControls";
 // Routes that render MainHeader (the main app shell) fold the brand and the
 // window buttons into that header instead and claim the chrome, so this bar
 // steps aside rather than stacking a second, near-empty bar above it. Routes
-// without a header — login, setup — still get this one.
+// without a header — the 404 page, a failed workspace load — still get this one.
 export function TitleBar() {
   const headerOwnsChrome = useWindowChromeStore((s) => s.headerOwnsChrome);
 
@@ -22,7 +22,7 @@ export function TitleBar() {
       style={dragStyle}
       className="flex h-header flex-shrink-0 select-none items-center justify-between border-b border-border bg-surface-raised pl-4 dark:border-border-dark dark:bg-surface-dark-raised"
     >
-      {/* Height and brand match MainHeader exactly, so the boot, setup and
+      {/* Height and brand match MainHeader exactly, so the error and
           404 screens wear the same chrome as the app instead of a shorter,
           differently-styled bar. Those screens have no app controls to put
           between the two, which is the only difference. */}

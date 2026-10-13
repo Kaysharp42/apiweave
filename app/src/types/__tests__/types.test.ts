@@ -24,7 +24,6 @@ import type {
   RunResult,
   KeyValue,
   WorkspaceTab,
-  PaginationState,
   CanvasAction,
   ApiResponseEnvelope,
   PaginatedResponse,
@@ -198,17 +197,6 @@ const _mockTab: WorkspaceTab = {
 };
 
 // ============================================================
-// PaginationState type tests
-// ============================================================
-
-const _mockPagination: PaginationState = {
-  skip: 0,
-  limit: 20,
-  total: 100,
-  hasMore: true,
-};
-
-// ============================================================
 // CanvasAction type tests
 // ============================================================
 
@@ -253,7 +241,6 @@ void _mockEnvironment;
 void _mockCollection;
 void _mockKeyValue;
 void _mockTab;
-void _mockPagination;
 void _mockAction;
 void _mockPaginatedResponse;
 void _mockEnvelope;

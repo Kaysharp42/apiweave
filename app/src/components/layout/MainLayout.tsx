@@ -55,10 +55,9 @@ export function MainLayout({ children }: MainLayoutProps) {
   // the same re-render the three separate subscriptions produced. The other
   // stores above and below use separate selectors per consumer for exactly
   // this reason; do not merge them into one.
-  const { refreshAll, resetPagination, activeWorkspaceId } = useSidebarStore(
+  const { refreshAll, activeWorkspaceId } = useSidebarStore(
     useShallow((state) => ({
       refreshAll: state.refreshAll,
-      resetPagination: state.resetPagination,
       activeWorkspaceId: state.activeWorkspaceId,
     })),
   );
@@ -83,7 +82,6 @@ export function MainLayout({ children }: MainLayoutProps) {
     const { workflows, allWorkflows } = useSidebarStore.getState();
     if (navigationSelectedValue === "workflows") {
       if (workflows.length === 0) {
-        resetPagination();
         void refreshAll("workflows");
       }
     } else if (navigationSelectedValue === "projects") {
@@ -91,7 +89,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         void refreshAll("projects");
       }
     }
-  }, [navigationSelectedValue, activeWorkspaceId, refreshAll, resetPagination]);
+  }, [navigationSelectedValue, activeWorkspaceId, refreshAll]);
 
   // Which shell to build. Exactly one of the two is mounted, so nothing inside
   // `<main>`, and nothing either branch owns, exists twice.

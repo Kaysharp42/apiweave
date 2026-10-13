@@ -1,6 +1,5 @@
 import { FileText } from "lucide-react";
 import { Button } from "../../atoms/Button";
-import { Spinner } from "../../atoms/Spinner";
 import { Skeleton } from "../../atoms/Skeleton";
 import { EmptyState } from "../../molecules/EmptyState";
 import { WorkflowItem } from "./WorkflowItem";
@@ -8,7 +7,7 @@ import type { WorkflowListProps } from "../../../types";
 
 /**
  * Renders the workflow list section of the sidebar.
- * Handles loading skeletons, empty state, filtered list, and infinite scroll pagination.
+ * Handles loading skeletons, empty state and the filtered list.
  */
 export function WorkflowList({
   workflows,
@@ -16,9 +15,7 @@ export function WorkflowList({
   environments,
   selectedWorkflowId,
   isRefreshing,
-  isLoadingMore,
   searchQuery,
-  pagination,
   onWorkflowClick,
   onExportWorkflow,
   onDeleteWorkflow,
@@ -41,7 +38,7 @@ export function WorkflowList({
     );
   }
 
-  if (workflows.length === 0 && !isLoadingMore) {
+  if (workflows.length === 0) {
     return (
       <EmptyState
         icon={
@@ -92,18 +89,6 @@ export function WorkflowList({
           />
         ))}
       </ul>
-
-      {isLoadingMore && (
-        <div className="flex items-center justify-center gap-2 py-4 text-text-secondary dark:text-text-secondary-dark text-xs">
-          <Spinner size="xs" /> Loading more…
-        </div>
-      )}
-      {!pagination.hasMore && workflows.length > 0 && (
-        <div className="mx-3 mt-0.5 border-t border-border py-2 text-center font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-          Showing all {pagination.total} workflow
-          {pagination.total !== 1 ? "s" : ""}
-        </div>
-      )}
     </>
   );
 }

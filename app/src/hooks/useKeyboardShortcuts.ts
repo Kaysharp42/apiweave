@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
+import { matchShortcut } from "../constants/keyboardShortcuts";
+import type { ShortcutAction } from "../types";
 
 interface UseKeyboardShortcutsParams {
   /**
@@ -25,23 +27,16 @@ interface ShortcutCallbacks {
   onShowShortcutsHelp?: (() => void) | undefined;
 }
 
-/** Ctrl, not Cmd, on every OS, and no other modifier unless the combo names it. */
-function shortcutFor(e: KeyboardEvent): keyof ShortcutCallbacks | null {
-  if (e.altKey || e.metaKey) return null;
-  if (!e.ctrlKey) return e.key === "?" ? "onShowShortcutsHelp" : null;
-  if (e.key === "Tab") return e.shiftKey ? "onPrevTab" : "onNextTab";
-  if (e.shiftKey) return null;
-  switch (e.key.toLowerCase()) {
-    case "n":
-      return "onNewWorkflow";
-    case "w":
-      return "onCloseTab";
-    case "b":
-      return "onToggleSidebar";
-    default:
-      return null;
-  }
-}
+const WORKSPACE_ACTIONS: Partial<
+  Record<ShortcutAction, keyof ShortcutCallbacks>
+> = {
+  newWorkflow: "onNewWorkflow",
+  closeTab: "onCloseTab",
+  nextTab: "onNextTab",
+  prevTab: "onPrevTab",
+  toggleSidebar: "onToggleSidebar",
+  showShortcutsHelp: "onShowShortcutsHelp",
+};
 
 export default function useKeyboardShortcuts({
   enabled = true,
@@ -76,8 +71,9 @@ export default function useKeyboardShortcuts({
       ) {
         return;
       }
-      const name = shortcutFor(e);
-      if (name === null) return;
+      const action = matchShortcut(e);
+      const name = action === null ? undefined : WORKSPACE_ACTIONS[action];
+      if (name === undefined) return;
       e.preventDefault();
       callbacks.current[name]?.();
     };

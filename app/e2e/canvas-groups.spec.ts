@@ -127,6 +127,24 @@ test.describe("group frames", () => {
   // ReactFlow's own delete pass takes every child of a deleted parent with it.
   // For a frame that reads the gesture backwards: deleting the box around some
   // nodes should leave the nodes.
+  test("copies a multi-node selection with its edge and pastes it", async ({
+    page,
+  }) => {
+    await openCanvas(page);
+    await selectBoth(page);
+
+    await page.keyboard.press("Control+c");
+    await page.keyboard.press("Control+v");
+
+    await expect(page.locator(".react-flow__node")).toHaveCount(4);
+    await expect(page.locator(".react-flow__edge")).toHaveCount(2);
+    // The paste is selected and the originals are not.
+    await expect(page.locator(".react-flow__node.selected")).toHaveCount(2);
+    await expect(
+      page.locator('.react-flow__node[data-id="start-1"]'),
+    ).not.toHaveClass(/selected/);
+  });
+
   test("deleting a frame keeps its members", async ({ page }) => {
     await openCanvas(page);
     const nodes = page.locator(".react-flow__node");

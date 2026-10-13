@@ -6,6 +6,12 @@ import { confirmCloseTabs } from "../../stores/PendingEditsStore";
 import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import type { WorkspaceTab } from "../../types/WorkspaceTab";
 import type { ContextMenuState } from "../../types/ContextMenuState";
+import { handleTablistKeyDown } from "../../utils/tablistKeyboard";
+
+/** The canvas area the workspace tabs control (rendered by `Workspace`). */
+export const WORKSPACE_TABPANEL_ID = "workspace-tabpanel";
+export const workspaceTabId = (tabId: string): string =>
+  `workspace-tab-${tabId}`;
 
 export function TabBar() {
   // Only this workspace's tabs: the store also holds the ones left open in the
@@ -88,6 +94,9 @@ export function TabBar() {
 
       <div
         ref={scrollRef}
+        role="tablist"
+        aria-label="Open workflows"
+        onKeyDown={handleTablistKeyDown}
         className="flex-1 flex items-stretch overflow-x-auto scrollbar-none"
       >
         {tabs.map((tab: WorkspaceTab) => {
@@ -99,6 +108,11 @@ export function TabBar() {
             >
               <button
                 type="button"
+                role="tab"
+                id={workspaceTabId(tab.id)}
+                aria-selected={isActive}
+                aria-controls={WORKSPACE_TABPANEL_ID}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setActive(tab.id)}
                 onMouseDown={(e) => handleMouseDown(e, tab.id)}
                 onContextMenu={(e) => handleContextMenu(e, tab.id)}
@@ -132,6 +146,9 @@ export function TabBar() {
                   e.stopPropagation();
                   requestClose([tab.id], () => closeTab(tab.id));
                 }}
+                // Only the active tab's close button is in the tab order; the
+                // others stay reachable through Ctrl+W after arrowing to a tab.
+                tabIndex={isActive ? 0 : -1}
                 className={[
                   "px-1.5 rounded transition-colors self-center cursor-pointer flex-shrink-0",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2",

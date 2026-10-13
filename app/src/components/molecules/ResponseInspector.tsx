@@ -212,6 +212,23 @@ function stringifyBody(body: unknown, rawBody?: string): string {
 
 const VALUE_PREVIEW_LIMIT = 48;
 
+/** A collection with more children than this starts collapsed. */
+const LARGE_COLLECTION_SIZE = 100;
+/** Above this many characters of body, only the root starts expanded. */
+const LARGE_BODY_CHARS = 100_000;
+
+/**
+ * json-edit-react mounts every row of an expanded collection, so a 1 MiB body
+ * rendered fully open is hundreds of thousands of DOM nodes and freezes the
+ * window. Collapsed rows never mount their children, so large bodies open one
+ * level at a time and only the levels the user drills into cost anything.
+ */
+function treeCollapseFilter(bodyChars: number): (node: NodeData) => boolean {
+  const largeBody = bodyChars > LARGE_BODY_CHARS;
+  return ({ size, level }) =>
+    (size ?? 0) > LARGE_COLLECTION_SIZE || (largeBody && level >= 1);
+}
+
 type ExtractedChipNodeProps = {
   readonly namesByPath: ReadonlyMap<string, readonly string[]>;
   readonly onRemove: ((variableName: string) => void) | undefined;
@@ -483,6 +500,12 @@ export function ResponseInspector({
     () => stringifyBody(response?.body, rawBody),
     [response?.body, rawBody],
   );
+  // Memoized: a new filter identity makes json-edit-react reset what the user
+  // has expanded.
+  const treeCollapse = useMemo(
+    () => treeCollapseFilter(bodyText.length),
+    [bodyText.length],
+  );
   const cookieRows = useMemo(() => getCookieRows(response), [response]);
   const filteredHeaders = useMemo(() => {
     if (!response) return [];
@@ -629,9 +652,10 @@ export function ResponseInspector({
   // data first would renumber array elements under the user's feet and produce
   // extractor paths pointing at the wrong item.
   const treeData = (response.body ?? null) as JsonEditorProps["data"];
-  const searchProps = {
+  const treeProps = {
     searchText: filterQuery,
     searchFilter: "all",
+    collapse: treeCollapse,
   } as const;
   const metricRows = getMetricRows(response, effectiveMetadata, bodyText);
   const showJsonPreview = isJsonContent(contentType, response.body, bodyFormat);
@@ -783,7 +807,7 @@ export function ResponseInspector({
               restrictAdd={true}
               restrictDelete={true}
               rootName="body"
-              {...searchProps}
+              {...treeProps}
               {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
             />
           </div>
@@ -924,7 +948,7 @@ export function ResponseInspector({
                 restrictAdd={true}
                 restrictDelete={true}
                 rootName="body"
-                {...searchProps}
+                {...treeProps}
                 customButtons={treeCustomButtons}
                 customNodeDefinitions={
                   // The library's prop widens every definition to

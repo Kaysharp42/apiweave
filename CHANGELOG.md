@@ -194,6 +194,29 @@ project adheres to [Semantic Versioning](https://semver.org/).
   to create its workflow. Both now create the workflow in the project. The HAR
   preview also now honours the chosen import mode and the **Sanitize** option,
   which it used to ignore.
+- **Large JSON responses no longer freeze the window.** The response tree
+  opened every row of the body, so a 1 MB response mounted hundreds of
+  thousands of elements. A collection with more than 100 entries now starts
+  collapsed, and a body over 100 KB opens one level at a time.
+- **The node editor's header badges show their tooltips.** The rule count,
+  delay, merge strategy and called-workflow badges had tooltips that never
+  appeared.
+- **The import dialogs, Run History and the tab bar work from the keyboard
+  and with a screen reader.** The curl, HAR, OpenAPI, project and Import to
+  Add Nodes dialogs and Run History are modal dialogs: they are announced with
+  their title, keep focus inside while open and close on Escape. The workflow
+  tab bar and every panel tab strip are tab lists: the arrow keys, Home and End
+  move between tabs.
+- **Keyboard shortcuts use ⌘ on macOS.** Every Ctrl shortcut now answers ⌘
+  on a Mac (Ctrl+Tab stays on Control, since ⌘Tab switches apps), the labels
+  in the help, command palette and hints show ⌘, and Backspace deletes the
+  selected nodes, since a Mac keyboard has no Delete key. The shortcuts help
+  now lists every shortcut, undo, redo and grouping included: it reads the
+  same table the key handlers match against.
+- **Copy, paste and duplicate act on the whole selection.** They used to take
+  one node and drop its connections. They now take every selected node, the
+  nodes inside a selected frame, and the edges between them; the paste gets
+  new ids, lands offset from the originals and is selected.
 
 ### Added
 
@@ -220,6 +243,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   each node's **Continue on failure** toggle in its Settings tab.
 - The renderer's startup gate, left over from the retired HTTP backend. Its
   spinner never showed and its error screen was unreachable.
+- The web sign-in leftovers: the marketing landing page, the `/login` route,
+  the admin route guard, the deployment-mode switch and an "Auth bootstrap
+  failed" screen. The desktop app has one local owner, so none of them could
+  be reached. The workspace switcher's **Manage workspaces** entry, which did
+  nothing, is gone with them.
+- The sidebar's workflow paging. The workflow list always returned every
+  workflow, so the infinite scroll never loaded a second page; its "Showing
+  all N workflows" footer is gone with it.
 - Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that
   nothing imported, and `axios`. Neither ran, but both shipped inside the app.
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
@@ -67,24 +67,18 @@ export function Sidebar() {
     projectId: string;
     name: string;
   } | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const handleScrollRef = useRef<() => void>(() => {});
 
   const workflows = useSidebarStore((s) => s.workflows);
   const allWorkflows = useSidebarStore((s) => s.allWorkflows);
   const projects = useSidebarStore((s) => s.projects);
   const collections = useSidebarStore((s) => s.collections);
   const environments = useEnvironmentStore((s) => s.environments);
-  const pagination = useSidebarStore((s) => s.pagination);
-  const isLoadingMore = useSidebarStore((s) => s.isLoadingMore);
   const isRefreshing = useSidebarStore((s) => s.isRefreshing);
   const searchQuery = useSidebarStore((s) => s.searchQuery);
   const closeTab = useTabStore((s) => s.closeTab);
-  const fetchWorkflows = useSidebarStore((s) => s.fetchWorkflows);
   const workflowVersion = useSidebarStore((s) => s.workflowVersion);
   const projectVersion = useSidebarStore((s) => s.projectVersion);
   const refreshAll = useSidebarStore((s) => s.refreshAll);
-  const setIsLoadingMore = useSidebarStore((s) => s.setIsLoadingMore);
   const setActiveWorkspaceId = useSidebarStore((s) => s.setActiveWorkspaceId);
   const navigate = useNavigate();
 
@@ -134,29 +128,6 @@ export function Sidebar() {
     };
   }, [refreshAll]);
 
-  handleScrollRef.current = () => {
-    if (scrollContainerRef.current && selectedNav === "workflows") {
-      const { scrollTop, scrollHeight, clientHeight } =
-        scrollContainerRef.current;
-      if (
-        scrollHeight - scrollTop <= clientHeight + 100 &&
-        !isLoadingMore &&
-        pagination.hasMore
-      ) {
-        setIsLoadingMore(true);
-        void fetchWorkflows(pagination.skip + pagination.limit, true);
-      }
-    }
-  };
-
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current;
-    if (scrollContainer && selectedNav === "workflows") {
-      const onScroll = () => handleScrollRef.current();
-      scrollContainer.addEventListener("scroll", onScroll, { passive: true });
-      return () => scrollContainer.removeEventListener("scroll", onScroll);
-    }
-  }, [selectedNav]);
 
   const createNewWorkflow = () => {
     setShowNewWorkflowPrompt(true);
@@ -395,12 +366,6 @@ export function Sidebar() {
     });
   };
 
-  const handleLoadMore = () => {
-    if (!isLoadingMore && pagination.hasMore) {
-      setIsLoadingMore(true);
-      void fetchWorkflows(pagination.skip + pagination.limit, true);
-    }
-  };
 
   return (
     <>
@@ -421,7 +386,6 @@ export function Sidebar() {
             }`}
           >
             <div
-              ref={scrollContainerRef}
                 className={[
                   "flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-300",
                   isRefreshing ? "opacity-50" : "opacity-100",
@@ -434,9 +398,7 @@ export function Sidebar() {
                   environments={environments}
                   selectedWorkflowId={selectedWorkflowId}
                   isRefreshing={isRefreshing}
-                  isLoadingMore={isLoadingMore}
                   searchQuery={searchQuery}
-                  pagination={pagination}
                   onWorkflowClick={handleWorkflowClick}
                   onExportWorkflow={handleExportWorkflow}
                   onDeleteWorkflow={(workflowId: string, name: string) =>
@@ -446,7 +408,6 @@ export function Sidebar() {
                   onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
                   onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
                   onCreateWorkflow={createNewWorkflow}
-                  onLoadMore={handleLoadMore}
                 />
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import useKeyboardShortcuts from "./useKeyboardShortcuts";
 
@@ -17,6 +17,27 @@ function press(combo: { key: string; ctrlKey?: boolean; shiftKey?: boolean }) {
 }
 
 describe("useKeyboardShortcuts", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("uses ⌘ instead of Ctrl on macOS, but keeps Control+Tab", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const onNewWorkflow = vi.fn();
+    const onNextTab = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onNewWorkflow, onNextTab }));
+
+    press({ key: "n", ctrlKey: true });
+    expect(onNewWorkflow).not.toHaveBeenCalled();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "n", metaKey: true, bubbles: true }),
+    );
+    expect(onNewWorkflow).toHaveBeenCalledTimes(1);
+
+    press({ key: "Tab", ctrlKey: true });
+    expect(onNextTab).toHaveBeenCalledTimes(1);
+  });
+
   it("fires onNewWorkflow for ctrl+n", () => {
     const onNewWorkflow = vi.fn();
     renderHook(() => useKeyboardShortcuts({ onNewWorkflow }));

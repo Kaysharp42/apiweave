@@ -1,7 +1,11 @@
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { NodeModal } from "./NodeModal";
 import type { NodeModalNode } from "../types/NodeModalNode";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const node: NodeModalNode = {
   id: "start-1",
@@ -48,6 +52,7 @@ describe("NodeModal keeps the draft", () => {
   });
 
   test("Cmd+S does the same on macOS", () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     const { onSave, onSaveWorkflow, name } = renderModal();
 
     fireEvent.keyDown(name, { key: "s", metaKey: true });

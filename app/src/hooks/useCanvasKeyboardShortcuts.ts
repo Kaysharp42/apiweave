@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { isEditableKeyboardTarget } from "../utils/shortcutGuards";
 import type { FocusDirection } from "../types/FocusDirection";
+import type { ShortcutAction } from "../types";
+import { matchShortcut } from "../constants/keyboardShortcuts";
 
 interface UseCanvasKeyboardShortcutsParams {
   isEditorOverlayOpen: boolean;
@@ -20,84 +22,28 @@ interface UseCanvasKeyboardShortcutsParams {
 type CanvasShortcutHandlers = UseCanvasKeyboardShortcutsParams;
 
 /**
- * What each chord does, as a table.
- *
- * Returning the handler rather than calling it is what makes `runChord` able to
- * own `preventDefault` — one place decides "this keystroke was ours", so a
- * chord added later cannot forget to claim it. `null` means the chord exists
- * but is unavailable right now, and the keystroke goes back to the browser.
- *
- * Ctrl+Shift+arrow rather than Ctrl+arrow for focus: plain Ctrl+arrow is word
- * navigation on Windows and Linux, which is where this app runs.
+ * What each canvas action does. Returning the handler rather than calling it
+ * lets the listener own `preventDefault` — one place decides "this keystroke
+ * was ours". `null` means the action is unavailable right now, and the
+ * keystroke goes back to the browser.
  */
-type ChordTable = Record<
-  string,
-  (handlers: CanvasShortcutHandlers) => (() => void) | null
->;
-
-const MODIFIER_CHORDS: ChordTable = {
-  s: (h) => h.onSave,
-  // Ctrl+R while running is unavailable: no handler, no preventDefault. The
-  // main process installs no reload accelerator, so the keystroke does nothing.
-  r: (h) => (h.isRunning ? null : h.onRun),
-  j: (h) => h.onToggleJsonEditor,
-  k: (h) => h.onOpenCommandPalette,
-  z: (h) => h.onUndo,
-  // Ctrl+Y as well as Ctrl+Shift+Z: this app runs on Windows, where Ctrl+Y is
-  // what people's hands already do.
-  y: (h) => h.onRedo,
-  g: (h) => h.onGroup,
+const CANVAS_ACTIONS: Partial<
+  Record<ShortcutAction, (h: CanvasShortcutHandlers) => (() => void) | null>
+> = {
+  save: (h) => h.onSave,
+  // Run while running is unavailable: no handler, no preventDefault.
+  run: (h) => (h.isRunning ? null : h.onRun),
+  toggleJsonEditor: (h) => h.onToggleJsonEditor,
+  openCommandPalette: (h) => h.onOpenCommandPalette,
+  undo: (h) => h.onUndo,
+  redo: (h) => h.onRedo,
+  group: (h) => h.onGroup,
+  ungroup: (h) => h.onUngroup,
+  focusUp: (h) => () => h.onFocusDirection("up"),
+  focusDown: (h) => () => h.onFocusDirection("down"),
+  focusLeft: (h) => () => h.onFocusDirection("left"),
+  focusRight: (h) => () => h.onFocusDirection("right"),
 };
-
-const SHIFT_CHORDS: ChordTable = {
-  z: (h) => h.onRedo,
-  g: (h) => h.onUngroup,
-  arrowup: (h) => () => h.onFocusDirection("up"),
-  arrowdown: (h) => () => h.onFocusDirection("down"),
-  arrowleft: (h) => () => h.onFocusDirection("left"),
-  arrowright: (h) => () => h.onFocusDirection("right"),
-};
-
-const CANVAS_SHORTCUT_LABELS: Record<string, string> = {
-  group: "Ctrl+G",
-  ungroup: "Ctrl+Shift+G",
-  undo: "Ctrl+Z",
-};
-
-/** Labels for surfaces that teach a canvas shortcut instead of handling it. */
-export function canvasShortcutLabel(shortcut: string): string | null {
-  return CANVAS_SHORTCUT_LABELS[shortcut] ?? null;
-}
-
-function runChord(
-  e: KeyboardEvent,
-  table: ChordTable,
-  key: string | undefined,
-  current: CanvasShortcutHandlers,
-): void {
-  const action = key === undefined ? undefined : table[key]?.(current);
-  if (!action) return;
-  e.preventDefault();
-  action();
-}
-
-/** The shortcut itself, once the guards have decided this keystroke is ours. */
-function runCanvasShortcut(
-  e: KeyboardEvent,
-  current: CanvasShortcutHandlers,
-): void {
-  const key = e.key?.toLowerCase?.();
-
-  if (key === "f5") {
-    e.preventDefault();
-    if (!current.isRunning) current.onRun();
-    return;
-  }
-
-  if (!(e.ctrlKey || e.metaKey)) return;
-
-  runChord(e, e.shiftKey ? SHIFT_CHORDS : MODIFIER_CHORDS, key, current);
-}
 
 /**
  * Canvas-scoped keyboard shortcuts (save/run/JSON editor, and Ctrl+Shift+arrow
@@ -125,7 +71,11 @@ export function useCanvasKeyboardShortcuts(
       if (e.defaultPrevented || current.isEditorOverlayOpen) return;
       if (isEditableKeyboardTarget(e.target)) return;
 
-      runCanvasShortcut(e, current);
+      const action = matchShortcut(e);
+      const run = action === null ? null : CANVAS_ACTIONS[action]?.(current);
+      if (!run) return;
+      e.preventDefault();
+      run();
     };
 
     window.addEventListener("keydown", handleKeyDown);

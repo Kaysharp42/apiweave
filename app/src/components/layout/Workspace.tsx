@@ -8,7 +8,11 @@ import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
 import DynamicFunctionsHelper from "../DynamicFunctionsHelper";
 import { WorkflowProvider } from "../../contexts/WorkflowContext";
 import { Settings, Sparkles, Package, PanelRightClose } from "lucide-react";
-import { TabBar } from "../organisms/TabBar";
+import {
+  TabBar,
+  WORKSPACE_TABPANEL_ID,
+  workspaceTabId,
+} from "../organisms/TabBar";
 import { KeyboardShortcutsHelp } from "../organisms/KeyboardShortcutsHelp";
 import { WorkspaceEmptyState } from "../molecules/WorkspaceEmptyState";
 import { PromptDialog } from "../molecules/PromptDialog";
@@ -171,7 +175,14 @@ export function Workspace({ active = true }: WorkspaceProps) {
     <div className="flex flex-col h-full min-h-0 bg-surface dark:bg-surface-dark">
       <TabBar />
 
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col relative">
+      <div
+        className="flex-1 min-h-0 overflow-hidden flex flex-col relative"
+        {...(activeTab && {
+          id: WORKSPACE_TABPANEL_ID,
+          role: "tabpanel",
+          "aria-labelledby": workspaceTabId(activeTab.id),
+        })}
+      >
         {activeTab ? (
           <WorkflowProvider
             key={activeTab.id}

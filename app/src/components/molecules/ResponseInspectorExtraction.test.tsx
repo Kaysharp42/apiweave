@@ -130,3 +130,32 @@ describe("ResponseInspector save-as-variable", () => {
     expect(screen.getByText('"Labrador"')).toBeInTheDocument();
   });
 });
+
+describe("ResponseInspector large bodies", () => {
+  test("opens a large body one level deep instead of mounting every row", () => {
+    const items = Array.from({ length: 5000 }, (_, index) => ({
+      id: index,
+      name: `item ${index}`,
+      nested: { padding: "x".repeat(120) },
+    }));
+    const grouped = Object.fromEntries(
+      Array.from({ length: 50 }, (_, group) => [
+        `group${group}`,
+        items.slice(group * 100, group * 100 + 100),
+      ]),
+    );
+    const { container } = render(
+      <ResponseInspector response={{ ...response, body: grouped }} />,
+    );
+    // Fully expanded this is ~500k nodes; collapsed it is the root plus 50 rows.
+    expect(container.querySelectorAll("*").length).toBeLessThan(5000);
+    expect(screen.getByText("group49")).toBeInTheDocument();
+    expect(screen.queryByText("item 0")).not.toBeInTheDocument();
+  });
+
+  test("starts collapsed any collection over 100 entries", () => {
+    const body = { small: [1, 2], big: Array.from({ length: 101 }, (_, i) => `row-${i}`) };
+    render(<ResponseInspector response={{ ...response, body }} />);
+    expect(screen.queryByText(/row-0/)).not.toBeInTheDocument();
+  });
+});

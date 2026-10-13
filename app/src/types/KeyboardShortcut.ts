@@ -1,6 +1,10 @@
+import type { KeyChord } from "./KeyChord";
+import type { ShortcutAction } from "./ShortcutAction";
+
 export interface KeyboardShortcut {
-  keys: string;
+  action: ShortcutAction;
+  group: "General" | "Tabs" | "Panels" | "Canvas";
   description: string;
-  category: string;
-  handler: () => void;
+  /** The first chord is the one labels show; the rest are alternatives. */
+  chords: readonly KeyChord[];
 }

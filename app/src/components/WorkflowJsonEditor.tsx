@@ -12,6 +12,10 @@ import { Dialog, Transition, TransitionChild } from "@headlessui/react";
 import { Button } from "./atoms/Button";
 import { BeautifyButton } from "./molecules/BeautifyButton";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import {
+  matchShortcut,
+  shortcutLabel,
+} from "../constants/keyboardShortcuts";
 import type { WorkflowJsonEditorProps } from "../types";
 
 // Mirrors the key-name/structural-auth redaction rules in
@@ -716,7 +720,7 @@ export function WorkflowJsonEditor({
   // lets the nested confirmation take it first while that is open.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      if (matchShortcut(e) === "save") {
         e.preventDefault();
         handleApply();
       }
@@ -820,7 +824,7 @@ export function WorkflowJsonEditor({
                       disabled={!isDirty}
                       variant="primary"
                       size="sm"
-                      title="Apply changes (Ctrl+S)"
+                      title={`Apply changes (${shortcutLabel("save")})`}
                     >
                       Apply
                     </Button>
@@ -925,7 +929,7 @@ export function WorkflowJsonEditor({
                         dispatch({ type: "set-value", value: v })
                       }
                     />
-                    <span>Ctrl+S to apply &middot; Esc to close</span>
+                    <span>{shortcutLabel("save")} to apply &middot; Esc to close</span>
                   </div>
                 ) : (
                   <>

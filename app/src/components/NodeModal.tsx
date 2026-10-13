@@ -36,6 +36,7 @@ import type { NodeModalProps } from "../types/NodeModalProps";
 import type { NodeModalNodeType } from "../types/NodeModalNodeType";
 import type { NodeModalHTTPRequestConfig } from "../types/NodeModalHTTPRequestConfig";
 import type { NodeModalMergeConfig } from "../types/NodeModalMergeConfig";
+import { matchShortcut } from "../constants/keyboardShortcuts";
 import type { NodeModalWorkflowCallConfig } from "../types/NodeModalWorkflowCallConfig";
 import type {
   NodeModalAssertionConfig,
@@ -195,14 +196,13 @@ export function NodeModal({
     callback();
   };
 
-  // Ctrl+S / Cmd+S works inside the editor too, including in its text
+  // The save shortcut works inside the editor too, including in its text
   // fields: apply the draft, then run the canvas's normal explicit save.
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
-      if (event.key.toLowerCase() !== "s") return;
+      if (matchShortcut(event) !== "save") return;
       event.preventDefault();
       applyDraft();
       onSaveWorkflow();
