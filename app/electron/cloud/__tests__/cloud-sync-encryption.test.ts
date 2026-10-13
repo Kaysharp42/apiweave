@@ -58,13 +58,12 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
   let settings: AppSettingsRepository
   let repository: CloudSyncRepository
   let tempDir: string
-  let keyfilePath: string
+  let masterKek: Uint8Array
 
   beforeEach(() => {
     keychain.available = true
     tempDir = mkdtempSync(join(tmpdir(), "cloud-e2ee-test-"))
-    keyfilePath = join(tempDir, "keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "keyfile.json"), null).masterKek
     const initialized = initDatabase({ databasePath: join(tempDir, "test.db") })
     db = initialized.database
     store = initialized.kvStore
@@ -94,7 +93,7 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
 
   /** A linked device, with the cloud config and account identity already stored. */
   function linked(): void {
-    new DeviceTokenStore(repository, keyfilePath).setTokens("device-1", "access-token", "refresh-token")
+    new DeviceTokenStore(repository, masterKek).setTokens("device-1", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-1",
       label: "Test Device",
@@ -134,7 +133,7 @@ describe("DesktopCloudSyncControl workspace encryption", () => {
   function control(): DesktopCloudSyncControl {
     return new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: { cloudEntryUrl: "https://cloud.test", clientVersion: "1.0.0", deviceLabel: "Test Device" },
       setSyncProviderTarget: () => undefined,
     })

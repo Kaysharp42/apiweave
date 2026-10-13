@@ -1,6 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
-  "entry": ["src/index.{ts,tsx,js,jsx}", "src/main.{ts,tsx,js,jsx}"],
+  "entry": [
+    "src/index.{ts,tsx,js,jsx}",
+    "src/main.{ts,tsx,js,jsx}",
+    "scripts/generate-update-signing-key.mjs",
+    "scripts/sign-update-manifest.mjs"
+  ],
   "ignorePatterns": ["**/*.generated.ts", "**/*.d.ts"],
   "ignoreDependencies": [
     "@fallow-cli/beacon",

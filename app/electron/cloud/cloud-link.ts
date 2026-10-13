@@ -18,7 +18,6 @@ import http from "node:http"
 import type { AddressInfo } from "node:net"
 import { randomBytes, createHash } from "node:crypto"
 import { shell } from "electron"
-import { readKeyfile } from "../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek, type EncryptedBlob } from "../../core/secrets/crypto"
 import { create, fromJson, toJsonString } from "@bufbuild/protobuf"
 import {
@@ -129,7 +128,8 @@ export interface DeviceLinkConfig {
   readonly zitadelIssuer: string
   readonly desktopClientId: string
   readonly apiBaseUrl: string
-  readonly keyfilePath: string
+  /** The keyfile master KEK, which wraps the refresh token's DEK. */
+  readonly masterKek: Uint8Array
   readonly deviceLabel: string
   readonly devicePublicKey: Uint8Array
   readonly clientVersion: string
@@ -652,9 +652,8 @@ function encryptRefreshToken(
   refreshToken: string,
 ): { blob: EncryptedBlob; wrappedDek: Uint8Array } {
   try {
-    const keyfile = readKeyfile(config.keyfilePath)
     const dek = generateDek()
-    const wrappedDek = wrapDek(dek, keyfile.masterKek)
+    const wrappedDek = wrapDek(dek, config.masterKek)
     const blob = encrypt(refreshToken, dek, "kek-desktop-link")
     return { blob, wrappedDek }
   } catch (err) {

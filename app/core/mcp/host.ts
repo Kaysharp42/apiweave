@@ -46,7 +46,8 @@ export interface McpHostOptions {
 
 /**
  * The opt-in loopback MCP server. Off until `start()`. Binds `127.0.0.1` only,
- * requires a static per-install bearer token on every request.
+ * requires the per-install bearer token on every request (rotated on demand by
+ * {@link McpHost.regenerateToken}).
  *
  * Two transport modes coexist (Phase 6):
  * - Stateless one-shot: a sessionless, non-initialize POST gets a fresh MCP
@@ -115,6 +116,27 @@ export class McpHost {
     return this.runExclusive(() => this.stopLocked())
   }
 
+  /**
+   * Replace the bearer token, for when the old one may have leaked. The new
+   * one is persisted before it takes effect, and every open session — each
+   * authenticated with the old token — is closed, so an SSE stream opened
+   * with the leaked token stops too. Clients reconnect with the new token;
+   * an embedded agent launched before this keeps the old one in its config and
+   * has to be relaunched.
+   */
+  async regenerateToken(): Promise<McpTokenInfo> {
+    return this.runExclusive(async () => {
+      if (this.info === null) throw new Error("The MCP server is not running")
+      this.token = generateToken()
+      this.info = { token: this.token, port: this.info.port }
+      saveTokenInfo(this.tokenFilePath, this.info)
+      for (const session of [...this.sessions.values()]) {
+        await this.closeSession(session)
+      }
+      return this.info
+    })
+  }
+
   /** Run `fn` after every previously-queued start/stop has settled, never overlapping. */
   private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.lifecycle.then(fn, fn)
@@ -169,6 +191,13 @@ export class McpHost {
     const url = new URL(req.url ?? "/", `http://${LOOPBACK_HOST}`)
     if (url.pathname !== MCP_PATH) {
       return json(res, 404, { error: "not_found" })
+    }
+    // DNS rebinding: a hostile page can point its own name at 127.0.0.1, and
+    // the browser then sends that name — not ours — as Host. Origin alone does
+    // not cover it, because a same-origin request from the rebound page needs
+    // none. Only the two names this server is actually reachable by pass.
+    if (!this.isAllowedHost(req.headers.host)) {
+      return json(res, 403, { error: "forbidden_host" })
     }
     if (!isAllowedOrigin(req.headers["origin"])) {
       return json(res, 403, { error: "forbidden_origin" })
@@ -320,6 +349,12 @@ export class McpHost {
     }
     await session.transport.close()
     await session.server.close()
+  }
+
+  private isAllowedHost(host: string | undefined): boolean {
+    if (host === undefined || this.info === null) return false
+    const port = this.info.port
+    return host === `${LOOPBACK_HOST}:${port}` || host === `localhost:${port}`
   }
 
   private authorized(req: http.IncomingMessage): boolean {

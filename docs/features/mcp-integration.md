@@ -11,12 +11,24 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
 - The bridge is disabled until you enable it in the desktop app.
 - It binds only to `127.0.0.1`; it is never exposed on a LAN or public address.
 - Every request requires the per-install MCP access token.
-- Browser-originated requests are accepted only from APIWeave or a loopback
-  origin, protecting the local endpoint against DNS rebinding.
+- Requests must name the server by its own address: a `Host` header other than
+  `127.0.0.1:<port>` or `localhost:<port>` is refused, and browser-originated
+  requests are accepted only from APIWeave or a loopback origin. Together these
+  protect the local endpoint against DNS rebinding.
 - The MCP surface is an explicit whitelist over the shared IPC handler registry.
   It is intentionally smaller than the renderer's complete IPC surface.
 - Secret tools expose names, scopes, and resolution metadata only. They never
   return plaintext or ciphertext and do not allow secret mutation over MCP.
+- A run an agent starts that would send stored secrets does not proceed until
+  you approve it. APIWeave shows a native dialog naming the agent (as it
+  reports itself), the workflow, each secret, and where the requests go —
+  the host when the URL is known before the run, the URL as written when it is
+  built during the run. **Allow once** lets that one run continue; **Deny**, or
+  no answer within two minutes, fails it before any request is sent, and the
+  agent sees `deniedByUser: true`. The run executes the workflows as they were
+  when you were asked: an edit made while the dialog is open does not change
+  where an approved secret goes. Runs you start yourself, and agent runs that
+  use no secret, are not affected.
 - Run tools return metadata-only projections: request and response bodies,
   headers, cookies, URLs, variable values, and assertion actual values stay in
   the local desktop UI. The one exception is `runs_getNodeResult`, which returns
@@ -64,7 +76,10 @@ The bridge speaks MCP protocol version `2025-06-18` (negotiated by the SDK).
 
 The token is generated on first enable and stored with the selected port in the
 app's user-data directory as `mcp-token`. Re-enabling the bridge reuses that
-token. Automatic and in-app token rotation are not currently implemented.
+token. If it may have leaked, choose **Regenerate token** in the MCP settings:
+the old token stops working at once, open MCP sessions are closed, and every
+client — including agents launched from APIWeave before the change — has to be
+given the new one.
 
 ## Authoring Guides
 

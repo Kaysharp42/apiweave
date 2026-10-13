@@ -2292,6 +2292,36 @@ describe("McpHost — loopback bind, bearer auth, port fallback", () => {
     expect((await post(port, { authorization }, listBody)).status).toBe(200)
   })
 
+  it("regenerates the token: the old one stops working, the new one is persisted", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const { token: oldToken, port } = await host.start()
+    const init = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } }
+    expect((await post(port, { authorization: `Bearer ${oldToken}` }, init)).status).toBe(200)
+    expect(host.getSessionCount()).toBe(1)
+
+    const { token: newToken } = await host.regenerateToken()
+
+    expect(newToken).not.toBe(oldToken)
+    expect(host.getConfig()?.token).toBe(newToken)
+    expect(JSON.parse(readFileSync(tokenPath, "utf8"))).toEqual({ token: newToken, port })
+    // Sessions opened with the old token are closed, not left streaming.
+    expect(host.getSessionCount()).toBe(0)
+    expect((await post(port, { authorization: `Bearer ${oldToken}` }, listBody)).status).toBe(401)
+    expect((await post(port, { authorization: `Bearer ${newToken}` }, listBody)).status).toBe(200)
+  })
+
+  it("rejects a Host that is not this loopback listener (DNS rebinding)", async () => {
+    host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0 })
+    const { token, port } = await host.start()
+    const authorization = `Bearer ${token}`
+
+    expect((await post(port, { authorization, host: `attacker.example:${port}` }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: "127.0.0.1" }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: `127.0.0.1:${port + 1}` }, listBody)).status).toBe(403)
+    expect((await post(port, { authorization, host: `localhost:${port}` }, listBody)).status).toBe(200)
+    expect((await post(port, { authorization, host: `127.0.0.1:${port}` }, listBody)).status).toBe(200)
+  })
+
   it("returns bounded errors for wrong paths, methods and declared oversized bodies", async () => {
     host = new McpHost({ router, tokenFilePath: tokenPath, version: "test", preferredPort: 0, maxBodyBytes: 32 })
     const { token, port } = await host.start()

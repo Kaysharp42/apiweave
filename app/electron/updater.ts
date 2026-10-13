@@ -1,7 +1,7 @@
 import { app, shell } from "electron"
 import { z } from "zod"
 import { autoUpdater } from "electron-updater"
-import type { ProgressInfo, UpdateInfo } from "electron-updater"
+import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from "electron-updater"
 // Not re-exported from the package root, and the events map is what makes
 // track() below type-safe. Type-only, so nothing is imported at runtime, and
 // electron-updater is pinned to ~6.3.9 (see package.json) — a deep path is safe
@@ -10,6 +10,7 @@ import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus"
 import { updaterLog } from "./logging"
+import { UPDATE_SIGNATURE_FIELD, verifyUpdateFile } from "./update_signature"
 
 // ---------------------------------------------------------------------------
 // The update channel
@@ -96,7 +97,7 @@ const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000
  * With `APIWEAVE_DEV_UPDATES=1`, a dev run reads `dev-app-update.yml` from the
  * app directory instead of the packaged `app-update.yml` and otherwise behaves
  * exactly like a shipped build — same provider, same manifest parsing, same
- * signature and sha512 checks, same install-on-quit. Point it at a throwaway
+ * sha512 and update-signature checks, same install-on-quit. Point it at a throwaway
  * repo and the whole path is testable in a loop.
  *
  * See docs/reference/release-and-updates.md for the procedure.
@@ -292,6 +293,10 @@ export class UpdateManager {
    */
   private silentCheck = false
 
+  /** Set once an install has been started, so the quit that follows
+   * {@link restartAndInstall} does not start a second one. */
+  private installStarted = false
+
   constructor(options: UpdateManagerOptions) {
     this.onChange = options.onChange
     this.writePolicy = options.writePolicy ?? ((): void => undefined)
@@ -309,10 +314,11 @@ export class UpdateManager {
     }
 
     if (this.autoInstall) {
-      // A download only ever begins unattended under the "automatic" policy.
-      // Once one has begun — by policy or by an explicit click — applying it at
-      // quit is what the user already consented to, so this stays on.
-      autoUpdater.autoInstallOnAppQuit = true
+      // electron-updater's own install-on-quit would run whatever it
+      // downloaded, before or regardless of the signature check in
+      // onDownloaded. So it is off, and onQuit below installs instead — only
+      // an update that reached "downloaded", which only a verified one does.
+      autoUpdater.autoInstallOnAppQuit = false
       autoUpdater.logger = updaterLog
       if (devUpdatesEnabled()) {
         // Makes electron-updater treat an unpackaged run as a real one. Nothing
@@ -355,8 +361,7 @@ export class UpdateManager {
         this.patch({ state: "not-available", latestVersion: info.version, lastCheckedAt: Date.now() })
       const onProgress = (progress: ProgressInfo): void =>
         this.patch({ downloadProgressPercent: Math.round(progress.percent) })
-      const onDownloaded = (info: UpdateInfo): void =>
-        this.patch({ state: "downloaded", latestVersion: info.version, downloadProgressPercent: 100 })
+      const onDownloaded = (event: UpdateDownloadedEvent): void => void this.verifyDownloaded(event)
       const onError = (error: Error): void => {
         if (this.silentCheck) {
           // A check the user never asked for must not paint an error they
@@ -382,7 +387,37 @@ export class UpdateManager {
       this.track("download-progress", onProgress)
       this.track("update-downloaded", onDownloaded)
       this.track("error", onError)
+
+      // A download only ever begins unattended under the "automatic" policy.
+      // Once one has begun — by policy or by an explicit click — and verified,
+      // applying it at quit is what the user already consented to. Same rules
+      // as electron-updater's own handler: silent, no relaunch, not on a crash.
+      const onQuit = (_event: Electron.Event, exitCode: number): void => {
+        if (this.status.state !== "downloaded" || this.installStarted || exitCode !== 0) return
+        this.installStarted = true
+        autoUpdater.quitAndInstall(true, false)
+      }
+      app.on("quit", onQuit)
+      this.disposers.push(() => app.off("quit", onQuit))
     }
+  }
+
+  /**
+   * The gate between a finished download and an install: the bytes on disk
+   * must carry a signature from the key compiled into this build (see
+   * update_signature.ts). An update that fails never reaches "downloaded", so
+   * neither restart-and-install nor install-on-quit will touch it.
+   */
+  private async verifyDownloaded(event: UpdateDownloadedEvent): Promise<void> {
+    const signature: unknown = Reflect.get(event, UPDATE_SIGNATURE_FIELD)
+    const failure = await verifyUpdateFile(event.downloadedFile, event.version, signature)
+    if (failure !== null) {
+      updaterLog.error(`refusing update ${event.version} (${event.downloadedFile}): ${failure}`)
+      this.patch({ state: "error", error: failure, downloadProgressPercent: null })
+      return
+    }
+    updaterLog.info(`update ${event.version} signature verified`)
+    this.patch({ state: "downloaded", latestVersion: event.version, downloadProgressPercent: 100 })
   }
 
   /**
@@ -591,7 +626,8 @@ export class UpdateManager {
 
   /** Only meaningful once `state === "downloaded"` (win/AppImage path). */
   restartAndInstall(): void {
-    if (this.status.state === "downloaded") {
+    if (this.status.state === "downloaded" && !this.installStarted) {
+      this.installStarted = true
       autoUpdater.quitAndInstall()
     }
   }

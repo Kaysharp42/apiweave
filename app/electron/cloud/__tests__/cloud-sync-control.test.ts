@@ -6,7 +6,7 @@ import nock from "nock"
 import type { Database, KVStore } from "../../../core/db"
 import { initDatabase } from "../../../core/db"
 import { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository } from "../../../core/repositories"
-import { createKeyfile, readKeyfile } from "../../../core/secrets/keyfile"
+import { createKeyfile } from "../../../core/secrets/keyfile"
 import { encrypt, generateDek, wrapDek } from "../../../core/secrets/crypto"
 import type { SyncProvider } from "../../../core/sync"
 import { DeviceTokenStore } from "../cloud-client"
@@ -36,12 +36,11 @@ describe("DesktopCloudSyncControl", () => {
   let db: Database
   let store: KVStore
   let tempDir: string
-  let keyfilePath: string
+  let masterKek: Uint8Array
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "cloud-sync-control-test-"))
-    keyfilePath = join(tempDir, "keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "keyfile.json"), null).masterKek
     const initialized = initDatabase({ databasePath: join(tempDir, "test.db") })
     db = initialized.database
     store = initialized.kvStore
@@ -65,7 +64,7 @@ describe("DesktopCloudSyncControl", () => {
     accountId: string,
     overrides: Partial<ConstructorParameters<typeof DesktopCloudSyncControl>[0]> = {},
   ): DesktopCloudSyncControl {
-    new DeviceTokenStore(repository, keyfilePath).setTokens("device-1", "access-token", "refresh-token")
+    new DeviceTokenStore(repository, masterKek).setTokens("device-1", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-1",
       label: "Test Device",
@@ -94,7 +93,7 @@ describe("DesktopCloudSyncControl", () => {
     repository.setSetting("cloud.account_identity", JSON.stringify({ accountId }))
     return new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -107,7 +106,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("revokes the device before removing account-scoped local state on unlink", async () => {
     const repository = new CloudSyncRepository(store)
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-1", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-1",
@@ -164,7 +163,7 @@ describe("DesktopCloudSyncControl", () => {
     let activeProvider: SyncProvider | undefined
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -371,7 +370,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("discards dead-lettered rows, keeps the binding and local record, and clears the error state", async () => {
     const repository = new CloudSyncRepository(store)
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-dl", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-dl",
@@ -410,7 +409,7 @@ describe("DesktopCloudSyncControl", () => {
 
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: { cloudEntryUrl: "https://cloud.test", clientVersion: "1.0.0", deviceLabel: "Test Device" },
       setSyncProviderTarget: () => undefined,
     })
@@ -467,7 +466,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("re-queues on retry and reports offline (not a hard error) when the push cannot reach the server", async () => {
     const repository = new CloudSyncRepository(store)
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-retry", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-retry",
@@ -506,7 +505,7 @@ describe("DesktopCloudSyncControl", () => {
 
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: { cloudEntryUrl: "https://cloud.test", clientVersion: "1.0.0", deviceLabel: "Test Device" },
       setSyncProviderTarget: () => undefined,
     })
@@ -524,7 +523,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("preserves local cloud state until an offline disconnect is explicitly confirmed", async () => {
     const repository = new CloudSyncRepository(store)
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-offline", "access-token", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-offline",
@@ -561,7 +560,7 @@ describe("DesktopCloudSyncControl", () => {
     }))
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -604,7 +603,7 @@ describe("DesktopCloudSyncControl", () => {
   it("cancels configuration discovery without waiting for OAuth timeout", async () => {
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -626,7 +625,7 @@ describe("DesktopCloudSyncControl", () => {
   it("aborts an in-flight link before clearing account state on unlink", async () => {
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -647,7 +646,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("automatically resumes a durable first-sync checkpoint after process restart", async () => {
     const repository = new CloudSyncRepository(store)
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-restart", "old-session", "restart-refresh")
     repository.upsertDevice({
       deviceId: "device-restart",
@@ -703,7 +702,7 @@ describe("DesktopCloudSyncControl", () => {
 
     new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -724,7 +723,7 @@ describe("DesktopCloudSyncControl", () => {
       "UPDATE workspaces SET settings_json = ? WHERE id = ?",
       [JSON.stringify({ description: null, isPersonal: false, deletedAt: null }), WORKSPACE_ID],
     )
-    const tokenStore = new DeviceTokenStore(repository, keyfilePath)
+    const tokenStore = new DeviceTokenStore(repository, masterKek)
     tokenStore.setTokens("device-bind", "bind-session", "bind-refresh")
     repository.upsertDevice({
       deviceId: "device-bind",
@@ -765,7 +764,7 @@ describe("DesktopCloudSyncControl", () => {
       .reply(503, { code: "UNAVAILABLE" })
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -794,7 +793,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("persists authentication-required state after an invalid refresh token", async () => {
     const repository = new CloudSyncRepository(store)
-    new DeviceTokenStore(repository, keyfilePath).setTokens("device-auth", "old-session", "invalid-refresh")
+    new DeviceTokenStore(repository, masterKek).setTokens("device-auth", "old-session", "invalid-refresh")
     repository.upsertDevice({
       deviceId: "device-auth",
       label: "Auth Device",
@@ -825,7 +824,7 @@ describe("DesktopCloudSyncControl", () => {
 
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -844,7 +843,7 @@ describe("DesktopCloudSyncControl", () => {
 
     const restarted = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -857,7 +856,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("reports offline separately without requiring account relink", async () => {
     const repository = new CloudSyncRepository(store)
-    new DeviceTokenStore(repository, keyfilePath).setTokens("device-offline-status", "old-session", "refresh-token")
+    new DeviceTokenStore(repository, masterKek).setTokens("device-offline-status", "old-session", "refresh-token")
     repository.upsertDevice({
       deviceId: "device-offline-status",
       label: "Offline Device",
@@ -887,7 +886,7 @@ describe("DesktopCloudSyncControl", () => {
     nock("https://auth.test").post("/oauth/v2/token").replyWithError("network unavailable")
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -903,7 +902,7 @@ describe("DesktopCloudSyncControl", () => {
 
   it("refreshes the authorized catalog and unbinds without deleting local content", async () => {
     const repository = new CloudSyncRepository(store)
-    new DeviceTokenStore(repository, keyfilePath).setTokens("device-catalog", "old-session", "catalog-refresh")
+    new DeviceTokenStore(repository, masterKek).setTokens("device-catalog", "old-session", "catalog-refresh")
     repository.upsertDevice({
       deviceId: "device-catalog",
       label: "Catalog Device",
@@ -956,7 +955,7 @@ describe("DesktopCloudSyncControl", () => {
       })
     const control = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -999,7 +998,7 @@ describe("DesktopCloudSyncControl", () => {
     }
     const missingIdentity = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -1014,7 +1013,7 @@ describe("DesktopCloudSyncControl", () => {
     const dek = generateDek()
     const mismatched = new DesktopCloudSyncControl({
       store,
-      keyfilePath,
+      masterKek,
       defaults: {
         cloudEntryUrl: "https://cloud.test",
         clientVersion: "1.0.0",
@@ -1034,7 +1033,7 @@ describe("DesktopCloudSyncControl", () => {
           },
           workspaces: [],
           encryptedRefreshToken: encrypt("replacement-refresh", dek, "test"),
-          wrappedDek: wrapDek(dek, readKeyfile(keyfilePath).masterKek),
+          wrappedDek: wrapDek(dek, masterKek),
           accessToken: "replacement-session",
         }
       },
@@ -1132,7 +1131,7 @@ describe("DesktopCloudSyncControl", () => {
     function control(configClient: () => Promise<typeof CONFIG>): DesktopCloudSyncControl {
       return new DesktopCloudSyncControl({
         store,
-        keyfilePath,
+        masterKek,
         defaults: { cloudEntryUrl: "https://cloud.test", clientVersion: "1.0.0", deviceLabel: "Test Device" },
         setSyncProviderTarget: () => undefined,
         configClient,

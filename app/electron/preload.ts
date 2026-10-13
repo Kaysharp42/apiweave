@@ -142,6 +142,7 @@ type McpBridge = {
   readonly getStatus: () => Promise<McpStatus>
   readonly enable: () => Promise<McpStatus>
   readonly disable: () => Promise<McpStatus>
+  readonly regenerateToken: () => Promise<McpStatus>
   readonly listTools: () => Promise<readonly MCPTool[]>
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>
   readonly listResources: () => Promise<readonly MCPResource[]>
@@ -152,6 +153,7 @@ const mcpBridge: McpBridge = {
   getStatus: call<McpStatus>("mcp:getStatus"),
   enable: call<McpStatus>("mcp:enable"),
   disable: call<McpStatus>("mcp:disable"),
+  regenerateToken: call<McpStatus>("mcp:regenerateToken"),
   listTools: call<readonly MCPTool[]>("mcp:listTools"),
   listPrompts: call<readonly MCPPrompt[]>("mcp:listPrompts"),
   listResources: call<readonly MCPResource[]>("mcp:listResources"),

@@ -151,13 +151,12 @@ function createFakeZitadel(options: FakeZitadelOptions = {}): Promise<{
 
 describe("cloud-link — happy path", () => {
   let tempDir: string
-  let keyfilePath: string
+  let masterKek: Uint8Array
   let fakeZitadel: Awaited<ReturnType<typeof createFakeZitadel>>
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), "apiweave-cloud-link-"))
-    keyfilePath = join(tempDir, "secrets.keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "secrets.keyfile.json"), null).masterKek
     fakeZitadel = await createFakeZitadel()
     mockOpenExternal.mockClear()
   })
@@ -174,7 +173,7 @@ describe("cloud-link — happy path", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -232,8 +231,7 @@ describe("cloud-link — happy path", () => {
     expect(result.encryptedRefreshToken.algorithm).toBe("aes-256-gcm")
 
     // Verify the refresh token can be decrypted.
-    const { readKeyfile } = await import("../../../core/secrets/keyfile")
-    const keyfile = readKeyfile(keyfilePath)
+    const keyfile = { masterKek }
     const dek = unwrapDek(result.wrappedDek, keyfile.masterKek)
     const decrypted = decrypt(result.encryptedRefreshToken, dek)
     expect(decrypted).toBe("fake-refresh-token")
@@ -250,7 +248,7 @@ describe("cloud-link — happy path", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -279,7 +277,7 @@ describe("cloud-link — happy path", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -297,8 +295,7 @@ describe("cloud-link — happy path", () => {
     const result = await linkPromise
 
     // Verify encryption uses the existing keyfile.
-    const { readKeyfile } = await import("../../../core/secrets/keyfile")
-    const keyfile = readKeyfile(keyfilePath)
+    const keyfile = { masterKek }
     const dek = unwrapDek(result.wrappedDek, keyfile.masterKek)
     const decrypted = decrypt(result.encryptedRefreshToken, dek)
     expect(decrypted).toBe("fake-refresh-token")
@@ -315,12 +312,11 @@ async function readRequestBody(request: http.IncomingMessage): Promise<string> {
 
 describe("cloud-link — negative cases", () => {
   let tempDir: string
-  let keyfilePath: string
+  let masterKek: Uint8Array
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "apiweave-cloud-link-"))
-    keyfilePath = join(tempDir, "secrets.keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "secrets.keyfile.json"), null).masterKek
     mockOpenExternal.mockClear()
   })
 
@@ -336,7 +332,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -363,7 +359,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -396,7 +392,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -428,7 +424,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -454,7 +450,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -475,7 +471,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -499,7 +495,7 @@ describe("cloud-link — negative cases", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -517,12 +513,11 @@ describe("cloud-link — negative cases", () => {
 
 describe("cloud-link — restart persistence", () => {
   let tempDir: string
-  let keyfilePath: string
+  let masterKek: Uint8Array
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "apiweave-cloud-link-"))
-    keyfilePath = join(tempDir, "secrets.keyfile.json")
-    createKeyfile(keyfilePath)
+    masterKek = createKeyfile(join(tempDir, "secrets.keyfile.json"), null).masterKek
     mockOpenExternal.mockClear()
   })
 
@@ -537,7 +532,7 @@ describe("cloud-link — restart persistence", () => {
       zitadelIssuer: fakeZitadel.baseUrl,
       desktopClientId: "test-client-id",
       apiBaseUrl: fakeZitadel.baseUrl,
-      keyfilePath,
+      masterKek,
       deviceLabel: "Test Device",
       devicePublicKey: new Uint8Array([1, 2, 3, 4]),
       clientVersion: "1.0.0",
@@ -556,8 +551,7 @@ describe("cloud-link — restart persistence", () => {
     const result = await linkPromise
 
     // Simulate process restart: re-read the keyfile and decrypt.
-    const { readKeyfile } = await import("../../../core/secrets/keyfile")
-    const keyfile = readKeyfile(keyfilePath)
+    const keyfile = { masterKek }
     const dek = unwrapDek(result.wrappedDek, keyfile.masterKek)
     const decrypted = decrypt(result.encryptedRefreshToken, dek)
 

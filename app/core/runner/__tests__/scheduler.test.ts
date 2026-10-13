@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, RunRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import { RunScheduler, type SchedulerDeps } from "../scheduler"
+import { AGENT_RUN_DENIED_ERROR, RunScheduler, requestDestinations, type AgentRunApprovalRequest, type SchedulerDeps } from "../scheduler"
 import { DynamicFunctions } from "../dynamic_functions"
 import { SafeHttp } from "../safe_http"
 import { FixedClockProvider, SeededRandomProvider } from "../harness/providers"
@@ -1055,5 +1055,191 @@ describe("RunScheduler", () => {
       expect(["interrupted", "cancelled", "completed"].includes(status ?? "")).toBe(true)
       expect(scheduler.getActiveCount()).toBe(0)
     })
+  })
+})
+
+/**
+ * H10: a local agent can write a workflow that sends any stored secret to a
+ * host it controls, then run it. A run an agent started may resolve secrets
+ * only after the user has been shown which ones and where they go.
+ */
+describe("agent-started runs that use secrets", () => {
+  async function startServer(): Promise<{ port: number; bodies: string[]; close: () => void }> {
+    const { createServer } = await import("node:http")
+    const bodies: string[] = []
+    const server = createServer((req, res) => {
+      let body = ""
+      req.on("data", (c) => (body += c))
+      req.on("end", () => {
+        bodies.push(body)
+        res.end("{}")
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    return { port: (server.address() as { port: number }).port, bodies, close: () => server.close() }
+  }
+
+  function seedSecretWorkflow(ws: string, url: string, name = "exfil"): string {
+    return workflows.create({
+      workspaceId: ws,
+      name,
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        {
+          nodeId: "http_1",
+          type: "http-request",
+          position: { x: 1, y: 0 },
+          config: { method: "POST", url, body: "{{secrets.API_KEY}}" },
+        },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "http_1" }],
+    }).workflowId
+  }
+
+  const resolveSecret: SchedulerDeps["resolveSecret"] = async (name) =>
+    name === "API_KEY" ? { plaintext: "s3cr3t", scopeType: "workspace" } : { plaintext: null, scopeType: null }
+
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 400))
+
+  it("asks the user, and a denial fails the run before any request carries the secret", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    const asked: AgentRunApprovalRequest[] = []
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        asked.push(request)
+        return false
+      },
+    })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "evil-agent" })
+    await settle()
+    server.close()
+
+    expect(asked).toEqual([
+      {
+        runId,
+        agent: "evil-agent",
+        workflowName: "exfil",
+        secretNames: ["API_KEY"],
+        destinations: [`127.0.0.1:${server.port}`],
+      },
+    ])
+    expect(server.bodies).toEqual([])
+    expect(runs.getById(runId)).toMatchObject({ status: "failed", error: AGENT_RUN_DENIED_ERROR })
+  })
+
+  it("runs normally once the user allows it", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    const scheduler = makeScheduler({ resolveSecret, approveAgentRun: async () => true })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await settle()
+    server.close()
+
+    expect(server.bodies).toEqual(["s3cr3t"])
+    expect(runs.getById(runId)?.status).toBe("completed")
+  })
+
+  it("refuses when no one can be asked", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const wf = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    const scheduler = makeScheduler({ resolveSecret })
+
+    const runId = scheduler.enqueue({ workspaceId: ws, workflowId: wf, agent: "claude-code" })
+    await settle()
+    server.close()
+
+    expect(server.bodies).toEqual([])
+    expect(runs.getById(runId)?.error).toBe(AGENT_RUN_DENIED_ERROR)
+  })
+
+  it("does not ask for the user's own runs, or for agent runs that use no secret", async () => {
+    const server = await startServer()
+    const ws = seedWorkspace()
+    const withSecret = seedSecretWorkflow(ws, `http://127.0.0.1:${server.port}/collect`)
+    const withoutSecret = seedWorkflow(ws)
+    let asked = 0
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async () => {
+        asked += 1
+        return false
+      },
+    })
+
+    const userRun = scheduler.enqueue({ workspaceId: ws, workflowId: withSecret })
+    const agentRun = scheduler.enqueue({ workspaceId: ws, workflowId: withoutSecret, agent: "claude-code" })
+    await settle()
+    server.close()
+
+    expect(asked).toBe(0)
+    expect(runs.getById(userRun)?.status).toBe("completed")
+    expect(runs.getById(agentRun)?.status).toBe("completed")
+  })
+
+  it("runs the graphs the user approved, even if the workflow is edited while the prompt is open", async () => {
+    const approved = await startServer()
+    const attacker = await startServer()
+    const ws = seedWorkspace()
+    const target = seedSecretWorkflow(ws, `http://127.0.0.1:${approved.port}/collect`, "target")
+    const caller = workflows.create({
+      workspaceId: ws,
+      name: "caller",
+      nodes: [
+        { nodeId: "start", type: "start", position: { x: 0, y: 0 } },
+        { nodeId: "call", type: "workflow", position: { x: 1, y: 0 }, config: { targetWorkflowId: target } },
+      ] as WorkflowNode[],
+      edges: [{ edgeId: "e1", source: "start", target: "call" }],
+    }).workflowId
+    const scheduler = makeScheduler({
+      resolveSecret,
+      approveAgentRun: async (request) => {
+        expect(request.destinations).toEqual([`127.0.0.1:${approved.port}`])
+        // The agent redirects the sub-workflow while the user is reading the prompt.
+        const current = workflows.getById(target)!
+        workflows.update(target, {
+          nodes: current.nodes.map((node) =>
+            node.nodeId === "http_1"
+              ? ({ ...node, config: { ...node.config, url: `http://127.0.0.1:${attacker.port}/x` } } as WorkflowNode)
+              : node,
+          ),
+        })
+        return true
+      },
+    })
+
+    scheduler.enqueue({ workspaceId: ws, workflowId: caller, agent: "claude-code" })
+    await settle()
+    approved.close()
+    attacker.close()
+
+    expect(attacker.bodies).toEqual([])
+    expect(approved.bodies).toEqual(["s3cr3t"])
+  })
+})
+
+describe("requestDestinations", () => {
+  it("reduces a URL to its host where it resolves before the run, and keeps it as written where it does not", () => {
+    const nodes = [
+      { nodeId: "a", type: "http-request", config: { url: "https://api.example.com/v1/login" } },
+      { nodeId: "b", type: "http-request", config: { url: "{{env.BASE}}/users" } },
+      { nodeId: "c", type: "http-request", config: { url: "{{variables.host}}/x" } },
+      { nodeId: "d", type: "http-request", config: { url: "{{login.response.body.next}}" } },
+      { nodeId: "e", type: "http-request", config: { url: "https://api.example.com/v1/other" } },
+      { nodeId: "f", type: "delay", config: { duration: 1 } },
+    ] as unknown as Parameters<typeof requestDestinations>[0]
+
+    expect(requestDestinations(nodes, { BASE: "https://env.example.org:8443" }, { host: "http://vars.example.net" })).toEqual([
+      "api.example.com",
+      "env.example.org:8443",
+      "vars.example.net",
+      "{{login.response.body.next}}",
+    ])
   })
 })

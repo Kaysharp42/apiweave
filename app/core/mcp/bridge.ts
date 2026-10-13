@@ -92,7 +92,8 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
         annotations: toolAnnotations(spec),
       },
       (args: Record<string, unknown>, extra?: { readonly signal?: AbortSignal }) =>
-        dispatchAsTool(router, spec, args, extra?.signal),
+        // The client's name from `initialize`; a sessionless one-shot never sent one.
+        dispatchAsTool(router, spec, args, server.server.getClientVersion()?.name ?? "An unnamed MCP client", extra?.signal),
     )
   }
 }
@@ -102,6 +103,7 @@ async function dispatchAsTool(
   router: IpcRouter,
   spec: McpToolSpec,
   args: Record<string, unknown>,
+  agent: string,
   signal?: AbortSignal,
 ): Promise<CallToolResult> {
   // Copy: the SDK owns `args`, and the defaults below must not write into it.
@@ -128,7 +130,7 @@ async function dispatchAsTool(
   try {
     result = await router.dispatch(
       { domain: spec.domain, action: spec.action, payload },
-      { redactSecrets: true, ...(signal !== undefined ? { signal } : {}) },
+      { redactSecrets: true, agent, ...(signal !== undefined ? { signal } : {}) },
     )
   } catch (error) {
     // A cancelled wait is client-side cancellation (disconnect, explicit cancel,

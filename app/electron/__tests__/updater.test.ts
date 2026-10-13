@@ -7,6 +7,7 @@ const CURRENT_VERSION = "0.6.3"
 
 const electronApp = { isPackaged: true, getVersion: () => CURRENT_VERSION }
 const mockOpenExternal = vi.fn()
+const quitListeners = new Set<(event: unknown, exitCode: number) => void>()
 
 vi.mock("electron", () => ({
   app: {
@@ -14,6 +15,8 @@ vi.mock("electron", () => ({
       return electronApp.isPackaged
     },
     getVersion: () => electronApp.getVersion(),
+    on: (_event: "quit", handler: (event: unknown, exitCode: number) => void) => quitListeners.add(handler),
+    off: (_event: "quit", handler: (event: unknown, exitCode: number) => void) => quitListeners.delete(handler),
   },
   shell: {
     openExternal: (...args: unknown[]) => mockOpenExternal(...args),
@@ -51,6 +54,23 @@ function listenerCount(): number {
   let total = 0
   for (const handlers of updaterListeners.values()) total += handlers.size
   return total
+}
+
+// The signature check itself is covered in update_signature.test.ts against
+// real keys; here it is the gate the manager has to respect.
+const mockVerify = vi.hoisted(() => vi.fn((): Promise<string | null> => Promise.resolve(null)))
+vi.mock("../update_signature", () => ({
+  UPDATE_SIGNATURE_FIELD: "apiweaveSignature",
+  verifyUpdateFile: mockVerify,
+}))
+
+/** An electron-updater `update-downloaded` payload. */
+function downloaded(version: string): unknown {
+  return { version, downloadedFile: `/cache/APIWeave-${version}.exe`, apiweaveSignature: "c2ln" }
+}
+
+function quit(exitCode = 0): void {
+  for (const handler of quitListeners) handler({}, exitCode)
 }
 
 vi.mock("electron-updater", () => ({
@@ -134,8 +154,13 @@ const MANIFEST_URL = "https://github.com/Kaysharp42/apiweave/releases/latest/dow
 beforeEach(() => {
   electronApp.isPackaged = true
   updaterListeners.clear()
+  quitListeners.clear()
+  mockVerify.mockReset()
+  mockVerify.mockResolvedValue(null)
+  vi.mocked(autoUpdater.quitAndInstall).mockClear()
   mockOpenExternal.mockClear()
   mockLog.warn.mockClear()
+  mockLog.error.mockClear()
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   vi.mocked(autoUpdater.checkForUpdates).mockClear()
@@ -393,7 +418,7 @@ describe("UpdateManager on the notice-only path", () => {
 })
 
 describe("UpdateManager on the auto-installing path", () => {
-  it("maps the electron-updater lifecycle onto renderer status", () => {
+  it("maps the electron-updater lifecycle onto renderer status", async () => {
     const { manager } = createManager("win32", "automatic")
     expect(manager.getStatus().supportsAutoInstall).toBe(true)
 
@@ -407,8 +432,25 @@ describe("UpdateManager on the auto-installing path", () => {
     emit("download-progress", { percent: 42.7 })
     expect(manager.getStatus().downloadProgressPercent).toBe(43)
 
-    emit("update-downloaded", { version: "0.7.0" })
-    expect(manager.getStatus()).toMatchObject({ state: "downloaded", downloadProgressPercent: 100 })
+    emit("update-downloaded", downloaded("0.7.0"))
+    await vi.waitFor(() => expect(manager.getStatus()).toMatchObject({ state: "downloaded", downloadProgressPercent: 100 }))
+    expect(mockVerify).toHaveBeenCalledWith("/cache/APIWeave-0.7.0.exe", "0.7.0", "c2ln")
+  })
+
+  it("refuses a download whose signature does not verify", async () => {
+    const { manager } = createManager("win32", "automatic")
+    mockVerify.mockResolvedValue("The update to 0.7.0 failed its signature check, so it will not be installed.")
+    emit("update-available", { version: "0.7.0" })
+
+    emit("update-downloaded", downloaded("0.7.0"))
+
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("error"))
+    expect(manager.getStatus().error).toMatch(/signature check/)
+    expect(mockLog.error).toHaveBeenCalled()
+    // Neither install path may touch it.
+    manager.restartAndInstall()
+    quit()
+    expect(vi.mocked(autoUpdater.quitAndInstall)).not.toHaveBeenCalled()
   })
 
   it("clears stale progress when the check errors out", () => {
@@ -468,11 +510,56 @@ describe("UpdateManager policy", () => {
     expect(autoUpdater.autoDownload).toBe(true)
   })
 
-  it("still applies an already-started download at quit", () => {
+  it("still applies a verified download at quit", async () => {
     // Whether the download began by policy or by an explicit click, the user
     // has consented to this version — throwing it away at quit helps nobody.
+    const { manager } = createManager("win32", "notify")
+    emit("update-downloaded", downloaded("0.7.0"))
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("downloaded"))
+
+    quit()
+
+    expect(vi.mocked(autoUpdater.quitAndInstall)).toHaveBeenCalledWith(true, false)
+  })
+
+  it("never lets electron-updater install on quit by itself", () => {
+    // Its handler would run the download before, or regardless of, the
+    // signature check.
+    autoUpdater.autoInstallOnAppQuit = true
     createManager("win32", "notify")
-    expect(autoUpdater.autoInstallOnAppQuit).toBe(true)
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it("installs nothing at quit while the signature check is still running", () => {
+    const { manager } = createManager("win32", "notify")
+    mockVerify.mockReturnValue(new Promise(() => undefined))
+    emit("update-downloaded", downloaded("0.7.0"))
+
+    quit()
+
+    expect(manager.getStatus().state).not.toBe("downloaded")
+    expect(vi.mocked(autoUpdater.quitAndInstall)).not.toHaveBeenCalled()
+  })
+
+  it("installs once when restart-and-install is followed by the quit it causes", async () => {
+    const { manager } = createManager("win32", "notify")
+    emit("update-downloaded", downloaded("0.7.0"))
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("downloaded"))
+
+    manager.restartAndInstall()
+    quit()
+
+    expect(vi.mocked(autoUpdater.quitAndInstall)).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not install at quit after a crash", async () => {
+    const { manager } = createManager("win32", "notify")
+    emit("update-downloaded", downloaded("0.7.0"))
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("downloaded"))
+
+    quit(1)
+
+    expect(vi.mocked(autoUpdater.quitAndInstall)).not.toHaveBeenCalled()
   })
 
   it("downloads on request once a notice has been raised", async () => {
@@ -664,7 +751,8 @@ describe("UpdateManager background checks", () => {
 
   it("does not re-check once an update is staged for restart", async () => {
     const { manager } = createManager("win32", "notify")
-    emit("update-downloaded", { version: "0.7.0" })
+    emit("update-downloaded", downloaded("0.7.0"))
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("downloaded"))
     vi.mocked(autoUpdater.checkForUpdates).mockClear()
 
     await manager.backgroundCheck()

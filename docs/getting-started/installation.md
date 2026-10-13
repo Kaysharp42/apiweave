@@ -87,7 +87,7 @@ When APIWeave opens for the first time:
   - **macOS**: `~/Library/Application Support/APIWeave`
   - **Linux**: `~/.config/APIWeave`
 - A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied.
-- The keyfile for the encrypted secret store is generated and written to the data directory as `keyfile.json`. Treat this file like a private key: if you copy it elsewhere, the secret store follows it. If you delete it, the secret store is gone for good.
+- The keyfile for the encrypted secret store is generated and written to the data directory as `keyfile.json`. Its key is sealed by the operating system keychain (Keychain on macOS, DPAPI on Windows, GNOME Keyring or KWallet on Linux), so the file opens only for the same user on the same machine. On Linux without a running keyring it is stored unsealed, and the log says so; it is sealed in place the first time a keyring is available. If you delete it, the secret store is gone for good. If it is missing but the database holds secrets, APIWeave does not silently make a new one: it asks whether to quit (so you can restore `keyfile.json` from the same backup as the database) or to delete the secrets it can no longer open and continue.
 - The app lands directly on the workflows list. No login is required to use the app; an optional Cloud account adds sync and collaboration later.
 
 ## Optional: Enable the Local MCP Bridge
@@ -114,7 +114,7 @@ APIWeave checks GitHub Releases for a newer version shortly after launch, then e
 
 Checks the app makes on its own stay quiet unless they find something: no spinner appears in a panel you did not open, and a check that fails because the machine was briefly offline is written to the log rather than shown as an error. A check *you* start always reports what happened.
 
-The default is **Notify me** rather than **Automatic** on purpose. The Windows and macOS builds are not code-signed yet, so the updater has no publisher certificate to verify a downloaded installer against — you approving each version is the strongest check available. Once signing lands, **Automatic** becomes a reasonable default.
+Every update is checked before it can install: the release pipeline signs each update, and the app refuses any download whose signature does not match the key built into it — the Updates panel says so instead of installing. The default is still **Notify me** rather than **Automatic**, because the Windows and macOS builds are not OS code-signed yet, and you approving each version stays the last check before new code runs.
 
 Which of those the app can actually carry out depends on the platform:
 

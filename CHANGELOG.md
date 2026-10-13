@@ -11,6 +11,57 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **An agent can no longer send your secrets anywhere without asking.** A
+  local agent could write a workflow that sends any stored secret to a host it
+  controls, then run it over MCP. A run an agent starts that would send secrets
+  now waits for you to approve it in a native dialog that names the agent, the
+  workflow, the secrets and the destinations. Deny, or no answer within two
+  minutes, fails the run before any request, and the agent sees
+  `deniedByUser: true`. A run also now executes the Call Workflow targets as
+  they were when it started.
+- **The secrets key is sealed by the OS keychain.** `keyfile.json` held the
+  master key in plaintext beside the database. It is now sealed with the
+  operating system keychain (Keychain, DPAPI, GNOME Keyring or KWallet), and an
+  existing plaintext keyfile is sealed in place on first launch. On Linux
+  without a keyring it stays unsealed and the log warns. A sealed keyfile opens
+  only for the same user on the same machine, so secrets no longer move with a
+  copied data folder.
+- **A missing keyfile no longer orphans your secrets silently.** If
+  `keyfile.json` is missing or cannot be opened while the database holds
+  secrets, APIWeave asks whether to quit, so the keyfile can be restored, or to
+  delete the secrets it cannot open and continue. It used to create a new
+  keyfile without a word.
+- **The MCP token can be regenerated.** MCP settings have a **Regenerate
+  token** action that replaces the access token and closes the sessions opened
+  with the old one.
+- **The MCP server only answers to its own address.** Requests whose `Host`
+  header is not `127.0.0.1:<port>` or `localhost:<port>` are refused, so a web
+  page that rebinds its domain to the loopback address cannot reach it.
+- **A workflow name cannot pose as agent instructions.** The session briefing
+  quotes the workflow or project name as a JSON string, so a name containing
+  line breaks or Markdown cannot add headings or instructions of its own.
+- **Prompts are escaped for `cmd.exe` on Windows.** An agent installed as a
+  `.cmd` shim (most npm-installed CLIs) runs through `cmd.exe`, which acted on
+  `&`, `|`, `%` and similar characters in the prompt. The embedded terminal now
+  escapes them; a prompt with a line break is refused there, since `cmd.exe`
+  cannot carry one. Launching such an agent in an external terminal refuses
+  those characters instead.
+- **Updates are signed, and the app refuses one that is not.** Releases sign
+  each Windows and AppImage update with a private key held as a CI secret,
+  and the app checks the downloaded installer against the key built
+  into it before it can install. A download that fails is never installed, and
+  the Updates panel says why. Previously anyone able to write a GitHub release
+  asset could ship code to every install.
+- **Packaged builds are locked down.** Electron fuses now ignore
+  `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS` and `--inspect`,
+  load only the integrity-checked `app.asar`, and encrypt cookies at rest. A
+  packaged build ignores `APIWEAVE_FRONTEND_DIST`. The window has a full
+  Content Security Policy instead of one covering only scripts, every web
+  permission except clipboard access is denied, and the window can no longer
+  be navigated to `file:` or `data:` URLs.
+
 ### Fixed
 
 - **Deleting a synced workspace now deletes it in Cloud.** The deletion was

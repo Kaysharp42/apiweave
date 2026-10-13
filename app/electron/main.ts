@@ -1,6 +1,7 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from "electron"
 import path from "node:path"
+import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
 import { emitRunProgress, isTrustedSender } from "../core/ipc/register"
@@ -18,7 +19,8 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../core/repositories"
-import { createKeyfile, readKeyfile, keyfileExists } from "../core/secrets/keyfile"
+import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
+import { osKeyProtector } from "./key_protector"
 import {
   AgentService,
   ScopeResolver,
@@ -73,9 +75,11 @@ import {
   WORKFLOW_CHANGED_CHANNEL,
 } from "../core/ipc/channels"
 import { UpdateManager } from "./updater"
+import { CONTENT_SECURITY_POLICY, isAppUrl, restrictPermissions } from "./web_security"
 import { getLogger } from "../core/logging/logger"
 import { initLogging, ipcLog, logFilePath, revealLogFile } from "./logging"
 import { startupFailureMessage } from "./startup_failure"
+import { AGENT_RUN_APPROVAL_TIMEOUT_MS, agentRunApprovalText } from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
@@ -174,24 +178,12 @@ const mayQuit = createQuitGate(
   () => app.quit(),
 )
 
-const APP_ORIGIN = "app://local"
-
-function isAppOrigin(url: string): boolean {
-  try {
-    return new URL(url).origin === new URL(APP_ORIGIN).origin
-  } catch {
-    return false
-  }
-}
-
 function frontendDistDir(): string {
-  if (process.env["APIWEAVE_FRONTEND_DIST"]) {
-    return process.env["APIWEAVE_FRONTEND_DIST"]
-  }
-
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "renderer")
-    : path.resolve(app.getAppPath(), "dist/renderer")
+  // A packaged build serves only the renderer it shipped with: honouring the
+  // override there would let anything that can set an environment variable
+  // swap in a document that inherits the preload bridge.
+  if (app.isPackaged) return path.join(process.resourcesPath, "renderer")
+  return process.env["APIWEAVE_FRONTEND_DIST"] || path.resolve(app.getAppPath(), "dist/renderer")
 }
 
 /**
@@ -296,7 +288,7 @@ async function createWindow(): Promise<void> {
   // Never let the privileged app:// document navigate to attacker-controlled
   // content — that content would inherit the same preload/IPC bridge.
   win.webContents.on("will-navigate", (event, url) => {
-    if (!isAppOrigin(url)) {
+    if (!isAppUrl(url)) {
       event.preventDefault()
     }
   })
@@ -324,6 +316,44 @@ async function createWindow(): Promise<void> {
   }
 }
 
+/**
+ * Open the secrets keyfile, or ask the user what to do when the secrets in the
+ * database cannot be opened: the keyfile is missing (a database restored
+ * without it), or the OS keychain that seals it will not open it (locked, or a
+ * data folder copied from another machine or user). Quitting (the default)
+ * changes nothing, so the keyfile can still be put back or the keychain
+ * unlocked; the other choice deletes the secrets that can no longer be opened
+ * and starts with a new keyfile — an unopenable one is set aside, never
+ * deleted. Returns `null` when the user chose to quit.
+ */
+function openKeyfileAtStartup(keyfilePath: string, secrets: SecretRepository): Keyfile | null {
+  const os = osKeyProtector()
+  if (os.protector === null) {
+    bootstrapLog.warn(`secrets keyfile is stored unencrypted: ${os.reason}`)
+  }
+  try {
+    return openKeyfile(keyfilePath, os.protector, secrets.countSealed())
+  } catch (error) {
+    if (!(error instanceof KeyfileMissing || error instanceof KeyfileLocked)) throw error
+    const choice = dialog.showMessageBoxSync({
+      type: "error",
+      title: "APIWeave secrets key is missing",
+      message: "Your stored secrets cannot be decrypted",
+      detail: `${error.message}\n\nData folder: ${app.getPath("userData")}`,
+      buttons: ["Quit", "Delete stored secrets and continue"],
+      defaultId: 0,
+      cancelId: 0,
+    })
+    if (choice !== 1) return null
+    const deleted = secrets.deleteAll()
+    if (error instanceof KeyfileLocked) {
+      renameSync(keyfilePath, `${keyfilePath}.unopenable-${Date.now()}`)
+    }
+    bootstrapLog.warn(`${error.name}: deleted ${deleted} undecryptable secret(s) at the user's request`)
+    return openKeyfile(keyfilePath, os.protector, 0)
+  }
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 bootstrapLog.info(`single-instance-lock=${hasSingleInstanceLock}`)
 
@@ -346,6 +376,7 @@ if (!hasSingleInstanceLock) {
   })
 
   app.whenReady().then(() => {
+    restrictPermissions(session.defaultSession)
     database = initDatabase({ userDataPath: app.getPath("userData") })
     // One-shot in-place rewrite: any workflow row persisted before the
     // strict canonical-node schema landed is rewritten so its http-request
@@ -403,14 +434,22 @@ if (!hasSingleInstanceLock) {
     const sync = new SwitchableSyncProvider(new LocalOnlySyncProvider())
 
     // Keyfile: the persisted master KEK that deterministically derives the
-    // sealed-box private seed. Seeded once on first run; read thereafter. Lose
-    // it and every stored secret is orphaned (intentional — never auto-regenerate).
+    // sealed-box private seed. Seeded once on first run; read thereafter, and
+    // sealed by the OS keychain where there is one. Lose it and every stored
+    // secret is orphaned (intentional — never auto-regenerate).
     const keyfilePath = path.join(app.getPath("userData"), "keyfile.json")
-    const keyfile = keyfileExists(keyfilePath) ? readKeyfile(keyfilePath) : createKeyfile(keyfilePath)
+    const keyfile = openKeyfileAtStartup(keyfilePath, secretStore)
+    if (keyfile === null) {
+      bootstrapLog.info("keyfile missing with stored secrets; user chose to quit")
+      database.close()
+      database = null
+      app.exit(1)
+      return
+    }
     const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, environments, keyfile.masterKek)
     const cloud = new DesktopCloudSyncControl({
       store: database.kvStore,
-      keyfilePath,
+      masterKek: keyfile.masterKek,
       defaults: cloudDefaults(app.getVersion()),
       setSyncProviderTarget: (provider) => sync.setTarget(provider),
       onWorkflowChanged: onRawWorkflowWrite,
@@ -458,6 +497,27 @@ if (!hasSingleInstanceLock) {
       resolveSecret: (name, chain) =>
         secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
       emitProgress: (runId, event) => runEvents.publish(runId, event),
+      approveAgentRun: async (request, signal) => {
+        const win = mainWindow
+        if (win === null || win.isDestroyed()) return false
+        if (!win.isFocused()) win.flashFrame(true)
+        const { message, detail } = agentRunApprovalText(request)
+        const { response } = await dialog.showMessageBox(win, {
+          type: "warning",
+          title: "Allow an agent to use your secrets?",
+          message,
+          detail,
+          buttons: ["Deny", "Allow once"],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+          // Closed as cancelled — a deny — on timeout or when the run is cancelled.
+          signal: AbortSignal.any([signal, AbortSignal.timeout(AGENT_RUN_APPROVAL_TIMEOUT_MS)]),
+        })
+        if (!win.isDestroyed()) win.flashFrame(false)
+        mcpLog.info(`agent run ${request.runId}: secrets ${response === 1 ? "allowed" : "denied"} by the user`)
+        return response === 1
+      },
     })
 
     const interrupted = scheduler.reconcileOnStartup()
@@ -562,6 +622,14 @@ if (!hasSingleInstanceLock) {
       }),
     )
     ipcMain.handle(
+      "mcp:regenerateToken",
+      requireTrustedSender(async () => {
+        if (mcpHost === null) throw new Error("The MCP server is not running")
+        await mcpHost.regenerateToken()
+        return mcpStatus()
+      }),
+    )
+    ipcMain.handle(
       "mcp:listTools",
       requireTrustedSender(
         (): readonly MCPTool[] => [
@@ -651,9 +719,9 @@ if (!hasSingleInstanceLock) {
     // lets them check on demand.
     // How much the updater may do unattended is the user's call, persisted in
     // app_settings alongside mcp.enabled. The default is "notify" rather than
-    // "automatic": the Windows build is unsigned, so electron-updater has no
-    // Authenticode publisher to check the downloaded installer against, and the
-    // user approving a specific version is the only verification there is.
+    // "automatic": every update must carry a signature from the key compiled
+    // into the app (update_signature.ts), but the user approving a specific
+    // version is still the last check before new code runs.
     const readUpdatePolicy = (): UpdatePolicy | null => {
       if (database === null) return null
       const value = appSettings.get("updates.policy")
@@ -870,18 +938,9 @@ if (!hasSingleInstanceLock) {
       // never cache.
       const headers = new Headers(response.headers)
       headers.set("Cache-Control", "no-store")
-      // Restrict the renderer document to same-origin scripts/workers only.
-      // Monaco is now bundled locally (see src/lib/monaco.ts) and the editor
-      // assets are served from app://local, so no CDN script source is needed.
-      // Other resource types (fonts, images, styles) are left unrestricted to
-      // keep web-font loading working; only script/worker execution is pinned.
-      // 'wasm-unsafe-eval' allows WebAssembly.instantiate (libsodium ships a
-      // wasm build) without granting full eval.
+      // The policy, and why each source is in it, lives in web_security.ts.
       if (pathname === "/index.html") {
-        headers.set(
-          "Content-Security-Policy",
-          "script-src 'self' app: 'wasm-unsafe-eval'; worker-src 'self' app: blob:",
-        )
+        headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
       }
       return new Response(response.body, {
         status: response.status,

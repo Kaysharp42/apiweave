@@ -9,7 +9,7 @@ export interface McpTokenInfo {
   readonly port: number
 }
 
-/** 128-bit static per-install token, hex-encoded. */
+/** 128-bit per-install token, hex-encoded. Kept across restarts; replaced only by `McpHost.regenerateToken`. */
 export function generateToken(): string {
   return randomBytes(16).toString("hex")
 }

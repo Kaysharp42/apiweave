@@ -103,7 +103,8 @@ interface DesktopCloudSyncDefaults {
 
 export interface DesktopCloudSyncControlOptions {
   readonly store: KVStore
-  readonly keyfilePath: string
+  /** The keyfile master KEK — read once at startup by the composition root. */
+  readonly masterKek: Uint8Array
   readonly defaults: DesktopCloudSyncDefaults
   readonly configClient?: DesktopCloudConfigClient
   readonly linkClient?: typeof startDeviceLink
@@ -165,7 +166,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
   public constructor(private readonly options: DesktopCloudSyncControlOptions) {
     this.repository = new CloudSyncRepository(options.store, options.onWorkflowChanged)
     this.settings = new AppSettingsRepository(options.store)
-    this.tokenStore = new DeviceTokenStore(this.repository, options.keyfilePath)
+    this.tokenStore = new DeviceTokenStore(this.repository, options.masterKek)
     this.firstSyncService = new CloudFirstSyncService(options.store)
     this.activeConfig = this.loadPersistedConfig()
     this.workspaceCatalog = this.loadWorkspaceCatalog()
@@ -388,7 +389,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
         zitadelIssuer: config.oidcIssuer,
         desktopClientId: config.desktopClientId,
         apiBaseUrl: config.apiBaseUrl,
-        keyfilePath: this.options.keyfilePath,
+        masterKek: this.options.masterKek,
         deviceLabel: input.deviceLabel ?? this.options.defaults.deviceLabel,
         devicePublicKey: makeDevicePublicKey(),
         clientVersion: this.options.defaults.clientVersion,
@@ -401,7 +402,7 @@ export class DesktopCloudSyncControl implements CloudSyncControl {
 
       const catalog = result.workspaces.map(toCatalogEntry)
       this.repository.transaction((repository) => {
-        const tokenStore = new DeviceTokenStore(repository, this.options.keyfilePath)
+        const tokenStore = new DeviceTokenStore(repository, this.options.masterKek)
         tokenStore.setEncryptedTokens(
           result.device.deviceId,
           result.encryptedRefreshToken,

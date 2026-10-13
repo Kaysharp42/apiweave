@@ -16,6 +16,29 @@ import { createSecretMasker } from "./secret_masker"
 
 const DEFAULT_CONCURRENCY_CAP = 4
 
+/**
+ * The run error of an agent-started run the user did not allow to send
+ * secrets. Fixed text — it is persisted and shown in History, and the MCP run
+ * projection recognises it to report `deniedByUser` without exposing errors.
+ */
+export const AGENT_RUN_DENIED_ERROR =
+  "Not run: an agent started this run and it was not allowed to send secrets"
+
+/** What the user is asked before an agent-started run may use secrets. */
+export interface AgentRunApprovalRequest {
+  readonly runId: string
+  /** The MCP client's own name for itself — self-reported, shown as such. */
+  readonly agent: string
+  readonly workflowName: string
+  /** Secret names that resolved to a value and would be sent. */
+  readonly secretNames: readonly string[]
+  /**
+   * Where the run's requests go: the host where a URL resolves statically
+   * (literal, `{{env.*}}`, `{{variables.*}}`), the URL as written otherwise.
+   */
+  readonly destinations: readonly string[]
+}
+
 export interface SchedulerDeps {
   readonly runs: RunRepository
   readonly workflows: WorkflowRepository
@@ -33,6 +56,13 @@ export interface SchedulerDeps {
     name: string,
     chain: { environmentId?: string; workspaceId?: string },
   ) => Promise<{ plaintext: string | null; scopeType: "environment" | "workspace" | null }>
+  /**
+   * Ask the user, over a path no MCP client can reach, whether an
+   * agent-started run may send the secrets it resolved. Resolves false on
+   * deny, timeout or `signal` (the run was cancelled). Absent means no one can
+   * be asked, so such a run is refused.
+   */
+  readonly approveAgentRun?: (request: AgentRunApprovalRequest, signal: AbortSignal) => Promise<boolean>
 }
 
 export interface EnqueueRequest {
@@ -41,6 +71,8 @@ export interface EnqueueRequest {
   readonly startNodeIds?: readonly string[]
   readonly variables?: Readonly<Record<string, unknown>>
   readonly selectedEnvironmentId?: string | null
+  /** Set when an agent started the run over MCP: the client's name. */
+  readonly agent?: string
 }
 
 /**
@@ -57,6 +89,8 @@ export interface EnqueueRequest {
  */
 export class RunScheduler {
   private readonly activeRuns = new Map<string, AbortController>()
+  /** runId → agent name, for runs an agent started. In memory: a restart interrupts every run anyway. */
+  private readonly agentRuns = new Map<string, string>()
   private readonly queue: string[] = []
   private draining = false
 
@@ -101,6 +135,7 @@ export class RunScheduler {
       ...(request.variables ? { variables: request.variables as Record<string, JsonValue> } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
     })
+    if (request.agent !== undefined) this.agentRuns.set(run.runId, request.agent)
     this.queue.push(run.runId)
     void this.drain()
     return run.runId
@@ -202,9 +237,41 @@ export class RunScheduler {
         throw new Error(`environment ${selectedEnvironmentId} not found for run ${runId}`)
       }
 
-      const secretResolution = await this.resolveRunSecrets(graph, run.workflowId, selectedEnvironmentId, run.workspaceId)
+      // Every workflow the run can reach, read once, now: the secrets scan, the
+      // agent approval and the Call Workflow nodes all see the same graphs, so
+      // an edit made while the run waits for approval or runs cannot change
+      // where an approved secret goes.
+      const reachable = this.reachableWorkflows(workflow.workflowId, workflow, run.workspaceId)
+      const secretResolution = await this.resolveRunSecrets(reachable.nodes, selectedEnvironmentId, run.workspaceId)
       if (secretResolution.resolvedSecrets.length > 0) {
         void this.deps.runs.setResolvedSecrets(runId, secretResolution.resolvedSecrets)
+      }
+      const environmentVariables = environment && environments
+        ? environments.resolveEffectiveVariables(environment.environmentId) as Record<string, unknown>
+        : undefined
+
+      // H10: a local agent can author a workflow and run it, so without this
+      // it could send any stored secret to a host of its choosing. A run it
+      // started may use secrets only once the user has seen which ones and
+      // where they go. Runs without secrets proceed as before.
+      // ponytail: the waiting run holds its concurrency slot until answered or timed out.
+      const agent = this.agentRuns.get(runId)
+      const secretNames = Object.keys(secretResolution.secrets ?? {})
+      if (agent !== undefined && secretNames.length > 0) {
+        const approved = await this.askApproval(
+          {
+            runId,
+            agent,
+            workflowName: workflow.name,
+            secretNames,
+            destinations: requestDestinations(reachable.nodes, environmentVariables ?? {}, mergedVariables),
+          },
+          controller.signal,
+        )
+        if (!approved) {
+          if (controller.signal.aborted) throw new Error("cancelled")
+          throw new AgentRunDenied()
+        }
       }
       // Every value this run resolved is scrubbed from whatever leaves the
       // executor — persisted results, node snapshots, progress events — for the
@@ -217,25 +284,10 @@ export class RunScheduler {
         rng: this.deps.rng,
         http: this.deps.http,
         functions: this.deps.functions,
-        ...(environment && environments
-          ? {
-              environmentVariables: environments.resolveEffectiveVariables(
-                environment.environmentId,
-              ) as Record<string, unknown>,
-            }
-          : {}),
+        ...(environmentVariables ? { environmentVariables } : {}),
         ...(secretResolution.secrets ? { secrets: secretResolution.secrets } : {}),
         emitProgress: (event) => this.handleProgress(runId, mask(event)),
-        resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => {
-          const target = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)
-          if (!target) return undefined
-          return {
-            name: target.name,
-            nodes: withoutCanvasOnlyNodes(target.nodes) as unknown as WorkflowGraph["nodes"],
-            edges: target.edges as unknown as WorkflowGraph["edges"],
-            variables: target.variables as Record<string, unknown>,
-          }
-        },
+        resolveWorkflow: (workflowId): ResolvedSubWorkflow | undefined => reachable.workflows.get(workflowId),
         // A Call Workflow node's sub-execution is a run of the *target*
         // workflow, so it gets its own row in that workflow's history (same
         // workspace and environment as the caller). Not queued through
@@ -272,10 +324,13 @@ export class RunScheduler {
       })
 
       this.emitFinished(runId, this.recordOutcome(runId, mask(output)))
-    } catch {
+    } catch (error) {
       if (controller.signal.aborted) {
         this.deps.runs.updateStatus(runId, "cancelled")
         this.emitFinished(runId, "cancelled")
+      } else if (error instanceof AgentRunDenied) {
+        this.deps.runs.updateStatus(runId, "failed", AGENT_RUN_DENIED_ERROR)
+        this.emitFinished(runId, "failed")
       } else {
         const existing = this.deps.runs.getById(runId)
         if (existing) {
@@ -291,6 +346,7 @@ export class RunScheduler {
       }
     } finally {
       this.activeRuns.delete(runId)
+      this.agentRuns.delete(runId)
       void this.drain()
     }
   }
@@ -320,18 +376,62 @@ export class RunScheduler {
     this.deps.emitProgress?.(runId, { kind: "run.finished", runId, status })
   }
 
+  /** A missing approver means no one can be asked, which is a no. A throwing one is too. */
+  private async askApproval(request: AgentRunApprovalRequest, signal: AbortSignal): Promise<boolean> {
+    if (this.deps.approveAgentRun === undefined) return false
+    try {
+      return await this.deps.approveAgentRun(request, signal)
+    } catch {
+      return false
+    }
+  }
+
   /**
-   * Scan the workflow graph — and every workflow its Call Workflow nodes reach,
-   * since a sub-execution shares this run's secret map — for `{{secrets.NAME}}`
-   * references, resolve each down the env > workspace chain, and return a
-   * name -> plaintext map for the executor.
-   * Also records safe resolution metadata (name/scope/resolved) on
-   * {@link lastResolvedSecrets} for masked-secret debugging — never values.
-   * Returns nothing when no resolver is wired or no references exist.
+   * The run's workflow and every workflow its Call Workflow nodes reach, read
+   * once. A sub-execution shares this run's secret map, so the secrets scan
+   * must see all of them — and the executor is then served these same
+   * snapshots rather than re-reading the database mid-run.
+   */
+  private reachableWorkflows(
+    workflowId: string,
+    root: { readonly name: string; readonly nodes: readonly unknown[]; readonly edges: readonly unknown[]; readonly variables: Readonly<Record<string, unknown>> },
+    workspaceId: string,
+  ): { nodes: WorkflowGraph["nodes"]; workflows: Map<string, ResolvedSubWorkflow> } {
+    const snapshot = (target: typeof root): ResolvedSubWorkflow => ({
+      name: target.name,
+      nodes: withoutCanvasOnlyNodes(target.nodes as WorkflowGraph["nodes"]) as unknown as WorkflowGraph["nodes"],
+      edges: target.edges as unknown as WorkflowGraph["edges"],
+      variables: target.variables as Record<string, unknown>,
+    })
+    const workflows = new Map<string, ResolvedSubWorkflow>([[workflowId, snapshot(root)]])
+    const nodes: WorkflowGraph["nodes"][number][] = []
+    const pending = [workflows.get(workflowId)!.nodes]
+    for (let batch = pending.pop(); batch; batch = pending.pop()) {
+      for (const node of batch) {
+        nodes.push(node)
+        // Same lookup the executor's `resolveWorkflow` does, so a target it
+        // could not reach contributes nothing here either.
+        const target = node.type === "workflow" ? node.config?.["targetWorkflowId"] : undefined
+        if (typeof target !== "string" || workflows.has(target)) continue
+        const child = this.deps.workflows.getByIdInWorkspace(target, workspaceId)
+        if (!child) continue
+        const resolved = snapshot(child)
+        workflows.set(target, resolved)
+        pending.push(resolved.nodes)
+      }
+    }
+    return { nodes, workflows }
+  }
+
+  /**
+   * Resolve every `{{secrets.NAME}}` referenced by `nodes` down the env >
+   * workspace chain, and return a name -> plaintext map for the executor plus
+   * safe resolution metadata (name/scope/resolved) for masked-secret
+   * debugging — never values. Returns nothing when no resolver is wired or no
+   * references exist.
    */
   private async resolveRunSecrets(
-    graph: WorkflowGraph,
-    workflowId: string,
+    nodes: WorkflowGraph["nodes"],
     environmentId: string | null,
     workspaceId: string,
   ): Promise<{ secrets?: Record<string, string>; resolvedSecrets: ResolvedSecretInfo[] }> {
@@ -340,22 +440,9 @@ export class RunScheduler {
 
     const names = new Set<string>()
     const pattern = /\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
-    const visited = new Set<string>([workflowId])
-    const pending: Array<WorkflowGraph["nodes"]> = [graph.nodes]
-    for (let nodes = pending.pop(); nodes; nodes = pending.pop()) {
-      for (const node of nodes) {
-        const config = node.config
-        if (!config) continue
-        for (const value of collectStrings(config)) {
-          for (const m of value.matchAll(pattern)) names.add(m[1]!)
-        }
-        // Same lookup the executor's `resolveWorkflow` does, so a target it
-        // could not reach contributes nothing here either.
-        const target = node.type === "workflow" ? config["targetWorkflowId"] : undefined
-        if (typeof target !== "string" || visited.has(target)) continue
-        visited.add(target)
-        const child = this.deps.workflows.getByIdInWorkspace(target, workspaceId)
-        if (child) pending.push(withoutCanvasOnlyNodes(child.nodes) as unknown as WorkflowGraph["nodes"])
+    for (const node of nodes) {
+      for (const value of collectStrings(node.config)) {
+        for (const m of value.matchAll(pattern)) names.add(m[1]!)
       }
     }
     if (names.size === 0) return { resolvedSecrets: [] }
@@ -408,6 +495,42 @@ export class RunScheduler {
     const result = sanitizeRunResults([event.result])[0]
     if (result !== undefined) this.deps.runs.upsertNodeResult(runId, result)
   }
+}
+
+/** An agent-started run the user did not allow to send its secrets. */
+class AgentRunDenied extends Error {}
+
+/**
+ * Where a run's requests go, for the approval prompt: every node's `url`,
+ * with `{{env.*}}` and `{{variables.*}}` filled in where they are known before
+ * the run, reduced to its host when it then parses. A URL built from values
+ * the run itself produces stays as written — the user sees that it is not
+ * fixed rather than a guess.
+ */
+export function requestDestinations(
+  nodes: WorkflowGraph["nodes"],
+  environmentVariables: Readonly<Record<string, unknown>>,
+  variables: Readonly<Record<string, unknown>>,
+): string[] {
+  const scopes: Record<string, Readonly<Record<string, unknown>>> = { env: environmentVariables, variables }
+  const destinations = new Set<string>()
+  for (const node of nodes) {
+    const url = node.config?.["url"]
+    if (typeof url !== "string" || url.length === 0) continue
+    const filled = url.replace(/\{\{\s*(env|variables)\.([A-Za-z0-9_.-]+)\s*\}\}/g, (match, scope: string, key: string) => {
+      const value = key.split(".").reduce<unknown>(
+        (current, part) => (typeof current === "object" && current !== null ? (current as Record<string, unknown>)[part] : undefined),
+        scopes[scope],
+      )
+      return typeof value === "string" || typeof value === "number" ? String(value) : match
+    })
+    try {
+      destinations.add(new URL(filled).host || filled)
+    } catch {
+      destinations.add(filled)
+    }
+  }
+  return [...destinations]
 }
 
 function sanitizeFinalVariables(output: Awaited<ReturnType<WorkflowExecutor["executeWorkflow"]>>): Record<string, JsonValue> {

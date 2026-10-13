@@ -14,7 +14,12 @@ export interface PtySpawnRequest {
   readonly sessionId: string
   /** Already resolved to an absolute path, and already `cmd.exe /c`-wrapped if it is a shim. */
   readonly file: string
-  readonly args: readonly string[]
+  /**
+   * An argv, or — for a shim — the already-escaped cmd.exe command line as one
+   * string, which node-pty passes through without quoting it again. See
+   * `ptyArgs` in `core/agents/executable.ts`.
+   */
+  readonly args: readonly string[] | string
   readonly cwd: string
   /** Merged over the host's own environment, not replacing it — the agent needs PATH. */
   readonly env: Readonly<Record<string, string>>

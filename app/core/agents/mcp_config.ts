@@ -5,13 +5,12 @@ import { scratchFileKind, writeScratchFile } from "./scratch_files"
 /**
  * One config file per session, not one per app.
  *
- * A single fixed `apiweave.json` was a live-token hazard twice over. Two
- * sessions launched at once raced on the same path, so the second launch
- * rewrote the token the first one had already been handed — and since the
- * bridge mints a fresh token per run, the first agent's config could stop
- * authenticating mid-session. Worse, one shared file has no owner, so nothing
- * could ever delete it: a bearer token good for every whitelisted MCP tool sat
- * in userData until the next launch overwrote it.
+ * A single fixed `apiweave.json` had two problems. Two sessions launched at
+ * once raced on the same path, so the second launch rewrote the config the
+ * first one had already been handed. Worse, one shared file has no owner, so
+ * nothing could ever delete it: the bearer token — one per install, replaced
+ * only when the user regenerates it — sat in userData, good for every
+ * whitelisted MCP tool, until the next launch overwrote it.
  *
  * Keying the name on the session id gives the file exactly one owner and one
  * lifetime, which is what makes {@link MCP_CONFIG_SCRATCH.deleteOne} and the

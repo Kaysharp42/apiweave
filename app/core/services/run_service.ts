@@ -28,6 +28,7 @@ export interface RunTrigger {
     variables?: Readonly<Record<string, unknown>>
     selectedEnvironmentId?: string | null
     startNodeIds?: readonly string[]
+    agent?: string
   }): string
   cancel(runId: string): boolean
 }
@@ -45,6 +46,8 @@ export interface RunCreateOptions {
   readonly operationId?: string
   /** Bounded wait after enqueue: 0 returns immediately, otherwise waits up to this long. */
   readonly waitMs?: number
+  /** The MCP client that asked, when an agent did — such a run needs the user's approval to send secrets. */
+  readonly agent?: string
 }
 
 export interface RunWaitOptions {
@@ -89,10 +92,10 @@ export class RunService {
     // agent-facing 10s default when the caller omits `waitMs`.
     const waitMs = options.waitMs === undefined ? 0 : normalizeWaitMs(options.waitMs)
     if (options.operationId !== undefined) {
-      const run = await this.createRunDeduped(workspaceId, input, options.operationId, waitMs, waitOptions.signal)
+      const run = await this.createRunDeduped(workspaceId, input, options.operationId, waitMs, waitOptions.signal, options.agent)
       return run
     }
-    const run = await this.enqueueRun(workspaceId, input)
+    const run = await this.enqueueRun(workspaceId, input, options.agent)
     if (waitMs === 0) return run
     return this.waitForRun(workspaceId, run.runId, waitMs, waitOptions)
   }
@@ -252,7 +255,7 @@ export class RunService {
 
   private activeWaits = 0
 
-  private async enqueueRun(workspaceId: string, input: Omit<RunCreate, "workspaceId">): Promise<Run> {
+  private async enqueueRun(workspaceId: string, input: Omit<RunCreate, "workspaceId">, agent?: string): Promise<Run> {
     if (this.trigger !== undefined) {
       // The scheduler creates the run row (status pending→running) and starts
       // execution; re-read it to return the freshly-scheduled run.
@@ -261,6 +264,7 @@ export class RunService {
         workflowId: input.workflowId,
         ...(input.variables ? { variables: input.variables } : {}),
         ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+        ...(agent !== undefined ? { agent } : {}),
       })
       return this.mustGet(workspaceId, runId)
     }
@@ -282,6 +286,7 @@ export class RunService {
     operationId: string,
     waitMs: number,
     signal?: AbortSignal,
+    agent?: string,
   ): Promise<Run> {
     const key = `${workspaceId}:${operationId}`
     const canonical = canonicalCreateRequest(input)
@@ -311,7 +316,7 @@ export class RunService {
       return this.waitForRun(workspaceId, run.runId, waitMs, signal !== undefined ? { signal } : {})
     }
     const pending = (async (): Promise<Run> => {
-      const run = await this.enqueueRun(workspaceId, input)
+      const run = await this.enqueueRun(workspaceId, input, agent)
       this.createDedup.set(key, { canonical, runId: run.runId })
       if (this.createDedup.size > MAX_DEDUP_ENTRIES) {
         const oldest = this.createDedup.keys().next().value

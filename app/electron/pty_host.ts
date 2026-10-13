@@ -204,7 +204,7 @@ function start(request: PtySpawnRequest): void {
   // points at any more.
   retire(request.sessionId)
 
-  const pty = spawnPty(request.file, [...request.args], {
+  const pty = spawnPty(request.file, typeof request.args === "string" ? request.args : [...request.args], {
     cwd: request.cwd,
     env: childEnv(request.env),
     cols: request.cols,
