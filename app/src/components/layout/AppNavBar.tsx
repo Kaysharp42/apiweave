@@ -10,7 +10,7 @@ import {
   Server,
 } from "lucide-react";
 import { Transition } from "@headlessui/react";
-import Tippy from "@tippyjs/react";
+import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
 import { useNavigationSelection, useNavBarCollapse } from "../../hooks/useNavigationControls";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
@@ -177,13 +177,14 @@ export function AppNavBar() {
           );
 
           return isNavBarCollapsed ? (
-            <Tippy
+            <Tooltip
               key={id}
               content={accessibleLabel}
               placement="right"
+              delay={0}
             >
               {content}
-            </Tippy>
+            </Tooltip>
           ) : (
             <React.Fragment key={id}>{content}</React.Fragment>
           );

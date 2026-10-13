@@ -1,4 +1,4 @@
-import dagre from "dagre"
+import dagre from "@dagrejs/dagre"
 
 // ponytail: dagre's Sugiyama layered layout IS the "logical flow + minimal
 // edge crossings" engine, shared verbatim between the renderer's "Tidy" action

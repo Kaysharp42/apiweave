@@ -1,4 +1,4 @@
-import Tippy from "@tippyjs/react";
+import { Tooltip } from "./Tooltip";
 import type { IconButtonProps } from "../../types";
 
 export function IconButton({
@@ -65,8 +65,8 @@ export function IconButton({
   if (!tooltip) return button;
 
   return (
-    <Tippy content={tooltip} placement="top" delay={[300, 0]}>
+    <Tooltip content={tooltip}>
       {button}
-    </Tippy>
+    </Tooltip>
   );
 }

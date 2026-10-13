@@ -2,11 +2,8 @@
 // Pre-commit ESLint wrapper.
 //
 // Pre-commit invokes hooks from the repo root and passes absolute file paths,
-// but ESLint 8.57.x only auto-discovers flat config (eslint.config.cjs) when
-// (a) run from a directory containing the config OR
-// (b) ESLINT_USE_FLAT_CONFIG=true is set.
-//
-// This script does both: sets the env var and re-execs ESLint with cwd=app/.
+// but ESLint 9 looks for eslint.config.cjs from its working directory, so this
+// re-execs ESLint with cwd=app/.
 import { spawnSync } from "node:child_process";
 import { dirname, resolve, isAbsolute, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,7 +30,6 @@ if (args.length === 0) {
 const result = spawnSync(process.execPath, [eslintBin, ...args], {
   cwd: appDir,
   stdio: "inherit",
-  env: { ...process.env, ESLINT_USE_FLAT_CONFIG: "true" },
 });
 
 process.exit(result.status ?? 1);

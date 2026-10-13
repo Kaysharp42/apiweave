@@ -175,10 +175,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
   host), failed loads and unresponsive windows are recorded in the daily log
   file, and each session's log opens with the app, Electron and OS versions.
 
+### Changed
+
+- **The installed app is about 165 MB smaller.** Every library the window
+  uses was shipped twice: once inside the bundled renderer and again as a
+  loose copy in the app archive, which grew to 183 MB. The archive now holds
+  only the five packages the main process loads at runtime, and is 18 MB.
+
 ### Removed
 
 - The renderer's startup gate, left over from the retired HTTP backend. Its
   spinner never showed and its error screen was unreachable.
+- Two unused packages: `@fallow-cli/beacon`, a coverage-telemetry SDK that
+  nothing imported, and `axios`. Neither ran, but both shipped inside the app.
 
 ## [0.11.0] — 2026-09-23
 

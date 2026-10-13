@@ -4,11 +4,11 @@
     "src/index.{ts,tsx,js,jsx}",
     "src/main.{ts,tsx,js,jsx}",
     "scripts/generate-update-signing-key.mjs",
-    "scripts/sign-update-manifest.mjs"
+    "scripts/sign-update-manifest.mjs",
+    "scripts/smoke-packaged.mjs"
   ],
   "ignorePatterns": ["**/*.generated.ts", "**/*.d.ts"],
   "ignoreDependencies": [
-    "@fallow-cli/beacon",
     "autoprefixer",
     "postcss",
     "tailwindcss",

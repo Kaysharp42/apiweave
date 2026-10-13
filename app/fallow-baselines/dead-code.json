@@ -4,8 +4,7 @@
   "unused_types": [],
   "private_type_leaks": [],
   "unused_dependencies": [
-    "package.json:@monaco-editor/react",
-    "package.json:axios"
+    "package.json:@monaco-editor/react"
   ],
   "unused_dev_dependencies": [],
   "circular_dependencies": [

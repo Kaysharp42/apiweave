@@ -5,8 +5,6 @@ import { UpdateStatusProvider } from "./contexts/UpdateStatusContext";
 import { TitleBar } from "./components/layout/TitleBar";
 // @ts-expect-error - CSS module type declaration handled by Vite
 import "./index.css";
-// @ts-expect-error - CSS module type declaration handled by Vite
-import "tippy.js/dist/tippy.css";
 import { isDesktopShell } from "./utils/isDesktopShell";
 import { desktop } from "./utils/apiweaveClient";
 import { confirmCloseAll } from "./stores/PendingEditsStore";

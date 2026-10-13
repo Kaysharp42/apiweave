@@ -235,7 +235,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | Component    | File                   | Purpose                                                                                                                  |
 | ------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `Button`     | `atoms/Button.tsx`     | Primary/secondary/ghost button with variant × intent × size matrix. Supports `loading`, `icon`, `fullWidth`, `disabled`. |
-| `IconButton` | `atoms/IconButton.tsx` | Icon-only button with optional Tippy tooltip. Supports `size`, `variant`, `disabled`, `loading`.                         |
+| `IconButton` | `atoms/IconButton.tsx` | Icon-only button with optional tooltip. Supports `size`, `variant`, `disabled`, `loading`.                               |
 | `Input`      | `atoms/Input.tsx`      | Text input with proper focus ring, error state, and dark mode support.                                                   |
 | `TextArea`   | `atoms/TextArea.tsx`   | Multi-line text input with resize control and dark mode support.                                                         |
 | `Badge`      | `atoms/Badge.tsx`      | Status/info badge with `variant` (ghost/primary/success/error/warning/info) and `size` (xs/sm/md).                       |
@@ -243,7 +243,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `Spinner`    | `atoms/Spinner.tsx`    | Loading spinner with `size` (xs/sm/md/lg) and optional `label`.                                                          |
 | `Skeleton`   | `atoms/Skeleton.tsx`   | Loading placeholder with `variant` (text/circle/rect).                                                                   |
 | `Divider`    | `atoms/Divider.tsx`    | Horizontal/vertical divider line.                                                                                        |
-| `Tooltip`    | `atoms/Tooltip.tsx`    | Tippy-based tooltip wrapper.                                                                                             |
+| `Tooltip`    | `atoms/Tooltip.tsx`    | Hover/focus tooltip on Floating UI.                                                                                      |
 
 ### Molecules
 
@@ -302,7 +302,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 
 | Hook                   | File                            | Purpose                                          |
 | ---------------------- | ------------------------------- | ------------------------------------------------ |
-| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Global keyboard shortcut bindings via Mousetrap. |
+| `useKeyboardShortcuts` | `hooks/useKeyboardShortcuts.ts` | Global keyboard shortcut bindings (one document `keydown` listener). |
 | `useWorkflowPolling`   | `hooks/useWorkflowPolling.ts`   | Workflow run polling with adaptive intervals.    |
 | `useCanvasDrop`        | `hooks/useCanvasDrop.ts`        | Canvas drag-and-drop handling.                   |
 | `useAutoSave`          | `hooks/useAutoSave.ts`          | Auto-save behavior with debounce.                |

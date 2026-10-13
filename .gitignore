@@ -207,3 +207,6 @@ tmp/
 .deepsec/
 app/tools
 app/_fallow_local.json
+
+# Local working notes (never committed)
+docs/.scratch/

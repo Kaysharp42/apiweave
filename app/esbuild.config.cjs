@@ -36,29 +36,27 @@ function copyIcon() {
   }
 }
 
+const { dependencies } = require("./package.json")
+
 const common = {
   bundle: true,
   tsconfig: "tsconfig.desktop.json",
-  // ponytail: zod v4 ships ESM-first + crypto/WASM deps that break under cjs
-  // bundling — desktop already declares it as a runtime dep, so externalize.
-  // libsodium-wrappers is prebuilt WASM; same story.
-  // electron-updater is externalized so it runs as the plain CommonJS package
-  // electron-builder expects, sharing the one hoisted builder-util-runtime
-  // that wrote latest.yml at build time. It does bundle cleanly today, but
-  // that's the unsupported path and nothing would catch it silently drifting.
-  // node-pty requires its native binding through a computed string
-  // (`prebuilds/${platform}-${arch}/pty.node`), which esbuild cannot analyse,
-  // and on Windows it resolves a worker script from `__dirname` — neither
-  // survives bundling. It must stay a plain require against the unpacked
-  // module directory (see build.asarUnpack in package.json).
-  external: [
-    "better-sqlite3",
-    "electron",
-    "electron-updater",
-    "node-pty",
-    "zod",
-    "libsodium-wrappers",
-  ],
+  // `dependencies` is exactly what the desktop bundles leave as a plain
+  // require: electron-builder copies those packages, and only those, into
+  // app.asar. Everything else main, preload and the PTY host import is bundled
+  // here, and the renderer is bundled by Vite, so their libraries belong in
+  // devDependencies — listing one in `dependencies` ships it a second time.
+  // Why each runtime dependency cannot be bundled:
+  // - better-sqlite3, node-pty: native addons. node-pty also requires its
+  //   binding through a computed string (`prebuilds/${platform}-${arch}/pty.node`)
+  //   and on Windows resolves a worker script from `__dirname`, neither of which
+  //   survives bundling (see build.asarUnpack in package.json).
+  // - zod: v4 ships ESM-first with crypto/WASM deps that break under cjs bundling.
+  // - libsodium-wrappers: prebuilt WASM.
+  // - electron-updater: runs as the plain CommonJS package electron-builder
+  //   expects, sharing the one hoisted builder-util-runtime that wrote
+  //   latest.yml at build time.
+  external: ["electron", ...Object.keys(dependencies)],
   format: "cjs",
   logLevel: "info",
   platform: "node",
