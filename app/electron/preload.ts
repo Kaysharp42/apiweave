@@ -7,6 +7,7 @@ import type { MCPTool } from "@shared/types/MCPTool"
 import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
+import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
 import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
@@ -153,6 +154,8 @@ type McpBridge = {
   readonly enable: () => Promise<McpStatus>
   readonly disable: () => Promise<McpStatus>
   readonly regenerateToken: () => Promise<McpStatus>
+  readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>
+  readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>
   readonly listTools: () => Promise<readonly MCPTool[]>
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>
   readonly listResources: () => Promise<readonly MCPResource[]>
@@ -164,6 +167,9 @@ const mcpBridge: McpBridge = {
   enable: call<McpStatus>("mcp:enable"),
   disable: call<McpStatus>("mcp:disable"),
   regenerateToken: call<McpStatus>("mcp:regenerateToken"),
+  listAgentApprovals: call<readonly AgentRunApproval[]>("mcp:listAgentApprovals"),
+  revokeAgentApproval: (approvalId) =>
+    ipcRenderer.invoke("mcp:revokeAgentApproval", approvalId) as Promise<boolean>,
   listTools: call<readonly MCPTool[]>("mcp:listTools"),
   listPrompts: call<readonly MCPPrompt[]>("mcp:listPrompts"),
   listResources: call<readonly MCPResource[]>("mcp:listResources"),

@@ -113,7 +113,7 @@ beforeEach(() => {
       name === "API_KEY" ? { plaintext: "s3cr3t", scopeType: "workspace" } : { plaintext: null, scopeType: null },
     approveAgentRun: async (request) => {
       approvals.push(request)
-      return false
+      return "deny"
     },
   })
   approvals = []
