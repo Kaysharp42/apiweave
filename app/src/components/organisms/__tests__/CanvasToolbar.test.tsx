@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { CanvasToolbarProps } from "../../../types/CanvasToolbarProps";
 import { describe, expect, it, vi } from "vitest";
 import { CanvasToolbar } from "../CanvasToolbar";
 
-function renderToolbar() {
+function renderToolbar(props: Partial<CanvasToolbarProps> = {}) {
   render(
     <CanvasToolbar
       onSave={vi.fn()}
@@ -21,6 +22,7 @@ function renderToolbar() {
       onRun={vi.fn()}
       environments={[]}
       onEnvironmentChange={vi.fn()}
+      {...props}
     />,
   );
 
@@ -45,5 +47,23 @@ describe("CanvasToolbar", () => {
 
     expect(toolbar).toHaveClass("flex-nowrap");
     expect(toolbar).not.toHaveClass("flex-wrap");
+  });
+
+  it("runs with the data file the user picks", () => {
+    const onRunWithData = vi.fn();
+    renderToolbar({ onRunWithData });
+    const file = new File(["user\nann\n"], "users.csv", { type: "text/csv" });
+
+    fireEvent.change(screen.getByLabelText("Data file to run with"), { target: { files: [file] } });
+
+    expect(onRunWithData).toHaveBeenCalledWith(file);
+    expect(screen.getByRole("button", { name: "Run with data" })).toBeEnabled();
+  });
+
+  it("shows which iteration of a data-driven run is running", () => {
+    renderToolbar({ onRunWithData: vi.fn(), isRunning: true, iteration: { groupId: "g", index: 3, count: 10 } });
+
+    expect(screen.getByText("Iteration 3/10")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run with data" })).toBeDisabled();
   });
 });

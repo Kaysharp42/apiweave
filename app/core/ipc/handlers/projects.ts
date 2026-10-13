@@ -1,9 +1,18 @@
 import { z } from "zod"
-import { CollectionSchema, JsonValueSchema, ProjectRunSchema, WorkflowSchema, WorkflowOrderItemSchema } from "@shared/zod-schemas"
+import {
+  CollectionSchema,
+  JsonValueSchema,
+  PostmanImportPreviewSchema,
+  PostmanImportResultSchema,
+  ProjectRunSchema,
+  WorkflowSchema,
+  WorkflowOrderItemSchema,
+} from "@shared/zod-schemas"
 import type { IpcRouter } from "../router"
 import type { ProjectBundle } from "../../services/project_export_service"
 import type { ProjectRunService } from "../../services/project_run_service"
-import { NotFoundError } from "../errors"
+import { convertPostmanCollection } from "../../services/postman_import"
+import { NotFoundError, ValidationError } from "../errors"
 import { buildReport } from "../../runner/reporters"
 import type { HandlerDeps } from "./common"
 import { ifFound, listResult } from "./common"
@@ -296,5 +305,48 @@ export function registerProjectHandlers(router: IpcRouter, deps: HandlerDeps): v
     input: z.object({ workspaceId: ws, bundle: BundleInputSchema }).strict(),
     output: DryRunResultSchema,
     handle: (i) => projects.dryRunImport(i.workspaceId, i.bundle as unknown as ProjectBundle),
+  })
+
+  // A Postman Collection v2.1 (and optionally a Postman environment) into a new
+  // project. The converter builds an ordinary project bundle, so validation,
+  // the single transaction and the missing-secret check are the bundle import's.
+  const postmanInput = z.object({
+    workspaceId: ws,
+    collection: z.record(z.string(), z.unknown()),
+    environment: z.record(z.string(), z.unknown()).optional(),
+    mode: z.enum(["folder", "request"]).optional(),
+    projectName: z.string().optional(),
+  }).strict()
+  const convertPostman = (i: z.infer<typeof postmanInput>) =>
+    convertPostmanCollection(i.collection, { workspaceId: i.workspaceId, mode: i.mode, environment: i.environment })
+
+  router.register("projects", "previewPostman", {
+    input: postmanInput,
+    output: PostmanImportPreviewSchema,
+    handle: async (i) => {
+      const { bundle, preview } = convertPostman(i)
+      // Authorizes the import and proves the bundle valid before the user commits to it.
+      const check = await projects.dryRunImport(i.workspaceId, bundle)
+      if (!check.valid) throw new ValidationError(check.errors.join("; "))
+      return { ...preview, projectName: i.projectName?.trim() || preview.projectName }
+    },
+  })
+
+  router.register("projects", "importPostman", {
+    input: postmanInput,
+    output: PostmanImportResultSchema,
+    handle: async (i) => {
+      const { bundle, preview } = convertPostman(i)
+      const result = await projects.importProject(i.workspaceId, bundle, i.projectName?.trim() ? { projectName: i.projectName } : {})
+      return {
+        projectId: result.projectId,
+        workflowCount: result.workflowCount,
+        environmentCount: result.environmentCount,
+        requiredSecrets: preview.requiredSecrets,
+        missingSecrets: [...result.missingSecrets],
+        // The required-secret list already names every secret; skip the bundle import's per-secret repeat.
+        warnings: [...preview.warnings, ...result.warnings.filter((warning) => !warning.startsWith("Secret '"))],
+      }
+    },
   })
 }

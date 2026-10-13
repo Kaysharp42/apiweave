@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
   Snowflake,
+  Repeat,
   ExternalLink,
   Clock3,
   Globe,
@@ -405,6 +406,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
   // was a third rendering of one fact, and it took width from the title.
   const tileHue = `var(--aw-method-${method.toLowerCase()})`;
 
+  const attemptCount = data.executionResult?.attempts?.length;
   const typeChip = useMemo(
     () => (
       <>
@@ -419,9 +421,17 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
             <Snowflake className="w-3 h-3" /> {data.branchCount}x
           </span>
         )}
+        {attemptCount !== undefined && attemptCount > 1 && (
+          <span
+            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex flex-shrink-0 items-center gap-0.5"
+            title={`Sent ${attemptCount} times`}
+          >
+            <Repeat className="w-3 h-3" /> {attemptCount}
+          </span>
+        )}
       </>
     ),
-    [data.branchCount, data.schemaRefreshWarning],
+    [data.branchCount, data.schemaRefreshWarning, attemptCount],
   );
 
   const status = data.executionStatus ?? "idle";

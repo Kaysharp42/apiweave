@@ -5,6 +5,7 @@ import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, runCli } from "../cli"
+import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
 
 const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.awecollection")
 const TOKEN = "s3cr3t-fixture-token"
@@ -12,11 +13,14 @@ const TOKEN = "s3cr3t-fixture-token"
 let server: http.Server
 let baseUrl: string
 let received: string[]
+/** `<path> <x-user header>` of every request, for data-driven runs. */
+let requests: string[]
 let dir: string
 
 beforeAll(async () => {
   server = http.createServer((request, response) => {
     received.push(request.headers.authorization ?? "")
+    requests.push(`${request.url} ${request.headers["x-user"] ?? ""}`)
     if (request.url === "/slow/health.json") {
       setTimeout(() => response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "ok" })), 1000)
     } else if (request.url === "/health.json") {
@@ -36,6 +40,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   received = []
+  requests = []
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-cli-"))
 })
 
@@ -99,6 +104,66 @@ describe("apiweave run", () => {
 
     expect(result.code).toBe(EXIT_PASSED)
     expect(received).toEqual([`Bearer ${TOKEN}`])
+  })
+
+  describe("OAuth 2.0", () => {
+    /** The fixture's workflow, its request authenticated with `oauth2` against `url`. */
+    function oauthWorkflow(url: string, oauth2: Record<string, unknown>): string {
+      const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { nodes: { nodeId: string; config?: object }[] }[] }
+      const workflow = project.workflows[0]!
+      workflow.nodes = workflow.nodes
+        .filter((node) => node.nodeId !== "check-status")
+        .map((node) => (node.nodeId === "get-health" ? { ...node, config: { url: `${url}/api`, auth: { type: "oauth2", oauth2 } } } : node))
+      fs.writeFileSync(path.join(dir, "oauth.json"), JSON.stringify({ workflow }))
+      return "oauth.json"
+    }
+
+    it("runs a client-credentials workflow, fetching one token for every iteration and never printing it", async () => {
+      const idp = await startFakeOAuthServer()
+      try {
+        const file = oauthWorkflow(idp.url, {
+          grantType: "client_credentials",
+          tokenUrl: `${idp.url}/token`,
+          clientId: "ci",
+          clientSecret: "{{secrets.CLIENT_SECRET}}",
+          clientAuth: "body",
+        })
+        const result = await run(["run", file, "-n", "2", "-r", "cli,junit"], { APIWEAVE_SECRET_CLIENT_SECRET: "ci-secret-value" })
+
+        expect(result.stderr).toBe("")
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(idp.tokenCalls).toHaveLength(1)
+        expect(idp.tokenCalls[0]!.form.get("client_secret")).toBe("ci-secret-value")
+        expect(idp.apiCalls).toEqual(["Bearer tok-1-abcdef", "Bearer tok-1-abcdef"])
+        const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+        for (const output of [result.stdout, junit]) {
+          expect(output).not.toContain("tok-1-abcdef")
+          expect(output).not.toContain("ci-secret-value")
+        }
+      } finally {
+        await idp.close()
+      }
+    })
+
+    it("uses a refresh token given as the token secret for an authorization-code workflow", async () => {
+      const idp = await startFakeOAuthServer()
+      try {
+        const file = oauthWorkflow(idp.url, {
+          grantType: "authorization_code",
+          authorizationUrl: `${idp.url}/authorize`,
+          tokenUrl: `${idp.url}/token`,
+          clientId: "ci",
+          tokenSecret: "{{secrets.API_OAUTH}}",
+        })
+        const result = await run(["run", file], { APIWEAVE_SECRET_API_OAUTH: "ci-refresh-token" })
+
+        expect(result.code).toBe(EXIT_PASSED)
+        expect(Object.fromEntries(idp.tokenCalls[0]!.form)).toEqual({ grant_type: "refresh_token", refresh_token: "ci-refresh-token", client_id: "ci" })
+        expect(idp.apiCalls).toEqual(["Bearer tok-1-abcdef"])
+      } finally {
+        await idp.close()
+      }
+    })
   })
 
   it.each([
@@ -165,6 +230,44 @@ describe("apiweave run", () => {
     expect(received).toEqual([])
   })
 
+  describe("Postman collections", () => {
+    const schema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+
+    it("imports a Postman collection and environment on the fly, the token a secret from the environment", async () => {
+      fs.writeFileSync(path.join(dir, "api.postman_collection.json"), JSON.stringify({
+        info: { name: "Health API", schema },
+        auth: { type: "bearer", bearer: [{ key: "token", value: "{{apiToken}}" }] },
+        item: [{
+          name: "Health",
+          request: { method: "GET", url: "{{baseUrl}}/health.json" },
+          event: [{ listen: "test", script: { exec: ["pm.test(\"up\", function () {", "  pm.response.to.have.status(200);", "});"] } }],
+        }],
+      }))
+      fs.writeFileSync(path.join(dir, "ci.postman_environment.json"), JSON.stringify({
+        name: "CI",
+        values: [{ key: "baseUrl", value: baseUrl, enabled: true }],
+      }))
+
+      const result = await run(
+        ["run", "api.postman_collection.json", "--env-file", "ci.postman_environment.json", "--env", "Postman: CI"],
+        { APIWEAVE_SECRET_apiToken: TOKEN },
+      )
+
+      expect(result.stderr).toBe("")
+      expect(result.code).toBe(EXIT_PASSED)
+      expect(received).toEqual([`Bearer ${TOKEN}`])
+      expect(result.stdout).toContain("Health")
+    })
+
+    it("exits 2 on a Collection v1 file, saying to re-export it", async () => {
+      fs.writeFileSync(path.join(dir, "old.json"), JSON.stringify({ id: "x", name: "Old", order: [], requests: [] }))
+      const result = await run(["run", "old.json"])
+
+      expect(result.code).toBe(EXIT_USAGE)
+      expect(result.stderr).toContain("Postman Collection v1")
+    })
+  })
+
   it.each([
     [["run", FIXTURE, "--env", "Prod"], "environment 'Prod' is not in the file (environments: CI)"],
     [["run", FIXTURE, "--workflow", "Nope"], "workflow 'Nope' is not in the project"],
@@ -180,5 +283,95 @@ describe("apiweave run", () => {
     expect(result.stderr).toContain(message)
     expect(result.stderr).not.toContain(TOKEN)
     expect(received).toEqual([])
+  })
+
+  describe("data-driven runs", () => {
+    /** The fixture project with its request reading `{{data.file}}` and `{{data.user}}`. */
+    function writeDataProject(): void {
+      const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as {
+        workflows: { nodes: { nodeId: string; config?: { url?: string; headers?: { key: string; value: string }[] } }[] }[]
+      }
+      const request = project.workflows[0]!.nodes.find((node) => node.nodeId === "get-health")!
+      request.config!.url = "{{env.baseUrl}}/{{data.file}}"
+      request.config!.headers!.push({ key: "X-User", value: "{{data.user}}" })
+      fs.writeFileSync(path.join(dir, "data.awecollection"), JSON.stringify(project))
+    }
+
+    it("runs once per CSV row, each with its own values", async () => {
+      writeDataProject()
+      fs.writeFileSync(path.join(dir, "rows.csv"), 'file,user\r\nhealth.json,ann\r\nhealth.json,"bob, jr"\r\nhealth.json,cy\r\n')
+
+      const result = await run(["run", "data.awecollection", "-d", "rows.csv", "--var", `baseUrl=${baseUrl}`, "-r", "cli,junit"], {
+        APIWEAVE_SECRET_API_TOKEN: TOKEN,
+      })
+
+      expect(result.stderr).toBe("")
+      expect(result.code).toBe(EXIT_PASSED)
+      expect(requests).toEqual(["/health.json ann", "/health.json bob, jr", "/health.json cy"])
+      expect(result.stdout).toContain("Health check [iteration 3]")
+      expect(result.stdout).toMatch(/Iterations\s+3\s+3\s+0/)
+      const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+      expect(junit.match(/<testsuite /g)).toHaveLength(3)
+      expect(junit).toContain('<testsuite name="Health check [iteration 2]"')
+    })
+
+    it("exits 1 when one iteration fails, runs the rest, and the JUnit report names it", async () => {
+      writeDataProject()
+      fs.writeFileSync(path.join(dir, "rows.json"), JSON.stringify([
+        { file: "health.json", user: "ann" },
+        { file: "down", user: "bob" },
+        { file: "health.json", user: "cy" },
+      ]))
+
+      const result = await run(["run", "data.awecollection", "--iteration-data", "rows.json", "--var", `baseUrl=${baseUrl}`, "-r", "junit"], {
+        APIWEAVE_SECRET_API_TOKEN: TOKEN,
+      })
+
+      expect(result.code).toBe(EXIT_FAILED)
+      expect(requests).toHaveLength(3)
+      const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+      expect(junit).toMatch(/<testsuite name="Health check \[iteration 2\]"[^>]* failures="1"/)
+      expect(junit).toMatch(/<testsuite name="Health check \[iteration 3\]"[^>]* failures="0"/)
+    })
+
+    it("stops at the first failed iteration with --bail", async () => {
+      writeDataProject()
+      fs.writeFileSync(path.join(dir, "rows.csv"), "file,user\nhealth.json,ann\ndown,bob\nhealth.json,cy\n")
+
+      const result = await run(["run", "data.awecollection", "-d", "rows.csv", "--bail", "--var", `baseUrl=${baseUrl}`], {
+        APIWEAVE_SECRET_API_TOKEN: TOKEN,
+      })
+
+      expect(result.code).toBe(EXIT_FAILED)
+      expect(requests).toEqual(["/health.json ann", "/down bob"])
+      expect(result.stdout).not.toContain("[iteration 3]")
+    })
+
+    it("runs a single workflow n times with --iteration-count, or the data's first n rows", async () => {
+      const plain = await run(["run", FIXTURE, "-n", "2", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+      expect(plain.code).toBe(EXIT_PASSED)
+      expect(requests).toHaveLength(2)
+
+      requests = []
+      writeDataProject()
+      fs.writeFileSync(path.join(dir, "rows.csv"), "file,user\nhealth.json,ann\nhealth.json,bob\nhealth.json,cy\n")
+      const cut = await run(["run", "data.awecollection", "-d", "rows.csv", "-n", "2", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+      expect(cut.code).toBe(EXIT_PASSED)
+      expect(requests).toEqual(["/health.json ann", "/health.json bob"])
+    })
+
+    it.each([
+      ["rows.csv", "file,user\nhealth.json\n", "--iteration-data: CSV row 1 has 1 fields"],
+      ["rows.json", "{}", "--iteration-data: JSON data must be an array of objects"],
+      ["missing.csv", null, "--iteration-data: cannot read"],
+    ])("exits 2 on a bad data file: %s", async (name, text, message) => {
+      if (text !== null) fs.writeFileSync(path.join(dir, name), text)
+
+      const result = await run(["run", FIXTURE, "-d", name], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+
+      expect(result.code).toBe(EXIT_USAGE)
+      expect(result.stderr).toContain(message)
+      expect(requests).toEqual([])
+    })
   })
 })

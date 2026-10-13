@@ -24,12 +24,24 @@ import type { Workflow } from "@shared/types/Workflow"
  * rules are listed in the failure text. A run that failed, was cancelled or was
  * interrupted with no failed node gets a `Run` test case that fails, so CI never
  * reads it as green. A project workflow that never ran is one skipped test case.
+ * A data-driven run is its iterations' suites in order, each suite name
+ * suffixed ` [iteration N]`.
  */
 
 /** The workflow's name and nodes, for test case names. `Workflow` satisfies it. */
 export type ReportWorkflow = Pick<Workflow, "workflowId" | "name" | "nodes">
 
 export type ReportInput =
+  | SingleReportInput
+  | {
+      readonly kind: "iterations"
+      readonly title: string
+      /** One input per iteration that ran, in order. */
+      readonly iterations: readonly SingleReportInput[]
+    }
+
+/** One workflow run or one project run. */
+export type SingleReportInput =
   | {
       readonly kind: "run"
       readonly run: Run
@@ -54,8 +66,10 @@ interface ReportCase {
   readonly durationMs: number
   /** One line: the failure or skip message. */
   readonly message: string | null
-  /** Further lines: failed assertion rules, request line, status code. */
+  /** Further lines: failed assertion rules, request line, status code, attempts. */
   readonly details: readonly string[]
+  /** Requests a retrying node sent; null when it has no retry. */
+  readonly attempts: number | null
 }
 
 interface ReportSuite {
@@ -72,6 +86,8 @@ interface Report {
   readonly status: string
   readonly startedAt: string | null
   readonly suites: readonly ReportSuite[]
+  /** Each iteration's status, for a data-driven run. */
+  readonly iterations?: readonly string[]
 }
 
 const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "note"])
@@ -79,6 +95,18 @@ const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "n
 // -------------------- Model --------------------
 
 function toReport(input: ReportInput): Report {
+  if (input.kind === "iterations") {
+    const reports = input.iterations.map(toReport)
+    return {
+      title: input.title,
+      status: reports.find((report) => report.status !== "completed")?.status ?? "completed",
+      startedAt: reports[0]?.startedAt ?? null,
+      suites: reports.flatMap((report, index) =>
+        report.suites.map((suite) => ({ ...suite, name: `${suite.name} [iteration ${index + 1}]` })),
+      ),
+      iterations: reports.map((report) => report.status),
+    }
+  }
   if (input.kind === "run") {
     const name = input.workflow?.name ?? input.run.workflowId
     return {
@@ -109,7 +137,7 @@ function toReport(input: ReportInput): Report {
         status: item.status,
         startedAt: null,
         durationMs: 0,
-        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [] }],
+        cases: [{ name: item.workflowName, type: "workflow", outcome: "skipped", durationMs: 0, message: reason, details: [], attempts: null }],
       }
     }),
   }
@@ -141,6 +169,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
             ? `Did not finish (${recorded})`
             : null,
       details: details(result, outcome),
+      attempts: result?.attempts?.length ?? null,
     })
   }
   if (run.status !== "completed" && !cases.some((testCase) => testCase.outcome === "failed")) {
@@ -152,6 +181,7 @@ function runSuite(name: string, run: Run, workflow: ReportWorkflow | null): Repo
       durationMs: run.duration ?? 0,
       message: run.failureMessage ?? run.error ?? `Run ${run.status}`,
       details: [],
+      attempts: null,
     })
   }
   return {
@@ -210,6 +240,9 @@ function details(result: RunResult | undefined, outcome: Outcome): string[] {
   if (typeof url === "string") lines.push(typeof method === "string" ? `${method} ${url}` : url)
   const code = statusCodeOf(result)
   if (code !== undefined) lines.push(`Status ${code}`)
+  if (result.attempts !== undefined) {
+    lines.push(`Attempts ${result.attempts.length}: ${result.attempts.map((attempt) => attempt.statusCode ?? "no response").join(", ")}`)
+  }
   for (const rule of result.assertions ?? []) {
     if (outcome !== "failed" || rule.outcome === "fail") lines.push(describeRule(rule))
   }
@@ -419,7 +452,8 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
     const width = Math.max(0, ...suite.cases.map((testCase) => testCase.name.length))
     for (const testCase of suite.cases) {
       const { mark, color: tint } = CONSOLE_MARK[testCase.outcome]
-      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s`)}`)
+      const attempts = testCase.attempts === null ? "" : ` · ${testCase.attempts} attempt${testCase.attempts === 1 ? "" : "s"}`
+      lines.push(`  ${paint(tint, mark)} ${testCase.name.padEnd(width)}  ${paint(ANSI.dim, `${seconds(testCase.durationMs)}s${attempts}`)}`)
       if (testCase.outcome === "passed") continue
       if (testCase.message !== null) lines.push(`      ${paint(tint, testCase.message)}`)
       if (testCase.outcome === "failed") for (const line of testCase.details) lines.push(`      ${paint(ANSI.dim, line)}`)
@@ -434,6 +468,10 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
     ["Workflows", report.suites.length, passedSuites, report.suites.length - passedSuites - skippedSuites, skippedSuites],
     ["Steps", cases.tests, cases.tests - cases.failures - cases.skipped, cases.failures, cases.skipped],
   ]
+  if (report.iterations !== undefined) {
+    const passed = report.iterations.filter((status) => status === "completed").length
+    rows.splice(1, 0, ["Iterations", report.iterations.length, passed, report.iterations.length - passed, 0])
+  }
   const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => String(row[column]).length)))
   for (const row of rows) {
     lines.push(row.map((cell, column) => (column === 0 ? String(cell).padEnd(widths[column]!) : String(cell).padStart(widths[column]!))).join("  "))

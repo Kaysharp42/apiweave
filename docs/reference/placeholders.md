@@ -1,6 +1,6 @@
 # Placeholders
 
-*Canonical reference for the four placeholder namespaces in APIWeave. Use this doc when you need the exact syntax for a placeholder, the order the runner resolves them in, what happens when a value is missing, and how the local scope chain works for secrets.*
+*Canonical reference for the five placeholder namespaces in APIWeave. Use this doc when you need the exact syntax for a placeholder, the order the runner resolves them in, what happens when a value is missing, and how the local scope chain works for secrets.*
 
 ## Prerequisites
 
@@ -14,6 +14,7 @@ None. This is a reference doc. Read [Concepts](../getting-started/concepts.md) f
 - [Workflow Variables](#workflow-variables)
 - [Previous Node Result](#previous-node-result)
 - [Secrets](#secrets)
+- [Data Rows](#data-rows)
 - [The Scope Chain](#the-scope-chain)
 - [Dynamic Functions](#dynamic-functions)
 - [Substitution Order](#substitution-order)
@@ -29,7 +30,7 @@ Every placeholder in APIWeave uses double curly braces. The runner substitutes t
 {{namespace.name}}
 ```
 
-The segment before the first dot is the **namespace**. The segment after the dot is the **key** (or, for `prev.*`, a dot path into the previous node's response object). There are four namespaces, plus dynamic functions, plus direct node-ID access (see below).
+The segment before the first dot is the **namespace**. The segment after the dot is the **key** (or, for `prev.*`, a dot path into the previous node's response object). There are five namespaces, plus dynamic functions, plus direct node-ID access (see below).
 
 Placeholders work in request URLs, query parameters, headers, cookies, bodies, and assertion `expectedValue` fields. Two kinds of field are **not** interpolated: the HTTP method and the timeout are taken literally, and an assertion's `path` is not templated either.
 
@@ -41,9 +42,10 @@ Placeholders work in request URLs, query parameters, headers, cookies, bodies, a
 | `variables.*` | `{{variables.token}}`                | workflow variable (manual or extracted)                      |
 | `prev.*`      | `{{prev.response.body.id}}`          | previous node result (`prev[0]` after a merge)               |
 | `secrets.*`   | `{{secrets.API_KEY}}`        | the local scope chain (env > workspace)                       |
+| `data.*`      | `{{data.user}}`                      | the current row of a [data-driven run](../features/data-driven-runs.md) |
 | functions     | `{{uuid()}}`                         | dynamic helper (uuid, timestamp, randomString, etc.)         |
 
-The four data namespaces are tried in a fixed order. See [Substitution Order](#substitution-order) for the exact sequence.
+The data namespaces are tried in a fixed order. See [Substitution Order](#substitution-order) for the exact sequence.
 
 ## Environment Variables
 
@@ -110,6 +112,17 @@ You can also address a node's result directly by its node ID, without `prev.*` a
 
 Secret values are submitted through a Libsodium sealed box encrypted against the install's public key. The runtime does not ask for a missing secret value at run time. If the scope chain does not declare the key, the placeholder stays as literal text in the field. See [Environments and Secrets](../features/environments-and-secrets.md) for the full write flow.
 
+## Data Rows
+
+`data.*` reads the current row of a [data-driven run](../features/data-driven-runs.md): a run started with **Run with data** in the app or `apiweave run --iteration-data` in CI, once per row of a CSV or JSON file. The key is the column name, and a dot path reads into a nested JSON value:
+
+```text
+{{env.BASE_URL}}/users/{{data.user}}
+{{data.address.city}}
+```
+
+Outside a data-driven run, or for a column the row does not have, the placeholder stays unresolved. Data values are not masked; keep credentials in `secrets.*`.
+
 ## The Scope Chain
 
 The runner resolves `{{secrets.NAME}}` through a fixed local chain. The first scope that declares the key wins.
@@ -142,6 +155,7 @@ The runner resolves placeholders in this exact order, on every interpolated fiel
 2. `{{secrets.NAME}}` resolves through the local scope chain. The value is decrypted in the runtime path only, substituted into the field, and never persisted. See [Secrets](#secrets).
 3. `{{env.NAME}}` resolves to environment variables from the selected environment.
 4. `{{variables.name}}` resolves to workflow variables (manual or extracted).
+   `{{data.column}}` resolves to the data-driven run's current row.
 5. `{{prev.response.body.field}}` and `{{prev[index]...}}` resolve to the previous node result.
 6. `{{<nodeId>.field}}` resolves against a specific node's result by ID.
 

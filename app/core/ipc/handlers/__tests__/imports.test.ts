@@ -1,3 +1,5 @@
+import fs from "node:fs"
+import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../../db"
 import type { InitializedDatabase } from "../../../db"
@@ -230,5 +232,37 @@ describe("IPC import handlers — saveTemplates", () => {
       ],
     })
     expect(updated.nodeTemplates.length).toBe(1)
+  })
+})
+
+describe("IPC import handlers — Postman", () => {
+  const fixture = (name: string): unknown =>
+    JSON.parse(fs.readFileSync(path.join(__dirname, "../../../services/__tests__/__fixtures__", name), "utf8"))
+
+  it("previews without writing, then imports into a new project and lists the secrets to create", async () => {
+    const payload = { workspaceId: wsId, collection: fixture("shop.postman_collection.json"), environment: fixture("shop.postman_environment.json") }
+    const preview = await ok<{ workflows: unknown[]; requiredSecrets: { name: string }[] }>("projects", "previewPostman", payload)
+    expect(preview.workflows).toHaveLength(5)
+    expect(preview.requiredSecrets).toHaveLength(5)
+    expect(await ok<{ total: number }>("projects", "list", { workspaceId: wsId })).toMatchObject({ total: 0 })
+
+    const result = await ok<{ projectId: string; workflowCount: number; missingSecrets: string[]; warnings: string[] }>(
+      "projects", "importPostman", { ...payload, projectName: "Shop (migrated)" },
+    )
+    expect(result.workflowCount).toBe(5)
+    expect(result.missingSecrets).toHaveLength(5)
+    expect(result.warnings.some((warning) => warning.startsWith("Secret '"))).toBe(false)
+    const project = await ok<{ name: string }>("projects", "get", { workspaceId: wsId, collectionId: result.projectId })
+    expect(project.name).toBe("Shop (migrated)")
+  })
+
+  it("rejects a Collection v1 file", async () => {
+    const res = await router.dispatch({
+      domain: "projects",
+      action: "previewPostman",
+      payload: { workspaceId: wsId, collection: { id: "x", name: "Old", order: [], requests: [] } },
+    })
+    expect(res.ok).toBe(false)
+    expect(JSON.stringify(res)).toContain("Collection v1")
   })
 })

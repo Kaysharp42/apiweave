@@ -39,6 +39,7 @@ import {
   SecretService,
   ProjectExportService,
   ImportService,
+  OAuthService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
 import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
@@ -61,6 +62,7 @@ import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
+import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
 import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
 import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
@@ -69,6 +71,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
+  OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
@@ -512,6 +515,7 @@ if (!hasSingleInstanceLock) {
         runId: run.runId,
         workspaceId: run.workspaceId,
         workflowId: run.workflowId,
+        iteration: run.iteration ?? null,
       } satisfies RunStartedEvent)
     })
     scheduler = new RunScheduler({
@@ -524,6 +528,12 @@ if (!hasSingleInstanceLock) {
       rng,
       resolveSecret: (name, chain) =>
         secretService.resolvePlaintext(name, chain).then((r) => ({ plaintext: r.plaintext, scopeType: r.scopeType })),
+      // One OAuth 2.0 token cache for the app session: client-credentials
+      // tokens are reused across runs until they near expiry.
+      oauthTokens: new Map(),
+      saveSecret: async (name, value, scope) => {
+        await secretService.storePlaintext(scope.workspaceId, { ...scope, name, value, label: "OAuth 2.0 token" })
+      },
       emitProgress: (runId, event) => runEvents.publish(runId, event),
       approveAgentRun: async (request, signal) => {
         const win = mainWindow
@@ -822,6 +832,28 @@ if (!hasSingleInstanceLock) {
       "updates:openLogFile",
       requireTrustedSender((): void => revealLogFile()),
     )
+
+    // OAuth 2.0 sign-in. Off the router like updates:* and agents:* below: it
+    // opens the system browser and writes the secret store, and the router is
+    // the MCP bridge's handler list. A run never signs in — an agent-started
+    // one that needs a token nobody has fetched fails with that message.
+    const oauthService = new OAuthService({
+      http,
+      secrets: secretService,
+      environments,
+      openExternal: (url) => shell.openExternal(url),
+    })
+    ipcMain.handle(
+      OAUTH_CHANNELS.authorize,
+      requireTrustedSender(async (request: OAuthTokenRequest) => {
+        const status = await oauthService.authorize(request)
+        // The user signed in in the browser; bring them back to where they started.
+        if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.focus()
+        return status
+      }),
+    )
+    ipcMain.handle(OAUTH_CHANNELS.status, requireTrustedSender((request: OAuthTokenRequest) => oauthService.status(request)))
+    ipcMain.handle(OAUTH_CHANNELS.clear, requireTrustedSender((request: OAuthTokenRequest) => oauthService.clear(request)))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

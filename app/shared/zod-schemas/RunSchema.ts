@@ -2,6 +2,7 @@ import { z } from "zod"
 import { JsonValueSchema } from "./JsonValueSchema"
 import { RevisionSchema } from "./RevisionSchema"
 import { ResolvedSecretInfoSchema } from "./ResolvedSecretInfoSchema"
+import { RunIterationSchema } from "./RunIterationSchema"
 import { RunResultSchema } from "./RunResultSchema"
 import { TimestampSchema } from "./TimestampSchema"
 
@@ -26,6 +27,8 @@ export const RunSchema = z
     resumeFromNodeIds: z.array(z.string()).nullable().optional(),
     resumeMode: z.enum(["single", "all-failed"]).nullable().optional(),
     resolvedSecrets: z.array(ResolvedSecretInfoSchema).optional(),
+    /** Set when the run is one iteration of a data-driven run. */
+    iteration: RunIterationSchema.nullable().optional(),
     rev: RevisionSchema,
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,

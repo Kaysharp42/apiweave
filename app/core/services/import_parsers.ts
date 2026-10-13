@@ -164,7 +164,7 @@ const Y_SPACING = 200
 const START_X = 600
 const START_Y = 100
 
-function positionForIndex(idx: number): { x: number; y: number } {
+export function positionForIndex(idx: number): { x: number; y: number } {
   const row = Math.floor(idx / NODES_PER_ROW)
   const col = idx % NODES_PER_ROW
   return { x: START_X + col * X_SPACING, y: START_Y + row * Y_SPACING }
@@ -192,7 +192,7 @@ function normalizeMethod(method: string | undefined): HttpMethod {
   return "GET"
 }
 
-function makeStartNode(): StartNode {
+export function makeStartNode(): StartNode {
   return {
     nodeId: newId(),
     type: "start",
@@ -202,7 +202,7 @@ function makeStartNode(): StartNode {
   }
 }
 
-function makeEndNode(httpCount: number): EndNode {
+export function makeEndNode(httpCount: number): EndNode {
   const totalRows = Math.ceil((httpCount + 1) / NODES_PER_ROW)
   return {
     nodeId: newId(),
@@ -213,7 +213,7 @@ function makeEndNode(httpCount: number): EndNode {
   }
 }
 
-function chainEdges(startId: string, httpIds: readonly string[], endId: string): ImportedEdge[] {
+export function chainEdges(startId: string, httpIds: readonly string[], endId: string): ImportedEdge[] {
   const edges: ImportedEdge[] = []
   let prev = startId
   for (const id of httpIds) {

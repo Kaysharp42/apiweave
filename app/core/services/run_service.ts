@@ -12,6 +12,7 @@ import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { RESOURCE_RUNS, RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
+import { startIterations, type IterationScheduler } from "../runner/iterations"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -21,17 +22,12 @@ import type { ScopeResolver } from "./scope_resolver"
  * `createRun` just persists a pending row and `cancel` marks it cancelled — the
  * behaviour the field-level-write tests rely on.
  */
-export interface RunTrigger {
-  enqueue(request: {
-    workspaceId: string
-    workflowId: string
-    variables?: Readonly<Record<string, unknown>>
-    selectedEnvironmentId?: string | null
-    startNodeIds?: readonly string[]
-    agent?: string
-  }): string
+export interface RunTrigger extends IterationScheduler {
   cancel(runId: string): boolean
 }
+
+/** What `runs.create` takes: a run row's fields plus one data row for `{{data.<column>}}`. */
+export type RunCreateInput = Omit<RunCreate, "workspaceId"> & { readonly data?: Readonly<Record<string, JsonValue>> }
 
 /**
  * Minimal broker surface the wait needs — subscribe plus nothing else. Typed
@@ -81,7 +77,7 @@ export class RunService {
 
   async createRun(
     workspaceId: string,
-    input: Omit<RunCreate, "workspaceId">,
+    input: RunCreateInput,
     options: RunCreateOptions = {},
     waitOptions: RunWaitOptions = {},
   ): Promise<Run> {
@@ -98,6 +94,35 @@ export class RunService {
     const run = await this.enqueueRun(workspaceId, input, options.agent)
     if (waitMs === 0) return run
     return this.waitForRun(workspaceId, run.runId, waitMs, waitOptions)
+  }
+
+  /**
+   * Start a data-driven run: the workflow once per row, one after another,
+   * each iteration an ordinary run that reads its row as `{{data.<column>}}`.
+   * Returns iteration 1's run as queued; the rest follow in the background,
+   * each announced like any other run. Cancelling the running iteration stops
+   * the ones after it.
+   */
+  async createIterations(
+    workspaceId: string,
+    input: {
+      readonly workflowId: string
+      readonly selectedEnvironmentId?: string | null
+      readonly rows: readonly Readonly<Record<string, JsonValue>>[]
+    },
+  ): Promise<Run> {
+    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "run", RESOURCE_WORKFLOWS)
+    if (this.trigger === undefined) throw new Error("No run scheduler is available")
+    const { firstRunId } = startIterations(
+      this.trigger,
+      {
+        workspaceId,
+        workflowId: input.workflowId,
+        ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+      },
+      input.rows,
+    )
+    return this.mustGet(workspaceId, firstRunId)
   }
 
   /**
@@ -255,7 +280,7 @@ export class RunService {
 
   private activeWaits = 0
 
-  private async enqueueRun(workspaceId: string, input: Omit<RunCreate, "workspaceId">, agent?: string): Promise<Run> {
+  private async enqueueRun(workspaceId: string, input: RunCreateInput, agent?: string): Promise<Run> {
     if (this.trigger !== undefined) {
       // The scheduler creates the run row (status pending→running) and starts
       // execution; re-read it to return the freshly-scheduled run.
@@ -264,10 +289,12 @@ export class RunService {
         workflowId: input.workflowId,
         ...(input.variables ? { variables: input.variables } : {}),
         ...(input.selectedEnvironmentId !== undefined ? { selectedEnvironmentId: input.selectedEnvironmentId } : {}),
+        ...(input.data !== undefined ? { data: input.data } : {}),
         ...(agent !== undefined ? { agent } : {}),
       })
       return this.mustGet(workspaceId, runId)
     }
+    // No scheduler, nothing reads `data`; the repository keeps only row fields.
     return this.runs.create({ ...input, workspaceId })
   }
 
@@ -282,7 +309,7 @@ export class RunService {
 // fallow-ignore-next-line complexity
   private async createRunDeduped(
     workspaceId: string,
-    input: Omit<RunCreate, "workspaceId">,
+    input: RunCreateInput,
     operationId: string,
     waitMs: number,
     signal?: AbortSignal,
@@ -439,7 +466,7 @@ export function normalizeWaitMs(waitMs: number | undefined): number {
 }
 
 /** Canonical request for idempotency: what actually affects the enqueued run. */
-function canonicalCreateRequest(input: Omit<RunCreate, "workspaceId">): string {
+function canonicalCreateRequest(input: RunCreateInput): string {
   return JSON.stringify({
     workflowId: input.workflowId,
     status: input.status ?? "pending",
@@ -447,6 +474,7 @@ function canonicalCreateRequest(input: Omit<RunCreate, "workspaceId">): string {
     variables: sortJsonValue(input.variables ?? {}),
     selectedEnvironmentId: input.selectedEnvironmentId ?? null,
     nodeStatuses: sortJsonValue(input.nodeStatuses ?? {}),
+    data: sortJsonValue(input.data ?? null),
   })
 }
 

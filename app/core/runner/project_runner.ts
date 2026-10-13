@@ -1,4 +1,5 @@
 import type { Collection } from "@shared/types/Collection"
+import type { JsonValue } from "@shared/types/JsonValue"
 import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { ProjectRunItem } from "@shared/types/ProjectRunItem"
 import type { RunTerminalStatus } from "@shared/types/RunProgressEvent"
@@ -17,6 +18,7 @@ export interface ProjectRunScheduler {
     readonly workflowId: string
     readonly selectedEnvironmentId: string | null
     readonly agent?: string
+    readonly data?: Readonly<Record<string, JsonValue>>
   }): string
   cancel(runId: string): boolean
   whenFinished(runId: string): Promise<RunTerminalStatus>
@@ -40,6 +42,8 @@ export interface ProjectRunRequest {
   readonly environmentId: string | null
   /** Set when an agent started the project run over MCP: each workflow's run then needs the user's approval to send secrets. */
   readonly agent?: string
+  /** A data row every workflow of this project run reads as `{{data.<column>}}`: one iteration of a data-driven project run. */
+  readonly data?: Readonly<Record<string, JsonValue>>
 }
 
 export interface ProjectRunHandle {
@@ -164,6 +168,7 @@ export class ProjectRunner {
             workflowId: item.workflowId,
             selectedEnvironmentId: request.environmentId,
             ...(request.agent !== undefined ? { agent: request.agent } : {}),
+            ...(request.data !== undefined ? { data: request.data } : {}),
           })
           active.currentRunId = runId
           items[index] = { ...item, runId, status: "running" }

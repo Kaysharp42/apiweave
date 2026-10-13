@@ -1,0 +1,317 @@
+{
+  "info": {
+    "_postman_id": "8d1c2a52-6f0e-4f3e-9d61-5b1c0e7b2a10",
+    "name": "Shop API",
+    "description": "Orders, catalog and auth for the demo shop.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "1234567"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": ["pm.request.headers.upsert({ key: \"Authorization\", value: \"Bearer abc.def-123456\" });"]
+      }
+    },
+    { "listen": "test", "script": { "type": "text/javascript", "exec": [""] } }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.test", "type": "string" },
+    { "key": "accessToken", "value": "", "type": "string" },
+    { "key": "pageSize", "value": "20", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      },
+      "response": []
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.environment.set(\"accessToken\", jsonData.data.token);",
+                  "pm.collectionVariables.set(\"userId\", jsonData.data.user.id);",
+                  "pm.test(\"Logged in\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"hunter2\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/users/{{userId}}", "host": ["{{baseUrl}}"], "path": ["users", "{{userId}}"] }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Everything about orders.",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          { "key": "key", "value": "X-API-Key", "type": "string" },
+          { "key": "value", "value": "sk_test_123", "type": "string" },
+          { "key": "in", "value": "header", "type": "string" }
+        ]
+      },
+      "item": [
+        {
+          "name": "List orders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.expect(pm.response.code).to.eql(200);",
+                  "});",
+                  "pm.test(\"Has orders\", function () {",
+                  "    pm.expect(pm.response.json().items.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Request-Id", "value": "{{$guid}}" },
+              { "key": "X-Debug", "value": "1", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=1&limit={{pageSize}}&status=open",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "{{pageSize}}" },
+                { "key": "status", "value": "open", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get order",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "type": "text/javascript", "exec": ["pm.variables.set(\"requestedAt\", Date.now());"] }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/:orderId",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", ":orderId"],
+              "variable": [{ "key": "orderId", "value": "{{orderId}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin",
+          "item": [
+            {
+              "name": "Export orders",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    { "key": "format", "value": "csv", "type": "text" },
+                    { "key": "since", "value": "{{$isoTimestamp}}", "type": "text" },
+                    { "key": "dryRun", "value": "true", "type": "text", "disabled": true }
+                  ]
+                },
+                "url": { "raw": "{{baseUrl}}/admin/orders/export", "host": ["{{baseUrl}}"], "path": ["admin", "orders", "export"] }
+              },
+              "response": []
+            },
+            {
+              "name": "Upload receipt",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    { "key": "note", "value": "monthly", "type": "text" },
+                    { "key": "receipt", "type": "file", "src": "/home/me/receipt.pdf" }
+                  ]
+                },
+                "url": "{{baseUrl}}/admin/receipts"
+              },
+              "response": []
+            },
+            {
+              "name": "Legacy report",
+              "request": {
+                "auth": {
+                  "type": "digest",
+                  "digest": [
+                    { "key": "username", "value": "auditor", "type": "string" },
+                    { "key": "password", "value": "digest-pass", "type": "string" }
+                  ]
+                },
+                "method": "GET",
+                "header": [],
+                "url": "{{baseUrl}}/admin/legacy-report"
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": ["pm.request.headers.add({ key: \"X-Trace\", value: \"catalog\" });"] }
+        }
+      ],
+      "auth": {
+        "type": "oauth2",
+        "oauth2": [
+          { "key": "grant_type", "value": "client_credentials", "type": "string" },
+          { "key": "accessTokenUrl", "value": "{{baseUrl}}/oauth/token", "type": "string" },
+          { "key": "clientId", "value": "shop-client", "type": "string" },
+          { "key": "clientSecret", "value": "s3cr3t-value", "type": "string" },
+          { "key": "scope", "value": "catalog:read", "type": "string" },
+          { "key": "client_authentication", "value": "body", "type": "string" },
+          { "key": "accessToken", "value": "cached-access-token-value", "type": "string" },
+          { "key": "addTokenTo", "value": "header", "type": "string" }
+        ]
+      },
+      "item": [
+        {
+          "name": "Search products",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Search($term: String!) { products(term: $term) { id name } }",
+                "variables": "{\n  \"term\": \"{{searchTerm}}\"\n}"
+              }
+            },
+            "url": "{{baseUrl}}/graphql"
+          },
+          "response": []
+        },
+        {
+          "name": "Ping",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "raw", "raw": "ping", "options": { "raw": { "language": "text" } } },
+            "url": "{{baseUrl}}/ping"
+          },
+          "response": []
+        },
+        {
+          "name": "Import feed",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/vnd.shop+xml" }],
+            "body": { "mode": "raw", "raw": "<feed><item id=\"1\"/></feed>", "options": { "raw": { "language": "xml" } } },
+            "url": "{{baseUrl}}/feeds/main"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete product",
+          "request": {
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "admin", "type": "string" },
+                { "key": "password", "value": "{{adminPassword}}", "type": "string" }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "body": { "mode": "none" },
+            "url": "{{baseUrl}}/products/{{productId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Random product",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Sent-At", "value": "{{$timestamp}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/products?seed={{$randomInt}}&name={{$randomFirstName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "seed", "value": "{{$randomInt}}" },
+                { "key": "name", "value": "{{$randomFirstName}}" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

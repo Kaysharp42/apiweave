@@ -3,6 +3,7 @@ import type { ClockProvider, RngProvider } from "./harness/providers"
 import { FormData as UndiciFormData, type Headers as UndiciHeaders, type RequestInit as UndiciRequestInit } from "undici"
 import { DynamicFunctions } from "./dynamic_functions"
 import { SafeHttp, SafeUrlError, describeNetworkError } from "./safe_http"
+import { OAuthError, oauthAccessToken, type OAuthTokenCache } from "./oauth"
 import { collectSseEvents, type SseEvent } from "./sse"
 import { extractSecretRefsFromString } from "../services/secret_utils"
 import { SIDE_TABLE_THRESHOLD_BYTES } from "../db"
@@ -15,6 +16,9 @@ import type { AssertionOperator } from "@shared/types/AssertionOperator"
 import type { AssertionSource } from "@shared/types/AssertionSource"
 import type { ExtractorOutcome } from "@shared/types/ExtractorOutcome"
 import type { ExtractorResolution } from "@shared/types/ExtractorResolution"
+import type { HttpAttempt } from "@shared/types/HttpAttempt"
+import type { HttpRetryConfig } from "@shared/types/HttpRetryConfig"
+import type { OAuth2AuthConfig } from "@shared/types/OAuth2AuthConfig"
 import { resolveExtractorPath } from "@shared/extractors/extractorPath"
 import { findCycles, successorMap } from "@shared/analysis/workflow_graph_analyzer"
 import type { JsonValueType } from "@shared/types/JsonValueType"
@@ -55,11 +59,23 @@ export interface WorkflowGraph {
 // panel writes this shape into node.config; the executor must consume it.
 
 interface HttpAuthConfig {
-  readonly type?: "none" | "bearer" | "basic" | "apiKey"
+  readonly type?: "none" | "bearer" | "basic" | "apiKey" | "oauth2"
   readonly bearer?: { readonly token?: string }
   readonly basic?: { readonly username?: string; readonly password?: string }
   readonly apiKey?: { readonly key?: string; readonly value?: string; readonly addTo?: "header" | "query" }
+  readonly oauth2?: OAuth2AuthConfig
 }
+
+/** How a request reaches the token endpoint: the node's own deadline, cancel and TLS settings. */
+interface AuthRequestContext {
+  readonly signal: AbortSignal | undefined
+  readonly timeoutMs: number
+  readonly sslVerify: boolean
+  /** Skip the cached token: the last one was answered with a 401. */
+  readonly forceRefresh: boolean
+}
+
+const SECRET_REFERENCE = /^\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/
 
 interface FormDataEntryLike {
   readonly key: string
@@ -90,7 +106,15 @@ export interface ExecutorDeps {
   readonly baseUrl?: string
   readonly secrets?: Readonly<Record<string, string>>
   readonly environmentVariables?: Readonly<Record<string, unknown>>
+  /** The data row of a data-driven run's iteration, read as `{{data.<column>}}`. */
+  readonly data?: Readonly<Record<string, unknown>>
   readonly emitProgress?: (event: ExecutorProgressEvent) => void
+  /** OAuth 2.0 tokens fetched so far — shared across runs when the caller keeps one. Absent: per executor. */
+  readonly oauthTokens?: OAuthTokenCache
+  /** Adds a value the run obtained itself (an OAuth token) to what its masker scrubs. */
+  readonly maskValue?: (value: string) => void
+  /** Writes a refreshed OAuth token set back to the secret it was read from. */
+  readonly saveSecret?: (name: string, value: string) => Promise<void>
   /** Workspace-scoped workflow lookup for `type: "workflow"` nodes. Undefined disables the node type entirely. */
   readonly resolveWorkflow?: (workflowId: string) => ResolvedSubWorkflow | undefined
   /**
@@ -238,6 +262,8 @@ export interface NodeResult {
   readonly unresolvedPlaceholders?: readonly string[]
   readonly assertionEvaluations?: readonly AssertionEvaluation[]
   readonly extractorOutcomes?: readonly ExtractorOutcome[]
+  /** Every request a retrying http-request node sent; the rest of the result is the last one's. */
+  readonly attempts?: readonly HttpAttempt[]
   /** Summary only — never the sub-workflow's raw per-node results, which would bypass the top-level redaction pass. */
   readonly subWorkflow?: {
     readonly workflowId: string
@@ -263,6 +289,32 @@ export interface ExecutorOutput {
   readonly results: readonly RunResult[]
   readonly failedNodes: readonly string[]
   readonly failureMessage: string | null
+}
+
+type AssertionResponseSource =
+  | { readonly state: "resolved"; readonly nodeId: string; readonly result: NodeResult }
+  | { readonly state: "source-unavailable" | "ambiguous-source" }
+
+/** Resolves `true` after `ms`, or `false` as soon as `signal` aborts (at once if it already has). */
+function waitFor(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      resolve(false)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve(true)
+    }, ms)
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+}
+
+/** The wait after attempt number `attempt` (1-based): `intervalMs`, doubled per attempt when exponential, capped by `maxIntervalMs`. */
+export function retryDelayMs(retry: HttpRetryConfig, attempt: number): number {
+  const base = retry.backoff === "exponential" ? retry.intervalMs * 2 ** (attempt - 1) : retry.intervalMs
+  return Math.min(base, retry.maxIntervalMs ?? Number.POSITIVE_INFINITY)
 }
 
 // -------------------- Internal sentinel --------------------
@@ -306,9 +358,11 @@ export class WorkflowExecutor {
   // still can't hang or stack-overflow a run.
   private callDepth = 0
   private static readonly MAX_CALL_DEPTH = 8
+  private readonly oauthTokens: OAuthTokenCache
 
   public constructor(private readonly deps: ExecutorDeps) {
     this.environmentVariables = { ...(deps.environmentVariables ?? {}) }
+    this.oauthTokens = deps.oauthTokens ?? new Map()
   }
 
   public async executeWorkflow(
@@ -689,7 +743,7 @@ export class WorkflowExecutor {
       let result: NodeResult
 
       if (nodeType === "http-request") {
-        result = await this.executeHttpRequest(node, cancelSignal)
+        result = await this.executeHttpRequestWithRetry(node, cancelSignal)
       } else if (nodeType === "delay") {
         result = await this.executeDelay(node, cancelSignal)
       } else if (nodeType === "assertion") {
@@ -783,7 +837,7 @@ export class WorkflowExecutor {
 
   // -------------------- HTTP request --------------------
 
-  private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+  private async executeHttpRequest(node: WorkflowNode, cancelSignal?: AbortSignal, forceRefreshToken = false): Promise<NodeResult> {
     const config = node.config ?? {}
     const method = (config["method"] as string | undefined) ?? "GET"
     let url = (config["url"] as string | undefined) ?? ""
@@ -831,7 +885,14 @@ export class WorkflowExecutor {
       headers["Cookie"] = existingCookie ? `${existingCookie}; ${cookieHeader}` : cookieHeader
     }
 
-    this.applyAuthConfig(auth, headers, queryParams)
+    try {
+      await this.applyAuthConfig(auth, headers, queryParams, {
+        signal: cancelSignal, timeoutMs: timeout * 1000, sslVerify, forceRefresh: forceRefreshToken,
+      })
+    } catch (authError) {
+      if (!(authError instanceof OAuthError)) throw authError
+      return withExtractorOutcomes({ status: "error", error: authError.message, method, url, duration: 0 })
+    }
 
     url = appendQueryParams(url, queryParams)
 
@@ -876,6 +937,12 @@ export class WorkflowExecutor {
         rejectUnauthorized: sslVerify,
         timeoutMs: timeout * 1000,
       })
+      // An OAuth token the API no longer accepts (revoked, rotated, or expired
+      // early): fetch a fresh one and send the request once more.
+      if (response.status === 401 && auth?.type === "oauth2" && !forceRefreshToken) {
+        await response.body?.cancel()
+        return this.executeHttpRequest(node, cancelSignal, true)
+      }
       const { bytes, truncated } = await this.deps.http.readBodyCapped(response, SIDE_TABLE_THRESHOLD_BYTES)
       const statusCode = response.status
       const duration = Date.now() - startTime
@@ -948,6 +1015,8 @@ export class WorkflowExecutor {
       }
       return withExtractorOutcomes({
         status: "error",
+        // Sent but unanswered (refused, reset, timed out): a retry may get through.
+        networkError: true,
         error: cancelSignal?.aborted
           ? "Request cancelled"
           : error instanceof Error && error.name === "TimeoutError"
@@ -959,6 +1028,47 @@ export class WorkflowExecutor {
         ...(expectedStatus !== undefined ? { expectedStatus } : {}),
         ...(unresolvedPlaceholders.length > 0 ? { unresolvedPlaceholders } : {}),
       })
+    }
+  }
+
+  /**
+   * The node's request, sent again per `config.retry` — the structured way to
+   * poll, since a workflow has no loops. Each attempt is a full request
+   * (placeholders and extractors re-run), and the node's result is the last
+   * attempt's plus the list of every attempt. A request that could not be sent
+   * at all (a blocked URL, a body that would not build) is not retried.
+   */
+  private async executeHttpRequestWithRetry(node: WorkflowNode, cancelSignal?: AbortSignal): Promise<NodeResult> {
+    const retry = node.config?.["retry"] as HttpRetryConfig | undefined
+    if (!retry) return this.executeHttpRequest(node, cancelSignal)
+    const until = retry.until ?? []
+    const attempts: HttpAttempt[] = []
+    for (;;) {
+      const attempt = await this.executeHttpRequest(node, cancelSignal)
+      attempts.push({
+        ...(attempt.statusCode !== undefined ? { statusCode: attempt.statusCode } : {}),
+        duration: Math.max(0, Math.round(attempt.duration ?? 0)),
+        ...(typeof attempt.error === "string" ? { error: attempt.error } : {}),
+      })
+      const result: NodeResult = { ...attempt, attempts }
+      if (cancelSignal?.aborted) return { ...result, status: "cancelled" }
+
+      const sent = attempt.statusCode !== undefined || attempt["networkError"] === true
+      const done = !sent || (until.length > 0
+        ? until.every((rule, index) =>
+            this.evaluateAssertion(index, rule, () => ({ state: "resolved", nodeId: node.nodeId, result: attempt })).outcome === "pass")
+        : attempt["networkError"] !== true && (attempt.statusCode ?? 0) < 500)
+      if (done) return result
+
+      if (attempts.length >= retry.maxAttempts) {
+        // The scheduler keeps this verdict and classes the cause like any other error.
+        const verdict = until.length > 0 ? "Condition not met" : "Failed"
+        const cause = attempt.error ?? (until.length > 0 ? undefined : `HTTP ${attempt.statusCode}`)
+        return { ...result, status: "error", error: `${verdict} after ${attempts.length} attempts${cause ? `: ${cause}` : ""}` }
+      }
+      // Harness mode collapses waits, as it does for Delay.
+      const waitMs = this.deps.baseUrl ? 0 : retryDelayMs(retry, attempts.length)
+      if (!(await waitFor(waitMs, cancelSignal))) return { ...result, status: "cancelled" }
     }
   }
 
@@ -996,7 +1106,16 @@ export class WorkflowExecutor {
     type KVField = ReadonlyArray<{ readonly key: string; readonly value: string; readonly active?: boolean }> | undefined
     const headers = this.normalizeKeyValueField(config["headers"] as KVField)
     const queryParams = this.normalizeKeyValueField(config["queryParams"] as KVField)
-    this.applyAuthConfig(auth, headers, queryParams)
+    try {
+      await this.applyAuthConfig(auth, headers, queryParams, {
+        // A zero SSE timeout means "no deadline" for the stream, not for the token request.
+        signal: cancelSignal, timeoutMs: timeout * 1000 || 30_000, sslVerify, forceRefresh: false,
+      })
+    } catch (authError) {
+      if (!(authError instanceof OAuthError)) throw authError
+      this.completeSseNode(node, { status: "error", error: authError.message, method: "GET", url, duration: 0 }, startedAt, secretRefs)
+      return false
+    }
     for (const key of Object.keys(headers)) if (key.toLowerCase() === "accept") delete headers[key]
     headers["Accept"] = "text/event-stream"
     url = appendQueryParams(url, queryParams)
@@ -1206,25 +1325,8 @@ export class WorkflowExecutor {
       return { status: "success", duration: 0, message: "Delayed for 0 ms (harness mode)" }
     }
 
-    // An abort that landed before this node started never fires the listener below.
-    if (cancelSignal?.aborted) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
-
-    return new Promise<NodeResult>((resolve) => {
-      const timer = setTimeout(() => {
-        resolve({ status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` })
-      }, durationMs)
-
-      if (cancelSignal) {
-        cancelSignal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer)
-            resolve({ status: "cancelled", duration: 0, message: "Delay cancelled" })
-          },
-          { once: true },
-        )
-      }
-    })
+    if (!(await waitFor(durationMs, cancelSignal))) return { status: "cancelled", duration: 0, message: "Delay cancelled" }
+    return { status: "success", duration: durationMs, message: `Delayed for ${durationMs} ms` }
   }
 
   // -------------------- Assertion --------------------
@@ -1277,7 +1379,7 @@ export class WorkflowExecutor {
         continue
       }
 
-      const evaluation = this.evaluateAssertion(node.nodeId, index, assertion, edges)
+      const evaluation = this.evaluateAssertion(index, assertion, () => this.resolveAssertionResponseSource(node.nodeId, edges))
       evaluations.push(evaluation)
       if (evaluation.outcome === "fail" && failureMode === "first") stopped = true
     }
@@ -1300,8 +1402,8 @@ export class WorkflowExecutor {
     }
   }
 
+  /** One rule against the response `resolveSource` locates (an assertion node's upstream request, or a retrying node's own attempt). */
   private evaluateAssertion(
-    assertionNodeId: string,
     ruleIndex: number,
     assertion: {
       readonly field?: string
@@ -1311,7 +1413,7 @@ export class WorkflowExecutor {
       readonly expectedValue?: unknown
       readonly source?: string
     },
-    edges: readonly WorkflowEdge[],
+    resolveSource: () => AssertionResponseSource,
   ): AssertionEvaluation {
     const source = toAssertionSource(assertion.source)
     const path = assertion.path ?? assertion.field ?? ""
@@ -1343,7 +1445,7 @@ export class WorkflowExecutor {
     if (source === "variables") {
       actual = this.workflowVariables[path]
     } else {
-      const resolution = this.resolveAssertionResponseSource(assertionNodeId, edges)
+      const resolution = resolveSource()
       if (resolution.state !== "resolved") {
         return {
           ...base,
@@ -1443,9 +1545,7 @@ export class WorkflowExecutor {
   private resolveAssertionResponseSource(
     assertionNodeId: string,
     edges: readonly WorkflowEdge[],
-  ):
-    | { readonly state: "resolved"; readonly nodeId: string; readonly result: NodeResult }
-    | { readonly state: "source-unavailable" | "ambiguous-source" } {
+  ): AssertionResponseSource {
     const queue = edges.filter((edge) => edge.target === assertionNodeId).map((edge) => edge.source)
     const visited = new Set<string>()
     const sourceIds = new Set<string>()
@@ -1829,25 +1929,12 @@ export class WorkflowExecutor {
         return value !== undefined ? value : match
       }
 
-      // Environment variables
-      if (varPath.startsWith("env.")) {
-        const pathParts = varPath.slice(4).split(".")
-        let value: unknown = this.environmentVariables
-        for (const part of pathParts) {
-          if (typeof value === "object" && value !== null) {
-            value = (value as Record<string, unknown>)[part]
-          } else {
-            return match
-          }
-        }
-        return value !== undefined && value !== null ? placeholderText(value) : match
-      }
-
-      // Workflow variables
-      if (varPath.startsWith("variables.")) {
-        const pathParts = varPath.slice(10).split(".")
-        let value: unknown = this.workflowVariables
-        for (const part of pathParts) {
+      // Environment variables, workflow variables, the iteration's data row
+      const scope = /^(env|variables|data)\.(.*)$/s.exec(varPath)
+      if (scope) {
+        let value: unknown =
+          scope[1] === "env" ? this.environmentVariables : scope[1] === "variables" ? this.workflowVariables : this.deps.data
+        for (const part of scope[2]!.split(".")) {
           if (typeof value === "object" && value !== null) {
             value = (value as Record<string, unknown>)[part]
           } else {
@@ -2029,13 +2116,23 @@ export class WorkflowExecutor {
 
   // -------------------- HTTP auth / body construction --------------------
 
-  /** Apply the panel's auth config as an Authorization header or an apiKey header/query entry. */
-  private applyAuthConfig(
+  /**
+   * Apply the panel's auth config as an Authorization header or an apiKey
+   * header/query entry. OAuth 2.0 fetches its token first; its failures are
+   * thrown as `OAuthError` for the caller to report on the node.
+   */
+  private async applyAuthConfig(
     auth: HttpAuthConfig | undefined,
     headers: Record<string, string>,
     queryParams: Record<string, string>,
-  ): void {
+    context: AuthRequestContext,
+  ): Promise<void> {
     if (!auth || !auth.type || auth.type === "none") return
+    if (auth.type === "oauth2") {
+      if (!auth.oauth2) throw new OAuthError("OAuth 2.0: the node has no OAuth 2.0 settings")
+      headers["Authorization"] = `Bearer ${await this.oauthToken(auth.oauth2, context)}`
+      return
+    }
     if (auth.type === "bearer" && auth.bearer?.token) {
       headers["Authorization"] = `Bearer ${this.substituteVariables(auth.bearer.token)}`
     } else if (auth.type === "basic" && auth.basic) {
@@ -2051,6 +2148,46 @@ export class WorkflowExecutor {
         headers[key] = value
       }
     }
+  }
+
+  private async oauthToken(oauth2: OAuth2AuthConfig, context: AuthRequestContext): Promise<string> {
+    // The client secret and the token are the only places secrets may go, and
+    // only as whole `{{secrets.NAME}}` references (the schema enforces it).
+    const secretName = (reference: string | undefined): string | undefined =>
+      reference ? SECRET_REFERENCE.exec(reference)?.[1] : undefined
+    const clientSecretName = secretName(oauth2.clientSecret)
+    const clientSecret = clientSecretName === undefined ? undefined : this.deps.secrets?.[clientSecretName]
+    if (clientSecretName !== undefined && clientSecret === undefined) {
+      throw new OAuthError(`OAuth 2.0: secret ${clientSecretName} is not set`)
+    }
+    const tokenSecretName = secretName(oauth2.tokenSecret)
+    const storedToken = tokenSecretName === undefined ? undefined : this.deps.secrets?.[tokenSecretName]
+    const fill = (text: string | undefined): string | undefined =>
+      text ? this.substituteVariables(text, { allowSecrets: false }) : undefined
+    return oauthAccessToken(
+      {
+        grantType: oauth2.grantType,
+        tokenUrl: fill(oauth2.tokenUrl) ?? "",
+        clientId: fill(oauth2.clientId) ?? "",
+        clientAuth: oauth2.clientAuth ?? "basic",
+        ...(clientSecret === undefined ? {} : { clientSecret }),
+        ...(oauth2.scope ? { scope: fill(oauth2.scope)! } : {}),
+        ...(oauth2.audience ? { audience: fill(oauth2.audience)! } : {}),
+        ...(tokenSecretName === undefined ? {} : { tokenSecretName }),
+        ...(storedToken === undefined ? {} : { storedToken }),
+      },
+      {
+        http: this.deps.http,
+        cache: this.oauthTokens,
+        now: this.deps.clock.now().getTime(),
+        ...(context.signal ? { signal: context.signal } : {}),
+        timeoutMs: context.timeoutMs,
+        rejectUnauthorized: context.sslVerify,
+        mask: (value) => this.deps.maskValue?.(value),
+        ...(this.deps.saveSecret ? { save: this.deps.saveSecret } : {}),
+      },
+      context.forceRefresh,
+    )
   }
 
   /** Build the fetch body per `bodyType`, mutating `headers` with a Content-Type when one is implied. */
@@ -2278,6 +2415,7 @@ function buildRunResult(nodeId: string, status: RunResult["status"], result: Nod
       ? { expectedStatus: (Array.isArray(result.expectedStatus) ? [...result.expectedStatus] : result.expectedStatus) as number | number[] }
       : {}),
     ...buildRunResultDiagnostics(result),
+    ...(result.attempts ? { attempts: result.attempts.map((attempt) => ({ ...attempt })) } : {}),
     request: buildRunResultRequest(result),
     response: buildRunResultResponse(result),
     error: typeof result.error === "string" ? result.error : null,
@@ -2348,19 +2486,19 @@ function collectSecretRefs(config: Record<string, unknown> | undefined): readonl
 }
 
 /**
- * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{prev...}}`,
- * `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
+ * Reference-shaped placeholders (`{{env.*}}`, `{{variables.*}}`, `{{data.*}}`,
+ * `{{prev...}}`, `{{secrets.*}}`) still present in a built HTTP request. `substituteVariables`
  * leaves an unresolved placeholder verbatim, so the assembled URL/headers/query
  * values tell us which references never resolved. Names only (never values).
  */
-const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|prev\b|secrets\.)([^}]*)\}\}/g
+const UNRESOLVED_REF_RE = /\{\{\s*(env\.|variables\.|data\.|prev\b|secrets\.)([^}]*)\}\}/g
 
 function collectUnresolvedPlaceholders(values: readonly string[]): string[] {
   const found = new Set<string>()
   for (const value of values) {
     for (const match of value.matchAll(UNRESOLVED_REF_RE)) {
       const prefix = match[1]!
-      // `env./variables./secrets.` swallow their dot into the prefix, so `rest` never
+      // `env./variables./data./secrets.` swallow their dot into the prefix, so `rest` never
       // starts with one — but `prev` (bare word-boundary, no dot) needs its `.` kept as
       // the join separator. Trimming (not stripping a leading dot) also drops the
       // trailing whitespace `{{ env.EMAIL }}` leaves in `rest` before the closing `}}`.

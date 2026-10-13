@@ -16,6 +16,9 @@ import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js"
  *  - `runs.report`, `projects.runReport` — a whole JUnit or HTML report as one
  *    unbounded string for the renderer to save; an agent reads the same facts,
  *    bounded, through `runs_get`, `runs_getNodeResult` and `projects_getRun`.
+ *  - `runs.createIterations` — the renderer's "Run with data…": a background
+ *    run per row. An agent runs a data set one row per `runs_create` (`data`),
+ *    and waits on each, so every iteration gets its own approval and summary.
  *  - `runs.delete`, `runs.clearHistory` — irreversible deletion of run
  *    history; the user's call from the History panel, never an agent's.
  *  - `runs.listByWorkflow`, `runs.listByWorkspace`, `runs.getLatest`,

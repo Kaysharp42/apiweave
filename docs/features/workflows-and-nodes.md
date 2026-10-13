@@ -88,13 +88,14 @@ APIWeave ships several node types. Each does one job. Start and End mark flow bo
 | `path variables` | Named segments of the URL path (`/users/:id`) with their values |
 | `headers` | Structured key/value rows, each with an active toggle |
 | `cookies` | Structured key/value rows, each with an active toggle |
-| `auth` | Optional auth scheme: bearer token, basic credentials, or API key. Supports placeholders |
+| `auth` | Optional auth scheme: bearer token, basic credentials, API key, or OAuth 2.0 (see [OAuth 2.0](#oauth-20)). Supports placeholders |
 | `body` | Body type: none, JSON, raw, form-data (with optional file uploads), x-www-form-urlencoded, or binary. Supports placeholders in any field. A non-empty JSON body is sent with `Content-Type: application/json` unless you set a `Content-Type` header yourself |
 | `timeout` | Request timeout in seconds (default 30). It is the request's only deadline: a timed-out node fails with "Request timed out after Ns" |
 | `follow redirects` | Whether redirect responses are followed (on by default, at most 5 hops). Redirects behave like a browser's: a 303, or a 301/302 answering a POST, is followed with a bodiless GET; a 307/308 resends the method and body; `Authorization`, `Cookie` and `Proxy-Authorization` are dropped when the redirect leaves the original origin; a redirect from HTTPS to HTTP is refused |
 | `verify SSL` | Whether the TLS certificate is verified (on by default) |
 | `expected status` | Optional expected status code or comma-separated list (see below) |
 | `continue on fail` | Whether a failed request lets the run continue down the outgoing edge |
+| `retry` | Optional: send the request again until a condition holds, or after a network error or 5xx (see [Retry and polling](#retry-and-polling)) |
 | `extractors` | List of `{name, path}` pairs that pull values from the response into workflow variables (see [Variables and Extractors](variables-and-extractors.md)) |
 
 A request that never gets a response fails with its network cause, such as "Network error: could not resolve host api.example.com (ENOTFOUND)", "connection refused", or a TLS failure naming the certificate problem. The response body is kept up to 1 MiB: a larger body is cut there and marked truncated, with its full size when the server declared one. A body that is not UTF-8 text (an image, a PDF) is stored base64-encoded.
@@ -119,6 +120,56 @@ A request that never gets a response fails with its network cause, such as "Netw
 The output body has `events`, `eventCount`, and `termination`. Each event records its `event` type, optional `id`, and exact `data` string, including multi-line data. A downstream Assertion can validate a frontend-facing payload directly, for example `response.body.events[0].data` or `response.body.eventCount`.
 
 **Handles:** one input, two outputs. **Ready** runs after the handshake; **Complete** runs only after the final bounded result exists. Use the Complete path for a regular Assertion node that checks `response.body.events`.
+
+#### OAuth 2.0
+
+Choose **OAuth 2.0** on the node's **Auth** tab and the run fetches an access token before the request and sends it as `Authorization: Bearer <token>`. Two grant types:
+
+- **Client credentials** is headless and works in the app and in the [CLI](../guides/ci.md). Set the token URL, the client ID, the client secret, and optionally a scope and an audience.
+- **Authorization code (PKCE)** is for APIs that act on behalf of a user. Set the authorization URL as well, and name the secret the token is stored in. **Get token** opens your system browser to sign in. APIWeave receives the redirect on a one-time listener on `127.0.0.1` (an ephemeral port, closed after one callback or five minutes), checks the `state`, exchanges the code with the PKCE verifier, and seals the access and refresh token into that secret. The Auth tab then shows who the token was issued to (when the server sends an OpenID `id_token`) and when it expires; **Clear token** deletes it. Register `http://127.0.0.1/callback` as a redirect URI with your provider; RFC 8252 servers accept any port on the loopback address.
+
+**Client authentication** sends the client ID and secret as an HTTP Basic header (the default) or as `client_id`/`client_secret` form fields.
+
+The client secret and the token secret are secret *names*, stored in the workflow as `{{secrets.NAME}}`. A literal value is refused, so neither ever reaches the workflow file or an export. The token URL, client ID, scope and audience accept placeholders; **Get token** fills only `{{env.*}}` and `{{secrets.*}}`, since it runs outside a workflow run. Get token stores the token in the environment selected for the workflow, or in the workspace when none is.
+
+During a run:
+
+- A client-credentials token is reused across nodes and runs until 30 seconds before it expires (`expires_in`), for as long as the app is open. Tokens are never written to disk.
+- An authorization-code token that has expired is refreshed with the refresh token, and the new token (and a rotated refresh token) is written back to the same secret.
+- If the API answers `401`, the node fetches a fresh token and sends the request once more.
+- Every token is masked as `<SECRET>` in run history, events and reports, like a secret.
+- A run never opens a browser. When no token has been fetched, or it expired with no refresh token, the node fails with a message saying to use **Get token**. This also applies to runs an agent starts over MCP.
+
+Token endpoint failures fail the node with the status and the OAuth error code, for example "OAuth 2.0 token request failed: HTTP 401 (invalid_client)". The token endpoint is listed among the destinations when an agent-started run asks to use your secrets.
+
+#### Retry and polling
+
+Workflows have no loops, so a request that has to be sent more than once says so itself, under **Settings → Retry**. This is how you test an async API: a `POST` that answers `202 Accepted`, then a `GET` on its status URL repeated until the job reports done.
+
+| Retry field | What it does |
+| --- | --- |
+| `max attempts` | Total requests, the first included (1 to 100) |
+| `interval` | Milliseconds to wait between attempts |
+| `backoff` | `fixed` (default) waits the interval every time; `exponential` doubles it after each attempt |
+| `max interval` | With exponential backoff, the longest a single wait may grow to |
+| `until` | Assertion rules, the same rules an Assertion node takes, checked against **this request's own response**: `status`, `prev` (`response.body.status`), `headers`, `cookies`, or `variables` (extractors run on every attempt first). The request stops repeating once every rule passes |
+
+With `until` rules, a response that does not satisfy them, a network error and a timeout are all retried. With no rules, only a network error, a timeout or a 5xx response is retried; a 4xx is final. A request that could not be sent at all (a URL that is not http(s), a body that would not build) is never retried.
+
+Each attempt is a full request: placeholders are filled and extractors run again. The node's result is the last attempt's response, plus the list of attempts (status code or error, and duration); the output panel shows the attempt count, and the canvas node a ↻ chip once it took more than one. Whether the final response passes is still decided by the usual rule (any 2xx, or **Expected status**): `until` decides when to stop, not whether the node passed. When the rules never hold the node fails with "Condition not met after N attempts", and without rules with "Failed after N attempts: HTTP 503" or the network error. Cancelling the run stops a retry mid-wait. Run reports and `apiweave run` list a retried node's attempts.
+
+A polling request for `{"status": "pending"}` → `{"status": "done"}`:
+
+```json
+"retry": {
+  "maxAttempts": 20,
+  "intervalMs": 2000,
+  "until": [
+    { "source": "status", "path": "", "operator": "equals", "expectedValue": 200 },
+    { "source": "prev", "path": "response.body.status", "operator": "equals", "expectedValue": "done" }
+  ]
+}
+```
 
 **Expected status (negative tests).** By default a node passes on any 2xx status and fails on everything else. Set **Expected status** — for example `409` or `409, 422` — and that rule is fully replaced: the node passes only when the actual status matches one of the expected values, and fails otherwise, *even for a 2xx response*. This is how you assert a negative test ("the API must reject this with 409") on the request itself. A matched status renders as a green node showing the status text (for example `409 Conflict`). Use it instead of a `continueOnFail` flag plus a downstream assertion that pins a non-2xx status; `workflow_diagnose` suggests exactly that migration when it sees that pattern.
 
@@ -156,12 +207,12 @@ operators.
 
 ### Delay
 
-**Purpose:** Pauses execution for a fixed time before continuing, useful for polling or pacing rate-limited calls.
+**Purpose:** Pauses execution for a fixed time before continuing, useful for pacing rate-limited calls or giving a system time to settle. To poll until something is ready, use the HTTP request's [Retry](#retry-and-polling) instead: a Delay runs once, and a workflow cannot loop back through it.
 
 | Field | What it does |
 | --- | --- |
 | `duration` | How long to wait, in milliseconds (default 1000) |
-| `jitter` | Optional randomized window: the runner waits `duration` plus a random amount between `minMs` and `maxMs` |
+| `jitter` | Optional randomized window: when set, the runner waits a random time between `minMs` and `maxMs` instead of `duration` |
 | `label` | Optional display name |
 
 **Handles:** one input, one output.

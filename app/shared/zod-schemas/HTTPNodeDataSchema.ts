@@ -3,6 +3,7 @@ import { AuthConfigSchema } from "./AuthConfigSchema"
 import { FileUploadSchema } from "./FileUploadSchema"
 import { FormDataEntrySchema } from "./FormDataEntrySchema"
 import { HttpMethodSchema } from "./HttpMethodSchema"
+import { HttpRetryConfigSchema } from "./HttpRetryConfigSchema"
 import { KeyValuePairSchema } from "./KeyValuePairSchema"
 import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
 
@@ -46,6 +47,9 @@ export const HTTPNodeDataSchema = z
       .describe(
         "The status code(s) this request is expected to return. The node passes when the response matches and fails when it does not, including when it returns 2xx. Omit for the default, where any 2xx passes. Use this for negative tests: a request that is supposed to be rejected.",
       ),
+    retry: HttpRetryConfigSchema.optional().describe(
+      "Send the request again: poll until a condition holds (`until`), or ride out network errors and 5xx responses. Attempts are recorded on the node result; the node fails with \"Condition not met after N attempts\" when the condition never holds.",
+    ),
     extractors: z
       .record(z.string(), z.string())
       .optional()

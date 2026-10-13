@@ -269,6 +269,52 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Import Postman collections.** **Projects → Import → Postman** turns a
+  Postman Collection v2.1, and optionally a Postman environment, into a new
+  project: one workflow per folder (nested folders named `Parent / Child`) or
+  one per request, each request with its method, URL, query, path variables,
+  headers, body (raw, urlencoded, form-data text fields, GraphQL as JSON) and
+  inherited auth (bearer, basic, API key, OAuth 2.0). Variables go to one
+  **Postman: …** environment, dynamic variables such as `{{$guid}}` to
+  APIWeave's dynamic functions, and test scripts that check the status or
+  store a response value to Expected status and extractors; other scripts are
+  kept in a note. Credential values are never imported: each becomes a
+  `{{secrets.NAME}}` reference, and the preview lists the secrets to create.
+  `apiweave run` runs a Postman collection directly. Collection v1 and v2.0
+  files are refused with a request to re-export. See
+  [Migrate from Postman](docs/guides/migrating-from-postman.md).
+- **OAuth 2.0 for HTTP requests.** The Auth tab offers OAuth 2.0 with two
+  grant types. **Client credentials** runs headless, in the app and in
+  `apiweave run`: the token is fetched before the request, reused until it
+  nears expiry, and fetched again once if the API answers 401. **Authorization
+  code with PKCE** signs in once through **Get token**, which opens your
+  browser and receives the redirect on a one-time `127.0.0.1` listener; the
+  access and refresh token are sealed in a secret you name, refreshed
+  automatically when they expire, and never stored in the workflow or an
+  export. The CLI takes a refresh token as that secret. Client secrets are
+  `{{secrets.NAME}}` references only, and every fetched token is masked in run
+  history, events and reports.
+- **Data-driven runs from a CSV or JSON file.** A workflow can run once per
+  row of a data file, each row's values read as `{{data.<column>}}`: a CSV
+  file's header names the columns, a JSON file is an array of objects. In the
+  app, **Run with data** beside **Run** picks the file; the toolbar shows
+  **Iteration 3/10**, each iteration is its own History entry with its place,
+  a failed iteration does not stop the next, and Cancel stops the rest. In CI,
+  `apiweave run --iteration-data <file>` (`-d`) does the same for a workflow or
+  a whole project, `--iteration-count` (`-n`) repeats a run, `--bail` stops at
+  the first failed iteration, and the reports have one suite per iteration
+  (`Health check [iteration 2]`). Agents pass one row as `data` on
+  `runs_create`. Row values are never stored with a run and are not masked:
+  keep secrets in the secret store.
+- **Poll async APIs with Retry.** An HTTP request can now repeat itself:
+  **Settings → Retry** sets the attempts, the wait (fixed or exponential with
+  a cap) and **Until** rules, the same rules an Assertion node takes, checked
+  against the request's own response — for example status 200 and
+  `response.body.status` equals `done`. Without rules it retries network
+  errors, timeouts and 5xx responses. A run cancel stops it mid-wait; the
+  result keeps every attempt, the output panel and canvas node show the
+  count, and a condition that never holds fails the node with "Condition not
+  met after N attempts". Reports and `apiweave run` list the attempts.
 - **Run tests in CI with `apiweave run`.** A headless command runs an exported
   workflow or `.awecollection` project under plain Node, with no Electron and
   no window, and exits 0 when every run passes, 1 when a test fails and 2 on a

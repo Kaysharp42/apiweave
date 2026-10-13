@@ -15,6 +15,7 @@ import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "@shared/types/AgentOutputEvent"
 import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
+import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
@@ -22,6 +23,7 @@ import {
   AGENT_WRITE_CHANNEL,
   CLOUD_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
+  OAUTH_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   runProgressChannel,
   RUN_STARTED_CHANNEL,
@@ -215,6 +217,15 @@ const agentsBridge: AgentsBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_AGENTS__", agentsBridge)
+
+/** OAuth 2.0 sign-in for HTTP nodes — a privileged world for the same reason as the agents bridge. */
+const oauthBridge: OAuthBridge = {
+  authorize: invokeBridge(OAUTH_CHANNELS.authorize),
+  status: invokeBridge(OAUTH_CHANNELS.status),
+  clear: invokeBridge(OAUTH_CHANNELS.clear),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_OAUTH__", oauthBridge)
 
 /**
  * The one thing that cannot travel over `contextBridge`: a session's output port.

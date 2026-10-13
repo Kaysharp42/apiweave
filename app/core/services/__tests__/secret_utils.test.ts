@@ -46,6 +46,22 @@ describe("sanitizeExportValue", () => {
     expect((auth["basic"] as Record<string, unknown>)["password"]).toBe("{{env.PASSWORD}}")
   })
 
+  it("keeps an OAuth 2.0 config's secret references and blanks anything else in their place", () => {
+    const sanitized = sanitizeExportValue({
+      auth: {
+        type: "oauth2",
+        oauth2: { grantType: "authorization_code", tokenUrl: "https://idp/token", clientId: "app", clientSecret: "literal-client-secret", tokenSecret: "{{secrets.API_OAUTH}}" },
+      },
+    }) as { auth: { oauth2: Record<string, unknown> } }
+    expect(sanitized.auth.oauth2).toEqual({
+      grantType: "authorization_code",
+      tokenUrl: "https://idp/token",
+      clientId: "app",
+      clientSecret: "",
+      tokenSecret: "{{secrets.API_OAUTH}}",
+    })
+  })
+
   it("redacts KeyValuePair arrays (headers/cookies/queryParams) by value, keeping key names", () => {
     const config = {
       headers: [{ key: "Authorization", value: "Bearer secret" }, { key: "Accept", value: "application/json" }],

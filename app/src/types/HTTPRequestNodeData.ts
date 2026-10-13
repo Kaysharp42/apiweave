@@ -3,6 +3,7 @@ import type { HttpMethod } from "@shared/types/HttpMethod";
 import type { FileUpload } from "./FileUpload";
 import type { KeyValuePair } from "@shared/types/KeyValuePair";
 import type { SchemaWarning } from "./SchemaWarning";
+import type { HttpAttempt } from "@shared/types/HttpAttempt";
 
 export interface HTTPRequestNodeData {
   label?: string;
@@ -17,6 +18,7 @@ export interface HTTPRequestNodeData {
     bodyFormat?: string;
     cookies?: Record<string, string>;
     error?: string;
+    attempts?: readonly HttpAttempt[];
   };
   config?: {
     method?: HttpMethod;

@@ -13,6 +13,7 @@ import {
   Trash2,
   FileCode,
   FileText,
+  FileSpreadsheet,
 } from "lucide-react";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { RunSummary } from "@shared/types/RunSummary";
@@ -286,6 +287,14 @@ export default function HistoryModal({
                       <div className="flex items-center gap-1">
                         <Zap className="w-3.5 h-3.5" />
                         <span className="capitalize">{run.trigger}</span>
+                      </div>
+                    )}
+                    {run.iteration && (
+                      <div className="flex items-center gap-1">
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        <span>
+                          Iteration {run.iteration.index}/{run.iteration.count}
+                        </span>
                       </div>
                     )}
                   </div>

@@ -534,6 +534,16 @@ function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<st
   if (isRecord(apiKey) && typeof apiKey["value"] === "string") {
     sanitized["apiKey"] = { ...apiKey, value: leaf(apiKey["value"]) }
   }
+  // OAuth 2.0 holds only `{{secrets.NAME}}` references (the schema refuses a
+  // literal); anything else blanks to "" so the bundle still imports.
+  const { oauth2 } = sanitized
+  if (isRecord(oauth2)) {
+    sanitized["oauth2"] = {
+      ...oauth2,
+      ...(oauth2["clientSecret"] === undefined ? {} : { clientSecret: referenceOrBlank(oauth2["clientSecret"], "") }),
+      ...(oauth2["tokenSecret"] === undefined ? {} : { tokenSecret: referenceOrBlank(oauth2["tokenSecret"], "") }),
+    }
+  }
   return sanitized
 }
 

@@ -94,7 +94,8 @@ function projectStatusCounts(results: Run["results"]): Record<string, JsonValue>
  * One failed node's debug essentials. `expectedStatus` keeps a matched
  * negative test legible; `unresolvedPlaceholders` names references that went
  * out as literal text (a 401 with placeholders present is a missing value,
- * not bad credentials). Bodies stay in the evidence tool.
+ * not bad credentials); `attemptCount` says a retrying request gave up after
+ * that many tries. Bodies stay in the evidence tool.
  */
 function projectFailedNode(result: RunResult): JsonValue {
   const response = isRecord(result.response) ? result.response : null
@@ -107,6 +108,8 @@ function projectFailedNode(result: RunResult): JsonValue {
     unresolvedPlaceholders: result.unresolvedPlaceholders ? [...result.unresolvedPlaceholders] : [],
     hasError: typeof result.error === "string" && result.error.length > 0,
     ...(typeof statusCode === "number" ? { responseStatusCode: statusCode } : {}),
+    // A retrying request that gave up: how many times it was sent.
+    ...(result.attempts ? { attemptCount: result.attempts.length } : {}),
   }
 }
 

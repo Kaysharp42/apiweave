@@ -467,7 +467,9 @@ export function WorkflowCanvas({
 
   const {
     isRunning,
+    currentIteration,
     runWorkflow,
+    runWorkflowWithData,
     cancelRun,
     runFromLastFailed,
     runAllFailed,
@@ -1843,6 +1845,7 @@ export function WorkflowCanvas({
         onImport={() => setShowImportToNodes(true)}
         onCommandPalette={() => setIsCommandPaletteOpen(true)}
         onRun={runWorkflow}
+        onRunWithData={(file) => void runWorkflowWithData(file)}
         onCancel={cancelRun}
         onRunFromLastFailed={runFromLastFailed}
         onRunAllFailed={runAllFailed}
@@ -1852,6 +1855,7 @@ export function WorkflowCanvas({
           }
         }}
         isRunning={isRunning}
+        iteration={currentIteration}
         environments={environments}
         {...(selectedEnvironment ? { selectedEnvironment } : {})}
         onRefreshSwagger={handleManualSwaggerRefresh}

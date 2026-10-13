@@ -10,7 +10,7 @@ import {
   type SecretScopeChain,
   type SecretScopeType,
 } from "../secrets/scoped_secret_resolver"
-import { ALGORITHM, openSealedBox, publicKeyFromSeed } from "../secrets/sealed_box"
+import { ALGORITHM, openSealedBox, publicKeyFromSeed, seal } from "../secrets/sealed_box"
 import type { SecretWriteStore, SecretUpsert } from "../secrets/SecretStore"
 import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
@@ -119,6 +119,29 @@ export class SecretService {
     await this.authorize(workspaceId, "create")
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     return this.pushAndReturn(await this.store.put({ ...input, workspaceId }))
+  }
+
+  /**
+   * Seal and store a value main produced itself — an OAuth token set from a
+   * sign-in or a refresh. Trusted callers only: it is never on the IPC router,
+   * where values arrive already sealed by the renderer.
+   */
+  async storePlaintext(
+    workspaceId: string,
+    input: { readonly scopeType: SecretScopeType; readonly scopeId: string; readonly name: string; readonly value: string; readonly label?: string },
+  ): Promise<SecretMetadata> {
+    await this.authorize(workspaceId, "create")
+    this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
+    const sealed = await seal(input.value, await publicKeyFromSeed(this.sealedBoxSeed))
+    return this.pushAndReturn(await this.store.put({
+      workspaceId,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      name: input.name,
+      keyId: scopeKeyId(input.scopeType, input.scopeId),
+      sealed,
+      ...(input.label === undefined ? {} : { label: input.label }),
+    }))
   }
 
   /** List secret metadata for a scope (never values). */

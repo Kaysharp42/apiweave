@@ -7,7 +7,11 @@ import type {
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
+import type { RunIteration } from "@shared/types/RunIteration";
+import type { IterationRow } from "@shared/iteration-data/iterationData";
 import type { ProjectRun } from "@shared/types/ProjectRun";
+import type { PostmanImportPreview } from "@shared/types/PostmanImportPreview";
+import type { PostmanImportResult } from "@shared/types/PostmanImportResult";
 import type { ReportFormat } from "@shared/types/ReportFormat";
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent";
 import type { AgentDefinition } from "@shared/types/AgentDefinition";
@@ -25,6 +29,9 @@ import type {
   AgentsBridge,
 } from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
+import type { OAuthBridge } from "@shared/types/OAuthBridge";
+import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
+import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -65,6 +72,7 @@ type IpcRun = Run & {
   readonly failedNodes?: readonly string[] | null;
   readonly nodeStatuses?: Record<string, JsonValue>;
   readonly variables?: Record<string, JsonValue>;
+  readonly iteration?: RunIteration | null;
   readonly resolvedSecrets?: readonly {
     readonly name: string;
     readonly scopeType: "environment" | "workspace" | null;
@@ -126,6 +134,7 @@ declare global {
     __APIWEAVE_MCP__?: McpBridge;
     __APIWEAVE_UPDATES__?: UpdatesBridge;
     __APIWEAVE_AGENTS__?: AgentsBridge;
+    __APIWEAVE_OAUTH__?: OAuthBridge;
     apiweave?: typeof apiweave;
   }
 
@@ -142,6 +151,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_MCP__?: McpBridge;
   __APIWEAVE_UPDATES__?: UpdatesBridge;
   __APIWEAVE_AGENTS__?: AgentsBridge;
+  __APIWEAVE_OAUTH__?: OAuthBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -544,6 +554,13 @@ export const apiweave = {
         readonly operationId?: string;
       } & Partial<IpcRun>,
     ) => invoke<IpcRun>("runs", "create", input),
+    /** A data-driven run: the workflow once per row. Returns iteration 1's run. */
+    createIterations: (input: {
+      readonly workspaceId: string;
+      readonly workflowId: string;
+      readonly selectedEnvironmentId?: string | null;
+      readonly rows: readonly IterationRow[];
+    }) => invoke<IpcRun>("runs", "createIterations", input),
     wait: (workspaceId: string, runId: string, waitMs?: number) =>
       invoke<IpcRun>("runs", "wait", waitMs === undefined ? { workspaceId, runId } : { workspaceId, runId, waitMs }),
     get: (workspaceId: string, runId: string) =>
@@ -761,6 +778,21 @@ export const apiweave = {
         workspaceId,
         bundle,
       }),
+    // A Postman Collection v2.1 (and optional Postman environment), as parsed JSON.
+    previewPostman: (input: {
+      readonly workspaceId: string;
+      readonly collection: Record<string, unknown>;
+      readonly environment?: Record<string, unknown>;
+      readonly mode?: "folder" | "request";
+      readonly projectName?: string;
+    }) => invoke<PostmanImportPreview>("projects", "previewPostman", input),
+    importPostman: (input: {
+      readonly workspaceId: string;
+      readonly collection: Record<string, unknown>;
+      readonly environment?: Record<string, unknown>;
+      readonly mode?: "folder" | "request";
+      readonly projectName?: string;
+    }) => invoke<PostmanImportResult>("projects", "importPostman", input),
   },
   cloud: {
     status: () => invoke<CloudSyncStatus>("cloud", "status", {}),
@@ -1113,4 +1145,26 @@ export const agents = {
       throw error;
     }
   },
+} as const;
+
+function getOAuthBridge(): OAuthBridge | undefined {
+  return (
+    globalThis.window?.__APIWEAVE_OAUTH__ ?? globalApiweave.__APIWEAVE_OAUTH__
+  );
+}
+
+const oauthDesktopOnly = (): Promise<never> =>
+  Promise.reject(new Error("OAuth sign-in is only available in the desktop app"));
+
+/**
+ * OAuth 2.0 sign-in for HTTP nodes (Get token, its status, Clear token). A
+ * sibling of `agents`, off the router facade: see `OAuthBridge`.
+ */
+export const oauth = {
+  authorize: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.authorize(request) ?? oauthDesktopOnly(),
+  status: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.status(request) ?? oauthDesktopOnly(),
+  clear: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
+    getOAuthBridge()?.clear(request) ?? oauthDesktopOnly(),
 } as const;
