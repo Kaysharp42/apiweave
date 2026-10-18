@@ -8,6 +8,16 @@ import { ValidationError } from "../ipc/errors"
 import { slugify } from "../repositories/helpers"
 import { extractSecretRefsFromString } from "./secret_utils"
 import type { ExportedEnvironment, ExportedWorkflow, ProjectBundle, ProjectExportService } from "./project_export_service"
+import {
+  compare,
+  environmentFileText,
+  fileText,
+  issueText,
+  nameSlug,
+  parseJsonText,
+  RecordIdSchema,
+  workflowFileText,
+} from "./workspace_repo_format"
 
 /**
  * A project as a folder of JSON files, for keeping tests in a git repository:
@@ -16,14 +26,13 @@ import type { ExportedEnvironment, ExportedWorkflow, ProjectBundle, ProjectExpor
  *   workflows/<slug>.json        one file per workflow
  *   environments/<slug>.json     one file per environment the workflows use (variables only)
  *
- * Written so a change diffs small and merges cleanly: one workflow per file,
- * objects with sorted keys (top-level fields in a fixed order), nodes sorted
- * by id (a group frame before what it holds), edges by id, positions rounded
- * to whole pixels, 2-space indent and a trailing newline, and nothing volatile
- * (no revision, timestamp, run state or workspace id). Ids are the content's
- * identity; a file name is only the name's slug, so renaming a workflow
- * renames its file. Secret values never enter the folder: `{{secrets.NAME}}`
- * references stay as written and `project.json` lists the names.
+ * The files are written the way the workspace repository format writes its
+ * own (`workspace_repo_format.ts`): the same workflow and environment
+ * documents, key order, rounding and layout. What is the folder's own is
+ * `project.json` and the naming: a file name is only the name's slug, so
+ * renaming a workflow renames its file. Secret values never enter the folder:
+ * `{{secrets.NAME}}` references stay as written and `project.json` lists the
+ * names.
  *
  * The folder's files are the ones `project.json` lists. A re-export rewrites
  * those, removes the ones that no longer belong (a deleted or renamed
@@ -34,12 +43,8 @@ export const PROJECT_FILE = "project.json"
 export const FOLDER_FORMAT = "apiweave-project"
 export const FOLDER_FORMAT_VERSION = 1
 
-const MAX_SLUG_LENGTH = 60
 /** Names Windows will not create a file under, whatever the extension. */
 const RESERVED_NAME = /^(con|prn|aux|nul|com\d|lpt\d)$/
-
-/** What an id generated here looks like (a ULID), loosely: an id from a folder also names files and rows, so nothing path-like gets in. */
-const folderId = z.string().regex(/^[A-Za-z0-9_-]+$/, "must be an APIWeave id (letters, digits, '-' and '_')")
 
 const fileEntry = (directory: string) =>
   z.string().regex(new RegExp(`^${directory}/[^/\\\\:]+\\.json$`), `must be a file directly under ${directory}/`)
@@ -50,14 +55,14 @@ const ManifestSchema = z
     version: z.literal(FOLDER_FORMAT_VERSION, {
       message: `this folder was written by a newer APIWeave (only format version ${FOLDER_FORMAT_VERSION} is supported)`,
     }),
-    projectId: folderId,
+    projectId: RecordIdSchema,
     name: z.string().min(1),
     description: z.string(),
     color: z.string(),
     workflows: z.array(
-      z.object({ workflowId: folderId, file: fileEntry("workflows"), enabled: z.boolean(), continueOnFail: z.boolean() }).strict(),
+      z.object({ workflowId: RecordIdSchema, file: fileEntry("workflows"), enabled: z.boolean(), continueOnFail: z.boolean() }).strict(),
     ),
-    environments: z.array(z.object({ environmentId: folderId, file: fileEntry("environments") }).strict()),
+    environments: z.array(z.object({ environmentId: RecordIdSchema, file: fileEntry("environments") }).strict()),
     secrets: z.array(z.string()),
   })
   .strict()
@@ -101,37 +106,6 @@ export function projectFolderFiles(bundle: ProjectBundle): Map<string, string> {
   }
   files.set(PROJECT_FILE, fileText(manifest as unknown as Record<string, JsonValue>))
   return files
-}
-
-/** A workflow's file. Also how an import decides a workflow is unchanged: same text, same workflow. */
-export function workflowFileText(workflow: ExportedWorkflow): string {
-  const nodes = workflow.nodes.map(roundPosition)
-  return fileText({
-    workflowId: workflow.workflowId,
-    name: workflow.name,
-    description: workflow.description ?? "",
-    selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
-    tags: [...workflow.tags],
-    variables: workflow.variables,
-    nodes: sortNodes(nodes),
-    edges: [...workflow.edges].sort((left, right) => compare(field(left, "edgeId"), field(right, "edgeId"))),
-    nodeTemplates: [...(workflow.nodeTemplates ?? [])],
-  })
-}
-
-export function environmentFileText(environment: ExportedEnvironment): string {
-  return fileText({
-    environmentId: environment.environmentId,
-    name: environment.name,
-    description: environment.description ?? null,
-    swaggerDocUrl: environment.swaggerDocUrl ?? null,
-    variables: environment.variables,
-  })
-}
-
-/** JSON with every object's keys sorted, so equal values print equal. */
-export function stableJson(value: unknown): string {
-  return JSON.stringify(sortKeys(JSON.parse(JSON.stringify(value ?? null)) as JsonValue))
 }
 
 /** Read a project folder into a bundle the project importer takes. Throws ValidationError naming the file at fault. */
@@ -253,17 +227,9 @@ export async function importProjectFolder(
 function readManifest(folder: string): Manifest | undefined {
   const text = readIfExists(path.join(folder, PROJECT_FILE))
   if (text === undefined) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch (error) {
-    throw new ValidationError(`${PROJECT_FILE} in ${folder} is not valid JSON (an unresolved merge conflict?): ${errorMessage(error)}`)
-  }
-  const result = ManifestSchema.safeParse(parsed)
+  const result = ManifestSchema.safeParse(parseJsonText(`${PROJECT_FILE} in ${folder}`, text))
   if (!result.success) {
-    const issue = result.error.issues[0]
-    const at = issue === undefined || issue.path.length === 0 ? "" : `${issue.path.join(".")}: `
-    throw new ValidationError(`${PROJECT_FILE} in ${folder} is not an APIWeave project file: ${at}${issue?.message ?? "invalid"}`)
+    throw new ValidationError(`${PROJECT_FILE} in ${folder} is not an APIWeave project file: ${issueText(result.error)}`)
   }
   const files = [...result.data.workflows, ...result.data.environments].map((entry) => entry.file)
   const duplicate = files.find((file, index) => files.indexOf(file) !== index)
@@ -274,12 +240,7 @@ function readManifest(folder: string): Manifest | undefined {
 function readJsonFile(folder: string, file: string): Record<string, JsonValue> {
   const text = readIfExists(path.join(folder, file))
   if (text === undefined) throw new ValidationError(`${file} is listed in ${PROJECT_FILE} but missing from ${folder}`)
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch (error) {
-    throw new ValidationError(`${file} is not valid JSON (an unresolved merge conflict?): ${errorMessage(error)}`)
-  }
+  const parsed = parseJsonText(file, text)
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new ValidationError(`${file} must hold a JSON object`)
   return parsed as Record<string, JsonValue>
 }
@@ -298,56 +259,10 @@ function fileNames(directory: string, items: readonly { readonly id: string; rea
   const names = new Map<string, string>()
   const taken = new Set<string>()
   for (const item of [...items].sort((left, right) => compare(left.id, right.id))) {
-    const slug = slugify(item.name, "").slice(0, MAX_SLUG_LENGTH).replace(/-+$/, "")
+    const slug = nameSlug(item.name)
     const base = slug === "" || RESERVED_NAME.test(slug) || taken.has(slug) ? `${slug === "" ? "" : `${slug}-`}${slugify(item.id, "")}` : slug
     taken.add(base)
     names.set(item.id, `${directory}/${base}.json`)
   }
   return names
-}
-
-function fileText(doc: Record<string, JsonValue>): string {
-  return `${JSON.stringify(Object.fromEntries(Object.entries(doc).map(([key, value]) => [key, sortKeys(value)])), null, 2)}\n`
-}
-
-function sortKeys(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) return value.map(sortKeys)
-  if (value === null || typeof value !== "object") return value
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, sortKeys(value[key]!)]))
-}
-
-function roundPosition(node: JsonValue): JsonValue {
-  if (!isRecord(node) || !isRecord(node["position"])) return node
-  const { x, y } = node["position"]
-  if (typeof x !== "number" || typeof y !== "number") return node
-  return { ...node, position: { x: Math.round(x), y: Math.round(y) } }
-}
-
-/** By id, except that a group frame comes before the nodes inside it (the canvas needs a parent first). */
-function sortNodes(nodes: readonly JsonValue[]): JsonValue[] {
-  const parents = new Map(nodes.map((node) => [field(node, "nodeId"), field(node, "parentId")]))
-  const depth = (nodeId: string): number => {
-    let count = 0
-    for (let parent = parents.get(nodeId) ?? ""; parent !== "" && count <= nodes.length; parent = parents.get(parent) ?? "") count += 1
-    return count
-  }
-  return [...nodes].sort((left, right) =>
-    depth(field(left, "nodeId")) - depth(field(right, "nodeId")) || compare(field(left, "nodeId"), field(right, "nodeId")))
-}
-
-function field(value: JsonValue, key: string): string {
-  const found = isRecord(value) ? value[key] : undefined
-  return typeof found === "string" ? found : ""
-}
-
-function compare(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
-}
-
-function isRecord(value: unknown): value is Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

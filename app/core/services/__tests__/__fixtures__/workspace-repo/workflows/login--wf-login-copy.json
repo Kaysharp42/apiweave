@@ -1,0 +1,21 @@
+{
+  "workflowId": "wf-login-copy",
+  "projectId": null,
+  "name": "Login",
+  "description": "",
+  "selectedEnvironmentId": null,
+  "tags": [],
+  "variables": {},
+  "nodes": [
+    {
+      "nodeId": "start",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "start"
+    }
+  ],
+  "edges": [],
+  "nodeTemplates": []
+}

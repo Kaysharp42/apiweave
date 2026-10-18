@@ -1,0 +1,5 @@
+{
+  "workspaceId": "ws-acme",
+  "name": "Acme QA",
+  "description": "Shared API tests"
+}
