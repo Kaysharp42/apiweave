@@ -216,7 +216,7 @@ function actOnHeldSnapshot(
 }
 
 /**
- * Reconciles writes made through MCP, cloud sync, or another renderer into the
+ * Reconciles writes made through MCP or another renderer into the
  * open canvas. A remote snapshot waits while local content is dirty, so it
  * cannot erase a graph the user is still editing.
  */

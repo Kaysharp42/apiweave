@@ -29,10 +29,10 @@ Variables the Electron main process reads from the host environment. In a packag
 | --- | --- | --- | --- |
 | `APIWEAVE_FRONTEND_DIST` | No | `app.getAppPath()/dist/renderer` | Dev runs only: absolute path to the renderer's `dist/` directory, to point the main process at a custom build of the renderer. A packaged build ignores it and always serves the renderer it shipped with. |
 | `APIWEAVE_DEV_UPDATES` | No | unset | Set to `1` to rehearse the updater against a local manifest (`app/dev-app-update.yml`) instead of the release channel. |
-| `APIWEAVE_CLOUD_ENTRY_URL` | No | baked-in Cloud entry URL | Override the APIWeave Cloud entry URL. The desktop fetches this environment's configuration, which supplies the matching web (`https://dev.apiweave.app`), API (`https://api-dev.apiweave.app`), and auth (`https://auth-dev.apiweave.app`) URLs. |
+| `APIWEAVE_LOG_LEVEL` | No | `info` | `debug`, `info`, `warn` or `error`. Read from the host environment (a development `app/.env.local` works); any other value falls back to `info`. |
 | `APPIMAGE` | No | set by AppImage runtime | Linux-only. Set automatically when the app runs from an AppImage; the updater uses it to self-update the AppImage in place. |
 
-Most main-process behavior is not environment-driven: the SQLite database path (`<userData>/apiweave.db`), the secret-store keyfile (`<userData>/keyfile.json`), the log level (`info`), and the Linux Wayland hint (`ozone-platform-hint=auto`) are fixed by the app rather than read from the environment. There is no `APIWEAVE_DB_PATH` or `APIWEAVE_KEYFILE_PATH` override.
+Most main-process behavior is not environment-driven: the SQLite database path (`<userData>/apiweave.db`), the secret-store keyfile (`<userData>/keyfile.json`), and the Linux Wayland hint (`ozone-platform-hint=auto`) are fixed by the app rather than read from the environment. There is no `APIWEAVE_DB_PATH` or `APIWEAVE_KEYFILE_PATH` override.
 
 `<userData>` is the OS-standard user data path for the app:
 
@@ -44,11 +44,7 @@ Most main-process behavior is not environment-driven: the SQLite database path (
 
 A short list of foot-guns we have seen. Each one has tripped up a real user.
 
-### Mistake 1: Putting the API or auth URL in `.env.local`
-
-Set only the cloud entry URL. The desktop fetches the environment configuration from it and validates that its web, API, and auth endpoints belong together. For the development environment, create `app/.env.local` from `app/.env.example`; it is ignored by Git.
-
-### Mistake 2: Copying only the database to a new machine
+### Mistake 1: Copying only the database to a new machine
 
 Secrets do not move between machines. `keyfile.json` is sealed by the operating system keychain of the user who created it, so on another machine (or another OS user) it cannot be opened even when copied, and APIWeave asks at startup whether to quit or to delete the secrets it cannot open. Copy the user data directory, then re-enter the secrets through the write flow. Restoring a backup on the same machine works only when `keyfile.json` comes from the same backup as `apiweave.db`.
 

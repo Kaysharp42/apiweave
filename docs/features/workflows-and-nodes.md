@@ -427,9 +427,9 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 ### Unsaved changes
 
-A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes, quitting, and linking or disconnecting the cloud account (which closes every tab) ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close, the quit, the link, or the disconnect. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes and quitting ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close or the quit. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
 
-Every save is checked against the revision the canvas loaded. If the workflow changed elsewhere in the meantime — an agent over MCP, cloud sync, another window — the save is refused instead of overwriting that change, your edits stay on the canvas unsaved, and a notice offers **Load latest** (discard your edits and show the newer version) or **Overwrite** (save yours over it).
+Every save is checked against the revision the canvas loaded. If the workflow changed elsewhere in the meantime — an agent over MCP or another window — the save is refused instead of overwriting that change, your edits stay on the canvas unsaved, and a notice offers **Load latest** (discard your edits and show the newer version) or **Overwrite** (save yours over it).
 
 The node editor holds its edits until they are applied to the node. **Save**, the close button, Escape, a click outside the editor, and **Previous**/**Next** all apply them; only **Cancel** discards them. `Ctrl+S` inside the editor, including in its text fields, applies the edits and saves the workflow, leaving the editor open.
 
@@ -442,15 +442,15 @@ Failure handling is per node. By default a failed node stops the run along its p
 Undo (`Ctrl+Z`) covers the edits on the canvas since it opened. **Version history**
 (the clock-on-a-page icon on the toolbar) goes further back, and covers changes
 that did not come from the canvas: a bad auto-save, an agent's edit over MCP, an
-import into the workflow, a cloud sync that replaced it.
+import into the workflow.
 
 Each version is the workflow as it was just **before** a change replaced it,
 labelled with that change — *Before canvas edits*, *Before agent Claude Code*,
-*Before cloud sync*, *Before import*, *Before restore*. A version is kept:
+*Before import*, *Before restore*. A version is kept:
 
 - while you edit on the canvas, at most once every 10 minutes (auto-save runs
   every 700 ms, and a version per save would bury the useful ones);
-- always before an agent, an import, a cloud sync or a restore changes the
+- always before an agent, an import or a restore changes the
   workflow, and before the first canvas save after one of those;
 - never twice in a row with the same content.
 
@@ -466,8 +466,8 @@ kept as a version itself, so a restore can be undone the same way. A restore is
 checked against the revision the canvas is on, like any save: if the workflow
 changed elsewhere in the meantime it is refused and nothing is overwritten.
 
-Versions stay on this computer: they are never synced to APIWeave Cloud and
-never exported. They hold the same configuration as the workflow itself —
+Versions stay on this computer: they are never exported. They hold the same
+configuration as the workflow itself —
 `{{secrets.NAME}}` references, never secret values. An agent can list a
 workflow's versions (`workflows_listRevisions`, metadata only); reading one and
 restoring one are yours, in this dialog.

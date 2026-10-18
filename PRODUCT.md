@@ -10,7 +10,9 @@ API developers, QA engineers, and DevOps professionals who need to build, run, a
 
 ## Product Purpose
 
-APIWeave is an open-source, local-first desktop app for visual API testing. It runs as a single Electron app on the user's machine, with its data in a local SQLite file; no server to host and no account required, with optional APIWeave Cloud sync for teams. Users assemble test workflows on a React Flow canvas from drag-and-drop nodes, chain requests with extracted variables and dynamic functions, run them against scoped environments, and inspect results node by node. Projects group workflows in a fixed order. The product exists to make API testing visual, scriptable, and CI-friendly — replacing ad-hoc Postman collections and brittle shell scripts with a repeatable, inspectable test graph.
+APIWeave is an open-source, local-first desktop app for visual API testing. It runs as a single Electron app on the user's machine, with its data in a local SQLite file; no server to host and no account required. Users assemble test workflows on a React Flow canvas from drag-and-drop nodes, chain requests with extracted variables and dynamic functions, run them against scoped environments, and inspect results node by node. Projects group workflows in a fixed order. The product exists to make API testing visual, scriptable, and CI-friendly — replacing ad-hoc Postman collections and brittle shell scripts with a repeatable, inspectable test graph.
+
+Git sync is coming — see the [roadmap](ROADMAP.md).
 
 ## Brand Personality
 

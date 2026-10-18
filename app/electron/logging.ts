@@ -18,7 +18,7 @@ import { isExpiredLogFile, logFileName } from "../core/logging/daily_files"
 //
 // Everything funnels through one system, shaped like the classic Java loggers:
 //
-//   getLogger("cloud-sync").warn(...)     ← core/electron code (SLF4J-style,
+//   getLogger("mcp-bridge").warn(...)     ← core/electron code (SLF4J-style,
 //                                            no electron import needed)
 //   log.scope("updater")                  ← electron-log named logger
 //

@@ -13,7 +13,6 @@
 - [Edge](#edge)
 - [Project](#project)
 - [Workspace](#workspace)
-- [Cloud Team and Cloud Workspace](#cloud-team-and-cloud-workspace)
 - [Environment](#environment)
 - [Secret](#secret)
 - [Run](#run)
@@ -59,11 +58,7 @@ Project: "Checkout API"
 
 ## Workspace
 
-A workspace is the container for your workflows, environments, projects, and node presets on this machine. A personal workspace is created for you automatically, and you can create more. Workspaces are local structures — no account is required to use them.
-
-## Cloud Team and Cloud Workspace
-
-Optional APIWeave Cloud sync turns on when you sign in with a Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) across machines and lets people collaborate in shared **Cloud Workspaces**, which belong to a **Cloud Team** from the Cloud account. Cloud never builds or runs tests, and it never holds run history or secret values. Signing in is optional: the desktop app is fully usable without a Cloud account, and each machine keeps its own secret values and run history either way.
+A workspace is the container for your workflows, environments, projects, and node presets on this machine. A personal workspace is created for you automatically, and you can create more. Workspaces are local structures — no account is required to use them. Git sync is coming — see the [roadmap](../../ROADMAP.md).
 
 ## Environment
 
@@ -78,7 +73,7 @@ Environment: "Staging"
 
 ## Secret
 
-A secret is a sensitive value (API key, client secret, signing token) that you do not want stored in plain workflow configuration. Secrets live at one of two scopes: **workspace** or **environment**. The metadata-only display shows name, scope, key id, and last update time — never the value or ciphertext. The `{{secrets.NAME}}` placeholder resolves through a scope chain: the selected environment wins, then the workspace secret store. Secret values are never synced, even when workflow structure is.
+A secret is a sensitive value (API key, client secret, signing token) that you do not want stored in plain workflow configuration. Secrets live at one of two scopes: **workspace** or **environment**. The metadata-only display shows name, scope, key id, and last update time — never the value or ciphertext. The `{{secrets.NAME}}` placeholder resolves through a scope chain: the selected environment wins, then the workspace secret store. Secret values stay on this machine and are never exported.
 
 New secret values are submitted through a Libsodium sealed box encrypted against the install's public key. The main process never accepts a plaintext secret value on a write path, and no UI, IPC handler, or MCP tool can read a stored value back.
 

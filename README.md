@@ -8,7 +8,7 @@ APIWeave is a local-first, open-source desktop app for visual API testing. You a
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
-Optional APIWeave Cloud sync adds collaboration: sign in with a Cloud account and workflows, environments, and projects sync across your machines (and team workspaces), while secret values and run history always stay local. The app is fully usable without any account.
+Git sync is coming — see the [roadmap](ROADMAP.md).
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up for local use (an optional Cloud account adds sync and collaboration), no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md).
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md).
 
 ## Tech Stack
 

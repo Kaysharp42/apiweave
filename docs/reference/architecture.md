@@ -44,7 +44,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Response validation** backs the `matches`/`notMatches`, `type` and `matchesSchema` [assertion operators](../features/workflows-and-nodes.md#validation-operators) and an HTTP node's [`responseSchemas`](../features/workflows-and-nodes.md#response-schemas). A regular expression comes from the workflow and the text it is tested against from a server, and V8 has no time limit for a regex, so a backtracking pattern could freeze the main process; `core/runner/regex_sandbox.ts` runs each match in a QuickJS instance (the script sandbox's engine and memory cap, one instance per run, a fresh runtime per match) whose regex engine polls the interrupt handler, stopping a match at 100 ms, with the input capped at 100,000 characters. JSON Schemas (`core/runner/json_schema.ts`) are validated by `@cfworker/json-schema`, which interprets the schema as data; Ajv was not used because it compiles every schema into JavaScript with `new Function`, which would turn a schema from a workflow or an imported spec into code the host runs. A validator is compiled once per schema per run.
 
-**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path and stores the sealed ciphertext verbatim. At run time it opens the boxes with the key held in the per-install keyfile, which is itself sealed by the OS keychain (Keychain, DPAPI, GNOME Keyring or KWallet) where one is available, resolves the local scope chain (selected environment, then the workspace store), and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user. Secret values never sync, even when workflow structure does.
+**Encrypted secret store** is a tightly scoped layer inside the main process. It accepts Libsodium sealed-box submissions on the write path and stores the sealed ciphertext verbatim. At run time it opens the boxes with the key held in the per-install keyfile, which is itself sealed by the OS keychain (Keychain, DPAPI, GNOME Keyring or KWallet) where one is available, resolves the local scope chain (selected environment, then the workspace store), and returns decrypted values only to the runtime that needs them. The masking layer scrubs the value before any persistence. The secret store has no read API for stored values that can be reached by a user.
 
 **Local MCP bridge** is an opt-in loopback HTTP server bound to `127.0.0.1`. It exposes the IPC handler registry as a second transport, so local AI agents on the same machine can drive the app. The bridge authenticates with a per-install bearer token that you can regenerate from Settings, and refuses any request whose `Host` is not its own loopback address. A run an agent starts that would send stored secrets waits for your approval in a native dialog. The bridge is off by default; until you enable it, nothing is listening on any port.
 
@@ -58,25 +58,23 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 **Auto-update manager** runs in the main process, checks the GitHub release channel in the background (per the update policy in Settings), and drives self-install where the platform supports it. It installs only an update whose signature matches the public key built into the app.
 
-**Cloud sync control** is an optional main-process component that talks to APIWeave Cloud over a durable outbox: pull and push of structure-only payloads, conflict detection and resolution, and surfaced dead-letter records. It is dormant until you sign in with a Cloud account.
-
 **`app://` protocol handler** serves the renderer from the packaged bundle under a locked-down CSP instead of a plain file URL.
 
 ## Resource Model
 
-APIWeave is a local-first app built around seven stored resource types, organized into workspaces. Every resource lives in the local SQLite database on your machine. A **workspace** is the container for your workflows, environments, projects, and presets; a personal workspace is created for you, and you can create more. Optional APIWeave Cloud sync turns on when you sign in with a Cloud account: it syncs test structure (workflows, environments, projects, and secret references) across machines and lets people collaborate in shared **Cloud Workspaces**, which belong to a **Cloud Team** from the Cloud account. Cloud never builds or runs tests, and it never holds run history or secret values.
+APIWeave is a local-first app built around seven stored resource types, organized into workspaces. Every resource lives in the local SQLite database on your machine. A **workspace** is the container for your workflows, environments, projects, and presets; a personal workspace is created for you, and you can create more. Git sync is coming — see the [roadmap](../../ROADMAP.md).
 
 | Resource | Visible to | Owner |
 |----------|-----------|-------|
 | Project | The workspace | The workspace it belongs to |
 | Workflow | The workspace | The workspace (optionally grouped in a project) |
 | Environment | The workspace | The workspace |
-| Node preset | The workspace | The workspace (never synced) |
-| Secret (workspace) | Any workflow in the workspace | The workspace (never synced) |
+| Node preset | The workspace | The workspace |
+| Secret (workspace) | Any workflow in the workspace | The workspace |
 | Secret (environment) | Workflows that select the environment | The environment |
 | Run | You | The workflow that produced it |
 
-Secrets are the one resource that is never shared: even when structure syncs through Cloud, each machine keeps its own secret values and run history locally. Cloud carries no outside collaborators, invites, service tokens, or audit log on the desktop side; cross-machine collaboration and Cloud Workspace membership are handled by the optional Cloud account, not the local model. The desktop app remains fully usable without a Cloud account.
+Secret values and run history stay on this machine. There are no outside collaborators, invites, service tokens, or audit log.
 
 ## Data Flow
 
@@ -110,7 +108,7 @@ The SQLite database holds everything APIWeave needs to keep working across page 
 
 - **Projects**: ordered groups of workflows.
 - **Workflows**: node graphs, edges, variables, and per-workflow settings.
-- **Workflow revisions**: gzipped snapshots of a workflow taken before a write replaces it (newest 50 per workflow, up to 90 days). Local only, never synced.
+- **Workflow revisions**: gzipped snapshots of a workflow taken before a write replaces it (newest 50 per workflow, up to 90 days). Local only.
 - **Runs**: execution history and overall status, with one row per node result. Each workflow keeps its newest 100 runs, a data-driven run's iterations counting as one; older finished runs are pruned when a run finishes.
 - **Environments**: variable maps, scope, and any pinned OpenAPI/Swagger URL.
 - **Node presets**: workspace-scoped saved node configurations.
@@ -128,7 +126,7 @@ APIWeave exposes two surfaces, both local:
 
 Outside the app, the headless CLI (`apiweave run`, `app/core/cli/`) reuses the importers, repositories, scheduler, project runner and reporters under plain Node, with an in-memory SQLite database and secrets from its environment. It never imports Electron, the keychain or the MCP bridge; its build fails if anything on its import graph does. See [Run Tests in CI](../guides/ci.md).
 
-One outbound-only connection exists beyond those: the auto-update manager polls the GitHub release channel for updates (and, when Cloud sync is enabled, the sync client talks to APIWeave Cloud). Neither accepts inbound connections.
+One outbound-only connection exists beyond those: the auto-update manager polls the GitHub release channel for updates. It accepts no inbound connections.
 
 ## Related
 

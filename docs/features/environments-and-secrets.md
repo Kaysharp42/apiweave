@@ -118,11 +118,10 @@ Running against staging-eu resolves:
 
 Set it from the environment editor's **Base Environment** picker. The editor then shows the inherited variables above your own, muted and read-only, each labelled with the environment it came from, and marks any that your environment overrides — so the effective set is visible without running anything.
 
-Three things to know:
+Two things to know:
 
 - **Plain variables only.** Secrets are not inherited. `{{secrets.NAME}}` still resolves through the fixed `environment > workspace` chain described in [The Scope Chain](#the-scope-chain), which inheritance does not touch. An environment that extends another does not gain access to its base's secrets.
 - **Loops are refused.** An environment cannot extend itself, cannot extend an environment outside its workspace, and cannot extend one whose own chain leads back to it. The picker hides those choices and the write is rejected with a validation error if something tries anyway. Chains are followed at most 8 levels deep.
-- **The link is local for now.** `baseEnvironmentId` is not part of the Cloud sync payload. An environment that syncs to another machine arrives with its own variables but no base link, so the receiving machine resolves only what that environment defines directly. Keep the shared values in the environment itself if a run has to be reproducible on a second machine.
 
 ## Secrets
 
@@ -134,12 +133,10 @@ Secrets live at one of two scopes:
 
 | Scope | Visible to |
 |-------|------------|
-| `workspace` | Any workflow in the workspace on this machine, never synced |
+| `workspace` | Any workflow in the workspace on this machine |
 | `environment` | Workflows that select the environment |
 
 The scope of a secret is fixed at creation time. The same secret cannot move between scopes; delete and recreate if you need a different scope.
-
-Secret values are never synced: when Cloud sync is in use, only secret references and structure travel, and secret values are rejected from sync payloads. Each machine keeps its own secrets, so a synced workflow is run against the keys stored locally on the machine that runs it.
 
 ### The Scope Chain
 
@@ -197,7 +194,6 @@ Set the URL during environment creation or edit it later. The URL must be reacha
 - **If `{{secrets.NAME}}` is not substituted and appears as literal text**, no scope in the chain declares that key. Open **Secrets** for the selected environment and the workspace store (in that order), and add the key through the Libsodium write flow.
 - **If an inherited variable does not reach the run**, check the chain in the environment editor: only variables shown in the muted **Inherited Variables** rows are in the effective set, and a name you also define locally is overridden by your own value.
 - **If a base environment is missing from the picker**, it is either this environment itself or an environment whose own chain leads back here. Both would form a cycle and are excluded on purpose.
-- **If an inherited variable resolves on one machine but not another**, the second machine received the environment through Cloud sync without the base link, which does not sync. Define the value on the environment directly.
 - **If APIWeave says your stored secrets cannot be decrypted at startup**, `keyfile.json` is missing or the operating system keychain that seals it will not open it. Restore `keyfile.json` from the same backup as the database, or unlock the keychain. Secrets do not move to another machine: there, choose to delete them and re-enter them through the write flow.
 
 ## Related

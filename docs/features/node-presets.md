@@ -101,9 +101,9 @@ A preset stores exactly what the node had. That means:
 
 ## Presets Stay on This Machine
 
-Presets are local-only. Cloud sync knows about workspaces, projects, workflows, and environments; it has no record type for a preset, so a preset is never uploaded and never appears on another machine — including your own second machine signed into the same Cloud account.
+Presets are local-only: a preset lives in the workspace on this machine and never appears on another machine.
 
-Practically: a preset library is a per-machine convenience today, not a team convention that travels. To share a configuration across machines, put it in a workflow (which does sync) or export a project as an `.awecollection` bundle.
+Practically: a preset library is a per-machine convenience, not something that travels between machines. To move a configuration between machines, export a project as an `.awecollection` bundle.
 
 ## Presets Over MCP
 
@@ -125,7 +125,7 @@ One limitation matters. Every MCP read passes through the same blanket redaction
 - **If a rename appears to do nothing**, you clicked away instead of pressing Enter. Clicking outside the input cancels; press Enter to commit.
 - **If a dropped preset's request fails with an unresolved `{{secrets.NAME}}`**, the preset kept the reference but the newly selected environment does not declare that key. Add the secret to the environment or workspace scope through the write flow described in [Environments and Secrets](environments-and-secrets.md).
 - **If `nodePresets_update` returns a validation error**, the config does not match the node type — most often a `nodeType` change that strands the existing config. Send the matching config in the same call.
-- **If a preset is missing after switching machines**, that is expected: presets do not sync. See [Presets Stay on This Machine](#presets-stay-on-this-machine).
+- **If a preset is missing after switching machines**, that is expected: presets live only on the machine that created them. See [Presets Stay on This Machine](#presets-stay-on-this-machine).
 
 ## Related
 

@@ -96,7 +96,7 @@ The library shows a resume card once you have opened a lesson: **Start here** fo
 
 At the bottom of a lesson article, choose **Reset progress**. A confirmation dialog explains that this clears every completed lesson and the resume position and does not touch your workflows. Confirm with **Reset**.
 
-Progress is stored locally on this machine, separate from workflows and from Cloud sync. It is not written into a workflow, an export, or a sync payload.
+Progress is stored locally on this machine, separate from workflows. It is not written into a workflow or an export.
 
 ## Follow Along
 
@@ -133,10 +133,6 @@ Create a new workflow
 Lesson result
 [Previous] [Next]
 ```
-
-### Cloud and other full-screen destinations
-
-A lesson's **Go to** link is a router link, not a document anchor. Most destinations resolve to a workspace-scoped route and keep the companion visible. **Cloud Sync** is different: it is a global route outside the main shell. Following it pauses the companion, and returning to the workspace does not reopen it automatically — start the practice again from the lesson or the library.
 
 ## Maintain the Curriculum
 
