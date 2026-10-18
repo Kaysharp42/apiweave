@@ -7,7 +7,6 @@ let scope: ScopeContext = {
   workspaceSlug: "ws-one",
   orgId: null,
   orgSlug: null,
-  userId: "user-1",
   isReady: true,
 };
 
@@ -24,7 +23,6 @@ function inWorkspace(workspaceId: string, slug: string): ScopeContext {
     workspaceSlug: slug,
     orgId: null,
     orgSlug: null,
-    userId: "user-1",
     isReady: true,
   };
 }

@@ -3,7 +3,6 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import type { PtyLauncher } from "../../agents/pty_launcher"
 import type { PtySpawnRequest } from "../../agents/pty_protocol"
 import { initDatabase, type InitializedDatabase } from "../../db"
@@ -104,7 +103,6 @@ beforeEach(() => {
     agentRepository,
     workflows,
     collections,
-    new LocalOwnerProvider(),
     scopeResolver,
     environment,
   )
@@ -495,7 +493,6 @@ describe("AgentService — embedded sessions", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,
@@ -550,7 +547,6 @@ describe("AgentService — embedded sessions", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,
@@ -701,7 +697,6 @@ describe("AgentService — per-session MCP config", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,
@@ -1360,7 +1355,6 @@ describe("AgentService — session briefings", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,
@@ -1570,7 +1564,6 @@ describe("AgentService — launcher config carrier", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,
@@ -1744,7 +1737,6 @@ describe("AgentService — MCP wiring carriers", () => {
       agentRepository,
       workflows,
       collections,
-      new LocalOwnerProvider(),
       new ScopeResolver({
         workspaceExists: (id) => workspaces.getById(id) !== undefined,
         environmentExists: () => false,

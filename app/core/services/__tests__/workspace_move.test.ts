@@ -7,7 +7,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { WorkflowService } from "../workflow_service"
@@ -21,7 +20,6 @@ let collections: CollectionRepository
 let workflowService: WorkflowService
 let collectionService: CollectionService
 
-const permissions = new LocalOwnerProvider()
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -36,7 +34,6 @@ beforeEach(() => {
   const scopeResolver = new ScopeResolver(existence)
   workflowService = new WorkflowService(
     workflows,
-    permissions,
     scopeResolver,
     collections,
     environments,
@@ -44,7 +41,6 @@ beforeEach(() => {
   collectionService = new CollectionService(
     collections,
     workflows,
-    permissions,
     scopeResolver,
   )
 })

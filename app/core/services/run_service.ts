@@ -6,12 +6,9 @@ import type { RunResumeRequest } from "@shared/types/RunResumeRequest"
 import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
 import { RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { ConflictError, NotFoundError } from "../ipc/errors"
 import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
-import { RESOURCE_RUNS, RESOURCE_WORKFLOWS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import { startIterations, type IterationScheduler } from "../runner/iterations"
 import type { ScopeResolver } from "./scope_resolver"
 
@@ -57,9 +54,10 @@ export interface RunWaitOptions {
  * Workspace-scoped run history + the field-level write surface the executor
  * drives. Ported from Python `run_service`.
  *
- * User-facing reads (get/list/cancel) authorize through scope + permission. The
- * executor-internal progress writes (`appendNodeStatus`, `mergeExtractedVariables`,
- * `completeRun`) are NOT re-authorized per call — the run was authorized at
+ * User-facing reads (get/list/cancel) check the workspace through the scope
+ * resolver. The executor-internal progress writes (`appendNodeStatus`,
+ * `mergeExtractedVariables`, `completeRun`) are NOT re-checked per call — the
+ * run was checked at
  * `createRun`, and re-resolving scope on every node completion is pure overhead.
  * They delegate to the repository's JSON-patch methods (decision #6b): each write
  * touches a single column, never a whole-row replace. The IPC event emission for
@@ -71,7 +69,6 @@ export class RunService {
 
   constructor(
     private readonly runs: RunRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly trigger?: RunTrigger,
     private readonly broker?: RunEventBroker | RunEventSource,
@@ -83,7 +80,7 @@ export class RunService {
     options: RunCreateOptions = {},
     waitOptions: RunWaitOptions = {},
   ): Promise<Run> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "run", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     // Immediate by default at the service layer: existing callers (renderer via
     // waitMs:0, unit tests, scheduler field writes) expect the queued snapshot
     // back, not a bounded wait. The IPC/MCP `runs.create` handler applies the
@@ -113,7 +110,7 @@ export class RunService {
       readonly rows: readonly Readonly<Record<string, JsonValue>>[]
     },
   ): Promise<Run> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "run", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (this.trigger === undefined) throw new Error("No run scheduler is available")
     const { firstRunId } = startIterations(
       this.trigger,
@@ -143,7 +140,7 @@ export class RunService {
     waitMs: number,
     options: RunWaitOptions = {},
   ): Promise<Run> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const bounded = normalizeWaitMs(waitMs)
     const signal = options.signal
     if (signal?.aborted === true) throw abortError("wait cancelled")
@@ -154,27 +151,27 @@ export class RunService {
   }
 
   async get(workspaceId: string, runId: string): Promise<Run> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.mustGet(workspaceId, runId)
   }
 
   async listByWorkflow(workspaceId: string, workflowId: string): Promise<{ items: readonly Run[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.runs.listByWorkflow(workflowId, workspaceId)
   }
 
   async listByWorkspace(workspaceId: string): Promise<{ items: readonly Run[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.runs.listByWorkspace(workspaceId)
   }
 
   async getLatest(workspaceId: string, workflowId: string): Promise<Run | undefined> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.runs.getLatestRun(workflowId, workspaceId)
   }
 
   async getLatestFailed(workspaceId: string, workflowId: string): Promise<Run | undefined> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.runs.getLatestFailedRun(workflowId, workspaceId)
   }
 
@@ -189,7 +186,7 @@ export class RunService {
     limit: number,
     cursor: string | undefined,
   ): Promise<{ items: readonly RunSummaryRow[]; nextCursor: string | null }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const snapshot = this.runs.runHistorySnapshot(workspaceId, filters)
     const after = cursor === undefined
       ? undefined
@@ -216,12 +213,12 @@ export class RunService {
    * transport's redaction pass, so masking keeps its original context.
    */
   async getNodeEvidence(workspaceId: string, runId: string, selection: EvidenceSelection): Promise<NodeEvidencePage> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return buildNodeEvidencePage(this.mustGet(workspaceId, runId), selection)
   }
 
   async cancel(workspaceId: string, runId: string): Promise<Run> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "cancel", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, runId)
     // Abort a live/queued run at the scheduler (the executor stops at its next
     // checkpoint and emits run.finished); then mark the row cancelled. For a run
@@ -238,7 +235,7 @@ export class RunService {
    * than deleted under the scheduler: cancel it first.
    */
   async deleteRun(workspaceId: string, runId: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const run = this.mustGet(workspaceId, runId)
     if (!this.runs.delete(runId, workspaceId)) {
       throw new ConflictError(`run ${runId} is ${run.status}; cancel it before deleting it`)
@@ -247,7 +244,7 @@ export class RunService {
 
   /** Delete every finished run of a workflow; live runs are kept. */
   async clearHistory(workspaceId: string, workflowId: string): Promise<{ deleted: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return { deleted: this.runs.deleteByWorkflow(workflowId, workspaceId) }
   }
 
@@ -391,9 +388,9 @@ export class RunService {
       if (waitMs === 0) return current
       throwIfAborted(signal)
       await waitForTerminal(terminalPromise, waitMs, signal)
-      // Re-authorize the final retrieval: the caller's access may have changed
-      // while waiting, and the initial check must not grant a future read.
-      await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+      // Re-check the final retrieval: the workspace may have been deleted while
+      // waiting, and the initial check must not grant a future read.
+      await this.scopeResolver.assertWorkspaceVisible(workspaceId)
       return this.mustGet(workspaceId, runId)
     } finally {
       this.activeWaits -= 1
@@ -415,13 +412,13 @@ export class RunService {
       throwIfAborted(signal)
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
-        await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+        await this.scopeResolver.assertWorkspaceVisible(workspaceId)
         return this.mustGet(workspaceId, runId)
       }
       await sleep(Math.min(POLL_INTERVAL_MS, remaining), signal)
       const latest = this.mustGet(workspaceId, runId)
       if (isTerminalStatus(latest.status)) {
-        await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+        await this.scopeResolver.assertWorkspaceVisible(workspaceId)
         return latest
       }
     }

@@ -93,8 +93,7 @@ export function WorkspaceProjectPage() {
           Workspace not found
         </h2>
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark text-center max-w-md">
-          The workspace &quot;{workspaceSlug}&quot; does not exist or you do not
-          have access to it.
+          The workspace &quot;{workspaceSlug}&quot; does not exist.
         </p>
         <Button
           variant="primary"

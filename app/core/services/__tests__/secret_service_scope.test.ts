@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, WorkspaceRepository } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { SecretService } from "../secret_service"
 import { NotFoundError } from "../../ipc/errors"
@@ -58,13 +57,12 @@ describe("SecretService — scope IDs are bound to the authorized workspace (cro
       environmentExists: (id) => environments.getById(id) !== undefined,
     }
     const scopeResolver = new ScopeResolver(existence)
-    const permissions = new LocalOwnerProvider()
 
     workspaceA = workspaces.create({ name: "Workspace A", slug: "workspace-a" }).workspaceId
     workspaceB = workspaces.create({ name: "Workspace B", slug: "workspace-b" }).workspaceId
     environmentInB = environments.create({ workspaceId: workspaceB, name: "Prod" }).environmentId
 
-    secretService = new SecretService(new FakeSecretStore(), permissions, scopeResolver, environments, new Uint8Array(32))
+    secretService = new SecretService(new FakeSecretStore(), scopeResolver, environments, new Uint8Array(32))
   })
 
   afterEach(() => db.close())

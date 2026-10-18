@@ -9,10 +9,7 @@ import {
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { Workspace } from "../types/Workspace";
-import type {
-  WorkspaceContextValue,
-  WorkspaceEntry,
-} from "../types/WorkspaceContextValue";
+import type { WorkspaceContextValue } from "../types/WorkspaceContextValue";
 import { apiweave } from "../utils/apiweaveClient";
 import { setLastWorkspaceSlug } from "../utils/workspacePreference";
 
@@ -22,42 +19,27 @@ interface WorkspaceProviderProps {
   children: ReactNode;
 }
 
+async function loadWorkspaces(): Promise<Workspace[]> {
+  return [...(await apiweave.workspaces.list())];
+}
+
 export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
   const navigate = useNavigate();
   const params = useParams<{ orgSlug?: string; workspaceSlug?: string }>();
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [memberships, setMemberships] = useState<Map<string, string>>(
-    new Map(),
-  );
   const [isLoading, setIsLoading] = useState(true);
-
-  const loadWorkspaceData = useCallback(async () => {
-    const workspaces = [...(await apiweave.workspaces.list())];
-
-    // Local-owner mode: the desktop app's single user owns every workspace
-    // it can list, and access is enforced in the Electron main process.
-    const roleMap = new Map<string, string>();
-    for (const ws of workspaces) {
-      roleMap.set(ws.workspaceId, "owner");
-    }
-
-    return { workspaces, roleMap };
-  }, []);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await loadWorkspaceData();
-      setWorkspaces(data.workspaces);
-      setMemberships(data.roleMap);
+      setWorkspaces(await loadWorkspaces());
     } catch {
       setWorkspaces([]);
-      setMemberships(new Map());
     } finally {
       setIsLoading(false);
     }
-  }, [loadWorkspaceData]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,16 +47,14 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     (async () => {
       setIsLoading(true);
       try {
-        const data = await loadWorkspaceData();
+        const loaded = await loadWorkspaces();
 
         if (cancelled) return;
 
-        setWorkspaces(data.workspaces);
-        setMemberships(data.roleMap);
+        setWorkspaces(loaded);
       } catch {
         if (!cancelled) {
           setWorkspaces([]);
-          setMemberships(new Map());
         }
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -84,14 +64,7 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, [loadWorkspaceData]);
-
-  const availableWorkspaces = useMemo<WorkspaceEntry[]>(() => {
-    return workspaces.map((ws) => ({
-      workspace: ws,
-      role: memberships.get(ws.workspaceId) ?? "read",
-    }));
-  }, [workspaces, memberships]);
+  }, []);
 
   const currentWorkspace = useMemo<Workspace | null>(() => {
     if (!params.workspaceSlug) {
@@ -99,11 +72,6 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
     }
     return workspaces.find((ws) => ws.slug === params.workspaceSlug) ?? null;
   }, [workspaces, params.workspaceSlug]);
-
-  const currentRole = useMemo<string | null>(() => {
-    if (!currentWorkspace) return null;
-    return memberships.get(currentWorkspace.workspaceId) ?? null;
-  }, [currentWorkspace, memberships]);
 
   const switchTo = useCallback(
     (workspaceSlug: string) => {
@@ -117,23 +85,15 @@ export function WorkspaceProvider({ children }: WorkspaceProviderProps) {
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
-      availableWorkspaces,
+      availableWorkspaces: workspaces,
       currentWorkspace,
       currentOrg: null,
       orgs: [],
-      currentRole,
       switchTo,
       refresh,
       isLoading,
     }),
-    [
-      availableWorkspaces,
-      currentWorkspace,
-      currentRole,
-      switchTo,
-      refresh,
-      isLoading,
-    ],
+    [workspaces, currentWorkspace, switchTo, refresh, isLoading],
   );
 
   return (

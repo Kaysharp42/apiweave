@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   RunRepository,
@@ -27,9 +26,8 @@ beforeEach(() => {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: () => false,
   })
-  const permissions = new LocalOwnerProvider()
-  workflowService = new WorkflowService(workflowRepository, permissions, scopeResolver)
-  const runService = new RunService(runRepository, permissions, scopeResolver)
+  workflowService = new WorkflowService(workflowRepository, scopeResolver)
+  const runService = new RunService(runRepository, scopeResolver)
   authoring = new AssertionAuthoringService(workflowService, runService)
 })
 

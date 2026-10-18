@@ -14,7 +14,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../../services/scope_resolver"
 import { WorkspaceService } from "../../services/workspace_service"
 import { CollectionService } from "../../services/collection_service"
@@ -91,7 +90,6 @@ beforeEach(() => {
     environmentExists: (id) => environments.getById(id) !== undefined,
   }
   const scopeResolver = new ScopeResolver(existence)
-  const permissions = new LocalOwnerProvider()
   const secretStore = new FakeSecretStore()
   broker = new RunEventBroker({ now: () => new Date().toISOString() })
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
@@ -115,23 +113,22 @@ beforeEach(() => {
     },
   })
   approvals = []
-  const workflowService = new WorkflowService(workflowRepository, permissions, scopeResolver, collections, environments)
-  runService = new RunService(runs, permissions, scopeResolver, scheduler, broker)
+  const workflowService = new WorkflowService(workflowRepository, scopeResolver, collections, environments)
+  runService = new RunService(runs, scopeResolver, scheduler, broker)
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, workflowRepository, scopeResolver),
-    collections: new CollectionService(collections, workflowRepository, permissions, scopeResolver),
+    collections: new CollectionService(collections, workflowRepository, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-    environments: new EnvironmentService(environments, permissions, scopeResolver),
-    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
+    environments: new EnvironmentService(environments, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, scopeResolver),
     runs: runService,
-    secrets: new SecretService(secretStore, permissions, scopeResolver, environments, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflowRepository,
       environments,
-      permissions,
       scopeResolver,
       secretStore,
       () => "2026-01-01T00:00:00.000Z",

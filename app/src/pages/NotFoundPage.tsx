@@ -59,7 +59,7 @@ export function NotFoundPage() {
         </h2>
         <p className="max-w-xl text-sm leading-6 text-text-secondary dark:text-text-secondary-dark sm:text-base">
           {contextPath
-            ? `The resource at "${contextPath}" does not exist or you do not have permission to access it.`
+            ? `The resource at "${contextPath}" does not exist.`
             : "The page you are looking for does not exist."}
         </p>
         <div>

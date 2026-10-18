@@ -6,10 +6,7 @@ import type {
   CollectionUpdate,
   WorkflowRepository,
 } from "../repositories"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_COLLECTIONS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 
@@ -23,28 +20,27 @@ export class CollectionService {
   constructor(
     private readonly collections: CollectionRepository,
     private readonly workflows: WorkflowRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
   ) {}
 
   async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId" | "collectionId">): Promise<Collection> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.collections.create({ ...input, workspaceId })
   }
 
   async get(workspaceId: string, collectionId: string): Promise<Collection> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.withCount(this.mustGet(workspaceId, collectionId))
   }
 
   async list(workspaceId: string): Promise<{ items: readonly Collection[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const { items, total } = this.collections.listByWorkspace(workspaceId)
     return { items: items.map((collection) => this.withCount(collection)), total }
   }
 
   async update(workspaceId: string, collectionId: string, patch: CollectionUpdate): Promise<Collection> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, collectionId)
     const updated = this.collections.update(collectionId, patch)
     if (updated === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
@@ -53,7 +49,7 @@ export class CollectionService {
 
   /** Delete a collection. Refuses (409) while any workflow is still attached. */
   async delete(workspaceId: string, collectionId: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, collectionId)
     const count = this.workflows.countByCollection(workspaceId, collectionId)
     if (count > 0) {
@@ -78,8 +74,8 @@ export class CollectionService {
     collectionId: string,
     targetWorkspaceId: string,
   ): Promise<Collection> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
     this.mustGet(workspaceId, collectionId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("project is already in this workspace")
@@ -104,14 +100,14 @@ export class CollectionService {
   }
 
   async addWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, collectionId)
     this.mustGetWorkflow(workspaceId, workflowId)
     return this.updateWorkflow(workflowId, { collectionId })
   }
 
   async removeWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, collectionId)
     const workflow = this.mustGetWorkflow(workspaceId, workflowId)
     if (workflow.collectionId !== collectionId) {
@@ -121,7 +117,7 @@ export class CollectionService {
   }
 
   async listWorkflows(workspaceId: string, collectionId: string): Promise<readonly Workflow[]> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, collectionId)
     return this.workflows.listByCollection(workspaceId, collectionId).items
   }

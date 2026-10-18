@@ -14,10 +14,7 @@ import type {
   WorkflowRepository,
 } from "../repositories"
 import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_COLLECTIONS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import { environmentFileText, stableJson, workflowFileText } from "./project_folder"
@@ -167,14 +164,13 @@ export class ProjectExportService {
     private readonly collections: CollectionRepository,
     private readonly workflows: WorkflowRepository,
     private readonly environments: EnvironmentRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly secretStore?: SecretMetadataStore,
     private readonly nowIso: () => string = () => new Date().toISOString(),
   ) {}
 
   async exportProject(workspaceId: string, projectId: string, includeEnvironments = true): Promise<ProjectBundle> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "export", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const project = this.collections.getById(projectId)
     if (project === undefined || project.workspaceId !== workspaceId) {
       throw new NotFoundError(`project ${projectId} not found`)
@@ -248,7 +244,7 @@ export class ProjectExportService {
     bundle: ProjectBundle,
     options: ProjectImportOptions = {},
   ): Promise<ImportResult> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "import", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
     const errors = validateBundle(bundle)
     if (errors.length > 0) {
       throw new ValidationError(errors.join("; "))
@@ -379,7 +375,7 @@ export class ProjectExportService {
    * a round trip; only a value changed in the folder replaces it.
    */
   async upsertProject(workspaceId: string, bundle: ProjectBundle): Promise<Omit<ProjectFolderImportResult, "folder">> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "import", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const errors = validateBundle(bundle)
     if (errors.length > 0) throw new ValidationError(errors.join("; "))
 
@@ -512,7 +508,7 @@ export class ProjectExportService {
   }
 
   async dryRunImport(targetWorkspaceId: string, bundle: ProjectBundle): Promise<DryRunResult> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "import", RESOURCE_COLLECTIONS)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
 
     const errors: string[] = []
     const warnings: string[] = []

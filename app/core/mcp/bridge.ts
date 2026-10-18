@@ -58,7 +58,7 @@ const ADVERTISED_OUTPUT: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.Z
 
 /**
  * Register every whitelisted IPC handler as an MCP tool on `server`. Each tool
- * dispatches through `router.dispatch` — the *same* validate → authorize → service
+ * dispatches through `router.dispatch` — the *same* validate → scope check → service
  * → validate path the renderer uses — so MCP is a second transport over the one
  * registry, not a parallel hand-ported stack. Parity and no-secret-leak hold by
  * construction (identical code path), not by a fixture-matched test.

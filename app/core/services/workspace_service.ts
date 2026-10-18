@@ -14,9 +14,8 @@ export interface WorkspaceCreateInput {
 /**
  * Workspace management. Ported from Python `workspace_service` with the
  * multi-tenant membership graph collapsed to the single local owner: the owner
- * sees every workspace that exists, so there is no per-resource permission gate
- * (workspace is not one of the surviving permission Resources). Existence-hiding
- * is preserved through `scopeResolver` on the by-id operations.
+ * sees every workspace that exists. Existence-hiding is preserved through
+ * `scopeResolver` on the by-id operations.
  */
 export class WorkspaceService {
   constructor(
@@ -51,13 +50,13 @@ export class WorkspaceService {
   }
 
   async get(workspaceId: string): Promise<Workspace> {
-    await this.mustResolve(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     // Resolver only confirms existence; re-read for the full aggregate.
     return this.workspaces.getById(workspaceId) as Workspace
   }
 
   async update(workspaceId: string, patch: WorkspaceUpdate): Promise<Workspace> {
-    await this.mustResolve(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (patch.isPersonal !== undefined) this.assertPersonalInvariant(workspaceId, patch.isPersonal)
     const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
     const updated = this.workspaces.update(workspaceId, next)
@@ -66,7 +65,7 @@ export class WorkspaceService {
   }
 
   async delete(workspaceId: string): Promise<void> {
-    await this.mustResolve(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.workspaces.transaction(() => this.deleteLocally(workspaceId))
   }
 
@@ -83,11 +82,6 @@ export class WorkspaceService {
       this.workflows.delete(workflow.workflowId)
     }
     this.workspaces.delete(workspaceId)
-  }
-
-  private async mustResolve(workspaceId: string): Promise<void> {
-    const resolution = await this.scopeResolver.resolve({ scopeType: "workspace", scopeId: workspaceId })
-    if (!resolution.ok) throw new NotFoundError(`workspace ${workspaceId} not found`)
   }
 
   /** Enforces the 'exactly one personal workspace' invariant on update (create already enforces it). */

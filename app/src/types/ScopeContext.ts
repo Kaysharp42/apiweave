@@ -10,6 +10,5 @@ export interface ScopeContext {
   workspaceSlug: string | null;
   orgId: null;
   orgSlug: null;
-  userId: string | null;
   isReady: boolean;
 }

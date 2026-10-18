@@ -7,7 +7,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { WorkflowService } from "../workflow_service"
 import { RunService } from "../run_service"
@@ -42,13 +41,12 @@ beforeEach(() => {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
-  const permissions = new LocalOwnerProvider()
-  service = new WorkflowService(workflows, permissions, scopeResolver)
+  service = new WorkflowService(workflows, scopeResolver)
   router = new IpcRouter()
   registerWorkflowHandlers(router, {
     workflows: service,
-    runs: new RunService(new RunRepository(db.kvStore), permissions, scopeResolver),
-    environments: new EnvironmentService(environments, permissions, scopeResolver),
+    runs: new RunService(new RunRepository(db.kvStore), scopeResolver),
+    environments: new EnvironmentService(environments, scopeResolver),
   } as unknown as HandlerDeps)
   workspaceId = workspaces.create({ name: "Local", slug: "local" }).workspaceId
   workflowId = workflows.create({ workspaceId, name: "Orders", nodes: [node("a")] }).workflowId

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { OrgWorkspaceSwitcher } from "../OrgWorkspaceSwitcher";
-import type { WorkspaceContextValue, WorkspaceEntry } from "../../../types";
+import type { WorkspaceContextValue } from "../../../types";
 import type { Workspace } from "../../../types/Workspace";
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,6 @@ const defaultContext: WorkspaceContextValue = {
   currentWorkspace: null,
   currentOrg: null,
   orgs: [],
-  currentRole: null,
   switchTo: mockSwitchTo,
   refresh: mockRefresh,
   isLoading: false,
@@ -57,13 +56,6 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
   };
 }
 
-function makeEntry(
-  ws: Workspace,
-  role = "owner",
-): WorkspaceEntry {
-  return { workspace: ws, role };
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -75,8 +67,7 @@ describe("OrgWorkspaceSwitcher", () => {
     setContext({
       availableWorkspaces: [],
       currentWorkspace: null,
-      currentRole: null,
-      refresh: mockRefresh,
+          refresh: mockRefresh,
       isLoading: false,
     });
   });
@@ -90,7 +81,7 @@ describe("OrgWorkspaceSwitcher", () => {
   it("renders trigger button with personal label when no workspace is selected", () => {
     const personalWs = makeWorkspace({ name: "Personal" });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs)],
+      availableWorkspaces: [personalWs],
       currentWorkspace: personalWs,
     });
     renderSwitcher();
@@ -108,7 +99,7 @@ describe("OrgWorkspaceSwitcher", () => {
       isPersonal: false,
     });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs), makeEntry(otherWs)],
+      availableWorkspaces: [personalWs, otherWs],
       currentWorkspace: personalWs,
     });
 
@@ -133,7 +124,7 @@ describe("OrgWorkspaceSwitcher", () => {
       isPersonal: false,
     });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs), makeEntry(otherWs)],
+      availableWorkspaces: [personalWs, otherWs],
       currentWorkspace: personalWs,
     });
 
@@ -160,7 +151,7 @@ describe("OrgWorkspaceSwitcher", () => {
       isPersonal: false,
     });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs), makeEntry(localWs)],
+      availableWorkspaces: [personalWs, localWs],
       currentWorkspace: localWs,
     });
 
@@ -174,7 +165,7 @@ describe("OrgWorkspaceSwitcher", () => {
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs)],
+      availableWorkspaces: [personalWs],
       currentWorkspace: personalWs,
     });
 
@@ -208,7 +199,7 @@ describe("OrgWorkspaceSwitcher", () => {
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs)],
+      availableWorkspaces: [personalWs],
       currentWorkspace: personalWs,
     });
 
@@ -226,7 +217,7 @@ describe("OrgWorkspaceSwitcher", () => {
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({
-      availableWorkspaces: [makeEntry(personalWs)],
+      availableWorkspaces: [personalWs],
       currentWorkspace: personalWs,
     });
 

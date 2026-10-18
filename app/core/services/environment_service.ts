@@ -7,10 +7,7 @@ import type {
   SecretRepository,
   WorkflowRepository,
 } from "../repositories"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_ENVIRONMENTS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 const MAX_BASE_ENVIRONMENT_CHAIN_DEPTH = 8
@@ -20,7 +17,6 @@ export class EnvironmentService {
   // fallow-ignore-next-line code-duplication -- constructor DI boilerplate that mirrors the sibling services (collection, workflow, run) by construction; the dependencies are different repositories and there is no behaviour here to extract
   constructor(
     private readonly environments: EnvironmentRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     // Optional so the existing single-argument-set construction in tests keeps
     // working. When absent, `detachReferences` degrades to clearing only the
@@ -31,7 +27,7 @@ export class EnvironmentService {
   ) {}
 
   async create(workspaceId: string, input: Omit<EnvironmentCreate, "workspaceId" | "environmentId">): Promise<Environment> {
-    await this.authorize(workspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (input.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, undefined, input.baseEnvironmentId)
     }
@@ -39,17 +35,17 @@ export class EnvironmentService {
   }
 
   async get(workspaceId: string, environmentId: string): Promise<Environment> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.mustGet(workspaceId, environmentId)
   }
 
   async list(workspaceId: string): Promise<{ items: readonly Environment[]; total: number }> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.environments.listByWorkspace(workspaceId)
   }
 
   async update(workspaceId: string, environmentId: string, patch: EnvironmentUpdate): Promise<Environment> {
-    await this.authorize(workspaceId, "update")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, environmentId)
     if (patch.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, environmentId, patch.baseEnvironmentId)
@@ -58,7 +54,7 @@ export class EnvironmentService {
   }
 
   async delete(workspaceId: string, environmentId: string): Promise<void> {
-    await this.authorize(workspaceId, "delete")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, environmentId)
     this.environments.transaction(() => {
       this.detachReferences(workspaceId, environmentId)
@@ -90,9 +86,9 @@ export class EnvironmentService {
     targetWorkspaceId?: string,
     name?: string,
   ): Promise<Environment> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const destination = targetWorkspaceId ?? workspaceId
-    await this.authorize(destination, "create")
+    await this.scopeResolver.assertWorkspaceVisible(destination)
     const source = this.mustGet(workspaceId, environmentId)
 
     const sameWorkspace = destination === workspaceId
@@ -129,8 +125,8 @@ export class EnvironmentService {
     environmentId: string,
     targetWorkspaceId: string,
   ): Promise<Environment> {
-    await this.authorize(workspaceId, "update")
-    await this.authorize(targetWorkspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
     this.mustGet(workspaceId, environmentId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("environment is already in this workspace")
@@ -163,7 +159,7 @@ export class EnvironmentService {
   }
 
   /**
-   * The shared shape of the two variable writes: authorize, require the
+   * The shared shape of the two variable writes: check the workspace, require the
    * environment, apply the write.
    */
   private async applyVariable(
@@ -172,17 +168,9 @@ export class EnvironmentService {
     name: string,
     write: (environmentId: string, name: string) => Environment | undefined,
   ): Promise<Environment> {
-    await this.authorize(workspaceId, "update")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, environmentId)
     return this.requireUpdated(write(environmentId, name), environmentId)
-  }
-
-  /**
-   * The two-step gate every entry point here runs first, narrowed to this
-   * service's resource so call sites name only the action.
-   */
-  private async authorize(workspaceId: string, action: "read" | "create" | "update" | "delete"): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_ENVIRONMENTS)
   }
 
   /** A repository write that answers `Environment | undefined` becomes the row, or a 404. */

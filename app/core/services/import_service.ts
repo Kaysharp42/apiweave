@@ -12,10 +12,7 @@ import type {
   WorkflowCreate,
   WorkflowRepository,
 } from "../repositories"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_COLLECTIONS, RESOURCE_WORKFLOWS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import {
@@ -162,7 +159,6 @@ export class ImportService {
     private readonly workflows: WorkflowRepository,
     private readonly environments: EnvironmentRepository,
     private readonly collections: CollectionRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     safeHttp?: SafeHttp,
   ) {
@@ -174,7 +170,7 @@ export class ImportService {
     workflowId: string,
     includeEnvironment: boolean,
   ): Promise<WorkflowBundle> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const workflow = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (!workflow) throw new NotFoundError(`workflow ${workflowId} not found`)
 
@@ -254,9 +250,8 @@ export class ImportService {
     sanitize: boolean,
     collectionId?: string,
   ): Promise<WorkflowImportResult> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
     if (collectionId !== undefined) {
-      await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "update", RESOURCE_COLLECTIONS)
       this.assertCollectionInWorkspace(collectionId, targetWorkspaceId)
     }
     validateWorkflowBundle(bundle)
@@ -338,7 +333,7 @@ export class ImportService {
   }
 
   async dryRunWorkflow(targetWorkspaceId: string, bundle: WorkflowBundle): Promise<WorkflowDryRunResult> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
 
     const errors: string[] = []
     const warnings: string[] = []
@@ -678,7 +673,7 @@ export class ImportService {
     input: string,
     opts: CurlParseOptions & { readonly workflowId?: string; readonly collectionId?: string } = {},
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const parsed = parseCurlCommands(input, opts)
     const httpNodes = parsed.nodes.filter((n): n is HttpRequestNode => n.type === "http-request")
 
@@ -744,7 +739,7 @@ export class ImportService {
     workflowId: string,
     templates: readonly ImportedNode[],
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const existing = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (!existing) throw new NotFoundError(`workflow ${workflowId} not found`)
 

@@ -11,7 +11,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../../repositories"
-import { LocalOwnerProvider } from "../../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../../../services/scope_resolver"
 import { WorkspaceService } from "../../../services/workspace_service"
 import { CollectionService } from "../../../services/collection_service"
@@ -63,30 +62,28 @@ beforeEach(() => {
     environmentExists: (id) => environments.getById(id) !== undefined,
   }
   const scopeResolver = new ScopeResolver(existence)
-  const permissions = new LocalOwnerProvider()
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
   const rng = new SeededRandomProvider("0xABCD1234")
   const http = new SafeHttp()
   const functions = new DynamicFunctions(clock, rng)
   scheduler = new RunScheduler({ runs, workflows, environments, http, functions, clock, rng })
 
-  const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
-  const runService = new RunService(runs, permissions, scopeResolver, scheduler)
+  const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
+  const runService = new RunService(runs, scopeResolver, scheduler)
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
-    collections: new CollectionService(collections, workflows, permissions, scopeResolver),
+    collections: new CollectionService(collections, workflows, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-    environments: new EnvironmentService(environments, permissions, scopeResolver),
-    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
+    environments: new EnvironmentService(environments, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, scopeResolver),
     runs: runService,
-    secrets: new SecretService(secretStore, permissions, scopeResolver, environments, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,
       environments,
-      permissions,
       scopeResolver,
       secretStore,
       () => clock.isoNow(),
@@ -95,7 +92,6 @@ beforeEach(() => {
       new ProjectRunner({ projectRuns, collections, workflows, environments, runs, scheduler }),
       projectRuns,
       collections,
-      permissions,
       scopeResolver,
     ),
   }

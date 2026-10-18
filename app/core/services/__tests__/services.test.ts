@@ -9,7 +9,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { EnvironmentService } from "../environment_service"
@@ -26,7 +25,6 @@ let environments: EnvironmentRepository
 let collections: CollectionRepository
 let presets: NodePresetRepository
 let scopeResolver: ScopeResolver
-const permissions = new LocalOwnerProvider()
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -49,10 +47,10 @@ function seedWorkspace(slug: string): string {
   return workspaces.create({ name: slug, slug }).workspaceId
 }
 
-describe("WorkflowService — scope + permission round-trip (QA: task-12-service-happy)", () => {
+describe("WorkflowService — scope round-trip (QA: task-12-service-happy)", () => {
   it("creates, gets, and lists within a known workspace; hides unknown workspaces as not_found", async () => {
     const wsA = seedWorkspace("a")
-    const service = new WorkflowService(workflows, permissions, scopeResolver)
+    const service = new WorkflowService(workflows, scopeResolver)
 
     const created = await service.create(wsA, { name: "demo" })
     expect(created.name).toBe("demo")
@@ -68,7 +66,7 @@ describe("WorkflowService — scope + permission round-trip (QA: task-12-service
   it("hides a workflow from another workspace as not_found (no cross-scope read)", async () => {
     const wsA = seedWorkspace("a")
     const wsB = seedWorkspace("b")
-    const service = new WorkflowService(workflows, permissions, scopeResolver)
+    const service = new WorkflowService(workflows, scopeResolver)
     const created = await service.create(wsA, { name: "demo" })
     await expect(service.get(wsB, created.workflowId)).rejects.toMatchObject({ code: "not_found" })
   })
@@ -78,7 +76,7 @@ describe("WorkflowService — scope + permission round-trip (QA: task-12-service
     const wsB = seedWorkspace("b")
     const foreignCollection = collections.create({ workspaceId: wsB, name: "Foreign" })
     const foreignEnv = environments.create({ workspaceId: wsB, name: "Foreign" })
-    const service = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
+    const service = new WorkflowService(workflows, scopeResolver, collections, environments)
 
     await expect(
       service.create(wsA, { name: "demo", collectionId: foreignCollection.collectionId }),
@@ -112,7 +110,7 @@ describe("WorkflowService — Call Workflow node target validation", () => {
     const wsA = seedWorkspace("a")
     const wsB = seedWorkspace("b")
     const foreignTarget = workflows.create({ workspaceId: wsB, name: "Foreign target" })
-    const service = new WorkflowService(workflows, permissions, scopeResolver)
+    const service = new WorkflowService(workflows, scopeResolver)
 
     await expect(
       service.create(wsA, { name: "caller", nodes: [...callWorkflowNode(foreignTarget.workflowId)] }),
@@ -126,7 +124,7 @@ describe("WorkflowService — Call Workflow node target validation", () => {
 
   it("rejects a direct self-call but accepts a valid same-workspace target", async () => {
     const ws = seedWorkspace("a")
-    const service = new WorkflowService(workflows, permissions, scopeResolver)
+    const service = new WorkflowService(workflows, scopeResolver)
     const target = await service.create(ws, { name: "target" })
     const created = await service.create(ws, { name: "caller" })
 
@@ -149,7 +147,7 @@ describe("WorkflowService — Call Workflow node target validation", () => {
     // method). The runner's depth-bounded recursion guard is what actually
     // stops this from hanging at execution time — covered in executor.test.ts.
     const ws = seedWorkspace("a")
-    const service = new WorkflowService(workflows, permissions, scopeResolver)
+    const service = new WorkflowService(workflows, scopeResolver)
     const a = await service.create(ws, { name: "A" })
     const b = await service.create(ws, { name: "B", nodes: [...callWorkflowNode(a.workflowId)] })
 
@@ -162,8 +160,8 @@ describe("WorkflowService — Call Workflow node target validation", () => {
 describe("CollectionService — membership + delete conflict", () => {
   it("refuses to delete a collection while workflows are still attached", async () => {
     const ws = seedWorkspace("a")
-    const collectionService = new CollectionService(collections, workflows, permissions, scopeResolver)
-    const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
+    const collectionService = new CollectionService(collections, workflows, scopeResolver)
+    const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
 
     const collection = await collectionService.create(ws, { name: "Col" })
     const workflow = await workflowService.create(ws, { name: "wf" })
@@ -181,7 +179,7 @@ describe("RunService — field-level writes (decision #6b)", () => {
   it("patches node_statuses per node without clobbering siblings, then finalizes status", async () => {
     const ws = seedWorkspace("a")
     const workflow = workflows.create({ workspaceId: ws, name: "wf" })
-    const runService = new RunService(runs, permissions, scopeResolver)
+    const runService = new RunService(runs, scopeResolver)
 
     const run = await runService.createRun(ws, { workflowId: workflow.workflowId })
     runService.appendNodeStatus(run.runId, "n1", { status: "passed" })
@@ -203,7 +201,7 @@ describe("RunService — field-level writes (decision #6b)", () => {
 describe("EnvironmentService — variable ops", () => {
   it("sets and deletes variables within scope", async () => {
     const ws = seedWorkspace("a")
-    const service = new EnvironmentService(environments, permissions, scopeResolver)
+    const service = new EnvironmentService(environments, scopeResolver)
     const env = await service.create(ws, { name: "Env" })
     const withVar = await service.setVariable(ws, env.environmentId, "base", "http://x")
     expect(withVar.variables).toEqual({ base: "http://x" })
@@ -217,7 +215,7 @@ describe("EnvironmentService — base environment inheritance", () => {
     const wsA = seedWorkspace("a")
     const wsB = seedWorkspace("b")
     const foreignBase = environments.create({ workspaceId: wsB, name: "Foreign base" })
-    const service = new EnvironmentService(environments, permissions, scopeResolver)
+    const service = new EnvironmentService(environments, scopeResolver)
 
     await expect(
       service.create(wsA, { name: "Env", baseEnvironmentId: foreignBase.environmentId }),
@@ -231,7 +229,7 @@ describe("EnvironmentService — base environment inheritance", () => {
 
   it("rejects self-reference and cycles, but accepts a valid multi-level chain", async () => {
     const ws = seedWorkspace("a")
-    const service = new EnvironmentService(environments, permissions, scopeResolver)
+    const service = new EnvironmentService(environments, scopeResolver)
 
     const base = await service.create(ws, { name: "base", variables: { region: "eu" } })
     const mid = await service.create(ws, { name: "mid", baseEnvironmentId: base.environmentId, variables: { host: "mid" } })
@@ -255,7 +253,7 @@ describe("EnvironmentService — base environment inheritance", () => {
 
 describe("NodePresetService — workspace-scoped preset library", () => {
   function service(): NodePresetService {
-    return new NodePresetService(presets, permissions, scopeResolver)
+    return new NodePresetService(presets, scopeResolver)
   }
 
   it("creates, lists, updates, and deletes within one workspace", async () => {
@@ -330,7 +328,6 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
       collections,
       workflows,
       environments,
-      permissions,
       scopeResolver,
       undefined,
       clock,
@@ -597,7 +594,6 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
       collections,
       workflows,
       environments,
-      permissions,
       scopeResolver,
     ).dryRunImport(ws, bundle)
     expect(result.valid).toBe(false)
@@ -612,7 +608,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     for (const name of ["one", "two"]) {
       workflows.create({ workspaceId: wsA, name, collectionId: collection.collectionId, selectedEnvironmentId: env.environmentId })
     }
-    const service = new ProjectExportService(collections, workflows, environments, permissions, scopeResolver)
+    const service = new ProjectExportService(collections, workflows, environments, scopeResolver)
     const bundle = await service.exportProject(wsA, collection.collectionId)
     const create = workflows.create.bind(workflows)
     let workflowWrites = 0
