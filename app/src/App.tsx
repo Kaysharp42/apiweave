@@ -12,9 +12,6 @@ import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
 import TutorialPage from "./pages/TutorialPage";
-import { ConflictDetailPage } from "./pages/cloud/ConflictDetailPage";
-import { ConflictsPage } from "./pages/cloud/ConflictsPage";
-import { CloudSyncPage } from "./pages/cloud/CloudSyncPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
@@ -22,7 +19,6 @@ import { Toast } from "./components/atoms/Toast";
 import { AuthProvider } from "./auth/AuthProvider";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
-import { useAccountSessionReset } from "./hooks/useAccountSessionReset";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
 import { apiweave } from "./utils/apiweaveClient";
@@ -236,12 +232,6 @@ function WorkspacePageRoute({
 // App
 // ---------------------------------------------------------------------------
 
-/** Drops session-scoped UI state when the linked cloud account changes. */
-function AccountSessionReset() {
-  useAccountSessionReset();
-  return null;
-}
-
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     try {
@@ -299,7 +289,6 @@ function App() {
       <PaletteProvider>
         <AuthProvider>
           <HashRouter>
-            <AccountSessionReset />
             <Routes>
               <Route path="/" element={<Navigate to="/app" replace />} />
 
@@ -307,13 +296,6 @@ function App() {
                   moving between them never remounts the providers. */}
               <Route element={<AuthedRoutes />}>
                 <Route path="/app" element={<DefaultWorkspaceRedirect />} />
-
-                <Route
-                  path="/cloud/conflicts/:conflictId"
-                  element={<ConflictDetailPage />}
-                />
-                <Route path="/cloud/conflicts" element={<ConflictsPage />} />
-                <Route path="/cloud/sync" element={<CloudSyncPage />} />
 
                 {/* Slug-based workspace routes. Redirects only, kept outside
                     the shell so they never paint an empty one on the way

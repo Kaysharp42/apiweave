@@ -1,21 +1,12 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Cloud, LayoutGrid, Lock, Plus, UserRound, Users } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
-import {
-  EMPTY_PASSPHRASE_DRAFT,
-  PassphraseFields,
-  passphraseFieldsReady,
-} from "../molecules/PassphraseFields";
 import { apiweave } from "../../utils/apiweaveClient";
-import type {
-  CreateWorkspaceModalProps,
-  PassphraseDraft,
-  Workspace,
-} from "../../types";
+import type { CreateWorkspaceModalProps } from "../../types";
 
 // Workspace slugs use lowercase letters, numbers, and hyphens.
 function toWorkspaceSlug(value: string): string {
@@ -31,36 +22,6 @@ function isValidWorkspaceSlug(value: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(value);
 }
 
-// Which call creates the workspace: personal, or team (existing or new,
-// optionally encrypted). Split out of
-// handleSubmit so that branch lives on its own, away from the submit
-// lifecycle (busy state, error toast, close-on-success).
-async function submitCreateWorkspace(params: {
-  readonly name: string;
-  readonly slug: string;
-  readonly description: string;
-  readonly owner: "personal" | "existing" | "new";
-  readonly teamId: string;
-  readonly newTeamName: string;
-  readonly encryptionPassphrase: string | null;
-}): Promise<Workspace> {
-  if (params.owner === "personal") {
-    return apiweave.workspaces.create({
-      name: params.name,
-      slug: params.slug,
-      description: params.description || null,
-      isPersonal: false,
-    });
-  }
-  return apiweave.cloud.createTeamWorkspace({
-    name: params.name,
-    slug: params.slug,
-    description: params.description || null,
-    ...(params.owner === "existing" ? { teamId: params.teamId } : { newTeamName: params.newTeamName }),
-    ...(params.encryptionPassphrase !== null ? { passphrase: params.encryptionPassphrase } : {}),
-  });
-}
-
 export function CreateWorkspaceModal({
   isOpen,
   onClose,
@@ -71,14 +32,6 @@ export function CreateWorkspaceModal({
   const [description, setDescription] = useState("");
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState<Awaited<ReturnType<typeof apiweave.cloud.status>> | null>(null);
-  const [owner, setOwner] = useState<"personal" | "existing" | "new">("personal");
-  const [teamId, setTeamId] = useState("");
-  const [newTeamName, setNewTeamName] = useState("");
-  // A Cloud workspace's encryption mode is fixed the moment the cloud row is
-  // created, and this form creates it — so this is the only chance to choose.
-  const [encrypt, setEncrypt] = useState(false);
-  const [draft, setDraft] = useState(EMPTY_PASSPHRASE_DRAFT);
 
   useEffect(() => {
     if (!isOpen) {
@@ -87,33 +40,7 @@ export function CreateWorkspaceModal({
       setDescription("");
       setServerError(null);
       setIsSubmitting(false);
-      setCloudStatus(null);
-      setOwner("personal");
-      setTeamId("");
-      setNewTeamName("");
-      setEncrypt(false);
-      setDraft(EMPTY_PASSPHRASE_DRAFT);
-      return;
     }
-    let cancelled = false;
-    void apiweave.cloud.status()
-      .then((status) => status.linked && status.teamCatalog.length === 0
-        ? apiweave.cloud.refreshWorkspaceCatalog()
-        : status)
-      .then((status) => {
-        if (cancelled) return;
-        setCloudStatus(status);
-        const firstTeam = status.teamCatalog.find(
-          (team) => !team.isPersonal && team.canCreateWorkspaces,
-        );
-        setTeamId(firstTeam?.teamId ?? "");
-      })
-      .catch(() => {
-        if (!cancelled) setCloudStatus(null);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [isOpen]);
 
   const trimmedName = name.trim();
@@ -122,21 +49,7 @@ export function CreateWorkspaceModal({
     trimmedSlug && !isValidWorkspaceSlug(trimmedSlug)
       ? "Use lowercase letters, numbers, and hyphens; start and end with a letter or number."
       : null;
-  const canUseTeams = cloudStatus?.linked === true;
-  const availableTeams = cloudStatus?.teamCatalog.filter(
-    (team) => !team.isPersonal && team.canCreateWorkspaces,
-  ) ?? [];
-  const hasOwner = owner === "personal"
-    || (owner === "existing" && canUseTeams && Boolean(teamId))
-    || (owner === "new" && canUseTeams && Boolean(newTeamName.trim()));
-  // Encryption is offered only on the cloud path — a personal workspace is
-  // created locally and makes its own choice on the Cloud Sync page later.
-  const canEncrypt = owner !== "personal" && canUseTeams;
-  const encrypting = canEncrypt && encrypt;
-  const encryptionReady = !encrypting || passphraseFieldsReady(draft, trimmedName);
-  const canSubmit = Boolean(
-    trimmedName && trimmedSlug && !slugError && hasOwner && encryptionReady,
-  );
+  const canSubmit = Boolean(trimmedName && trimmedSlug && !slugError) && !isSubmitting;
 
   const handleNameChange = (value: string): void => {
     setName(value);
@@ -151,14 +64,11 @@ export function CreateWorkspaceModal({
     setServerError(null);
 
     try {
-      const workspace = await submitCreateWorkspace({
+      const workspace = await apiweave.workspaces.create({
         name: trimmedName,
         slug: trimmedSlug,
-        description: description.trim(),
-        owner,
-        teamId,
-        newTeamName: newTeamName.trim(),
-        encryptionPassphrase: encrypting ? draft.passphrase : null,
+        description: description.trim() || null,
+        isPersonal: false,
       });
       await onCreated(workspace);
       toast.success(`Workspace "${workspace.name}" created`);
@@ -207,7 +117,8 @@ export function CreateWorkspaceModal({
         className="space-y-4 p-5"
       >
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          Choose who owns this Workspace. You can keep it personal or place it in a Cloud Team.
+          A workspace groups its own workflows, projects, environments and
+          secrets. Everything stays on this device.
         </p>
 
         {serverError && (
@@ -215,79 +126,6 @@ export function CreateWorkspaceModal({
             {serverError}
           </div>
         )}
-
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
-            Where should this Workspace live?
-          </legend>
-          <OwnershipOption
-            checked={owner === "personal"}
-            description={canUseTeams
-              ? "Only you. It syncs through your personal Cloud space."
-              : "Stored on this device. You can connect Cloud later."}
-            icon={<UserRound className="h-4 w-4" aria-hidden="true" />}
-            label="Personal"
-            onChange={() => setOwner("personal")}
-          />
-          <OwnershipOption
-            checked={owner === "existing"}
-            description={canUseTeams
-              ? "Share ownership with a Team you can create Workspaces in."
-              : "Connect APIWeave Cloud to choose a Team."}
-            disabled={!canUseTeams || availableTeams.length === 0}
-            icon={<Users className="h-4 w-4" aria-hidden="true" />}
-            label="Existing Cloud Team"
-            onChange={() => setOwner("existing")}
-          />
-          {owner === "existing" && canUseTeams && (
-            <div className="pl-10">
-              <label className="mb-1 block text-xs font-medium text-text-secondary dark:text-text-secondary-dark" htmlFor="workspace-team">
-                Team
-              </label>
-              <select
-                id="workspace-team"
-                value={teamId}
-                onChange={(event) => setTeamId(event.target.value)}
-                disabled={isSubmitting}
-                className="h-10 w-full rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
-              >
-                {availableTeams.map((team) => (
-                  <option key={team.teamId} value={team.teamId}>{team.teamName}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <OwnershipOption
-            checked={owner === "new"}
-            description={canUseTeams
-              ? "Create a Team, then place this Workspace inside it."
-              : "Connect APIWeave Cloud to create a Team."}
-            disabled={!canUseTeams}
-            icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-            label="New Cloud Team"
-            onChange={() => setOwner("new")}
-          />
-          {owner === "new" && canUseTeams && (
-            <div className="pl-10">
-              <label className="mb-1 block text-xs font-medium text-text-secondary dark:text-text-secondary-dark" htmlFor="new-team-name">
-                Team name
-              </label>
-              <Input
-                id="new-team-name"
-                value={newTeamName}
-                onChange={(event) => setNewTeamName(event.target.value)}
-                placeholder="Platform Engineering"
-                disabled={isSubmitting}
-              />
-            </div>
-          )}
-          {canUseTeams && availableTeams.length === 0 ? (
-            <p className="flex items-center gap-1.5 pl-10 text-xs text-text-muted dark:text-text-muted-dark">
-              <Cloud className="h-3.5 w-3.5" aria-hidden="true" />
-              No existing Team allows Workspace creation. Create a new Team instead.
-            </p>
-          ) : null}
-        </fieldset>
 
         <FormField label="Workspace name" required>
           <Input
@@ -325,118 +163,7 @@ export function CreateWorkspaceModal({
             disabled={isSubmitting}
           />
         </FormField>
-
-        {/* A Cloud workspace's encryption mode is written once, when the cloud
-            row is created — which happens on submit. So the warning has to be
-            here, before the choice, not after it. */}
-        {canEncrypt ? (
-          <EncryptionChoice
-            workspaceName={trimmedName}
-            encrypt={encrypt}
-            onEncryptChange={setEncrypt}
-            value={draft}
-            onChange={setDraft}
-            disabled={isSubmitting}
-          />
-        ) : null}
       </form>
     </Modal>
-  );
-}
-
-function OwnershipOption({
-  checked,
-  description,
-  disabled = false,
-  icon,
-  label,
-  onChange,
-}: {
-  checked: boolean;
-  description: string;
-  disabled?: boolean;
-  icon: ReactNode;
-  label: string;
-  onChange: () => void;
-}) {
-  return (
-    <label className={`flex min-h-14 items-start gap-3 rounded-sm border p-3 transition-colors ${
-      checked
-        ? "border-primary bg-primary/5 dark:border-primary-light dark:bg-primary-light/10"
-        : "border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
-    } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"}`}>
-      <input
-        type="radio"
-        name="workspace-owner"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-        className="mt-1 accent-primary"
-      />
-      <span className="mt-0.5 text-text-secondary dark:text-text-secondary-dark">{icon}</span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-text-primary dark:text-text-primary-dark">{label}</span>
-        <span className="mt-0.5 block text-xs text-text-secondary dark:text-text-secondary-dark">{description}</span>
-      </span>
-    </label>
-  );
-}
-
-
-/**
- * The encryption choice for a Cloud Workspace. It lives in the create form
- * because the mode is written once, when the cloud row is created — which
- * happens on submit — so the warning has to come before the choice.
- */
-function EncryptionChoice({
-  workspaceName,
-  encrypt,
-  onEncryptChange,
-  value,
-  onChange,
-  disabled,
-}: {
-  readonly workspaceName: string;
-  readonly encrypt: boolean;
-  readonly onEncryptChange: (next: boolean) => void;
-  readonly value: PassphraseDraft;
-  readonly onChange: (next: PassphraseDraft) => void;
-  readonly disabled: boolean;
-}) {
-  return (
-    <fieldset className="space-y-3 rounded-sm border border-border p-3 dark:border-border-dark">
-      <legend className="flex items-center gap-1.5 px-1 text-sm font-medium text-text-primary dark:text-text-primary-dark">
-        <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-        Encryption
-      </legend>
-      <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-        Decide now: this is fixed when the Workspace is created and can never be
-        changed, in either direction.
-      </p>
-      <label className="flex cursor-pointer items-start gap-2">
-        <input
-          type="checkbox"
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-primary"
-          checked={encrypt}
-          disabled={disabled}
-          onChange={(event) => onEncryptChange(event.target.checked)}
-        />
-        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
-          End-to-end encrypt this Workspace
-          <span className="block text-text-muted dark:text-text-muted-dark">
-            The cloud stores ciphertext it cannot read. Leave this off and the
-            Workspace syncs in a form the server can read.
-          </span>
-        </span>
-      </label>
-      {encrypt ? (
-        <PassphraseFields
-          workspaceName={workspaceName}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      ) : null}
-    </fieldset>
   );
 }

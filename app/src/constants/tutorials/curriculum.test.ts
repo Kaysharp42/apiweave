@@ -39,7 +39,6 @@ const EXPECTED_LESSON_IDS = [
   "embedded-agents",
   "mcp",
   "settings",
-  "cloud",
   "updates",
 ] as const;
 
@@ -103,7 +102,6 @@ describe("tutorial curriculum", () => {
     for (const term of [
       "sse",
       "inheritance",
-      "dead letter",
       "dry run",
       "expected status",
       "recursion",
@@ -193,15 +191,6 @@ describe("tutorial destinations", () => {
     );
   });
 
-  it("keeps cloud sync unscoped, matching its top-level route", () => {
-    expect(tutorialDestinationHref("cloud-sync", "personal", "personal")).toBe(
-      "/cloud/sync",
-    );
-    expect(tutorialDestinationHref("cloud-sync", "acme", "team")).toBe(
-      "/cloud/sync",
-    );
-  });
-
   it("builds workspace, library and lesson hrefs", () => {
     expect(tutorialWorkspaceHref("personal", "personal")).toBe(
       "/personal/personal/workflows",
@@ -222,10 +211,7 @@ describe("tutorial destinations", () => {
         "personal",
         "personal",
       );
-      const isCloud = lesson.destination.path === "cloud-sync";
-      expect(
-        href.startsWith("/personal/personal/") || (isCloud && href === "/cloud/sync"),
-      ).toBe(true);
+      expect(href.startsWith("/personal/personal/")).toBe(true);
     }
   });
 });

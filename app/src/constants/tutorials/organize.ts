@@ -68,7 +68,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Understand the local-only boundary",
           instruction:
-            "Remember that presets are local to this machine. Cloud sync has no record type for a preset, so it never uploads and never appears on another machine.",
+            "Remember that presets are stored in this machine's database and are never uploaded anywhere, so a preset never appears on another machine.",
           detail:
             "{{secrets.NAME}} references in a preset stay references and resolve against each workflow's environment; a literal token typed into a header is stored literally, in the same database as the workflow.",
         },

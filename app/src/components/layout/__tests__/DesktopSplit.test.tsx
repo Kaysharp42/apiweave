@@ -48,7 +48,6 @@ vi.mock("../MainFooter", () => ({ MainFooter: () => null }));
 vi.mock("../../organisms/UpdateBanner", () => ({
   UpdateBanner: () => null,
 }));
-vi.mock("../SyncAlerts", () => ({ SyncAlerts: () => null }));
 vi.mock("../../../contexts/AgentSessionsContext", () => ({
   AgentSessionsProvider: ({
     children,

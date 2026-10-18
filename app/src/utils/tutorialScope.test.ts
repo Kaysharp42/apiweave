@@ -52,7 +52,6 @@ describe("resolveTutorialScope", () => {
     expect(resolveTutorialScope("")).toEqual(fallback);
     expect(resolveTutorialScope("/")).toEqual(fallback);
     expect(resolveTutorialScope("/app")).toEqual(fallback);
-    expect(resolveTutorialScope("/cloud/sync")).toEqual(fallback);
     expect(resolveTutorialScope("/setup")).toEqual(fallback);
   });
 });

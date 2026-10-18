@@ -5,7 +5,6 @@ import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
 import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
-import { AccountMenu } from "./AccountMenu";
 import useNavigationStore from "../../stores/NavigationStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
@@ -150,10 +149,6 @@ export function MainHeader() {
           className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
           icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         />
-
-        <div className="flex items-center" style={noDragStyle}>
-          <AccountMenu />
-        </div>
       </div>
 
       {/* Flush to the window's top-right corner (the header drops its right

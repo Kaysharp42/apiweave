@@ -22,37 +22,11 @@ const created: Workspace = {
   updatedAt: "2026-07-19T00:00:00.000Z",
 } as unknown as Workspace;
 
-const linkedStatus = {
-  linked: true,
-  active: true,
-  linkState: "linked",
-  syncState: "idle",
-  state: "idle",
-  pendingCount: 0,
-  deadLetterCount: 0,
-  conflictCount: 0,
-  workspaceIds: [],
-  bindings: [],
-  workspaceCatalog: [],
-  teamCatalog: [
-    {
-      teamId: "team-platform",
-      teamName: "Platform",
-      isPersonal: false,
-      canCreateWorkspaces: true,
-    },
-  ],
-};
-
-function stubBridge(status: typeof linkedStatus | null = null) {
-  const invoke = vi.fn(async (domain: string, action: string) => ({
-    ok: true as const,
-    data: domain === "cloud" && action === "status" ? status ?? { ...linkedStatus, linked: false, teamCatalog: [] } : created,
-  }));
+function stubBridge() {
+  const invoke = vi.fn(async () => ({ ok: true as const, data: created }));
   const bridge = {
     invoke,
     onRunProgress: vi.fn().mockReturnValue(() => undefined),
-    onCloudStatusChanged: vi.fn().mockReturnValue(() => undefined),
   };
   vi.stubGlobal("__APIWEAVE_IPC__", bridge);
   Object.defineProperty(window, "__APIWEAVE_IPC__", {
@@ -99,47 +73,19 @@ describe("CreateWorkspaceModal (desktop)", () => {
     );
   });
 
-  it("creates and attaches a workspace to an existing Cloud Team", async () => {
-    const invoke = stubBridge(linkedStatus);
-    const user = userEvent.setup();
+  it("offers no Cloud ownership or encryption choice", () => {
+    stubBridge();
+
     render(
-      <CreateWorkspaceModal isOpen onClose={() => undefined} onCreated={vi.fn()} />,
+      <CreateWorkspaceModal
+        isOpen
+        onClose={() => undefined}
+        onCreated={vi.fn()}
+      />,
     );
 
-    await user.click(await screen.findByRole("radio", { name: /Existing Cloud Team/i }));
-    await user.type(screen.getByPlaceholderText("QA Workspace"), "Checkout APIs");
-    await user.click(screen.getByRole("button", { name: "Create workspace" }));
-
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
-      "cloud",
-      "createTeamWorkspace",
-      expect.objectContaining({
-        name: "Checkout APIs",
-        slug: "checkout-apis",
-        teamId: "team-platform",
-      }),
-    ));
-  });
-
-  it("creates a new Cloud Team with its first workspace", async () => {
-    const invoke = stubBridge(linkedStatus);
-    const user = userEvent.setup();
-    render(
-      <CreateWorkspaceModal isOpen onClose={() => undefined} onCreated={vi.fn()} />,
-    );
-
-    await user.click(await screen.findByRole("radio", { name: /New Cloud Team/i }));
-    await user.type(screen.getByPlaceholderText("Platform Engineering"), "Payments");
-    await user.type(screen.getByPlaceholderText("QA Workspace"), "Checkout APIs");
-    await user.click(screen.getByRole("button", { name: "Create workspace" }));
-
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith(
-      "cloud",
-      "createTeamWorkspace",
-      expect.objectContaining({
-        name: "Checkout APIs",
-        newTeamName: "Payments",
-      }),
-    ));
+    expect(screen.queryByText(/Cloud Team/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/End-to-end encrypt/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
   });
 });
