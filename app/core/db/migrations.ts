@@ -8,6 +8,11 @@ type Migration = {
   readonly sql: string
 }
 
+type Token = {
+  readonly text: string
+  readonly next: number
+}
+
 const MIGRATION_FILE = /^(\d+)_.*\.sql$/
 
 /**
@@ -46,6 +51,7 @@ const DROP_TABLE_START = /^\s*drop\s+table\b/i
 const DROP_TABLE = new RegExp(String.raw`^\s*drop\s+table\s+(?:if\s+exists\s+)?(?:${IDENTIFIER}\s*\.\s*)?(${IDENTIFIER})\s*$`, "i")
 const RENAME_TABLE_START = /^\s*alter\s+table\b[\s\S]*\brename\s+to\b/i
 const RENAME_TABLE = new RegExp(String.raw`^\s*alter\s+table\s+(?:${IDENTIFIER}\s*\.\s*)?(${IDENTIFIER})\s+rename\s+to\b`, "i")
+const IDENTIFIER_QUOTES: ReadonlySet<string> = new Set(['"', "`", "["])
 const UNREADABLE_NAME_HINT = "(name the table bare or in double quotes; a single-quoted name reads as a string)"
 
 /**
@@ -114,26 +120,21 @@ export function readMigrations(migrationsPath = defaultMigrationsPath()): readon
 function assertContentTablesSurvive(fileName: string, sql: string): void {
   for (const statement of withoutCommentsAndStrings(sql).split(";")) {
     if (DROP_TABLE_START.test(statement)) {
-      const table = readTableName(DROP_TABLE, statement)
-      if (table === undefined) {
-        throw new Error(
-          `migration contains forbidden DROP TABLE: ${fileName}: cannot read the table name in "${statement.trim()}" ${UNREADABLE_NAME_HINT}`,
-        )
-      }
-      if (CONTENT_TABLES.has(table)) {
-        throw new Error(`migration contains forbidden DROP TABLE: ${fileName}: ${table} holds user data`)
-      }
+      assertNotContentTable(fileName, statement, DROP_TABLE, "migration contains forbidden DROP TABLE")
     } else if (RENAME_TABLE_START.test(statement)) {
-      const table = readTableName(RENAME_TABLE, statement)
-      if (table === undefined) {
-        throw new Error(
-          `migration renames a content table: ${fileName}: cannot read the table name in "${statement.trim()}" ${UNREADABLE_NAME_HINT}`,
-        )
-      }
-      if (CONTENT_TABLES.has(table)) {
-        throw new Error(`migration renames a content table: ${fileName}: ${table} holds user data`)
-      }
+      assertNotContentTable(fileName, statement, RENAME_TABLE, "migration renames a content table")
     }
+  }
+}
+
+/** Refuses `statement`, prefixed with `refusal`, when the table `pattern` reads from it is a content table or cannot be read. */
+function assertNotContentTable(fileName: string, statement: string, pattern: RegExp, refusal: string): void {
+  const table = readTableName(pattern, statement)
+  if (table === undefined) {
+    throw new Error(`${refusal}: ${fileName}: cannot read the table name in "${statement.trim()}" ${UNREADABLE_NAME_HINT}`)
+  }
+  if (CONTENT_TABLES.has(table)) {
+    throw new Error(`${refusal}: ${fileName}: ${table} holds user data`)
   }
 }
 
@@ -151,29 +152,38 @@ function withoutCommentsAndStrings(sql: string): string {
   let result = ""
   let index = 0
   while (index < sql.length) {
-    const char = sql.charAt(index)
-    const pair = sql.slice(index, index + 2)
-    if (pair === "--") {
-      const end = sql.indexOf("\n", index)
-      index = end === -1 ? sql.length : end
-    } else if (pair === "/*") {
-      const end = sql.indexOf("*/", index + 2)
-      index = end === -1 ? sql.length : end + 2
-      result += " "
-    } else if (char === "'") {
-      index = closingQuote(sql, index, "'") + 1
-      result += "''"
-    } else if (char === '"' || char === "`" || char === "[") {
-      const end = char === "[" ? sql.indexOf("]", index + 1) : closingQuote(sql, index, char)
-      const stop = end === -1 ? sql.length : end + 1
-      result += sql.slice(index, stop)
-      index = stop
-    } else {
-      result += char
-      index += 1
-    }
+    const token = readToken(sql, index)
+    result += token.text
+    index = token.next
   }
   return result
+}
+
+/**
+ * The comment, string literal, quoted identifier or plain character starting
+ * at `index`: the text that replaces it, and the index just past it. A line
+ * comment stops before its newline, so the line break survives.
+ */
+function readToken(sql: string, index: number): Token {
+  const char = sql.charAt(index)
+  const pair = sql.slice(index, index + 2)
+  if (pair === "--") return { text: "", next: endAfter(sql, sql.indexOf("\n", index), 0) }
+  if (pair === "/*") return { text: " ", next: endAfter(sql, sql.indexOf("*/", index + 2), 2) }
+  if (char === "'") return { text: "''", next: closingQuote(sql, index, "'") + 1 }
+  if (IDENTIFIER_QUOTES.has(char)) return readQuotedIdentifier(sql, index)
+  return { text: char, next: index + 1 }
+}
+
+function readQuotedIdentifier(sql: string, index: number): Token {
+  const quote = sql.charAt(index)
+  const end = quote === "[" ? sql.indexOf("]", index + 1) : closingQuote(sql, index, quote)
+  const stop = endAfter(sql, end, 1)
+  return { text: sql.slice(index, stop), next: stop }
+}
+
+/** The index past a terminator of `length` found at `found`, or the end of the SQL when none was. */
+function endAfter(sql: string, found: number, length: number): number {
+  return found === -1 ? sql.length : found + length
 }
 
 /** Index of the quote closing the one at `start`, treating a doubled quote as an escape. */

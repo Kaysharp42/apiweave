@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- the row interface, the COLUMNS projection and the insert-then-mustExist(getById(id)) create are the shape every sibling repository carries: that mirroring is the convention (persistence models and SQLite rows intentionally track each other), not behaviour to extract, and a generic base repository is the abstraction this codebase deliberately does without. The clones are long-standing; this file is re-flagged only because origin and syncMode left it, which moved the fingerprint, not because new duplication was written. Two clone groups land on different line ranges and fallow 2.104 has no range form, so file-level is the narrowest marker available.
 import type { KVStore, SqliteRow } from "../db"
 import type { Workspace } from "@shared/types/Workspace"
 import { generateId } from "../id"

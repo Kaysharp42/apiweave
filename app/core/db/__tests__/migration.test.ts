@@ -287,72 +287,80 @@ describe("database migrations", () => {
     }
   })
 
-  it("drops the Cloud schema without touching content (pre-023 fixture with real Cloud rows)", () => {
-    const tempRoot = makeTempRoot()
-    const databasePath = path.join(tempRoot, "cloud-upgrade.db")
-    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 22) })
-    expect(old.schemaVersion).toBe(22)
-    seedCloudFixture(old)
-    const before = contentRows(old)
-    for (const [table, rows] of Object.entries(before)) {
-      expect(rows.length, `${table} must be seeded for the check to mean anything`).toBeGreaterThan(0)
-    }
-    const indexesBefore = schemaObjects(old, "index")
-    const triggersBefore = schemaObjects(old, "trigger")
-    const cloudTables = tableNames(old.kvStore).filter((name) => name.startsWith("cloud_"))
-    expect(cloudTables).toHaveLength(7)
-    for (const table of [...cloudTables, "scoped_keys"]) {
-      expect(old.kvStore.get(`SELECT COUNT(*) AS n FROM "${table}"`)?.["n"], `${table} must be seeded`).toBeGreaterThan(0)
-    }
-    old.close()
+  // Each case upgrades its own copy of the fixture: two of them write to it.
+  describe("dropping the Cloud schema (pre-023 fixture with real Cloud rows)", () => {
+    const keptSettings = [
+      { key: "Cloud.Upper" },
+      { key: "agents.cloud.x" },
+      { key: "agents.default" },
+      { key: "cloud_underscore" },
+      { key: "cloudy.theme" },
+      { key: "mcp.enabled" },
+    ]
 
-    const upgraded = initDatabase({ databasePath })
-    try {
-      expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-      expect(upgraded.database.pragma("foreign_keys", { simple: true })).toBe(1)
-      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
-
-      const workspacesBefore = before["workspaces"] ?? []
-      const appSettingsBefore = before["app_settings"] ?? []
-      expect(contentRows(upgraded)).toEqual({
-        ...before,
-        workspaces: workspacesBefore.map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
-        app_settings: appSettingsBefore.filter((row) => !String(row["key"]).startsWith("cloud.")),
-      })
-
-      const tables = tableNames(upgraded.kvStore)
-      for (const dropped of [...cloudTables, "scoped_keys"]) {
-        expect(tables).not.toContain(dropped)
+    it("keeps every content row and leaves no foreign key dangling", () => {
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+        expect(upgraded.database.pragma("foreign_keys", { simple: true })).toBe(1)
+        expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+        expect(contentRows(upgraded)).toEqual({
+          ...before,
+          workspaces: (before["workspaces"] ?? []).map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
+          app_settings: (before["app_settings"] ?? []).filter((row) => !String(row["key"]).startsWith("cloud.")),
+        })
+      } finally {
+        upgraded.close()
       }
-      expect(cloudLeftovers(upgraded)).toEqual([])
-      const keptSettings = [
-        { key: "Cloud.Upper" },
-        { key: "agents.cloud.x" },
-        { key: "agents.default" },
-        { key: "cloud_underscore" },
-        { key: "cloudy.theme" },
-        { key: "mcp.enabled" },
-      ]
-      expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
-      const workspaceColumns = upgraded.kvStore.query("SELECT name FROM pragma_table_info('workspaces')").map((row) => row["name"])
-      expect(workspaceColumns).not.toContain("origin")
-      expect(workspaceColumns).not.toContain("syncMode")
-      expect(workspaceColumns).toEqual(["id", "name", "slug", "settings_json", "rev", "createdAt", "updatedAt"])
+    })
 
-      expect(schemaObjects(upgraded, "index")).toEqual(
-        indexesBefore.filter((name) => !name.startsWith("idx_cloud_") && name !== "idx_scoped_keys_scope"),
-      )
-      expect(schemaObjects(upgraded, "trigger")).toEqual(triggersBefore.filter((name) => name !== "scoped_keys_touch"))
+    it("drops the Cloud tables, the workspace columns and the cloud.* settings, and nothing near them", () => {
+      const { upgraded, cloudTables } = upgradeCloudFixture()
+      try {
+        const tables = tableNames(upgraded.kvStore)
+        for (const dropped of [...cloudTables, "scoped_keys"]) {
+          expect(tables).not.toContain(dropped)
+        }
+        expect(cloudLeftovers(upgraded)).toEqual([])
+        expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
+        const workspaceColumns = upgraded.kvStore.query("SELECT name FROM pragma_table_info('workspaces')").map((row) => row["name"])
+        expect(workspaceColumns).not.toContain("origin")
+        expect(workspaceColumns).not.toContain("syncMode")
+        expect(workspaceColumns).toEqual(["id", "name", "slug", "settings_json", "rev", "createdAt", "updatedAt"])
+      } finally {
+        upgraded.close()
+      }
+    })
 
-      const workspaceBefore = workspacesBefore.find((row) => row["id"] === "ws-cloud")
-      upgraded.kvStore.set("UPDATE workspaces SET name = ? WHERE id = ?", ["Cloud renamed", "ws-cloud"])
-      const workspaceAfter = upgraded.kvStore.get("SELECT rev, updatedAt FROM workspaces WHERE id = ?", ["ws-cloud"])
-      expect(workspaceAfter?.["rev"]).toBe(Number(workspaceBefore?.["rev"]) + 1)
-      expect(workspaceAfter?.["updatedAt"]).not.toBe(workspaceBefore?.["updatedAt"])
+    it("drops Cloud's indexes and trigger and no others", () => {
+      const { upgraded, indexesBefore, triggersBefore } = upgradeCloudFixture()
+      try {
+        expect(schemaObjects(upgraded, "index")).toEqual(
+          indexesBefore.filter((name) => !name.startsWith("idx_cloud_") && name !== "idx_scoped_keys_scope"),
+        )
+        expect(schemaObjects(upgraded, "trigger")).toEqual(triggersBefore.filter((name) => name !== "scoped_keys_touch"))
+      } finally {
+        upgraded.close()
+      }
+    })
 
-      // The cascade from workspaces still reaches every child, directly or through
-      // workflows, runs and collections. agent_local_paths has no FK by design
-      // (015_agents.sql) and app_settings is not workspace-scoped: both stay.
+    it("still bumps rev and updatedAt when a rebuilt workspace row changes", () => {
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        const workspaceBefore = before["workspaces"]?.find((row) => row["id"] === "ws-cloud")
+        upgraded.kvStore.set("UPDATE workspaces SET name = ? WHERE id = ?", ["Cloud renamed", "ws-cloud"])
+        const workspaceAfter = upgraded.kvStore.get("SELECT rev, updatedAt FROM workspaces WHERE id = ?", ["ws-cloud"])
+        expect(workspaceAfter?.["rev"]).toBe(Number(workspaceBefore?.["rev"]) + 1)
+        expect(workspaceAfter?.["updatedAt"]).not.toBe(workspaceBefore?.["updatedAt"])
+      } finally {
+        upgraded.close()
+      }
+    })
+
+    // The cascade from workspaces still reaches every child, directly or through
+    // workflows, runs and collections. agent_local_paths has no FK by design
+    // (015_agents.sql) and app_settings is not workspace-scoped: both stay.
+    it("still cascades a workspace delete to every child table", () => {
       const cascaded = [
         "workflows",
         "workflow_revisions",
@@ -369,18 +377,21 @@ describe("database migrations", () => {
         "agent_run_approvals",
       ]
       expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
-      upgraded.kvStore.delete("DELETE FROM workspaces WHERE id = ?", ["ws-cloud"])
-      const afterDelete = contentRows(upgraded)
-      for (const table of cascaded) {
-        expect(afterDelete[table], `${table} must cascade from workspaces`).toEqual([])
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        upgraded.kvStore.delete("DELETE FROM workspaces WHERE id = ?", ["ws-cloud"])
+        const afterDelete = contentRows(upgraded)
+        for (const table of cascaded) {
+          expect(afterDelete[table], `${table} must cascade from workspaces`).toEqual([])
+        }
+        expect(afterDelete["workspaces"]?.map((row) => row["id"])).toEqual(["ws-local"])
+        expect(afterDelete["agent_local_paths"]).toEqual(before["agent_local_paths"])
+        expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
+        expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+      } finally {
+        upgraded.close()
       }
-      expect(afterDelete["workspaces"]?.map((row) => row["id"])).toEqual(["ws-local"])
-      expect(afterDelete["agent_local_paths"]).toEqual(before["agent_local_paths"])
-      expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
-      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
-    } finally {
-      upgraded.close()
-    }
+    })
   })
 
   it("classifies every table as content or state", () => {
@@ -655,6 +666,41 @@ function schemaObjects(db: InitializedDatabase, type: "index" | "trigger"): read
   return db.kvStore
     .query("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name", [type])
     .map((row) => String(row["name"]))
+}
+
+interface CloudUpgrade {
+  readonly upgraded: InitializedDatabase
+  /** Every content table's rows in the v22 database. */
+  readonly before: Record<string, readonly SqliteRow[]>
+  readonly cloudTables: readonly string[]
+  readonly indexesBefore: readonly string[]
+  readonly triggersBefore: readonly string[]
+}
+
+/**
+ * Seeds the v22 fixture, checks it holds a row in every content and Cloud
+ * table — without them the assertions after the upgrade mean nothing — and
+ * opens it at the current schema. The caller closes `upgraded`.
+ */
+function upgradeCloudFixture(): CloudUpgrade {
+  const tempRoot = makeTempRoot()
+  const databasePath = path.join(tempRoot, "cloud-upgrade.db")
+  const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 22) })
+  expect(old.schemaVersion).toBe(22)
+  seedCloudFixture(old)
+  const before = contentRows(old)
+  for (const [table, rows] of Object.entries(before)) {
+    expect(rows.length, `${table} must be seeded for the check to mean anything`).toBeGreaterThan(0)
+  }
+  const indexesBefore = schemaObjects(old, "index")
+  const triggersBefore = schemaObjects(old, "trigger")
+  const cloudTables = tableNames(old.kvStore).filter((name) => name.startsWith("cloud_"))
+  expect(cloudTables).toHaveLength(7)
+  for (const table of [...cloudTables, "scoped_keys"]) {
+    expect(old.kvStore.get(`SELECT COUNT(*) AS n FROM "${table}"`)?.["n"], `${table} must be seeded`).toBeGreaterThan(0)
+  }
+  old.close()
+  return { upgraded: initDatabase({ databasePath }), before, cloudTables, indexesBefore, triggersBefore }
 }
 
 /** A v22 database as Cloud left it: a bound workspace with every kind of Cloud row, and content in every table. */
