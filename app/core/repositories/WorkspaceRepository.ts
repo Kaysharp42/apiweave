@@ -1,26 +1,19 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { Workspace } from "@shared/types/Workspace"
-import type { WorkspaceOrigin } from "@shared/types/WorkspaceOrigin"
-import type { WorkspaceSyncMode } from "@shared/types/WorkspaceSyncMode"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
 import { holdNotificationsUntilCommit } from "./transactionNotifications"
 
-export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> &
-  Partial<Pick<Workspace, "description" | "isPersonal" | "origin" | "syncMode">>
+export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> & Partial<Pick<Workspace, "description" | "isPersonal">>
 
-export type WorkspaceUpdate = Partial<
-  Pick<Workspace, "name" | "slug" | "description" | "isPersonal" | "origin" | "syncMode" | "deletedAt">
->
+export type WorkspaceUpdate = Partial<Pick<Workspace, "name" | "slug" | "description" | "isPersonal" | "deletedAt">>
 
-const COLUMNS = "id, name, slug, origin, syncMode, settings_json, rev, createdAt, updatedAt"
+const COLUMNS = "id, name, slug, settings_json, rev, createdAt, updatedAt"
 
 interface WorkspaceRow extends SqliteRow {
   readonly id: string
   readonly name: string
   readonly slug: string
-  readonly origin: string
-  readonly syncMode: string
   readonly settings_json: string
   readonly rev: number
   readonly createdAt: string
@@ -49,8 +42,8 @@ export class WorkspaceRepository {
       deletedAt: null,
     }
     this.store.set(
-      "INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, input.name, input.slug, input.origin ?? "local", input.syncMode ?? "none", toJson(settings)],
+      "INSERT INTO workspaces (id, name, slug, settings_json) VALUES (?, ?, ?, ?)",
+      [id, input.name, input.slug, toJson(settings)],
     )
     return mustExist(this.getById(id), `workspace ${id} missing after insert`)
   }
@@ -83,8 +76,8 @@ export class WorkspaceRepository {
       deletedAt: merged.deletedAt ?? null,
     }
     this.store.set(
-      "UPDATE workspaces SET name = ?, slug = ?, origin = ?, syncMode = ?, settings_json = ? WHERE id = ?",
-      [merged.name, merged.slug, merged.origin, merged.syncMode, toJson(settings), workspaceId],
+      "UPDATE workspaces SET name = ?, slug = ?, settings_json = ? WHERE id = ?",
+      [merged.name, merged.slug, toJson(settings), workspaceId],
     )
     return this.getById(workspaceId)
   }
@@ -102,8 +95,6 @@ function rowToWorkspace(row: WorkspaceRow): Workspace {
     name: row.name,
     description: settings.description,
     isPersonal: settings.isPersonal,
-    origin: row.origin as WorkspaceOrigin,
-    syncMode: row.syncMode as WorkspaceSyncMode,
     deletedAt: settings.deletedAt,
     rev: row.rev,
     createdAt: row.createdAt,

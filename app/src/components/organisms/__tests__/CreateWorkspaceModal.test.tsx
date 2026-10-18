@@ -14,8 +14,6 @@ const created: Workspace = {
   name: "QA Workspace",
   description: null,
   isPersonal: false,
-  origin: "local",
-  syncMode: "none",
   deletedAt: null,
   rev: 1,
   createdAt: "2026-07-19T00:00:00.000Z",
