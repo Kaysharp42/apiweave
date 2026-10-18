@@ -437,7 +437,7 @@ export class AgentService {
     }
   }
 
-  /** Keystrokes. Authorized as `run`: typing at an agent is driving a process. */
+  /** Keystrokes. */
   async writeToSession(sessionId: string, data: string): Promise<void> {
     await this.mustResolveSession(sessionId)
     this.environment.pty?.write(sessionId, data)
