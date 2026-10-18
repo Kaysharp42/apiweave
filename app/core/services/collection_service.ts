@@ -7,13 +7,6 @@ import type {
   WorkflowRepository,
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
-import {
-  recordCollectionTombstone,
-  recordCollectionUpsert,
-  recordWorkflowTombstone,
-  recordWorkflowUpsert,
-} from "../sync/cloud-mutations"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -30,20 +23,13 @@ export class CollectionService {
   constructor(
     private readonly collections: CollectionRepository,
     private readonly workflows: WorkflowRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
   ) {}
 
   async create(workspaceId: string, input: Omit<CollectionCreate, "workspaceId" | "collectionId">): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_COLLECTIONS)
-    const created = this.collections.transaction(() => {
-      const collection = this.collections.create({ ...input, workspaceId })
-      recordCollectionUpsert(this.syncProvider, this.withCount(collection))
-      return collection
-    })
-    await this.syncProvider.push()
-    return created
+    return this.collections.create({ ...input, workspaceId })
   }
 
   async get(workspaceId: string, collectionId: string): Promise<Collection> {
@@ -60,29 +46,20 @@ export class CollectionService {
   async update(workspaceId: string, collectionId: string, patch: CollectionUpdate): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
     this.mustGet(workspaceId, collectionId)
-    const updated = this.collections.transaction(() => {
-      const collection = this.collections.update(collectionId, patch)
-      if (collection !== undefined) recordCollectionUpsert(this.syncProvider, this.withCount(collection))
-      return collection
-    })
+    const updated = this.collections.update(collectionId, patch)
     if (updated === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
-    await this.syncProvider.push()
     return this.withCount(updated)
   }
 
   /** Delete a collection. Refuses (409) while any workflow is still attached. */
   async delete(workspaceId: string, collectionId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_COLLECTIONS)
-    const existing = this.mustGet(workspaceId, collectionId)
+    this.mustGet(workspaceId, collectionId)
     const count = this.workflows.countByCollection(workspaceId, collectionId)
     if (count > 0) {
       throw new ConflictError(`Cannot delete collection. ${count} workflow(s) are still in it.`)
     }
-    this.collections.transaction(() => {
-      recordCollectionTombstone(this.syncProvider, this.withCount(existing))
-      this.collections.delete(collectionId)
-    })
-    await this.syncProvider.push()
+    this.collections.delete(collectionId)
   }
 
   /**
@@ -103,7 +80,7 @@ export class CollectionService {
   ): Promise<Collection> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
     await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_COLLECTIONS)
-    const existing = this.mustGet(workspaceId, collectionId)
+    this.mustGet(workspaceId, collectionId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("project is already in this workspace")
     }
@@ -111,40 +88,26 @@ export class CollectionService {
     const members = this.workflows.listByCollection(workspaceId, collectionId).items
     const movingWorkflowIds = new Set(members.map((workflow) => workflow.workflowId))
 
-    const moved = this.collections.transaction(() => {
-      // Keyed by workspace, so leaving reads as a deletion from the source — see
-      // the matching note in `WorkflowService.moveToWorkspace`.
-      recordCollectionTombstone(this.syncProvider, this.withCount(existing))
-      for (const member of members) recordWorkflowTombstone(this.syncProvider, member)
-
+    return this.collections.transaction(() => {
       this.collections.setWorkspace(collectionId, targetWorkspaceId)
-      const relocated: Workflow[] = []
       for (const member of members) {
         this.workflows.setWorkspace(member.workflowId, targetWorkspaceId)
-        const workflow = this.workflows.update(member.workflowId, {
+        this.workflows.update(member.workflowId, {
           selectedEnvironmentId: null,
           nodes: clearDepartingCallTargets(member.nodes, movingWorkflowIds),
         })
-        if (workflow !== undefined) relocated.push(workflow)
       }
       const collection = this.collections.getById(collectionId)
       if (collection === undefined) throw new NotFoundError(`collection ${collectionId} not found`)
-      const withCount = this.withCount(collection)
-      recordCollectionUpsert(this.syncProvider, withCount)
-      for (const workflow of relocated) recordWorkflowUpsert(this.syncProvider, workflow)
-      return withCount
+      return this.withCount(collection)
     })
-    await this.syncProvider.push()
-    return moved
   }
 
   async addWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_COLLECTIONS)
     this.mustGet(workspaceId, collectionId)
     this.mustGetWorkflow(workspaceId, workflowId)
-    const updated = this.updateWorkflow(workflowId, { collectionId })
-    await this.syncProvider.push()
-    return updated
+    return this.updateWorkflow(workflowId, { collectionId })
   }
 
   async removeWorkflow(workspaceId: string, collectionId: string, workflowId: string): Promise<Workflow> {
@@ -154,9 +117,7 @@ export class CollectionService {
     if (workflow.collectionId !== collectionId) {
       throw new NotFoundError(`workflow ${workflowId} is not in collection ${collectionId}`)
     }
-    const updated = this.updateWorkflow(workflowId, { collectionId: null })
-    await this.syncProvider.push()
-    return updated
+    return this.updateWorkflow(workflowId, { collectionId: null })
   }
 
   async listWorkflows(workspaceId: string, collectionId: string): Promise<readonly Workflow[]> {
@@ -172,13 +133,8 @@ export class CollectionService {
     }
   }
 
-  /** A workflow write and its cloud outbox entry, committed together. */
   private updateWorkflow(workflowId: string, patch: { readonly collectionId: string | null }): Workflow {
-    const updated = this.workflows.transaction(() => {
-      const workflow = this.workflows.update(workflowId, patch)
-      if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
-      return workflow
-    })
+    const updated = this.workflows.update(workflowId, patch)
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
     return updated
   }

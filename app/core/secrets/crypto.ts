@@ -1,12 +1,9 @@
 /**
- * AES-256-GCM envelope encryption — ported from `backend/app/services/secret_crypto.py`
- * and `secret_kek.py`.
+ * AES-256-GCM encryption — ported from `backend/app/services/secret_crypto.py`.
  *
- * Envelope model: each secret is encrypted with a per-scope Data Encryption Key
- * (DEK); the DEK is itself wrapped by the master Key Encryption Key (KEK). The
- * wire format is byte-identical to the Python `cryptography` AESGCM output —
- * `ciphertext || tag(16)` for the payload, `nonce(12) || ciphertext || tag(16)`
- * for a wrapped DEK — so the fixtures captured from Python round-trip exactly.
+ * The wire format is byte-identical to the Python `cryptography` AESGCM output
+ * — `ciphertext || tag(16)` — so the fixtures captured from Python round-trip
+ * exactly.
  *
  * Node's `crypto` returns the GCM tag separately; we append it (Python style).
  */
@@ -65,37 +62,6 @@ export function encrypt(
 export function decrypt(blob: EncryptedBlob, dek: Uint8Array, aad?: Uint8Array): string {
   assertKey(dek, "dek")
   return decryptRaw(dek, blob.nonce, blob.ciphertext, aad).toString("utf-8")
-}
-
-/**
- * Wrap a DEK with the master KEK. Returns `nonce(12) || ciphertext || tag(16)`
- * as raw bytes (base64-encode before storage). Matches `secret_kek.wrap_dek`.
- */
-export function wrapDek(
-  dek: Uint8Array,
-  masterKey: Uint8Array,
-  nonce: Uint8Array = randomBytes(NONCE_SIZE),
-): Uint8Array {
-  assertKey(masterKey, "masterKey")
-  const cipher = createCipheriv(ALGORITHM, masterKey, nonce)
-  const body = Buffer.concat([cipher.update(Buffer.from(dek)), cipher.final()])
-  return Buffer.concat([Buffer.from(nonce), body, cipher.getAuthTag()])
-}
-
-/** Unwrap a DEK previously wrapped by {@link wrapDek}. Matches `secret_kek.unwrap_dek`. */
-export function unwrapDek(wrapped: Uint8Array, masterKey: Uint8Array): Uint8Array {
-  assertKey(masterKey, "masterKey")
-  if (wrapped.length < NONCE_SIZE + TAG_SIZE) {
-    throw new Error("wrapped DEK is too short to contain nonce + tag")
-  }
-  const nonce = wrapped.subarray(0, NONCE_SIZE)
-  const ciphertext = wrapped.subarray(NONCE_SIZE)
-  return decryptRaw(masterKey, nonce, ciphertext)
-}
-
-/** Generate a fresh 256-bit DEK. */
-export function generateDek(): Uint8Array {
-  return randomBytes(DEK_SIZE)
 }
 
 function decryptRaw(

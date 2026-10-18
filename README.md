@@ -16,7 +16,7 @@ Optional APIWeave Cloud sync adds collaboration: sign in with a Cloud account an
 
 **For contributors:** clone the repo, install the desktop and frontend dependencies, and run the dev shell. See the [Developer Guide](AGENTS.md) for the dev workflow.
 
-> **npm 12+ note:** The `@apiweave/proto` dependency is a remote tarball. npm 12+ blocks this by default — `scripts/setup.sh` creates `app/.npmrc` with `allow-remote=all` automatically. If your global npm config has `allow-scripts=false`, Electron's postinstall will be blocked; `scripts/setup.sh` also downloads the binary manually in that case.
+> **npm 12+ note:** If your global npm config has `allow-scripts=false`, Electron's postinstall will be blocked; `scripts/setup.sh` downloads the binary manually in that case.
 
 ## Desktop App
 

@@ -27,7 +27,7 @@ export function isAppUrl(url: string): boolean {
  * - Images take data:/blob: for response and upload previews and https: for
  *   account avatars.
  * - connect-src has no remote hosts: the renderer makes no network requests
- *   of its own — HTTP runs, cloud sync and update checks all live in main,
+ *   of its own — HTTP runs and update checks all live in main,
  *   outside this policy.
  */
 export const CONTENT_SECURITY_POLICY = [

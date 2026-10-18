@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_SECRETS } from "../auth/permissions"
 import {
@@ -67,7 +66,6 @@ export class SecretService {
 
   constructor(
     private readonly store: SecretWriteStore,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly environments: EnvironmentOwnershipLookup,
@@ -118,7 +116,7 @@ export class SecretService {
   async set(workspaceId: string, input: Omit<SecretUpsert, "workspaceId">): Promise<SecretMetadata> {
     await this.authorize(workspaceId, "create")
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
-    return this.pushAndReturn(await this.store.put({ ...input, workspaceId }))
+    return this.store.put({ ...input, workspaceId })
   }
 
   /**
@@ -133,7 +131,7 @@ export class SecretService {
     await this.authorize(workspaceId, "create")
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     const sealed = await seal(input.value, await publicKeyFromSeed(this.sealedBoxSeed))
-    return this.pushAndReturn(await this.store.put({
+    return this.store.put({
       workspaceId,
       scopeType: input.scopeType,
       scopeId: input.scopeId,
@@ -141,7 +139,7 @@ export class SecretService {
       keyId: scopeKeyId(input.scopeType, input.scopeId),
       sealed,
       ...(input.label === undefined ? {} : { label: input.label }),
-    }))
+    })
   }
 
   /** List secret metadata for a scope (never values). */
@@ -167,7 +165,6 @@ export class SecretService {
     if (!(await this.store.remove(scopeType, scopeId, name))) {
       throw new NotFoundError(`secret ${name} not found`)
     }
-    await this.syncProvider.push()
   }
 
   /**
@@ -231,13 +228,7 @@ export class SecretService {
     if (removeSource) {
       await this.store.remove(scopeType, scopeId, name)
     }
-    return this.pushAndReturn(created)
-  }
-
-  /** Push the outbox, then hand the written row back. */
-  private async pushAndReturn(metadata: SecretMetadata): Promise<SecretMetadata> {
-    await this.syncProvider.push()
-    return metadata
+    return created
   }
 
   private async copyInto(

@@ -8,11 +8,9 @@ import {
   WorkspaceRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../LocalOnlySyncProvider"
-import type { SyncProvider } from "../SyncProvider"
-import { ScopeResolver, type ScopeExistence } from "../../services/scope_resolver"
-import { CollectionService } from "../../services/collection_service"
-import { ProjectExportService } from "../../services/project_export_service"
+import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
+import { CollectionService } from "../collection_service"
+import { ProjectExportService } from "../project_export_service"
 
 let db: InitializedDatabase
 let workspaces: WorkspaceRepository
@@ -21,7 +19,6 @@ let environments: EnvironmentRepository
 let collections: CollectionRepository
 let scopeResolver: ScopeResolver
 const permissions = new LocalOwnerProvider()
-const sync = new LocalOnlySyncProvider()
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -42,53 +39,12 @@ function seedWorkspace(slug: string): string {
   return workspaces.create({ name: slug, slug }).workspaceId
 }
 
-// ─── 1. SyncProvider seam ────────────────────────────────────────────────────
-
-describe("SyncProvider seam — LocalOnlySyncProvider (QA: task-7-seams)", () => {
-  it("pull() and push() resolve without error and touch no remote", async () => {
-    const provider: SyncProvider = new LocalOnlySyncProvider()
-    await expect(provider.pull()).resolves.toBeUndefined()
-    await expect(provider.push()).resolves.toBeUndefined()
-  })
-
-  it("exposes exactly the pull/push surface a cloud provider must conform to", () => {
-    const provider: SyncProvider = new LocalOnlySyncProvider()
-    const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(provider)).filter(
-      (m) => m !== "constructor",
-    )
-    expect(methods.sort()).toEqual(["pull", "push", "recordMutation"])
-  })
-})
-
-// ─── 2. Workspace origin / syncMode ─────────────────────────────────────────
-
-describe("Workspace origin + syncMode defaults and update (QA: task-7-seams)", () => {
-  it("fresh workspace defaults to origin='local', syncMode='none'", () => {
-    const ws = workspaces.create({ name: "Fresh", slug: "fresh" })
-    expect(ws.origin).toBe("local")
-    expect(ws.syncMode).toBe("none")
-  })
-
-  it("updates origin to 'cloud' and syncMode to 'bi-directional' and preserves them", () => {
-    const ws = workspaces.create({ name: "Migrate", slug: "migrate" })
-    const updated = workspaces.update(ws.workspaceId, { origin: "cloud", syncMode: "bi-directional" })
-    expect(updated).toBeDefined()
-    expect(updated!.origin).toBe("cloud")
-    expect(updated!.syncMode).toBe("bi-directional")
-
-    // Round-trip through getById to confirm persistence.
-    const fetched = workspaces.getById(ws.workspaceId)
-    expect(fetched?.origin).toBe("cloud")
-    expect(fetched?.syncMode).toBe("bi-directional")
-  })
-})
-
-// ─── 3. Project === Collection ───────────────────────────────────────────────
+// ─── 1. Project === Collection ───────────────────────────────────────────────
 
 describe("Project === Collection alias (QA: task-7-seams)", () => {
   it("collectionId serves as projectId when no explicit projectId is set", async () => {
     const ws = seedWorkspace("proj-alias")
-    const collectionService = new CollectionService(collections, workflows, sync, permissions, scopeResolver)
+    const collectionService = new CollectionService(collections, workflows, permissions, scopeResolver)
 
     const collection = await collectionService.create(ws, { name: "My Project" })
 
@@ -101,7 +57,6 @@ describe("Project === Collection alias (QA: task-7-seams)", () => {
       collections,
       workflows,
       environments,
-      sync,
       permissions,
       scopeResolver,
       undefined,
@@ -121,7 +76,7 @@ describe("Project === Collection alias (QA: task-7-seams)", () => {
   })
 })
 
-// ─── 4. Export excludes secrets (QA: task-7-secret-boundary) ─────────────────
+// ─── 2. Export excludes secrets (QA: task-7-secret-boundary) ─────────────────
 
 describe("Export excludes secret plaintext (QA: task-7-secret-boundary)", () => {
   it("produces a bundle with no plaintext secret, no sealed blob, and secretReferences populated", async () => {
@@ -144,7 +99,6 @@ describe("Export excludes secret plaintext (QA: task-7-secret-boundary)", () => 
       collections,
       workflows,
       environments,
-      sync,
       permissions,
       scopeResolver,
       undefined,

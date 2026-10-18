@@ -13,8 +13,6 @@ import type {
   WorkflowRepository,
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
-import { recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS, RESOURCE_WORKFLOWS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -164,7 +162,6 @@ export class ImportService {
     private readonly workflows: WorkflowRepository,
     private readonly environments: EnvironmentRepository,
     private readonly collections: CollectionRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     safeHttp?: SafeHttp,
@@ -325,12 +322,10 @@ export class ImportService {
             : (bundledEnv.variables as Record<string, JsonValue>),
           secrets: {},
         })
-        recordEnvironmentUpsert(this.syncProvider, environment)
-        return this.recorded(this.workflows.create({ ...create, selectedEnvironmentId: environment.environmentId }))
+        return this.workflows.create({ ...create, selectedEnvironmentId: environment.environmentId })
       }
-      return this.recorded(this.workflows.create(create))
+      return this.workflows.create(create)
     })
-    await this.syncProvider.push()
 
     return {
       workflowId: created.workflowId,
@@ -724,10 +719,8 @@ export class ImportService {
       }
 
       const workflowId = opts.workflowId
-      const updated = this.workflows.transaction(() =>
-        this.recorded(this.workflows.update(workflowId, { nodes: mergedNodes, edges: mergedEdges }, "import")))
+      const updated = this.workflows.update(workflowId, { nodes: mergedNodes, edges: mergedEdges }, "import")
       if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
-      await this.syncProvider.push()
       return updated
     }
 
@@ -743,9 +736,7 @@ export class ImportService {
       tags: [...parsed.tags],
       ...(opts.collectionId ? { collectionId: opts.collectionId } : {}),
     }
-    const created = this.workflows.transaction(() => this.recorded(this.workflows.create(create)))
-    await this.syncProvider.push()
-    return created
+    return this.workflows.create(create)
   }
 
   async saveTemplates(
@@ -761,9 +752,8 @@ export class ImportService {
     const newTemplates = templates.map((t) => JSON.parse(JSON.stringify(t)) as JsonValue)
     const merged = [...existingTemplates, ...newTemplates]
 
-    const updated = this.workflows.transaction(() => this.recorded(this.workflows.update(workflowId, { nodeTemplates: merged }, "import")))
+    const updated = this.workflows.update(workflowId, { nodeTemplates: merged }, "import")
     if (!updated) throw new NotFoundError(`workflow ${workflowId} not found`)
-    await this.syncProvider.push()
     return updated
   }
 
@@ -773,12 +763,6 @@ export class ImportService {
     if (!collection || collection.workspaceId !== workspaceId) {
       throw new NotFoundError(`collection ${collectionId} not found`)
     }
-  }
-
-  /** Queue the cloud upsert for a row written in the caller's transaction, so the two commit together. */
-  private recorded<T extends Workflow | undefined>(workflow: T): T {
-    if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
-    return workflow
   }
 }
 

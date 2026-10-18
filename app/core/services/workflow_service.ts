@@ -27,8 +27,6 @@ import {
   type NodeSearchRequest,
 } from "./workflow_reads"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
-import { recordWorkflowTombstone, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -239,7 +237,6 @@ function mergeById<T>(
 export class WorkflowService {
   constructor(
     private readonly workflows: WorkflowRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly collections?: CollectionRepository,
@@ -254,10 +251,7 @@ export class WorkflowService {
     const nodes = options?.layout === true && input.nodes !== undefined
       ? layoutWorkflowNodes(input.nodes, input.edges ?? [])
       : input.nodes
-    const created = this.workflows.transaction(() =>
-      this.recorded(this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })))
-    await this.syncProvider.push()
-    return created
+    return this.workflows.create({ ...input, workspaceId, ...(nodes !== undefined ? { nodes } : {}) })
   }
 
   async get(workspaceId: string, workflowId: string): Promise<Workflow> {
@@ -367,9 +361,7 @@ export class WorkflowService {
         next = { ...patch, nodes: layoutWorkflowNodes(nextNodes, nextEdges) }
       }
     }
-    const updated = this.writeAtRevision(workspaceId, workflowId, options?.expectedRevision, next, options?.source)
-    await this.syncProvider.push()
-    return updated
+    return this.writeAtRevision(workspaceId, workflowId, options?.expectedRevision, next, options?.source)
   }
 
   /**
@@ -413,9 +405,7 @@ export class WorkflowService {
     }
     const persist: WorkflowUpdate & { nodes: Workflow["nodes"] } = { ...next, nodes, edges }
 
-    const updated = this.writeAtRevision(workspaceId, workflowId, patch.expectedRevision, persist, source)
-    await this.syncProvider.push()
-    return updated
+    return this.writeAtRevision(workspaceId, workflowId, patch.expectedRevision, persist, source)
   }
 
   async applyAssertions(
@@ -440,14 +430,14 @@ export class WorkflowService {
     }
 
     const canonicalRules = AssertionItemSchema.array().parse(rules)
-    const updated = this.workflows.transaction(() => this.recorded(this.workflows.updateAssertionRules(
+    const updated = this.workflows.updateAssertionRules(
       workflowId,
       expectedRevision,
       assertionNodeId,
       mode,
       canonicalRules,
       source,
-    )))
+    )
     if (updated === undefined) {
       const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
       throw new ConflictError("workflow revision changed before assertions could be applied", {
@@ -455,7 +445,6 @@ export class WorkflowService {
         currentRevision: current?.rev,
       })
     }
-    await this.syncProvider.push()
     return updated
   }
 
@@ -494,19 +483,13 @@ export class WorkflowService {
     const revision = this.workflows.revisions.get(workflowId, revisionId)
     if (revision === undefined) throw new NotFoundError(`revision ${revisionId} not found`)
     this.assertCallWorkflowTargetsInWorkspace(revision.snapshot.nodes, workspaceId, workflowId)
-    const updated = this.writeAtRevision(workspaceId, workflowId, expectedRevision, revision.snapshot, "restore")
-    await this.syncProvider.push()
-    return updated
+    return this.writeAtRevision(workspaceId, workflowId, expectedRevision, revision.snapshot, "restore")
   }
 
   async delete(workspaceId: string, workflowId: string): Promise<void> {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_WORKFLOWS)
-    const existing = this.mustGet(workspaceId, workflowId)
-    this.workflows.transaction(() => {
-      recordWorkflowTombstone(this.syncProvider, existing)
-      this.workflows.delete(workflowId)
-    })
-    await this.syncProvider.push()
+    this.mustGet(workspaceId, workflowId)
+    this.workflows.delete(workflowId)
   }
 
   /** Attach/detach a workflow to a collection (project). `collectionId=null` detaches. */
@@ -518,9 +501,8 @@ export class WorkflowService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
     this.assertCollectionInWorkspace(collectionId, workspaceId)
-    const updated = this.workflows.transaction(() => this.recorded(this.workflows.update(workflowId, { collectionId })))
+    const updated = this.workflows.update(workflowId, { collectionId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    await this.syncProvider.push()
     return updated
   }
 
@@ -553,20 +535,14 @@ export class WorkflowService {
     this.assertCollectionInWorkspace(targetCollectionId, targetWorkspaceId)
 
     const moved = this.workflows.transaction(() => {
-      // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
-      // upsert under the destination would leave the source workspace still
-      // claiming the row. Leaving is a deletion from where it left.
-      recordWorkflowTombstone(this.syncProvider, existing)
       this.workflows.setWorkspace(workflowId, targetWorkspaceId)
-      return this.recorded(this.workflows.update(workflowId, {
+      return this.workflows.update(workflowId, {
         collectionId: targetCollectionId,
         selectedEnvironmentId: null,
         nodes: clearDepartingCallTargets(existing.nodes, new Set()),
-      }))
+      })
     })
     if (moved === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-
-    await this.syncProvider.push()
     return moved
   }
 
@@ -579,17 +555,15 @@ export class WorkflowService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
     this.mustGet(workspaceId, workflowId)
     this.assertEnvironmentInWorkspace(environmentId, workspaceId)
-    const updated = this.workflows.transaction(() =>
-      this.recorded(this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })))
+    const updated = this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })
     if (updated === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
-    await this.syncProvider.push()
     return updated
   }
 
   /**
-   * Write `persist` — at `expectedRevision` when given — and queue its cloud
-   * upsert in the same transaction. A row that vanished is a 404; one whose
-   * revision moved between the caller's check and this write is a conflict.
+   * Write `persist` — at `expectedRevision` when given. A row that vanished is
+   * a 404; one whose revision moved between the caller's check and this write
+   * is a conflict.
    */
   private writeAtRevision(
     workspaceId: string,
@@ -598,9 +572,9 @@ export class WorkflowService {
     persist: WorkflowUpdate,
     source: WorkflowWriteSource = "canvas",
   ): Workflow {
-    const updated = this.workflows.transaction(() => this.recorded(expectedRevision === undefined
+    const updated = expectedRevision === undefined
       ? this.workflows.update(workflowId, persist, source)
-      : this.workflows.updateAtRevision(workflowId, expectedRevision, persist, source)))
+      : this.workflows.updateAtRevision(workflowId, expectedRevision, persist, source)
     if (updated !== undefined) return updated
     const current = this.workflows.getByIdInWorkspace(workflowId, workspaceId)
     if (current === undefined) throw new NotFoundError(`workflow ${workflowId} not found`)
@@ -608,16 +582,6 @@ export class WorkflowService {
       expectedRevision,
       currentRevision: current.rev,
     })
-  }
-
-  /**
-   * Queue the cloud upsert for a row just written. Callers run the write and
-   * this inside one `workflows.transaction`, so the edit and its outbox entry
-   * commit together or not at all.
-   */
-  private recorded<T extends Workflow | undefined>(workflow: T): T {
-    if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
-    return workflow
   }
 
   /** Existence-hiding read: a workflow outside `workspaceId` is reported as absent. */

@@ -1,5 +1,5 @@
 /**
- * Credential heuristics shared by the main process (exports, imports, sync)
+ * Credential heuristics shared by the main process (exports, imports, agent reads)
  * and the renderer (environment variable import): whether a key NAME says it
  * holds a secret, and whether a string VALUE carries credential material.
  */

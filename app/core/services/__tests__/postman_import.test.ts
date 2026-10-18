@@ -5,7 +5,6 @@ import type { JsonValue } from "@shared/types/JsonValue"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { CollectionRepository, EnvironmentRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ProjectExportService } from "../project_export_service"
 import { convertPostmanCollection, convertTestScript, isPostmanCollection } from "../postman_import"
@@ -302,7 +301,7 @@ describe("Postman import into the database", () => {
       workspaceExists: (id) => workspaces.getById(id) !== undefined,
       environmentExists: (id) => environments.getById(id) !== undefined,
     })
-    projects = new ProjectExportService(collections, workflows, environments, new LocalOnlySyncProvider(), new LocalOwnerProvider(), scopeResolver)
+    projects = new ProjectExportService(collections, workflows, environments, new LocalOwnerProvider(), scopeResolver)
     workspaceId = workspaces.create({ name: "test", slug: "test" }).workspaceId
   })
 

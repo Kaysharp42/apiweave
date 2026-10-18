@@ -15,7 +15,6 @@ import {
   WorkspaceRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../../services/scope_resolver"
 import { WorkspaceService } from "../../services/workspace_service"
 import { CollectionService } from "../../services/collection_service"
@@ -93,7 +92,6 @@ beforeEach(() => {
   }
   const scopeResolver = new ScopeResolver(existence)
   const permissions = new LocalOwnerProvider()
-  const sync = new LocalOnlySyncProvider()
   const secretStore = new FakeSecretStore()
   broker = new RunEventBroker({ now: () => new Date().toISOString() })
   const clock = new FixedClockProvider("2026-01-02T03:04:05.000Z")
@@ -117,23 +115,22 @@ beforeEach(() => {
     },
   })
   approvals = []
-  const workflowService = new WorkflowService(workflowRepository, sync, permissions, scopeResolver, collections, environments)
-  runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, broker)
+  const workflowService = new WorkflowService(workflowRepository, permissions, scopeResolver, collections, environments)
+  runService = new RunService(runs, permissions, scopeResolver, scheduler, broker)
   const deps: HandlerDeps = {
-    workspaces: new WorkspaceService(workspaces, workflowRepository, sync, scopeResolver),
-    collections: new CollectionService(collections, workflowRepository, sync, permissions, scopeResolver),
+    workspaces: new WorkspaceService(workspaces, workflowRepository, scopeResolver),
+    collections: new CollectionService(collections, workflowRepository, permissions, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-    environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    environments: new EnvironmentService(environments, permissions, scopeResolver),
     nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
     runs: runService,
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflowRepository,
       environments,
-      sync,
       permissions,
       scopeResolver,
       secretStore,

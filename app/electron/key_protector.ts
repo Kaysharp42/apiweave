@@ -2,8 +2,7 @@
  * The OS keychain as a {@link KeyProtector} for the secrets keyfile.
  *
  * `safeStorage` is main-process only and must be asked after `app.whenReady`.
- * Same trust rule as the WDEK cache (`cloud/wdek-cache.ts`): on Linux without a
- * keyring, `safeStorage` "encrypts" with a hardcoded key, which protects
+ * On Linux without a keyring, `safeStorage` "encrypts" with a hardcoded key, which protects
  * nothing — so there, as where encryption is unavailable at all, the keyfile
  * stays plaintext and this says why.
  */

@@ -236,27 +236,29 @@ export class WorkflowRepository {
 
   /** `source` is who is writing, for the revision this write keeps of what it replaces. */
   public update(workflowId: string, patch: WorkflowUpdate, source: WorkflowWriteSource = "canvas"): Workflow | undefined {
-    const existing = this.getById(workflowId)
-    if (existing === undefined) {
-      return undefined
-    }
-    this.revisions.capture(existing, source)
-    const merged: Workflow = { ...existing, ...patch }
-    const graph = canonicalWorkflow({ nodes: merged.nodes, edges: merged.edges })
-    const settings: WorkflowSettings = {
-      description: merged.description ?? null,
-      tags: merged.tags,
-      collectionId: merged.collectionId ?? null,
-      selectedEnvironmentId: merged.selectedEnvironmentId ?? null,
-      nodeTemplates: merged.nodeTemplates,
-    }
-    this.store.set(
-      "UPDATE workflows SET name = ?, slug = ?, graph_json = ?, variables_json = ?, settings_json = ? WHERE id = ?",
-      [merged.name, slugify(merged.name, workflowId), toJson(graph), toJson(merged.variables), toJson(settings), workflowId],
-    )
-    const updated = this.getById(workflowId)
-    if (updated !== undefined) this.notifyChanged(updated)
-    return updated
+    return this.transaction(() => {
+      const existing = this.getById(workflowId)
+      if (existing === undefined) {
+        return undefined
+      }
+      this.revisions.capture(existing, source)
+      const merged: Workflow = { ...existing, ...patch }
+      const graph = canonicalWorkflow({ nodes: merged.nodes, edges: merged.edges })
+      const settings: WorkflowSettings = {
+        description: merged.description ?? null,
+        tags: merged.tags,
+        collectionId: merged.collectionId ?? null,
+        selectedEnvironmentId: merged.selectedEnvironmentId ?? null,
+        nodeTemplates: merged.nodeTemplates,
+      }
+      this.store.set(
+        "UPDATE workflows SET name = ?, slug = ?, graph_json = ?, variables_json = ?, settings_json = ? WHERE id = ?",
+        [merged.name, slugify(merged.name, workflowId), toJson(graph), toJson(merged.variables), toJson(settings), workflowId],
+      )
+      const updated = this.getById(workflowId)
+      if (updated !== undefined) this.notifyChanged(updated)
+      return updated
+    })
   }
 
   /**

@@ -19,13 +19,7 @@ fi
 echo "Node.js $(node -v) detected"
 echo
 
-# npm 12+ requires allow-remote to fetch tarball deps
 cd "$APP_DIR"
-if [ ! -f .npmrc ]; then
-  echo "allow-remote=all" > .npmrc
-  echo "Created .npmrc with allow-remote=all (required for npm 12+ remote tarball deps)"
-fi
-
 echo "Installing app dependencies..."
 npm install
 

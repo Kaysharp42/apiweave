@@ -4,7 +4,6 @@ import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, readMigrations, ThreadStore } from "../index"
 import { vacuumIfFragmented } from "../maintenance"
-import { LocalOnlySyncProvider } from "../../sync"
 import type { InitializedDatabase } from "../index"
 import type { BetterSqlite3Factory } from "../sqlite-types"
 
@@ -97,9 +96,6 @@ describe("database migrations", () => {
         secondOpen.close()
       }
 
-      const syncProvider = new LocalOnlySyncProvider()
-      await expect(syncProvider.pull()).resolves.toBeUndefined()
-      await expect(syncProvider.push()).resolves.toBeUndefined()
       expect(() => new ThreadStore()).toThrow("not_implemented")
     } finally {
       db.close()

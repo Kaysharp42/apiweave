@@ -427,7 +427,7 @@ runtime prompt, and secrets cannot be created over MCP (\`secrets_list\` and
 are available.
 
 Never inline a real credential into a workflow. Write \`{{secrets.API_KEY}}\` and
-the reference survives reads, exports and sync intact; a literal does not.
+the reference survives reads and exports intact; a literal does not.
 
 ## When a placeholder does not resolve
 

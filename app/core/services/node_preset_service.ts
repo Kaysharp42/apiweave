@@ -12,12 +12,6 @@ import type { ScopeResolver } from "./scope_resolver"
 /**
  * Workspace-scoped node-preset library (FEATURE-IDEAS §6.2) — the persisted,
  * named counterpart to the sessionStorage canvas clipboard.
- *
- * Takes no `SyncProvider`, unlike every sibling service: a preset has no
- * `RecordKind` in the sync contract (`apiweave-proto` knows only workspace /
- * project / workflow / environment), so there is nothing to record. Injecting
- * one would be an unused dependency that reads as "syncs, silently broken"
- * rather than "local-only, by decision" — see the plan's Sync note for 6.2.
  */
 export class NodePresetService {
   constructor(

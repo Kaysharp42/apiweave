@@ -15,7 +15,6 @@ import {
   WorkspaceRepository,
 } from "../repositories"
 import { LocalOwnerProvider } from "../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../services/scope_resolver"
 import { ImportService, WorkflowBundleSchema } from "../services/import_service"
 import { ProjectExportService, type ProjectBundle } from "../services/project_export_service"
@@ -418,13 +417,12 @@ async function importTarget(
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
-  const sync = new LocalOnlySyncProvider()
   const permissions = new LocalOwnerProvider()
   if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "awecollection")) {
     const projectBundle = isPostmanCollection(bundle)
       ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
       : bundle as unknown as ProjectBundle
-    const projects = new ProjectExportService(collections, workflows, environments, sync, permissions, scopeResolver)
+    const projects = new ProjectExportService(collections, workflows, environments, permissions, scopeResolver)
     // A folder imports as the app's "Import from folder" does (ids kept); a bundle as its bundle import does.
     const { projectId } = folder === undefined
       ? await projects.importProject(workspaceId, projectBundle)
@@ -435,7 +433,7 @@ async function importTarget(
   }
   if (isRecord(bundle) && isRecord(bundle["workflow"])) {
     if (workflow !== undefined) throw new UsageError("--workflow picks a workflow in a project bundle; this file is a single workflow")
-    const { workflowId } = await new ImportService(workflows, environments, collections, sync, permissions, scopeResolver)
+    const { workflowId } = await new ImportService(workflows, environments, collections, permissions, scopeResolver)
       .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
     return { kind: "workflow", workflowId }
   }

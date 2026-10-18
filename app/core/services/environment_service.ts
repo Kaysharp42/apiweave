@@ -8,12 +8,6 @@ import type {
   WorkflowRepository,
 } from "../repositories"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
-import {
-  recordEnvironmentTombstone,
-  recordEnvironmentUpsert,
-  recordWorkflowUpsert,
-} from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_ENVIRONMENTS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -26,7 +20,6 @@ export class EnvironmentService {
   // fallow-ignore-next-line code-duplication -- constructor DI boilerplate that mirrors the sibling services (collection, workflow, run) by construction; the dependencies are different repositories and there is no behaviour here to extract
   constructor(
     private readonly environments: EnvironmentRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     // Optional so the existing single-argument-set construction in tests keeps
@@ -42,7 +35,7 @@ export class EnvironmentService {
     if (input.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, undefined, input.baseEnvironmentId)
     }
-    return this.commitUpsert(() => this.environments.create({ ...input, workspaceId }))
+    return this.environments.create({ ...input, workspaceId })
   }
 
   async get(workspaceId: string, environmentId: string): Promise<Environment> {
@@ -61,19 +54,16 @@ export class EnvironmentService {
     if (patch.baseEnvironmentId) {
       this.validateBaseEnvironment(workspaceId, environmentId, patch.baseEnvironmentId)
     }
-    return this.commitUpsert(() => this.requireUpdated(this.environments.update(environmentId, patch), environmentId))
+    return this.requireUpdated(this.environments.update(environmentId, patch), environmentId)
   }
 
   async delete(workspaceId: string, environmentId: string): Promise<void> {
     await this.authorize(workspaceId, "delete")
-    const existing = this.mustGet(workspaceId, environmentId)
+    this.mustGet(workspaceId, environmentId)
     this.environments.transaction(() => {
-      recordEnvironmentTombstone(this.syncProvider, existing)
-      const detached = this.detachReferences(workspaceId, environmentId)
+      this.detachReferences(workspaceId, environmentId)
       this.environments.delete(environmentId)
-      this.recordDetached(detached)
     })
-    await this.syncProvider.push()
   }
 
   /**
@@ -106,7 +96,7 @@ export class EnvironmentService {
     const source = this.mustGet(workspaceId, environmentId)
 
     const sameWorkspace = destination === workspaceId
-    return this.commitUpsert(() => this.environments.create({
+    return this.environments.create({
       workspaceId: destination,
       name: name?.trim() || `${source.name} (copy)`,
       description: source.description,
@@ -115,7 +105,7 @@ export class EnvironmentService {
       variables: { ...source.variables },
       secrets: {},
       isDefault: false,
-    }))
+    })
   }
 
   /**
@@ -141,21 +131,16 @@ export class EnvironmentService {
   ): Promise<Environment> {
     await this.authorize(workspaceId, "update")
     await this.authorize(targetWorkspaceId, "create")
-    const existing = this.mustGet(workspaceId, environmentId)
+    this.mustGet(workspaceId, environmentId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("environment is already in this workspace")
     }
 
-    return this.commitUpsert(() => {
-      // The outbox is keyed by workspace (`core/sync/cloud-mutations`), so a lone
-      // upsert under the destination would leave the source workspace still
-      // claiming the row. Leaving is a deletion from where it left.
-      recordEnvironmentTombstone(this.syncProvider, existing)
-      const detached = this.detachReferences(workspaceId, environmentId)
+    return this.environments.transaction(() => {
+      this.detachReferences(workspaceId, environmentId)
       this.environments.update(environmentId, { baseEnvironmentId: null, isDefault: false })
       this.environments.setWorkspace(environmentId, targetWorkspaceId)
       this.secrets?.reassignWorkspace("environment", environmentId, targetWorkspaceId)
-      this.recordDetached(detached)
       return this.requireUpdated(this.environments.getById(environmentId), environmentId)
     })
   }
@@ -179,7 +164,7 @@ export class EnvironmentService {
 
   /**
    * The shared shape of the two variable writes: authorize, require the
-   * environment, apply the write, then queue the upsert and push.
+   * environment, apply the write.
    */
   private async applyVariable(
     workspaceId: string,
@@ -189,7 +174,7 @@ export class EnvironmentService {
   ): Promise<Environment> {
     await this.authorize(workspaceId, "update")
     this.mustGet(workspaceId, environmentId)
-    return this.commitUpsert(() => this.requireUpdated(write(environmentId, name), environmentId))
+    return this.requireUpdated(write(environmentId, name), environmentId)
   }
 
   /**
@@ -200,21 +185,6 @@ export class EnvironmentService {
     await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_ENVIRONMENTS)
   }
 
-  /**
-   * Run a write and queue the sync upsert for the row it returns in one
-   * transaction — the edit and its outbox entry commit together or not at
-   * all — then push the outbox and hand the row back.
-   */
-  private async commitUpsert(write: () => Environment): Promise<Environment> {
-    const environment = this.environments.transaction(() => {
-      const written = write()
-      recordEnvironmentUpsert(this.syncProvider, written)
-      return written
-    })
-    await this.syncProvider.push()
-    return environment
-  }
-
   /** A repository write that answers `Environment | undefined` becomes the row, or a 404. */
   private requireUpdated(updated: Environment | undefined, environmentId: string): Environment {
     if (updated === undefined) throw new NotFoundError(`environment ${environmentId} not found`)
@@ -222,8 +192,7 @@ export class EnvironmentService {
   }
 
   /**
-   * Clear every reference to `environmentId` from within `workspaceId`, and
-   * report what changed so the caller can record the sync upserts.
+   * Clear every reference to `environmentId` from within `workspaceId`.
    *
    * Both callers — delete and cross-workspace move — leave the same dangling
    * references behind, so the guard lives here once rather than in each. A
@@ -235,42 +204,18 @@ export class EnvironmentService {
    * Must run inside the caller's transaction, and BEFORE the environment leaves
    * the workspace — it reads the source workspace's rows to find the referrers.
    */
-  private detachReferences(
-    workspaceId: string,
-    environmentId: string,
-  ): { workflowIds: readonly string[]; environmentIds: readonly string[] } {
-    const workflowIds: string[] = []
+  private detachReferences(workspaceId: string, environmentId: string): void {
     for (const workflow of this.workflows?.listByWorkspace(workspaceId, true).items ?? []) {
       if (workflow.selectedEnvironmentId !== environmentId) continue
       this.workflows?.update(workflow.workflowId, { selectedEnvironmentId: null })
-      workflowIds.push(workflow.workflowId)
     }
 
     // `baseEnvironmentId` lives in settings_json, so the filter runs in JS after
     // an indexed workspace_id fetch — fine at desktop scale (a workspace holds a
     // handful of environments).
-    const environmentIds: string[] = []
     for (const sibling of this.environments.listByWorkspace(workspaceId).items) {
       if (sibling.environmentId === environmentId || sibling.baseEnvironmentId !== environmentId) continue
       this.environments.update(sibling.environmentId, { baseEnvironmentId: null })
-      environmentIds.push(sibling.environmentId)
-    }
-
-    return { workflowIds, environmentIds }
-  }
-
-  /** Queue sync upserts for the rows {@link detachReferences} rewrote. */
-  private recordDetached(detached: {
-    workflowIds: readonly string[]
-    environmentIds: readonly string[]
-  }): void {
-    for (const workflowId of detached.workflowIds) {
-      const workflow = this.workflows?.getById(workflowId)
-      if (workflow !== undefined) recordWorkflowUpsert(this.syncProvider, workflow)
-    }
-    for (const siblingId of detached.environmentIds) {
-      const sibling = this.environments.getById(siblingId)
-      if (sibling !== undefined) recordEnvironmentUpsert(this.syncProvider, sibling)
     }
   }
 

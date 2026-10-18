@@ -3,7 +3,6 @@ import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { SecretService } from "../secret_service"
 import { NotFoundError } from "../../ipc/errors"
@@ -60,13 +59,12 @@ describe("SecretService — scope IDs are bound to the authorized workspace (cro
     }
     const scopeResolver = new ScopeResolver(existence)
     const permissions = new LocalOwnerProvider()
-    const sync = new LocalOnlySyncProvider()
 
     workspaceA = workspaces.create({ name: "Workspace A", slug: "workspace-a" }).workspaceId
     workspaceB = workspaces.create({ name: "Workspace B", slug: "workspace-b" }).workspaceId
     environmentInB = environments.create({ workspaceId: workspaceB, name: "Prod" }).environmentId
 
-    secretService = new SecretService(new FakeSecretStore(), sync, permissions, scopeResolver, environments, new Uint8Array(32))
+    secretService = new SecretService(new FakeSecretStore(), permissions, scopeResolver, environments, new Uint8Array(32))
   })
 
   afterEach(() => db.close())

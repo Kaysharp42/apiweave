@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase, RUN_HISTORY_RETENTION_PER_WORKFLOW, SIDE_TABLE_THRESHOLD_BYTES } from "../../db"
 import type { InitializedDatabase } from "../../db"
-import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
-import { CollectionSchema } from "@shared/zod-schemas/CollectionSchema"
 import {
-  CloudSyncRepository,
   CollectionRepository,
   EnvironmentRepository,
   NodePresetRepository,
@@ -622,23 +619,5 @@ describe("CollectionRepository", () => {
     expect(collections.decrementWorkflowCount(collection.collectionId)?.workflowCount).toBe(0)
     expect(collections.decrementWorkflowCount(collection.collectionId)?.workflowCount).toBe(0)
     expect(collections.setWorkflowCount(collection.collectionId, 5)?.workflowCount).toBe(5)
-  })
-
-  it("accepts a pulled project that still carries the retired project-level continueOnFail, and drops it", () => {
-    const workspaceId = seedWorkspace()
-    new CloudSyncRepository(db.kvStore).applyChange({
-      cursor: 1n,
-      workspaceId,
-      kind: RecordKind.PROJECT,
-      recordId: "project-pulled",
-      rev: 1n,
-      op: ChangeOp.UPSERT,
-      payload: new TextEncoder().encode(JSON.stringify({ name: "Pulled", workflowOrder: [], continueOnFail: false })),
-    })
-
-    const pulled = collections.getById("project-pulled")!
-    expect(pulled).not.toHaveProperty("continueOnFail")
-    expect(CollectionSchema.parse(pulled)).toEqual(pulled)
-    expect(collections.update("project-pulled", { name: "Renamed" })).not.toHaveProperty("continueOnFail")
   })
 })

@@ -1,15 +1,9 @@
+import { randomBytes } from "node:crypto"
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  DEK_SIZE,
-  decrypt,
-  encrypt,
-  generateDek,
-  unwrapDek,
-  wrapDek,
-} from "../crypto"
+import { DEK_SIZE, decrypt, encrypt } from "../crypto"
 import { openSealedBox, publicKeyFromSeed, seal, sodiumReady } from "../sealed_box"
 import {
   KeyfileCorrupted,
@@ -32,7 +26,7 @@ interface CryptoVector {
   name: string
   plaintextBase64: string
   masterKeySha256Base64: string
-  wrappedDekBase64: string
+  dekBase64: string
   secretNonceBase64: string
   aes256GcmCiphertextBase64: string
   sealedBoxPublicKeyBase64: string
@@ -45,17 +39,11 @@ function loadVector(name: string): CryptoVector {
   return JSON.parse(readFileSync(join(CRYPTO_DIR, `${name}.json`), "utf-8")) as CryptoVector
 }
 
-/** urlsafe base64 → bytes (the Python `wrapped_dek` uses urlsafe alphabet). */
-function fromUrlsafe(b64: string): Buffer {
-  return Buffer.from(b64.replace(/-/g, "+").replace(/_/g, "/"), "base64")
-}
-
 describe("secrets crypto — byte-equality vs Python fixtures", () => {
   for (const name of VECTOR_NAMES) {
     it(`AES-256-GCM output is byte-identical for the "${name}" vector`, () => {
       const v = loadVector(name)
-      const master = Buffer.from(v.masterKeySha256Base64, "base64")
-      const dek = unwrapDek(fromUrlsafe(v.wrappedDekBase64), master)
+      const dek = Buffer.from(v.dekBase64, "base64")
       expect(dek.length).toBe(DEK_SIZE)
 
       const value = Buffer.from(v.plaintextBase64, "base64").toString("utf-8")
@@ -85,14 +73,8 @@ describe("secrets crypto — byte-equality vs Python fixtures", () => {
 })
 
 describe("secrets crypto — round trips", () => {
-  it("wrapDek/unwrapDek round-trips a fresh DEK", () => {
-    const master = generateDek()
-    const dek = generateDek()
-    expect(Buffer.from(unwrapDek(wrapDek(dek, master), master)).equals(Buffer.from(dek))).toBe(true)
-  })
-
   it("encrypt/decrypt round-trips including a 256-byte value", () => {
-    const dek = generateDek()
+    const dek = randomBytes(DEK_SIZE)
     for (const value of ["", "hunter2", "x".repeat(256)]) {
       expect(decrypt(encrypt(value, dek, "kek-test"), dek)).toBe(value)
     }
@@ -131,9 +113,9 @@ describe("keyfile — no regeneration on corrupt (security-critical)", () => {
   })
 
   it("corrupt keyfile throws KeyfileCorrupted and is NOT silently regenerated", () => {
-    // First-run: seal-and-store a secret (wrap a DEK under the KEK) and remember its wrap.
+    // First-run: seal-and-store a secret under the KEK and remember its ciphertext.
     const kf = createKeyfile(path, null)
-    const storedWrap = Buffer.from(wrapDek(generateDek(), kf.masterKek))
+    const stored = Buffer.from(encrypt("hunter2", kf.masterKek, "kek-test").ciphertext)
 
     // An attacker/disk-fault corrupts the keyfile on disk.
     writeFileSync(path, "}{ not json at all", "utf-8")
@@ -143,8 +125,8 @@ describe("keyfile — no regeneration on corrupt (security-critical)", () => {
 
     // The keyfile on disk is UNCHANGED (no auto-recover wrote a fresh KEK)...
     expect(readFileSync(path, "utf-8")).toBe("}{ not json at all")
-    // ...and the previously stored wrapped DEK is untouched in memory (no orphan).
-    expect(storedWrap.length).toBeGreaterThan(0)
+    // ...and the previously stored ciphertext is untouched in memory (no orphan).
+    expect(stored.length).toBeGreaterThan(0)
   })
 
   it("createKeyfile refuses to overwrite an existing keyfile", () => {

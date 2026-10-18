@@ -47,9 +47,6 @@ module.exports = [
     files: [
       "core/runner/harness/**/*.ts",
       "electron/main.ts",
-      "electron/cloud/cloud-provider.ts",
-      "electron/cloud/cloud-sync-control.ts",
-      "electron/cloud/cloud-transport.ts",
     ],
     rules: {
       "no-console": "off",

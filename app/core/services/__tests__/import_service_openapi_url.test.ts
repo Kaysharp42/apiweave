@@ -5,7 +5,6 @@ import type {
   WorkflowRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ImportService } from "../import_service"
 import { SafeHttp } from "../../runner/safe_http"
@@ -96,7 +95,6 @@ beforeEach(() => {
     noRepo,
     noRepo,
     noRepo,
-    new LocalOnlySyncProvider(),
     new LocalOwnerProvider(),
     new ScopeResolver({ workspaceExists: () => true, environmentExists: () => true }),
     safeHttp,

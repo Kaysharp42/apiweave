@@ -6,7 +6,7 @@
  * #collectionId). Stable identity comes from `app/core/id.ts` (ULID),
  * which every repository uses when creating rows. This interface captures
  * only the change-provenance triple every aggregate root carries, so a
- * future sync engine (see `app/core/sync/SyncProvider.ts`) can read
+ * future sync engine can read
  * `rev/createdAt/updatedAt` without per-aggregate special cases.
  *
  * Note: TS also has a built-in `Record<K, V>` utility type. Files that

@@ -2,8 +2,7 @@
  * Local keyfile — the root of the desktop secrets subsystem.
  *
  * Holds the master Key Encryption Key (KEK). Every stored secret is a sealed box
- * whose keypair derives from it (`SecretService`: seed = sha256(KEK)), and the
- * cloud client wraps the key that encrypts its refresh token with it.
+ * whose keypair derives from it (`SecretService`: seed = sha256(KEK)).
  * Stored as JSON under Electron's `userData` (path injected, so tests point at a
  * temp dir). The KEK itself is sealed by a {@link KeyProtector} — Electron's
  * `safeStorage`, i.e. the OS keychain — whenever one is available, so the file
