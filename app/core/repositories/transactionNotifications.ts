@@ -1,3 +1,5 @@
+import { getLogger } from "../logging/logger"
+
 /**
  * Write observers (the main→renderer `workflow-changed` broadcast) must hear
  * about a write only once it can no longer be taken back — but SQLite
@@ -65,4 +67,28 @@ export function sendOrHoldNotification(store: object, send: () => void): void {
     return
   }
   scope.pending.push(send)
+}
+
+/** Told the id of a workspace whose content a committed write changed. */
+export type WorkspaceWriteObserver = (workspaceId: string) => void
+
+/**
+ * {@link sendOrHoldNotification} for the repositories whose observers only
+ * need to know which workspace changed. Best-effort like every observer here:
+ * one that throws is logged, never turned into a failure of the write.
+ */
+export function notifyWorkspaceWrite(
+  store: object,
+  observer: WorkspaceWriteObserver | undefined,
+  workspaceId: string,
+  logName: string,
+): void {
+  if (observer === undefined) return
+  sendOrHoldNotification(store, () => {
+    try {
+      observer(workspaceId)
+    } catch (error) {
+      getLogger(logName).error("observer failed for workspace", workspaceId, error)
+    }
+  })
 }

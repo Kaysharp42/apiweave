@@ -306,6 +306,19 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
+  /**
+   * Version history runs git and, once a remote can be bound, decides where a
+   * workspace is pushed: an agent that could reach it could send the workspace
+   * to a repository it controls. It lives off the router (GIT_CHANNELS, the
+   * `__APIWEAVE_GIT__` preload world).
+   */
+  it("exposes no git tools — version history is not on the router", () => {
+    for (const spec of MCP_TOOLS) {
+      expect(spec.domain).not.toBe("git")
+      expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/git|track|sync/)
+    }
+  })
+
   it("exposes no webhook or import tools (dropped/deferred surface)", () => {
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("webhooks")

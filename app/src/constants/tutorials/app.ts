@@ -33,7 +33,7 @@ export const appChapter: TutorialChapter = {
         {
           title: "Find the two settings groups",
           instruction:
-            "Open Settings from the left navigation rail. The sidebar splits into Workspace settings (Projects, Environments, Secrets) and App settings (Agents, Canvas, MCP Server, Updates).",
+            "Open Settings from the left navigation rail. The sidebar splits into Workspace settings (Projects, Environments, Secrets, Version history (git)) and App settings (Agents, Canvas, MCP Server, Updates).",
           detail:
             "Workspace settings are scoped to the workspace you are in; app settings are per-machine.",
         },
@@ -68,7 +68,7 @@ export const appChapter: TutorialChapter = {
       example: {
         caption: "What lives where",
         language: "text",
-        code: "Workspace settings          App settings (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     MCP Server\n                              Updates",
+        code: "Workspace settings          App settings (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     MCP Server\n  Version history             Updates",
       },
       expectedResult:
         "Canvas interaction feels the way you configured it, and you can tell a per-machine preference from a per-workspace resource at a glance.",

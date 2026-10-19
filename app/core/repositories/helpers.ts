@@ -90,6 +90,47 @@ export function insertAndRead<Mapped>(
   return mustExist(readBack(), message)
 }
 
+/** The tables whose rows belong to one workspace through `workspace_id`, and are scoped by a `scopeId` that mirrors it. */
+type WorkspaceScopedTable = "collections" | "environments"
+
+function owningWorkspace(store: KVStore, table: WorkspaceScopedTable, id: string): string | undefined {
+  return store.get<{ workspace_id: string } & SqliteRow>(`SELECT workspace_id FROM ${table} WHERE id = ?`, [id])?.workspace_id
+}
+
+/** Delete one workspace-scoped row, then tell `changed` the workspace it left. False, and no call, when there was no row. */
+export function deleteFromWorkspace(
+  store: KVStore,
+  table: WorkspaceScopedTable,
+  id: string,
+  changed: (workspaceId: string) => void,
+): boolean {
+  const workspaceId = owningWorkspace(store, table, id)
+  if (workspaceId === undefined) return false
+  const deleted = store.delete(`DELETE FROM ${table} WHERE id = ?`, [id]).changes > 0
+  if (deleted) changed(workspaceId)
+  return deleted
+}
+
+/**
+ * Re-home one workspace-scoped row: `scopeId` mirrors `workspace_id` on such a
+ * row, so the two move together or its scope goes stale. Both workspaces are
+ * told — one lost the row, the other gained it. False when there was no row.
+ */
+export function moveToWorkspace(
+  store: KVStore,
+  table: WorkspaceScopedTable,
+  id: string,
+  workspaceId: string,
+  changed: (workspaceId: string) => void,
+): boolean {
+  const from = owningWorkspace(store, table, id)
+  if (from === undefined) return false
+  store.set(`UPDATE ${table} SET workspace_id = ?, scopeId = ? WHERE id = ?`, [workspaceId, workspaceId, id])
+  changed(from)
+  changed(workspaceId)
+  return true
+}
+
 /**
  * The `app_settings` get/set/delete trio. Every consumer that stores a scalar
  * preference per key (`agents.default_agent`, `mcp.enabled`, `updates.policy`)

@@ -42,6 +42,10 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { ProjectFolderBridge } from "@shared/types/ProjectFolderBridge";
+import type { GitBridge } from "@shared/types/GitBridge";
+import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
+import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
+import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult";
 import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult";
 import type { MCPTool } from "@shared/types/MCPTool";
@@ -143,6 +147,7 @@ declare global {
     __APIWEAVE_OAUTH__?: OAuthBridge;
     __APIWEAVE_NETWORK__?: NetworkBridge;
     __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
+    __APIWEAVE_GIT__?: GitBridge;
     apiweave?: typeof apiweave;
   }
 
@@ -162,6 +167,7 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_OAUTH__?: OAuthBridge;
   __APIWEAVE_NETWORK__?: NetworkBridge;
   __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
+  __APIWEAVE_GIT__?: GitBridge;
 };
 
 type ListResult<T> = { readonly items: readonly T[]; readonly total: number };
@@ -1225,4 +1231,47 @@ export const projectFolders = {
     getProjectFolderBridge()
       ?.importProject({ workspaceId })
       .catch(unwrapRemoteError) ?? projectFoldersDesktopOnly(),
+} as const;
+
+function getGitBridge(): GitBridge | undefined {
+  return globalThis.window?.__APIWEAVE_GIT__ ?? globalApiweave.__APIWEAVE_GIT__;
+}
+
+const gitDesktopOnly = (): Promise<never> =>
+  Promise.reject(
+    new Error("Version history is only available in the desktop app"),
+  );
+
+/**
+ * A workspace's version history in git. A sibling of `projectFolders`, off
+ * the router facade: see `GitBridge`. Every call resolves to the workspace's
+ * status after it.
+ */
+export const git = {
+  isAvailable: (): boolean => getGitBridge() !== undefined,
+  status: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.status(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  track: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.track(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  untrack: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.untrack(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  setMode: (
+    workspaceId: string,
+    mode: WorkspaceGitMode,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.setMode(workspaceId, mode).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  syncNow: (
+    workspaceId: string,
+    request?: WorkspaceGitCommitRequest,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.syncNow(workspaceId, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  onStatusChanged: (
+    callback: (status: WorkspaceGitStatus) => void,
+  ): (() => void) =>
+    getGitBridge()?.onStatusChanged(callback) ?? (() => undefined),
 } as const;

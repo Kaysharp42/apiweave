@@ -5,6 +5,7 @@ import {
   GitAuthFailedError,
   GitCommandError,
   GitError,
+  GitIdentityMissingError,
   GitInvalidArgumentError,
   GitNetworkError,
   GitNonFastForwardError,
@@ -15,6 +16,7 @@ import {
 } from "../git_errors"
 import { GitService } from "../git_service"
 import {
+  anonymousService,
   closedPortUrl,
   listen,
   makeBareRemote,
@@ -162,6 +164,44 @@ describe("local repository", () => {
     const error = await sandbox.service.mergeAbort(dir).catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(GitCommandError)
     expect((error as GitCommandError).details.stderr).toMatch(/no merge to abort/i)
+  })
+})
+
+describe("author", () => {
+  it("throws GitIdentityMissingError rather than guessing an author from the login and host", async () => {
+    const sandbox = makeSandbox()
+    const service = anonymousService(sandbox)
+    const dir = path.join(sandbox.root, "repo")
+    await service.init(dir, { initialBranch: "main" })
+    writeFile(dir, "a.json", "{}\n")
+    await service.add(dir, ["a.json"])
+
+    const error = await service.commit(dir, "first").catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(GitIdentityMissingError)
+    expect(error).toMatchObject({ code: "identity_missing" })
+  })
+
+  it("sets the author in the repository's own config, and commits under it", async () => {
+    const sandbox = makeSandbox()
+    const service = anonymousService(sandbox)
+    const dir = path.join(sandbox.root, "repo")
+    await service.init(dir, { initialBranch: "main" })
+    writeFile(dir, "a.json", "{}\n")
+    await service.add(dir, ["a.json"])
+
+    await service.setIdentity(dir, { name: "  -Ada Lovelace ", email: "ada@example.invalid" })
+    await service.commit(dir, "first")
+
+    expect((await service.log(dir))[0]).toMatchObject({ authorName: "-Ada Lovelace", authorEmail: "ada@example.invalid" })
+    expect(rawGit(dir, sandbox.env, "config", "--local", "--get", "user.name").trim()).toBe("-Ada Lovelace")
+    expect(fs.readFileSync(path.join(sandbox.root, "global.gitconfig"), "utf8")).toBe("")
+  })
+
+  it("refuses an author git would refuse, before git is started", async () => {
+    const sandbox = makeSandbox()
+    await expect(sandbox.service.setIdentity(sandbox.root, { name: "Ada <x>", email: "a@e.invalid" })).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    await expect(sandbox.service.setIdentity(sandbox.root, { name: "Ada", email: " " })).rejects.toBeInstanceOf(GitInvalidArgumentError)
   })
 })
 

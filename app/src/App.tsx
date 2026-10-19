@@ -8,6 +8,7 @@ import {
 } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
+import { WorkspaceVersionHistoryPage } from "./pages/WorkspaceVersionHistoryPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
 import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
 import { AppSettingsPage } from "./pages/AppSettingsPage";
@@ -378,8 +379,16 @@ function App() {
                     </WorkspacePageRoute>
                   }
                 />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/version-history"
+                  element={
+                    <WorkspacePageRoute>
+                      <WorkspaceVersionHistoryPage />
+                    </WorkspacePageRoute>
+                  }
+                />
                 {/* The app-scoped settings — one page each, matched after the
-                    two static workspace-scoped paths above. */}
+                    static workspace-scoped paths above. */}
                 <Route
                   path="/:orgSlug/:workspaceSlug/settings/:section"
                   element={

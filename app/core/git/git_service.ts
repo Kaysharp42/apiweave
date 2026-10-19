@@ -38,6 +38,15 @@ function isSilentExit(error: GitCommandError): boolean {
   return error.details.exitCode === 1 && error.details.stderr.trim() === ""
 }
 
+/** git refuses an ident with angle brackets or a line break in it, and one that is empty after trimming. */
+function checkedIdentityField(field: "name" | "email", value: string): string {
+  const trimmed = value.trim()
+  if (trimmed === "" || /[<>\r\n\0]/.test(trimmed)) {
+    throw new GitInvalidArgumentError(`a commit author's ${field} must be non-empty, on one line, without '<' or '>'`)
+  }
+  return trimmed
+}
+
 async function isDirectory(directory: string): Promise<boolean> {
   try {
     return (await stat(directory)).isDirectory()
@@ -202,6 +211,18 @@ export class GitService {
 
   async remoteSetUrl(repoDir: string, name: string, url: string): Promise<void> {
     await this.remoteCommand(repoDir, "set-url", name, url)
+  }
+
+  /**
+   * Make `identity` the author of this repository's commits, in its own
+   * `.git/config` — the repository-local counterpart of the `identity` option,
+   * for a machine whose git configuration names nobody.
+   */
+  async setIdentity(repoDir: string, identity: GitIdentity): Promise<void> {
+    const name = checkedIdentityField("name", identity.name)
+    const email = checkedIdentityField("email", identity.email)
+    await this.run("config", ["config", "--local", "--", "user.name", name], repoDir)
+    await this.run("config", ["config", "--local", "--", "user.email", email], repoDir)
   }
 
   async mergeAbort(repoDir: string): Promise<void> {

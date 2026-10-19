@@ -3,6 +3,7 @@ import { gitFailure } from "../git_classify"
 import {
   GitAuthFailedError,
   GitCommandError,
+  GitIdentityMissingError,
   GitNetworkError,
   GitNonFastForwardError,
   GitNotARepositoryError,
@@ -22,6 +23,16 @@ function classify(stderr: string): GitError {
 
 /** Verbatim stderr, as GitHub, GitLab and Gitea print it. */
 const FIXTURES: ReadonlyArray<readonly [string, ErrorClass, string]> = [
+  [
+    "git: no author configured, guessing disabled",
+    GitIdentityMissingError,
+    "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"you@example.com\"\n  git config --global user.name \"Your Name\"\n\nto set your account's default identity.\nOmit --global to set the identity only in this repository.\n\nfatal: no email was given and auto-detection is disabled\n",
+  ],
+  [
+    "git: no author configured, guess refused",
+    GitIdentityMissingError,
+    "Committer identity unknown\n\n*** Please tell me who you are.\n\nfatal: unable to auto-detect email address (got 'ada@host.(none)')\n",
+  ],
   [
     "GitHub: password rejected over https",
     GitAuthFailedError,

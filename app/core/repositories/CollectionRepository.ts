@@ -2,8 +2,8 @@ import type { KVStore, SqliteRow } from "../db"
 import type { Collection } from "@shared/types/Collection"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
 import { generateId } from "../id"
-import { mustExist, parseJson, slugify, toJson } from "./helpers"
-import { holdNotificationsUntilCommit } from "./transactionNotifications"
+import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, slugify, toJson } from "./helpers"
+import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &
   Partial<Pick<Collection, "collectionId" | "projectId" | "description" | "color" | "workflowOrder">>
@@ -33,7 +33,11 @@ interface CollectionSettings {
 }
 
 export class CollectionRepository {
-  public constructor(private readonly store: KVStore) {}
+  /** `onChanged` hears the workspace of every committed write, as `WorkflowRepository`'s observer does. */
+  public constructor(
+    private readonly store: KVStore,
+    private readonly onChanged?: WorkspaceWriteObserver,
+  ) {}
 
   /**
    * Same contract as `WorkflowRepository.transaction`: notifications raised by
@@ -58,7 +62,9 @@ export class CollectionRepository {
       "INSERT INTO collections (id, workspace_id, scopeId, name, slug, workflow_ids_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [id, input.workspaceId, input.workspaceId, input.name, slugify(input.name, id), toJson(input.workflowOrder ?? []), toJson(settings)],
     )
-    return mustExist(this.getById(id), `collection ${id} missing after insert`)
+    const created = mustExist(this.getById(id), `collection ${id} missing after insert`)
+    this.notifyChanged(input.workspaceId)
+    return created
   }
 
   public getById(collectionId: string): Collection | undefined {
@@ -92,6 +98,7 @@ export class CollectionRepository {
       "UPDATE collections SET name = ?, slug = ?, workflow_ids_json = ?, settings_json = ? WHERE id = ?",
       [merged.name, slugify(merged.name, collectionId), toJson(merged.workflowOrder), toJson(settings), collectionId],
     )
+    this.notifyChanged(existing.workspaceId)
     return this.getById(collectionId)
   }
 
@@ -122,16 +129,17 @@ export class CollectionRepository {
    * workspace-scoped row (see `create`), so the two move together.
    */
   public setWorkspace(collectionId: string, workspaceId: string): Collection | undefined {
-    if (this.getById(collectionId) === undefined) return undefined
-    this.store.set(
-      "UPDATE collections SET workspace_id = ?, scopeId = ? WHERE id = ?",
-      [workspaceId, workspaceId, collectionId],
-    )
-    return this.getById(collectionId)
+    return moveToWorkspace(this.store, "collections", collectionId, workspaceId, this.notifyChanged)
+      ? this.getById(collectionId)
+      : undefined
   }
 
   public delete(collectionId: string): boolean {
-    return this.store.delete("DELETE FROM collections WHERE id = ?", [collectionId]).changes > 0
+    return deleteFromWorkspace(this.store, "collections", collectionId, this.notifyChanged)
+  }
+
+  private readonly notifyChanged = (workspaceId: string): void => {
+    notifyWorkspaceWrite(this.store, this.onChanged, workspaceId, "collection-notify")
   }
 }
 

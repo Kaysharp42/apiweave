@@ -45,6 +45,7 @@ describe("database migrations", () => {
         "secrets_metadata",
         "workflow_revisions",
         "workflows",
+        "workspace_git",
         "workspaces",
       ])
 
@@ -308,6 +309,8 @@ describe("database migrations", () => {
           ...before,
           workspaces: (before["workspaces"] ?? []).map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
           app_settings: (before["app_settings"] ?? []).filter((row) => !String(row["key"]).startsWith("cloud.")),
+          // Created after the fixture's version, so it starts empty.
+          workspace_git: [],
         })
       } finally {
         upgraded.close()
@@ -375,10 +378,13 @@ describe("database migrations", () => {
         "agent_definitions",
         "agent_sessions",
         "agent_run_approvals",
+        "workspace_git",
       ]
       expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
       const { upgraded, before } = upgradeCloudFixture()
       try {
+        // The fixture predates workspace_git, so the row it must cascade is written here.
+        upgraded.kvStore.set("INSERT INTO workspace_git (workspace_id) VALUES (?)", ["ws-cloud"])
         upgraded.kvStore.delete("DELETE FROM workspaces WHERE id = ?", ["ws-cloud"])
         const afterDelete = contentRows(upgraded)
         for (const table of cascaded) {
