@@ -1,4 +1,5 @@
 import {
+  GitBranch,
   LayoutGrid,
   Plus,
   Upload,
@@ -22,6 +23,7 @@ export function WorkspaceEmptyState({
   onNewWorkflow,
   onImport,
   onOpenCollection,
+  onOpenFromGit,
   onOpenTutorials,
   tutorialsLabel = "Start tutorial",
 }: WorkspaceEmptyStateProps) {
@@ -98,6 +100,18 @@ export function WorkspaceEmptyState({
             </Button>
           )}
         </div>
+
+        {onOpenFromGit && (
+          <Button
+            variant="outline"
+            size="xs"
+            fullWidth
+            onClick={onOpenFromGit}
+            icon={<GitBranch className="w-3.5 h-3.5" />}
+          >
+            Open from git…
+          </Button>
+        )}
       </div>
 
       {/* Shortcuts */}

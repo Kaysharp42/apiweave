@@ -1,5 +1,7 @@
-import { rm, stat } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { mkdir, readdir, rename, rm, stat } from "node:fs/promises"
 import path from "node:path"
+import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkspaceGitCommit } from "@shared/types/WorkspaceGitCommit"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
@@ -16,7 +18,15 @@ import type {
   WorkspaceGitRepository,
   WorkspaceRepository,
 } from "../repositories"
-import { RecordIdSchema, serializeWorkspace, workspaceSnapshot, type WorkspaceRecords } from "../services/workspace_repo_format"
+import {
+  RecordIdSchema,
+  parseWorkspace,
+  serializeWorkspace,
+  workspaceSnapshot,
+  type WorkspaceRecords,
+} from "../services/workspace_repo_format"
+import { WorkspaceRepoImporter } from "../services/workspace_repo_import"
+import { uniqueWorkspaceSlug } from "../services/workspace_service"
 import { assertWorkspaceRemoteUrl } from "./git_arguments"
 import {
   GitError,
@@ -27,7 +37,7 @@ import {
 } from "./git_errors"
 import type { GitService } from "./git_service"
 import type { GitStatusEntry } from "./git_types"
-import { writeWorkspaceTree } from "./workspace_tree"
+import { readWorkspaceTree, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
 export const AUTO_COMMIT_DELAY_MS = 30_000
@@ -49,12 +59,26 @@ const WORKING_COPY_MESSAGE =
   "That repository is a working copy, not a bare repository, so git cannot push to its checked-out branch. " +
   "Create a bare or empty repository on your host and connect to that."
 
+/**
+ * A scratch clone of an open in progress is `<cloneRoot>/.open-<random>`. No
+ * workspace id can start with a `.`, so the prefix is the app's alone, and a
+ * crash mid-open leaves only directories that {@link GitSyncService.reconcile}
+ * can recognise and remove.
+ */
+const OPEN_SCRATCH_PREFIX = ".open-"
+
+const NO_BRANCH_MESSAGE = "The repository has no branch checked out."
+const DEFAULT_BRANCH_EMPTY_MESSAGE =
+  "That repository has branches, but its default branch has nothing to check out, and only the default branch is opened. " +
+  "Set the repository's default branch to the one that holds the workspace."
+
 const log = getLogger("git-sync")
 
 /** The part of {@link GitService} the sync service drives; a test can wrap it. */
 export type GitSyncGit = Pick<
   GitService,
   | "init"
+  | "clone"
   | "setIdentity"
   | "add"
   | "status"
@@ -112,6 +136,8 @@ export class GitSyncService {
   private readonly delayMs: number
   private readonly locks = new Map<string, Promise<void>>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Opens run one at a time: the end of the chain, which never rejects. */
+  private openQueue: Promise<void> = Promise.resolve()
   private disposed = false
 
   public constructor(private readonly options: GitSyncServiceOptions) {
@@ -253,6 +279,30 @@ export class GitSyncService {
     })
   }
 
+  /**
+   * Clone the repository at `url` and open the workspace it holds: validated
+   * and parsed in a scratch clone first, then moved to `<cloneRoot>/<id>`,
+   * imported, and tracked in auto mode, bound to `url` and the branch the
+   * clone is on. A workspace whose id is already here is not opened again:
+   * that resolves `duplicate`, which is how the caller links to it. `opened`
+   * carries the importer's warnings, for the caller to show before switching.
+   *
+   * A clone already at the id, or a workspace id that collides with one here
+   * only in letter case, is refused before anything is moved: a clone no row
+   * claims may hold commits that are not on the remote, and a case-variant id
+   * would share one repository folder with the workspace already here. Nothing
+   * is left behind by a failure; a clone this call did not create is never
+   * removed.
+   *
+   * One open at a time. It is slow, rare and user-initiated, and the
+   * duplicate check is not atomic with the insert, so two opens of one id
+   * must not fight over one clone. No status is announced: the workspace is
+   * new, and the caller reloads its list.
+   */
+  public openFromGit(url: string): Promise<OpenWorkspaceFromGitResult> {
+    return this.inOpenQueue(() => this.openNow(url))
+  }
+
   public async setMode(workspaceId: string, mode: WorkspaceGitMode): Promise<WorkspaceGitStatus> {
     if (!this.repositories.workspaceGit.setMode(workspaceId, mode)) throw notTracked(workspaceId)
     // Switching to auto picks up whatever manual mode left uncommitted.
@@ -310,9 +360,12 @@ export class GitSyncService {
    *
    * A clone no row claims is left exactly where it is. It is what restoring a
    * database from a backup that predates the row leaves behind, it may hold
-   * the only copy of that history, and a later `track` adopts it.
+   * the only copy of that history, and a later `track` adopts it. The one
+   * exception is a scratch clone of an open that never finished, which is the
+   * app's own and is removed.
    */
   public async reconcile(): Promise<void> {
+    await this.inOpenQueue(() => this.sweepOpenScratch())
     const bindings = this.repositories.workspaceGit.listAll()
     const results = await Promise.allSettled(
       bindings.map((binding) => this.exclusive(binding.workspaceId, () => this.reconcileOne(binding))),
@@ -324,6 +377,7 @@ export class GitSyncService {
 
   /** Resolves once no call is running or queued for any workspace. */
   public async settled(): Promise<void> {
+    await this.openQueue
     while (this.locks.size > 0) await Promise.all(this.locks.values())
   }
 
@@ -333,6 +387,116 @@ export class GitSyncService {
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
     await this.settled()
+  }
+
+  private inOpenQueue<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.openQueue.then(work)
+    this.openQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async openNow(url: string): Promise<OpenWorkspaceFromGitResult> {
+    const remoteUrl = assertWorkspaceRemoteUrl(url)
+    // The scratch clone lives under the clone root so that moving it into place stays on one volume.
+    await mkdir(this.options.cloneRoot, { recursive: true })
+    const scratch = path.join(this.options.cloneRoot, `${OPEN_SCRATCH_PREFIX}${randomUUID()}`)
+    try {
+      return await this.openFromScratch(remoteUrl, scratch)
+    } finally {
+      // Gone already when the clone was moved into place.
+      await removeDirectory(scratch)
+    }
+  }
+
+  private async openFromScratch(remoteUrl: string, scratch: string): Promise<OpenWorkspaceFromGitResult> {
+    const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
+    await this.git.clone(remoteUrl, scratch)
+    await this.assertCheckedOut(scratch)
+    const snapshot = parseWorkspace(await readWorkspaceTree(scratch))
+    const workspaceId = snapshot.workspace.workspaceId
+    const existing = workspaces.getById(workspaceId)
+    if (existing !== undefined) return { kind: "duplicate", workspaceId, slug: existing.slug, name: existing.name }
+    this.assertNoCaseVariantWorkspace(workspaceId)
+    // The binding needs a branch to name, and a detached HEAD has none.
+    const branch = (await this.git.status(scratch)).branch
+    if (branch === undefined) throw new ValidationError(NO_BRANCH_MESSAGE)
+
+    const directory = this.cloneDir(workspaceId)
+    if (workspaceGit.get(workspaceId) !== undefined) {
+      throw new ConflictError(`The database holds version history for workspace ${workspaceId} but not the workspace itself; refusing to replace its repository.`)
+    }
+    // No workspace row claims it, so it is not this open's to replace: it may be
+    // a database restored from a backup that predates the row, holding the only
+    // copy of that history. Refuse before touching the filesystem.
+    if (await exists(directory)) {
+      throw new ConflictError(
+        `A repository is already at ${directory} for workspace ${workspaceId}, and no workspace in this app claims it. ` +
+          "It may hold commits that are not on the remote, so it was left alone. " +
+          "Restore the workspace it belongs to, or move that folder away and try again.",
+      )
+    }
+    let movedIntoPlace = false
+    try {
+      await rename(scratch, directory)
+      movedIntoPlace = true
+      const name = snapshot.workspace.name
+      const slug = uniqueWorkspaceSlug(workspaces, name)
+      let warnings: readonly string[] = []
+      workspaces.transaction(() => {
+        workspaces.create({ workspaceId, name, description: snapshot.workspace.description, slug, isPersonal: false })
+        warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+        workspaceGit.insert(workspaceId, "auto")
+        workspaceGit.setRemote(workspaceId, remoteUrl, branch)
+      })
+      return { kind: "opened", workspaceId, slug, name, warnings }
+    } catch (error) {
+      // Only the clone this call moved into place: another writer may have won the id in the meantime.
+      if (movedIntoPlace) {
+        await removeDirectory(directory).catch((cleanupError: unknown) => {
+          log.warn(`could not remove the clone of workspace ${workspaceId} after a failed open`, cleanupError)
+        })
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Refuse a repository whose workspace id equals one that is already here
+   * ignoring case. SQLite compares ids exactly, but `cloneDir` does not on
+   * Windows and default macOS, so the two would share one repository folder.
+   */
+  private assertNoCaseVariantWorkspace(workspaceId: string): void {
+    const lowered = workspaceId.toLowerCase()
+    const twin = this.repositories.workspaces
+      .listAll()
+      .find((workspace) => workspace.workspaceId !== workspaceId && workspace.workspaceId.toLowerCase() === lowered)
+    if (twin === undefined) return
+    throw new ConflictError(
+      `Workspace ${twin.workspaceId} is already here and differs from ${workspaceId} only in letter case, ` +
+        "so the two would share one repository folder on this computer. " +
+        "Rename the workspace in the repository, or open it in the workspace that is already here instead.",
+    )
+  }
+
+  /** A clone of a repository with branches whose default branch is not one of them has no files: say so, rather than that the repository is not a workspace. */
+  private async assertCheckedOut(directory: string): Promise<void> {
+    if ((await this.git.revParse(directory, "HEAD")) !== undefined) return
+    if ((await this.git.firstRemoteRef(directory, ORIGIN)) !== undefined) throw new ValidationError(DEFAULT_BRANCH_EMPTY_MESSAGE)
+  }
+
+  /** A scratch clone no open is using: its open crashed. Never throws, like the rest of {@link reconcile}. */
+  private async sweepOpenScratch(): Promise<void> {
+    try {
+      const names = await readdir(this.options.cloneRoot).catch((error: unknown) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
+        throw error
+      })
+      await Promise.all(
+        names.filter((name) => name.startsWith(OPEN_SCRATCH_PREFIX)).map((name) => removeDirectory(path.join(this.options.cloneRoot, name))),
+      )
+    } catch (error) {
+      log.warn("could not remove the scratch clones of unfinished opens", error)
+    }
   }
 
   private async reconcileOne(binding: WorkspaceGitBinding): Promise<void> {

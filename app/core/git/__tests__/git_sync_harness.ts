@@ -70,6 +70,7 @@ export function openHarness(options: HarnessOptions = {}): Harness {
 export function passthrough(git: GitService): GitSyncGit {
   return {
     init: git.init.bind(git),
+    clone: git.clone.bind(git),
     setIdentity: git.setIdentity.bind(git),
     add: git.add.bind(git),
     status: git.status.bind(git),

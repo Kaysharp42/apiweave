@@ -56,6 +56,25 @@ describe("readWorkspaceTree", () => {
     await expect(readWorkspaceTree(dir)).rejects.toThrow(/workflows\/big--w1\.json is 10485761 bytes; a repository file may be at most 10485760/)
   })
 
+  it("refuses a tree over its byte limit while it reads, naming the file that crossed it", async () => {
+    put("projects/a--p1.json", "x".repeat(30))
+    put("workflows/b--w1.json", "y".repeat(30))
+
+    await expect(readWorkspaceTree(dir, { maxTotalBytes: 50 })).rejects.toThrow(
+      /workflows\/b--w1\.json pushes the repository over its 50-byte limit \(60 bytes in total\); at most 50 are read/,
+    )
+  })
+
+  it("refuses a tree with more files than the limit, naming the file past it", async () => {
+    put("projects/a--p1.json", "1")
+    put("projects/b--p2.json", "1")
+    put("workflows/c--w1.json", "1")
+
+    await expect(readWorkspaceTree(dir, { maxFiles: 2 })).rejects.toThrow(
+      /workflows\/c--w1\.json pushes the repository over its 2-file limit; at most 2 files are read/,
+    )
+  })
+
   it("names a root file that is a folder, instead of failing with EISDIR", async () => {
     fs.mkdirSync(path.join(dir, "workspace.json"))
 

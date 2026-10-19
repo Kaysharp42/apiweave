@@ -41,6 +41,7 @@ function installBridge(initial: WorkspaceGitStatus): InstalledBridge {
       tracked({ mode: "manual", lastCommit: { sha: "fedcba9876543", subject: request?.message ?? "Update 1 file", authorDate: "2026-10-19T10:00:00+02:00" } })),
     connectRemote: vi.fn(async (_workspaceId, url) => tracked({ remoteUrl: url })),
     disconnectRemote: vi.fn(async () => tracked()),
+    openFromGit: vi.fn(async () => ({ kind: "opened" as const, workspaceId: "ws-2", slug: "opened", name: "Opened", warnings: [] })),
     onStatusChanged: (callback) => {
       listener = callback;
       return () => {

@@ -384,6 +384,35 @@ describe("reading a workspace repository", () => {
     expect(() => parseWorkspace(new Map([...tree(), ...parts]))).toThrow(/docs\/part-9\.txt pushes the repository over its 104857600-byte limit/)
   })
 
+  it("refuses a name or description over its length limit, for the workspace and every record", () => {
+    const files = tree()
+    const tooLongName = "n".repeat(201)
+    const tooLongDescription = "d".repeat(2001)
+
+    expect(() => parseWorkspace(editJson(files, "workspace.json", (doc) => {
+      doc["name"] = tooLongName
+    }))).toThrow(/workspace\.json: name: a name may be at most 200 characters/)
+    expect(() => parseWorkspace(editJson(files, "workspace.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/workspace\.json: description: a description may be at most 2000 characters/)
+    expect(() => parseWorkspace(editJson(files, "projects/shop-api--proj-shop.json", (doc) => {
+      doc["name"] = tooLongName
+    }))).toThrow(/projects\/shop-api--proj-shop\.json: name: a name may be at most 200 characters/)
+    expect(() => parseWorkspace(editJson(files, "environments/staging--env-staging.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/environments\/staging--env-staging\.json: description: a description may be at most 2000 characters/)
+    expect(() => parseWorkspace(editJson(files, "workflows/login--wf-login.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/workflows\/login--wf-login\.json: description: a description may be at most 2000 characters/)
+  })
+
+  it("refuses to write a name or description over its length limit too", () => {
+    const snapshot = workspaceSnapshot(seededRecords())
+
+    expect(() => serializeWorkspace({ ...snapshot, workspace: { ...snapshot.workspace, name: "n".repeat(201) } }))
+      .toThrow(/workspace\.json: name: a name may be at most 200 characters/)
+  })
+
   it("refuses a repository that is not one, or one a newer APIWeave wrote", () => {
     const files = tree()
     files.delete(".apiweave/format.json")

@@ -42,6 +42,7 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitBridge } from "@shared/types/GitBridge";
+import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
@@ -1206,8 +1207,8 @@ const gitDesktopOnly = (): Promise<never> =>
 
 /**
  * A workspace's version history in git. A sibling of `network`, off
- * the router facade: see `GitBridge`. Every call resolves to the workspace's
- * status after it.
+ * the router facade: see `GitBridge`. Every call but `openFromGit` resolves to
+ * the workspace's status after it.
  */
 export const git = {
   isAvailable: (): boolean => getGitBridge() !== undefined,
@@ -1240,6 +1241,9 @@ export const git = {
     gitDesktopOnly(),
   disconnectRemote: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.disconnectRemote(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  openFromGit: (url: string): Promise<OpenWorkspaceFromGitResult> =>
+    getGitBridge()?.openFromGit(url).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,

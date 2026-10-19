@@ -213,7 +213,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
   });
 
-  it("offers workspace creation and nothing else", async () => {
+  it("offers workspace creation and opening from git, and nothing else", async () => {
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({
@@ -228,7 +228,31 @@ describe("OrgWorkspaceSwitcher", () => {
       screen.getByRole("button", { name: "New workspace" }),
     ).toBeInTheDocument();
     expect(
+      screen.getByRole("button", { name: "Open from git…" }),
+    ).toBeInTheDocument();
+    expect(
       screen.queryByRole("button", { name: "Manage workspaces" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens the open-from-git dialog from its menu entry", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ isPersonal: true });
+    setContext({
+      availableWorkspaces: [personalWs],
+      currentWorkspace: personalWs,
+    });
+
+    renderSwitcher();
+    expect(
+      screen.queryByRole("dialog", { name: "Open workspace from git" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByRole("button", { name: "Open from git…" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Open workspace from git" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Repository URL")).toBeInTheDocument();
   });
 });
