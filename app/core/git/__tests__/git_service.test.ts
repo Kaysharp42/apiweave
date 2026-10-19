@@ -323,6 +323,24 @@ describe("remotes", () => {
     expect(await sandbox.service.status(clone)).toMatchObject({ branch: "main", upstream: "origin/main", ahead: 0, behind: 0 })
   })
 
+  it("clones a link the repository carries as a plain file holding its target", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    writeFile(dir, "target.txt", "../outside")
+    const blob = rawGit(dir, sandbox.env, "hash-object", "-w", "target.txt").trim()
+    rawGit(dir, sandbox.env, "update-index", "--add", "--cacheinfo", `120000,${blob},link`)
+    rawGit(dir, sandbox.env, ...WHO, "commit", "-m", "a link")
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main")
+
+    const clone = path.join(sandbox.root, "clone")
+    await sandbox.service.clone(remote.url, clone)
+
+    expect(fs.lstatSync(path.join(clone, "link")).isFile()).toBe(true)
+    expect(fs.readFileSync(path.join(clone, "link"), "utf8")).toBe("../outside")
+  })
+
   it("fetches new commits and reports behind", async () => {
     const sandbox = makeSandbox()
     const remote = makeBareRemote(sandbox)
