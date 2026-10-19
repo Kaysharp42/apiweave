@@ -188,7 +188,8 @@ describe("history", () => {
       body: "with a body\n",
     })
     expect(entries[1]).toMatchObject({ parents: [], subject: "first", body: "" })
-    expect(entries[0]?.authorDate).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$/)
+    // git prints `Z` when the author's offset is zero, a numeric offset otherwise.
+    expect(entries[0]?.authorDate).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(Z|[+-]\d\d:\d\d)$/)
   })
 
   it("honours maxCount, a revision and a path", async () => {
