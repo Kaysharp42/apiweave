@@ -176,7 +176,7 @@ A literal credential the repository withheld (`<SECRET>`) cannot authenticate a 
 
 ## GitHub Actions
 
-Check out the repository that holds the workspace files (or a `.awecollection` bundle), store each secret as a repository secret, and add a job. In this release the app does not push a workspace anywhere, so see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how to get one into a repository of your own:
+Check out the repository that holds the workspace files (or a `.awecollection` bundle), store each secret as a repository secret, and add a job. In this release the app pushes a workspace once, when you connect it to an empty repository (see [Connect a remote](git-workflows.md#connect-a-remote)), and never again, so see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how to keep a repository of your own up to date:
 
 ```yaml
 name: API tests

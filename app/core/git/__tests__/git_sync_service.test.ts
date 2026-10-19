@@ -1,71 +1,13 @@
 import fs from "node:fs"
 import path from "node:path"
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { initDatabase, type InitializedDatabase } from "../../db"
-import {
-  CollectionRepository,
-  EnvironmentRepository,
-  WorkflowRepository,
-  WorkspaceGitRepository,
-  WorkspaceRepository,
-} from "../../repositories"
+import { describe, expect, it, vi } from "vitest"
 import { parseWorkspace, serializeWorkspace } from "../../services/workspace_repo_format"
 import { WorkspaceRepoImporter } from "../../services/workspace_repo_import"
-import { AUTO_COMMIT_DELAY_MS, GitSyncService, type GitSyncGit, type GitSyncRepositories } from "../git_sync_service"
+import { AUTO_COMMIT_DELAY_MS, GitSyncService, type GitSyncGit } from "../git_sync_service"
 import { GitIdentityMissingError } from "../git_errors"
 import type { GitService } from "../git_service"
 import { writeWorkspaceTree } from "../workspace_tree"
-import { anonymousService, makeSandbox } from "./git_test_utils"
-
-interface Harness {
-  readonly db: InitializedDatabase
-  readonly repositories: GitSyncRepositories
-  readonly sync: GitSyncService
-  readonly git: GitService
-  readonly cloneRoot: string
-  readonly workspaceId: string
-  /** The workspace's clone. */
-  readonly dir: string
-}
-
-const harnesses: Harness[] = []
-
-afterEach(async () => {
-  vi.useRealTimers()
-  for (const harness of harnesses.splice(0)) {
-    await harness.sync.dispose()
-    harness.db.close()
-  }
-})
-
-interface HarnessOptions {
-  /** Interpose on the git the service drives. */
-  readonly wrap?: (git: GitService) => GitSyncGit
-  /** A git whose configuration names no author, as on a machine where nobody ran `git config --global user.name`. */
-  readonly anonymous?: boolean
-}
-
-/** A database whose repositories report their writes to a sync service over real git in a temporary root. */
-function openHarness(options: HarnessOptions = {}): Harness {
-  const sandbox = makeSandbox()
-  const git = options.anonymous === true ? anonymousService(sandbox) : sandbox.service
-  const db = initDatabase({ databasePath: ":memory:" })
-  let sync: GitSyncService | undefined
-  const note = (workspaceId: string): void => sync?.workspaceChanged(workspaceId)
-  const repositories: GitSyncRepositories = {
-    workspaces: new WorkspaceRepository(db.kvStore, note),
-    collections: new CollectionRepository(db.kvStore, note),
-    workflows: new WorkflowRepository(db.kvStore, (event) => sync?.workflowChanged(event)),
-    environments: new EnvironmentRepository(db.kvStore, note),
-    workspaceGit: new WorkspaceGitRepository(db.kvStore),
-  }
-  const workspaceId = repositories.workspaces.create({ name: "Acme QA", slug: "acme-qa" }).workspaceId
-  const cloneRoot = path.join(sandbox.root, "clones")
-  sync = new GitSyncService({ cloneRoot, git: options.wrap?.(git) ?? git, repositories })
-  const harness = { db, repositories, sync, git, cloneRoot, workspaceId, dir: path.join(cloneRoot, workspaceId) }
-  harnesses.push(harness)
-  return harness
-}
+import { openHarness, passthrough, subjects, type Harness } from "./git_sync_harness"
 
 /** Every file in a clone but git's own, by '/'-separated path. */
 function readTree(dir: string): Map<string, string> {
@@ -82,17 +24,9 @@ function readTree(dir: string): Map<string, string> {
 /** The real git, except that every commit fails as a full disk would. */
 function failingCommits(git: GitService): GitSyncGit {
   return {
-    init: git.init.bind(git),
-    setIdentity: git.setIdentity.bind(git),
-    add: git.add.bind(git),
-    status: git.status.bind(git),
-    log: git.log.bind(git),
+    ...passthrough(git),
     commit: () => Promise.reject(new Error("disk full")),
   }
-}
-
-async function subjects(harness: Harness): Promise<string[]> {
-  return (await harness.git.log(harness.dir)).map((entry) => entry.subject)
 }
 
 /** Auto commits wait on `setTimeout`; git's own process timers are faked too, but never advanced while git runs. */
@@ -118,6 +52,8 @@ describe("GitSyncService", () => {
       workspaceId: harness.workspaceId,
       tracked: true,
       mode: "auto",
+      remoteUrl: null,
+      branch: "main",
       state: "idle",
       lastError: null,
       lastCommit: { sha: log[0]!.sha, subject: log[0]!.subject, authorDate: log[0]!.authorDate },
@@ -276,10 +212,7 @@ describe("GitSyncService", () => {
     const events: string[] = []
     let duringFirstAdd: (() => void) | undefined
     const harness = openHarness({ wrap: (git) => ({
-      init: git.init.bind(git),
-      setIdentity: git.setIdentity.bind(git),
-      status: git.status.bind(git),
-      log: git.log.bind(git),
+      ...passthrough(git),
       add: async (dir, paths) => {
         events.push("add:start")
         const edit = duringFirstAdd

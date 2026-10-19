@@ -2,7 +2,7 @@
 
 *How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
 
-> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message) and **Stop tracking**. That repository lives on your machine, in the app's data folder. This release does **not** push, pull or import: there is no remote to set, and nothing reads a repository back into the app. `apiweave run` runs a repository's files in CI, so a checkout of one is all a pipeline needs.
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message), **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connecting a remote pushes the history **once**, to an empty repository; after that the app never pushes or pulls again, and nothing reads a repository back into the app. `apiweave run` runs a repository's files in CI, so a checkout of one is all a pipeline needs.
 
 ## Prerequisites
 
@@ -65,9 +65,41 @@ If git does not know who you are, the panel asks for a name and email once and k
 
 The repository is an ordinary git repository at `<userData>/git/<workspace id>/`; see [Installation](../getting-started/installation.md) for where `<userData>` is. It is browsable with any git tool, and only APIWeave should write there. **Stop tracking** deletes that repository and its commits; the workspace itself is not changed.
 
+## Connect a remote
+
+A tracked workspace can be connected to one remote repository on a git host, so its history is kept somewhere other than your machine.
+
+1. Create an empty repository on your host (no README, no first commit).
+2. In **Version history (git)**, paste its URL under **Remote URL** and click **Connect to remote**.
+
+The URL takes one of four forms:
+
+- `https://host/owner/repo.git`
+- `ssh://git@host/owner/repo.git`
+- `git@host:owner/repo.git` (the scp-like form `user@host:path`)
+- `file:///path/to/repo.git`, for a repository on a drive or share
+
+Plain `http://` and `git://` are refused, and so is a bare path such as `C:\repo` or `repo.git`, a URL with a query string or fragment, and a host or user name that starts with `-`.
+
+What happens next depends on what the repository holds:
+
+- **No branches at all:** the workspace's history is pushed to the `main` branch, once. This is the only push this release makes. It must be a bare repository (as every host creates), not a working copy somebody uses: git cannot push to a working copy's checked-out branch, and the connection is refused saying so.
+- **Already holding this workspace's history** (a copy of the app's repository, for instance): it is joined as it is and nothing is pushed.
+- **Holding history this workspace did not come from:** the connection is refused with `That repository already has history this workspace did not come from.` That includes a repository with history on another branch only, such as `master`: only one with no branches at all counts as empty. Opening a workspace from git is not in this release.
+- **Unreachable, or refusing you:** the connection is refused with git's own message, and the workspace stays unconnected.
+
+A refused connection leaves the workspace unconnected and its history untouched. The workspace's own repository is left with no remote, whatever it had. Git runs with its prompts off and uses your own configuration, so the host's credentials must already be available to it (an SSH key, or a credential helper that has signed in). Credentials never go in the URL: the URL is stored in plain text, in the app's database, in the repository's configuration and in the panel, so one that carries a user name or password (`https://user:token@host/…`) is refused. Use an SSH URL, or sign in through git's credential helper. The `git@` of an SSH URL is an account name, not a credential, and is accepted.
+
+A workspace has one remote. **Disconnect** removes it after you confirm: every local commit stays, and nothing on the host is touched. To point a workspace at another repository, disconnect it and connect again.
+
+Two things to know about the history that is pushed:
+
+- The push creates `main`, but a new empty bare repository's own `HEAD` may name `master`. Someone cloning it then gets no checkout and must ask for the branch: `git clone --branch main <url>`.
+- **Stop tracking** deletes the app's repository, and tracking again starts a new history. A remote that holds the old one has nothing in common with the new one, so the next connect refuses it as someone else's history. Connect a fresh empty repository instead.
+
 ## Get a repository into CI
 
-Until a release can push for you, this is the route from the app's repository to a pipeline. Clone the app's repository out of its data folder into a checkout of your own, and push **that clone** to your host:
+Connecting an empty repository puts the history on your host once. The app does not push after that, so this is the route for getting later changes from the app's repository to a pipeline. Clone the app's repository out of its data folder into a checkout of your own, and push **that clone** to your host:
 
 ```bash
 git clone "<userData>/git/<workspace id>" my-tests    # your own copy; its origin is the app's repository
@@ -78,7 +110,7 @@ git push -u host HEAD
 
 Run `apiweave run ./my-tests` there, or let your pipeline check out `host`. To bring in later changes, `git pull` inside the clone (its `origin` is the local path), then `git push host`. Only committed changes travel: in manual mode, use **Commit now** first.
 
-**Do not add a remote inside the app's own repository** (`<userData>/git/<workspace id>`), and do not edit or commit in it. Only APIWeave writes there; it is the app's working copy, and the clone is the one that is yours.
+**Do not add or change a remote inside the app's own repository** (`<userData>/git/<workspace id>`) by hand, and do not edit or commit in it: **Connect to remote** and **Disconnect** are how its remote is set. Only APIWeave writes there; it is the app's working copy, and the clone is the one that is yours.
 
 ## Run a repository in CI
 
@@ -101,13 +133,17 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 
 ## Not covered in this release
 
-- **No remote.** Nothing pushes or pulls, and a repository is not imported back into the app.
+- **One push, then none.** Connecting to an empty repository pushes the history once. Later commits stay local, nothing is pulled, a diverged remote is not detected, and the branch is `main` with no way to change it.
+- **No import.** A repository is not read back into the app, and there is no "open a workspace from git".
 - **Environment inheritance is not carried.** An environment's base environment is not written; put the variables a run needs in the environment itself.
 - **Local history stays separate.** A workflow's [version history](../features/workflows-and-nodes.md#version-history) in the app is not the git history.
 
 ## Troubleshooting
 
 - **If tracking fails because git is not found**, install git and make sure it is on your `PATH`.
+- **If connecting fails with an authentication error**, git could not sign in to the host without asking. Sign in once with your usual git tool (or add an SSH key to your agent), then connect again.
+- **If connecting says `Commit the workspace once before connecting a remote.`**, the workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email when the panel asks, or use **Commit now**, then connect.
+- **If connecting fails with `That repository already has history…`**, the repository already holds someone else's history. The workspace was left unconnected; create an empty repository and connect to that.
 - **If a commit asks who you are**, enter a name and email in the panel; they are saved in this workspace's repository only.
 - **If `apiweave run` says `.apiweave/format.json is missing`**, the folder is not a workspace repository. Point it at the folder that holds `.apiweave/`.
 - **If `apiweave run` names a file as invalid**, the file was edited by hand or has an unresolved merge conflict. Fix that file; the message names it and the problem.

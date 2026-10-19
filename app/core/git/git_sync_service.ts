@@ -6,7 +6,7 @@ import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommit
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
-import { NotFoundError, ValidationError } from "../ipc/errors"
+import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
   CollectionRepository,
@@ -17,7 +17,14 @@ import type {
   WorkspaceRepository,
 } from "../repositories"
 import { RecordIdSchema, serializeWorkspace, workspaceSnapshot, type WorkspaceRecords } from "../services/workspace_repo_format"
-import { GitError, GitIdentityMissingError } from "./git_errors"
+import { assertWorkspaceRemoteUrl } from "./git_arguments"
+import {
+  GitError,
+  GitIdentityMissingError,
+  GitNotARepositoryError,
+  isCheckedOutBranchRefusal,
+  isNoSuchRemote,
+} from "./git_errors"
 import type { GitService } from "./git_service"
 import type { GitStatusEntry } from "./git_types"
 import { writeWorkspaceTree } from "./workspace_tree"
@@ -28,10 +35,40 @@ export const AUTO_COMMIT_DELAY_MS = 30_000
 const TRACK_MESSAGE = "Start tracking this workspace in APIWeave"
 const RECREATE_MESSAGE = "Recreate this workspace's repository from APIWeave"
 
+/** The one remote a workspace's repository has. */
+const ORIGIN = "origin"
+
+const TRACK_FIRST_MESSAGE = "Track this workspace's version history before connecting a remote."
+const ALREADY_CONNECTED_MESSAGE = "This workspace is already connected to a remote. Disconnect it first."
+const UNRELATED_HISTORY_MESSAGE =
+  "That repository already has history this workspace did not come from. Open a workspace from git instead."
+
+const NO_COMMIT_MESSAGE = "Commit the workspace once before connecting a remote."
+const NOTHING_TO_DISCONNECT_MESSAGE = "This workspace has no version history, so it has no remote to disconnect."
+const WORKING_COPY_MESSAGE =
+  "That repository is a working copy, not a bare repository, so git cannot push to its checked-out branch. " +
+  "Create a bare or empty repository on your host and connect to that."
+
 const log = getLogger("git-sync")
 
 /** The part of {@link GitService} the sync service drives; a test can wrap it. */
-export type GitSyncGit = Pick<GitService, "init" | "setIdentity" | "add" | "status" | "commit" | "log">
+export type GitSyncGit = Pick<
+  GitService,
+  | "init"
+  | "setIdentity"
+  | "add"
+  | "status"
+  | "commit"
+  | "log"
+  | "fetch"
+  | "push"
+  | "remoteAdd"
+  | "remoteSetUrl"
+  | "remoteRemove"
+  | "revParse"
+  | "mergeBase"
+  | "firstRemoteRef"
+>
 
 export interface GitSyncRepositories {
   readonly workspaces: WorkspaceRepository
@@ -86,12 +123,23 @@ export class GitSyncService {
   public async status(workspaceId: string): Promise<WorkspaceGitStatus> {
     const binding = this.repositories.workspaceGit.get(workspaceId)
     if (binding === undefined) {
-      return { workspaceId, tracked: false, mode: "auto", state: "idle", lastError: null, lastCommit: null }
+      return {
+        workspaceId,
+        tracked: false,
+        mode: "auto",
+        remoteUrl: null,
+        branch: "main",
+        state: "idle",
+        lastError: null,
+        lastCommit: null,
+      }
     }
     return {
       workspaceId,
       tracked: true,
       mode: binding.mode,
+      remoteUrl: binding.remoteUrl,
+      branch: binding.branch,
       state: binding.state,
       lastError: binding.lastError,
       lastCommit: await this.lastCommit(this.cloneDir(workspaceId)),
@@ -132,13 +180,75 @@ export class GitSyncService {
     })
   }
 
-  /** Delete the workspace's repository and stop tracking it. A remote, once there is one, is never touched. */
+  /**
+   * Delete the workspace's repository and stop tracking it. The remote's own
+   * copy is never touched, but this history is gone: tracking again starts a
+   * new one, which a remote holding the old one no longer shares.
+   */
   public async untrack(workspaceId: string): Promise<WorkspaceGitStatus> {
     const directory = this.cloneDir(workspaceId)
     this.cancelAutoCommit(workspaceId)
     return this.exclusive(workspaceId, async () => {
       await removeDirectory(directory)
       this.repositories.workspaceGit.delete(workspaceId)
+      return this.announce(workspaceId)
+    })
+  }
+
+  /**
+   * Bind the workspace to the remote at `url`. A remote with no branch at all
+   * receives this workspace's history; one whose history this workspace's
+   * shares is joined as it is, and nothing is pushed — that is a later sync's.
+   * A remote with other history, on this branch or another, is refused.
+   * Re-pointing a connected workspace is a disconnect, then a connect.
+   *
+   * The clone's `origin` is this service's, and is built fresh: one an adopted
+   * clone carries may have a `pushurl`, a fetch refspec or mirror settings
+   * that would send the push somewhere other than `url`. Atomic: a failure
+   * after that removes `origin` again, so the binding is as it was and the
+   * clone has no remote, which is what an unbound workspace's clone has. A
+   * rollback that fails cannot mask the error that caused it.
+   *
+   * `state` and `lastError` are not touched: they are about the last commit,
+   * which connecting does not undo.
+   */
+  public async connectRemote(workspaceId: string, url: string): Promise<WorkspaceGitStatus> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.trackedBinding(workspaceId)
+      if (binding.remoteUrl !== null) throw new ConflictError(ALREADY_CONNECTED_MESSAGE)
+      const remoteUrl = assertWorkspaceRemoteUrl(url)
+      // A workspace tracked without an author has no commit yet: nothing to push or compare.
+      if ((await this.git.revParse(directory, "HEAD")) === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
+      await this.removeOrigin(directory)
+      await this.git.remoteAdd(directory, ORIGIN, remoteUrl)
+      try {
+        await this.joinRemote(directory, binding.branch)
+        this.repositories.workspaceGit.setRemote(workspaceId, remoteUrl, binding.branch)
+      } catch (error) {
+        await this.git.remoteRemove(directory, ORIGIN).catch((rollbackError: unknown) => {
+          log.warn(`could not remove the remote a failed connect added for workspace ${workspaceId}`, rollbackError)
+        })
+        throw error
+      }
+      return this.announce(workspaceId)
+    })
+  }
+
+  /** Remove the connection. Local history is never touched, nor is the remote's. Disconnecting an unconnected workspace changes nothing. */
+  public async disconnectRemote(workspaceId: string): Promise<WorkspaceGitStatus> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.repositories.workspaceGit.get(workspaceId)
+      if (binding === undefined) throw new ConflictError(NOTHING_TO_DISCONNECT_MESSAGE)
+      if (binding.remoteUrl === null) return this.status(workspaceId)
+      try {
+        await this.removeOrigin(directory)
+      } catch (error) {
+        // The goal is a clone with no `origin`; one that is gone is already there.
+        if (!(error instanceof GitNotARepositoryError)) throw error
+      }
+      this.repositories.workspaceGit.clearRemote(workspaceId)
       return this.announce(workspaceId)
     })
   }
@@ -152,9 +262,9 @@ export class GitSyncService {
   }
 
   /**
-   * Commit what changed; with no remote bound, a local commit is the whole
-   * sync cycle. A missing author is not thrown: it is the status's `lastError`,
-   * which is how the caller learns to ask for one and pass it back here.
+   * Commit what changed; a local commit is the whole sync cycle. A missing
+   * author is not thrown: it is the status's `lastError`, which is how the
+   * caller learns to ask for one and pass it back here.
    */
   public async syncNow(workspaceId: string, request: WorkspaceGitCommitRequest = {}): Promise<WorkspaceGitStatus> {
     try {
@@ -242,6 +352,66 @@ export class GitSyncService {
     } else if (binding.state === "syncing") {
       // The app quit, or crashed, in the middle of a cycle.
       this.repositories.workspaceGit.setState(binding.workspaceId, "idle")
+    }
+    // The row is the truth about the remote: a clone that was recreated or adopted gets it back. Local git only, no network.
+    if (binding.remoteUrl !== null) await this.pointOriginAt(directory, binding.remoteUrl)
+  }
+
+  /** The workspace's binding, or the refusal a remote operation on an untracked workspace gets. */
+  private trackedBinding(workspaceId: string): WorkspaceGitBinding {
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    if (binding === undefined) throw new ConflictError(TRACK_FIRST_MESSAGE)
+    return binding
+  }
+
+  /**
+   * `origin` at `url`, whether or not the clone has an `origin` yet. Only for
+   * a URL that is already the row's own (reconcile): a connect starts from no
+   * `origin`, because what else an old one carries is not the row's.
+   */
+  private async pointOriginAt(directory: string, url: string): Promise<void> {
+    try {
+      await this.git.remoteSetUrl(directory, ORIGIN, url)
+    } catch (error) {
+      if (!isNoSuchRemote(error)) throw error
+      await this.git.remoteAdd(directory, ORIGIN, url)
+    }
+  }
+
+  /** The clone with no `origin`: one that has none is already there. */
+  private async removeOrigin(directory: string): Promise<void> {
+    try {
+      await this.git.remoteRemove(directory, ORIGIN)
+    } catch (error) {
+      if (!isNoSuchRemote(error)) throw error
+    }
+  }
+
+  /**
+   * Fetch the remote and settle how this workspace relates to it. A remote
+   * with no branch at all is pushed to, shared history is left alone, and
+   * anything else throws: a remote with branches but not this one holds
+   * someone else's project, which an empty-looking `origin/<branch>` must not
+   * hide.
+   */
+  private async joinRemote(directory: string, branch: string): Promise<void> {
+    await this.git.fetch(directory, ORIGIN)
+    const remoteBranch = `${ORIGIN}/${branch}`
+    if ((await this.git.revParse(directory, remoteBranch)) === undefined) {
+      if ((await this.git.firstRemoteRef(directory, ORIGIN)) !== undefined) throw new ConflictError(UNRELATED_HISTORY_MESSAGE)
+      await this.pushFirstTime(directory, branch)
+    } else if ((await this.git.mergeBase(directory, "HEAD", remoteBranch)) === undefined) {
+      throw new ConflictError(UNRELATED_HISTORY_MESSAGE)
+    }
+  }
+
+  private async pushFirstTime(directory: string, branch: string): Promise<void> {
+    try {
+      await this.git.push(directory, ORIGIN, branch, { setUpstream: true })
+    } catch (error) {
+      // An empty non-bare repository looks empty to a fetch and then refuses the push; the original error is git's own wording of it.
+      if (isCheckedOutBranchRefusal(error)) throw new ConflictError(WORKING_COPY_MESSAGE)
+      throw error
     }
   }
 

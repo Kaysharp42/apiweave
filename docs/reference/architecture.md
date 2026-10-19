@@ -126,7 +126,7 @@ APIWeave exposes two surfaces, both local:
 
 Outside the app, the headless CLI (`apiweave run`, `app/core/cli/`) reuses the importers, repositories, scheduler, project runner and reporters under plain Node, with an in-memory SQLite database and secrets from its environment. It never imports Electron, the keychain or the MCP bridge; its build fails if anything on its import graph does. See [Run Tests in CI](../guides/ci.md).
 
-One outbound-only connection exists beyond those: the auto-update manager polls the GitHub release channel for updates. It accepts no inbound connections.
+Two outbound-only connections exist beyond those: the auto-update manager polls the GitHub release channel for updates, and connecting a workspace to a git remote runs your own `git` against that host, once, when you click **Connect to remote** (see [Keep Tests in a Git Repository](../guides/git-workflows.md#connect-a-remote)). Neither accepts inbound connections.
 
 ## Related
 

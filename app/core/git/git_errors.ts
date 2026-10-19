@@ -82,6 +82,16 @@ export class GitCommandError extends GitProcessError {
   readonly code = "command_failed"
 }
 
+/** `git remote set-url` / `remove` on a name the repository has no remote for: unclassified, so a {@link GitCommandError}. */
+export function isNoSuchRemote(error: unknown): boolean {
+  return error instanceof GitCommandError && /No such remote/i.test(error.details.stderr)
+}
+
+/** A push into the checked-out branch of a non-bare repository, which git's default `receive.denyCurrentBranch=refuse` turns away. */
+export function isCheckedOutBranchRefusal(error: unknown): boolean {
+  return error instanceof GitProcessError && /refusing to update checked out branch/i.test(error.details.stderr)
+}
+
 export function gitInstallUrl(platform: NodeJS.Platform): string {
   switch (platform) {
     case "win32":

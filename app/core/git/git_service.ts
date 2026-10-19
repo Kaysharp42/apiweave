@@ -162,6 +162,17 @@ export class GitService {
     return this.runOptional("mergeBase", ["merge-base", a, b], repoDir)
   }
 
+  /** One branch fetched from `remote` (`refs/remotes/<remote>/…`), or undefined when it has none: what tells an empty remote from one with other branches. */
+  async firstRemoteRef(repoDir: string, remote: string): Promise<string | undefined> {
+    assertRefName(remote)
+    const ref = await this.run(
+      "forEachRef",
+      ["for-each-ref", "--count=1", "--format=%(refname)", `refs/remotes/${remote}/`],
+      repoDir,
+    )
+    return ref.trim() === "" ? undefined : ref.trim()
+  }
+
   /** The file as stored at `rev` (`git show <rev>:<path>`), or undefined when `rev` has no such path. */
   async show(repoDir: string, rev: string, filePath: string): Promise<string | undefined> {
     assertRevision(rev)
@@ -213,6 +224,11 @@ export class GitService {
     await this.remoteCommand(repoDir, "set-url", name, url)
   }
 
+  /** Drops the remote and the remote-tracking branches fetched from it. */
+  async remoteRemove(repoDir: string, name: string): Promise<void> {
+    await this.remoteCommand(repoDir, "remove", name)
+  }
+
   /**
    * Make `identity` the author of this repository's commits, in its own
    * `.git/config` — the repository-local counterpart of the `identity` option,
@@ -257,10 +273,12 @@ export class GitService {
     }
   }
 
-  private async remoteCommand(repoDir: string, action: "add" | "set-url", name: string, url: string): Promise<void> {
+  private async remoteCommand(repoDir: string, action: "add" | "set-url" | "remove", name: string, url?: string): Promise<void> {
     assertRefName(name)
-    assertSafeRemoteUrl(url)
-    await this.run("remote", ["remote", action, "--", name, url], repoDir)
+    if (url !== undefined) {
+      assertSafeRemoteUrl(url)
+    }
+    await this.run("remote", ["remote", action, "--", name, ...(url === undefined ? [] : [url])], repoDir)
   }
 
   private identityArgs(): string[] {

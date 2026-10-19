@@ -124,11 +124,68 @@ function CommitForm({ busy, onCommit }: CommitFormProps) {
   );
 }
 
+interface RemoteSectionProps {
+  readonly remoteUrl: string | null;
+  readonly busy: boolean;
+  readonly onConnect: (url: string) => void;
+  readonly onDisconnect: () => void;
+}
+
+function RemoteSection({
+  remoteUrl,
+  busy,
+  onConnect,
+  onDisconnect,
+}: RemoteSectionProps) {
+  const [url, setUrl] = useState("");
+  return (
+    <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
+      <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
+        {remoteUrl ?? "Not connected"}
+      </DetailField>
+      {remoteUrl === null ? (
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConnect(url.trim());
+          }}
+        >
+          <FormField label="Remote URL">
+            <Input
+              aria-label="Remote URL"
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder="https://host/owner/repo.git or git@host:owner/repo.git"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </FormField>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={url.trim() === ""}
+          >
+            Connect to remote
+          </Button>
+        </form>
+      ) : (
+        <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
+          Disconnect
+        </Button>
+      )}
+    </div>
+  );
+}
+
 interface TrackedProps {
   readonly status: WorkspaceGitStatus;
   readonly busy: boolean;
   readonly onToggleMode: () => void;
   readonly onCommit: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
+  readonly onConnect: (url: string) => void;
+  readonly onDisconnect: () => void;
   readonly onUntrack: () => void;
 }
 
@@ -137,6 +194,8 @@ function Tracked({
   busy,
   onToggleMode,
   onCommit,
+  onConnect,
+  onDisconnect,
   onUntrack,
 }: TrackedProps) {
   const { lastCommit, lastError } = status;
@@ -164,6 +223,12 @@ function Tracked({
       {status.mode === "manual" && !needsAuthor && (
         <CommitForm busy={busy} onCommit={onCommit} />
       )}
+      <RemoteSection
+        remoteUrl={status.remoteUrl}
+        busy={busy}
+        onConnect={onConnect}
+        onDisconnect={onDisconnect}
+      />
       <div className="border-t border-border pt-4 dark:border-border-dark">
         <Button variant="ghost" intent="error" disabled={busy} onClick={onUntrack}>
           Stop tracking
@@ -173,7 +238,7 @@ function Tracked({
   );
 }
 
-/** Settings for a workspace's version history (git): track, auto or manual commits, the last commit. */
+/** Settings for a workspace's version history (git): track, auto or manual commits, the last commit, the remote. */
 export function VersionHistoryPanel({
   workspaceId,
 }: {
@@ -183,7 +248,9 @@ export function VersionHistoryPanel({
   const [status, setStatus] = useState<WorkspaceGitStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmingUntrack, setConfirmingUntrack] = useState(false);
+  const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!available) return;
@@ -250,7 +317,9 @@ export function VersionHistoryPanel({
           (await run(() => git.syncNow(workspaceId, request)))?.lastError ===
           null
         }
-        onUntrack={() => setConfirmingUntrack(true)}
+        onConnect={(url) => void run(() => git.connectRemote(workspaceId, url))}
+        onDisconnect={() => setConfirming("disconnect")}
+        onUntrack={() => setConfirming("untrack")}
       />
     );
   })();
@@ -269,10 +338,22 @@ export function VersionHistoryPanel({
         )}
       </div>
       <ConfirmDialog
-        open={confirmingUntrack}
-        onClose={() => setConfirmingUntrack(false)}
+        open={confirming === "disconnect"}
+        onClose={() => setConfirming(null)}
         onConfirm={() => {
-          setConfirmingUntrack(false);
+          setConfirming(null);
+          void run(() => git.disconnectRemote(workspaceId));
+        }}
+        title="Disconnect from this remote?"
+        message="Every local commit stays; only the connection is removed."
+        confirmLabel="Disconnect"
+        intent="warning"
+      />
+      <ConfirmDialog
+        open={confirming === "untrack"}
+        onClose={() => setConfirming(null)}
+        onConfirm={() => {
+          setConfirming(null);
           void run(() => git.untrack(workspaceId));
         }}
         title="Stop tracking this workspace?"
