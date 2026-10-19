@@ -20,7 +20,7 @@ import { assertNoSecretValues, sanitizeExportValue, sanitizeVariablesForExport }
  *   workspace.json                   id, name, description
  *   projects/<slug>--<id>.json       name, description, color, workflow order
  *   workflows/<slug>--<id>.json      one file per workflow, in a project or not
- *   environments/<slug>--<id>.json   workspace-scoped environments: variables and secret names
+ *   environments/<slug>--<id>.json   workspace-scoped environments: variables
  *
  * Written so a change diffs small and merges cleanly: objects with sorted keys
  * (top-level fields in a fixed order), nodes sorted by id (a group frame before
@@ -53,10 +53,16 @@ import { assertNoSecretValues, sanitizeExportValue, sanitizeVariablesForExport }
  * written. Resolving a tree whose defaults are absent, duplicated or stale is
  * the importer's job (a later PR).
  *
- * Never written: user-scoped environments, secret values or ciphertext, runs,
- * node presets, agents, workflow revisions, an environment's base
- * environment. Literal credentials are withheld exactly as an export withholds
- * them (`<SECRET>`); `{{secrets.NAME}}` references stay as written.
+ * Never written: user-scoped environments, secret values or ciphertext, the
+ * names of the secrets stored on this machine, runs, node presets, agents,
+ * workflow revisions, an environment's base environment. The stored secret
+ * names are local state rather than shared state: a machine that has no value
+ * for a name cannot carry "this name exists" (the store holds sealed values
+ * only), so writing the local list would have every machine erase the other's
+ * names in an endless exchange of commits. The names that matter are in the
+ * content anyway, as `{{secrets.NAME}}` wherever they are used. Literal
+ * credentials are withheld exactly as an export withholds them (`<SECRET>`);
+ * `{{secrets.NAME}}` references stay as written.
  *
  * Everything here is pure: the caller reads the rows and the files.
  *
@@ -143,7 +149,6 @@ const EnvironmentFileSchema = z
     swaggerDocUrl: z.string().nullable(),
     isDefault: z.boolean(),
     variables: VariablesSchema,
-    secretNames: z.array(z.string()),
   })
   .strict()
 
@@ -162,8 +167,6 @@ export interface WorkspaceRecords {
   readonly workflows: readonly Workflow[]
   /** Every environment of the workspace; user-scoped ones are left out of the snapshot here. */
   readonly environments: readonly Environment[]
-  /** The names of the secrets stored against each environment, by environment id. */
-  readonly environmentSecretNames: ReadonlyMap<string, readonly string[]>
 }
 
 /** The parts of a workflow every export writes, whether it comes from a row or from a file. */
@@ -208,10 +211,7 @@ export function workspaceSnapshot(records: WorkspaceRecords): WorkspaceSnapshot 
     workspace: checked(`workspace ${records.workspace.workspaceId}`, WorkspaceFileSchema, workspaceDocument(records.workspace)),
     projects: byId(records.projects.map(snapshotProject), (project) => project.projectId),
     workflows: byId(records.workflows.map(snapshotWorkflow), (workflow) => workflow.workflowId),
-    environments: byId(
-      environments.map((environment) => snapshotEnvironment(environment, records.environmentSecretNames.get(environment.environmentId) ?? [])),
-      (environment) => environment.environmentId,
-    ),
+    environments: byId(environments.map(snapshotEnvironment), (environment) => environment.environmentId),
   }
 }
 
@@ -336,8 +336,8 @@ function snapshotWorkflow(workflow: Workflow) {
   return checked(`workflow ${workflow.workflowId}`, WorkflowFileSchema, repoWorkflowDocument({ ...workflow, projectId: workflow.collectionId ?? null }))
 }
 
-function snapshotEnvironment(environment: Environment, secretNames: readonly string[]) {
-  return checked(`environment ${environment.environmentId}`, EnvironmentFileSchema, repoEnvironmentDocument({ ...environment, secretNames }))
+function snapshotEnvironment(environment: Environment) {
+  return checked(`environment ${environment.environmentId}`, EnvironmentFileSchema, repoEnvironmentDocument(environment))
 }
 
 function projectContent(collection: Collection): ProjectContent {
@@ -394,16 +394,11 @@ function environmentDocument(environment: EnvironmentContent, extra: Readonly<Re
   }
 }
 
-function repoEnvironmentDocument(
-  environment: EnvironmentContent & { readonly secretNames: readonly string[]; readonly isDefault: boolean },
-): Record<string, JsonValue> {
-  return {
-    ...environmentDocument(
-      { ...environment, variables: sanitizeVariablesForExport(asRecord(toPlain(environment.variables))) },
-      { isDefault: environment.isDefault },
-    ),
-    secretNames: [...new Set(environment.secretNames)].sort(compare),
-  }
+function repoEnvironmentDocument(environment: EnvironmentContent & { readonly isDefault: boolean }): Record<string, JsonValue> {
+  return environmentDocument(
+    { ...environment, variables: sanitizeVariablesForExport(asRecord(toPlain(environment.variables))) },
+    { isDefault: environment.isDefault },
+  )
 }
 
 function recordFile(directory: string, id: string, name: string, schema: z.ZodType, document: Record<string, JsonValue>): TreeFile {
