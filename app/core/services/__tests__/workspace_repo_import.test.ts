@@ -83,7 +83,6 @@ function snapshotOf(store: Store): WorkspaceSnapshot {
     projects: store.collections.listByWorkspace(store.workspaceId).items,
     workflows: store.workflows.listByWorkspace(store.workspaceId, true).items,
     environments,
-    environmentSecretNames: new Map(),
   })
 }
 

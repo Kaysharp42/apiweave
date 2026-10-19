@@ -7,9 +7,5 @@
   "variables": {
     "apiKey": "<SECRET>",
     "baseUrl": "https://staging.example.com"
-  },
-  "secretNames": [
-    "API_TOKEN",
-    "ZETA"
-  ]
+  }
 }
