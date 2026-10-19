@@ -6,6 +6,5 @@
   "isDefault": false,
   "variables": {
     "region": "eu"
-  },
-  "secretNames": []
+  }
 }

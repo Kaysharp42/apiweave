@@ -146,10 +146,6 @@ function recordsOf(store: Store): WorkspaceRecords {
     projects: store.collections.listByWorkspace(store.workspaceId).items,
     workflows: store.workflows.listByWorkspace(store.workspaceId, true).items,
     environments,
-    environmentSecretNames: new Map(environments.map((environment) => [
-      environment.environmentId,
-      store.secrets.listByScope("environment", environment.environmentId).map((secret) => secret.name),
-    ])),
   }
 }
 
@@ -291,7 +287,6 @@ describe("workspace repository format", () => {
       projects: reversed(records.projects),
       workflows: reversed(records.workflows).map((workflow) => ({ ...workflow, nodes: reversed(workflow.nodes), edges: reversed(workflow.edges) })),
       environments: reversed(records.environments),
-      environmentSecretNames: new Map([...records.environmentSecretNames].reverse().map(([id, names]) => [id, reversed(names)])),
     }
     const snapshot = workspaceSnapshot(records)
     const expected = [...serializeWorkspace(snapshot)]
@@ -329,7 +324,7 @@ describe("workspace repository format", () => {
     const tree = [...files.values()].join("\n")
 
     for (const literal of ["literal-key", "hunter2", "live-literal-token", "live-query-token", "template-literal-token"]) expect(tree).not.toContain(literal)
-    for (const key of ["rev", "createdAt", "updatedAt", "slug", "isPersonal", "deletedAt", "baseEnvironmentId", "secrets", "scopeType", "collectionId", "workflowCount", "order"]) {
+    for (const key of ["rev", "createdAt", "updatedAt", "slug", "isPersonal", "deletedAt", "baseEnvironmentId", "secrets", "secretNames", "scopeType", "collectionId", "workflowCount", "order"]) {
       expect(tree).not.toContain(`"${key}"`)
     }
     expect([...files.keys()].filter((file) => file !== "workspace.json").every((file) => !files.get(file)!.includes('"workspaceId"'))).toBe(true)
@@ -339,9 +334,8 @@ describe("workspace repository format", () => {
     expect(JSON.parse(files.get("environments/staging--env-staging.json")!)).toMatchObject({
       isDefault: true,
       variables: { baseUrl: "https://staging.example.com", apiKey: "<SECRET>" },
-      secretNames: ["API_TOKEN", "ZETA"],
     })
-    expect(JSON.parse(files.get("environments/base--env-base.json")!)).toMatchObject({ isDefault: false, secretNames: [] })
+    expect(JSON.parse(files.get("environments/base--env-base.json")!)).toMatchObject({ isDefault: false })
   })
 
   it("refuses a secret-storage field anywhere in the tree, on the way out and on the way in", () => {
