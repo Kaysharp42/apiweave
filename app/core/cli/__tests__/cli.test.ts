@@ -6,8 +6,6 @@ import path from "node:path"
 import type { AddressInfo } from "node:net"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { EXIT_FAILED, EXIT_PASSED, EXIT_USAGE, USAGE, runCli } from "../cli"
-import { projectFolderFiles, writeProjectFolder } from "../../services/project_folder"
-import type { ProjectBundle } from "../../services/project_export_service"
 import { startFakeOAuthServer } from "../../runner/__tests__/oauth_fake_server"
 import {
   AWS_ACCESS_KEY_ID,
@@ -28,6 +26,7 @@ import {
 } from "../../runner/__tests__/network_test_servers"
 
 const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.awecollection")
+const REPOSITORY = path.join(__dirname, "..", "__fixtures__", "workspace-repo")
 const TOKEN = "s3cr3t-fixture-token"
 
 let server: http.Server
@@ -120,31 +119,6 @@ describe("apiweave run", () => {
     }
   })
 
-  it("runs a project folder (Export to folder) and exits 0, 1 or 2", async () => {
-    const folder = path.join(dir, "apiweave")
-    writeProjectFolder(folder, projectFolderFiles(JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as ProjectBundle))
-    fs.writeFileSync(path.join(folder, "README.md"), "Not part of the project.\n")
-
-    const passed = await run(["run", "apiweave", "--env", "CI", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
-    expect(passed.stderr).toBe("")
-    expect(passed.code).toBe(EXIT_PASSED)
-    expect(received).toEqual([`Bearer ${TOKEN}`])
-    expect(passed.stdout).toContain("✔ Status is ok")
-
-    const one = await run(["run", folder, "--workflow", "wf_health", "--var", `baseUrl=${baseUrl}/down`, "--secret", `API_TOKEN=${TOKEN}`])
-    expect(one.code).toBe(EXIT_FAILED)
-    expect(one.stdout).toContain("✖ Status is ok")
-
-    const missingSecret = await run(["run", folder, "--var", `baseUrl=${baseUrl}`])
-    expect(missingSecret.code).toBe(EXIT_USAGE)
-    expect(missingSecret.stderr).toContain("missing secret API_TOKEN")
-
-    fs.rmSync(path.join(folder, "project.json"))
-    const notAProject = await run(["run", folder])
-    expect(notAProject.code).toBe(EXIT_USAGE)
-    expect(notAProject.stderr).toContain("has no project.json")
-  })
-
   it("runs a single workflow export, its environment and a dotenv secrets file", async () => {
     const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: unknown[]; environments: unknown[] }
     const exportFile = path.join(dir, "health.json")
@@ -176,7 +150,7 @@ describe("apiweave run", () => {
     const result = await run(["run", "other.json"])
 
     expect(result.code).toBe(EXIT_USAGE)
-    expect(result.stderr).toContain("is not an APIWeave project folder, workflow export, .awecollection project bundle or Postman collection")
+    expect(result.stderr).toContain("is not an APIWeave workspace repository, workflow export, .awecollection project bundle or Postman collection")
   })
 
   it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
@@ -515,7 +489,8 @@ describe("apiweave run", () => {
     [["test", FIXTURE], "unknown command 'test'"],
     [["run", FIXTURE, "--nope"], "Unknown option '--nope'"],
     [[], "missing command"],
-    [["run"], "missing <file|folder> to run"],
+    [["run"], "missing <path> to run"],
+    [["run", FIXTURE, "--project", "CLI smoke"], "--project picks a project of a workspace repository; this file is not one"],
     [["run", FIXTURE, "extra"], "unexpected argument 'extra'"],
     [["run", FIXTURE, "--timeout-request", "0"], "--timeout-request must be a positive whole number of milliseconds"],
     [["run", FIXTURE, "-n", "1.5"], "--iteration-count must be a positive whole number"],
@@ -616,6 +591,290 @@ describe("apiweave run", () => {
       expect(result.stderr).toContain(message)
       expect(requests).toEqual([])
     })
+  })
+})
+
+describe("apiweave run — workspace repository", () => {
+  const secretEnv = { APIWEAVE_SECRET_API_TOKEN: TOKEN }
+  const withUrl = (url: string = baseUrl): string[] => ["--var", `baseUrl=${url}`]
+
+  /** A copy of the checked-in repository the test may change. */
+  let copies = 0
+  function copyRepository(): string {
+    const copy = path.join(dir, `repo-${(copies += 1)}`)
+    fs.cpSync(REPOSITORY, copy, { recursive: true })
+    return copy
+  }
+
+  it("runs every project in the repository's order, as one report named after the workspace", async () => {
+    const result = await run(["run", REPOSITORY, ...withUrl(), "-r", "cli,junit"], secretEnv)
+
+    expect(result.code).toBe(EXIT_PASSED)
+    // Billing's id sorts before Shop API's; the workflow outside any project is not part of a project run.
+    expect(requests).toEqual(["/health.json billing-invoices", "/health.json shop-health", "/health.json shop-orders"])
+    expect(received.filter((header) => header !== "")).toEqual([`Bearer ${TOKEN}`])
+    expect(result.stdout.split("\n")[0]).toBe("Acme QA · completed")
+    expect(result.stdout).toContain("Billing: List invoices")
+    expect(result.stdout).toContain("Shop API: Health check")
+    expect(result.stdout).toMatch(/Projects\s+2\s+2\s+0\s+0/)
+    expect(result.stdout).not.toContain("Iterations")
+    const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+    expect(junit).toContain('<testsuites name="Acme QA" tests="6" failures="0"')
+    expect([...junit.matchAll(/<testsuite name="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      "Billing: List invoices",
+      "Shop API: Health check",
+      "Shop API: List orders",
+    ])
+  })
+
+  it("says what the repository withheld, and never what it holds in secrets", async () => {
+    const result = await run(["run", REPOSITORY, ...withUrl(), "-r", "junit"], secretEnv)
+
+    expect(result.stderr).toContain(`apiweave: warning: Workflow 'List orders' has the placeholder "<SECRET>"`)
+    expect(result.stderr).not.toContain(TOKEN)
+  })
+
+  it("runs one project picked by name or by id, as that project's report", async () => {
+    const byName = await run(["run", REPOSITORY, "--project", "Shop API", ...withUrl()], secretEnv)
+    expect(byName.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json shop-health", "/health.json shop-orders"])
+    expect(byName.stdout.split("\n")[0]).toBe("Shop API · completed")
+    expect(byName.stdout).not.toContain("Projects")
+
+    requests = []
+    // Billing needs no secret: only what would run is checked.
+    const byId = await run(["run", REPOSITORY, "--project", "prj_billing", ...withUrl()])
+    expect(byId.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json billing-invoices"])
+  })
+
+  it("exits 2 for an unknown project or an ambiguous one, listing what is there", async () => {
+    const unknown = await run(["run", REPOSITORY, "--project", "Nope", ...withUrl()], secretEnv)
+    expect(unknown.code).toBe(EXIT_USAGE)
+    expect(unknown.stderr).toContain("project 'Nope' is not in the repository (projects: Billing (prj_billing), Shop API (prj_shop))")
+
+    const repository = copyRepository()
+    const shop = JSON.parse(fs.readFileSync(path.join(repository, "projects", "shop-api--prj_shop.json"), "utf8")) as Record<string, unknown>
+    fs.writeFileSync(path.join(repository, "projects", "billing-too--prj_other.json"), JSON.stringify({ ...shop, projectId: "prj_other", name: "Billing", workflowOrder: [] }))
+    const ambiguous = await run(["run", repository, "--project", "Billing", ...withUrl()], secretEnv)
+    expect(ambiguous.code).toBe(EXIT_USAGE)
+    expect(ambiguous.stderr).toContain("project 'Billing' is ambiguous in the repository")
+    expect(requests).toEqual([])
+  })
+
+  it("runs one workflow by name or id, including one that is in no project", async () => {
+    const outside = await run(["run", REPOSITORY, "--workflow", "Standalone ping", ...withUrl()])
+    expect(outside.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json standalone-ci"])
+    expect(outside.stdout.split("\n")[0]).toBe("Standalone ping · completed")
+
+    requests = []
+    const byId = await run(["run", REPOSITORY, "-w", "wf_invoices", ...withUrl()])
+    expect(byId.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json billing-invoices"])
+
+    requests = []
+    const scoped = await run(["run", REPOSITORY, "--project", "Shop API", "--workflow", "Health check", ...withUrl()], secretEnv)
+    expect(scoped.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json shop-health"])
+  })
+
+  it("exits 2 for a workflow that is unknown, ambiguous or outside the --project, naming the candidates", async () => {
+    const unknown = await run(["run", REPOSITORY, "--workflow", "Nope", ...withUrl()])
+    expect(unknown.code).toBe(EXIT_USAGE)
+    expect(unknown.stderr).toContain("workflow 'Nope' is not in the repository (workflows:")
+    expect(unknown.stderr).toContain("Standalone ping (wf_standalone)")
+
+    const outside = await run(["run", REPOSITORY, "--project", "Billing", "--workflow", "Health check", ...withUrl()])
+    expect(outside.code).toBe(EXIT_USAGE)
+    expect(outside.stderr).toContain("workflow 'Health check' is not in project 'Billing' (workflows: List invoices (wf_invoices))")
+
+    const repository = copyRepository()
+    const invoices = fs.readFileSync(path.join(repository, "workflows", "list-invoices--wf_invoices.json"), "utf8")
+    fs.writeFileSync(path.join(repository, "workflows", "list-invoices--wf_twin.json"), invoices.replace('"wf_invoices"', '"wf_twin"'))
+    const ambiguous = await run(["run", repository, "--workflow", "List invoices", ...withUrl()])
+    expect(ambiguous.code).toBe(EXIT_USAGE)
+    expect(ambiguous.stderr).toContain("workflow 'List invoices' is ambiguous in the repository")
+    expect(requests).toEqual([])
+  })
+
+  it("runs against an environment of the repository with --env", async () => {
+    // The repository's own Staging, pointed at the test server by editing its file.
+    const repository = copyRepository()
+    const staging = path.join(repository, "environments", "staging--env_staging.json")
+    fs.writeFileSync(staging, fs.readFileSync(staging, "utf8").replace("http://127.0.0.1:8787", baseUrl))
+    const result = await run(["run", repository, "--workflow", "Standalone ping", "--env", "Staging"])
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json standalone-staging"])
+
+    const unknown = await run(["run", REPOSITORY, "--env", "Prod", ...withUrl()], secretEnv)
+    expect(unknown.code).toBe(EXIT_USAGE)
+    expect(unknown.stderr).toContain("environment 'Prod' is not in the repository (environments:")
+  })
+
+  it("exits 2 naming the missing secret before sending anything, but only for what would run", async () => {
+    const result = await run(["run", REPOSITORY, ...withUrl()])
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("missing secret API_TOKEN")
+    expect(result.stderr).toContain("APIWEAVE_SECRET_API_TOKEN")
+    expect(received).toEqual([])
+  })
+
+  it("exits 2 naming the file when the tree is invalid, and what is missing when it is not a repository", async () => {
+    const repository = copyRepository()
+    fs.writeFileSync(path.join(repository, "workflows", "list-orders--wf_orders.json"), "<<<<<<< HEAD\n")
+    const invalid = await run(["run", repository, ...withUrl()], secretEnv)
+    expect(invalid.code).toBe(EXIT_USAGE)
+    expect(invalid.stderr).toContain("workflows/list-orders--wf_orders.json is not valid JSON")
+
+    const misnamed = copyRepository()
+    fs.renameSync(path.join(misnamed, "projects", "billing--prj_billing.json"), path.join(misnamed, "projects", "billing--prj_wrong.json"))
+    const named = await run(["run", misnamed, ...withUrl()], secretEnv)
+    expect(named.code).toBe(EXIT_USAGE)
+    expect(named.stderr).toContain("projects/billing--prj_wrong.json: a file in projects/ must be named <name>--prj_billing.json")
+
+    fs.rmSync(path.join(repository, ".apiweave"), { recursive: true })
+    const notARepository = await run(["run", repository])
+    expect(notARepository.code).toBe(EXIT_USAGE)
+    expect(notARepository.stderr).toContain(`${repository} is not an APIWeave workspace repository: .apiweave/format.json is missing`)
+    expect(requests).toEqual([])
+  })
+
+  it("leaves a README and git alone", async () => {
+    const repository = copyRepository()
+    fs.writeFileSync(path.join(repository, "README.md"), "Not part of the workspace.\n")
+    fs.mkdirSync(path.join(repository, ".git"))
+    fs.writeFileSync(path.join(repository, ".git", "HEAD"), "ref: refs/heads/main\n")
+
+    const result = await run(["run", repository, "--project", "Billing", ...withUrl()])
+
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json billing-invoices"])
+  })
+
+  it("refuses what the format does not know under a record folder, naming it, rather than running without it", async () => {
+    const repository = copyRepository()
+    fs.mkdirSync(path.join(repository, "workflows", "archive"))
+    const invoices = fs.readFileSync(path.join(repository, "workflows", "list-invoices--wf_invoices.json"), "utf8")
+    fs.writeFileSync(path.join(repository, "workflows", "archive", "old--wf_old.json"), invoices.replace('"wf_invoices"', '"wf_old"'))
+
+    const result = await run(["run", repository, ...withUrl()], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("workflows/archive/old--wf_old.json: only <name>--<id>.json files belong in workflows/, and not in subfolders")
+    expect(requests).toEqual([])
+  })
+
+  it("refuses a link out of the repository, naming the path", async () => {
+    const outside = path.join(dir, "outside")
+    fs.cpSync(path.join(REPOSITORY, "environments"), outside, { recursive: true })
+    const linked = copyRepository()
+    fs.rmSync(path.join(linked, "environments"), { recursive: true })
+    fs.symlinkSync(outside, path.join(linked, "environments"), "junction")
+    const link = await run(["run", linked, "--env", "Staging", ...withUrl()], secretEnv)
+    expect(link.code).toBe(EXIT_USAGE)
+    expect(link.stderr).toContain("environments: must be a plain folder")
+    expect(requests).toEqual([])
+
+  })
+
+  it("names a root file that cannot be read", async () => {
+    const repository = copyRepository()
+    fs.rmSync(path.join(repository, "workspace.json"))
+    fs.mkdirSync(path.join(repository, "workspace.json"))
+
+    const result = await run(["run", repository, ...withUrl()], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("workspace.json: must be a plain file")
+    expect(result.stderr).not.toContain("EISDIR")
+  })
+
+  it("exits 2, not 1, for a workflow saved with an environment the repository does not hold, unless --env names one", async () => {
+    const repository = copyRepository()
+    const file = path.join(repository, "workflows", "standalone-ping--wf_standalone.json")
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace('"env_ci"', '"env_user_scoped"'))
+
+    const result = await run(["run", repository, "--workflow", "Standalone ping", ...withUrl()])
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("workflow 'Standalone ping' is saved with environment 'env_user_scoped', which is not in the repository. Pass --env <name>")
+    expect(requests).toEqual([])
+
+    const named = await run(["run", repository, "--workflow", "Standalone ping", "--env", "CI", ...withUrl()])
+    expect(named.code).toBe(EXIT_PASSED)
+    expect(requests).toEqual(["/health.json standalone-ci"])
+
+    // Only what would run is checked.
+    requests = []
+    const other = await run(["run", repository, "--project", "Billing", ...withUrl()])
+    expect(other.code).toBe(EXIT_PASSED)
+  })
+  it("skips a project with no enabled workflow with a line on stderr, but not when it is the one asked for", async () => {
+    const repository = copyRepository()
+    fs.writeFileSync(
+      path.join(repository, "projects", "empty--prj_empty.json"),
+      `${JSON.stringify({ projectId: "prj_empty", name: "Empty", description: null, color: null, workflowOrder: [] }, null, 2)}\n`,
+    )
+
+    const result = await run(["run", repository, ...withUrl(), "-r", "cli,junit"], secretEnv)
+    expect(result.code).toBe(EXIT_PASSED)
+    expect(result.stderr).toContain("apiweave: skipped project 'Empty': it has no enabled workflows")
+    const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+    expect([...junit.matchAll(/<testsuite name="([^"]*)"/g)].map((match) => match[1])).toEqual([
+      "Billing: List invoices",
+      "Shop API: Health check",
+      "Shop API: List orders",
+    ])
+    expect(requests).toHaveLength(3)
+    expect(result.stdout).toMatch(/Projects\s+2\s+2\s+0\s+0/)
+
+    requests = []
+    const asked = await run(["run", repository, "--project", "Empty", ...withUrl()], secretEnv)
+    expect(asked.code).toBe(EXIT_USAGE)
+    expect(asked.stderr).toContain("project 'Empty' has no enabled workflows to run")
+    expect(requests).toEqual([])
+  })
+
+  it("exits 2 when no project has anything to run", async () => {
+    const repository = copyRepository()
+    for (const project of ["billing--prj_billing", "shop-api--prj_shop"]) {
+      const file = path.join(repository, "projects", `${project}.json`)
+      const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { workflowOrder: { enabled: boolean }[] }
+      fs.writeFileSync(file, JSON.stringify({ ...parsed, workflowOrder: parsed.workflowOrder.map((item) => ({ ...item, enabled: false })) }))
+    }
+
+    const result = await run(["run", repository, ...withUrl()], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("no project of the repository has an enabled workflow to run")
+  })
+
+  it("refuses iterations over several projects, and names --project", async () => {
+    const result = await run(["run", REPOSITORY, "-n", "2", ...withUrl()], secretEnv)
+
+    expect(result.code).toBe(EXIT_USAGE)
+    expect(result.stderr).toContain("pick one with --project <name|id>")
+    expect(requests).toEqual([])
+
+    const one = await run(["run", REPOSITORY, "--project", "Shop API", "-n", "2", ...withUrl()], secretEnv)
+    expect(one.code).toBe(EXIT_PASSED)
+    expect(requests).toHaveLength(4)
+    expect(one.stdout).toMatch(/Iterations\s+2\s+2\s+0\s+0/)
+    expect(one.stdout).not.toContain("Projects")
+  })
+
+  it.each([
+    [[], 3],
+    [["--bail"], 1],
+  ])("runs the next project after a failed one unless --bail: %j", async (flags, sent) => {
+    const result = await run(["run", REPOSITORY, ...withUrl(`${baseUrl}/down`), ...flags, "-r", "cli,junit"], secretEnv)
+
+    expect(result.code).toBe(EXIT_FAILED)
+    expect(received).toHaveLength(sent)
+    expect(result.stdout).toMatch(sent === 3 ? /Projects\s+2\s+0\s+2\s+0/ : /Projects\s+1\s+0\s+1\s+0/)
+    // A suite is named the same whether or not the other projects ran.
+    const junit = fs.readFileSync(path.join(dir, "apiweave-report.xml"), "utf8")
+    expect([...junit.matchAll(/<testsuite name="([^"]*)"/g)].map((match) => match[1])[0]).toBe("Billing: List invoices")
   })
 })
 

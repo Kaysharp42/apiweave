@@ -60,7 +60,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
-- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs an exported workflow or `.awecollection` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
+- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.awecollection` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
 
 ## Documentation
 

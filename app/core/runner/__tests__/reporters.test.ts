@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { Run } from "@shared/types/Run"
 import type { RunResult } from "@shared/types/RunResult"
-import { buildConsoleReport, buildHtmlReport, buildJUnitReport, writeReport, type ReportInput, type ReportWorkflow } from "../reporters"
+import { buildConsoleReport, buildHtmlReport, buildJUnitReport, writeReport, type ReportInput, type ReportWorkflow, type SingleReportInput } from "../reporters"
 
 // -------------------- A strict little XML reader --------------------
 
@@ -459,6 +459,56 @@ describe("exact report text", () => {
       Duration 0.000s
       "
     `)
+  })
+})
+
+// -------------------- Repository run --------------------
+
+describe("repository run — several projects", () => {
+  const loginRun = (projectName: string, runId: string, status: Run["status"]): SingleReportInput => ({
+    kind: "project",
+    projectName,
+    projectRun: {
+      projectRunId: `prun_${runId}`,
+      projectId: `proj_${runId}`,
+      environmentId: null,
+      status,
+      startedAt: "2026-07-06T10:00:00.000Z",
+      finishedAt: "2026-07-06T10:00:05.000Z",
+      items: [{ workflowId: "wf_1", workflowName: "Login", continueOnFail: false, runId, status, durationMs: 5000 }],
+    },
+    runs: [makeRun({ runId, status, nodeStatuses: { http_1: "passed" } })],
+    workflows: [WORKFLOW],
+  })
+  const input: ReportInput = {
+    kind: "projects",
+    title: "Acme QA",
+    projects: [loginRun("Billing", "run_a", "completed"), loginRun("Shop", "run_b", "failed")],
+  }
+
+  it("flattens the suites in project order, each named after its project, under the workspace's name", () => {
+    const root = parseXml(buildJUnitReport(input))
+    expect(root.attrs["name"]).toBe("Acme QA")
+    expect(all(root, "testsuite").map((suite) => suite.attrs["name"])).toEqual(["Billing: Login", "Shop: Login"])
+    expect(buildHtmlReport(input)).toContain("<h1>Acme QA</h1>")
+  })
+
+  it("names a suite after its project even when only one project ran", () => {
+    const root = parseXml(buildJUnitReport({ kind: "projects", title: "Acme QA", projects: [loginRun("Billing", "run_a", "completed")] }))
+    expect(all(root, "testsuite").map((suite) => suite.attrs["name"])).toEqual(["Billing: Login"])
+  })
+
+  it("counts the projects in the summary, and calls nothing an iteration", () => {
+    const text = buildConsoleReport(input, false)
+    expect(text).toMatch(/Projects\s+2\s+1\s+1\s+0/)
+    expect(text).not.toContain("Iterations")
+    expect(text.split("\n")[0]).toBe("Acme QA · failed")
+  })
+
+  it("still counts iterations of a data-driven run as iterations", () => {
+    const text = buildConsoleReport({ kind: "iterations", title: "Users API", iterations: [{ kind: "run", run: makeRun(), workflow: WORKFLOW }] }, false)
+    expect(text).toMatch(/Iterations\s+1\s+1\s+0\s+0/)
+    expect(text).not.toContain("Projects")
   })
 })
 

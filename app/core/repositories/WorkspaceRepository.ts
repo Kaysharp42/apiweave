@@ -5,7 +5,7 @@ import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
 import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
-export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> & Partial<Pick<Workspace, "description" | "isPersonal">>
+export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> & Partial<Pick<Workspace, "workspaceId" | "description" | "isPersonal">>
 
 export type WorkspaceUpdate = Partial<Pick<Workspace, "name" | "slug" | "description" | "isPersonal" | "deletedAt">>
 
@@ -40,7 +40,7 @@ export class WorkspaceRepository {
   }
 
   public create(input: WorkspaceCreate): Workspace {
-    const id = generateId()
+    const id = input.workspaceId ?? generateId()
     const settings: WorkspaceSettings = {
       description: input.description ?? null,
       isPersonal: input.isPersonal ?? true,

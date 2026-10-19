@@ -168,6 +168,7 @@ A quick checklist after first launch:
 | Database backups (before each schema upgrade, newest 5) | `<userData>/backups/apiweave-<time>-v<schema>.db` |
 | Secret keyfile | `<userData>/keyfile.json` |
 | MCP token (when enabled) | `<userData>/mcp-token` |
+| Version history (git) repository of a tracked workspace | `<userData>/git/<workspace id>/`; see [Keep Tests in a Git Repository](../guides/git-workflows.md) |
 | Run reports (JUnit, HTML) | Not stored: built on demand from History or a project run, saved where you choose |
 | Log (main, renderer, updates, crashes) | `<logs>/apiweave-main-YYYY-MM-DD.log`, one file per day, kept 14 days |
 

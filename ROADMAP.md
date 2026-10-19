@@ -31,7 +31,7 @@ or import.
 
 Teams and CI (1.0): **one-click project runs** with live progress, the headless
 **`apiweave run`** CLI with JUnit and HTML reports, **data-driven runs** from CSV
-or JSON, **Postman import**, **git-friendly project folders**, OAuth 2.0, Digest,
+or JSON, **Postman import**, OAuth 2.0, Digest,
 AWS Signature V4 and JWT auth, GraphQL bodies, sandboxed pre-request and
 post-response scripts, schema and contract assertions, retry and polling, a
 per-run cookie jar, and proxy, private CA and client-certificate support.

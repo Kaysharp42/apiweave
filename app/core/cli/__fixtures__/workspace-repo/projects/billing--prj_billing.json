@@ -1,0 +1,13 @@
+{
+  "projectId": "prj_billing",
+  "name": "Billing",
+  "description": null,
+  "color": null,
+  "workflowOrder": [
+    {
+      "continueOnFail": true,
+      "enabled": true,
+      "workflowId": "wf_invoices"
+    }
+  ]
+}

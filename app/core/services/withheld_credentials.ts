@@ -30,7 +30,7 @@ export function keepWithheldNodeTemplates(stored: Workflow | undefined, incoming
     : [...incoming]
 }
 
-/** The folder and workspace-repository imports report withheld placeholders identically. */
+/** What a workspace-repository import says about a workflow that still holds a withheld placeholder. */
 export function withheldPlaceholderWarning(
   workflowName: string,
   stored: Workflow | undefined,

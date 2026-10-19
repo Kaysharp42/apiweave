@@ -28,7 +28,8 @@ import type { Workflow } from "@shared/types/Workflow"
  * reads it as green. A project workflow whose run is not stored is one test
  * case: failed when its item failed, was cancelled or interrupted, else skipped.
  * A data-driven run is its iterations' suites in order, each suite name
- * suffixed ` [iteration N]`.
+ * suffixed ` [iteration N]`. A repository run is its projects' suites in order,
+ * each suite name prefixed `<project>: `, however many projects ran.
  */
 
 /** The workflow's name and nodes, for test case names. `Workflow` satisfies it. */
@@ -41,6 +42,13 @@ export type ReportInput =
       readonly title: string
       /** One input per iteration that ran, in order. */
       readonly iterations: readonly SingleReportInput[]
+    }
+  | {
+      readonly kind: "projects"
+      /** The workspace's name: what a repository run is called. */
+      readonly title: string
+      /** One input per project that ran, in run order. */
+      readonly projects: readonly SingleReportInput[]
     }
 
 /** One workflow run or one project run. */
@@ -91,8 +99,8 @@ interface Report {
   readonly status: string
   readonly startedAt: string | null
   readonly suites: readonly ReportSuite[]
-  /** Each iteration's status, for a data-driven run. */
-  readonly iterations?: readonly string[]
+  /** One status per iteration of a data-driven run, or per project of a repository run, under the label the summary gives that row. */
+  readonly rollup?: { readonly label: "Iterations" | "Projects"; readonly statuses: readonly string[] }
 }
 
 const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "note"])
@@ -101,16 +109,12 @@ const NOT_TEST_NODES: ReadonlySet<string> = new Set(["start", "end", "group", "n
 
 function toReport(input: ReportInput): Report {
   if (input.kind === "iterations") {
-    const reports = input.iterations.map(toReport)
-    return {
-      title: input.title,
-      status: reports.find((report) => report.status !== "completed")?.status ?? "completed",
-      startedAt: reports[0]?.startedAt ?? null,
-      suites: reports.flatMap((report, index) =>
-        report.suites.map((suite) => ({ ...suite, name: `${suite.name} [iteration ${index + 1}]` })),
-      ),
-      iterations: reports.map((report) => report.status),
-    }
+    return combine(input.title, input.iterations.map(toReport), "Iterations", (_report, suite, index) => `${suite.name} [iteration ${index + 1}]`)
+  }
+  if (input.kind === "projects") {
+    // Two projects can both hold a "Login", so the project's name always leads: a suite is named the same
+    // whether or not other projects ran (--bail and skipped projects change how many did).
+    return combine(input.title, input.projects.map(toReport), "Projects", (report, suite) => `${report.title}: ${suite.name}`)
   }
   if (input.kind === "run") {
     const name = input.workflow?.name ?? input.run.workflowId
@@ -148,6 +152,22 @@ function toReport(input: ReportInput): Report {
         cases: [{ name: item.workflowName, type: "workflow", outcome: failed ? "failed" : "skipped", durationMs: 0, message: reason, details: [], attempts: null, logs: [] }],
       }
     }),
+  }
+}
+
+/** One report out of several: the first that did not complete sets the status, and each suite is named by `suiteName`. */
+function combine(
+  title: string,
+  reports: readonly Report[],
+  label: "Iterations" | "Projects",
+  suiteName: (report: Report, suite: ReportSuite, index: number) => string,
+): Report {
+  return {
+    title,
+    status: reports.find((report) => report.status !== "completed")?.status ?? "completed",
+    startedAt: reports[0]?.startedAt ?? null,
+    suites: reports.flatMap((report, index) => report.suites.map((suite) => ({ ...suite, name: suiteName(report, suite, index) }))),
+    rollup: { label, statuses: reports.map((report) => report.status) },
   }
 }
 
@@ -515,9 +535,10 @@ export function buildConsoleReport(input: ReportInput, color: boolean): string {
     ["Workflows", report.suites.length, passedSuites, report.suites.length - passedSuites - skippedSuites, skippedSuites],
     ["Steps", cases.tests, cases.tests - cases.failures - cases.skipped, cases.failures, cases.skipped],
   ]
-  if (report.iterations !== undefined) {
-    const passed = report.iterations.filter((status) => status === "completed").length
-    rows.splice(1, 0, ["Iterations", report.iterations.length, passed, report.iterations.length - passed, 0])
+  if (report.rollup !== undefined) {
+    const { label, statuses } = report.rollup
+    const passed = statuses.filter((status) => status === "completed").length
+    rows.splice(1, 0, [label, statuses.length, passed, statuses.length - passed, 0])
   }
   const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => String(row[column]).length)))
   for (const row of rows) {

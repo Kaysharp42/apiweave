@@ -41,13 +41,10 @@ import type { OAuthTokenStatus } from "@shared/types/OAuthTokenStatus";
 import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
-import type { ProjectFolderBridge } from "@shared/types/ProjectFolderBridge";
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
-import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult";
-import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -146,7 +143,6 @@ declare global {
     __APIWEAVE_AGENTS__?: AgentsBridge;
     __APIWEAVE_OAUTH__?: OAuthBridge;
     __APIWEAVE_NETWORK__?: NetworkBridge;
-    __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
     __APIWEAVE_GIT__?: GitBridge;
     apiweave?: typeof apiweave;
   }
@@ -166,7 +162,6 @@ type GlobalWithApiweave = typeof globalThis & {
   __APIWEAVE_AGENTS__?: AgentsBridge;
   __APIWEAVE_OAUTH__?: OAuthBridge;
   __APIWEAVE_NETWORK__?: NetworkBridge;
-  __APIWEAVE_PROJECT_FOLDERS__?: ProjectFolderBridge;
   __APIWEAVE_GIT__?: GitBridge;
 };
 
@@ -1200,39 +1195,6 @@ export const network = {
     getNetworkBridge()?.chooseFile() ?? networkDesktopOnly(),
 } as const;
 
-function getProjectFolderBridge(): ProjectFolderBridge | undefined {
-  return (
-    globalThis.window?.__APIWEAVE_PROJECT_FOLDERS__ ??
-    globalApiweave.__APIWEAVE_PROJECT_FOLDERS__
-  );
-}
-
-const projectFoldersDesktopOnly = (): Promise<never> =>
-  Promise.reject(
-    new Error("Project folders are only available in the desktop app"),
-  );
-
-/**
- * Export a project to a folder / import one back. Each opens the native folder
- * picker in main and resolves to null when it is cancelled. A sibling of
- * `network`, off the router facade: see `ProjectFolderBridge`.
- */
-export const projectFolders = {
-  exportProject: (
-    workspaceId: string,
-    projectId: string,
-  ): Promise<ProjectFolderExportResult | null> =>
-    getProjectFolderBridge()
-      ?.exportProject({ workspaceId, projectId })
-      .catch(unwrapRemoteError) ?? projectFoldersDesktopOnly(),
-  importProject: (
-    workspaceId: string,
-  ): Promise<ProjectFolderImportResult | null> =>
-    getProjectFolderBridge()
-      ?.importProject({ workspaceId })
-      .catch(unwrapRemoteError) ?? projectFoldersDesktopOnly(),
-} as const;
-
 function getGitBridge(): GitBridge | undefined {
   return globalThis.window?.__APIWEAVE_GIT__ ?? globalApiweave.__APIWEAVE_GIT__;
 }
@@ -1243,7 +1205,7 @@ const gitDesktopOnly = (): Promise<never> =>
   );
 
 /**
- * A workspace's version history in git. A sibling of `projectFolders`, off
+ * A workspace's version history in git. A sibling of `network`, off
  * the router facade: see `GitBridge`. Every call resolves to the workspace's
  * status after it.
  */

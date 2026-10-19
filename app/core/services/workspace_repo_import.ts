@@ -195,7 +195,7 @@ export class WorkspaceRepoImporter {
     const projectIds = new Set(snapshot.projects.map((project) => project.projectId))
     for (const workflow of snapshot.workflows) {
       if (workflow.projectId !== null && !projectIds.has(workflow.projectId)) {
-        throw new ValidationError(`workflow ${workflow.workflowId} names project ${workflow.projectId}, which is missing from the snapshot`)
+        throw new ValidationError(`workflows/*--${workflow.workflowId}.json names project ${workflow.projectId}, but there is no projects/*--${workflow.projectId}.json`)
       }
     }
   }

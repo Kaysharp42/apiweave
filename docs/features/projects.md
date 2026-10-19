@@ -168,7 +168,7 @@ To import:
 
 Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
 
-To keep a project in a git repository instead, use **Export to Folder** and **Import from Folder** in the same dialogs: one JSON file per workflow, updated in place and matched by id on import. See [Keep Tests in a Git Repository](../guides/git-workflows.md).
+A `.awecollection` file is the way to hand someone a copy of one project. To keep a whole workspace under version control instead, it can be tracked in a local git repository (one JSON file per project, workflow and environment) that `apiweave run` also reads. See [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
 A Postman collection imports into a new project from the same menu (**Import → Postman**); see [Migrate from Postman](../guides/migrating-from-postman.md).
 

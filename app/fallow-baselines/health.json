@@ -903,7 +903,6 @@
     "core/services/assertion_authoring_service.ts:high impact",
     "core/services/workflow_service.ts:complexity",
     "src/hooks/useCloudSync.ts:high impact",
-    "core/services/project_folder.ts:high impact",
     "src/components/atoms/flow/BaseNode.tsx:complexity",
     "core/runner/scheduler.ts:complexity",
     "src/components/node-modal/HttpRequestOutputPanel.tsx:complexity",

@@ -71,10 +71,9 @@ import { assertNoSecretValues, sanitizeExportValue, sanitizeVariablesForExport }
  * per-tree size limits, the schema of every file it reads, record ids that can
  * name a file and a file name matching the id it holds, and
  * `assertNoSecretValues` for forbidden secret-*storage* fields (`ciphertext`,
- * `kek`, ...) anywhere. It does NOT reject a literal credential in a file: the
- * folder import accepts one a user typed deliberately, and a later PR
- * generalizes that logic, so a literal is accepted here and withheld as
- * `<SECRET>` the next time the tree is written — the file heals on sync.
+ * `kek`, ...) anywhere. It does NOT reject a literal credential in a file: a
+ * user may type one deliberately, so a literal is accepted here and withheld
+ * as `<SECRET>` the next time the tree is written — the file heals on sync.
  */
 
 const WORKSPACE_FORMAT = "apiweave-workspace"
@@ -87,7 +86,9 @@ const MAX_TREE_BYTES = 100 * 1024 * 1024
 const MAX_SLUG_LENGTH = 60
 
 /** What an id generated here looks like (a ULID), loosely: an id also names files and rows, so nothing path-like gets in. */
-export const RecordIdSchema = z.string().regex(/^[A-Za-z0-9_-]+$/, "must be an APIWeave id (letters, digits, '-' and '_')")
+export const RecordIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_][A-Za-z0-9_-]*$/, "must be an APIWeave id (letters, digits, '-' and '_', not starting with '-')")
 
 /**
  * A JSON value that must also satisfy `schema`, kept exactly as written:
@@ -259,7 +260,7 @@ export function parseWorkspace(files: ReadonlyMap<string, string>): WorkspaceSna
   }
 }
 
-/** A workflow as it leaves the app (a bundle, a project folder, a workspace repository): credentials withheld, ids kept. */
+/** A workflow as it leaves the app (a bundle, a workspace repository): credentials withheld, ids kept. */
 export function exportWorkflow(workflow: WorkflowContent): ExportedWorkflow {
   return {
     workflowId: workflow.workflowId,
@@ -280,13 +281,9 @@ export function exportNode(node: unknown): JsonValue {
   return plain
 }
 
-/** A workflow's project-folder file. Also how an import decides a workflow is unchanged: same text, same workflow. */
+/** A workflow's file text, without its project link. Also how an import decides a workflow is unchanged: same text, same workflow. */
 export function workflowFileText(workflow: ExportedWorkflow): string {
   return fileText(workflowDocument(workflow))
-}
-
-export function environmentFileText(environment: EnvironmentContent): string {
-  return fileText(environmentDocument(environment))
 }
 
 /** JSON with every object's keys sorted, so equal values print equal. */
@@ -305,7 +302,7 @@ export function nameSlug(name: string): string {
 }
 
 /** `text` as JSON, or a ValidationError naming `label`. */
-export function parseJsonText(label: string, text: string): unknown {
+function parseJsonText(label: string, text: string): unknown {
   try {
     return JSON.parse(text)
   } catch (error) {
@@ -361,7 +358,7 @@ function projectDocument(project: ProjectContent): Record<string, JsonValue> {
   }
 }
 
-/** The project-folder file's fields, with `head` (the workspace repository's project link) right after the id. */
+/** The workflow file's fields, with `head` (the workspace repository's project link) right after the id. */
 function workflowDocument(workflow: ExportedWorkflow, head: Readonly<Record<string, JsonValue>> = {}): Record<string, JsonValue> {
   return {
     workflowId: workflow.workflowId,
@@ -416,13 +413,18 @@ function byId<T>(records: readonly T[], idOf: (record: T) => string): T[] {
   return [...records].sort((left, right) => compare(idOf(left), idOf(right)))
 }
 
+/** One file past its limit is refused; a reader calls this with the size on disk, before it reads the file. */
+export function checkFileSize(path: string, bytes: number): void {
+  if (bytes > MAX_FILE_BYTES) throw new ValidationError(`${path} is ${bytes} bytes; a repository file may be at most ${MAX_FILE_BYTES}`)
+}
+
 /** Every path relative, `/`-separated and inside the tree; no file or tree past its size limit. */
 function checkTree(files: ReadonlyMap<string, string>): void {
   let total = 0
   for (const [path, text] of files) {
     if (!isTreePath(path)) throw new ValidationError(`refusing ${JSON.stringify(path)}: a repository path must be relative, '/'-separated and stay inside the repository`)
     const bytes = Buffer.byteLength(text, "utf8")
-    if (bytes > MAX_FILE_BYTES) throw new ValidationError(`${path} is ${bytes} bytes; a repository file may be at most ${MAX_FILE_BYTES}`)
+    checkFileSize(path, bytes)
     total += bytes
     if (total > MAX_TREE_BYTES) throw new ValidationError(`${path} pushes the repository over its ${MAX_TREE_BYTES}-byte limit (${total} bytes in total); at most ${MAX_TREE_BYTES} are read`)
   }

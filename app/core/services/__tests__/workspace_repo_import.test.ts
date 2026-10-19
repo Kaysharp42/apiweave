@@ -123,7 +123,7 @@ it("WorkspaceRepoImporter upserts by id, removes absent workspace records and pr
     expect(store.changes).toEqual([{ kind: "delete", workflowId: "wf-extra" }])
 })
 
-it("WorkspaceRepoImporter keeps redacted literals, but replaces a genuinely changed value and returns the folder warning", () => {
+it("WorkspaceRepoImporter keeps redacted literals, but replaces a genuinely changed value and returns the placeholder warning", () => {
     const store = openStore()
     seed(store)
     const snapshot = snapshotOf(store)
@@ -263,7 +263,7 @@ it("WorkspaceRepoImporter refuses workflows attached to a project absent from th
       ;(workflow as { projectId: string | null }).projectId = "proj-ghost"
     })
 
-    expect(() => store.importer.apply(store.workspaceId, snapshot)).toThrow(/workflow wf-free names project proj-ghost.*missing from the snapshot/)
+    expect(() => store.importer.apply(store.workspaceId, snapshot)).toThrow(/workflows\/\*--wf-free\.json names project proj-ghost, but there is no projects\/\*--proj-ghost\.json/)
     expect(store.workspaces.getById(store.workspaceId)?.name).toBe("Workspace")
 })
 

@@ -1,134 +1,121 @@
 # Keep Tests in a Git Repository
 
-*How to export a project to a folder of JSON files, commit it, review changes as diffs, pull a teammate's changes back into the app, and run the same folder in CI. For teams that want their API tests next to the code they test.*
+*How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
+
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message) and **Stop tracking**. That repository lives on your machine, in the app's data folder. This release does **not** push, pull or import: there is no remote to set, and nothing reads a repository back into the app. `apiweave run` runs a repository's files in CI, so a checkout of one is all a pipeline needs.
 
 ## Prerequisites
 
-- A project with the workflows you want to keep. See [Projects](../features/projects.md).
-- A git repository (or any folder) to export into.
-- Secrets referenced as `{{secrets.NAME}}`, not typed into requests. The folder never holds secret values; see [Secrets](#secrets).
+- Git installed on the machine. APIWeave runs your own `git`, so its credential helpers and your configured author apply.
+- Secrets referenced as `{{secrets.NAME}}`, not typed into requests. A repository never holds secret values; see [Secrets](#secrets).
 
 ## How it works
 
-APIWeave stores everything in its local database. **Export to Folder** writes one project as plain JSON files that diff and merge well; **Import from Folder** reads them back into the same project, matched by id. `apiweave run <folder>` runs the folder in CI with no database at all.
+APIWeave keeps everything in its local database, and the database stays the source of truth. A tracked workspace is also written as a tree of JSON files, a projection of the database that is the same on every machine, and each change to the workspace becomes a commit of that tree. In **auto** mode (the default) a commit is made about 30 seconds after your last edit; in **manual** mode only **Commit now** commits. Nothing is committed when the tree has not changed.
+
+A repository is also a format other tools can read: `apiweave run` takes a folder with this layout directly, with no database at all. See [Run a repository in CI](#run-a-repository-in-ci).
+
+## Repository layout
 
 ```text
-apiweave/
-├── project.json               # name, workflow order, enabled / continue on fail, the files below, secret names
-├── workflows/
-│   ├── login.json             # one file per workflow
-│   └── orders-list.json
-└── environments/
-    └── staging.json           # one file per environment the workflows use: variables only
+.apiweave/format.json              {"format": "apiweave-workspace", "version": 1}
+.gitattributes                     * text eol=lf
+workspace.json                     workspace id, name, description
+projects/<slug>--<id>.json         name, description, color, workflow order (workflowId, enabled, continueOnFail)
+workflows/<slug>--<id>.json        one file per workflow, including workflows in no project
+environments/<slug>--<id>.json     workspace-scoped environments: name, description, swaggerDocUrl, isDefault, variables
 ```
 
-The format is the same data as an `.awecollection` bundle, split per workflow and written deterministically:
+- A folder holding `.apiweave/format.json` is a workspace repository; `apiweave run` detects one that way.
+- **The folders are flat.** Moving a workflow between projects edits two JSON fields (the workflow's `projectId` and the projects' `workflowOrder`) and moves no file.
+- A file is named `<slug>--<id>.json`. The slug is the name in lowercase (`Orders / list` → `orders-list`) and is only cosmetic: the id inside the file is the identity, and the name must end in it. Renaming a workflow renames its file; git's rename detection and the id keep that a clean change.
+- Only the files above belong to APIWeave. A `README.md`, CI configuration or any other file you keep in the repository is left alone.
 
-- **One workflow per file**, so two people editing two workflows never touch the same file.
-- **Stable order**: keys sorted inside every object (the top-level fields keep a fixed order), nodes sorted by id with a group frame before the nodes inside it, edges sorted by id, workflows listed in `project.json` in the project's run order.
-- **Nothing volatile**: no revision numbers, timestamps, run results or workspace ids. Node positions stay, rounded to whole pixels, because the canvas needs them.
-- **2-space indent and a trailing newline.** Exporting an unchanged project rewrites nothing, and changing one node changes only that node's lines in that workflow's file.
-- **Ids are the identity.** Every workflow, environment and the project keep their ids; a file name is just the slug of the name (`Orders / list` → `orders-list.json`). Renaming a workflow renames its file. Two workflows with the same slug get the id appended to the second one's file name.
+## Determinism
 
-`project.json` looks like this:
+Every file is written the same way on every machine, so a change reviews as a small diff and two people's edits rarely touch the same lines:
 
-```json
-{
-  "format": "apiweave-project",
-  "version": 1,
-  "projectId": "01K6Z4D1V3N8Q2J5W7X9Y0A1B2",
-  "name": "Shop API",
-  "description": "",
-  "color": "#3B82F6",
-  "workflows": [
-    { "workflowId": "01K6Z4F0M2...", "file": "workflows/orders-list.json", "enabled": true, "continueOnFail": false },
-    { "workflowId": "01K6Z4E8K7...", "file": "workflows/login.json", "enabled": true, "continueOnFail": true }
-  ],
-  "environments": [
-    { "environmentId": "01K6Z4C9P1...", "file": "environments/staging.json" }
-  ],
-  "secrets": ["API_TOKEN"]
-}
-```
+- **Sorted keys** inside every object; the top-level fields keep a fixed order.
+- **Sorted lists**: nodes by id, with a group frame before the nodes inside it; edges by id; each folder's files by id.
+- **Positions rounded** to whole pixels, because the canvas needs them but not their fractions.
+- **2-space indent, LF line endings and a trailing newline**; `.gitattributes` keeps git from converting them.
+- **Nothing volatile**: no revision numbers, timestamps, run results or local paths.
+- **Only changed files are written**, and a file with no record behind it is removed, so an unchanged workspace changes nothing.
 
-## Export a project to a folder
-
-1. In the sidebar, open the project's actions and click **Export project**.
-2. Click **Export to Folder…** and pick a folder, for example `apiweave/` in your repository. Create it from the picker if it does not exist.
-3. Commit the folder.
-
-To update the folder later, export again into the same folder. APIWeave rewrites the files that changed, leaves the others untouched, and removes the files of workflows that were deleted from the project or renamed. It only ever removes files the previous `project.json` listed: a `README.md`, a `.gitignore` or anything else you keep in the folder stays.
-
-The export refuses, without writing anything, when:
-
-- the folder's `project.json` belongs to another project. Each project gets its own folder.
-- a file it would write already exists and the previous `project.json` does not list it. Move that file away, or pick another folder.
-
-## Import a folder
-
-After a `git pull`, bring the changes into the app:
-
-1. In the sidebar's **Import** menu for projects, click **Collection**.
-2. Click **Import from Folder…** and pick the folder.
-
-The import makes the project match the folder, matched by id:
-
-- A workflow the folder has and the workspace does not is created with the folder's id. So is the project, and each environment.
-- A workflow that changed is rewritten through the normal save path, so its previous version is kept in its [version history](../features/workflows-and-nodes.md#version-history) with the source **import**. An open canvas picks up the change.
-- A workflow whose file matches what an export would write is left alone: no new version, no change to its revision.
-- A workflow in the project that the folder no longer has is moved out of the project, not deleted. You find it among the workspace's workflows outside any project, and the import result names it.
-- An environment's variables are replaced by the folder's; its secrets are not touched.
-
-A folder maps to one workspace. Importing it into a second workspace is refused, because its ids already exist in the first; to copy a project into another workspace, export it as an `.awecollection` bundle and import that instead.
+The id is part of every file name, so two people creating "Get user" at the same time never collide on a path.
 
 ## Secrets
 
-Secret values never reach the folder:
+Secret values never reach a repository:
 
-- `{{secrets.NAME}}` references stay as written, and `project.json` lists every name the project uses under `secrets`. Add each one on every machine that runs the project: in the app (an import result lists the ones missing from the workspace), or as `APIWEAVE_SECRET_<NAME>` in CI.
+- `{{secrets.NAME}}` references stay as written, so the repository says which secrets a workflow uses and CI supplies each as `APIWEAVE_SECRET_<NAME>`.
 - A credential typed straight into a request or a variable is withheld, the way an `.awecollection` export withholds it: it becomes `<SECRET>`, or a secret-named header is left out.
+- Secret values, their ciphertext and keys, and the list of secret names stored on this machine are never written.
+- Never written either: user-scoped environments, run history, node presets, agents, workflow revisions and an environment's base environment.
 
-A withheld value survives a round trip as long as nobody changes that part of the workflow: when a node's config, a variable or an environment variable in the folder reads exactly as the export wrote it, the import keeps the stored value. When it was changed in the folder, the folder's version wins and the credential is gone from that node; the import warns about any `<SECRET>` placeholder it stored, and the version before the import is in the workflow's history. Move such credentials to secrets before you share the folder.
+A request that sends `<SECRET>` comes from a withheld credential. Replace it with a `{{secrets.NAME}}` reference in the app; the next commit writes the reference.
 
-## Work as a team
+## Track a workspace
 
-1. Each person keeps the project in APIWeave and the folder in the repository.
-2. After editing in the app, **Export to Folder**, review the diff, and commit.
-3. After pulling, **Import from Folder** so the app sees the teammates' changes.
+1. Open **Settings → Workspace settings → Version history (git)**.
+2. Click **Track this workspace**. The first commit holds the whole workspace.
+3. Leave **Commit automatically** on, or turn it off to commit only with **Commit now**, optionally with a message. Left empty, the message names the files the commit changed.
 
-Because each workflow is its own file and every file is written the same way on every machine, most merges are automatic. Two people changing the same workflow conflict in that one file, on the lines they both changed; resolve it like any JSON conflict and import the result. A file left with conflict markers fails the import with "not valid JSON (an unresolved merge conflict?)" and changes nothing. Adding workflows on two branches touches the `workflows` list in `project.json` on both; keep both entries.
+If git does not know who you are, the panel asks for a name and email once and keeps them in this workspace's repository only; your global git configuration is not touched.
 
-Export before you pull if you have unexported changes: an import replaces a workflow's content with the folder's (its previous version stays in history, but it is not merged).
+The repository is an ordinary git repository at `<userData>/git/<workspace id>/`; see [Installation](../getting-started/installation.md) for where `<userData>` is. It is browsable with any git tool, and only APIWeave should write there. **Stop tracking** deletes that repository and its commits; the workspace itself is not changed.
 
-## Run the folder in CI
+## Get a repository into CI
 
-`apiweave run` takes the folder directly, with the same importer the app uses:
+Until a release can push for you, this is the route from the app's repository to a pipeline. Clone the app's repository out of its data folder into a checkout of your own, and push **that clone** to your host:
 
 ```bash
-apiweave run ./apiweave --env Staging
-apiweave run ./apiweave --workflow "Login" --env Staging
+git clone "<userData>/git/<workspace id>" my-tests    # your own copy; its origin is the app's repository
+cd my-tests
+git remote add host https://git.example.com/acme/my-tests.git
+git push -u host HEAD
 ```
 
-Every option of [Run Tests in CI](ci.md) works the same way. Secrets come from `APIWEAVE_SECRET_<NAME>`, `--secret` or `--secrets-file`.
+Run `apiweave run ./my-tests` there, or let your pipeline check out `host`. To bring in later changes, `git pull` inside the clone (its `origin` is the local path), then `git push host`. Only committed changes travel: in manual mode, use **Commit now** first.
 
-## Not covered
+**Do not add a remote inside the app's own repository** (`<userData>/git/<workspace id>`), and do not edit or commit in it. Only APIWeave writes there; it is the app's working copy, and the clone is the one that is yours.
 
-- **No linked folder.** Export and import are one-shot actions; nothing watches the folder or exports on save. Export when you want to commit, import after you pull.
-- **One project per folder.** A whole workspace is several folders, one per project.
-- **Environment inheritance is not carried.** An environment's base environment is not exported, as with `.awecollection` bundles; put the variables a run needs in the environment itself.
-- **Version history stays local.** The folder holds the current version; git holds the history of the folder.
+## Run a repository in CI
+
+`apiweave run` takes the repository folder directly, with the same importer the app uses, and never needs git installed:
+
+```bash
+apiweave run ./tests --env Staging                       # every project
+apiweave run ./tests --project "Shop API" --env Staging  # one project
+apiweave run ./tests --workflow "Login" --env Staging    # one workflow
+```
+
+- **Default: every project**, one after another, in the repository's own order (projects by id). A project with no enabled workflow is skipped with a line on stderr. A workflow that is in no project is not part of a default run: pick it with `--workflow`.
+- `--project <name|id>` runs one project. An unknown or ambiguous name exits `2` and lists the projects.
+- `--workflow <name|id>` runs one workflow, of the `--project` when given and of the whole repository otherwise, so it can reach a workflow that is in no project.
+- `--env` picks one of the repository's environments by name; without it each workflow runs against the environment it was saved with.
+- Exit code `0` when everything passed, `1` when a test failed, `2` for a usage or configuration error, such as a missing secret or an invalid file (the message names the file).
+- `--bail` also stops the sequence at the first project that did not complete.
+
+A `.awecollection` bundle, a single workflow export and a Postman collection still run with the same command. Every option, the reports and a GitHub Actions job are in [Run Tests in CI](ci.md).
+
+## Not covered in this release
+
+- **No remote.** Nothing pushes or pulls, and a repository is not imported back into the app.
+- **Environment inheritance is not carried.** An environment's base environment is not written; put the variables a run needs in the environment itself.
+- **Local history stays separate.** A workflow's [version history](../features/workflows-and-nodes.md#version-history) in the app is not the git history.
 
 ## Troubleshooting
 
-- **If the export says the folder holds another project**, you picked the folder of a different project. Pick that project's folder or an empty one.
-- **If the export refuses to overwrite a file**, a file with the same name exists but is not listed in `project.json`. Move it, or pick another folder.
-- **If the import says the ids already belong to another workspace**, this folder was imported into another workspace before. Import it there, or use an `.awecollection` bundle to copy the project.
-- **If `project.json` is not an APIWeave project file**, it was edited by hand or written by a newer APIWeave. The message names the field at fault. A `file` entry must be directly under `workflows/` or `environments/`.
-- **If a request sends `<SECRET>`**, the folder holds a withheld credential. Replace it with a `{{secrets.NAME}}` reference in the app and export again.
+- **If tracking fails because git is not found**, install git and make sure it is on your `PATH`.
+- **If a commit asks who you are**, enter a name and email in the panel; they are saved in this workspace's repository only.
+- **If `apiweave run` says `.apiweave/format.json is missing`**, the folder is not a workspace repository. Point it at the folder that holds `.apiweave/`.
+- **If `apiweave run` names a file as invalid**, the file was edited by hand or has an unresolved merge conflict. Fix that file; the message names it and the problem.
+- **If a request sends `<SECRET>`**, the repository holds a withheld credential. Replace it with a `{{secrets.NAME}}` reference in the app.
 
 ## Related
 
-- [Projects](../features/projects.md): project runs and `.awecollection` bundles.
 - [Run Tests in CI](ci.md): every `apiweave run` option and a GitHub Actions job.
+- [Projects](../features/projects.md): project runs and `.awecollection` bundles.
 - [Environments and Secrets](../features/environments-and-secrets.md): secrets and how references resolve.
-- [Workflows and Nodes: Version history](../features/workflows-and-nodes.md#version-history): what an import keeps of the version it replaces.
+- [Workflows and Nodes: Version history](../features/workflows-and-nodes.md#version-history): a workflow's own saved versions.
