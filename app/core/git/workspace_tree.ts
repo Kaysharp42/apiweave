@@ -87,7 +87,7 @@ async function readPlainFile(directory: string, relative: string): Promise<strin
   }
 }
 
-/** The caps the tree walk enforces while it reads; both default to the format's own limits. */
+/** The caps the tree walk enforces as it reads files; both default to the format's own limits. */
 export interface ReadWorkspaceTreeOptions {
   /** At most this many bytes in total. Defaults to {@link MAX_TREE_BYTES}. */
   readonly maxTotalBytes?: number
@@ -105,10 +105,12 @@ export interface ReadWorkspaceTreeOptions {
  * refused, and so is an oversized one before it is read. A missing file is
  * simply absent; `parseWorkspace` says what a repository lacks.
  *
- * The tree's own caps are enforced as it reads, not afterwards by
+ * The tree's own caps are enforced as files are read, not afterwards by
  * `parseWorkspace`: bytes and a file count accumulate per file, and the walk
  * refuses the file that crosses either, so an untrusted repository cannot make
- * the app materialise a whole tree before the totals are known.
+ * the app hold a whole tree's contents before the totals are known. The
+ * entries are listed and `lstat`ed first, before either cap applies: the
+ * listing holds names only, never contents.
  */
 export async function readWorkspaceTree(
   directory: string,

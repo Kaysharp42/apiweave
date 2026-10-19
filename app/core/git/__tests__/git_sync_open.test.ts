@@ -9,6 +9,9 @@ import { makeBareRemote, rawGit } from "./git_test_utils"
 
 const NOT_A_WORKSPACE = /\.apiweave\/format\.json is missing: this is not an APIWeave workspace repository/
 
+/** What an open puts in its clone's `.git` until the workspace's rows are committed. */
+const OPEN_MARKER = "apiweave-open"
+
 function seed(harness: Harness): void {
   const { workspaceId, repositories } = harness
   const project = repositories.collections.create({
@@ -86,6 +89,7 @@ describe("GitSyncService.openFromGit", () => {
     expect(result).toEqual({ kind: "opened", workspaceId: source.workspaceId, slug: "acme-qa-2", name: "Acme QA", warnings: [] })
     const clone = path.join(target.cloneRoot, source.workspaceId)
     expect(fs.existsSync(path.join(clone, ".git"))).toBe(true)
+    expect(fs.existsSync(path.join(clone, ".git", OPEN_MARKER))).toBe(false)
     expect(entries(target.cloneRoot)).toEqual([source.workspaceId])
     expect(binding(target, source.workspaceId)).toMatchObject({
       mode: "auto",
@@ -169,12 +173,59 @@ describe("GitSyncService.openFromGit", () => {
     const head = rawGit(unclaimed, target.sandbox.env, "rev-parse", "HEAD").trim()
 
     await expect(target.sync.openFromGit(url)).rejects.toThrow(/no workspace in this app claims it/)
+    await target.sync.reconcile()
 
     expect(rawGit(unclaimed, target.sandbox.env, "rev-parse", "HEAD").trim()).toBe(head)
     expect(fs.readFileSync(path.join(unclaimed, "local-only.txt"), "utf8")).toBe("not on the remote\n")
     expect(entries(target.cloneRoot)).toEqual([source.workspaceId])
     expect(target.repositories.workspaces.listAll().map((workspace) => workspace.workspaceId)).toEqual([target.workspaceId])
     expect(target.repositories.workspaceGit.get(source.workspaceId)).toBeUndefined()
+  })
+
+  describe("the clone of an open that crashed after moving it into place", () => {
+    /** `<cloneRoot>/<id>` as a crash between the move and the commit of the rows leaves it: marked, and claimed by no row. */
+    async function strandedOpen(target: Harness, url: string, workspaceId: string): Promise<string> {
+      const stranded = path.join(target.cloneRoot, workspaceId)
+      await target.git.clone(url, stranded)
+      fs.writeFileSync(path.join(stranded, ".git", OPEN_MARKER), "")
+      return stranded
+    }
+
+    it("is removed by reconcile, after which the repository opens", async () => {
+      const { source, url } = await publishedWorkspace()
+      const target = openHarness()
+      await strandedOpen(target, url, source.workspaceId)
+
+      await target.sync.reconcile()
+
+      expect(entries(target.cloneRoot)).toEqual([])
+      expect(await target.sync.openFromGit(url)).toMatchObject({ kind: "opened", workspaceId: source.workspaceId })
+      expect(fs.existsSync(path.join(target.cloneRoot, source.workspaceId, ".git", OPEN_MARKER))).toBe(false)
+    })
+
+    it("is replaced by a re-open without waiting for reconcile", async () => {
+      const { source, url } = await publishedWorkspace()
+      const target = openHarness()
+      const stranded = await strandedOpen(target, url, source.workspaceId)
+      fs.writeFileSync(path.join(stranded, "leftover.txt"), "from the crashed open\n")
+
+      expect(await target.sync.openFromGit(url)).toMatchObject({ kind: "opened", workspaceId: source.workspaceId })
+
+      expect(fs.existsSync(path.join(stranded, "leftover.txt"))).toBe(false)
+      expect(fs.existsSync(path.join(stranded, ".git", OPEN_MARKER))).toBe(false)
+      expect(binding(target, source.workspaceId).remoteUrl).toBe(url)
+    })
+
+    it("is kept by reconcile once a row claims it, which only drops the stale marker", async () => {
+      const { source } = await publishedWorkspace()
+      fs.writeFileSync(path.join(source.dir, ".git", OPEN_MARKER), "")
+      const head = rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim()
+
+      await source.sync.reconcile()
+
+      expect(rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim()).toBe(head)
+      expect(fs.existsSync(path.join(source.dir, ".git", OPEN_MARKER))).toBe(false)
+    })
   })
 
   it("refuses a repository whose id differs from a workspace here only in letter case, naming both", async () => {
@@ -196,6 +247,54 @@ describe("GitSyncService.openFromGit", () => {
     expect(fs.readFileSync(path.join(upperClone, "keep.txt"), "utf8")).toBe("mine\n")
     expect(entries(target.cloneRoot)).toEqual(["ABC"])
     expect(target.repositories.workspaces.listAll().map((workspace) => workspace.workspaceId).sort()).toEqual(["ABC", target.workspaceId].sort())
+  })
+
+  it("refuses a repository whose workspace id is a Windows device name, before any folder is named after it", async () => {
+    const flyer = openHarness()
+    seed(flyer)
+    const files = serializeWorkspace(snapshotOf(flyer))
+    files.set("workspace.json", `${JSON.stringify({ ...(JSON.parse(files.get("workspace.json")!) as object), workspaceId: "NUL" }, null, 2)}\n`)
+    const target = openHarness()
+
+    await expect(target.sync.openFromGit(await publishFiles(target, "device", files))).rejects.toThrow(
+      /workspace\.json: workspaceId: must be an APIWeave id, not a name Windows reserves for a device/,
+    )
+
+    expectNothingCreated(target)
+  })
+
+  it("does not hold dispose for an open still cloning, and creates nothing when the clone finishes", async () => {
+    const { url } = await publishedWorkspace()
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let cloned: () => void = () => undefined
+    const cloning = new Promise<void>((resolve) => {
+      cloned = resolve
+    })
+    const target = openHarness({
+      disposeWaitMs: 50,
+      wrap: (git) => ({
+        ...passthrough(git),
+        clone: async (from, to, options) => {
+          await git.clone(from, to, options)
+          cloned()
+          // Still downloading, as far as anyone waiting can tell.
+          await gate
+        },
+      }),
+    })
+    const open = target.sync.openFromGit(url)
+    await cloning
+
+    const began = Date.now()
+    await target.sync.dispose()
+    expect(Date.now() - began).toBeLessThan(2_000)
+
+    release()
+    await expect(open).rejects.toThrow("APIWeave is closing, so the workspace was not opened.")
+    expectNothingCreated(target)
   })
 
   it("returns the import's warnings with the opened workspace, for the caller to show", async () => {
@@ -351,7 +450,7 @@ describe("GitSyncService.openFromGit", () => {
     const target = openHarness({ wrap: (git) => ({ ...passthrough(git), clone }) })
 
     await expect(target.sync.openFromGit("http://example.com/repo.git")).rejects.toThrow(/Plain http:\/\/ is not accepted/)
-    await expect(target.sync.openFromGit("--upload-pack=touch x")).rejects.toThrow()
+    await expect(target.sync.openFromGit("--upload-pack=touch x")).rejects.toThrow("remote URL must not start with '-'")
 
     expect(clone).not.toHaveBeenCalled()
     expect(fs.existsSync(target.cloneRoot)).toBe(false)

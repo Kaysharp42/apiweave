@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdir, readdir, rename, rm, stat } from "node:fs/promises"
+import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
@@ -37,8 +37,10 @@ import {
   isCheckedOutBranchRefusal,
   isNoSuchRemote,
 } from "./git_errors"
+import { awaitWithin } from "./git_process"
 import type { GitService } from "./git_service"
 import type { GitAheadBehind, GitStatusEntry } from "./git_types"
+import { moveIntoPlace } from "./move_into_place"
 import { readWorkspaceTree, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
@@ -47,7 +49,11 @@ export const AUTO_COMMIT_DELAY_MS = 30_000
 /** How often the app looks at the remote by itself: a full cycle in auto mode, a fetch in manual mode. */
 export const SYNC_INTERVAL_MS = 5 * 60_000
 
-/** How long {@link GitSyncService.dispose} waits for a running cycle before letting the app quit; the next startup's reconcile repairs the rest. */
+/**
+ * How long {@link GitSyncService.dispose} waits for a running cycle or open
+ * before letting the app quit; the next startup's reconcile repairs or
+ * removes what it left behind.
+ */
 export const DISPOSE_WAIT_MS = 5_000
 
 const TRACK_MESSAGE = "Start tracking this workspace in APIWeave"
@@ -85,11 +91,18 @@ const LATE_DIVERGED_MESSAGE =
 
 /**
  * A scratch clone of an open in progress is `<cloneRoot>/.open-<random>`. No
- * workspace id can start with a `.`, so the prefix is the app's alone, and a
- * crash mid-open leaves only directories that {@link GitSyncService.reconcile}
- * can recognise and remove.
+ * workspace id can start with a `.`, so the prefix is the app's alone. Before
+ * it moves to `<cloneRoot>/<id>` the clone gets {@link OPEN_MARKER}, which goes
+ * once the workspace's rows are committed. So a crash mid-open leaves only
+ * directories that {@link GitSyncService.reconcile} can recognise and remove:
+ * a scratch clone, or a clone no row claims that carries the marker.
  */
 const OPEN_SCRATCH_PREFIX = ".open-"
+
+/** Inside `.git`, where no checkout or commit can put or remove it: `<cloneRoot>/<id>` is an open that has not finished. */
+const OPEN_MARKER = "apiweave-open"
+
+const DISPOSING_MESSAGE = "APIWeave is closing, so the workspace was not opened. Open it again after the next start."
 
 const NO_BRANCH_MESSAGE = "The repository has no branch checked out."
 const DEFAULT_BRANCH_EMPTY_MESSAGE =
@@ -139,7 +152,7 @@ export interface GitSyncServiceOptions {
   readonly autoCommitDelayMs?: number
   /** Defaults to {@link SYNC_INTERVAL_MS}; {@link GitSyncService.start} polls at this rate. */
   readonly syncIntervalMs?: number
-  /** Defaults to {@link DISPOSE_WAIT_MS}; how long {@link GitSyncService.dispose} waits for a running cycle. */
+  /** Defaults to {@link DISPOSE_WAIT_MS}; how long {@link GitSyncService.dispose} waits for a running cycle or open. */
   readonly disposeWaitMs?: number
   /** Told every status a call or an auto commit leaves behind. Must not throw. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
@@ -374,14 +387,20 @@ export class GitSyncService {
    * A clone already at the id, or a workspace id that collides with one here
    * only in letter case, is refused before anything is moved: a clone no row
    * claims may hold commits that are not on the remote, and a case-variant id
-   * would share one repository folder with the workspace already here. Nothing
-   * is left behind by a failure; a clone this call did not create is never
-   * removed.
+   * would share one repository folder with the workspace already here. The
+   * one clone at the id that is replaced is an earlier open's that never
+   * finished, recognised by {@link OPEN_MARKER}: it holds only what was
+   * downloaded. A failure leaves nothing behind but what a crash or a failed
+   * removal can strand — a scratch clone or a marked one, both of which
+   * {@link reconcile} removes; an unmarked clone this call did not create is
+   * never removed.
    *
    * One open at a time. It is slow, rare and user-initiated, and the
    * duplicate check is not atomic with the insert, so two opens of one id
    * must not fight over one clone. No status is announced: the workspace is
-   * new, and the caller reloads its list.
+   * new, and the caller reloads its list. An open that is still cloning when
+   * the service is disposed gives up once the clone is done, and creates
+   * nothing.
    */
   public openFromGit(url: string): Promise<OpenWorkspaceFromGitResult> {
     return this.inOpenQueue(() => this.openNow(url))
@@ -495,8 +514,9 @@ export class GitSyncService {
    * A clone no row claims is left exactly where it is. It is what restoring a
    * database from a backup that predates the row leaves behind, it may hold
    * the only copy of that history, and a later `track` adopts it. The one
-   * exception is a scratch clone of an open that never finished, which is the
-   * app's own and is removed.
+   * exception is what an open that never finished leaves — a scratch clone,
+   * or a clone that still carries {@link OPEN_MARKER} — which is the app's own
+   * download and is removed.
    */
   public async reconcile(): Promise<void> {
     await this.inOpenQueue(() => this.sweepOpenScratch())
@@ -581,10 +601,12 @@ export class GitSyncService {
   }
 
   /**
-   * Stop auto commits and wait for what is running, but not for ever: a cycle
-   * blocked on a network timeout must not hold the app open. Giving up leaves
-   * it running; the next startup's reconcile repairs what it left behind.
-   * What auto mode had pending is committed by that reconcile.
+   * Stop auto commits and wait for what is running, but at most
+   * {@link DISPOSE_WAIT_MS}: a cycle blocked on a network timeout, or an open
+   * still cloning, must not hold the app open. Giving up leaves it running —
+   * an open gives up by itself once its clone is done — and the next
+   * startup's reconcile repairs or removes what it left behind. What auto
+   * mode had pending is committed by that reconcile.
    */
   public async dispose(): Promise<void> {
     this.disposed = true
@@ -594,19 +616,12 @@ export class GitSyncService {
     }
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
-    await this.settleWithin(this.disposeWaitMs)
-  }
-
-  /** {@link settled}, bounded: log when the wait runs out rather than hanging the caller. */
-  private async settleWithin(ms: number): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const giveUp = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), ms)
-    })
-    const outcome = await Promise.race([this.settled().then(() => "settled" as const), giveUp])
-    if (timer !== undefined) clearTimeout(timer)
-    if (outcome === "timeout") {
-      log.warn(`gave up waiting ${ms} ms for running sync calls to settle; they carry on in the background`)
+    let settled = false
+    await awaitWithin(this.settled().then(() => {
+      settled = true
+    }), this.disposeWaitMs)
+    if (!settled) {
+      log.warn(`gave up waiting ${this.disposeWaitMs} ms for running sync calls to settle; they carry on in the background`)
     }
   }
 
@@ -624,14 +639,18 @@ export class GitSyncService {
     try {
       return await this.openFromScratch(remoteUrl, scratch)
     } finally {
-      // Gone already when the clone was moved into place.
-      await removeDirectory(scratch)
+      // Gone already when the clone was moved into place. A scratch clone that
+      // will not go is the startup sweep's, and must not hide how the open ended.
+      await removeDirectory(scratch).catch((cleanupError: unknown) => {
+        log.warn("could not remove the scratch clone of an open", cleanupError)
+      })
     }
   }
 
   private async openFromScratch(remoteUrl: string, scratch: string): Promise<OpenWorkspaceFromGitResult> {
     const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
     await this.git.clone(remoteUrl, scratch)
+    this.assertNotDisposed()
     await this.assertCheckedOut(scratch)
     const snapshot = parseWorkspace(await readWorkspaceTree(scratch))
     const workspaceId = snapshot.workspace.workspaceId
@@ -646,28 +665,41 @@ export class GitSyncService {
     if (workspaceGit.get(workspaceId) !== undefined) {
       throw new ConflictError(`The database holds version history for workspace ${workspaceId} but not the workspace itself; refusing to replace its repository.`)
     }
-    // No workspace row claims it, so it is not this open's to replace: it may be
-    // a database restored from a backup that predates the row, holding the only
-    // copy of that history. Refuse before touching the filesystem.
     if (await exists(directory)) {
-      throw new ConflictError(
-        `A repository is already at ${directory} for workspace ${workspaceId}, and no workspace in this app claims it. ` +
-          "It may hold commits that are not on the remote, so it was left alone. " +
-          "Restore the workspace it belongs to, or move that folder away and try again.",
-      )
+      // No workspace row claims it, so unless it is marked it is not this
+      // open's to replace: it may be a database restored from a backup that
+      // predates the row, holding the only copy of that history. Refuse
+      // before touching it.
+      if (!(await exists(openMarker(directory)))) {
+        throw new ConflictError(
+          `A repository is already at ${directory} for workspace ${workspaceId}, and no workspace in this app claims it. ` +
+            "It may hold commits that are not on the remote, so it was left alone. " +
+            "Restore the workspace it belongs to, or move that folder away and try again.",
+        )
+      }
+      // An earlier open of this id that never finished: nothing in it but what was downloaded.
+      await removeDirectory(directory)
     }
+    // Marked before it moves, so that from the moment it is at the id until its rows are committed it is recognisably an unfinished open.
+    await writeFile(openMarker(scratch), "")
     let movedIntoPlace = false
     try {
-      await rename(scratch, directory)
+      await moveIntoPlace(scratch, directory)
       movedIntoPlace = true
       const name = snapshot.workspace.name
       const slug = uniqueWorkspaceSlug(workspaces, name)
       let warnings: readonly string[] = []
+      // Checked again with no await before the transaction: once dispose has returned, the database may be closing.
+      this.assertNotDisposed()
       workspaces.transaction(() => {
         workspaces.create({ workspaceId, name, description: snapshot.workspace.description, slug, isPersonal: false })
         warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
         workspaceGit.insert(workspaceId, "auto")
         workspaceGit.setRemote(workspaceId, remoteUrl, branch)
+      })
+      // The rows claim the clone now; a marker that will not go is removed by the next reconcile.
+      await rm(openMarker(directory), { force: true }).catch((cleanupError: unknown) => {
+        log.warn(`could not remove the open marker from the clone of workspace ${workspaceId}`, cleanupError)
       })
       return { kind: "opened", workspaceId, slug, name, warnings }
     } catch (error) {
@@ -699,25 +731,37 @@ export class GitSyncService {
     )
   }
 
+  private assertNotDisposed(): void {
+    if (this.disposed) throw new Error(DISPOSING_MESSAGE)
+  }
+
   /** A clone of a repository with branches whose default branch is not one of them has no files: say so, rather than that the repository is not a workspace. */
   private async assertCheckedOut(directory: string): Promise<void> {
     if ((await this.git.revParse(directory, "HEAD")) !== undefined) return
     if ((await this.git.firstRemoteRef(directory, ORIGIN)) !== undefined) throw new ValidationError(DEFAULT_BRANCH_EMPTY_MESSAGE)
   }
 
-  /** A scratch clone no open is using: its open crashed. Never throws, like the rest of {@link reconcile}. */
+  /**
+   * What an open that crashed left: a scratch clone no open is using, or a
+   * marked clone no row claims. Never throws, like the rest of {@link reconcile}.
+   */
   private async sweepOpenScratch(): Promise<void> {
     try {
       const names = await readdir(this.options.cloneRoot).catch((error: unknown) => {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return []
         throw error
       })
-      await Promise.all(
-        names.filter((name) => name.startsWith(OPEN_SCRATCH_PREFIX)).map((name) => removeDirectory(path.join(this.options.cloneRoot, name))),
-      )
+      const unfinished = await Promise.all(names.map(async (name) => ((await this.isUnfinishedOpen(name)) ? [name] : [])))
+      await Promise.all(unfinished.flat().map((name) => removeDirectory(path.join(this.options.cloneRoot, name))))
     } catch (error) {
-      log.warn("could not remove the scratch clones of unfinished opens", error)
+      log.warn("could not remove the clones of unfinished opens", error)
     }
+  }
+
+  private async isUnfinishedOpen(name: string): Promise<boolean> {
+    if (name.startsWith(OPEN_SCRATCH_PREFIX)) return true
+    if (!RecordIdSchema.safeParse(name).success || this.repositories.workspaceGit.get(name) !== undefined) return false
+    return exists(openMarker(path.join(this.options.cloneRoot, name)))
   }
 
   private async reconcileOne(binding: WorkspaceGitBinding): Promise<void> {
@@ -731,6 +775,8 @@ export class GitSyncService {
       // died with the app, and would refuse every later commit until someone
       // found and deleted it by hand.
       await rm(path.join(directory, ".git", "index.lock"), { force: true })
+      // The row claims this clone, so a marker an open left on it is stale, and must not later get the clone swept.
+      await rm(openMarker(directory), { force: true })
     }
     if (missing || binding.mode === "auto") {
       await this.commitCycle(binding.workspaceId, directory, missing ? { message: RECREATE_MESSAGE } : {})
@@ -1208,6 +1254,10 @@ class DivergedError extends Error {
 
 function notTracked(workspaceId: string): NotFoundError {
   return new NotFoundError(`workspace ${workspaceId} has no version history; track it first`)
+}
+
+function openMarker(directory: string): string {
+  return path.join(directory, ".git", OPEN_MARKER)
 }
 
 async function isRepository(directory: string): Promise<boolean> {

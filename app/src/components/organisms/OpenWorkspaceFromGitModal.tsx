@@ -49,9 +49,7 @@ export function OpenWorkspaceFromGitModal({
     try {
       await work();
     } catch (error) {
-      const message = error instanceof Error ? error.message : failure;
-      setServerError(message);
-      toast.error(message);
+      setServerError(error instanceof Error ? error.message : failure);
     } finally {
       setIsSubmitting(false);
     }
@@ -73,6 +71,8 @@ export function OpenWorkspaceFromGitModal({
           name: result.name,
           warnings: result.warnings,
         });
+        // The workspace exists now, whether or not the user switches to it.
+        await refresh();
         return;
       }
       await goToWorkspace(result.slug);
@@ -113,12 +113,8 @@ export function OpenWorkspaceFromGitModal({
     if (pending !== null) {
       return (
         <>
-          <Button
-            variant="ghost"
-            onClick={() => setPending(null)}
-            disabled={isSubmitting}
-          >
-            Back
+          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
+            Close
           </Button>
           <Button loading={isSubmitting} onClick={handleOpenPending}>
             Open workspace
@@ -182,8 +178,8 @@ export function OpenWorkspaceFromGitModal({
               switch to it:
             </p>
             <ul className="list-disc space-y-1.5 pl-5 text-sm text-text-secondary dark:text-text-secondary-dark">
-              {pending.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
+              {pending.warnings.map((warning, index) => (
+                <li key={`${index}:${warning}`}>{warning}</li>
               ))}
             </ul>
           </div>
@@ -200,6 +196,7 @@ export function OpenWorkspaceFromGitModal({
 
             <FormField label="Repository URL" required>
               <Input
+                aria-label="Repository URL"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
                 placeholder="https://host/owner/repo.git or git@host:owner/repo.git"

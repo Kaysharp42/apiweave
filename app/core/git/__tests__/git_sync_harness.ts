@@ -42,7 +42,7 @@ export interface HarnessOptions {
   readonly anonymous?: boolean
   /** Told every status the service announces. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
-  /** How long `dispose` waits for a running cycle; a test that holds one open passes a small value. */
+  /** How long `dispose` waits for a running cycle or open; a test that holds one passes a small value. */
   readonly disposeWaitMs?: number
 }
 
