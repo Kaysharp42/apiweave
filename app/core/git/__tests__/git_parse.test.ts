@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseLog, parseStatus, parseVersion } from "../git_parse"
+import { parseAheadBehind, parseCommitCount, parseLog, parseStatus, parseVersion } from "../git_parse"
 
 const SHA_A = "a".repeat(40)
 const SHA_B = "b".repeat(40)
@@ -124,5 +124,30 @@ describe("parseVersion", () => {
 
   it("refuses anything else", () => {
     expect(parseVersion("command not found")).toBeUndefined()
+  })
+})
+
+describe("parseAheadBehind", () => {
+  it("reads the left and right counts", () => {
+    expect(parseAheadBehind("3\t2\n")).toEqual({ ahead: 3, behind: 2 })
+    expect(parseAheadBehind("0\t0\n")).toEqual({ ahead: 0, behind: 0 })
+  })
+
+  it("refuses anything else", () => {
+    expect(parseAheadBehind("3 2\n")).toBeUndefined()
+    expect(parseAheadBehind("")).toBeUndefined()
+  })
+})
+
+describe("parseCommitCount", () => {
+  it("reads one count", () => {
+    expect(parseCommitCount("1\n")).toBe(1)
+    expect(parseCommitCount("12")).toBe(12)
+  })
+
+  it("refuses anything else", () => {
+    expect(parseCommitCount("1\t2\n")).toBeUndefined()
+    expect(parseCommitCount("many\n")).toBeUndefined()
+    expect(parseCommitCount("")).toBeUndefined()
   })
 })

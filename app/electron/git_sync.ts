@@ -93,5 +93,9 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
     GIT_CHANNELS.disconnectRemote,
     guard((workspaceId: unknown) => gitSync.disconnectRemote(workspaceIdOf(workspaceId))),
   )
+  ipcMain.handle(
+    GIT_CHANNELS.discardLocalChanges,
+    guard((workspaceId: unknown) => gitSync.discardLocalChanges(workspaceIdOf(workspaceId))),
+  )
   ipcMain.handle(GIT_CHANNELS.openFromGit, guard((url: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url))))
 }

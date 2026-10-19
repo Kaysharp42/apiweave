@@ -16,9 +16,13 @@ export interface GitBridge {
   readonly untrack: (workspaceId: string) => Promise<WorkspaceGitStatus>
   readonly setMode: (workspaceId: string, mode: WorkspaceGitMode) => Promise<WorkspaceGitStatus>
   /**
-   * Commit what changed; the app never pushes or pulls on a commit. A missing
-   * author resolves rather than rejects: the status's `lastError` is
-   * `identity_missing`, and the retry passes `request.identity`.
+   * Commit what changed and, with a remote, fetch, integrate and push. Resolves
+   * to the status the cycle left behind: a missing author, a divergence, a
+   * refused push, every other git failure and a remote tree that does not
+   * import are that status's `state` and `lastError`, not a rejection. It
+   * rejects for an id that is not a workspace id, an untracked workspace, and
+   * an unexpected failure. The retry that names an author passes
+   * `request.identity`.
    */
   readonly syncNow: (workspaceId: string, request?: WorkspaceGitCommitRequest) => Promise<WorkspaceGitStatus>
   readonly onStatusChanged: (callback: (status: WorkspaceGitStatus) => void) => () => void
@@ -31,6 +35,13 @@ export interface GitBridge {
   readonly connectRemote: (workspaceId: string, url: string) => Promise<WorkspaceGitStatus>
   /** Remove the connection. Every local commit stays; nothing on the remote is touched. */
   readonly disconnectRemote: (workspaceId: string) => Promise<WorkspaceGitStatus>
+  /**
+   * Reset the workspace to the remote's branch and re-import it, throwing away
+   * every local commit and uncommitted change. The remote is fetched first.
+   * Rejects when the workspace has no remote, or the remote has no branch for
+   * it yet.
+   */
+  readonly discardLocalChanges: (workspaceId: string) => Promise<WorkspaceGitStatus>
   /**
    * Clone the repository at `url` and open the workspace it holds, tracked in
    * auto mode and bound to that remote. Resolves `duplicate`, creating

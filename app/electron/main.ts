@@ -897,7 +897,7 @@ if (!hasSingleInstanceLock) {
       },
     )
     registerGitHandlers(ipcMain, requireTrustedSender, gitSync)
-    gitSync.reconcile().catch((error: unknown) => bootstrapLog.warn("version history reconcile failed", error))
+    gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

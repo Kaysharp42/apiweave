@@ -13,9 +13,10 @@ import {
   type GitError,
   type GitFailureDetails,
 } from "./git_errors"
-import { LOG_FORMAT, parseLog, parseStatus, parseVersion } from "./git_parse"
+import { LOG_FORMAT, parseAheadBehind, parseCommitCount, parseLog, parseStatus, parseVersion } from "./git_parse"
 import { execGit, gitConfigArgs, gitEnvironment, timeoutFor, type GitExecOutcome } from "./git_process"
 import type {
+  GitAheadBehind,
   GitCommand,
   GitIdentity,
   GitLogEntry,
@@ -162,6 +163,39 @@ export class GitService {
     return this.runOptional("mergeBase", ["merge-base", a, b], repoDir)
   }
 
+  /**
+   * How many commits each side holds that the other does not, in one
+   * invocation: `ahead` counts `local`'s commits, `behind` counts `other`'s.
+   * Zeros when either revision names nothing — an unborn HEAD, or a branch the
+   * remote has not got yet — because git's `--ignore-missing` drops it from
+   * the comparison rather than failing.
+   */
+  async countAheadBehind(repoDir: string, local: string, other: string): Promise<GitAheadBehind> {
+    assertRevision(local)
+    assertRevision(other)
+    return this.revList(repoDir, ["rev-list", "--left-right", "--count", "--ignore-missing", `${local}...${other}`, "--"], parseAheadBehind)
+  }
+
+  /**
+   * How many commits `rev` reaches. The caller checks that `rev` names
+   * something first: `rev-list` fails on an unborn HEAD rather than counting
+   * zero for it.
+   */
+  async countCommits(repoDir: string, rev: string): Promise<number> {
+    assertRevision(rev)
+    return this.revList(repoDir, ["rev-list", "--count", rev, "--"], parseCommitCount)
+  }
+
+  /** A `git rev-list` whose output `parse` must accept: anything else is a failure, not a count. */
+  private async revList<T>(repoDir: string, args: string[], parse: (output: string) => T | undefined): Promise<T> {
+    const stdout = await this.run("revList", args, repoDir)
+    const parsed = parse(stdout)
+    if (parsed === undefined) {
+      throw new GitCommandError(`unexpected output from git rev-list: ${stdout.trim()}`, failureDetails(args, 0, stdout, ""))
+    }
+    return parsed
+  }
+
   /** One branch fetched from `remote` (`refs/remotes/<remote>/…`), or undefined when it has none: what tells an empty remote from one with other branches. */
   async firstRemoteRef(repoDir: string, remote: string): Promise<string | undefined> {
     assertRefName(remote)
@@ -243,6 +277,16 @@ export class GitService {
 
   async mergeAbort(repoDir: string): Promise<void> {
     await this.run("mergeAbort", ["merge", "--abort"], repoDir)
+  }
+
+  /**
+   * Fast-forward the checked-out branch to `rev`, leaving it otherwise alone:
+   * a descendant moves the branch, an ancestor (or the same commit) is already
+   * up to date, and a sibling is refused.
+   */
+  async mergeFastForward(repoDir: string, rev: string): Promise<void> {
+    assertRevision(rev)
+    await this.run("mergeFastForward", ["merge", "--ff-only", rev, "--"], repoDir)
   }
 
   /** Discard every local change and move the branch to `rev` (default `HEAD`). */

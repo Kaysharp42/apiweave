@@ -42,6 +42,8 @@ export interface HarnessOptions {
   readonly anonymous?: boolean
   /** Told every status the service announces. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
+  /** How long `dispose` waits for a running cycle; a test that holds one open passes a small value. */
+  readonly disposeWaitMs?: number
 }
 
 /** A database whose repositories report their writes to a sync service over real git in a temporary root. */
@@ -60,7 +62,13 @@ export function openHarness(options: HarnessOptions = {}): Harness {
   }
   const workspaceId = repositories.workspaces.create({ name: "Acme QA", slug: "acme-qa" }).workspaceId
   const cloneRoot = path.join(sandbox.root, "clones")
-  sync = new GitSyncService({ cloneRoot, git: options.wrap?.(git) ?? git, repositories, onStatusChanged: options.onStatusChanged })
+  sync = new GitSyncService({
+    cloneRoot,
+    git: options.wrap?.(git) ?? git,
+    repositories,
+    onStatusChanged: options.onStatusChanged,
+    disposeWaitMs: options.disposeWaitMs,
+  })
   const harness = { db, sandbox, repositories, sync, git, cloneRoot, workspaceId, dir: path.join(cloneRoot, workspaceId) }
   harnesses.push(harness)
   return harness
@@ -83,6 +91,10 @@ export function passthrough(git: GitService): GitSyncGit {
     remoteRemove: git.remoteRemove.bind(git),
     revParse: git.revParse.bind(git),
     mergeBase: git.mergeBase.bind(git),
+    mergeFastForward: git.mergeFastForward.bind(git),
+    resetHard: git.resetHard.bind(git),
+    countAheadBehind: git.countAheadBehind.bind(git),
+    countCommits: git.countCommits.bind(git),
     firstRemoteRef: git.firstRemoteRef.bind(git),
   }
 }

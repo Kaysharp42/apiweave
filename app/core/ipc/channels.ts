@@ -96,6 +96,7 @@ export const GIT_CHANNELS = {
   syncNow: "git:syncNow",
   connectRemote: "git:connectRemote",
   disconnectRemote: "git:disconnectRemote",
+  discardLocalChanges: "git:discardLocalChanges",
   openFromGit: "git:openFromGit",
 } as const
 

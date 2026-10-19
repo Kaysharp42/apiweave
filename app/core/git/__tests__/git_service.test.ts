@@ -284,6 +284,76 @@ describe("history", () => {
     expect(fs.readFileSync(path.join(dir, "a.json"), "utf8")).toBe('{"v":1}\n')
   })
 
+  it("fast-forwards to a descendant, treats an ancestor as a no-op, and refuses a sibling", async () => {
+    const sandbox = makeSandbox()
+    const { dir, first, second } = await twoCommits(sandbox)
+    rawGit(dir, sandbox.env, "checkout", "-b", "side")
+    writeFile(dir, "b.json", "{}\n")
+    await sandbox.service.add(dir, ["b.json"])
+    const side = (await sandbox.service.commit(dir, "side")) ?? ""
+    rawGit(dir, sandbox.env, "checkout", "-b", "sibling", second)
+    writeFile(dir, "c.json", "{}\n")
+    await sandbox.service.add(dir, ["c.json"])
+    const sibling = (await sandbox.service.commit(dir, "sibling")) ?? ""
+    rawGit(dir, sandbox.env, "checkout", "main")
+
+    await sandbox.service.mergeFastForward(dir, side)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+
+    await sandbox.service.mergeFastForward(dir, side)
+    await sandbox.service.mergeFastForward(dir, second)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+
+    await expect(sandbox.service.mergeFastForward(dir, sibling)).rejects.toBeInstanceOf(GitCommandError)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+    expect((await sandbox.service.status(dir)).clean).toBe(true)
+    expect(first).not.toBe(side)
+    expect(sibling).not.toBe(side)
+  })
+
+  it("counts each side's commits in one call, and says zero when a side has no commit", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main", { setUpstream: true })
+    const other = path.join(sandbox.root, "other")
+    await sandbox.service.clone(remote.url, other)
+    writeFile(other, "b.json", "{}\n")
+    await sandbox.service.add(other, ["b.json"])
+    await sandbox.service.commit(other, "theirs")
+    await sandbox.service.push(other, "origin", "main")
+
+    await sandbox.service.fetch(dir, "origin")
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/main")).toEqual({ ahead: 0, behind: 1 })
+
+    writeFile(dir, "c.json", "{}\n")
+    await sandbox.service.add(dir, ["c.json"])
+    await sandbox.service.commit(dir, "ours")
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/main")).toEqual({ ahead: 1, behind: 1 })
+
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/no-such-branch")).toEqual({ ahead: 0, behind: 0 })
+    const unborn = path.join(sandbox.root, "unborn")
+    await sandbox.service.init(unborn, { initialBranch: "main" })
+    expect(await sandbox.service.countAheadBehind(unborn, "HEAD", "origin/main")).toEqual({ ahead: 0, behind: 0 })
+    await expect(sandbox.service.countAheadBehind(dir, "--output=pwned", "HEAD")).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    expect(fs.existsSync(path.join(dir, "pwned"))).toBe(false)
+  })
+
+  it("counts the commits a revision reaches, and refuses a revision that reads as an option", async () => {
+    const sandbox = makeSandbox()
+    const dir = await repoWithCommit(sandbox)
+    writeFile(dir, "b.json", "{}\n")
+    await sandbox.service.add(dir, ["b.json"])
+    await sandbox.service.commit(dir, "second")
+
+    expect(await sandbox.service.countCommits(dir, "HEAD")).toBe(2)
+    expect(await sandbox.service.countCommits(dir, "HEAD~1")).toBe(1)
+
+    await expect(sandbox.service.countCommits(dir, "--output=pwned")).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    expect(fs.existsSync(path.join(dir, "pwned"))).toBe(false)
+  })
+
   it("aborts a merge in progress", async () => {
     const sandbox = makeSandbox()
     const dir = await repoWithCommit(sandbox)

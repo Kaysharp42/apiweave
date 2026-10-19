@@ -24,7 +24,7 @@ const COLUMNS =
 /** What a remote left on the row: where a sync got to, and whether it refused our pushes. None of it carries over to another remote. */
 const CLEAR_SYNC_RECORD = "last_synced_commit = NULL, last_synced_at = NULL, read_only = 0"
 
-const STATES: readonly string[] = ["idle", "syncing", "merging", "error"] satisfies readonly WorkspaceGitState[]
+const STATES: readonly string[] = ["idle", "syncing", "merging", "diverged", "error"] satisfies readonly WorkspaceGitState[]
 
 function isState(value: string): value is WorkspaceGitState {
   return STATES.includes(value)
@@ -61,6 +61,20 @@ export class WorkspaceGitRepository {
 
   public setMode(workspaceId: string, mode: WorkspaceGitMode): boolean {
     return this.store.set("UPDATE workspace_git SET mode = ? WHERE workspace_id = ?", [mode, workspaceId]).changes > 0
+  }
+
+  /** Whether the host refuses this user's pushes. Not part of {@link CLEAR_SYNC_RECORD}: a push sets and clears it, not a change of remote. */
+  public setReadOnly(workspaceId: string, readOnly: boolean): boolean {
+    return this.store.set("UPDATE workspace_git SET read_only = ? WHERE workspace_id = ?", [readOnly ? 1 : 0, workspaceId]).changes > 0
+  }
+
+  /** Where a successful cycle left the two: the remote commit it integrated or pushed, and when. */
+  public recordSynced(workspaceId: string, commit: string, at: string): boolean {
+    return this.store.set("UPDATE workspace_git SET last_synced_commit = ?, last_synced_at = ? WHERE workspace_id = ?", [
+      commit,
+      at,
+      workspaceId,
+    ]).changes > 0
   }
 
   /**
