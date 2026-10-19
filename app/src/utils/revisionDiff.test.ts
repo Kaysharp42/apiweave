@@ -16,4 +16,5 @@ test("names the writer a revision was kept before", () => {
   expect(revisionSourceLabel("agent:Claude Code")).toBe("agent Claude Code");
   expect(revisionSourceLabel("canvas")).toBe("canvas edits");
   expect(revisionSourceLabel("cloud")).toBe("cloud sync");
+  expect(revisionSourceLabel("git")).toBe("git sync");
 });

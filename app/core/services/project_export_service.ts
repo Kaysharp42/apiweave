@@ -2,7 +2,6 @@ import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
 import type { Workflow } from "@shared/types/Workflow"
-import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -17,15 +16,14 @@ import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
-import { environmentFileText, exportNode, exportWorkflow, stableJson, workflowFileText } from "./workspace_repo_format"
+import { environmentFileText, exportWorkflow, workflowFileText } from "./workspace_repo_format"
 import {
   assertNoSecretValues,
   collectSecretRefs,
-  findRedactedPlaceholders,
-  SECRET_PLACEHOLDER,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
+import { asRecord, keepWithheldConfig, keepWithheldNodeTemplates, keepWithheldVariables, toPlain, withheldPlaceholderWarning } from "./withheld_credentials"
 import { isSecretKey } from "@shared/credentials/credentials"
 
 /** Schema version for project bundles. Existing v2 files remain importable. */
@@ -116,16 +114,6 @@ function exportEnvironment(environment: Environment, workspaceId: string): Expor
     variables: sanitizeVariablesForExport(asRecord(toPlain(environment.variables))),
     swaggerDocUrl: environment.swaggerDocUrl ?? null,
   }
-}
-
-function toPlain(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value ?? null)) as JsonValue
-}
-
-function asRecord(value: JsonValue): Record<string, JsonValue> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, JsonValue>)
-    : {}
 }
 
 /**
@@ -691,7 +679,6 @@ function validateBundle(bundle: ProjectBundle): string[] {
   return errors
 }
 
-/** A variable whose folder value reads as the stored value's exported form is unchanged: keep the stored (unredacted) value. */
 /** The fields a project folder's workflow is written with, keeping node templates the export left unchanged. */
 function folderWorkflowFields(incoming: ExportedWorkflow, stored: Workflow | undefined, projectId: string, nodes: Workflow["nodes"]) {
   return {
@@ -703,43 +690,8 @@ function folderWorkflowFields(incoming: ExportedWorkflow, stored: Workflow | und
     tags: [...incoming.tags],
     collectionId: projectId,
     selectedEnvironmentId: incoming.selectedEnvironmentId,
-    nodeTemplates: stored !== undefined && stableJson(exportWorkflow(stored).nodeTemplates ?? []) === stableJson(incoming.nodeTemplates ?? [])
-      ? stored.nodeTemplates
-      : [...(incoming.nodeTemplates ?? [])],
+    nodeTemplates: keepWithheldNodeTemplates(stored, incoming.nodeTemplates ?? []),
   }
-}
-
-function withheldPlaceholderWarning(
-  workflowName: string,
-  stored: Workflow | undefined,
-  fields: Pick<Workflow, "nodes" | "variables" | "nodeTemplates">,
-): string | undefined {
-  const placeholders = findRedactedPlaceholders(toPlain({ nodes: fields.nodes, variables: fields.variables, nodeTemplates: fields.nodeTemplates }))
-  if (placeholders.length === 0) return undefined
-  return `Workflow '${workflowName}' has the placeholder "${SECRET_PLACEHOLDER}" at ${placeholders.join(", ")}: `
-    + "the export withheld a credential there. Use a {{secrets.NAME}} reference instead"
-    + (stored === undefined ? "" : "; the version before this import is in the workflow's history")
-}
-
-function keepWithheldVariables(
-  stored: Record<string, JsonValue>,
-  incoming: Record<string, JsonValue>,
-): Record<string, JsonValue> {
-  const exported = sanitizeVariablesForExport(asRecord(toPlain(stored)))
-  return Object.fromEntries(Object.entries(incoming).map(([key, value]) => [
-    key,
-    key in exported && stableJson(exported[key]) === stableJson(value) ? stored[key]! : value,
-  ]))
-}
-
-/** A node whose config reads as the stored node's exported config keeps the stored (unredacted) config. */
-function keepWithheldConfig(node: WorkflowNode, stored: Workflow | undefined): WorkflowNode {
-  const previous = stored?.nodes.find((candidate) => candidate.nodeId === node.nodeId)
-  if (previous === undefined || previous.type !== node.type) return node
-  const exportedConfig = asRecord(exportNode(previous))["config"] ?? null
-  return stableJson(exportedConfig) === stableJson(toPlain(node.config ?? null))
-    ? ({ ...node, config: previous.config } as WorkflowNode)
-    : node
 }
 
 function emptyStats(bundle: ProjectBundle): DryRunResult["stats"] {
