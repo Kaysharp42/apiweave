@@ -1,8 +1,8 @@
+import { slugify } from "@shared/text/slugify"
 import type { Workspace } from "@shared/types/Workspace"
+import { MAX_SLUG_LENGTH } from "@shared/workspace-repo/format"
 import type { WorkflowRepository, WorkspaceRepository, WorkspaceUpdate } from "../repositories"
-import { slugify } from "../repositories/helpers"
 import { ConflictError, NotFoundError } from "../ipc/errors"
-import { MAX_SLUG_LENGTH } from "./workspace_repo_format"
 import type { ScopeResolver } from "./scope_resolver"
 
 /** Input for creating a workspace. `slug` is derived from `name` when omitted. */

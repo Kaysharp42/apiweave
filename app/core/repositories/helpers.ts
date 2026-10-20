@@ -22,17 +22,6 @@ export function toJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-/** Derive a NOT-NULL slug column from a display name. The schema keeps `slug`
- * for future routing/sync; the domain types don't expose it, so repositories
- * synthesize it. Falls back to the row id when a name has no slug-able chars. */
-export function slugify(name: string, fallback: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-  return slug.length > 0 ? slug : fallback
-}
-
 /** A freshly inserted/updated row is read straight back; its absence is a
  * broken invariant, not a not-found the caller should handle. */
 export function mustExist<T>(row: T | undefined, message: string): T {

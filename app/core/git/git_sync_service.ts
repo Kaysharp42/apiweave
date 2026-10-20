@@ -10,6 +10,7 @@ import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange"
+import { RecordIdSchema } from "@shared/workspace-repo/format"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
@@ -21,7 +22,6 @@ import type {
   WorkspaceRepository,
 } from "../repositories"
 import {
-  RecordIdSchema,
   parseWorkspace,
   serializeWorkspace,
   workspaceSnapshot,

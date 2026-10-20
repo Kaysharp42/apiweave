@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import { MAX_SLUG_LENGTH } from "@shared/workspace-repo/format"
 import { WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
-import { MAX_SLUG_LENGTH } from "../workspace_repo_format"
 import { WorkspaceService, uniqueWorkspaceSlug } from "../workspace_service"
 
 let db: InitializedDatabase

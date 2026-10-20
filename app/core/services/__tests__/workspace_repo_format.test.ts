@@ -5,8 +5,6 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import { generateId } from "../../id"
 import { CollectionRepository, EnvironmentRepository, SecretRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import {
-  MAX_RECORD_ID_LENGTH,
-  RecordIdSchema,
   describeRecordFile,
   parseWorkspace,
   serializeWorkspace,
@@ -15,6 +13,7 @@ import {
   type WorkspaceSnapshot,
 } from "../workspace_repo_format"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { MAX_RECORD_ID_LENGTH, RecordIdSchema } from "@shared/workspace-repo/format"
 
 const FIXTURE_DIR = path.join(__dirname, "__fixtures__", "workspace-repo")
 
