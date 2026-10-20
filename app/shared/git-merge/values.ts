@@ -172,11 +172,13 @@ function mergeItems(
 /**
  * The merged items' order: the order of the one copy that changed it; when
  * both did, the remote copy's, with the items only yours holds after it, in
- * yours. That is recorded as settled when it moved items you had ordered.
+ * yours. That is recorded as settled when it moved items you had ordered. A
+ * copy changed the order only if it moved items the ancestor holds: adding or
+ * removing one is not reordering.
  */
 function orderOf(at: readonly string[], base: string[], ours: string[], theirs: string[], merged: ReadonlyMap<string, JsonValue>, scope: MergeScope): string[] {
-  const oursMoved = !sameOrder(ours, base)
-  const theirsMoved = !sameOrder(theirs, base)
+  const oursMoved = reordered(ours, base)
+  const theirsMoved = reordered(theirs, base)
   const [first, second] = oursMoved && !theirsMoved ? [ours, theirs] : [theirs, ours]
   const order = [...new Set([...first, ...second])].filter((key) => merged.has(key))
   const yours = new Set(ours)
@@ -185,6 +187,13 @@ function orderOf(at: readonly string[], base: string[], ours: string[], theirs: 
     scope.settled.push({ at, rule: "order" })
   }
   return order
+}
+
+/** Whether the keys `copy` shares with `base` are in another order than the ancestor's. */
+function reordered(copy: readonly string[], base: readonly string[]): boolean {
+  const inCopy = new Set(copy)
+  const inBase = new Set(base)
+  return !sameOrder(copy.filter((key) => inBase.has(key)), base.filter((key) => inCopy.has(key)))
 }
 
 function sameOrder(left: readonly string[], right: readonly string[]): boolean {

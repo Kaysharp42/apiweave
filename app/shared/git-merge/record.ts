@@ -26,8 +26,8 @@ export interface GitMergeRecordResult {
 /**
  * Merge one record three ways. `base` is the common ancestor and `ours`/`theirs`
  * the two copies — your copy and the remote copy — each as its file holds it,
- * and undefined where that tree has no such record. Each must be a valid
- * record of `kind`, and all hold the same id.
+ * and undefined where that tree has no such record. Each must be a record of
+ * `kind` as {@link readRecord} reads it, canonical, and all hold the same id.
  *
  * The record merges by the format's rules: a keyed array (nodes, edges, a
  * project's workflow order, tags) item by item, every object key by key, and
@@ -54,17 +54,21 @@ export function mergeRecord(
   for (const copy of [base, ours, theirs]) {
     if (copy !== undefined && recordIdOf(kind, copy) !== recordId) throw new Error(`the copies of ${kind} ${recordId} hold different ids`)
   }
+  // Only one copy changed it, or both alike: that copy, which leaves nothing broken that it did not hold already.
+  if (deepEqualJson(ours, theirs) || deepEqualJson(ours, base)) return { merged: theirs, conflicts: [], notes: [] }
+  if (deepEqualJson(theirs, base)) return { merged: ours, conflicts: [], notes: [] }
   const copies = { base, ours, theirs }
   const named = { kind, recordId, name: recordNameOf(first) }
   const scope = scopeFor(recordId, picks)
   // Two copies that each added a record under one id are two records, not one to mix field by field.
-  const merged = base === undefined && ours !== undefined && theirs !== undefined && !deepEqualJson(ours, theirs)
+  const merged = base === undefined && ours !== undefined && theirs !== undefined
     ? clash(scope, { at: [], base, ours, theirs })
     : merge3(recordShape(kind), [], base, ours, theirs, scope)
   if (merged === undefined) return resultOf(named, undefined, scope, [])
   const notes: GitMergeNote[] = []
   const repaired = kind === "workflow" ? repairWorkflow(merged, copies, scope, notes, named) : merged
-  const written = canonicalizeRecord(kind, repaired)
+  const copy = [theirs, ours].find((candidate) => deepEqualJson(candidate, repaired))
+  const written = copy === undefined ? canonicalizeRecord(kind, repaired) : { document: copy }
   if ("document" in written) return resultOf(named, written.document, scope, [...notes, ...settledNotes(named, scope)])
   return wholeCopy(named, copies, scope, written.invalid)
 }
@@ -172,8 +176,9 @@ function graphOf(workflow: JsonValue | undefined): Graph {
  * What a workflow's two copies, merged, would leave pointing at nothing: an
  * edge from or to a node the other copy deleted is dropped, and a node in a
  * frame the other copy deleted is freed from it, staying where it was on the
- * canvas. Each is noted. A reference that already points at nothing in one of
- * the copies is that copy's, not the merge's, and is left as it is.
+ * canvas, in the nearest frame around it that is left. Each is noted. A
+ * reference that already points at nothing in one of the copies is that
+ * copy's, not the merge's, and is left as it is.
  */
 function repairWorkflow(merged: JsonValue, copies: Copies, scope: MergeScope, notes: GitMergeNote[], named: Named): JsonValue {
   if (!isPlainRecord(merged)) return merged
@@ -181,37 +186,87 @@ function repairWorkflow(merged: JsonValue, copies: Copies, scope: MergeScope, no
   const frames = [...sides, graphOf(copies.base)]
   const present = new Set(listOf(merged, "nodes").flatMap((node) => textOf(node, "nodeId") ?? []))
   const nodes = listOf(merged, "nodes").map((node) => freeFromLostFrame(node, present, sides, frames, notes, named))
-  const dropped = new Set<string>()
-  const edges = listOf(merged, "edges").filter((edge) => keepEdge(edge, present, sides, dropped, notes, named))
-  // A conflict inside an edge that is gone is no longer anyone's to settle.
-  scope.clashes = scope.clashes.filter((found) => found.at[0] !== "edges" || !dropped.has(found.at[1] ?? ""))
+  const dropped = new Map<string, MissingEnd>()
+  const edges = listOf(merged, "edges").filter((edge) => {
+    const edgeId = textOf(edge, "edgeId")
+    const missing = edgeId === undefined ? undefined : dropReason(edgeId, edge, present, sides)
+    if (edgeId !== undefined && missing !== undefined) dropped.set(edgeId, missing)
+    return missing === undefined
+  })
+  dropSettledEdgeClashes(scope, new Set(edges.flatMap((edge) => textOf(edge, "edgeId") ?? [])), dropped, present, sides)
+  for (const [edgeId, missing] of dropped) notes.push({ type: "droppedEdge", recordId: named.recordId, name: named.name, edgeId, ...missing })
   return { ...merged, nodes, edges }
 }
 
+/**
+ * A conflict inside an edge that is gone whichever copy is picked is no longer
+ * anyone's to settle: the edge is dropped, whichever copy deleted it, and the
+ * conflict with it. An edge one copy deleted alone, and the other changed, is
+ * still a question: picking the change brings it back.
+ */
+function dropSettledEdgeClashes(scope: MergeScope, kept: ReadonlySet<string>, dropped: Map<string, MissingEnd>, present: ReadonlySet<string>, sides: readonly Graph[]): void {
+  for (const found of scope.clashes) {
+    const edgeId = found.at[0] === "edges" ? found.at[1] : undefined
+    if (edgeId === undefined || kept.has(edgeId) || dropped.has(edgeId)) continue
+    const reasons = sides.flatMap((side) => side.edges.get(edgeId) ?? []).map((copy) => dropReason(edgeId, copy, present, sides))
+    const missing = reasons[0]
+    if (missing !== undefined && reasons.every((reason) => reason !== undefined)) dropped.set(edgeId, missing)
+  }
+  scope.clashes = scope.clashes.filter((found) => found.at[0] !== "edges" || !dropped.has(found.at[1] ?? ""))
+}
+
+/**
+ * A node whose frame the merge deleted, taken out of it: into the nearest
+ * frame around that one that is left, or out of every frame, its position
+ * shifted by each deleted frame's so it stays where it was on the canvas.
+ */
 function freeFromLostFrame(node: JsonValue, present: ReadonlySet<string>, sides: readonly Graph[], frames: readonly Graph[], notes: GitMergeNote[], named: Named): JsonValue {
   const nodeId = textOf(node, "nodeId")
   const frameId = textOf(node, "parentId")
   if (!isPlainRecord(node) || nodeId === undefined || frameId === undefined || present.has(frameId)) return node
   if (sides.some((side) => textOf(side.nodes.get(nodeId), "parentId") === frameId && !side.nodes.has(frameId))) return node
   notes.push({ type: "freedNode", recordId: named.recordId, name: named.name, nodeId, frameId })
-  const frame = frames.map((graph) => pointOf(own(graph.nodes.get(frameId) ?? {}, "position"))).find((point) => point !== undefined)
+  const { parentId, offset } = frameLeft(frameId, present, frames)
   const position = pointOf(own(node, "position"))
   const free = Object.fromEntries(Object.entries(node).filter(([key]) => key !== "parentId"))
-  return frame === undefined || position === undefined ? free : { ...free, position: { x: frame.x + position.x, y: frame.y + position.y } }
+  const placed = parentId === undefined ? free : { ...free, parentId }
+  return position === undefined ? placed : { ...placed, position: { x: offset.x + position.x, y: offset.y + position.y } }
 }
 
-function keepEdge(edge: JsonValue, present: ReadonlySet<string>, sides: readonly Graph[], dropped: Set<string>, notes: GitMergeNote[], named: Named): boolean {
-  const edgeId = textOf(edge, "edgeId")
+interface Point {
+  readonly x: number
+  readonly y: number
+}
+
+const ORIGIN: Point = { x: 0, y: 0 }
+
+/** Where a node in `frameId` goes: the nearest frame from there out that the merge kept, if any, and how far the deleted frames on the way offset it. */
+function frameLeft(frameId: string, present: ReadonlySet<string>, frames: readonly Graph[], visited = new Set<string>()): { readonly parentId: string | undefined; readonly offset: Point } {
+  if (present.has(frameId)) return { parentId: frameId, offset: ORIGIN }
+  if (visited.has(frameId)) return { parentId: undefined, offset: ORIGIN }
+  visited.add(frameId)
+  const frame = frames.map((graph) => graph.nodes.get(frameId)).find((copy) => copy !== undefined) ?? {}
+  const at = pointOf(own(frame, "position")) ?? ORIGIN
+  const around = textOf(frame, "parentId")
+  const outer = around === undefined ? { parentId: undefined, offset: ORIGIN } : frameLeft(around, present, frames, visited)
+  return { parentId: outer.parentId, offset: { x: at.x + outer.offset.x, y: at.y + outer.offset.y } }
+}
+
+/** Why the merge drops this copy of an edge: the end it names that the merge deleted. Undefined to keep it, as well as one a copy already has pointing at nothing. */
+function dropReason(edgeId: string, edge: JsonValue, present: ReadonlySet<string>, sides: readonly Graph[]): MissingEnd | undefined {
   const missing = missingEnd(edge, present)
-  if (edgeId === undefined || missing === undefined) return true
-  if (sides.some((side) => side.edges.has(edgeId) && missingEnd(side.edges.get(edgeId)!, new Set(side.nodes.keys())) !== undefined)) return true
-  dropped.add(edgeId)
-  notes.push({ type: "droppedEdge", recordId: named.recordId, name: named.name, edgeId, ...missing })
-  return false
+  if (missing === undefined) return undefined
+  if (sides.some((side) => side.edges.has(edgeId) && missingEnd(side.edges.get(edgeId)!, new Set(side.nodes.keys())) !== undefined)) return undefined
+  return missing
+}
+
+interface MissingEnd {
+  readonly end: "source" | "target"
+  readonly nodeId: string
 }
 
 /** The first end of an edge that names a node not in `present`. */
-function missingEnd(edge: JsonValue, present: ReadonlySet<string>): { readonly end: "source" | "target"; readonly nodeId: string } | undefined {
+function missingEnd(edge: JsonValue, present: ReadonlySet<string>): MissingEnd | undefined {
   for (const end of ["source", "target"] as const) {
     const nodeId = textOf(edge, end)
     if (nodeId !== undefined && !present.has(nodeId)) return { end, nodeId }
@@ -229,7 +284,7 @@ function textOf(value: JsonValue | undefined, field: string): string | undefined
   return typeof text === "string" ? text : undefined
 }
 
-function pointOf(value: JsonValue | undefined): { readonly x: number; readonly y: number } | undefined {
+function pointOf(value: JsonValue | undefined): Point | undefined {
   const x = isPlainRecord(value) ? own(value, "x") : undefined
   const y = isPlainRecord(value) ? own(value, "y") : undefined
   return typeof x === "number" && typeof y === "number" ? { x, y } : undefined

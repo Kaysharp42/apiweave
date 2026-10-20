@@ -3,13 +3,15 @@
  * of `backend/app/services/secret_utils.py` and `project_export_service.py`.
  *
  * Only what export/import needs lives here: key-name secret detection, variable
- * sanitization (`<SECRET>` placeholder), `{{secrets.NAME}}` reference extraction,
- * and the fail-closed forbidden-key guard. Masking resolved secret *values* out
+ * sanitization (`<SECRET>` placeholder) and `{{secrets.NAME}}` reference
+ * extraction. The fail-closed forbidden-key guard is shared with the semantic
+ * merge, in `shared/workspace-repo/secret_storage.ts`. Masking resolved secret *values* out
  * of run results is the runner's job: see `core/runner/secret_masker.ts`.
  */
 
 import type { JsonValue } from "@shared/types/JsonValue"
 import { containsCredentialMaterial, isSecretKey, REF_SPAN_RE } from "@shared/credentials/credentials"
+import { isForbiddenSecretStorageKey } from "@shared/workspace-repo/secret_storage"
 
 /** Placeholder written in place of a redacted secret value (byte-compat with Python). */
 export const SECRET_PLACEHOLDER = "<SECRET>"
@@ -53,36 +55,6 @@ const JWT_PATTERN = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/
 /** Value-level secret heuristic used by export sanitizers: import patterns plus a bare-JWT check. */
 export function looksLikeSecretValue(value: string): boolean {
   return detectSecretsInValue(value) || JWT_PATTERN.test(value)
-}
-
-/** Structural fields that must NEVER appear in an export bundle — fail closed if seen. */
-const FORBIDDEN_EXPORT_KEYS: ReadonlySet<string> = new Set([
-  "ciphertext",
-  "privateKey",
-  "private_key",
-  "plaintext",
-  "secretValue",
-  "secret_value",
-  "encryptedValue",
-  "encrypted_value",
-  "kek_id",
-  "kek",
-  "dek",
-  "wrapped_dek",
-  "hmacSecret",
-  "hmac_secret",
-])
-
-/**
- * True for a key that names actual secret *storage* (`ciphertext`, `kek`, the
- * vault fields) rather than a user credential slot (`token`, `password`).
- * Sanitizers drop these keys outright: a blanked vault field is still a vault
- * field, and keeping one would trip {@link assertNoSecretValues}. Never confuse
- * this with a workflow's own `password`/`token` config, whose slot must survive
- * so `{{variables.password}}` references do not dangle.
- */
-export function isForbiddenSecretStorageKey(key: string): boolean {
-  return FORBIDDEN_EXPORT_KEYS.has(key)
 }
 
 /**
@@ -916,28 +888,5 @@ export function collectSecretRefs(
     for (const item of data) collectSecretRefs(item, scopeType, scopeId, into, seen)
   } else if (isRecord(data)) {
     for (const value of Object.values(data)) collectSecretRefs(value, scopeType, scopeId, into, seen)
-  }
-}
-
-/**
- * Fail-closed guard: throw if any forbidden secret-storage key is present anywhere
- * in the structure. A leak here is a programming error, not user input, so it must
- * fail loudly before the bundle ever leaves the process (Python `_check_no_secret_values`).
- */
-export function assertNoSecretValues(data: JsonValue, path = ""): void {
-  if (Array.isArray(data)) {
-    data.forEach((item, index) => assertNoSecretValues(item, `${path}[${index}]`))
-  } else if (isRecord(data)) {
-    for (const key of Object.keys(data)) {
-      if (FORBIDDEN_EXPORT_KEYS.has(key)) {
-        throw new Error(
-          `Bundle contains forbidden secret field '${key}' at '${path || "(root)"}'. ` +
-            "Schema v2 bundles must never contain secret values or ciphertext.",
-        )
-      }
-    }
-    for (const [key, value] of Object.entries(data)) {
-      assertNoSecretValues(value, path ? `${path}.${key}` : key)
-    }
   }
 }
