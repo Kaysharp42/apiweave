@@ -17,13 +17,13 @@ import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_mov
 import type { ScopeResolver } from "./scope_resolver"
 import { exportWorkflow } from "./workspace_repo_format"
 import {
-  assertNoSecretValues,
   collectSecretRefs,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
 import { asRecord, toPlain } from "./withheld_credentials"
 import { isSecretKey } from "@shared/credentials/credentials"
+import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
 
 /** Schema version for project bundles. Existing v2 files remain importable. */
 export const SCHEMA_VERSION = "2.0"

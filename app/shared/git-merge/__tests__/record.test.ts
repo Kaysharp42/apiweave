@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest"
 import type { GitMergePick } from "../../types/GitMergePick"
 import type { GitMergeSide } from "../../types/GitMergeSide"
-import { mergeRecord } from "../record"
+import { mergeRecord, readRecord } from "../record"
 import { edge, environment, frame, node, project, workflow, type Json, type WorkflowFile } from "./trees"
 
 const pick = (path: string, side: GitMergeSide, recordId = "wf1"): GitMergePick => ({ recordId, path, side })
+
+/** A workflow as its file holds it, which is how a merge takes its copies. */
+function canonical(value: WorkflowFile): Json {
+  const read = readRecord("workflow", value)
+  if (!("document" in read)) throw new Error(read.invalid)
+  return read.document
+}
 
 function flow(fields: Partial<WorkflowFile> = {}): WorkflowFile {
   return workflow("wf1", { name: "Login", ...fields })
@@ -269,6 +276,10 @@ describe("a project's workflow order", () => {
     ["only your copy reordered it: your order", order(entry("wf_c"), entry("wf_a"), entry("wf_b")), base, ["wf_c", "wf_a", "wf_b"]],
     ["only the remote copy reordered it: its order", base, order(entry("wf_b"), entry("wf_a"), entry("wf_c")), ["wf_b", "wf_a", "wf_c"]],
     ["both copies added workflows: the remote copy's, then yours", order(entry("wf_a"), entry("wf_b"), entry("wf_c"), entry("wf_d")), order(entry("wf_a"), entry("wf_b"), entry("wf_c"), entry("wf_e")), ["wf_a", "wf_b", "wf_c", "wf_e", "wf_d"]],
+    ["your copy reordered it, the remote copy added one: your order, the addition after it", order(entry("wf_c"), entry("wf_b"), entry("wf_a")), order(entry("wf_a"), entry("wf_b"), entry("wf_c"), entry("wf_d")), ["wf_c", "wf_b", "wf_a", "wf_d"]],
+    ["your copy reordered it, the remote copy removed one: your order, without it", order(entry("wf_c"), entry("wf_b"), entry("wf_a")), order(entry("wf_a"), entry("wf_c")), ["wf_c", "wf_a"]],
+    ["your copy added one, the remote copy reordered it: the remote's order, your addition after it", order(entry("wf_a"), entry("wf_b"), entry("wf_c"), entry("wf_d")), order(entry("wf_c"), entry("wf_b"), entry("wf_a")), ["wf_c", "wf_b", "wf_a", "wf_d"]],
+    ["your copy added one, the remote copy removed one: neither reordered it", order(entry("wf_a"), entry("wf_b"), entry("wf_c"), entry("wf_d")), order(entry("wf_a"), entry("wf_c")), ["wf_a", "wf_c", "wf_d"]],
   ])("%s, without a note", (_, ours, theirs, expected) => {
     const result = mergeOrder(base, ours, theirs)
 
@@ -339,6 +350,51 @@ describe("what the other copy's deletion leaves pointing at nothing", () => {
     expect(result.notes).toEqual([{ type: "freedNode", recordId: "wf1", name: "Login", nodeId: "n5", frameId: "g1" }])
   })
 
+  describe("frees a node from nested frames your copy deleted", () => {
+    const nested = flow({ nodes: [frame("f0", 100, 100), { ...frame("f1", 10, 20), parentId: "f0" }] })
+    const theirs = flow({ nodes: [...nested.nodes, node("n5", 1, 2, { parentId: "f1" })] })
+    const freed = [{ type: "freedNode", recordId: "wf1", name: "Login", nodeId: "n5", frameId: "f1" }]
+
+    it("into the nearest frame around them that is left, shifted by the deleted frame only", () => {
+      const result = merge(nested, flow({ nodes: [frame("f0", 100, 100)] }), theirs)
+
+      expect(nodesOf(result.merged)).toEqual([frame("f0", 100, 100), node("n5", 11, 22, { parentId: "f0" })])
+      expect(result.notes).toEqual(freed)
+    })
+
+    it("out of every frame when none is left, shifted by them all", () => {
+      const result = merge(nested, flow({ nodes: [] }), theirs)
+
+      expect(nodesOf(result.merged)).toEqual([node("n5", 111, 122)])
+      expect(result.notes).toEqual(freed)
+    })
+  })
+
+  it("an edge one copy deleted with its node and the other relabelled is dropped, not asked about, whichever copy deleted it", () => {
+    const pair = flow({ nodes: [node("n1", 0, 0), node("n2", 200, 0)], edges: [edge("e1", "n1", "n2")] })
+    const deleted = { ...pair, nodes: [node("n2", 200, 0)], edges: [] }
+    const relabelled = { ...pair, edges: [edge("e1", "n1", "n2", { label: "go" })] }
+    const dropped = [{ type: "droppedEdge", recordId: "wf1", name: "Login", edgeId: "e1", end: "source", nodeId: "n1" }]
+
+    const yoursDeleted = merge(pair, deleted, relabelled)
+    const remoteDeleted = merge(pair, relabelled, deleted)
+    for (const result of [yoursDeleted, remoteDeleted]) {
+      expect(result.conflicts).toEqual([])
+      expect(nodesOf(result.merged).map((item) => item["nodeId"])).toEqual(["n2"])
+      expect(edgeIds(result.merged)).toEqual([])
+      expect(result.notes).toEqual(dropped)
+    }
+    expect(remoteDeleted.merged).toEqual(yoursDeleted.merged)
+  })
+
+  it("keeps the conflict on an edge one copy deleted alone and the other relabelled: a pick can still bring it back", () => {
+    const pair = flow({ nodes: [node("n1", 0, 0), node("n2", 200, 0)], edges: [edge("e1", "n1", "n2")] })
+    const result = merge(pair, { ...pair, edges: [] }, { ...pair, edges: [edge("e1", "n1", "n2", { label: "go" })] })
+
+    expect(result.conflicts.map((conflict) => conflict.path)).toEqual(["edges.e1"])
+    expect(result.notes).toEqual([])
+  })
+
   it("drops, with its conflict, an edge both copies changed once a pick deletes the node it needs", () => {
     const theirs = { ...moved(base, "n3", { x: 600, y: 0 }, { config: { duration: 1 } }), edges: [base.edges[0]!, base.edges[1]!, edge("e3", "n2", "n3", { label: "last" })] }
 
@@ -403,8 +459,9 @@ describe("a whole record", () => {
   })
 
   it("comes out as its file holds it: the format's field order, a frame before its nodes, edges by id", () => {
-    const ours = flow({ nodes: [node("z1", 0, 0, { parentId: "g9" }), frame("g9", 0, 0), node("b1", 0, 0)], edges: [edge("e2", "b1", "z1"), edge("e1", "z1", "b1")] })
-    const { merged } = merge(flow(), ours, flow())
+    const ours = canonical(flow({ nodes: [node("b1", 0, 0)], edges: [edge("e1", "z1", "b1")] }))
+    const theirs = canonical(flow({ nodes: [node("z1", 0, 0, { parentId: "g9" }), frame("g9", 0, 0)], edges: [edge("e2", "b1", "z1")] }))
+    const { merged } = merge(canonical(flow()), ours, theirs)
 
     expect(Object.keys(merged!)).toEqual(["workflowId", "projectId", "name", "description", "selectedEnvironmentId", "tags", "variables", "nodes", "edges", "nodeTemplates"])
     expect(nodesOf(merged).map((item) => item["nodeId"])).toEqual(["b1", "g9", "z1"])

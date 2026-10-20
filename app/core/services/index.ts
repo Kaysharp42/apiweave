@@ -34,7 +34,6 @@ export {
   sanitizeVariablesForExport,
   extractSecretRefsFromString,
   collectSecretRefs,
-  assertNoSecretValues,
   findRedactedPlaceholders,
   sanitizeAgentReadValue,
   SECRET_PLACEHOLDER,

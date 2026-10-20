@@ -16,13 +16,13 @@ import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import {
-  assertNoSecretValues,
   collectSecretRefs,
   sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
 import { isSecretKey } from "@shared/credentials/credentials"
+import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
 import { SafeHttp, describeNetworkError } from "../runner/safe_http"
 
 // ponytail: fixed 10 MiB knob for remote OpenAPI/Swagger doc fetches — large

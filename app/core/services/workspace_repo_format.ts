@@ -31,9 +31,10 @@ import {
   type EnvironmentContent,
   type ProjectContent,
 } from "@shared/workspace-repo/format"
+import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
 import { ValidationError } from "../ipc/errors"
 import type { ExportedWorkflow } from "./project_export_service"
-import { assertNoSecretValues, sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
+import { sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
 
 /**
  * A workspace's repository, written from its rows and read back: the tree
