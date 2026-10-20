@@ -91,6 +91,7 @@ const WORKFLOW_EDITS: readonly WorkflowEdit[] = [
   addNode,
   removeNode,
   addEdge,
+  relabelEdge,
   retag,
 ]
 
@@ -144,9 +145,61 @@ function addEdge(random: () => number, draft: WorkflowFile): void {
   if (!edges.some((item) => item["edgeId"] === edgeId)) edges.push(edge(edgeId, sourceId, targetId))
 }
 
+function relabelEdge(random: () => number, draft: WorkflowFile): void {
+  const edges = workflowEdges(draft)
+  if (edges.length === 0) return
+  const item = edges[Math.floor(random() * edges.length)]!
+  if (random() < 0.25) delete item["label"]
+  else item["label"] = `l${Math.floor(random() * 4)}`
+}
+
 function retag(random: () => number, draft: WorkflowFile): void {
   draft.tags = draft.tags.filter(() => random() < 0.6)
   if (random() < 0.5) draft.tags.push(`tag${Math.floor(random() * 3)}`)
+}
+
+/** One place in a workflow an edit can set: `write` sets it, or says the workflow has no such place; `holds` finds the value in a merge. */
+interface Place {
+  readonly name: string
+  readonly write: (draft: WorkflowFile, value: string) => boolean
+  readonly holds: (merged: Json, value: string) => boolean
+}
+
+/** Places no two of which overlap, so setting two of them is two disjoint edits. */
+const PLACES: readonly Place[] = [
+  { name: "name", write: (draft, value) => setOn(draft, "name", value), holds: (merged, value) => merged["name"] === value },
+  { name: "description", write: (draft, value) => setOn(draft, "description", value), holds: (merged, value) => merged["description"] === value },
+  ...["alpha", "delta"].map((key): Place => ({
+    name: `variables.${key}`,
+    write: (draft, value) => setOn(draft.variables, key, value),
+    holds: (merged, value) => recordOrEmpty(merged["variables"])[key] === value,
+  })),
+  {
+    name: "tags",
+    write: (draft, value) => {
+      draft.tags.push(value)
+      return true
+    },
+    holds: (merged, value) => tagIds(merged["tags"]).includes(`tag:${value}`),
+  },
+  ...[0, 1, 2, 3].flatMap((index): Place[] => [
+    {
+      name: `nodes[${index}].label`,
+      write: (draft, value) => setOn(workflowNodes(draft)[index], "label", value),
+      holds: (merged, value) => recordsOf(merged["nodes"]).some((item) => item["label"] === value),
+    },
+    {
+      name: `edges[${index}].label`,
+      write: (draft, value) => setOn(workflowEdges(draft)[index], "label", value),
+      holds: (merged, value) => recordsOf(merged["edges"]).some((item) => item["label"] === value),
+    },
+  ]),
+]
+
+function setOn(item: Record<string, unknown> | undefined, key: string, value: string): boolean {
+  if (item === undefined) return false
+  item[key] = value
+  return true
 }
 
 function workflowNodes(draft: WorkflowFile): Json[] {
@@ -247,6 +300,27 @@ describe("mergeRecord properties", () => {
       const straightPaths = straight.conflicts.map((conflict) => shape(conflict, "theirs"))
       const swappedPaths = swapped.conflicts.map((conflict) => shape(conflict, "ours"))
       if (JSON.stringify(straightPaths) !== JSON.stringify(swappedPaths)) throw failure(seed, "conflicts are not symmetric under a side swap")
+    }
+  })
+
+  it("keeps both copies' edits when they touch different places", () => {
+    for (let iteration = 0; iteration < ITERATIONS; iteration += 1) {
+      const seed = BASE_SEED + iteration
+      const random = prng(seed)
+      const base = randomWorkflow(random)
+      const places = PLACES.filter((place) => place.write(structuredClone(base) as WorkflowFile, "probe"))
+      const first = Math.floor(random() * places.length)
+      const second = (first + 1 + Math.floor(random() * (places.length - 1))) % places.length
+      const [mine, remote] = [places[first]!, places[second]!]
+      const ours = structuredClone(base) as WorkflowFile
+      const theirs = structuredClone(base) as WorkflowFile
+      mine.write(ours, `ours-${seed}`)
+      remote.write(theirs, `theirs-${seed}`)
+
+      const result = mergeRecord("workflow", canonical("workflow", base), canonical("workflow", ours), canonical("workflow", theirs))
+      if (result.conflicts.length > 0) throw failure(seed, `disjoint edits conflict at ${result.conflicts.map((conflict) => conflict.path).join(", ")}`)
+      if (!mine.holds(result.merged!, `ours-${seed}`)) throw failure(seed, `your edit to ${mine.name} was lost`)
+      if (!remote.holds(result.merged!, `theirs-${seed}`)) throw failure(seed, `the remote edit to ${remote.name} was lost`)
     }
   })
 

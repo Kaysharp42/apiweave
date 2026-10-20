@@ -203,6 +203,20 @@ describe("a tree the merge cannot read", () => {
     expect(() => merge(ourFiles, broken("workflows/orders--wf_orders.json", fileText(workflowDocument(workflow("wf_login"), { projectId: null }))))).toThrow(/is not named <name>--wf_login.json/)
   })
 
+  it("refuses secret storage in a copy, as the importer would, naming the file and where in it", () => {
+    const theirs = ourTree((draft) => {
+      draft.environments[0]!.variables["token"] = { ciphertext: "c2VjcmV0", kid: "key-1" }
+    })
+    const path = recordPath("environments", "env_dev", "Dev").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    let result: ReturnType<typeof merge> | undefined
+
+    expect(() => {
+      result = merge(ourFiles, theirs)
+    }).toThrow(GitMergeInputError)
+    expect(() => merge(ourFiles, theirs)).toThrow(new RegExp(`remote copy's ${path} holds secret storage.*'ciphertext' at 'variables\\.token'`))
+    expect(result).toBeUndefined()
+  })
+
   it("refuses the remote's history of another workspace", () => {
     const theirs = ourTree((draft) => {
       draft.workspace.workspaceId = "ws_02"

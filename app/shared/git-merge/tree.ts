@@ -20,6 +20,7 @@ import {
   issueText,
   recordPath,
 } from "../workspace-repo/format"
+import { assertNoSecretValues } from "../workspace-repo/secret_storage"
 import { mergeRecord, readRecord, recordIdOf, recordNameOf, type RecordDocument } from "./record"
 import { conflictsOf, merge3, scopeFor } from "./values"
 
@@ -83,7 +84,8 @@ interface TreeCopy {
  * differently is a conflict on the file.
  *
  * Your copy and the remote copy must each be a tree APIWeave can read: every
- * file of the format's schema-valid, its records named after their ids, no
+ * file of the format's schema-valid and free of secret storage (`ciphertext`,
+ * `kek`, ...: what the importer refuses), its records named after their ids, no
  * path outside the tree, and this format's version; anything less throws
  * {@link GitMergeInputError}. The ancestor's unreadable files are only
  * missing: a record without a readable ancestor merges as one added in both
@@ -97,9 +99,10 @@ export function mergeTree(
   theirFiles: ReadonlyMap<string, string>,
   picks: readonly GitMergePick[] = [],
 ): GitMergeTreeResult {
-  const base = readCopy(baseFiles, "base")
-  const ours = readCopy(ourFiles, "ours")
-  const theirs = readCopy(theirFiles, "theirs")
+  const reads: Reads = new Map()
+  const base = readCopy(baseFiles, "base", reads)
+  const ours = readCopy(ourFiles, "ours", reads)
+  const theirs = readCopy(theirFiles, "theirs", reads)
   checkSameWorkspace(base, ours, theirs)
   const conflicts: GitMergeConflict[] = []
   const notes: GitMergeNote[] = []
@@ -194,11 +197,14 @@ function checkSameWorkspace(base: TreeCopy, ours: TreeCopy, theirs: TreeCopy): v
   for (const id of ancestor.keys()) if (id !== mine) ancestor.delete(id)
 }
 
+/** What a record file was read as, by path: a text the copies share is read once, and its copies are one record. */
+type Reads = Map<string, { readonly text: string; readonly record: RecordDocument | string }>
+
 /** One copy of the tree, every file read. Your copy and the remote's must read whole; see {@link mergeTree}. */
-function readCopy(files: ReadonlyMap<string, string>, copy: CopyName): TreeCopy {
+function readCopy(files: ReadonlyMap<string, string>, copy: CopyName, reads: Reads): TreeCopy {
   const tree: TreeCopy = { records: new Map(RECORD_KINDS.map((kind) => [kind, new Map<string, RecordDocument>()])), others: new Map() }
   const doubled = new Set<string>()
-  for (const path of [...files.keys()].sort(compare)) readPath(tree, copy, path, files.get(path)!, doubled)
+  for (const path of [...files.keys()].sort(compare)) readPath(tree, copy, path, files.get(path)!, doubled, reads)
   if (copy === "base") return tree
   for (const path of [FORMAT_FILE, WORKSPACE_FILE]) {
     if (!files.has(path)) throw new GitMergeInputError(copy, path, "is missing: this is not an APIWeave workspace repository")
@@ -206,13 +212,13 @@ function readCopy(files: ReadonlyMap<string, string>, copy: CopyName): TreeCopy 
   return tree
 }
 
-function readPath(tree: TreeCopy, copy: CopyName, path: string, text: string, doubled: Set<string>): void {
+function readPath(tree: TreeCopy, copy: CopyName, path: string, text: string, doubled: Set<string>, reads: Reads): void {
   if (!isTreePath(path)) return refuse(copy, path, "is not a path inside the repository")
   if (path === ATTRIBUTES_FILE) return
   if (path === FORMAT_FILE) return readFormat(copy, path, text)
   const kind = path === WORKSPACE_FILE ? "workspace" : folderKind(path)
   if (kind === undefined) tree.others.set(path, text)
-  else readRecordFile(tree, copy, kind, path, text, doubled)
+  else readRecordFile(tree, copy, kind, path, text, doubled, reads)
 }
 
 function readFormat(copy: CopyName, path: string, text: string): void {
@@ -230,8 +236,10 @@ function folderKind(path: string): WorkspacePendingChangeKind | undefined {
   return (["project", "workflow", "environment"] as const).find((kind) => RECORD_FOLDER[kind] === folder)
 }
 
-function readRecordFile(tree: TreeCopy, copy: CopyName, kind: WorkspacePendingChangeKind, path: string, text: string, doubled: Set<string>): void {
-  const record = recordInFile(kind, path, text)
+function readRecordFile(tree: TreeCopy, copy: CopyName, kind: WorkspacePendingChangeKind, path: string, text: string, doubled: Set<string>, reads: Reads): void {
+  const known = reads.get(path)
+  const record = known !== undefined && known.text === text ? known.record : recordInFile(kind, path, text)
+  if (known === undefined) reads.set(path, { text, record })
   if (typeof record === "string") return refuse(copy, path, record)
   const id = recordIdOf(kind, record)
   const records = tree.records.get(kind)!
@@ -253,11 +261,23 @@ function recordInFile(kind: WorkspacePendingChangeKind, path: string, text: stri
   if (folder !== undefined && !/^[^/]+\.json$/.test(path.slice(folder.length))) return `is not a <name>--<id>.json file directly inside ${folder}`
   const value = parseJson(text)
   if (value === undefined) return NOT_JSON
+  const secret = secretStorageIn(value)
+  if (secret !== undefined) return secret
   const read = readRecord(kind, value)
   if (!("document" in read)) return `does not hold a valid ${kind}: ${read.invalid}`
   const id = recordIdOf(kind, read.document)
   if (folder !== undefined && !new RegExp(`^${folder}[a-z0-9-]+--${id}\\.json$`).test(path)) return `is not named <name>--${id}.json, after the id it holds`
   return read.document
+}
+
+/** Where a file's JSON holds secret storage, which the importer refuses in any repository file; undefined when it holds none. */
+function secretStorageIn(value: JsonValue): string | undefined {
+  try {
+    assertNoSecretValues(value)
+    return undefined
+  } catch (error) {
+    return `holds secret storage, which no repository file may: ${error instanceof Error ? error.message : String(error)}`
+  }
 }
 
 /** A copy's file that cannot be read: your copy and the remote's throw; the ancestor's is only left out. */
