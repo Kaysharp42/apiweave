@@ -4,6 +4,7 @@ import type {
   GitStatus,
   GitStatusEntry,
   GitStatusEntryKind,
+  GitTreeBlob,
   GitTreeEntry,
   GitVersion,
 } from "./git_types"
@@ -157,6 +158,26 @@ export function parseTreeEntries(output: string): GitTreeEntry[] | undefined {
     if (match === null) return undefined
     const [, type = "", oid = "", path = ""] = match
     if (type === "blob") entries.push({ path, oid })
+  }
+  return entries
+}
+
+// `<mode> SP <type> SP <oid> SP <size> TAB <path>`; -l pads the size with spaces.
+const TREE_LISTING = /^\d+ (\w+) ([0-9a-f]+) +(\d+)\t([\s\S]+)$/
+
+/**
+ * Parse `git ls-tree -r -l -z`: the files (blobs) of a tree, by path, with
+ * their sizes. Anything that is not a file — a submodule's commit — is
+ * skipped, and output that does not read as a listing is refused, not guessed at.
+ */
+export function parseTreeListings(output: string): GitTreeBlob[] | undefined {
+  const entries: GitTreeBlob[] = []
+  for (const record of output.split("\0")) {
+    if (record === "") continue
+    const match = TREE_LISTING.exec(record)
+    if (match === null) return undefined
+    const [, type = "", oid = "", size = "0", path = ""] = match
+    if (type === "blob") entries.push({ path, oid, size: Number(size) })
   }
   return entries
 }

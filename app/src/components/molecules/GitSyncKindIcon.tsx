@@ -16,6 +16,7 @@ const ICONS: Readonly<Record<GitSyncKind, LucideIcon>> = {
   pending: CircleDot,
   syncing: RefreshCw,
   incoming: ArrowDownToLine,
+  merging: GitMerge,
   diverged: GitMerge,
   "read-only": Lock,
   error: AlertCircle,

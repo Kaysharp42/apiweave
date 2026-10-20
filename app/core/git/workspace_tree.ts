@@ -2,7 +2,8 @@ import type { Stats } from "node:fs"
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { ValidationError } from "../ipc/errors"
-import { checkFileSize, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
+import { checkFileSize, MAX_FILE_BYTES, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
+import type { GitService } from "./git_service"
 
 /** The folders whose `.json` files belong to the format: a file there that maps to no record is the format's to remove. */
 export const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
@@ -138,6 +139,20 @@ export async function readWorkspaceTree(
   }
   return files
 }
+/**
+ * A commit's tree as the format sees it: the same files {@link readWorkspaceTree}
+ * reads from a checkout, read straight from `rev` and capped the same way. A
+ * merge reads the ancestor and both sides this way — the database is committed
+ * before it decides, so its commit, not a checkout, is "ours".
+ */
+export function readWorkspaceTreeAt(
+  git: Pick<GitService, "readTreeFiles">,
+  directory: string,
+  rev: string,
+): Promise<Map<string, string>> {
+  return git.readTreeFiles(directory, rev, { maxFiles: MAX_TREE_FILES, maxTotalBytes: MAX_TREE_BYTES, maxFileBytes: MAX_FILE_BYTES })
+}
+
 /**
  * Make `directory` hold `files` (as `serializeWorkspace` returns them): write
  * only a file whose bytes differ, so an unchanged record keeps its timestamp

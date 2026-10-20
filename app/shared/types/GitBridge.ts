@@ -1,4 +1,6 @@
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
+import type { GitMergeConflict } from "./GitMergeConflict"
+import type { GitMergePick } from "./GitMergePick"
 import type { WorkspaceGitCommitRequest } from "./WorkspaceGitCommitRequest"
 import type { WorkspaceGitMode } from "./WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "./WorkspaceGitStatus"
@@ -32,6 +34,32 @@ export interface GitBridge {
    * history: nothing is committed, and the status does not change.
    */
   readonly pendingChanges: (workspaceId: string) => Promise<readonly WorkspacePendingChange[]>
+  /**
+   * What a merge is waiting on: every place your copy and the remote copy
+   * changed differently, recomputed from the merge's three commits and the
+   * picks persisted so far. Empty when the workspace is not merging. Rejects
+   * for an untracked workspace or one whose clone cannot be read.
+   */
+  readonly mergeConflicts: (workspaceId: string) => Promise<readonly GitMergeConflict[]>
+  /**
+   * Settle conflicts with picks and, when none are left, commit the merge,
+   * import it and push. Resolves to the status afterwards — still `merging`
+   * when conflicts remain, which is not an error. Resolves, rather than
+   * rejects, for a refused push and every other classified failure; it rejects
+   * only for an untracked workspace, one that is not merging, a pick that is
+   * not a pick, and an unexpected failure.
+   */
+  readonly resolveMerge: (
+    workspaceId: string,
+    picks: readonly GitMergePick[],
+    request?: WorkspaceGitCommitRequest,
+  ) => Promise<WorkspaceGitStatus>
+  /**
+   * Give up on the merge: abort it, put the clone back on this device's own
+   * commits, import nothing and leave the workspace `diverged`. Every local
+   * commit stays.
+   */
+  readonly abandonMerge: (workspaceId: string) => Promise<WorkspaceGitStatus>
   readonly onStatusChanged: (callback: (status: WorkspaceGitStatus) => void) => () => void
   /**
    * Bind the workspace to a remote: a repository with no branches receives its

@@ -1,4 +1,6 @@
 import type { KVStore, SqliteRow } from "../db"
+import type { GitMergePick } from "@shared/types/GitMergePick"
+import type { GitMergeSide } from "@shared/types/GitMergeSide"
 import { isWorkspaceGitMode, type WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitState } from "@shared/types/WorkspaceGitState"
@@ -27,6 +29,19 @@ export interface WorkspaceGitBinding {
 const COLUMNS =
   "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from"
 
+/**
+ * A merge waiting for the user, as the row persists it: the three commits and
+ * the picks made so far. Its conflicts are never stored — the same trees and
+ * picks recompute them, which is what makes a restart free.
+ */
+export interface WorkspaceMerge {
+  readonly workspaceId: string
+  readonly baseCommit: string
+  readonly ourCommit: string
+  readonly theirCommit: string
+  readonly picks: readonly GitMergePick[]
+}
+
 /** What a remote left on the row: where a sync got to, and whether it refused our pushes. None of it carries over to another remote. */
 const CLEAR_SYNC_RECORD = "last_synced_commit = NULL, last_synced_at = NULL, read_only = 0"
 
@@ -47,6 +62,20 @@ interface WorkspaceGitRow extends SqliteRow {
   readonly last_synced_commit: string | null
   readonly last_synced_at: string | null
   readonly integrating_from: string | null
+}
+
+interface MergeRow extends SqliteRow {
+  readonly workspace_id: string
+  readonly base_commit: string
+  readonly our_commit: string
+  readonly their_commit: string
+}
+
+interface MergePickRow extends SqliteRow {
+  readonly base_commit: string
+  readonly record_id: string
+  readonly path: string
+  readonly side: string
 }
 
 /** Which workspaces have a git history, and how each one syncs. No row: not tracked. */
@@ -130,6 +159,74 @@ export class WorkspaceGitRepository {
   public delete(workspaceId: string): boolean {
     return this.store.delete("DELETE FROM workspace_git WHERE workspace_id = ?", [workspaceId]).changes > 0
   }
+
+  /**
+   * The merge waiting for this workspace, or undefined. Picks are returned only
+   * for the merge's own base commit: one made against a base the merge no
+   * longer has is about different conflicts and settles nothing.
+   */
+  public getMerge(workspaceId: string): WorkspaceMerge | undefined {
+    const row = getMapped(this.store, "SELECT workspace_id, base_commit, our_commit, their_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId], rowToMerge)
+    if (row === undefined) return undefined
+    const picks = queryMapped(
+      this.store,
+      "SELECT base_commit, record_id, path, side FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit = ? ORDER BY record_id, path",
+      [workspaceId, row.baseCommit],
+      rowToPick,
+    )
+    return { ...row, picks }
+  }
+
+  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. */
+  public startMerge(
+    workspaceId: string,
+    baseCommit: string,
+    ourCommit: string,
+    theirCommit: string,
+    picks: readonly GitMergePick[],
+  ): void {
+    this.store.transaction((store) => {
+      store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
+      store.set("INSERT INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES (?, ?, ?, ?)", [
+        workspaceId,
+        baseCommit,
+        ourCommit,
+        theirCommit,
+      ])
+      this.insertPicks(store, workspaceId, baseCommit, picks)
+    })
+  }
+
+  /**
+   * Replace the merge's picks. False, and nothing written, when the merge has
+   * moved on to another base commit: these picks settle conflicts it no longer has.
+   */
+  public setMergePicks(workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): boolean {
+    return this.store.transaction((store) => {
+      const row = store.get<{ base_commit: string } & SqliteRow>("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
+      if (row === undefined || row.base_commit !== baseCommit) return false
+      store.delete("DELETE FROM workspace_merge_pick WHERE workspace_id = ?", [workspaceId])
+      this.insertPicks(store, workspaceId, baseCommit, picks)
+      return true
+    })
+  }
+
+  /** No merge is waiting any more. Its picks go with it. */
+  public clearMerge(workspaceId: string): boolean {
+    return this.store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId]).changes > 0
+  }
+
+  private insertPicks(store: KVStore, workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): void {
+    for (const pick of picks) {
+      store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)", [
+        workspaceId,
+        baseCommit,
+        pick.recordId,
+        pick.path,
+        pick.side,
+      ])
+    }
+  }
 }
 
 function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
@@ -148,4 +245,23 @@ function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
     lastSyncedAt: row.last_synced_at,
     integratingFrom: row.integrating_from,
   }
+}
+
+/** The merge row without its picks, which are read separately. */
+function rowToMerge(row: MergeRow): Omit<WorkspaceMerge, "picks"> {
+  return {
+    workspaceId: row.workspace_id,
+    baseCommit: row.base_commit,
+    ourCommit: row.our_commit,
+    theirCommit: row.their_commit,
+  }
+}
+
+function rowToPick(row: MergePickRow): GitMergePick {
+  if (!isMergeSide(row.side)) throw new Error(`workspace_merge_pick holds an unknown side: ${row.side}`)
+  return { recordId: row.record_id, path: row.path, side: row.side }
+}
+
+function isMergeSide(value: string): value is GitMergeSide {
+  return value === "ours" || value === "theirs"
 }

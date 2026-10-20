@@ -71,7 +71,9 @@ describe("describeGitSync", () => {
   });
 
   it("explains a divergence and a read-only workspace in the plan's words", () => {
-    expect(describeGitSync(trackedStatus({ state: "diverged" })).explanation).toMatch(/Both this device and the remote changed.*later release/);
+    expect(describeGitSync(trackedStatus({ state: "diverged" })).explanation).toMatch(
+      /Both this device and the remote changed.*merge was abandoned.*Sync now combines/,
+    );
     expect(describeGitSync(trackedStatus({ readOnly: true })).explanation).toMatch(/^You can't push to this repo — your changes stay on this device/);
   });
 

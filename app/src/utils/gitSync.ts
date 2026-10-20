@@ -6,7 +6,10 @@ const READ_ONLY_EXPLANATION =
   "You can't push to this repo — your changes stay on this device. Retry tries the push again; Discard local changes loads the remote's version instead.";
 
 const DIVERGED_EXPLANATION =
-  "Both this device and the remote changed, and APIWeave can't combine the two yet — that arrives in a later release. Your changes stay on this device. Discard local changes to load the remote's version instead.";
+  "Both this device and the remote changed, and the merge was abandoned. Your changes stay on this device. Sync now combines the two again, or Discard local changes loads the remote's version instead.";
+
+const MERGING_EXPLANATION =
+  "Both this device and the remote changed, and some fields were changed differently in each. Those need your decision before the merge can finish; until then nothing is pushed and your changes stay on this device. Discard local changes loads the remote's version instead.";
 
 const plural = (count: number, one: string, other: string): string =>
   `${count} ${count === 1 ? one : other}`;
@@ -42,6 +45,15 @@ function syncingView(status: WorkspaceGitStatus): GitSyncView {
   return status.remoteUrl === null
     ? view("syncing", "Committing", "info", "Committing your changes to this workspace's history…")
     : view("syncing", "Syncing", "info", `Syncing with ${whereOf(status)}…`);
+}
+
+/** A merge waiting for the user to settle its conflicts: not "syncing", because no pass will finish it. */
+function mergingView(status: WorkspaceGitStatus): GitSyncView {
+  const { lastError } = status;
+  return view("merging", "Merge needed", "warning", MERGING_EXPLANATION, {
+    // A resolve that failed (a missing author, say) says why here.
+    detail: lastError !== null && lastError.code !== null ? lastError.message : null,
+  });
 }
 
 function divergedView(status: WorkspaceGitStatus): GitSyncView {
@@ -130,7 +142,8 @@ function syncedView(status: WorkspaceGitStatus): GitSyncView {
  * "committed", never "synced", and has no push to describe.
  */
 export function describeGitSync(status: WorkspaceGitStatus): GitSyncView {
-  if (status.state === "syncing" || status.state === "merging") return syncingView(status);
+  if (status.state === "merging") return mergingView(status);
+  if (status.state === "syncing") return syncingView(status);
   if (status.state === "diverged") return divergedView(status);
   if (status.readOnly) return readOnlyView(status);
   if (status.state === "error") return errorView(status);

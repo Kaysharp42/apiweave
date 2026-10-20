@@ -16,6 +16,7 @@ export type GitCommand =
   | "remote"
   | "mergeAbort"
   | "mergeFastForward"
+  | "mergeNoCommit"
   | "resetHard"
   | "revList"
   | "log"
@@ -63,6 +64,21 @@ export interface GitStatus {
 export interface GitTreeEntry {
   readonly path: string
   readonly oid: string
+}
+
+/** {@link GitTreeEntry} with the size git reports for the blob, so a reader can refuse an oversized tree before reading it. */
+export interface GitTreeBlob extends GitTreeEntry {
+  readonly size: number
+}
+
+/** The most a committed tree may hold before it is refused unread: the same caps the checkout walk enforces. */
+export interface GitTreeLimits {
+  /** At most this many files. */
+  readonly maxFiles: number
+  /** At most this many bytes in total. */
+  readonly maxTotalBytes: number
+  /** At most this many bytes in one file. */
+  readonly maxFileBytes: number
 }
 
 /** How two revisions stand apart: each side's commits the other does not reach. */

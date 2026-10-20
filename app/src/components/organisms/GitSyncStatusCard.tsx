@@ -79,7 +79,7 @@ export function GitSyncStatusCard({
   const connected = status.remoteUrl !== null;
   const offerDiscard =
     connected &&
-    (alwaysOfferDiscard || view.kind === "diverged" || view.kind === "read-only");
+    (alwaysOfferDiscard || view.kind === "merging" || view.kind === "diverged" || view.kind === "read-only");
 
   return (
     <div className="space-y-3">
