@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- this is a registration table of parallel one-line `handleWorkspace(...)` calls; each channel's handler has its own signature, so a loop would lose the per-channel typing, and `handleWorkspace` already owns the sender guard.
 import { mkdirSync } from "node:fs"
 import path from "node:path"
 import type { IpcMain, IpcMainInvokeEvent } from "electron"
@@ -70,13 +71,14 @@ const RemoteUrlSchema = z.string().min(1, "a remote URL is required").max(2048, 
 
 const MergePickSchema = z
   .object({
-    recordId: z.string().min(1).max(128),
+    // A file conflict names its path, which may run to 4096 characters.
+    recordId: z.string().min(1).max(4096),
     path: z.string().max(4096),
     side: z.enum(["ours", "theirs"]),
   })
   .strict()
 
-/** A resolution's picks, checked: each names one record or file, one path in it, and which copy settles it. */
+/** A resolution's picks, checked: each names one record or file (by id or path), one path in it, and which copy settles it. */
 const MergePicksSchema = z.array(MergePickSchema).max(10_000)
 
 /** Track, resolving a missing author as the status that asks for one rather than as an error the renderer would have to read. */

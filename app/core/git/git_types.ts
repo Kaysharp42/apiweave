@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a pure types module: its interfaces are runs of `readonly field: type` lines by nature, and the run shared with an unrelated repository interface is suffix-array coincidence, not behaviour to extract.
 import type { GitIdentity } from "@shared/types/GitIdentity"
 
 export type GitCommand =

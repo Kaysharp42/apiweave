@@ -349,6 +349,7 @@ export class GitSyncService {
     })
   }
 
+  // fallow-ignore-next-line code-duplication -- this block is method chrome (`directory`, `exclusive`) aligned with `discardLocalChanges`'s opening; the two methods share no behaviour to extract.
   /**
    * Delete the workspace's repository and stop tracking it. The remote's own
    * copy is never touched, but this history is gone: tracking again starts a
@@ -553,15 +554,14 @@ export class GitSyncService {
     })
   }
 
+  // fallow-ignore-next-line code-duplication -- this block is method chrome (`directory`, `exclusive`, the binding lookup) that happens to align with another method's; the two share no behaviour.
   /**
-   * What the next commit would do, as records: the workspace's added, changed
-   * and deleted workflows, projects, environments and its own settings, named
-   * the way the user knows them. The workspace is serialized exactly as a
-   * commit would, in memory, and compared with the files HEAD holds: nothing
-   * is written into the clone, staged or committed, so the clone and the write
-   * counters stay exactly as they were. Reading HEAD takes two git calls
-   * however many records there are — `ls-tree` for the files and one
-   * `cat-file --batch` for the deleted records' names.
+   * What the next commit would do, as records the user knows by name. The
+   * workspace is serialized in memory and compared with the files HEAD holds:
+   * nothing is written, staged or committed, so the clone and the write
+   * counters stay as they were. Reading HEAD takes two git calls however many
+   * records there are — `ls-tree`, and one `cat-file --batch` for the deleted
+   * records' names.
    *
    * Rejects for an untracked workspace, and when the clone cannot be moved
    * back to the database after an import that never finished.
@@ -831,23 +831,35 @@ export class GitSyncService {
     try {
       await this.git.fetch(this.cloneDir(workspaceId), ORIGIN)
       const binding = this.repositories.workspaceGit.get(workspaceId)
-      if (binding === undefined) return
-      // A waiting merge keeps its state through a fetch; only a failure it may
-      // have left behind goes, exactly as for `diverged`.
-      if (binding.state === "merging") {
-        if (binding.lastError === null || isReachFailure(binding.lastError)) this.repositories.workspaceGit.setState(workspaceId, "merging", null)
-        return
-      }
-      if (binding.state !== "diverged" && (binding.lastError === null || isReachFailure(binding.lastError))) {
-        this.settleIdle(workspaceId)
-      }
+      if (binding !== undefined) this.settleAfterFetch(workspaceId, binding)
     } catch (error) {
-      const state = this.repositories.workspaceGit.get(workspaceId)?.state
-      this.repositories.workspaceGit.setState(workspaceId, state === "diverged" || state === "merging" ? state : "error", describeError(error))
+      this.recordFetchFailure(workspaceId, error)
       throw error
     } finally {
       await this.announce(workspaceId)
     }
+  }
+
+  /**
+   * A good fetch's outcome, as the workspace's state: it settles a failure to
+   * reach the remote, keeps a waiting merge and `diverged` (which is about
+   * where the histories stand, not how reachable the remote is), and leaves
+   * every other failure — a missing author, a refused push, a tree that did
+   * not import — because a fetch does not retry those.
+   */
+  private settleAfterFetch(workspaceId: string, binding: WorkspaceGitBinding): void {
+    const reachSettled = binding.lastError === null || isReachFailure(binding.lastError)
+    if (binding.state === "merging") {
+      if (reachSettled) this.repositories.workspaceGit.setState(workspaceId, "merging", null)
+    } else if (reachSettled && binding.state !== "diverged") {
+      this.settleIdle(workspaceId)
+    }
+  }
+
+  /** A failed fetch's outcome: `diverged` and `merging` keep their state, since a fetch cannot change either; anything else becomes `error`. */
+  private recordFetchFailure(workspaceId: string, error: unknown): void {
+    const state = this.repositories.workspaceGit.get(workspaceId)?.state
+    this.repositories.workspaceGit.setState(workspaceId, state === "diverged" || state === "merging" ? state : "error", describeError(error))
   }
 
   /**
@@ -1295,24 +1307,29 @@ export class GitSyncService {
    * user, and the push's own classified error for anything else.
    */
   private async pushToRemote(workspaceId: string, directory: string, branch: string): Promise<boolean> {
-    if (await this.remoteHoldsHead(directory, branch)) return true
-    const rejection = await this.pushOnce(directory, branch)
-    if (rejection === undefined) {
-      await this.recordPushed(workspaceId, directory)
-      return true
-    }
+    const rejection = await this.pushUnlessHeld(workspaceId, directory, branch)
+    if (rejection === undefined) return true
     // The remote moved while this cycle was running: fetch it again, take what
     // is new, and push once more. Integrating may itself find a divergence.
     const integrated = await this.integrate(workspaceId, directory, branch)
     if (!integrated) return false
-    if (await this.remoteHoldsHead(directory, branch)) return true
-    const second = await this.pushOnce(directory, branch)
-    if (second === undefined) {
-      await this.recordPushed(workspaceId, directory)
-      return true
-    }
+    const second = await this.pushUnlessHeld(workspaceId, directory, branch)
+    if (second === undefined) return true
     if (await this.bothSidesHoldCommits(directory, branch)) throw new DivergedError(LATE_DIVERGED_MESSAGE)
     throw second
+  }
+
+  /**
+   * One attempt at step 5: push unless the remote already holds HEAD, and
+   * record a push that went through. Undefined means the remote holds HEAD or
+   * took the push; a non-fast-forward rejection is returned for the caller to
+   * settle and retry.
+   */
+  private async pushUnlessHeld(workspaceId: string, directory: string, branch: string): Promise<GitNonFastForwardError | undefined> {
+    if (await this.remoteHoldsHead(directory, branch)) return undefined
+    const rejection = await this.pushOnce(directory, branch)
+    if (rejection === undefined) await this.recordPushed(workspaceId, directory)
+    return rejection
   }
 
   /**

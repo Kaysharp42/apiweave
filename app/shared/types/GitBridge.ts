@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a bridge interface is a list of parallel one-line method signatures; the run is the interface's shape, not shared behaviour to extract.
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { GitMergeConflict } from "./GitMergeConflict"
 import type { GitMergePick } from "./GitMergePick"
