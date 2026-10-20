@@ -251,6 +251,7 @@ const gitBridge: GitBridge = {
   untrack: invokeBridge(GIT_CHANNELS.untrack),
   setMode: invokeBridge(GIT_CHANNELS.setMode),
   syncNow: invokeBridge(GIT_CHANNELS.syncNow),
+  pendingChanges: invokeBridge(GIT_CHANNELS.pendingChanges),
   connectRemote: invokeBridge(GIT_CHANNELS.connectRemote),
   disconnectRemote: invokeBridge(GIT_CHANNELS.disconnectRemote),
   discardLocalChanges: invokeBridge(GIT_CHANNELS.discardLocalChanges),

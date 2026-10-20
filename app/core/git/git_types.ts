@@ -19,6 +19,9 @@ export type GitCommand =
   | "resetHard"
   | "revList"
   | "log"
+  | "lsTree"
+  | "catFile"
+  | "clean"
   | "config"
 
 export type { GitIdentity }
@@ -54,6 +57,12 @@ export interface GitStatus {
   readonly behind: number
   readonly entries: readonly GitStatusEntry[]
   readonly clean: boolean
+}
+
+/** One file of a commit's tree: its path, and the id of the blob that holds its bytes. */
+export interface GitTreeEntry {
+  readonly path: string
+  readonly oid: string
 }
 
 /** How two revisions stand apart: each side's commits the other does not reach. */

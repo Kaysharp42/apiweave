@@ -46,6 +46,7 @@ import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFrom
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
+import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -1232,6 +1233,11 @@ export const git = {
     request?: WorkspaceGitCommitRequest,
   ): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.syncNow(workspaceId, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  pendingChanges: (
+    workspaceId: string,
+  ): Promise<readonly WorkspacePendingChange[]> =>
+    getGitBridge()?.pendingChanges(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   connectRemote: (
     workspaceId: string,

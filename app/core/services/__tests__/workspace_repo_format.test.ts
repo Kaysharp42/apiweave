@@ -7,6 +7,7 @@ import { CollectionRepository, EnvironmentRepository, SecretRepository, Workflow
 import {
   MAX_RECORD_ID_LENGTH,
   RecordIdSchema,
+  describeRecordFile,
   parseWorkspace,
   serializeWorkspace,
   workspaceSnapshot,
@@ -487,5 +488,24 @@ describe("reading a workspace repository", () => {
     const snapshot = workspaceSnapshot(seededRecords())
 
     expect(() => serializeWorkspace({ ...snapshot, workflows: [{ ...snapshot.workflows[0]!, workflowId: "../../evil" }] })).toThrow(/'\.\.\/\.\.\/evil' is not an APIWeave id/)
+  })
+
+  it("says which record a single file holds, and nothing for the files that are not a record's", () => {
+    const files = tree()
+    const describe = (path: string) => describeRecordFile(path, files.get(path) ?? "")
+
+    expect(describe("workspace.json")).toEqual({ kind: "workspace", id: expect.any(String), name: "Acme QA" })
+    expect(describe("workflows/login--wf-login.json")).toEqual({ kind: "workflow", id: "wf-login", name: "Login" })
+    expect(describe("projects/shop-api--proj-shop.json")).toMatchObject({ kind: "project", id: "proj-shop" })
+    const environment = [...files.keys()].find((path) => path.startsWith("environments/"))!
+    expect(describe(environment)).toMatchObject({ kind: "environment" })
+    for (const path of [".apiweave/format.json", ".gitattributes", "README.md", "workflows/archive/login--wf-login.json", "workflows/notes.txt"]) {
+      expect(describeRecordFile(path, files.get(path) ?? "anything")).toBeUndefined()
+    }
+  })
+
+  it("refuses a record file that does not read, naming it", () => {
+    expect(() => describeRecordFile("workflows/login--wf-login.json", "<<<<<<< HEAD\n")).toThrow(/login--wf-login\.json is not valid JSON/)
+    expect(() => describeRecordFile("projects/shop-api--proj-shop.json", "{}")).toThrow(/projects\/shop-api--proj-shop\.json/)
   })
 })

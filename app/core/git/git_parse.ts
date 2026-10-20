@@ -1,4 +1,12 @@
-import type { GitAheadBehind, GitLogEntry, GitStatus, GitStatusEntry, GitStatusEntryKind, GitVersion } from "./git_types"
+import type {
+  GitAheadBehind,
+  GitLogEntry,
+  GitStatus,
+  GitStatusEntry,
+  GitStatusEntryKind,
+  GitTreeEntry,
+  GitVersion,
+} from "./git_types"
 
 export function parseVersion(output: string): GitVersion | undefined {
   const match = /^git version ((\d+)\.(\d+)(?:\.(\d+))?.*)$/m.exec(output)
@@ -131,6 +139,56 @@ export function parseAheadBehind(output: string): GitAheadBehind | undefined {
 export function parseCommitCount(output: string): number | undefined {
   const match = /^(\d+)\s*$/.exec(output)
   return match === null ? undefined : Number(match[1])
+}
+
+// `<mode> SP <type> SP <oid> TAB <path>`; with -z the path is verbatim and may hold spaces or a line break.
+const TREE_ENTRY = /^\d+ (\w+) ([0-9a-f]+)\t([\s\S]+)$/
+
+/**
+ * Parse `git ls-tree -r -z`: the files (blobs) of a tree, by path. Anything
+ * that is not a file — a submodule's commit — is skipped, and output that does
+ * not read as tree entries at all is refused, not guessed at.
+ */
+export function parseTreeEntries(output: string): GitTreeEntry[] | undefined {
+  const entries: GitTreeEntry[] = []
+  for (const record of output.split("\0")) {
+    if (record === "") continue
+    const match = TREE_ENTRY.exec(record)
+    if (match === null) return undefined
+    const [, type = "", oid = "", path = ""] = match
+    if (type === "blob") entries.push({ path, oid })
+  }
+  return entries
+}
+
+/**
+ * Parse `git cat-file --batch` for the objects asked for, in order: each is a
+ * `<oid> blob <size>` line, then exactly `size` bytes, then a line feed — or
+ * `<oid> missing`. The sizes are in bytes and the output arrives as text, so
+ * it is measured in bytes again; a blob that is not valid UTF-8 no longer
+ * measures as it did, and the output is refused rather than misread.
+ */
+export function parseBlobBatch(output: string, oids: readonly string[]): Map<string, string | undefined> | undefined {
+  const bytes = Buffer.from(output, "utf8")
+  const blobs = new Map<string, string | undefined>()
+  let offset = 0
+  for (const oid of oids) {
+    const lineEnd = bytes.indexOf(0x0a, offset)
+    if (lineEnd === -1) return undefined
+    const header = bytes.toString("utf8", offset, lineEnd)
+    offset = lineEnd + 1
+    if (header === `${oid} missing`) {
+      blobs.set(oid, undefined)
+      continue
+    }
+    const match = /^([0-9a-f]+) blob (\d+)$/.exec(header)
+    if (match === null || match[1] !== oid) return undefined
+    const end = offset + Number(match[2])
+    if (end >= bytes.length || bytes[end] !== 0x0a) return undefined
+    blobs.set(oid, bytes.toString("utf8", offset, end))
+    offset = end + 1
+  }
+  return offset === bytes.length ? blobs : undefined
 }
 
 /**

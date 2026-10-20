@@ -94,6 +94,7 @@ export const GIT_CHANNELS = {
   untrack: "git:untrack",
   setMode: "git:setMode",
   syncNow: "git:syncNow",
+  pendingChanges: "git:pendingChanges",
   connectRemote: "git:connectRemote",
   disconnectRemote: "git:disconnectRemote",
   discardLocalChanges: "git:discardLocalChanges",

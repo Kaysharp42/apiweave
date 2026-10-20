@@ -85,9 +85,15 @@ async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string)
  * remote and push a workspace to a repository it controls.
  */
 export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard, gitSync: GitSyncService): void {
-  ipcMain.handle(GIT_CHANNELS.status, guard((workspaceId: unknown) => gitSync.status(workspaceIdOf(workspaceId))))
-  ipcMain.handle(GIT_CHANNELS.track, guard((workspaceId: unknown) => trackOrAskForAuthor(gitSync, workspaceIdOf(workspaceId))))
-  ipcMain.handle(GIT_CHANNELS.untrack, guard((workspaceId: unknown) => gitSync.untrack(workspaceIdOf(workspaceId))))
+  const handleWorkspace = (channel: string, call: (workspaceId: string) => Promise<unknown>): void => {
+    ipcMain.handle(channel, guard((workspaceId: unknown) => call(workspaceIdOf(workspaceId))))
+  }
+  handleWorkspace(GIT_CHANNELS.status, (workspaceId) => gitSync.status(workspaceId))
+  handleWorkspace(GIT_CHANNELS.track, (workspaceId) => trackOrAskForAuthor(gitSync, workspaceId))
+  handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
+  handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
+  handleWorkspace(GIT_CHANNELS.disconnectRemote, (workspaceId) => gitSync.disconnectRemote(workspaceId))
+  handleWorkspace(GIT_CHANNELS.discardLocalChanges, (workspaceId) => gitSync.discardLocalChanges(workspaceId))
   ipcMain.handle(
     GIT_CHANNELS.setMode,
     guard((workspaceId: unknown, mode: unknown) => {
@@ -102,14 +108,6 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
   ipcMain.handle(
     GIT_CHANNELS.connectRemote,
     guard((workspaceId: unknown, url: unknown) => gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url))),
-  )
-  ipcMain.handle(
-    GIT_CHANNELS.disconnectRemote,
-    guard((workspaceId: unknown) => gitSync.disconnectRemote(workspaceIdOf(workspaceId))),
-  )
-  ipcMain.handle(
-    GIT_CHANNELS.discardLocalChanges,
-    guard((workspaceId: unknown) => gitSync.discardLocalChanges(workspaceIdOf(workspaceId))),
   )
   ipcMain.handle(GIT_CHANNELS.openFromGit, guard((url: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url))))
 }

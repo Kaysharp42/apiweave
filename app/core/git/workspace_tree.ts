@@ -5,7 +5,10 @@ import { ValidationError } from "../ipc/errors"
 import { checkFileSize, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
 
 /** The folders whose `.json` files belong to the format: a file there that maps to no record is the format's to remove. */
-const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
+export const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
+
+/** Everything the format owns in a commit's tree: the format file's folder, `.gitattributes`, `workspace.json` and the record folders. */
+export const FORMAT_PATHS = [".apiweave", ".gitattributes", "workspace.json", ...RECORD_FOLDERS] as const
 
 /** The format's own files at the top of the tree, besides the record folders. */
 const ROOT_FILES = [".apiweave/format.json", ".gitattributes", "workspace.json"] as const

@@ -4,6 +4,7 @@ import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Workflow } from "@shared/types/Workflow"
 import type { Workspace } from "@shared/types/Workspace"
+import type { WorkspacePendingChangeKind } from "@shared/types/WorkspacePendingChangeKind"
 import { JsonValueSchema } from "@shared/zod-schemas/JsonValueSchema"
 import { WorkflowEdgeSchema } from "@shared/zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -283,6 +284,41 @@ export function parseWorkspace(files: ReadonlyMap<string, string>): WorkspaceSna
     workflows: readRecords(files, "workflows", WorkflowFileSchema, (workflow) => workflow.workflowId),
     environments: readRecords(files, "environments", EnvironmentFileSchema, (environment) => environment.environmentId),
   }
+}
+
+/** What one repository file holds: which kind of record, its id and its name. */
+export interface RecordFileSummary {
+  readonly kind: WorkspacePendingChangeKind
+  readonly id: string
+  readonly name: string
+}
+
+/**
+ * The record a single file holds, or undefined for a path that is not a
+ * record's (`.apiweave/format.json`, `.gitattributes`, a README). Throws a
+ * ValidationError when the path is a record's but its text is not: the caller
+ * reads one file out of a history, where `parseWorkspace` has no whole tree.
+ */
+export function describeRecordFile(path: string, text: string): RecordFileSummary | undefined {
+  if (path === WORKSPACE_FILE) {
+    const workspace = decode(path, text, WorkspaceFileSchema)
+    return { kind: "workspace", id: workspace.workspaceId, name: workspace.name }
+  }
+  const [folder, file, ...rest] = path.split("/")
+  if (file === undefined || rest.length > 0 || !file.endsWith(".json")) return undefined
+  if (folder === "projects") {
+    const project = decode(path, text, ProjectFileSchema)
+    return { kind: "project", id: project.projectId, name: project.name }
+  }
+  if (folder === "workflows") {
+    const workflow = decode(path, text, WorkflowFileSchema)
+    return { kind: "workflow", id: workflow.workflowId, name: workflow.name }
+  }
+  if (folder === "environments") {
+    const environment = decode(path, text, EnvironmentFileSchema)
+    return { kind: "environment", id: environment.environmentId, name: environment.name }
+  }
+  return undefined
 }
 
 /** A workflow as it leaves the app (a bundle, a workspace repository): credentials withheld, ids kept. */

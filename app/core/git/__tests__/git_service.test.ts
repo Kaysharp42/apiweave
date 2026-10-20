@@ -659,3 +659,96 @@ describe("LC_ALL=C", () => {
     expect((error as GitNotARepositoryError).details.stderr).toContain("fatal: not a git repository")
   })
 })
+
+describe("reading a tree without a checkout", () => {
+  /** A repository whose one commit holds files in two folders, a file with spaces and accents, an empty file and a copy of another. */
+  async function treeRepo(sandbox: GitSandbox): Promise<string> {
+    const dir = path.join(sandbox.root, "tree")
+    await sandbox.service.init(dir, { initialBranch: "main" })
+    fs.mkdirSync(path.join(dir, "workflows", "nested"), { recursive: true })
+    fs.mkdirSync(path.join(dir, "other"))
+    writeFile(dir, "workflows/a b é.json", '{"name":"héllo ✓"}\n')
+    writeFile(dir, "workflows/nested/deep.json", '{"deep":true}\n')
+    writeFile(dir, "workflows/empty.json", "")
+    writeFile(dir, "workflows/copy.json", '{"deep":true}\n')
+    writeFile(dir, "workspace.json", '{"id":1}\n')
+    writeFile(dir, "other/x.json", "{}\n")
+    await sandbox.service.add(dir, ["."])
+    await sandbox.service.commit(dir, "tree")
+    return dir
+  }
+
+  const blobOf = (sandbox: GitSandbox, dir: string, file: string): string => rawGit(dir, sandbox.env, "rev-parse", `HEAD:${file}`).trim()
+
+  it("lists a commit's files recursively under the paths asked for, with their blob ids", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+
+    const entries = await sandbox.service.lsTree(dir, "HEAD", ["workflows", "workspace.json", "nothing-here"])
+
+    expect(entries.map((entry) => entry.path).sort()).toEqual([
+      "workflows/a b é.json",
+      "workflows/copy.json",
+      "workflows/empty.json",
+      "workflows/nested/deep.json",
+      "workspace.json",
+    ])
+    for (const entry of entries) expect(entry.oid).toBe(blobOf(sandbox, dir, entry.path))
+  })
+
+  it("refuses no paths and a revision that reads as an option", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+
+    await expect(sandbox.service.lsTree(dir, "HEAD", [])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    await expect(sandbox.service.lsTree(dir, "--help", ["workflows"])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+  })
+
+  it("reads many blobs in one git call, multi-byte text, an empty file and a repeated id included", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    const accented = blobOf(sandbox, dir, "workflows/a b é.json")
+    const deep = blobOf(sandbox, dir, "workflows/nested/deep.json")
+    const empty = blobOf(sandbox, dir, "workflows/empty.json")
+    const missing = "0".repeat(40)
+
+    const blobs = await sandbox.service.readBlobs(dir, [accented, deep, empty, deep, missing])
+
+    expect(blobs.get(accented)).toBe('{"name":"héllo ✓"}\n')
+    expect(blobs.get(deep)).toBe('{"deep":true}\n')
+    expect(blobs.get(empty)).toBe("")
+    expect(blobs.has(missing)).toBe(true)
+    expect(blobs.get(missing)).toBeUndefined()
+    expect(blobs.size).toBe(4)
+    expect(await sandbox.service.readBlobs(dir, [])).toEqual(new Map())
+  })
+
+  it("refuses an id that is not a full hex id, before it reaches git's stdin", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    const real = blobOf(sandbox, dir, "workspace.json")
+
+    for (const bad of ["HEAD", `${real}\nHEAD`, real.slice(0, 10), real.toUpperCase(), "-p"]) {
+      await expect(sandbox.service.readBlobs(dir, [real, bad])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    }
+  })
+
+  it("cleans untracked files and folders under the paths it is given, and nothing else", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    fs.mkdirSync(path.join(dir, "workflows", "stray-dir"))
+    writeFile(dir, "workflows/stray.json", "{}\n")
+    writeFile(dir, "workflows/stray-dir/inner.json", "{}\n")
+    writeFile(dir, "other/untracked.json", "{}\n")
+    writeFile(dir, "workflows/copy.json", "edited\n")
+
+    await sandbox.service.clean(dir, ["workflows"])
+
+    expect(fs.existsSync(path.join(dir, "workflows", "stray.json"))).toBe(false)
+    expect(fs.existsSync(path.join(dir, "workflows", "stray-dir"))).toBe(false)
+    // A tracked file, even edited, and an untracked one outside the paths stay.
+    expect(fs.readFileSync(path.join(dir, "workflows", "copy.json"), "utf8")).toBe("edited\n")
+    expect(fs.existsSync(path.join(dir, "other", "untracked.json"))).toBe(true)
+    await expect(sandbox.service.clean(dir, [])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+  })
+})

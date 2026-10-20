@@ -105,6 +105,8 @@ describe("GitSyncService.openFromGit", () => {
     expect(binding(target, source.workspaceId).lastSyncedAt).not.toBeNull()
     expect(snapshotOf(target, source.workspaceId)).toEqual(snapshotOf(source))
     expect(target.repositories.workspaces.getById(source.workspaceId)).toMatchObject({ isPersonal: false, slug: "acme-qa-2" })
+    // The import's own writes are not edits waiting for a commit.
+    expect(await target.sync.status(source.workspaceId)).toMatchObject({ uncommitted: false })
     // What the clone holds is what the database now serializes to, so the first auto commit has nothing to write.
     expect(await target.sync.commitLocal(source.workspaceId)).toBeUndefined()
     const status = await target.sync.status(source.workspaceId)
