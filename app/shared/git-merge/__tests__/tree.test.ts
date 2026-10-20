@@ -217,6 +217,20 @@ describe("a tree the merge cannot read", () => {
     expect(result).toBeUndefined()
   })
 
+  it.each([".git/config", ".GIT/config", ".git./info/attributes", "git~1/config", "docs/.g\u200Cit/hooks/pre-commit"])(
+    "refuses a remote copy writing into git's own folder as %j, instead of merging it as a file",
+    (path) => {
+      const theirs = broken(path, "[filter \"x\"]\n\tclean = calc.exe\n")
+      let result: ReturnType<typeof merge> | undefined
+
+      expect(() => {
+        result = merge(ourFiles, theirs)
+      }).toThrow(GitMergeInputError)
+      expect(() => merge(ourFiles, theirs)).toThrow(`the remote copy's ${path} is not a path a repository may hold`)
+      expect(result).toBeUndefined()
+    },
+  )
+
   it("refuses the remote's history of another workspace", () => {
     const theirs = ourTree((draft) => {
       draft.workspace.workspaceId = "ws_02"
