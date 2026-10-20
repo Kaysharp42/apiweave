@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
-import { describeGitSync } from "../../utils/gitSync";
+import { describeGitSync, gitSyncPrimaryLabel } from "../../utils/gitSync";
 import type { GitSyncStatusCardProps, SyncButtonsProps } from "../../types";
 
 const INTENT_TEXT = {
@@ -26,16 +26,16 @@ function lastSyncLines(status: WorkspaceGitStatus): string[] {
 }
 
 /**
- * What the state offers: Retry when it is stuck, otherwise Sync now (Commit
- * now with no remote) — one action under two names, so a retry in manual mode
- * with edits waiting asks for its commit message too — and Discard local
- * changes where that is the way out. A missing author has neither primary
- * action: only the settings form settles it.
+ * What the state offers: Review merge while a merge waits on conflicts, Retry
+ * when it is stuck, otherwise Sync now (Commit now with no remote) — one
+ * action under several names, so a retry in manual mode with edits waiting asks
+ * for its commit message too — and Discard local changes where that is the way
+ * out. A missing author has neither primary action: only the settings form
+ * settles it.
  */
 function SyncButtons({ view, connected, offerDiscard, actions }: SyncButtonsProps) {
-  const stuck = view.kind === "error" || view.kind === "read-only";
   const running = view.kind === "syncing";
-  const primaryLabel = stuck ? "Retry" : connected ? "Sync now" : "Commit now";
+  const merging = view.kind === "merging";
   return (
     <div className="flex flex-wrap items-center gap-2">
       {!view.needsAuthor && (
@@ -43,9 +43,9 @@ function SyncButtons({ view, connected, offerDiscard, actions }: SyncButtonsProp
           variant="primary"
           size="sm"
           loading={actions.busy || running}
-          onClick={actions.sync}
+          onClick={merging ? actions.askToResolveMerge : actions.sync}
         >
-          {primaryLabel}
+          {gitSyncPrimaryLabel(view, connected)}
         </Button>
       )}
       {offerDiscard && (

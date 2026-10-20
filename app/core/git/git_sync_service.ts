@@ -5,6 +5,8 @@ import type { GitErrorCode } from "@shared/types/GitErrorCode"
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict"
 import type { GitMergeNote } from "@shared/types/GitMergeNote"
 import type { GitMergePick } from "@shared/types/GitMergePick"
+import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits"
+import type { MergeSideCommit } from "@shared/types/MergeSideCommit"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkspaceGitCommit } from "@shared/types/WorkspaceGitCommit"
@@ -109,6 +111,11 @@ const COMMIT_WHILE_MERGING_MESSAGE = "This workspace is merging the remote's cha
 
 /** How many times a resolve commits the edits that landed under it and redoes the merge before leaving it for another try. */
 const MAX_MERGE_ATTEMPTS = 3
+
+/** How many records one {@link GitSyncService.mergeRecordCommits} call reads commits for: a picker asks for what it lists. */
+const MAX_MERGE_RECORD_COMMITS = 500
+/** How many records' commits one {@link GitSyncService.mergeRecordCommits} call reads at once: read-only `log`s, but not 500 processes at a time. */
+const MAX_MERGE_COMMITS_IN_FLIGHT = 8
 
 /**
  * A scratch clone of an open in progress is `<cloneRoot>/.open-<random>`. No
@@ -583,6 +590,7 @@ export class GitSyncService {
    * often as it likes, and the same commits and picks always give the same
    * list.
    */
+  // fallow-ignore-next-line code-duplication -- this block is method chrome (`directory`, `exclusive`, the binding lookup) that happens to align with another method's; the two share no behaviour.
   public async mergeConflicts(workspaceId: string): Promise<readonly GitMergeConflict[]> {
     const directory = this.cloneDir(workspaceId)
     return this.exclusive(workspaceId, async () => {
@@ -591,6 +599,70 @@ export class GitSyncService {
       if (merge === undefined) return []
       return (await this.computeMerge(merge, directory)).result.conflicts
     })
+  }
+
+  /**
+   * The last commit each side made to each of `recordIds`, read from the
+   * merge's two commits: who wrote each copy, for the picker to show beside
+   * it. The ids are the conflicts' `recordId`s — a `file` conflict names its
+   * path — and a side that does not hold a record has no commit there, `null`.
+   *
+   * Read-only: no tree is written and the clone does not move, so asking
+   * again always gives the same answers. One `ls-tree` per side names the
+   * record files both trees hold; each commit is then one `log -1 -- <path>`,
+   * run a few at a time so a big conflict list cannot start a process per
+   * record. Rejects for an untracked workspace and one that is not merging.
+   */
+  public async mergeRecordCommits(workspaceId: string, recordIds: readonly string[]): Promise<readonly MergeRecordCommits[]> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      this.mergingBinding(workspaceId)
+      const merge = this.repositories.workspaceGit.getMerge(workspaceId)
+      if (merge === undefined) throw new ConflictError(NOT_MERGING_MESSAGE)
+      const wanted = [...new Set(recordIds)].slice(0, MAX_MERGE_RECORD_COMMITS)
+      const [ours, theirs] = await Promise.all([
+        this.recordCommitsAt(directory, merge.ourCommit),
+        this.recordCommitsAt(directory, merge.theirCommit),
+      ])
+      // A worker takes the next record when its two reads settle, so at most
+      // `MAX_MERGE_COMMITS_IN_FLIGHT` records are being read at once. Each
+      // result is written at its index, keeping the list in the order asked.
+      const commits = new Array<MergeRecordCommits>(wanted.length)
+      let next = 0
+      const readNext = async (): Promise<void> => {
+        while (next < wanted.length) {
+          const index = next
+          next += 1
+          const recordId = wanted[index]
+          if (recordId === undefined) return
+          const [ourCommit, theirCommit] = await Promise.all([ours(recordId), theirs(recordId)])
+          commits[index] = { recordId, ours: ourCommit, theirs: theirCommit }
+        }
+      }
+      await Promise.all(
+        Array.from({ length: Math.min(MAX_MERGE_COMMITS_IN_FLIGHT, wanted.length) }, readNext),
+      )
+      return commits
+    })
+  }
+
+  /**
+   * A reader of one commit's history per record: the tree says which path holds
+   * each record id (`<folder>/<slug>--<id>.json`), and a path the tree does not
+   * list is used as given — a `file` conflict names its own path. A record
+   * neither form finds has no commit on this side.
+   */
+  private async recordCommitsAt(directory: string, rev: string): Promise<(recordId: string) => Promise<MergeSideCommit | null>> {
+    const byId = new Map<string, string>()
+    for (const entry of await this.git.lsTree(directory, rev, FORMAT_PATHS)) {
+      const id = recordIdOfFile(entry.path)
+      if (id !== undefined) byId.set(id, entry.path)
+    }
+    return async (recordId) => {
+      const [entry] = await this.git.log(directory, { rev, maxCount: 1, path: byId.get(recordId) ?? recordId })
+      if (entry === undefined) return null
+      return { sha: entry.sha, authorName: entry.authorName, authorDate: entry.authorDate, subject: entry.subject }
+    }
   }
 
   /**
@@ -1950,6 +2022,12 @@ function untrackedStatus(workspaceId: string): WorkspaceGitStatus {
     lastSyncedAt: null,
     lastCommit: null,
   }
+}
+
+/** The id a record file is named after (`<folder>/<slug>--<id>.json`), or undefined for a file that is not one. */
+function recordIdOfFile(relative: string): string | undefined {
+  const match = /--([A-Za-z0-9_][A-Za-z0-9_-]*)\.json$/.exec(relative)
+  return match?.[1]
 }
 
 function notTracked(workspaceId: string): NotFoundError {

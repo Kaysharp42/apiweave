@@ -253,6 +253,7 @@ const gitBridge: GitBridge = {
   syncNow: invokeBridge(GIT_CHANNELS.syncNow),
   pendingChanges: invokeBridge(GIT_CHANNELS.pendingChanges),
   mergeConflicts: invokeBridge(GIT_CHANNELS.mergeConflicts),
+  mergeRecordCommits: invokeBridge(GIT_CHANNELS.mergeRecordCommits),
   resolveMerge: invokeBridge(GIT_CHANNELS.resolveMerge),
   abandonMerge: invokeBridge(GIT_CHANNELS.abandonMerge),
   connectRemote: invokeBridge(GIT_CHANNELS.connectRemote),

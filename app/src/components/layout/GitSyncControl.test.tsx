@@ -55,6 +55,7 @@ const STATES: readonly StateCase[] = [
   { name: "syncing", status: trackedStatus({ state: "syncing" }), label: "Syncing" },
   { name: "incoming", status: trackedStatus({ mode: "manual", incoming: 3 }), label: "Incoming (3)" },
   { name: "diverged", status: trackedStatus({ state: "diverged", incoming: 1, outgoing: 1 }), label: "Diverged" },
+  { name: "merging", status: trackedStatus({ state: "merging", incoming: 1, outgoing: 1 }), label: "Merge needed" },
   { name: "read-only", status: trackedStatus({ readOnly: true }), label: "Read-only" },
   {
     name: "error",
@@ -292,6 +293,21 @@ describe("GitSyncControl", () => {
     // And nothing it was doing — busy, a failure — followed the control to the next workspace.
     await user.click(screen.getByRole("button", { name: "Version history: Committed" }));
     expect(await screen.findByRole("button", { name: "Commit now" })).toBeEnabled();
+  });
+
+  it("offers Review merge while a merge waits, opening the picker instead of syncing again", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installGitBridge(trackedStatus({ state: "merging", incoming: 1, outgoing: 1 }));
+    renderControl();
+
+    await user.click(await trigger("Merge needed"));
+    expect(await screen.findByText(/some fields were changed differently/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Review merge" }));
+    const dialog = await screen.findByRole("dialog", { name: "Resolve merge" });
+    expect(await within(dialog).findByText(/No conflicts are waiting/)).toBeInTheDocument();
+    expect(bridge.syncNow).not.toHaveBeenCalled();
   });
 
   it("explains a divergence, and discards only after the confirmation", async () => {

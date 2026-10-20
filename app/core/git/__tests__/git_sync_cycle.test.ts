@@ -489,6 +489,51 @@ describe("the sync cycle", () => {
       expect(headOf(a, workspaceId)).toBe(aHead)
     })
 
+    it("names the last commit each side made to a conflicted record, without moving either side", async () => {
+      const pair = await sharedPair()
+      const { a, b, sandbox, remote, opened, sharedId } = pair
+      const { aHead, bHead } = await renameConflict(pair)
+
+      // Asking twice for the same record answers once, and reading changes nothing.
+      const commits = await b.sync.mergeRecordCommits(opened, [sharedId, sharedId])
+
+      expect(commits).toEqual([
+        {
+          recordId: sharedId,
+          ours: expect.objectContaining({ sha: bHead, authorName: "Device B", subject: "Rename on B" }),
+          theirs: expect.objectContaining({ sha: aHead, authorName: "Device A", subject: "Rename on A" }),
+        },
+      ])
+      expect(headOf(b, opened)).toBe(bHead)
+      expect(headOf(a, pair.workspaceId)).toBe(aHead)
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+    })
+
+    it("has no commit for a side that does not hold the record", async () => {
+      const pair = await sharedPair()
+      const { a, b, remote, sandbox, workspaceId, opened, sharedId } = pair
+      a.repositories.workflows.delete(sharedId)
+      await a.sync.syncNow(workspaceId, { message: "Delete on A" })
+      const aHead = headOf(a, workspaceId)
+      b.repositories.workflows.update(sharedId, { name: "Kept on B" })
+      expect(await b.sync.syncNow(opened, { message: "Change on B" })).toMatchObject({ state: "merging" })
+
+      const [commits] = await b.sync.mergeRecordCommits(opened, [sharedId])
+
+      expect(commits?.ours).toMatchObject({ sha: headOf(b, opened), subject: "Change on B" })
+      // A deleted it, so A's side has no commit for it — not an error.
+      expect(commits?.theirs).toBeNull()
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+    })
+
+    it("refuses to read commit details when no merge is waiting", async () => {
+      const pair = await sharedPair()
+
+      await expect(pair.b.sync.mergeRecordCommits(pair.opened, [pair.sharedId])).rejects.toThrow(
+        "This workspace has no merge in progress.",
+      )
+    })
+
     it("resolves a merge with a pick: a two-parent commit, an import, a push, and the other clone fast-forwards", async () => {
       const pair = await sharedPair()
       const { a, b, sandbox, remote, workspaceId, opened, sharedId } = pair
