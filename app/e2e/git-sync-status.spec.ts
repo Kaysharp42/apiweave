@@ -100,7 +100,7 @@ const SCENARIOS: readonly StateScenario[] = [
       lastError: { code: null, message: "both sides changed" },
     },
     label: "Diverged",
-    explanation: /Both this device and the remote changed.*later release/,
+    explanation: /Both this device and the remote changed, and the merge was abandoned/,
   },
   {
     name: "read-only",
