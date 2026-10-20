@@ -6,7 +6,7 @@ import type { GitMergeFieldProps } from "../../types";
 
 /**
  * One conflicted field: both copies side by side under their own words, and a
- * choice per copy. A conflict at `""` is the whole record, so its card's
+ * choice per copy. A conflict at `""` is the whole record or file, so its card's
  * whole-record buttons are its choice; an invalid record offers only those too.
  */
 export function GitMergeField({
@@ -16,6 +16,12 @@ export function GitMergeField({
   onPick,
 }: GitMergeFieldProps) {
   const chooseHere = conflict.path !== "" && conflict.invalid === undefined;
+  const heading =
+    conflict.path !== ""
+      ? humanizePath(conflict.path)
+      : conflict.kind === "file"
+        ? "Whole file"
+        : "Whole record";
   const copies = [
     { side: "ours", owner: "Your", value: conflict.ours },
     { side: "theirs", owner: "Remote", value: conflict.theirs },
@@ -23,7 +29,7 @@ export function GitMergeField({
   return (
     <li className="border-t border-border px-3 py-3 first:border-t-0 dark:border-border-dark">
       <p className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">
-        {humanizePath(conflict.path)}
+        {heading}
       </p>
       <div className="mt-2 grid gap-3 md:grid-cols-2">
         {copies.map((copy) => (

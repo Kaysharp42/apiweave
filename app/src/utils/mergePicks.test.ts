@@ -4,7 +4,6 @@ import type { GitMergeSide } from "@shared/types/GitMergeSide";
 import {
   allConflictsPicked,
   groupConflicts,
-  keepListedPicks,
   pickKey,
   picksRequest,
   sideOfConflict,
@@ -164,20 +163,3 @@ describe("picksRequest", () => {
   });
 });
 
-describe("keepListedPicks", () => {
-  it("keeps decisions on listed places and whole-record decisions for a listed record, and drops the rest", () => {
-    const before = picks([
-      ["w1", "name", "ours"],
-      ["w1", "gone", "theirs"],
-      ["w1", "", "ours"],
-      ["w2", "", "theirs"],
-      ["w3", "name", "ours"],
-    ]);
-    const remaining = [conflict({ recordId: "w1", path: "name" }), conflict({ recordId: "w3", path: "description" })];
-
-    expect([...keepListedPicks(remaining, before)]).toEqual([
-      [pickKey("w1", "name"), "ours"],
-      [pickKey("w1", ""), "ours"],
-    ]);
-  });
-});

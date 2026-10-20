@@ -112,30 +112,6 @@ export function picksRequest(
     );
 }
 
-/**
- * What is still worth keeping after the server answered with the conflicts that
- * remain: decisions on listed fields, and whole-record decisions for a record
- * still listed. A pick that no longer matches anything is dropped, so the next
- * request cannot carry a decision about a place the merge no longer asks about.
- */
-export function keepListedPicks(
-  conflicts: readonly GitMergeConflict[],
-  picks: ReadonlyMap<string, GitMergeSide>,
-): ReadonlyMap<string, GitMergeSide> {
-  const listed = new Set(
-    conflicts.map((conflict) => pickKey(conflict.recordId, conflict.path)),
-  );
-  const records = new Set(conflicts.map((conflict) => conflict.recordId));
-  const next = new Map<string, GitMergeSide>();
-  for (const [key, side] of picks) {
-    const { recordId, path } = placeOf(key);
-    if (path === "" ? records.has(recordId) : listed.has(key)) {
-      next.set(key, side);
-    }
-  }
-  return next;
-}
-
 function compare(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;

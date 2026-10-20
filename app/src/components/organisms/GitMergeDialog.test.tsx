@@ -162,7 +162,7 @@ describe("GitMergeDialog", () => {
     );
   });
 
-  it("asks for the remaining conflicts after a partial resolve, keeping only the picks still listed", async () => {
+  it("carries every decision forward when a partial resolve leaves a conflict", async () => {
     const user = userEvent.setup();
     const { bridge } = renderDialog([NAME, DESCRIPTION], {
       resolveMerge: vi.fn(async () => trackedStatus({ state: "merging" })),
@@ -176,19 +176,29 @@ describe("GitMergeDialog", () => {
     await user.click(screen.getByRole("button", { name: "Keep remote copy of description" }));
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
-    // The re-done merge turned up a different conflict: both old picks are gone with their places.
+    // The re-done merge turned up a different conflict, and none of the
+    // decisions already made were thrown away.
     expect(await screen.findByText("1 conflict left to decide.")).toBeInTheDocument();
     expect(screen.queryByText("On A")).not.toBeInTheDocument();
     expect(screen.queryByText("From A")).not.toBeInTheDocument();
     expect(screen.getByText("Get A")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Finish merge" })).toBeDisabled();
+    // The reloaded list has a record the first list did not, so its card's
+    // authors are read again.
+    expect(bridge.mergeRecordCommits).toHaveBeenCalledTimes(2);
 
     await user.click(screen.getByRole("button", { name: "Keep remote copy of method" }));
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
+    // The whole set, not just the pick made since the reload: the server
+    // replaces its stored picks with exactly what the request carries.
     expect(bridge.resolveMerge).toHaveBeenLastCalledWith(
       "ws-1",
-      [{ recordId: "w1", path: "method", side: "theirs" }],
+      [
+        { recordId: "w1", path: "description", side: "theirs" },
+        { recordId: "w1", path: "method", side: "theirs" },
+        { recordId: "w1", path: "name", side: "ours" },
+      ],
       undefined,
     );
   });
@@ -283,6 +293,8 @@ describe("GitMergeDialog", () => {
     );
 
     expect(await screen.findByText("README.md")).toBeInTheDocument();
+    // A `""` place is the whole file, named as such rather than left blank.
+    expect(screen.getByText("Whole file")).toBeInTheDocument();
     // Only the two whole-file choices: no per-path buttons at all.
     expect(screen.getAllByRole("button", { name: /of README\.md$/ })).toHaveLength(2);
 
@@ -293,6 +305,21 @@ describe("GitMergeDialog", () => {
       "ws-1",
       [{ recordId: "README.md", path: "", side: "ours" }],
       undefined,
+    );
+  });
+
+  it("names a whole-record conflict instead of leaving its row blank", async () => {
+    renderDialog([
+      {
+        ...NAME,
+        path: "",
+        invalid: "These copies do not make a valid workflow",
+      },
+    ]);
+
+    expect(await screen.findByText("Whole record")).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "These copies do not make a valid workflow",
     );
   });
 

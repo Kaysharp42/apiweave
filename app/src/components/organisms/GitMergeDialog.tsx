@@ -12,7 +12,6 @@ import { describeConflictCount } from "../../utils/mergeCommits";
 import {
   allConflictsPicked,
   groupConflicts,
-  keepListedPicks,
   picksRequest,
   withPathPick,
   withWholeRecordPick,
@@ -23,6 +22,24 @@ const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
+ * Who last wrote each of the listed records, both copies. `null` when the
+ * details cannot be read: they are display only and never block a choice.
+ */
+async function fetchCommits(
+  workspaceId: string,
+  listed: readonly GitMergeConflict[],
+): Promise<ReadonlyMap<string, MergeRecordCommits> | null> {
+  const recordIds = [...new Set(listed.map((conflict) => conflict.recordId))];
+  if (recordIds.length === 0) return new Map();
+  try {
+    const found = await git.mergeRecordCommits(workspaceId, recordIds);
+    return new Map(found.map((entry) => [entry.recordId, entry]));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The merge picker: every conflict the merge is waiting on, one card per
  * record or file, with both copies' values and a choice per field or for the
  * whole record. A dialog rather than a page — it opens over the canvas from the
@@ -30,8 +47,8 @@ const errorText = (error: unknown): string =>
  * same reason the commit and discard dialogs are dialogs.
  *
  * The request always carries every decision made so far: the server replaces
- * its stored picks each time. A resolve that leaves conflicts reloads them and
- * drops only the decisions that no longer name a listed place.
+ * its stored picks each time, so a resolve that leaves conflicts reloads them
+ * and keeps the earlier decisions for the next finish to send again.
  *
  * Abandon is the deliberate way out: it keeps every local commit and change,
  * pushes nothing, and asks before it does that.
@@ -68,16 +85,13 @@ export function GitMergeDialog({
       }
       if (!live) return;
       setConflicts(listed);
-      const recordIds = [...new Set(listed.map((conflict) => conflict.recordId))];
-      if (recordIds.length === 0) return;
-      try {
-        const found = await git.mergeRecordCommits(workspaceId, recordIds);
-        if (live) {
-          setCommits(new Map(found.map((entry) => [entry.recordId, entry])));
-        }
-      } catch {
-        // Display only: a record's authors are not worth blocking the decision.
-        if (live) setCommitDetailsFailed(true);
+      const details = await fetchCommits(workspaceId, listed);
+      if (!live) return;
+      if (details === null) {
+        setCommitDetailsFailed(true);
+      } else {
+        setCommitDetailsFailed(false);
+        setCommits(details);
       }
     })();
     return () => {
@@ -90,7 +104,17 @@ export function GitMergeDialog({
   const reload = async (): Promise<void> => {
     const listed = await git.mergeConflicts(workspaceId);
     setConflicts(listed);
-    setPicks((current) => keepListedPicks(listed, current));
+    // A redo can turn up a conflict in a record the first list did not have,
+    // so every listed record's commits are read again for its card. The picks
+    // stay exactly as they are: the server replaces its stored set with each
+    // request, so the next finish must carry the earlier decisions too.
+    const details = await fetchCommits(workspaceId, listed);
+    if (details === null) {
+      setCommitDetailsFailed(true);
+    } else {
+      setCommitDetailsFailed(false);
+      setCommits(details);
+    }
   };
 
   const finish = async (): Promise<void> => {
