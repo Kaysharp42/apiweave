@@ -202,13 +202,16 @@ function repairWorkflow(merged: JsonValue, copies: Copies, scope: MergeScope, no
  * A conflict inside an edge that is gone whichever copy is picked is no longer
  * anyone's to settle: the edge is dropped, whichever copy deleted it, and the
  * conflict with it. An edge one copy deleted alone, and the other changed, is
- * still a question: picking the change brings it back.
+ * still a question: picking the change brings it back. So is an edge to a
+ * node still in conflict, which a pick may bring back too.
  */
 function dropSettledEdgeClashes(scope: MergeScope, kept: ReadonlySet<string>, dropped: Map<string, MissingEnd>, present: ReadonlySet<string>, sides: readonly Graph[]): void {
+  const open = scope.clashes.flatMap(({ at }) => (at.length === 2 && at[0] === "nodes" ? at.slice(1) : []))
+  const mayStay = new Set([...present, ...open])
   for (const found of scope.clashes) {
     const edgeId = found.at[0] === "edges" ? found.at[1] : undefined
     if (edgeId === undefined || kept.has(edgeId) || dropped.has(edgeId)) continue
-    const reasons = sides.flatMap((side) => side.edges.get(edgeId) ?? []).map((copy) => dropReason(edgeId, copy, present, sides))
+    const reasons = sides.flatMap((side) => side.edges.get(edgeId) ?? []).map((copy) => dropReason(edgeId, copy, mayStay, sides))
     const missing = reasons[0]
     if (missing !== undefined && reasons.every((reason) => reason !== undefined)) dropped.set(edgeId, missing)
   }
