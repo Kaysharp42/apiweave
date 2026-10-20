@@ -8,7 +8,8 @@ import useNodePresetStore from "../stores/NodePresetStore";
 import useAgentWriteRefresh from "./useAgentWriteRefresh";
 
 /**
- * Refetch the shared stores an agent's MCP writes invalidate.
+ * Refetch the shared stores an agent's MCP writes, or a git sync's import,
+ * invalidate.
  *
  * Mounted once for the app shell, beside `useAgentRunNotice`, because these
  * stores back surfaces the user can be looking at from any route. Pages that

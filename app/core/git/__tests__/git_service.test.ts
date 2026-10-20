@@ -411,6 +411,27 @@ describe("remotes", () => {
     expect(fs.readFileSync(path.join(clone, "link"), "utf8")).toBe("../outside")
   })
 
+  it("fast-forwards over a link the remote gained as a plain file too", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main")
+    const clone = path.join(sandbox.root, "clone")
+    await sandbox.service.clone(remote.url, clone)
+    writeFile(dir, "target.txt", "../outside")
+    const blob = rawGit(dir, sandbox.env, "hash-object", "-w", "target.txt").trim()
+    rawGit(dir, sandbox.env, "update-index", "--add", "--cacheinfo", `120000,${blob},workflows`)
+    rawGit(dir, sandbox.env, ...WHO, "commit", "-m", "a link where a folder belongs")
+    await sandbox.service.push(dir, "origin", "main")
+
+    await sandbox.service.fetch(clone, "origin")
+    await sandbox.service.mergeFastForward(clone, "origin/main")
+
+    expect(fs.lstatSync(path.join(clone, "workflows")).isFile()).toBe(true)
+    expect(fs.readFileSync(path.join(clone, "workflows"), "utf8")).toBe("../outside")
+  })
+
   it("fetches new commits and reports behind", async () => {
     const sandbox = makeSandbox()
     const remote = makeBareRemote(sandbox)

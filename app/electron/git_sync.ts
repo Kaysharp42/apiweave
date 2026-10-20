@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs"
 import path from "node:path"
 import type { IpcMain, IpcMainInvokeEvent } from "electron"
 import { z } from "zod"
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -15,15 +16,25 @@ type TrustedSenderGuard = <Args extends unknown[], R>(
   handler: (...args: Args) => R,
 ) => (event: IpcMainInvokeEvent, ...args: Args) => R | Promise<never>
 
+/** What an import from the remote can rewrite: every domain the renderer refetches for an agent's write that the workspace's tree holds. */
+const IMPORTED_DOMAINS = ["workspaces", "projects", "workflows", "environments"] as const
+
 /**
  * The sync service over the user's own git: clones under `userData/git`, and
  * an empty `userData/git-hooks` as every call's `core.hooksPath`, so no hook —
  * the user's global one included — runs inside a clone.
+ *
+ * An import from the remote rewrites records under a renderer that did not
+ * ask for it, exactly as an agent's MCP write does, and a form still holding
+ * the old values would save them back over it. So it is announced the same
+ * way: `publishRefresh` gets the coarse event the renderer already refetches
+ * its lists for.
  */
 export function createGitSync(
   userDataPath: string,
   repositories: GitSyncRepositories,
   onStatusChanged: (status: WorkspaceGitStatus) => void,
+  publishRefresh: (event: AgentWriteEvent) => void,
 ): GitSyncService {
   const hooksDir = path.join(userDataPath, "git-hooks")
   mkdirSync(hooksDir, { recursive: true })
@@ -32,6 +43,9 @@ export function createGitSync(
     git: new GitService({ hooksDir }),
     repositories,
     onStatusChanged,
+    onImported: (workspaceId) => {
+      for (const domain of IMPORTED_DOMAINS) publishRefresh({ domain, action: "gitImport", workspaceId })
+    },
   })
 }
 

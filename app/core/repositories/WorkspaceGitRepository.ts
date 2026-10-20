@@ -16,10 +16,16 @@ export interface WorkspaceGitBinding {
   readonly lastError: WorkspaceGitError | null
   readonly lastSyncedCommit: string | null
   readonly lastSyncedAt: string | null
+  /**
+   * The commit the clone was on before a fast-forward or a discard moved it,
+   * while the import of where it moved to has not committed. Non-null outside
+   * a running integration: the clone is ahead of the database.
+   */
+  readonly integratingFrom: string | null
 }
 
 const COLUMNS =
-  "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at"
+  "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from"
 
 /** What a remote left on the row: where a sync got to, and whether it refused our pushes. None of it carries over to another remote. */
 const CLEAR_SYNC_RECORD = "last_synced_commit = NULL, last_synced_at = NULL, read_only = 0"
@@ -40,6 +46,7 @@ interface WorkspaceGitRow extends SqliteRow {
   readonly last_error: string | null
   readonly last_synced_commit: string | null
   readonly last_synced_at: string | null
+  readonly integrating_from: string | null
 }
 
 /** Which workspaces have a git history, and how each one syncs. No row: not tracked. */
@@ -75,6 +82,15 @@ export class WorkspaceGitRepository {
       at,
       workspaceId,
     ]).changes > 0
+  }
+
+  /**
+   * Record, before the clone moves, the commit it is leaving — or null once the
+   * database holds the tree the clone is on. Cleared in the same transaction as
+   * the import, so the two commit together.
+   */
+  public setIntegratingFrom(workspaceId: string, commit: string | null): boolean {
+    return this.store.set("UPDATE workspace_git SET integrating_from = ? WHERE workspace_id = ?", [commit, workspaceId]).changes > 0
   }
 
   /**
@@ -130,5 +146,6 @@ function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
     lastError: row.last_error === null ? null : parseJson<WorkspaceGitError>(row.last_error),
     lastSyncedCommit: row.last_synced_commit,
     lastSyncedAt: row.last_synced_at,
+    integratingFrom: row.integrating_from,
   }
 }

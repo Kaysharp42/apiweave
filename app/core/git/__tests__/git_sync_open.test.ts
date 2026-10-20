@@ -99,6 +99,10 @@ describe("GitSyncService.openFromGit", () => {
       lastError: null,
       readOnly: false,
     })
+    // The database and the clone hold exactly the remote's tip: that is where the two last agreed.
+    const remoteTip = rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim()
+    expect(binding(target, source.workspaceId).lastSyncedCommit).toBe(remoteTip)
+    expect(binding(target, source.workspaceId).lastSyncedAt).not.toBeNull()
     expect(snapshotOf(target, source.workspaceId)).toEqual(snapshotOf(source))
     expect(target.repositories.workspaces.getById(source.workspaceId)).toMatchObject({ isPersonal: false, slug: "acme-qa-2" })
     // What the clone holds is what the database now serializes to, so the first auto commit has nothing to write.
@@ -174,6 +178,7 @@ describe("GitSyncService.openFromGit", () => {
 
     await expect(target.sync.openFromGit(url)).rejects.toThrow(/no workspace in this app claims it/)
     await target.sync.reconcile()
+    await target.sync.settled()
 
     expect(rawGit(unclaimed, target.sandbox.env, "rev-parse", "HEAD").trim()).toBe(head)
     expect(fs.readFileSync(path.join(unclaimed, "local-only.txt"), "utf8")).toBe("not on the remote\n")
@@ -197,6 +202,7 @@ describe("GitSyncService.openFromGit", () => {
       await strandedOpen(target, url, source.workspaceId)
 
       await target.sync.reconcile()
+      await target.sync.settled()
 
       expect(entries(target.cloneRoot)).toEqual([])
       expect(await target.sync.openFromGit(url)).toMatchObject({ kind: "opened", workspaceId: source.workspaceId })
@@ -465,8 +471,45 @@ describe("GitSyncService.openFromGit", () => {
     fs.mkdirSync(adopted, { recursive: true })
 
     await target.sync.reconcile()
+    await target.sync.settled()
 
     expect(entries(target.cloneRoot)).toEqual(["orphan-clone"])
+  })
+
+  it("reconciles without waiting for an open that is still cloning, and sweeps once that open is done", async () => {
+    const { source, url } = await publishedWorkspace()
+    let release: (() => void) | undefined
+    let cloneStarted: (() => void) | undefined
+    const cloning = new Promise<void>((resolve) => {
+      cloneStarted = resolve
+    })
+    const target = openHarness({
+      wrap: (git) => ({
+        ...passthrough(git),
+        clone: async (...args: Parameters<typeof git.clone>) => {
+          await new Promise<void>((resolve) => {
+            release = resolve
+            cloneStarted?.()
+          })
+          return git.clone(...args)
+        },
+      }),
+    })
+    const stale = path.join(target.cloneRoot, ".open-0123abcd")
+    fs.mkdirSync(path.join(stale, ".git"), { recursive: true })
+    const opening = target.sync.openFromGit(url)
+    await cloning
+
+    const reconciled = await Promise.race([
+      target.sync.reconcile().then(() => "reconciled"),
+      new Promise((resolve) => setTimeout(() => resolve("blocked behind the open"), 2_000)),
+    ])
+
+    expect(reconciled).toBe("reconciled")
+    release?.()
+    expect(await opening).toMatchObject({ kind: "opened", workspaceId: source.workspaceId })
+    await target.sync.settled()
+    expect(entries(target.cloneRoot)).toEqual([source.workspaceId])
   })
 
   it("reconciles when there is no clone root yet", async () => {

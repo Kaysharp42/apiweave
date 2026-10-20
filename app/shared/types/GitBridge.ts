@@ -38,8 +38,9 @@ export interface GitBridge {
   /**
    * Reset the workspace to the remote's branch and re-import it, throwing away
    * every local commit and uncommitted change. The remote is fetched first.
-   * Rejects when the workspace has no remote, or the remote has no branch for
-   * it yet.
+   * Rejects when the workspace has no remote, the remote has no branch for it
+   * yet, the fetch fails, or the remote's tree does not import — in the last
+   * case the workspace is left as it was.
    */
   readonly discardLocalChanges: (workspaceId: string) => Promise<WorkspaceGitStatus>
   /**

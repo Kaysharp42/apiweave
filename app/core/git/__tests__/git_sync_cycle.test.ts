@@ -11,6 +11,8 @@ import {
 } from "../../repositories"
 import { serializeWorkspace, workspaceSnapshot, type WorkspaceSnapshot } from "../../services/workspace_repo_format"
 import {
+  GitCommandError,
+  GitNetworkError,
   GitNonFastForwardError,
   type GitFailureDetails,
 } from "../git_errors"
@@ -31,6 +33,8 @@ interface Device {
   readonly git: GitService
   readonly cloneRoot: string
   readonly env: NodeJS.ProcessEnv
+  /** Every workspace the service said it imported into, in order. */
+  readonly imports: string[]
 }
 
 const devices: Device[] = []
@@ -61,8 +65,9 @@ function openDevice(sandbox: GitSandbox, name: string, wrap?: (git: GitService) 
     env: sandbox.env,
   })
   const cloneRoot = path.join(sandbox.root, `${name}-clones`)
-  sync = new GitSyncService({ cloneRoot, git: wrap?.(git) ?? git, repositories })
-  const device: Device = { db, repositories, sync, git, cloneRoot, env: sandbox.env }
+  const imports: string[] = []
+  sync = new GitSyncService({ cloneRoot, git: wrap?.(git) ?? git, repositories, onImported: (workspaceId) => imports.push(workspaceId) })
+  const device: Device = { db, repositories, sync, git, cloneRoot, env: sandbox.env, imports }
   devices.push(device)
   return device
 }
@@ -233,6 +238,19 @@ function nonFastForward(): GitNonFastForwardError {
   return new GitNonFastForwardError("git push failed: (non-fast-forward)", details)
 }
 
+const NETWORK_DOWN = "git fetch failed: fatal: unable to access the remote: Could not resolve host"
+
+/** A fetch that cannot reach the remote, as git classifies it. */
+function networkDown(): GitNetworkError {
+  return new GitNetworkError(NETWORK_DOWN, { args: ["fetch"], exitCode: 128, stdout: "", stderr: NETWORK_DOWN })
+}
+
+/** A reset that fails, as one would on a clone a crashed git left locked. */
+function resetRefused(): GitCommandError {
+  const stderr = "fatal: Unable to create '.git/index.lock': File exists."
+  return new GitCommandError(`git reset failed: ${stderr}`, { args: ["reset"], exitCode: 128, stdout: "", stderr })
+}
+
 describe("the sync cycle", () => {
   it("pushes A's edit, and B pulling it gets the same records with nothing to commit", async () => {
     fakeTimers()
@@ -263,8 +281,10 @@ describe("the sync cycle", () => {
     // The commit B pulled is A's, and B made none of its own: nothing schedules a commit behind the import.
     expect((await b.git.log(dirOf(b, opened)))[0]).toMatchObject({ authorName: "Device A", authorEmail: "a@example.invalid", subject: "Add login" })
     expect(await b.git.status(dirOf(b, opened))).toMatchObject({ clean: true })
-    expect(binding(b, opened)).toMatchObject({ state: "idle", lastError: null, lastSyncedCommit: pushed })
+    expect(binding(b, opened)).toMatchObject({ state: "idle", lastError: null, lastSyncedCommit: pushed, integratingFrom: null })
     expect(binding(b, opened).lastSyncedAt).not.toBeNull()
+    // The one import is announced, for the renderer to refetch what it rewrote.
+    expect(b.imports).toEqual([opened])
     const status = await b.sync.status(opened)
     expect(status).toMatchObject({ incoming: 0, outgoing: 0, readOnly: false })
 
@@ -347,6 +367,8 @@ describe("the sync cycle", () => {
     const discarded = await b.sync.discardLocalChanges(opened)
 
     expect(discarded).toMatchObject({ state: "idle", lastError: null, incoming: 0, outgoing: 0 })
+    expect(b.imports).toEqual([opened])
+    expect(binding(b, opened).integratingFrom).toBeNull()
     expect(headOf(b, opened)).toBe(aHead)
     expect(await b.git.status(dirOf(b, opened))).toMatchObject({ clean: true })
     expect(binding(b, opened)).toMatchObject({ lastSyncedCommit: aHead })
@@ -509,6 +531,12 @@ describe("the sync cycle", () => {
     expect(headOf(b, opened)).toBe(aHead)
     expect(b.repositories.workflows.listByWorkspace(opened, true).items.map((workflow) => workflow.name)).toEqual(["On A"])
     expect(b.repositories.workflows.getById(onA.workflowId)).toBeDefined()
+
+    // Retry with nothing to send: git would answer "Everything up-to-date" without asking the
+    // hook, which proves nothing about the host. Nothing is pushed, and B stays read-only.
+    const retried = await b.sync.syncNow(opened)
+    expect(retried).toMatchObject({ state: "idle", readOnly: true, lastError: { code: "permission_denied" }, incoming: 0, outgoing: 0 })
+    expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
   })
 
   it("surfaces a network loss mid-push as an error, keeps the commit, and retries on the next cycle", async () => {
@@ -866,6 +894,9 @@ describe("the sync cycle", () => {
     expect(snapshotOf(b, opened)).toEqual(before)
     expect(remoteHead(sandbox, remote.dir)).toBe(broken)
     expect(await b.git.status(dirOf(b, opened))).toMatchObject({ clean: true })
+    // Back where the database is, so nothing is left to recover; and nothing was imported to announce.
+    expect(binding(b, opened).integratingFrom).toBeNull()
+    expect(b.imports).toEqual([])
 
     // The next cycle fails the same way and pushes nothing: without the rollback it would push this tree back over the remote's.
     const again = await b.sync.syncNow(opened)
@@ -887,8 +918,9 @@ describe("the sync cycle", () => {
 
     expect(imported).toMatchObject({ state: "idle", lastError: null, incoming: 0, outgoing: 0 })
     expect(headOf(b, opened)).toBe(fixed)
-    expect(binding(b, opened).lastSyncedCommit).toBe(fixed)
+    expect(binding(b, opened)).toMatchObject({ lastSyncedCommit: fixed, integratingFrom: null })
     expect(b.repositories.workflows.getById(REMOTE_WORKFLOW_ID)?.name).toBe("Fixed on the remote")
+    expect(b.imports).toEqual([opened])
   })
 
   it("moves the clone back when a discard cannot import the remote's tree, so the local tree is never pushed over it", async () => {
@@ -906,6 +938,8 @@ describe("the sync cycle", () => {
 
     await expect(b.sync.discardLocalChanges(opened)).rejects.toThrow(/workspace\.json is not valid JSON/)
 
+    expect(b.imports).toEqual([])
+    expect(binding(b, opened).integratingFrom).toBeNull()
     expect(headOf(b, opened)).toBe(localTip)
     expect(await b.git.status(dirOf(b, opened))).toMatchObject({ clean: true })
     expect(b.repositories.workflows.listByWorkspace(opened, true).items.map((workflow) => workflow.name)).toEqual(["B only"])
@@ -965,7 +999,7 @@ describe("the sync cycle", () => {
     const b = openDevice(sandbox, "b", (git) => ({
       ...passthrough(git),
       fetch: async (dir, remoteName) => {
-        if (failFetch) throw new Error("network down")
+        if (failFetch) throw networkDown()
         return git.fetch(dir, remoteName)
       },
     }))
@@ -980,7 +1014,7 @@ describe("the sync cycle", () => {
 
     failFetch = true
     await elapse(b, SYNC_INTERVAL_MS)
-    expect(await b.sync.status(opened)).toMatchObject({ state: "error", readOnly: true, lastError: { code: null, message: "network down" } })
+    expect(await b.sync.status(opened)).toMatchObject({ state: "error", readOnly: true, lastError: { code: "network_error", message: NETWORK_DOWN } })
 
     // The failure was about one fetch; the next good one clears it. The workspace is still read-only.
     failFetch = false
@@ -1059,5 +1093,232 @@ describe("the sync cycle", () => {
     expect(await subjectsOf(b, opened)).toContain("Add B's work")
     expect(await subjectsOf(b, opened)).not.toContain("Someone else's commit")
     expect(remoteHead(sandbox, remote.dir)).not.toBe(headOf(b, opened))
+  })
+
+  describe("a clone left ahead of its database", () => {
+    /**
+     * What a crash, a kill or a quit between a fast-forward and its import
+     * leaves on a device: the row marked as the service marks it, the clone at
+     * the remote's tip, and the database as it was.
+     */
+    function moveCloneWithoutImport(device: Device, workspaceId: string): void {
+      const dir = dirOf(device, workspaceId)
+      rawGit(dir, device.env, "fetch", "origin")
+      device.repositories.workspaceGit.setIntegratingFrom(workspaceId, headOf(device, workspaceId))
+      rawGit(dir, device.env, "merge", "--ff-only", "origin/main")
+    }
+
+    /** A device whose `git reset` fails while `refuse` says so. */
+    function refusingResets(sandbox: GitSandbox, name: string): { device: Device; refuse: (on: boolean) => void } {
+      let refusing = false
+      const device = openDevice(sandbox, name, (git) => ({
+        ...passthrough(git),
+        resetHard: async (dir, rev) => {
+          if (refusing) throw resetRefused()
+          return git.resetHard(dir, rev)
+        },
+      }))
+      return {
+        device,
+        refuse: (on) => {
+          refusing = on
+        },
+      }
+    }
+
+    it("goes back to the database's commit on restart, so nothing reverts the remote's change, and then imports it", async () => {
+      const sandbox = makeSandbox()
+      const a = openDevice(sandbox, "a")
+      const remote = makeBareRemote(sandbox, "shared.git")
+      const workspaceId = await publish(a, sandbox, remote)
+      const b = openDevice(sandbox, "b")
+      const opened = await openFromRemote(b, remote.url)
+      const onA = a.repositories.workflows.create({ workspaceId, name: "On A" })
+      await a.sync.syncNow(workspaceId, { message: "Add on A" })
+      const aHead = remoteHead(sandbox, remote.dir)
+
+      moveCloneWithoutImport(b, opened)
+      expect(headOf(b, opened)).toBe(aHead)
+      expect(b.repositories.workflows.getById(onA.workflowId)).toBeUndefined()
+
+      await b.sync.start()
+
+      // Serializing the old database over the moved clone would have committed A's workflow away and pushed that.
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+      expect(headOf(b, opened)).toBe(aHead)
+      expect(await subjectsOf(b, opened)).toEqual(await subjectsOf(a, workspaceId))
+      expect(b.repositories.workflows.getById(onA.workflowId)?.name).toBe("On A")
+      expect(binding(b, opened)).toMatchObject({ state: "idle", lastError: null, integratingFrom: null, lastSyncedCommit: aHead })
+      expect(b.imports).toEqual([opened])
+
+      await a.sync.syncNow(workspaceId)
+      expect(a.repositories.workflows.getById(onA.workflowId)?.name).toBe("On A")
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+    })
+
+    it("stops with an error and pushes nothing while the clone cannot be moved back, and recovers once it can", async () => {
+      const sandbox = makeSandbox()
+      const a = openDevice(sandbox, "a")
+      const remote = makeBareRemote(sandbox, "shared.git")
+      const workspaceId = await publish(a, sandbox, remote)
+      const { device: b, refuse } = refusingResets(sandbox, "b")
+      const opened = await openFromRemote(b, remote.url)
+      const openedAt = headOf(b, opened)
+      const onA = a.repositories.workflows.create({ workspaceId, name: "On A" })
+      await a.sync.syncNow(workspaceId, { message: "Add on A" })
+      const aHead = remoteHead(sandbox, remote.dir)
+      moveCloneWithoutImport(b, opened)
+      const subjects = await subjectsOf(b, opened)
+      // Even a workspace recorded as diverged: a clone that cannot be moved back is an error.
+      b.repositories.workspaceGit.setState(opened, "diverged", null)
+      refuse(true)
+
+      const stopped = await b.sync.syncNow(opened)
+
+      expect(stopped).toMatchObject({ state: "error", lastError: { code: "command_failed" } })
+      expect(await subjectsOf(b, opened)).toEqual(subjects)
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+      expect(binding(b, opened).integratingFrom).toBe(openedAt)
+
+      // A restart's reconcile stops the same way rather than committing over the moved clone.
+      await b.sync.reconcile()
+      expect(binding(b, opened)).toMatchObject({ state: "error", integratingFrom: openedAt })
+      expect(await subjectsOf(b, opened)).toEqual(subjects)
+
+      refuse(false)
+      const recovered = await b.sync.syncNow(opened)
+
+      expect(recovered).toMatchObject({ state: "idle", lastError: null, incoming: 0, outgoing: 0 })
+      expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+      expect(b.repositories.workflows.getById(onA.workflowId)?.name).toBe("On A")
+      expect(binding(b, opened).integratingFrom).toBeNull()
+    })
+
+    it("stays marked when moving back after a failed import fails, and the next cycle moves back before committing", async () => {
+      const sandbox = makeSandbox()
+      const a = openDevice(sandbox, "a")
+      const remote = makeBareRemote(sandbox, "shared.git")
+      await publish(a, sandbox, remote)
+      const { device: b, refuse } = refusingResets(sandbox, "b")
+      const opened = await openFromRemote(b, remote.url)
+      const tip = headOf(b, opened)
+      const broken = pushFromElsewhere(sandbox, remote, { "workspace.json": NOT_A_WORKSPACE }, "Break the workspace file")
+      refuse(true)
+
+      const failed = await b.sync.syncNow(opened)
+
+      expect(failed.state).toBe("error")
+      expect(failed.lastError?.message).toMatch(/workspace\.json is not valid JSON/)
+      expect(headOf(b, opened)).toBe(broken)
+      expect(binding(b, opened).integratingFrom).toBe(tip)
+
+      refuse(false)
+      const again = await b.sync.syncNow(opened)
+
+      // Back on the database's commit first: the cycle met the same unreadable tree, rather than committing the database's over it.
+      expect(again.state).toBe("error")
+      expect(again.lastError?.message).toMatch(/workspace\.json is not valid JSON/)
+      expect(headOf(b, opened)).toBe(tip)
+      expect(remoteHead(sandbox, remote.dir)).toBe(broken)
+      expect(binding(b, opened).integratingFrom).toBeNull()
+    })
+
+    it("moves the clone back before connecting another remote, so it never pushes commits the database does not hold", async () => {
+      const sandbox = makeSandbox()
+      const a = openDevice(sandbox, "a")
+      const remote = makeBareRemote(sandbox, "shared.git")
+      const workspaceId = await publish(a, sandbox, remote)
+      const b = openDevice(sandbox, "b")
+      const opened = await openFromRemote(b, remote.url)
+      const openedAt = headOf(b, opened)
+      a.repositories.workflows.create({ workspaceId, name: "On A" })
+      await a.sync.syncNow(workspaceId, { message: "Add on A" })
+      moveCloneWithoutImport(b, opened)
+      await b.sync.disconnectRemote(opened)
+      const other = makeBareRemote(sandbox, "other.git")
+
+      await b.sync.connectRemote(opened, other.url)
+
+      expect(remoteHead(sandbox, other.dir)).toBe(openedAt)
+      expect(headOf(b, opened)).toBe(openedAt)
+      expect(binding(b, opened).integratingFrom).toBeNull()
+    })
+  })
+
+  it("records a fetch the host refuses as an error: only a refused push makes a workspace read-only", async () => {
+    const sandbox = makeSandbox()
+    const refusing = await listen((_request, response) => {
+      response.writeHead(403, { "Content-Type": "text/plain" })
+      response.end("Forbidden\n")
+    })
+    let refuseFetch = false
+    const a = openDevice(sandbox, "a", (git) => ({
+      ...passthrough(git),
+      fetch: async (dir, remoteName) => {
+        if (!refuseFetch) return git.fetch(dir, remoteName)
+        const original = rawGit(dir, sandbox.env, "remote", "get-url", "origin").trim()
+        try {
+          await git.remoteSetUrl(dir, "origin", refusing.url)
+          return await git.fetch(dir, remoteName)
+        } finally {
+          await git.remoteSetUrl(dir, "origin", original)
+        }
+      },
+    }))
+    const remote = makeBareRemote(sandbox, "shared.git")
+    const workspaceId = await publish(a, sandbox, remote)
+    refuseFetch = true
+
+    const status = await a.sync.syncNow(workspaceId)
+
+    expect(status).toMatchObject({ state: "error", readOnly: false, lastError: { code: "permission_denied" } })
+  })
+
+  it("keeps an automatic workspace diverged through a cycle that fails before integrating, and through reconcile", async () => {
+    const sandbox = makeSandbox()
+    const a = openDevice(sandbox, "a")
+    const remote = makeBareRemote(sandbox, "shared.git")
+    const workspaceId = await publish(a, sandbox, remote)
+    let failFetch = false
+    const b = openDevice(sandbox, "b", (git) => ({
+      ...passthrough(git),
+      fetch: async (dir, remoteName) => {
+        if (failFetch) throw networkDown()
+        return git.fetch(dir, remoteName)
+      },
+    }))
+    const opened = await openFromRemote(b, remote.url)
+    a.repositories.workflows.create({ workspaceId, name: "On A" })
+    await a.sync.syncNow(workspaceId, { message: "Add on A" })
+    b.repositories.workflows.create({ workspaceId: opened, name: "On B" })
+    expect(await b.sync.syncNow(opened, { message: "Add on B" })).toMatchObject({ state: "diverged" })
+
+    failFetch = true
+    await b.sync.start()
+
+    expect(binding(b, opened)).toMatchObject({ state: "diverged", lastError: { code: "network_error", message: NETWORK_DOWN } })
+    await b.sync.reconcile()
+    expect(binding(b, opened)).toMatchObject({ state: "diverged", lastError: { code: "network_error", message: NETWORK_DOWN } })
+
+    failFetch = false
+    expect(await b.sync.syncNow(opened)).toMatchObject({ state: "diverged", incoming: 1, outgoing: 1 })
+  })
+
+  it.each([
+    { cause: "a missing author", lastError: { code: "identity_missing" as const, message: "git does not know who you are" } },
+    { cause: "a push the remote kept rejecting", lastError: { code: "non_fast_forward" as const, message: "git push failed: (non-fast-forward)" } },
+  ])("keeps an error a fetch did not cause, $cause, through a good manual fetch", async ({ lastError }) => {
+    const sandbox = makeSandbox()
+    const a = openDevice(sandbox, "a")
+    const remote = makeBareRemote(sandbox, "shared.git")
+    await publish(a, sandbox, remote)
+    const b = openDevice(sandbox, "b")
+    const opened = await openFromRemote(b, remote.url)
+    await b.sync.setMode(opened, "manual")
+    b.repositories.workspaceGit.setState(opened, "error", lastError)
+
+    await b.sync.start()
+
+    expect(binding(b, opened)).toMatchObject({ state: "error", lastError })
   })
 })

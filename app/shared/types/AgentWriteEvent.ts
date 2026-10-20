@@ -1,6 +1,8 @@
 /**
- * One successful MCP write, announced on the unkeyed `apiweave:agent-write`
- * channel so the renderer can refetch what the agent changed.
+ * One successful MCP write — or an import from a workspace's git remote,
+ * which changes records underneath the renderer the same way — announced on
+ * the unkeyed `apiweave:agent-write` channel so the renderer can refetch what
+ * changed.
  *
  * Coarse on purpose — the domain and action, not a snapshot of the row. The
  * renderer's stores refetch lists rather than patch them (there is no query
