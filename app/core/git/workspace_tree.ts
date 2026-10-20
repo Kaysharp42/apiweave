@@ -1,6 +1,7 @@
 import type { Stats } from "node:fs"
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { isTreePath } from "@shared/workspace-repo/format"
 import { ValidationError } from "../ipc/errors"
 import { checkFileSize, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
 
@@ -143,9 +144,13 @@ export async function readWorkspaceTree(
  * only a file whose bytes differ, so an unchanged record keeps its timestamp
  * and git has nothing to look at, and delete a record file that no longer maps
  * to a record. Anything else in the directory — `.git`, a README, CI config —
- * is left alone.
+ * is left alone. A path that leaves the tree or names `.git` is refused before
+ * anything is written.
  */
 export async function writeWorkspaceTree(directory: string, files: ReadonlyMap<string, string>): Promise<void> {
+  for (const relative of files.keys()) {
+    if (!isTreePath(relative)) throw refuse(relative, "is not a path a repository may hold: it leaves the tree or names git's own .git folder")
+  }
   for (const folder of RECORD_FOLDERS) {
     for (const stale of await recordFiles(directory, folder)) {
       if (!files.has(stale)) await rm(path.join(directory, ...stale.split("/")), { force: true })

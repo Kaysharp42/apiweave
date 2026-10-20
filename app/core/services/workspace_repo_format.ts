@@ -55,7 +55,7 @@ import { sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
  * Everything here is pure: the caller reads the rows and the files.
  *
  * `parseWorkspace` treats its input as untrusted, and enforces exactly this:
- * tree paths (relative, '/'-separated, inside the repository), the per-file and
+ * tree paths (relative, '/'-separated, inside the repository, never in `.git`), the per-file and
  * per-tree size limits, the schema of every file it reads, record ids that can
  * name a file and a file name matching the id it holds, and
  * `assertNoSecretValues` for forbidden secret-*storage* fields (`ciphertext`,
@@ -291,7 +291,7 @@ export function checkFileSize(path: string, bytes: number): void {
 function checkTree(files: ReadonlyMap<string, string>): void {
   let total = 0
   for (const [path, text] of files) {
-    if (!isTreePath(path)) throw new ValidationError(`refusing ${JSON.stringify(path)}: a repository path must be relative, '/'-separated and stay inside the repository`)
+    if (!isTreePath(path)) throw new ValidationError(`refusing ${JSON.stringify(path)}: a repository path must be relative, '/'-separated, stay inside the repository and never name git's own .git folder`)
     const bytes = Buffer.byteLength(text, "utf8")
     checkFileSize(path, bytes)
     total += bytes
