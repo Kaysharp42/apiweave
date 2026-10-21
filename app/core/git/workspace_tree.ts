@@ -1,10 +1,11 @@
 import type { Stats } from "node:fs"
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { lstat, mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { isTreePath } from "@shared/workspace-repo/format"
 import { ValidationError } from "../ipc/errors"
 import { checkFileSize, MAX_FILE_BYTES, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
 import type { GitService } from "./git_service"
+import type { GitTreeContents } from "./git_types"
 
 /** The folders whose `.json` files belong to the format: a file there that maps to no record is the format's to remove. */
 export const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
@@ -142,15 +143,16 @@ export async function readWorkspaceTree(
 }
 /**
  * A commit's tree as the format sees it: the same files {@link readWorkspaceTree}
- * reads from a checkout, read straight from `rev` and capped the same way. A
- * merge reads the ancestor and both sides this way — the database is committed
- * before it decides, so its commit, not a checkout, is "ours".
+ * reads from a checkout, read straight from `rev` and capped the same way, with
+ * its links and submodules listed unread. A merge reads the ancestor and both
+ * sides this way — the database is committed before it decides, so its commit,
+ * not a checkout, is "ours".
  */
 export function readWorkspaceTreeAt(
   git: Pick<GitService, "readTreeFiles">,
   directory: string,
   rev: string,
-): Promise<Map<string, string>> {
+): Promise<GitTreeContents> {
   return git.readTreeFiles(directory, rev, { maxFiles: MAX_TREE_FILES, maxTotalBytes: MAX_TREE_BYTES, maxFileBytes: MAX_FILE_BYTES })
 }
 
@@ -166,6 +168,24 @@ export function treeTarget(directory: string, relative: string): string {
     throw refuse(relative, "is not a path a repository may hold: it leaves the tree or names git's own .git folder")
   }
   return target
+}
+
+/**
+ * Remove what a checkout holds at `target` (a {@link treeTarget}) for a tree
+ * entry that is not a plain file: the plain file git writes a link as, under
+ * `core.symlinks=false`, or the empty folder it makes for a submodule. A folder
+ * goes only if it is empty — git never fills one in a clone the app owns — so
+ * nothing under it is ever deleted.
+ */
+export async function removeCheckedOutEntry(target: string): Promise<void> {
+  let stats: Stats
+  try {
+    stats = await lstat(target)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return
+    throw error
+  }
+  await (stats.isDirectory() ? rmdir(target) : rm(target, { force: true }))
 }
 
 /**

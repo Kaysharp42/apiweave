@@ -53,7 +53,8 @@ import type { GitService } from "./git_service"
 import type { GitAheadBehind, GitStatusEntry, GitTreeEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
 import { describePendingChanges, diffTrees } from "./pending_changes"
-import { FORMAT_PATHS, readWorkspaceTree, readWorkspaceTreeAt, treeTarget, writeWorkspaceTree } from "./workspace_tree"
+import { settleTreeEntries, withoutPaths } from "./tree_entries"
+import { FORMAT_PATHS, readWorkspaceTree, readWorkspaceTreeAt, removeCheckedOutEntry, treeTarget, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
 export const AUTO_COMMIT_DELAY_MS = 30_000
@@ -186,6 +187,8 @@ interface MergeComputation {
   readonly result: GitMergeTreeResult
   /** The ancestor, our copy and the remote copy, in that order: what the merge deletes is in them and not in `files`. */
   readonly copies: readonly ReadonlyMap<string, string>[]
+  /** Links and submodules the remote copy removed, which the merge removes too; every other one stays as our commit holds it. */
+  readonly entryRemovals: readonly string[]
 }
 
 export interface GitSyncServiceOptions {
@@ -1560,17 +1563,25 @@ export class GitSyncService {
     return true
   }
 
-  /** One merge's three trees and what the merge makes of them. */
+  /**
+   * One merge's three trees and what the merge makes of them. Links and
+   * submodules are settled as tree entries by {@link settleTreeEntries} and
+   * kept out of the file merge, so it neither writes nor deletes one.
+   */
   private async computeMerge(merge: WorkspaceMerge, directory: string): Promise<MergeComputation> {
-    const [base, ours, theirs] = await Promise.all([
+    const [baseTree, ourTree, theirTree] = await Promise.all([
       readWorkspaceTreeAt(this.git, directory, merge.baseCommit),
       readWorkspaceTreeAt(this.git, directory, merge.ourCommit),
       readWorkspaceTreeAt(this.git, directory, merge.theirCommit),
     ])
+    const entries = settleTreeEntries({ base: baseTree, ours: ourTree, theirs: theirTree }, merge)
+    const base = withoutPaths(baseTree.files, entries.paths)
+    const ours = withoutPaths(ourTree.files, entries.paths)
+    const theirs = withoutPaths(theirTree.files, entries.paths)
     try {
       // A tree APIWeave cannot read is never merged over: report which copy and
       // which file, rather than committing a guess.
-      return { result: mergeTree(base, ours, theirs, merge.picks), copies: [base, ours, theirs] }
+      return { result: mergeTree(base, ours, theirs, merge.picks), copies: [base, ours, theirs], entryRemovals: entries.removals }
     } catch (error) {
       if (error instanceof GitMergeInputError) throw new ValidationError(error.message)
       throw error
@@ -1671,6 +1682,12 @@ export class GitSyncService {
    * {@link treeTarget} — inside the clone, and never git's own `.git` folder in
    * any spelling — before anything on disk changes, and one that fails stops
    * the merge with nothing written.
+   *
+   * A link or submodule the remote copy removed goes first, so a folder the
+   * remote put in its place can be written. Every other one is in no copy's
+   * files, so nothing here touches it: the checkout keeps the plain file git
+   * wrote it as, and `git add` — under `core.symlinks=false` — keeps the
+   * entry's mode and blob as our commit has them.
    */
   private async writeMergedTree(directory: string, computation: MergeComputation): Promise<void> {
     const { files } = computation.result
@@ -1679,6 +1696,8 @@ export class GitSyncService {
       for (const relative of copy.keys()) if (!files.has(relative)) gone.add(relative)
     }
     const removals = [...gone].map((relative) => treeTarget(directory, relative))
+    const entryRemovals = computation.entryRemovals.map((relative) => treeTarget(directory, relative))
+    for (const target of entryRemovals) await removeCheckedOutEntry(target)
     await writeWorkspaceTree(directory, files)
     for (const target of removals) await rm(target, { force: true })
   }

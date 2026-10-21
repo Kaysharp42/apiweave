@@ -82,6 +82,13 @@ export interface GitTreeListing extends GitTreeEntry {
   readonly size: number
 }
 
+/** A commit's tree as a merge reads it: every plain file's text, and what is not a plain file as the entry git lists, never read. */
+export interface GitTreeContents {
+  readonly files: ReadonlyMap<string, string>
+  /** Symbolic links and submodules, by path. */
+  readonly otherEntries: ReadonlyMap<string, GitTreeListing>
+}
+
 /** The most a committed tree may hold before it is refused unread: the same caps the checkout walk enforces. */
 export interface GitTreeLimits {
   /** At most this many files. */
