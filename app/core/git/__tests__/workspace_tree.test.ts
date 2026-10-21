@@ -2,7 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { readWorkspaceTree, writeWorkspaceTree } from "../workspace_tree"
+import { readWorkspaceTree, treeTarget, writeWorkspaceTree } from "../workspace_tree"
 
 let dir: string
 
@@ -101,6 +101,23 @@ describe("readWorkspaceTree", () => {
     expect(await readWorkspaceTree(dir)).toEqual(new Map())
     put("workspace.json", "workspace")
     expect([...(await readWorkspaceTree(dir)).keys()]).toEqual(["workspace.json"])
+  })
+
+  it("writeWorkspaceTree refuses a path into .git or out of the tree before writing anything", async () => {
+    for (const bad of [".git/config", ".GIT/config", "../outside.json"]) {
+      await expect(writeWorkspaceTree(dir, new Map([["workspace.json", "{}\n"], [bad, "[core]\n"]]))).rejects.toThrow(
+        `${bad}: is not a path a repository may hold`,
+      )
+    }
+
+    expect(fs.readdirSync(dir)).toEqual([])
+  })
+
+  it("treeTarget resolves a path inside the tree, and refuses one into .git in any spelling or out of the tree", () => {
+    expect(treeTarget(dir, "docs/notes.md")).toBe(path.join(path.resolve(dir), "docs", "notes.md"))
+    for (const bad of [".git/config", ".GIT/config", ".git./info/attributes", "git~1/config", "docs/.git/hooks/x", "../outside.json", "a/../../outside.json"]) {
+      expect(() => treeTarget(dir, bad)).toThrow(`${bad}: is not a path a repository may hold`)
+    }
   })
 
   it("reads back what writeWorkspaceTree wrote", async () => {

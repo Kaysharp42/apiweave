@@ -1,6 +1,7 @@
 import type { Stats } from "node:fs"
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
+import { isTreePath } from "@shared/workspace-repo/format"
 import { ValidationError } from "../ipc/errors"
 import { checkFileSize, MAX_FILE_BYTES, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
 import type { GitService } from "./git_service"
@@ -154,20 +155,35 @@ export function readWorkspaceTreeAt(
 }
 
 /**
+ * Where `relative` lands under `directory`. Refused unless it is a path a
+ * repository may hold — inside the tree, and not in git's own `.git` folder in
+ * any spelling — and resolves to somewhere inside `directory`.
+ */
+export function treeTarget(directory: string, relative: string): string {
+  const root = path.resolve(directory)
+  const target = path.resolve(root, ...relative.split("/"))
+  if (!isTreePath(relative) || !target.startsWith(`${root}${path.sep}`)) {
+    throw refuse(relative, "is not a path a repository may hold: it leaves the tree or names git's own .git folder")
+  }
+  return target
+}
+
+/**
  * Make `directory` hold `files` (as `serializeWorkspace` returns them): write
  * only a file whose bytes differ, so an unchanged record keeps its timestamp
  * and git has nothing to look at, and delete a record file that no longer maps
  * to a record. Anything else in the directory — `.git`, a README, CI config —
- * is left alone.
+ * is left alone. Every path is checked with {@link treeTarget} before anything
+ * is written.
  */
 export async function writeWorkspaceTree(directory: string, files: ReadonlyMap<string, string>): Promise<void> {
+  const targets = [...files].map(([relative, text]) => [treeTarget(directory, relative), text] as const)
   for (const folder of RECORD_FOLDERS) {
     for (const stale of await recordFiles(directory, folder)) {
       if (!files.has(stale)) await rm(path.join(directory, ...stale.split("/")), { force: true })
     }
   }
-  for (const [relative, text] of files) {
-    const target = path.join(directory, ...relative.split("/"))
+  for (const [target, text] of targets) {
     if ((await readIfPresent(target)) === text) continue
     await mkdir(path.dirname(target), { recursive: true })
     await writeFile(target, text, "utf8")

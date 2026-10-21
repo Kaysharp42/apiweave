@@ -234,9 +234,23 @@ export function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-/** Whether a path stays inside the repository: relative, `/`-separated, and no empty, `.` or `..` segment, drive letter, backslash or NUL. */
+/** Code points HFS+ ignores in a name, as git's `is_hfs_dotgit` skips them: `.g\u200Cit` is `.git` on a Mac. */
+const HFS_IGNORABLE = /[\u200C-\u200F\u202A-\u202E\u206A-\u206F\uFEFF]/g
+
+/** A name that is git's own folder somewhere git runs, as git's `verify_path` refuses it: `.git` in any case, with the trailing dots or spaces NTFS drops, or its NTFS short name `git~1`. */
+const GIT_FOLDER = /^(?:\.git|git~1)[. ]*$/i
+
+/**
+ * Whether a path stays inside the repository's tree: relative, `/`-separated,
+ * and no empty, `.` or `..` segment, drive letter, backslash, `:` (an NTFS
+ * stream, `.git::$INDEX_ALLOCATION`) or NUL — and no segment that is git's own
+ * folder on some file system ({@link GIT_FOLDER}, ignoring {@link HFS_IGNORABLE}).
+ * A file written there would rewrite the clone's config and hooks, which is
+ * why git's own checkout refuses these paths too.
+ */
 export function isTreePath(path: string): boolean {
-  return path.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && !/[\\:\0]/.test(segment))
+  return path.split("/").every((segment) =>
+    segment !== "" && segment !== "." && segment !== ".." && !/[\\:\0]/.test(segment) && !GIT_FOLDER.test(segment.replace(HFS_IGNORABLE, "")))
 }
 
 export function workspaceDocument(workspace: Pick<Workspace, "workspaceId" | "name" | "description">): Record<string, JsonValue> {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { GitErrorCode } from "@shared/types/GitErrorCode"
+import type { GitIdentity } from "@shared/types/GitIdentity"
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict"
 import type { GitMergeNote } from "@shared/types/GitMergeNote"
 import type { GitMergePick } from "@shared/types/GitMergePick"
@@ -17,7 +18,7 @@ import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange"
 import { describeMergeNote } from "@shared/git-merge/notes"
 import { GitMergeInputError, mergeTree, type GitMergeTreeResult } from "@shared/git-merge/tree"
-import { RecordIdSchema, isTreePath } from "@shared/workspace-repo/format"
+import { RecordIdSchema } from "@shared/workspace-repo/format"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
@@ -52,7 +53,7 @@ import type { GitService } from "./git_service"
 import type { GitAheadBehind, GitStatusEntry, GitTreeEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
 import { describePendingChanges, diffTrees } from "./pending_changes"
-import { FORMAT_PATHS, RECORD_FOLDERS, readWorkspaceTree, readWorkspaceTreeAt, writeWorkspaceTree } from "./workspace_tree"
+import { FORMAT_PATHS, readWorkspaceTree, readWorkspaceTreeAt, treeTarget, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
 export const AUTO_COMMIT_DELAY_MS = 30_000
@@ -89,19 +90,22 @@ const NO_REMOTE_BRANCH_MESSAGE = "The remote does not have this workspace's bran
 /**
  * Both sides hold commits since they last agreed and a merge the user gave up
  * on is not going to be retried by a pass: only Sync now combines them again.
- * Nothing was pushed, and every local commit stays.
+ * Nothing was pushed, and every local commit stays. `diverged` means exactly
+ * this, and nothing else reaches it.
  */
 const DIVERGED_MESSAGE =
   "This workspace and its remote have each changed since they last agreed, and the merge was abandoned. " +
   "Nothing was pushed; this device's changes are safe. Sync now to combine the two again, or discard the local changes to match the remote."
 
-/** The same stop, reached when the remote moved again while a retried push was running: it is the second failure's reason. */
-const LATE_DIVERGED_MESSAGE =
-  "The remote moved again while this workspace was pushing, so nothing was pushed. " +
-  "Sync now to combine the two, or discard the local changes to match the remote."
-
-/** A merge the user has to settle: its conflicts are waiting for picks (the merge page lists them). */
-const MERGING_MESSAGE = "This workspace is merging the remote's changes. Keep your copy or the remote's for each conflicting field."
+/**
+ * A remote branch that shares no commit with this workspace's history — it was
+ * replaced, or this device's history folder was recreated — has no ancestor to
+ * merge from. It is {@link UNRELATED_HISTORY_MESSAGE} met by a sync rather than
+ * a connect, so what to do differs.
+ */
+const UNRELATED_REMOTE_MESSAGE =
+  "The remote's branch holds history this workspace did not come from, so the two cannot be merged, and nothing was pushed. " +
+  "Discard local changes to load the remote's version, or disconnect the remote to keep this device's."
 
 /** A merge that would not stop seeing new local edits: another Resolve finishes it. */
 const MERGE_RETRY_MESSAGE = "This workspace changed again while the merge was being committed. Resolve the merge again to finish it."
@@ -416,7 +420,13 @@ export class GitSyncService {
     })
   }
 
-  /** Remove the connection. Local history is never touched, nor is the remote's. Disconnecting an unconnected workspace changes nothing. */
+  /**
+   * Remove the connection. Local history is never touched, nor is the
+   * remote's. Disconnecting an unconnected workspace changes nothing. A merge
+   * waiting on the remote's commit goes with the remote, in the same
+   * transaction: the workspace is idle again, every local commit and edit
+   * stays, and auto mode commits the edits the merge held back.
+   */
   public async disconnectRemote(workspaceId: string): Promise<WorkspaceGitStatus> {
     const directory = this.cloneDir(workspaceId)
     return this.exclusive(workspaceId, async () => {
@@ -430,6 +440,7 @@ export class GitSyncService {
         if (!(error instanceof GitNotARepositoryError)) throw error
       }
       this.repositories.workspaceGit.clearRemote(workspaceId)
+      this.resumeAutoCommit(workspaceId)
       return this.announce(workspaceId)
     })
   }
@@ -494,11 +505,29 @@ export class GitSyncService {
     // The status this cycle left, read under its lock: a cycle queued behind it must not answer for it.
     return this.exclusive(workspaceId, async () => {
       // A waiting merge owns the clone until it is resolved or abandoned; Sync
-      // now neither commits over it nor starts a second merge.
-      if (this.repositories.workspaceGit.get(workspaceId)?.state === "merging") return this.announce(workspaceId)
+      // now neither commits over it nor starts a second merge. It only takes
+      // the author it names, which a resolve that stopped for one needs next.
+      const binding = this.repositories.workspaceGit.get(workspaceId)
+      if (binding?.state === "merging") {
+        if (request.identity !== undefined) await this.nameMergeAuthor(binding, request.identity)
+        return this.announce(workspaceId)
+      }
       await this.syncCycle(workspaceId, this.cloneDir(workspaceId), request, true)
       return this.status(workspaceId)
     })
+  }
+
+  /** The clone's author, set while a merge waits; the missing-author error a resolve left is then over, and any other stays. */
+  private async nameMergeAuthor(binding: WorkspaceGitBinding, identity: GitIdentity): Promise<void> {
+    const { workspaceId } = binding
+    try {
+      await this.git.setIdentity(this.cloneDir(workspaceId), identity)
+    } catch (error) {
+      if (!(error instanceof GitError)) throw error
+      this.repositories.workspaceGit.setState(workspaceId, "merging", describeError(error))
+      return
+    }
+    if (binding.lastError?.code === "identity_missing") this.repositories.workspaceGit.setState(workspaceId, "merging", null)
   }
 
   /**
@@ -533,8 +562,9 @@ export class GitSyncService {
         await this.git.resetHard(directory, remoteRef)
         // `reset --hard` keeps files git does not track: a record file a cycle
         // wrote and never staged (a crash between the two) would be imported
-        // back as if the remote held it.
-        await this.git.clean(directory, RECORD_FOLDERS)
+        // back as if the remote held it, and a file a merge wrote would be
+        // committed later as this device's.
+        await this.git.clean(directory, ["."])
         await this.importRemoteTree(workspaceId, directory)
       } catch (error) {
         // The reset moved the clone but the import did not take; left there, a
@@ -671,6 +701,13 @@ export class GitSyncService {
    * the merge with the remote's commit as its second parent, import it, and
    * push. Edits made while the merge waited are committed first and the merge
    * is redone on top of them, so an import never overwrites them.
+   * `request.message` is the merge commit's subject; the commit of those edits
+   * gets the usual one, which names what it changed.
+   *
+   * Until the merge commit is imported the workspace stays `merging`, so no
+   * timer, pass or Sync now moves the commit it is merging from; the push that
+   * follows is an ordinary cycle's step 5 and shows as `syncing`. Once the
+   * merge is over, auto mode commits whatever was edited meanwhile.
    *
    * With conflicts still unpicked the workspace stays `merging` and the status
    * says so; that is an outcome, not an error. A classified failure — a
@@ -703,6 +740,7 @@ export class GitSyncService {
     } catch (error) {
       this.noteMergeFailure(workspaceId, error)
     }
+    this.resumeAutoCommit(workspaceId)
     return this.announce(workspaceId)
   }
 
@@ -719,10 +757,13 @@ export class GitSyncService {
     if (!this.repositories.workspaceGit.setMergePicks(workspaceId, merge.baseCommit, picks)) {
       throw new ConflictError("The merge changed while it was being resolved. Open the merge again.")
     }
-    const waiting = await this.settleMerge(workspaceId, directory, request)
-    // The merge is in the database and the clone now; the push is the
-    // cycle's step 5, and a remote that moved again may start another merge.
-    if (!waiting && (await this.pushToRemote(workspaceId, directory, binding.branch))) this.settleIdle(workspaceId)
+    if (await this.settleMerge(workspaceId, directory, request)) return
+    // The merge is in the database and the clone now, so nothing is left for
+    // `merging` to guard: the push is the cycle's step 5, and a remote that
+    // moved again may start another merge.
+    this.markSyncing(workspaceId)
+    await this.announce(workspaceId)
+    if (await this.pushToRemote(workspaceId, directory, binding.branch)) this.settleIdle(workspaceId)
   }
 
   /**
@@ -735,7 +776,7 @@ export class GitSyncService {
     } else {
       this.recordCycleFailure(workspaceId, error, false)
     }
-    if (!(error instanceof GitError || error instanceof AppError || error instanceof PushRefusedError || error instanceof DivergedError)) throw error
+    if (!(error instanceof GitError || error instanceof AppError || error instanceof PushRefusedError)) throw error
     log.warn(`resolving the merge of workspace ${workspaceId} failed`, error)
   }
 
@@ -752,7 +793,8 @@ export class GitSyncService {
    * periodic pass does not immediately offer the same conflicts again. Every
    * local commit is kept — HEAD is this device's latest, a merge commit never
    * outlives a crash on this path — and Sync now asks for the merge again.
-   * Discard is the way to match the remote instead.
+   * Discard is the way to match the remote instead. Auto mode goes on
+   * committing edits locally, the ones made while the merge waited first.
    */
   public async abandonMerge(workspaceId: string): Promise<WorkspaceGitStatus> {
     const directory = this.cloneDir(workspaceId)
@@ -767,8 +809,8 @@ export class GitSyncService {
         if (head !== undefined) await this.git.resetHard(directory, head)
         else await this.abortGitMerge(directory)
       }
-      this.repositories.workspaceGit.clearMerge(workspaceId)
-      this.repositories.workspaceGit.setState(workspaceId, "diverged", { code: null, message: DIVERGED_MESSAGE })
+      this.repositories.workspaceGit.endMerge(workspaceId, "diverged", { code: null, message: DIVERGED_MESSAGE })
+      this.resumeAutoCommit(workspaceId)
       return this.announce(workspaceId)
     })
   }
@@ -880,7 +922,8 @@ export class GitSyncService {
         const binding = this.repositories.workspaceGit.get(workspaceId)
         if (binding === undefined || binding.remoteUrl === null) return
         // A merge waits for the user, and an abandoned one waits for Sync now:
-        // a pass must not start either again behind their back.
+        // a pass must not start either again behind their back. The timer
+        // still commits an abandoned merge's edits locally (see autoSync).
         if (binding.state === "merging" || (binding.mode === "auto" && binding.state === "diverged")) return
         if (binding.mode === "manual") await this.fetchOnly(workspaceId)
         else await this.syncCycle(workspaceId, this.cloneDir(workspaceId), {}, !binding.readOnly)
@@ -1143,11 +1186,15 @@ export class GitSyncService {
   /**
    * A merge the app quit under. The clone goes back to this device's own
    * commit (a finalize that never imported is undone), and the three commits
-   * must still be readable: a clone recreated from the database has no remote
-   * commit, so the merge is dropped and the next cycle starts a fresh one.
-   * The conflicts themselves are never stored — the row's trees and picks
-   * recompute them — so nothing else needs repairing. Returns false when the
-   * workspace is no longer merging and the ordinary startup applies.
+   * must still be readable, or the merge is dropped and the workspace is idle.
+   * A clone whose commits are merely gone still shares the remote's history,
+   * so the next cycle merges again. A clone that is gone altogether is
+   * recreated from the database as a history of its own, which shares no
+   * commit with the remote: the next cycle cannot merge it, and stops with
+   * {@link UNRELATED_REMOTE_MESSAGE}. The conflicts themselves are never
+   * stored — the row's trees and picks recompute them — so nothing else needs
+   * repairing. Returns false when the workspace is no longer merging and the
+   * ordinary startup applies.
    */
   private async reconcileMerge(binding: WorkspaceGitBinding, directory: string): Promise<boolean> {
     const workspaceId = binding.workspaceId
@@ -1158,9 +1205,8 @@ export class GitSyncService {
       if (await isRepository(directory)) await this.abortGitMerge(directory)
       const merge = this.repositories.workspaceGit.getMerge(workspaceId)
       if (merge === undefined || !(await isRepository(directory)) || !(await this.holdsCommits(directory, merge))) {
-        log.warn(`workspace ${workspaceId} was merging, but its commits are gone; the next cycle will merge again`)
-        this.repositories.workspaceGit.clearMerge(workspaceId)
-        this.repositories.workspaceGit.setState(workspaceId, "idle", null)
+        log.warn(`workspace ${workspaceId} was merging, but the commits of the merge are gone; the merge is dropped`)
+        this.repositories.workspaceGit.endMerge(workspaceId, "idle", null)
         return false
       }
       // The clone may be on a commit the merge row has not caught up with: a
@@ -1350,10 +1396,6 @@ export class GitSyncService {
    * bug: recorded too, and thrown.
    */
   private recordCycleFailure(workspaceId: string, error: unknown, stillDiverged: boolean): void {
-    if (error instanceof DivergedError) {
-      this.repositories.workspaceGit.setState(workspaceId, "diverged", error.lastError)
-      return
-    }
     if (error instanceof PushRefusedError) {
       // The host refuses this user's pushes: local commits keep working, and
       // pulling continues, so the workspace is not in error — it is read-only.
@@ -1374,9 +1416,11 @@ export class GitSyncService {
    * all, since `git push` with nothing to send succeeds without asking the
    * host anything. False when the retry found a divergence the merge stops on:
    * the workspace is `merging` and the push must not run. Throws
-   * {@link DivergedError} when the retry finds both sides hold commits and the
-   * merge cannot settle it, {@link PushRefusedError} when the host refuses this
-   * user, and the push's own classified error for anything else.
+   * {@link PushRefusedError} when the host refuses this user, and the push's
+   * own classified error for anything else — a second non-fast-forward
+   * included: the remote moved again under the retry, which is a race the next
+   * cycle settles by fetching and merging once more, so it ends as `error`,
+   * never as the `diverged` only an abandoned merge leaves.
    */
   private async pushToRemote(workspaceId: string, directory: string, branch: string): Promise<boolean> {
     const rejection = await this.pushUnlessHeld(workspaceId, directory, branch)
@@ -1387,7 +1431,6 @@ export class GitSyncService {
     if (!integrated) return false
     const second = await this.pushUnlessHeld(workspaceId, directory, branch)
     if (second === undefined) return true
-    if (await this.bothSidesHoldCommits(directory, branch)) throw new DivergedError(LATE_DIVERGED_MESSAGE)
     throw second
   }
 
@@ -1459,7 +1502,9 @@ export class GitSyncService {
    *
    * A write that lands under the commit makes the import refuse; the merge
    * commit is then dropped and the decision is taken again, so the edit is
-   * committed as part of ours and never imported over.
+   * committed as part of ours and never imported over. Histories that share
+   * no ancestor have nothing to merge from: that is an `error` with
+   * {@link UNRELATED_REMOTE_MESSAGE}, which says what to do instead.
    */
   private async mergeFetched(
     workspaceId: string,
@@ -1469,12 +1514,13 @@ export class GitSyncService {
     head: string | undefined,
     theirs: string,
   ): Promise<boolean> {
-    if (base === undefined || head === undefined) throw new DivergedError(DIVERGED_MESSAGE)
+    if (base === undefined || head === undefined) throw new ConflictError(UNRELATED_REMOTE_MESSAGE)
     const merge = { workspaceId, baseCommit: base, ourCommit: head, theirCommit: theirs, picks: [] }
     const outcome = await this.computeMerge(merge, directory)
     if (outcome.result.conflicts.length > 0) {
       this.repositories.workspaceGit.startMerge(workspaceId, base, head, theirs, [])
-      this.repositories.workspaceGit.setState(workspaceId, "merging", { code: null, message: MERGING_MESSAGE })
+      // Waiting for picks is not a failure, so no `lastError`: that is for what stopped a resolve.
+      this.repositories.workspaceGit.setState(workspaceId, "merging", null)
       return false
     }
     const imported = await this.commitMerge(workspaceId, directory, merge, outcome)
@@ -1562,15 +1608,15 @@ export class GitSyncService {
     for (let attempt = 0; attempt < MAX_MERGE_ATTEMPTS; attempt++) {
       const stored = this.repositories.workspaceGit.getMerge(workspaceId)
       if (stored === undefined) throw new ConflictError(NOT_MERGING_MESSAGE)
-      if (this.uncommittedWrites(workspaceId)) await this.writeAndCommit(workspaceId, directory, request.message)
+      if (this.uncommittedWrites(workspaceId)) await this.writeAndCommit(workspaceId, directory)
       const merge = await this.moveMergeToHead(workspaceId, stored, directory)
       const computation = await this.computeMerge(merge, directory)
       if (computation.result.conflicts.length > 0) {
         this.repositories.workspaceGit.startMerge(workspaceId, merge.baseCommit, merge.ourCommit, merge.theirCommit, merge.picks)
-        this.repositories.workspaceGit.setState(workspaceId, "merging", { code: null, message: MERGING_MESSAGE })
+        this.repositories.workspaceGit.setState(workspaceId, "merging", null)
         return true
       }
-      if (await this.commitMerge(workspaceId, directory, merge, computation)) return false
+      if (await this.commitMerge(workspaceId, directory, merge, computation, request.message)) return false
     }
     this.repositories.workspaceGit.setState(workspaceId, "merging", { code: null, message: MERGE_RETRY_MESSAGE })
     return true
@@ -1580,7 +1626,8 @@ export class GitSyncService {
    * Commit `computation` as the merge of `merge.theirCommit` into HEAD, write
    * its tree, and import it. False when an edit landed while the commit was
    * being made: the clone is back on `head`, the merge is not imported, and
-   * the caller has to decide again with that edit committed.
+   * the caller has to decide again with that edit committed. `subject` names
+   * the commit instead of the default; the notes follow it either way.
    *
    * `integratingFrom` is written before the clone moves, so a crash here is
    * repaired at the next start; the import clears it in its own transaction.
@@ -1590,6 +1637,7 @@ export class GitSyncService {
     directory: string,
     merge: WorkspaceMerge,
     computation: MergeComputation,
+    subject?: string,
   ): Promise<boolean> {
     const head = await this.git.revParse(directory, "HEAD")
     if (head === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
@@ -1600,7 +1648,7 @@ export class GitSyncService {
       await this.git.mergeNoCommit(directory, merge.theirCommit)
       await this.writeMergedTree(directory, computation)
       await this.git.add(directory, ["."])
-      await this.git.commit(directory, mergeCommitMessage(computation.result.notes))
+      await this.git.commit(directory, mergeCommitMessage(computation.result.notes, subject))
       const imported = await this.importRemoteTree(workspaceId, directory, true)
       if (!imported) await this.returnTo(workspaceId, directory, head)
       return imported
@@ -1617,18 +1665,22 @@ export class GitSyncService {
    * held that the merge does not — a deleted record, a README one side
    * removed — goes. Files outside all three trees (`.git`, a stray download)
    * are not the merge's to touch.
+   *
+   * The trees come from another device, so this does not lean on the merge
+   * having refused a bad path: every path written or deleted is checked with
+   * {@link treeTarget} — inside the clone, and never git's own `.git` folder in
+   * any spelling — before anything on disk changes, and one that fails stops
+   * the merge with nothing written.
    */
   private async writeMergedTree(directory: string, computation: MergeComputation): Promise<void> {
     const { files } = computation.result
-    await writeWorkspaceTree(directory, files)
     const gone = new Set<string>()
     for (const copy of computation.copies) {
       for (const relative of copy.keys()) if (!files.has(relative)) gone.add(relative)
     }
-    for (const relative of gone) {
-      if (!isTreePath(relative)) continue
-      await rm(path.join(directory, ...relative.split("/")), { force: true })
-    }
+    const removals = [...gone].map((relative) => treeTarget(directory, relative))
+    await writeWorkspaceTree(directory, files)
+    for (const target of removals) await rm(target, { force: true })
   }
 
   /** `git merge --abort`, for a merge git still knows about; the reset that follows is what clears anything else. */
@@ -1695,9 +1747,19 @@ export class GitSyncService {
     await this.returnTo(workspaceId, directory, from)
   }
 
-  /** The clone back on `rev`, where the database is; the mark goes only once it is there. */
+  /**
+   * The clone back on `rev`, where the database is; the mark goes only once it
+   * is there. `reset --hard` keeps what git does not track, and a merge that
+   * stopped between writing its tree and staging it leaves the remote's files
+   * untracked — a README the next `add` would commit as this device's change.
+   * So every untracked file goes too. That loses nothing: the clone is the
+   * app's own, `.git` is never touched, and the only other files ever written
+   * there are the database's records, which every commit writes afresh from
+   * the database before it stages anything.
+   */
   private async returnTo(workspaceId: string, directory: string, rev: string): Promise<void> {
     await this.git.resetHard(directory, rev)
+    await this.git.clean(directory, ["."])
     this.repositories.workspaceGit.setIntegratingFrom(workspaceId, null)
   }
 
@@ -1721,26 +1783,6 @@ export class GitSyncService {
       if (error instanceof GitPermissionDeniedError) throw new PushRefusedError(error)
       throw error
     }
-  }
-
-  /**
-   * What tells the two ways a retried push can fail again apart: if only the
-   * remote holds commits the refusal is a race to retry (`error`), and if both
-   * sides hold them it is the state the user has to settle (`diverged`). Asks
-   * the remote again, because the second rejection says it moved.
-   */
-  private async bothSidesHoldCommits(directory: string, branch: string): Promise<boolean> {
-    try {
-      await this.git.fetch(directory, ORIGIN)
-    } catch (error) {
-      // The refs it already has are the ones the push was refused against.
-      if (!(error instanceof GitError)) throw error
-    }
-    const head = await this.git.revParse(directory, "HEAD")
-    const remoteSha = await this.git.revParse(directory, `${ORIGIN}/${branch}`)
-    if (head === undefined || remoteSha === undefined) return false
-    const base = await this.git.mergeBase(directory, "HEAD", `${ORIGIN}/${branch}`)
-    return base !== head && base !== remoteSha
   }
 
   /** The remote now holds our HEAD, so the push is what made the two agree; having sent commits, it also proves the host accepts this user again. */
@@ -1893,16 +1935,32 @@ export class GitSyncService {
     this.timers.delete(workspaceId)
   }
 
-  /** The timer's cycle. Its failure is already the workspace's `lastError`; there is no caller to throw to. */
+  /**
+   * After a merge ends — resolved, abandoned, dropped with its remote — the
+   * edits it held back are no longer anyone's to commit: auto mode schedules
+   * the commit their own writes could not while the workspace was `merging`.
+   */
+  private resumeAutoCommit(workspaceId: string): void {
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    if (this.disposed || binding?.mode !== "auto" || binding.state === "merging" || !this.uncommittedWrites(workspaceId)) return
+    this.scheduleAutoCommit(workspaceId)
+  }
+
+  /**
+   * The timer's cycle. Its failure is already the workspace's `lastError`;
+   * there is no caller to throw to. A waiting merge commits nothing over it,
+   * and an abandoned one still commits locally — only merging again and
+   * pushing wait for Sync now.
+   */
   private async autoSync(workspaceId: string): Promise<void> {
     try {
       await this.exclusive(workspaceId, async () => {
         // The mode can have changed, or the workspace been untracked, while this waited for the lock.
         const binding = this.repositories.workspaceGit.get(workspaceId)
-        if (this.disposed || binding?.mode !== "auto") return
-        // A merge waits for the user, and an abandoned one waits for Sync now.
-        if (binding.state === "merging" || binding.state === "diverged") return
-        await this.syncCycle(workspaceId, this.cloneDir(workspaceId), {}, !binding.readOnly)
+        if (this.disposed || binding?.mode !== "auto" || binding.state === "merging") return
+        const directory = this.cloneDir(workspaceId)
+        if (binding.state === "diverged") await this.commitCycle(workspaceId, directory)
+        else await this.syncCycle(workspaceId, directory, {}, !binding.readOnly)
       })
     } catch (error) {
       log.warn(`auto sync failed for workspace ${workspaceId}`, error)
@@ -1961,17 +2019,6 @@ export class GitSyncService {
   private cloneDir(workspaceId: string): string {
     if (!RecordIdSchema.safeParse(workspaceId).success) throw new ValidationError(`'${workspaceId}' is not a workspace id`)
     return path.join(this.options.cloneRoot, workspaceId)
-  }
-}
-
-/** §3.1 step 4's stop state, carried out of the sync helpers to the cycle that records it. */
-class DivergedError extends Error {
-  readonly lastError: WorkspaceGitError
-
-  constructor(message: string) {
-    super(message)
-    this.name = new.target.name
-    this.lastError = { code: null, message }
   }
 }
 
@@ -2062,8 +2109,8 @@ function describeChanges(entries: readonly GitStatusEntry[]): string {
  * what the merge settled by itself — positions both copies moved, a dropped
  * edge — so the user can see why the result is not either copy.
  */
-function mergeCommitMessage(notes: readonly GitMergeNote[]): string {
-  const subject = "Merge the remote's changes"
+function mergeCommitMessage(notes: readonly GitMergeNote[], named?: string): string {
+  const subject = named?.trim() || "Merge the remote's changes"
   if (notes.length === 0) return subject
   return [subject, "", "Settled by the merge:", ...notes.map((note) => `- ${describeMergeNote(note)}`)].join("\n")
 }

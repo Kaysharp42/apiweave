@@ -67,8 +67,18 @@ export interface GitTreeEntry {
   readonly oid: string
 }
 
-/** {@link GitTreeEntry} with the size git reports for the blob, so a reader can refuse an oversized tree before reading it. */
-export interface GitTreeBlob extends GitTreeEntry {
+/**
+ * One entry of a recursive `ls-tree -l`, whatever it is: a file, a symbolic
+ * link or a submodule's commit, told apart by `mode` and `type`, with the size
+ * git reports for a blob — so a reader can refuse what is not a plain file, and
+ * an oversized tree, before reading it.
+ */
+export interface GitTreeListing extends GitTreeEntry {
+  /** `100644` or `100755` for a file, `120000` for a symbolic link, `160000` for a submodule. */
+  readonly mode: string
+  /** `blob`, or `commit` for a submodule. */
+  readonly type: string
+  /** Zero for what is not a blob, which git gives no size. */
   readonly size: number
 }
 

@@ -148,12 +148,18 @@ export class WorkspaceGitRepository {
     ).changes > 0
   }
 
-  /** Back to local only. The branch stays: it is the local repository's own. */
+  /**
+   * Back to local only. The branch stays: it is the local repository's own. A
+   * merge waiting on the remote's commit has nothing left to finish, so it
+   * goes in the same transaction, picks and all, and a workspace that was
+   * `merging` is idle again.
+   */
   public clearRemote(workspaceId: string): boolean {
-    return this.store.set(
-      `UPDATE workspace_git SET remote_url = NULL, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`,
-      [workspaceId],
-    ).changes > 0
+    return this.store.transaction((store) => {
+      store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
+      store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state = 'merging'", [workspaceId])
+      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [workspaceId]).changes > 0
+    })
   }
 
   public delete(workspaceId: string): boolean {
@@ -214,6 +220,14 @@ export class WorkspaceGitRepository {
   /** No merge is waiting any more. Its picks go with it. */
   public clearMerge(workspaceId: string): boolean {
     return this.store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId]).changes > 0
+  }
+
+  /** {@link clearMerge} and the state the workspace leaves the merge in, as one write: never a row with no merge that still says `merging`. */
+  public endMerge(workspaceId: string, state: WorkspaceGitState, lastError: WorkspaceGitError | null): void {
+    this.store.transaction(() => {
+      this.clearMerge(workspaceId)
+      this.setState(workspaceId, state, lastError)
+    })
   }
 
   private insertPicks(store: KVStore, workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): void {

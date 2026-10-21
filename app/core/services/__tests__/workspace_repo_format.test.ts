@@ -404,8 +404,12 @@ describe("reading a workspace repository", () => {
     "workflows\\login--wf-x.json",
     "a//b.json",
     "./workspace.json",
+    ".git/config",
+    "docs/.GIT/hooks/pre-commit",
   ])("refuses the path %j, which leaves the tree", (file) => {
-    expect(() => parseWorkspace(new Map([...tree(), [file, "{}"]]))).toThrow(/a repository path must be relative, '\/'-separated and stay inside the repository/)
+    expect(() => parseWorkspace(new Map([...tree(), [file, "{}"]]))).toThrow(
+      /a repository path must be relative, '\/'-separated, stay inside the repository and never name git's own \.git folder/,
+    )
   })
 
   it("refuses an oversized file, and an oversized tree", () => {

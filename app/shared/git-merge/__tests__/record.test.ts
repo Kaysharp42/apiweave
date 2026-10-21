@@ -395,6 +395,27 @@ describe("what the other copy's deletion leaves pointing at nothing", () => {
     expect(result.notes).toEqual([])
   })
 
+  describe("asks the same about an edge to a node still in conflict, whichever copy deleted them", () => {
+    const pair = flow({ nodes: [node("n1", 0, 0), node("n2", 200, 0)], edges: [edge("e1", "n1", "n2")] })
+    const changed = { ...moved(pair, "n1", { x: 50, y: 0 }), edges: [edge("e1", "n1", "n2", { label: "go" })] }
+    const withoutN1 = { ...pair, nodes: [node("n2", 200, 0)], edges: [] }
+    const withoutBoth = { ...pair, nodes: [], edges: [] }
+
+    it.each([
+      ["your copy deleted the node and the edge, the remote moved the node and relabelled the edge", withoutN1, changed, ["edges.e1", "nodes.n1"]],
+      ["the remote copy deleted the node and the edge, yours moved the node and relabelled the edge", changed, withoutN1, ["edges.e1", "nodes.n1"]],
+      ["your copy deleted both nodes and the edge, the remote moved one and relabelled the edge: the other is gone for good", withoutBoth, changed, ["nodes.n1"]],
+      ["the remote copy deleted both nodes and the edge, yours moved one and relabelled the edge: the other is gone for good", changed, withoutBoth, ["nodes.n1"]],
+    ])("%s", (_, ours, theirs, paths) => {
+      const open = merge(pair, ours, theirs)
+
+      expect(open.conflicts.map((conflict) => conflict.path)).toEqual(paths)
+      for (const side of ["ours", "theirs"] as const) {
+        expect(merge(pair, ours, theirs, paths.map((path) => pick(path, side))).conflicts).toEqual([])
+      }
+    })
+  })
+
   it("drops, with its conflict, an edge both copies changed once a pick deletes the node it needs", () => {
     const theirs = { ...moved(base, "n3", { x: 600, y: 0 }, { config: { duration: 1 } }), edges: [base.edges[0]!, base.edges[1]!, edge("e3", "n2", "n3", { label: "last" })] }
 

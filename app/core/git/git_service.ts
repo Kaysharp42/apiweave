@@ -34,9 +34,9 @@ import type {
   GitLogOptions,
   GitServiceOptions,
   GitStatus,
-  GitTreeBlob,
   GitTreeEntry,
   GitTreeLimits,
+  GitTreeListing,
   GitVersion,
 } from "./git_types"
 
@@ -82,10 +82,20 @@ async function isDirectory(directory: string): Promise<boolean> {
   }
 }
 
+/** The modes of a plain file: a regular one and an executable one. */
+const FILE_MODES: ReadonlySet<string> = new Set(["100644", "100755"])
+
+/** What a tree entry that is not a plain file is, in words. */
+function entryKind(entry: GitTreeListing): string {
+  if (entry.mode === "120000") return "a symbolic link"
+  if (entry.mode === "160000" || entry.type === "commit") return "a submodule"
+  return `an entry of mode ${entry.mode}`
+}
+
 /** Split tree entries into batches a `cat-file` can hold: by file count and by the blobs' own sizes. */
-function batchesBySize(entries: readonly GitTreeBlob[]): GitTreeBlob[][] {
-  const batches: GitTreeBlob[][] = []
-  let batch: GitTreeBlob[] = []
+function batchesBySize(entries: readonly GitTreeListing[]): GitTreeListing[][] {
+  const batches: GitTreeListing[][] = []
+  let batch: GitTreeListing[] = []
   let bytes = 0
   for (const entry of entries) {
     if (batch.length > 0 && (batch.length >= TREE_BATCH_FILES || bytes + entry.size > TREE_BATCH_BYTES)) {
@@ -303,6 +313,11 @@ export class GitService {
    * is how a merge reads the ancestor and both sides: the database is committed
    * first, so the committed tree is the truth about "ours", never the checkout.
    *
+   * Only plain files are read. A symbolic link's blob is its target and a
+   * submodule is another repository's commit: read as text, either would be
+   * merged and written back as an ordinary file, so a tree holding one is
+   * refused with {@link ValidationError}, naming it.
+   *
    * `ls-tree -r -l` reports each blob's size, so the caps are enforced before a
    * byte is read: a tree over them is refused with {@link ValidationError}, the
    * same classified refusal the checkout walk gives. Blobs then arrive in
@@ -313,6 +328,10 @@ export class GitService {
     assertRevision(rev)
     const args = ["ls-tree", "-r", "-l", "-z", rev, "--", "."]
     const entries = parsedOrFailure("ls-tree", args, parseTreeListings(await this.run("lsTree", args, repoDir)))
+    const unreadable = entries.find((entry) => entry.type !== "blob" || !FILE_MODES.has(entry.mode))
+    if (unreadable !== undefined) {
+      throw new ValidationError(`${unreadable.path} at ${rev} is ${entryKind(unreadable)}, not a plain file; a workspace repository holds plain files only`)
+    }
     if (entries.length > limits.maxFiles) {
       throw new ValidationError(`the tree at ${rev} holds ${entries.length} files; at most ${limits.maxFiles} are read`)
     }

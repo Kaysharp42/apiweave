@@ -86,7 +86,7 @@ interface TreeCopy {
  * Your copy and the remote copy must each be a tree APIWeave can read: every
  * file of the format's schema-valid and free of secret storage (`ciphertext`,
  * `kek`, ...: what the importer refuses), its records named after their ids, no
- * path outside the tree, and this format's version; anything less throws
+ * path outside the tree or inside a `.git` folder, and this format's version; anything less throws
  * {@link GitMergeInputError}. The ancestor's unreadable files are only
  * missing: a record without a readable ancestor merges as one added in both
  * copies.
@@ -213,7 +213,7 @@ function readCopy(files: ReadonlyMap<string, string>, copy: CopyName, reads: Rea
 }
 
 function readPath(tree: TreeCopy, copy: CopyName, path: string, text: string, doubled: Set<string>, reads: Reads): void {
-  if (!isTreePath(path)) return refuse(copy, path, "is not a path inside the repository")
+  if (!isTreePath(path)) return refuse(copy, path, "is not a path a repository may hold: it leaves the tree or names git's own .git folder")
   if (path === ATTRIBUTES_FILE) return
   if (path === FORMAT_FILE) return readFormat(copy, path, text)
   const kind = path === WORKSPACE_FILE ? "workspace" : folderKind(path)

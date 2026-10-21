@@ -58,12 +58,19 @@ function syncingView(status: WorkspaceGitStatus): GitSyncView {
     : view("syncing", "Syncing", "info", `Syncing with ${whereOf(status)}…`);
 }
 
-/** A merge waiting for the user to settle its conflicts: not "syncing", because no pass will finish it. */
+/**
+ * A merge waiting for the user to settle its conflicts: not "syncing", because
+ * no pass will finish it. A merge that is simply waiting carries no error; any
+ * `lastError` is why the last resolve stopped — git's text, or the app's own
+ * (an import the merged tree failed, a merge that kept seeing new edits) — and
+ * is the detail, except a missing author, which asks for one instead.
+ */
 function mergingView(status: WorkspaceGitStatus): GitSyncView {
   const { lastError } = status;
+  const needsAuthor = lastError?.code === "identity_missing";
   return view("merging", "Merge needed", "warning", MERGING_EXPLANATION, {
-    // A resolve that failed (a missing author, say) says why here.
-    detail: lastError !== null && lastError.code !== null ? lastError.message : null,
+    needsAuthor,
+    detail: lastError !== null && !needsAuthor ? lastError.message : null,
   });
 }
 
