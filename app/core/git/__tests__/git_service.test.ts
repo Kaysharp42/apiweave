@@ -244,6 +244,15 @@ describe("history", () => {
     expect((await sandbox.service.log(dir, { path: "b.json" })).map((entry) => entry.subject)).toEqual(["third"])
   })
 
+  it("takes a path starting with a colon literally, not as pathspec magic", async () => {
+    const sandbox = makeSandbox()
+    const { dir } = await twoCommits(sandbox)
+
+    // Without `--literal-pathspecs` git refuses `:odd.json` as invalid magic.
+    // Nothing matches, so the answer is an empty history, not an error.
+    expect(await sandbox.service.log(dir, { path: ":odd.json" })).toEqual([])
+  })
+
   it("has an empty log before the first commit", async () => {
     const sandbox = makeSandbox()
     const dir = path.join(sandbox.root, "unborn")

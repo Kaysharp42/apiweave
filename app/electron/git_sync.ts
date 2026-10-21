@@ -110,6 +110,7 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
   handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
   handleWorkspace(GIT_CHANNELS.mergeConflicts, (workspaceId) => gitSync.mergeConflicts(workspaceId))
+  handleWorkspace(GIT_CHANNELS.mergePicks, (workspaceId) => gitSync.mergePicks(workspaceId))
   ipcMain.handle(
     GIT_CHANNELS.mergeRecordCommits,
     guard((workspaceId: unknown, recordIds: unknown) =>

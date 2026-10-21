@@ -635,6 +635,20 @@ export class GitSyncService {
   }
 
   /**
+   * The decisions already stored for the waiting merge, so a picker reopened
+   * after a partial resolve starts where it left off: {@link mergeConflicts}
+   * lists only what those decisions leave unsettled. Empty when no merge is
+   * waiting. Rejects for an untracked workspace.
+   *
+   * Read-only, and a read of the database alone: the picks are what
+   * {@link resolveMerge} last stored, and nothing about them needs the clone.
+   */
+  public async mergePicks(workspaceId: string): Promise<readonly GitMergePick[]> {
+    this.trackedBinding(workspaceId)
+    return this.repositories.workspaceGit.getMerge(workspaceId)?.picks ?? []
+  }
+
+  /**
    * The last commit each side made to each of `recordIds`, read from the
    * merge's two commits: who wrote each copy, for the picker to show beside
    * it. The ids are the conflicts' `recordId`s — a `file` conflict names its

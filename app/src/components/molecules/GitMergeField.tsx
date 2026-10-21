@@ -11,6 +11,7 @@ import type { GitMergeFieldProps } from "../../types";
  */
 export function GitMergeField({
   conflict,
+  recordName,
   selected,
   disabled,
   onPick,
@@ -53,7 +54,7 @@ export function GitMergeField({
               size="sm"
               disabled={disabled}
               aria-pressed={selected === copy.side}
-              aria-label={`Keep ${copy.owner.toLowerCase()} copy of ${conflict.path}`}
+              aria-label={`Keep ${copy.owner.toLowerCase()} copy of ${humanizePath(conflict.path)} in ${recordName}`}
               icon={
                 selected === copy.side ? (
                   <Check className="h-3.5 w-3.5" aria-hidden="true" />

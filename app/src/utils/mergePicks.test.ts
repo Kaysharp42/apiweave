@@ -5,6 +5,7 @@ import {
   allConflictsPicked,
   groupConflicts,
   pickKey,
+  picksFromList,
   picksRequest,
   sideOfConflict,
   withPathPick,
@@ -60,17 +61,44 @@ describe("withWholeRecordPick", () => {
 });
 
 describe("withPathPick", () => {
-  it("drops the record's whole-record choice and keeps its other field choices", () => {
+  it("keeps the record's whole-record choice, so its other fields stay settled", () => {
     const before = picks([
       ["w1", "", "theirs"],
       ["w1", "description", "ours"],
       ["w2", "", "ours"],
     ]);
 
-    expect([...withPathPick(before, "w1", "name", "theirs")]).toEqual([
+    const next = withPathPick(before, "w1", "name", "ours");
+
+    expect([...next]).toEqual([
+      [pickKey("w1", ""), "theirs"],
       [pickKey("w1", "description"), "ours"],
       [pickKey("w2", ""), "ours"],
-      [pickKey("w1", "name"), "theirs"],
+      [pickKey("w1", "name"), "ours"],
+    ]);
+    // The field's own pick wins where it was made; the record's choice is the
+    // fallback the server uses for every other field.
+    expect(sideOfConflict(next, conflict({ path: "name" }))).toBe("ours");
+    expect(sideOfConflict(next, conflict({ path: "method" }))).toBe("theirs");
+  });
+});
+
+describe("picksFromList", () => {
+  it("turns the decisions stored with the merge into the map the picker works in", () => {
+    const stored = [
+      { recordId: "w1", path: "name", side: "ours" as const },
+      { recordId: "w1", path: "", side: "theirs" as const },
+    ];
+
+    const next = picksFromList(stored);
+
+    expect([...next]).toEqual([
+      [pickKey("w1", "name"), "ours"],
+      [pickKey("w1", ""), "theirs"],
+    ]);
+    expect(picksRequest(next)).toEqual([
+      { recordId: "w1", path: "", side: "theirs" },
+      { recordId: "w1", path: "name", side: "ours" },
     ]);
   });
 });

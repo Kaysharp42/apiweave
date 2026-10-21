@@ -141,6 +141,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         syncNow: async () => current,
         pendingChanges: async () => [],
         mergeConflicts: async () => listed,
+        mergePicks: async () => [...picks],
         mergeRecordCommits: async (_workspaceId: string, recordIds: readonly string[]) =>
           recordIds.map((recordId) => ({ recordId, ...(commits[recordId] ?? { ours: null, theirs: null }) })),
         resolveMerge: async (_workspaceId: string, chosen: readonly FakePick[]) => {
@@ -223,10 +224,18 @@ test.describe("git merge conflicts", () => {
     await expect(finish).toBeDisabled();
     await captureEvidence(page, "git-sync-merge.png");
 
-    await dialog.getByRole("button", { name: "Keep your copy of name" }).click();
-    await dialog.getByRole("button", { name: "Keep remote copy of description" }).click();
+    await dialog
+      .getByRole("button", { name: "Keep your copy of Name in Checkout" })
+      .click();
+    await dialog
+      .getByRole("button", { name: "Keep remote copy of Description in Checkout" })
+      .click();
     await expect(finish).toBeDisabled();
-    await dialog.getByRole("button", { name: "Keep your copy of README.md" }).click();
+    await dialog
+      .getByRole("button", {
+        name: "Keep your copy for all conflicts in README.md",
+      })
+      .click();
     await expect(finish).toBeEnabled();
     await captureEvidence(page, "git-sync-merge-picked.png");
 

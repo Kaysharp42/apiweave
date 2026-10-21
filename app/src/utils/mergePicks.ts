@@ -35,9 +35,10 @@ export function withWholeRecordPick(
 }
 
 /**
- * Choose a copy for one field: a field pick is the more specific intent, so the
- * record's whole-record pick goes — one intent at a time, and the server would
- * otherwise settle the field from the whole-record pick anyway.
+ * Choose a copy for one field: a field pick is the more specific intent, so it
+ * wins that field. The record's whole-record pick stays, because the server
+ * settles each field from its own pick first and the nearest pick above it
+ * second — so the record's choice remains the fallback for every other field.
  */
 export function withPathPick(
   picks: ReadonlyMap<string, GitMergeSide>,
@@ -46,9 +47,17 @@ export function withPathPick(
   side: GitMergeSide,
 ): ReadonlyMap<string, GitMergeSide> {
   const next = new Map(picks);
-  next.delete(pickKey(recordId, ""));
   next.set(pickKey(recordId, path), side);
   return next;
+}
+
+/** The decisions stored with the merge as the map the picker works in: the inverse of {@link picksRequest}. */
+export function picksFromList(
+  picks: readonly GitMergePick[],
+): ReadonlyMap<string, GitMergeSide> {
+  return new Map(
+    picks.map((pick) => [pickKey(pick.recordId, pick.path), pick.side]),
+  );
 }
 
 /** The copy settled for a conflict: its own field pick, else its record's whole-record pick. */

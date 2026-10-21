@@ -1247,6 +1247,11 @@ export const git = {
   ): Promise<readonly GitMergeConflict[]> =>
     getGitBridge()?.mergeConflicts(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
+  mergePicks: (
+    workspaceId: string,
+  ): Promise<readonly GitMergePick[]> =>
+    getGitBridge()?.mergePicks(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
   mergeRecordCommits: (
     workspaceId: string,
     recordIds: readonly string[],

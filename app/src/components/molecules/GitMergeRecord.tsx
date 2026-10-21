@@ -91,7 +91,7 @@ export function GitMergeRecord({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <WholeRecordButton
-            label="Keep your copy"
+            label="Keep your copy for all conflicts"
             name={group.name}
             side="ours"
             chosen={whole}
@@ -99,7 +99,7 @@ export function GitMergeRecord({
             onChoose={onWholeRecord}
           />
           <WholeRecordButton
-            label="Keep remote copy"
+            label="Keep remote copy for all conflicts"
             name={group.name}
             side="theirs"
             chosen={whole}
@@ -121,6 +121,7 @@ export function GitMergeRecord({
           <GitMergeField
             key={pickKey(conflict.recordId, conflict.path)}
             conflict={conflict}
+            recordName={group.name}
             selected={sideOfConflict(picks, conflict)}
             disabled={disabled}
             onPick={(side) => onPath(conflict.path, side)}
@@ -146,7 +147,7 @@ function WholeRecordButton({
       intent={selected ? "success" : "default"}
       size="sm"
       disabled={disabled}
-      aria-label={`${label} of ${name}`}
+      aria-label={`${label} in ${name}`}
       aria-pressed={selected}
       icon={
         selected ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : undefined

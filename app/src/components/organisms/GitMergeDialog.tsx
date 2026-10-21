@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
+import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { GitMergeSide } from "@shared/types/GitMergeSide";
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
+import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError";
 import { Button } from "../atoms/Button";
 import { Spinner } from "../atoms/Spinner";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
@@ -12,6 +14,7 @@ import { describeConflictCount } from "../../utils/mergeCommits";
 import {
   allConflictsPicked,
   groupConflicts,
+  picksFromList,
   picksRequest,
   withPathPick,
   withWholeRecordPick,
@@ -20,6 +23,17 @@ import type { GitMergeDialogProps } from "../../types";
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+/**
+ * Why a resolve left the merge waiting, in the user's terms. A missing author
+ * is the one failure a retry cannot clear on its own, so it also says where
+ * to set one.
+ */
+function mergeErrorText(error: WorkspaceGitError): string {
+  if (error.code !== "identity_missing") return error.message;
+  const reason = /[.!?]$/.test(error.message) ? error.message : `${error.message}.`;
+  return `${reason} Set your name and email in Version history settings.`;
+}
 
 /**
  * Who last wrote each of the listed records, both copies. `null` when the
@@ -32,7 +46,12 @@ async function fetchCommits(
   const recordIds = [...new Set(listed.map((conflict) => conflict.recordId))];
   if (recordIds.length === 0) return new Map();
   try {
-    const found = await git.mergeRecordCommits(workspaceId, recordIds);
+    // The bridge caps how many ids one read takes; the rest of the list simply
+    // shows no authors, which is display only.
+    const found = await git.mergeRecordCommits(
+      workspaceId,
+      recordIds.slice(0, 500),
+    );
     return new Map(found.map((entry) => [entry.recordId, entry]));
   } catch {
     return null;
@@ -48,7 +67,9 @@ async function fetchCommits(
  *
  * The request always carries every decision made so far: the server replaces
  * its stored picks each time, so a resolve that leaves conflicts reloads them
- * and keeps the earlier decisions for the next finish to send again.
+ * and keeps the earlier decisions for the next finish to send again. A picker
+ * opened again after that reads the stored decisions back and starts from
+ * them, so closing and reopening loses nothing.
  *
  * Abandon is the deliberate way out: it keeps every local commit and change,
  * pushes nothing, and asks before it does that.
@@ -77,14 +98,22 @@ export function GitMergeDialog({
     let live = true;
     void (async () => {
       let listed: readonly GitMergeConflict[];
+      let stored: readonly GitMergePick[];
       try {
-        listed = await git.mergeConflicts(workspaceId);
+        // The conflicts are what the stored decisions leave unsettled, so both
+        // are read together: seeding from one without the other would show a
+        // conflict already settled, or hide one that is not.
+        [listed, stored] = await Promise.all([
+          git.mergeConflicts(workspaceId),
+          git.mergePicks(workspaceId),
+        ]);
       } catch (failure) {
         if (live) setError(errorText(failure));
         return;
       }
       if (!live) return;
       setConflicts(listed);
+      setPicks(picksFromList(stored));
       const details = await fetchCommits(workspaceId, listed);
       if (!live) return;
       if (details === null) {
@@ -127,10 +156,11 @@ export function GitMergeDialog({
         onClose();
         return;
       }
-      // A merge still waiting after a classified failure — a missing author —
-      // says why and keeps every decision; otherwise it lists what is left.
-      if (next.lastError !== null && next.lastError.code !== null) {
-        setError(next.lastError.message);
+      // A merge still waiting after a classified or unclassified failure says
+      // why and keeps every decision — the same rule the card follows for a
+      // status's `lastError`; otherwise it lists what is left.
+      if (next.lastError !== null) {
+        setError(mergeErrorText(next.lastError));
       }
       await reload();
     } catch (failure) {
@@ -212,7 +242,10 @@ export function GitMergeDialog({
             </p>
           ) : (
             <>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
+              <p
+                role="status"
+                className="text-xs text-text-muted dark:text-text-muted-dark"
+              >
                 {describeConflictCount(conflicts.length)}
               </p>
               <ul className="space-y-3" aria-label="Merge conflicts">

@@ -44,6 +44,12 @@ export interface GitBridge {
    */
   readonly mergeConflicts: (workspaceId: string) => Promise<readonly GitMergeConflict[]>
   /**
+   * The decisions already stored for the waiting merge, so a picker reopened
+   * after a partial resolve starts where it left off. Empty when the workspace
+   * is not merging. Rejects for an untracked workspace.
+   */
+  readonly mergePicks: (workspaceId: string) => Promise<readonly GitMergePick[]>
+  /**
    * The commit each side last made to each conflicted record or file, from
    * `git log -1 <rev> -- <path>` — who wrote each copy, for the picker. A record
    * a side does not hold has no commit there. Read-only, and display only:

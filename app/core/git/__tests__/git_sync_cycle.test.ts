@@ -581,6 +581,24 @@ describe("the sync cycle", () => {
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
     })
 
+    it("reads back the decisions stored for the waiting merge, and none when it is not merging", async () => {
+      const pair = await sharedPair()
+      const { a, b, workspaceId, opened, sharedId } = pair
+      await renameConflict(pair)
+      const merge = b.repositories.workspaceGit.getMerge(opened)
+      if (merge === undefined) throw new Error("the merge did not start")
+      const stored = [
+        { recordId: sharedId, path: "", side: "ours" as const },
+        { recordId: sharedId, path: "name", side: "theirs" as const },
+      ]
+      b.repositories.workspaceGit.setMergePicks(opened, merge.baseCommit, stored)
+
+      // The set a reopened picker seeds from, in the merge's own order.
+      expect(await b.sync.mergePicks(opened)).toEqual(stored)
+      // The other device is on the same remote, but it is not the one merging.
+      expect(await a.sync.mergePicks(workspaceId)).toEqual([])
+    })
+
     it("has no commit for a side that does not hold the record", async () => {
       const pair = await sharedPair()
       const { a, b, remote, sandbox, workspaceId, opened, sharedId } = pair

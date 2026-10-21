@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
+import type { GitMergePick } from "@shared/types/GitMergePick";
 import { GitMergeDialog } from "./GitMergeDialog";
 import { installGitBridge, trackedStatus } from "../../__tests__/gitFixtures";
 
@@ -64,14 +65,14 @@ function renderDialog(
     mergeRecordCommits: vi.fn(async () => COMMITS),
     ...overrides,
   });
-  render(
+  const { unmount } = render(
     <GitMergeDialog
       status={trackedStatus({ state: "merging" })}
       onClose={onClose}
       onStatus={onStatus}
     />,
   );
-  return { bridge, onClose, onStatus };
+  return { bridge, onClose, onStatus, unmount };
 }
 
 describe("GitMergeDialog", () => {
@@ -94,6 +95,9 @@ describe("GitMergeDialog", () => {
     expect(screen.getByText("Rename on A")).toBeInTheDocument();
 
     expect(bridge.mergeConflicts).toHaveBeenCalledWith("ws-1");
+    // The decisions stored with the merge seed the picker, so reopening it
+    // after a partial resolve starts where the last session left off.
+    expect(bridge.mergePicks).toHaveBeenCalledWith("ws-1");
     // Once per record, not once per conflict.
     expect(bridge.mergeRecordCommits).toHaveBeenCalledWith("ws-1", ["w1"]);
   });
@@ -107,9 +111,17 @@ describe("GitMergeDialog", () => {
     const finish = await screen.findByRole("button", { name: "Finish merge" });
     expect(finish).toBeDisabled();
 
-    await user.click(await screen.findByRole("button", { name: "Keep your copy of name" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy of Name in Checkout",
+      }),
+    );
     expect(finish).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Keep remote copy of description" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep remote copy of Description in Checkout",
+      }),
+    );
 
     expect(finish).toBeEnabled();
     await user.click(finish);
@@ -132,7 +144,11 @@ describe("GitMergeDialog", () => {
       resolveMerge: vi.fn(async () => trackedStatus({ state: "idle" })),
     });
 
-    await user.click(await screen.findByRole("button", { name: "Keep remote copy of Checkout" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep remote copy for all conflicts in Checkout",
+      }),
+    );
 
     const finish = screen.getByRole("button", { name: "Finish merge" });
     expect(finish).toBeEnabled();
@@ -145,19 +161,32 @@ describe("GitMergeDialog", () => {
     );
   });
 
-  it("replaces a whole-record choice with a field's own pick", async () => {
+  it("lets a field's own pick override the whole-record choice for that field only", async () => {
     const user = userEvent.setup();
-    const { bridge } = renderDialog([NAME], {
+    const { bridge } = renderDialog([NAME, DESCRIPTION], {
       resolveMerge: vi.fn(async () => trackedStatus({ state: "idle" })),
     });
 
-    await user.click(await screen.findByRole("button", { name: "Keep your copy of Checkout" }));
-    await user.click(screen.getByRole("button", { name: "Keep remote copy of name" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy for all conflicts in Checkout",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep remote copy of Name in Checkout",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
+    // The record's choice stays as the fallback, so Description is still
+    // settled by it, and name is the only field the later choice overrides.
     expect(bridge.resolveMerge).toHaveBeenLastCalledWith(
       "ws-1",
-      [{ recordId: "w1", path: "name", side: "theirs" }],
+      [
+        { recordId: "w1", path: "", side: "ours" },
+        { recordId: "w1", path: "name", side: "theirs" },
+      ],
       undefined,
     );
   });
@@ -172,13 +201,23 @@ describe("GitMergeDialog", () => {
         .mockResolvedValue([METHOD]),
     });
 
-    await user.click(await screen.findByRole("button", { name: "Keep your copy of name" }));
-    await user.click(screen.getByRole("button", { name: "Keep remote copy of description" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy of Name in Checkout",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep remote copy of Description in Checkout",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
     // The re-done merge turned up a different conflict, and none of the
     // decisions already made were thrown away.
-    expect(await screen.findByText("1 conflict left to decide.")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "1 conflict left to decide.",
+    );
     expect(screen.queryByText("On A")).not.toBeInTheDocument();
     expect(screen.queryByText("From A")).not.toBeInTheDocument();
     expect(screen.getByText("Get A")).toBeInTheDocument();
@@ -187,7 +226,11 @@ describe("GitMergeDialog", () => {
     // authors are read again.
     expect(bridge.mergeRecordCommits).toHaveBeenCalledTimes(2);
 
-    await user.click(screen.getByRole("button", { name: "Keep remote copy of method" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep remote copy of Method in Checkout",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
     // The whole set, not just the pick made since the reload: the server
@@ -203,6 +246,62 @@ describe("GitMergeDialog", () => {
     );
   });
 
+  it("starts from the decisions stored with the merge when it is opened again", async () => {
+    const user = userEvent.setup();
+    const stored: GitMergePick[] = [];
+    const first = renderDialog([NAME, DESCRIPTION], {
+      resolveMerge: vi.fn(async (_workspaceId, chosen) => {
+        stored.splice(0, stored.length, ...chosen);
+        return trackedStatus({ state: "merging" });
+      }),
+    });
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy of Name in Checkout",
+      }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep remote copy of Description in Checkout",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Finish merge" }));
+    // The first round left nothing to list, so the dialog had nothing more to
+    // show; the user closes it, and the merge is still waiting.
+    expect(first.bridge.resolveMerge).toHaveBeenCalled();
+    first.unmount();
+
+    const { bridge, onClose } = renderDialog([METHOD], {
+      mergeConflicts: vi.fn(async () => [METHOD]),
+      mergePicks: vi.fn(async () => stored),
+      resolveMerge: vi.fn(async () => trackedStatus({ state: "idle" })),
+    });
+
+    // The reopened picker read the decisions the merge has stored (what is
+    // left to list is only the conflict those decisions did not settle), and
+    // shows the leftover.
+    const reopened = await screen.findByRole("button", {
+      name: "Keep remote copy of Method in Checkout",
+    });
+    expect(reopened).toHaveAttribute("aria-pressed", "false");
+    await user.click(reopened);
+    await user.click(screen.getByRole("button", { name: "Finish merge" }));
+
+    // The request carries the first round's picks too: the server replaces its
+    // stored set with exactly what this one holds.
+    expect(bridge.resolveMerge).toHaveBeenCalledWith(
+      "ws-1",
+      [
+        { recordId: "w1", path: "description", side: "theirs" },
+        { recordId: "w1", path: "method", side: "theirs" },
+        { recordId: "w1", path: "name", side: "ours" },
+      ],
+      undefined,
+    );
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("says why the merge could not finish, and keeps the decisions that are still waiting", async () => {
     const user = userEvent.setup();
     const { onClose } = renderDialog([NAME], {
@@ -214,12 +313,44 @@ describe("GitMergeDialog", () => {
       ),
     });
 
-    await user.click(await screen.findByRole("button", { name: "Keep your copy of Checkout" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy for all conflicts in Checkout",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Author identity unknown");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Author identity unknown. Set your name and email in Version history settings.",
+    );
     expect(screen.getByRole("button", { name: "Finish merge" })).toBeEnabled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("says why an unclassified failure left the merge waiting", async () => {
+    const user = userEvent.setup();
+    renderDialog([NAME], {
+      resolveMerge: vi.fn(async () =>
+        trackedStatus({
+          state: "merging",
+          lastError: {
+            code: null,
+            message: "This workspace changed again while the merge was being resolved.",
+          },
+        }),
+      ),
+    });
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Keep your copy of Name in Checkout",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Finish merge" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This workspace changed again while the merge was being resolved.",
+    );
   });
 
   it("stays usable when the commit details cannot be read", async () => {
@@ -229,7 +360,11 @@ describe("GitMergeDialog", () => {
     });
 
     expect(await screen.findByText("Commit details unavailable")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Keep your copy of Checkout" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep your copy for all conflicts in Checkout",
+      }),
+    );
 
     expect(screen.getByRole("button", { name: "Finish merge" })).toBeEnabled();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -296,15 +431,46 @@ describe("GitMergeDialog", () => {
     // A `""` place is the whole file, named as such rather than left blank.
     expect(screen.getByText("Whole file")).toBeInTheDocument();
     // Only the two whole-file choices: no per-path buttons at all.
-    expect(screen.getAllByRole("button", { name: /of README\.md$/ })).toHaveLength(2);
+    expect(
+      screen.getAllByRole("button", { name: /in README\.md$/ }),
+    ).toHaveLength(2);
 
-    await user.click(screen.getByRole("button", { name: "Keep your copy of README.md" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "Keep your copy for all conflicts in README.md",
+      }),
+    );
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
     expect(bridge.resolveMerge).toHaveBeenCalledWith(
       "ws-1",
       [{ recordId: "README.md", path: "", side: "ours" }],
       undefined,
+    );
+  });
+
+  it("asks about at most 500 records for commit details", async () => {
+    const many = Array.from({ length: 501 }, (_, index) => ({
+      ...NAME,
+      recordId: `w${index}`,
+      name: `Workflow ${index}`,
+    }));
+    const mergeRecordCommits = vi.fn(
+      async (_workspaceId: string, _recordIds: readonly string[]) => [],
+    );
+
+    renderDialog(many, { mergeRecordCommits });
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Keep your copy of Name in Workflow 0",
+      }),
+    ).toBeInTheDocument();
+    // The bridge refuses more than 500 ids; the rest of the list simply shows
+    // no authors.
+    expect(mergeRecordCommits).toHaveBeenCalledWith(
+      "ws-1",
+      many.slice(0, 500).map((conflict) => conflict.recordId),
     );
   });
 
@@ -329,6 +495,17 @@ describe("GitMergeDialog", () => {
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("the clone is busy");
+    expect(screen.getByRole("button", { name: "Finish merge" })).toBeDisabled();
+  });
+
+  it("says so when the decisions stored with the merge cannot be read", async () => {
+    renderDialog([NAME], {
+      mergePicks: vi.fn().mockRejectedValue(new Error("the picks are unreadable")),
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "the picks are unreadable",
+    );
     expect(screen.getByRole("button", { name: "Finish merge" })).toBeDisabled();
   });
 });
