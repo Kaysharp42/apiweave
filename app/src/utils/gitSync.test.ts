@@ -77,6 +77,29 @@ describe("describeGitSync", () => {
     expect(describeGitSync(trackedStatus({ readOnly: true })).explanation).toMatch(/^You can't push to this repo — your changes stay on this device/);
   });
 
+  it("says a merge is needed, with no detail while it simply waits", () => {
+    expect(describeGitSync(trackedStatus({ state: "merging", lastError: null }))).toMatchObject({
+      kind: "merging",
+      label: "Merge needed",
+      detail: null,
+      needsAuthor: false,
+    });
+  });
+
+  it("tells why a resolve stopped, whether the reason is git's or the app's, and asks for a missing author", () => {
+    const git = describeGitSync(trackedStatus({ state: "merging", lastError: { code: "network_error", message: "fatal: unable to access" } }));
+    expect(git).toMatchObject({ kind: "merging", detail: "fatal: unable to access", needsAuthor: false });
+
+    const app = "This workspace changed again while the merge was being committed. Resolve the merge again to finish it.";
+    expect(describeGitSync(trackedStatus({ state: "merging", lastError: { code: null, message: app } }))).toMatchObject({
+      kind: "merging",
+      detail: app,
+    });
+
+    const author = describeGitSync(trackedStatus({ state: "merging", lastError: { code: "identity_missing", message: "Author identity unknown" } }));
+    expect(author).toMatchObject({ kind: "merging", needsAuthor: true, detail: null });
+  });
+
   it("gives an error the message for its code, git's text as detail, and flags a missing author", () => {
     const view = describeGitSync(
       trackedStatus({ state: "error", lastError: { code: "network_error", message: "fatal: unable to access" } }),
