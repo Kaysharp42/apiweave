@@ -151,13 +151,14 @@ export class WorkspaceGitRepository {
   /**
    * Back to local only. The branch stays: it is the local repository's own. A
    * merge waiting on the remote's commit has nothing left to finish, so it
-   * goes in the same transaction, picks and all, and a workspace that was
-   * `merging` is idle again.
+   * goes in the same transaction, picks and all. A workspace that was
+   * `merging` or `diverged` is idle again: both are about a remote it no
+   * longer has.
    */
   public clearRemote(workspaceId: string): boolean {
     return this.store.transaction((store) => {
       store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
-      store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state = 'merging'", [workspaceId])
+      store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state IN ('merging', 'diverged')", [workspaceId])
       return store.set(`UPDATE workspace_git SET remote_url = NULL, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [workspaceId]).changes > 0
     })
   }

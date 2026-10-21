@@ -177,7 +177,7 @@ const TREE_LISTING = /^(\d+) (\w+) ([0-9a-f]+) +(\d+|-)\t([\s\S]+)$/
 /**
  * Parse `git ls-tree -r -l -z`: every entry of a tree, by path, with its mode,
  * its type and a blob's size. Nothing is skipped — a symbolic link and a
- * submodule are listed as what they are, for the caller to refuse — and output
+ * submodule are listed as what they are, for the caller to tell apart — and output
  * that does not read as a listing is refused, not guessed at.
  */
 export function parseTreeListings(output: string): GitTreeListing[] | undefined {

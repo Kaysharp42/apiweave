@@ -398,6 +398,18 @@ describe("GitSyncService.disconnectRemote", () => {
     expect(binding(harness).readOnly).toBe(false)
   })
 
+  it("leaves a diverged workspace idle: diverging is about the remote it no longer has", async () => {
+    const harness = await trackedHarness()
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    harness.repositories.workspaceGit.setState(harness.workspaceId, "diverged", { code: null, message: "the remote's history was rewritten" })
+
+    const status = await harness.sync.disconnectRemote(harness.workspaceId)
+
+    expect(status).toMatchObject({ remoteUrl: null, state: "idle", lastError: null })
+    expect(binding(harness)).toMatchObject({ remoteUrl: null, state: "idle", lastError: null })
+  })
+
   it("needs a tracked workspace, and says it has nothing to disconnect rather than asking to connect", async () => {
     const harness = openHarness()
 
