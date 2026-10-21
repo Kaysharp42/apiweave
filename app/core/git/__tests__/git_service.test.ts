@@ -244,13 +244,14 @@ describe("history", () => {
     expect((await sandbox.service.log(dir, { path: "b.json" })).map((entry) => entry.subject)).toEqual(["third"])
   })
 
-  it("takes a path starting with a colon literally, not as pathspec magic", async () => {
+  it("takes a path literally, not as a glob", async () => {
     const sandbox = makeSandbox()
     const { dir } = await twoCommits(sandbox)
 
-    // Without `--literal-pathspecs` git refuses `:odd.json` as invalid magic.
-    // Nothing matches, so the answer is an empty history, not an error.
-    expect(await sandbox.service.log(dir, { path: ":odd.json" })).toEqual([])
+    // A glob would match `a.json` and report the commit that touched it;
+    // taken literally, `*.json` names no file, so the answer is an empty
+    // history.
+    expect(await sandbox.service.log(dir, { path: "*.json" })).toEqual([])
   })
 
   it("has an empty log before the first commit", async () => {

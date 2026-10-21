@@ -101,12 +101,13 @@ export function GitMergeDialog({
       let stored: readonly GitMergePick[];
       try {
         // The conflicts are what the stored decisions leave unsettled, so both
-        // are read together: seeding from one without the other would show a
-        // conflict already settled, or hide one that is not.
-        [listed, stored] = await Promise.all([
-          git.mergeConflicts(workspaceId),
-          git.mergePicks(workspaceId),
-        ]);
+        // are read, in this order: `mergePicks` is a lock-free read while
+        // `mergeConflicts` queues behind any resolve in flight, so a pick set
+        // read first could be the older one and the next finish would drop the
+        // in-flight decisions. Reading the newer list first means a stored set
+        // that is a superset of it is harmless.
+        listed = await git.mergeConflicts(workspaceId);
+        stored = await git.mergePicks(workspaceId);
       } catch (failure) {
         if (live) setError(errorText(failure));
         return;

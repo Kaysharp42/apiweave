@@ -140,7 +140,7 @@ In manual mode, **Sync now** with edits waiting opens a dialog before anything i
 
 ### Resolving a merge
 
-**Review merge** opens the picker over whatever you were doing — from the header's popover or from **Version history settings** — and closing it leaves everything as it was, with the decisions made so far stored with the merge. Opening it again shows those decisions as already made, so closing and reopening loses nothing.
+**Review merge** opens the picker over whatever you were doing — from the header's popover or from **Version history settings** — and closing it leaves everything as it was, with the decisions made so far stored with the merge. Opening the picker again keeps those decisions, so closing and reopening loses nothing.
 
 It lists one card per conflicted record or file. Each conflicted place shows both copies side by side under **Your copy** and **Remote copy**; a copy that side deleted or never had says *Not present*. Under each place are **Keep your copy** and **Keep remote copy**, and the card's header has **Keep your copy for all conflicts** and **Keep remote copy for all conflicts** for the whole record: one choice there settles every **conflicted** field in it, and every other change from both sides is already merged. A field choice overrides the record choice for that field only. Above each card are the author, short commit and subject of the commit each side last made to it, read from the merge's two commits; if those details cannot be read the card says *Commit details unavailable* and the choices still work. A record whose two copies cannot make a valid record together says why and offers only the whole-record choice.
 

@@ -302,6 +302,29 @@ describe("GitMergeDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("reads the conflicts before the picks, so the picks cannot be the older of the two", async () => {
+    let release: (conflicts: readonly GitMergeConflict[]) => void = () => {};
+    const mergePicks = vi.fn(async () => [] as GitMergePick[]);
+    renderDialog([], {
+      mergeConflicts: vi.fn(
+        () =>
+          new Promise<readonly GitMergeConflict[]>((resolve) => {
+            release = resolve;
+          }),
+      ),
+      mergePicks,
+    });
+
+    // `mergeConflicts` is still waiting on the service lock. Reading the picks
+    // now would seed a set from before the resolve in flight, and the next
+    // finish would drop that resolve's decisions.
+    expect(mergePicks).not.toHaveBeenCalled();
+
+    release([NAME]);
+    expect(await screen.findByText("On B")).toBeInTheDocument();
+    expect(mergePicks).toHaveBeenCalledWith("ws-1");
+  });
+
   it("says why the merge could not finish, and keeps the decisions that are still waiting", async () => {
     const user = userEvent.setup();
     const { onClose } = renderDialog([NAME], {
