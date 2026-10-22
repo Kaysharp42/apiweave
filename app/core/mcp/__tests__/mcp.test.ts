@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { ResourceUpdatedNotificationSchema } from "@modelcontextprotocol/sdk/types.js"
+import { AGENT_CHANNELS, GIT_CHANNELS, NETWORK_CHANNELS, OAUTH_CHANNELS } from "../../ipc/channels"
 import { RunEventBroker } from "../../runner/run_event_broker"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
@@ -295,15 +296,14 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
   })
 
   /**
-   * Export to folder / Import from folder make main write and delete files on
-   * disk; they live off the router (PROJECT_FOLDER_CHANNELS, a privileged
-   * preload world), so no local agent can reach them.
+   * Whatever main does for the user alone — run git, write files, set the
+   * proxy, launch an agent — is a privileged channel with its own preload
+   * world. None of them may be published as a tool, under its own name.
    */
-  it("exposes no project folder tools — writing files on disk is not on the router", () => {
-    for (const spec of MCP_TOOLS) {
-      expect(spec.domain).not.toBe("projectFolder")
-      expect(spec.action.toLowerCase()).not.toContain("folder")
-    }
+  it("publishes no privileged channel as a tool", () => {
+    const privileged = [GIT_CHANNELS, NETWORK_CHANNELS, OAUTH_CHANNELS, AGENT_CHANNELS].flatMap((channels) => Object.values(channels))
+    const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
+    for (const channel of privileged) expect(published.has(channel), channel).toBe(false)
   })
 
   /**
@@ -2523,12 +2523,16 @@ describe("McpHost — stateful sessions and live run subscriptions over HTTP", (
     broker.publish(runId, { kind: "run.started", runId })
     broker.publish(runId, { kind: "run.finished", runId, status: "completed" })
 
-    // The notification rides the GET SSE stream — allow it to arrive. The budget
-    // is generous because the loop exits on arrival: it bounds a hang, it does
-    // not assert a latency, and a tight bound only makes the suite flaky as more
-    // tests share the machine.
+    // The notification rides the GET SSE stream, which the client transport opens
+    // without awaiting it, and the server silently drops what is published before
+    // that stream is registered; McpHost has no event store, so nothing is replayed.
+    // The first publish can therefore be lost for good, so the test waits for *an*
+    // arrival and re-publishes run.started on each poll (never run.finished: the
+    // broker dedupes terminal events, so a repeat would dispatch nothing). The loop
+    // exits on arrival, so the budget only bounds a hang.
     for (let i = 0; i < 250 && notified.length < 1; i++) {
       await new Promise((resolve) => setTimeout(resolve, 20))
+      if (notified.length < 1) broker.publish(runId, { kind: "run.started", runId })
     }
     expect(notified).toContain(uri)
 

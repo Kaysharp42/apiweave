@@ -66,9 +66,6 @@ import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
-import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult"
-import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
-import { exportProjectFolder, importProjectFolder } from "../core/services/project_folder"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
@@ -77,7 +74,6 @@ import {
   GIT_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
-  PROJECT_FOLDER_CHANNELS,
   PROJECT_RUN_CHANGED_CHANNEL,
   RUN_STARTED_CHANNEL,
   SCREEN_READER_ARG,
@@ -884,39 +880,7 @@ if (!hasSingleInstanceLock) {
       }),
     )
 
-    // Project folders. Off the router like network:*: main writes and deletes
-    // files on disk, which no local agent may trigger. The folder is the one
-    // the user picks here, never a path the caller passes.
-    const chooseFolder = async (title: string, buttonLabel: string): Promise<string | null> => {
-      const options: Electron.OpenDialogOptions = { title, buttonLabel, properties: ["openDirectory", "createDirectory"] }
-      const win = mainWindow
-      const result = win !== null && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-      return result.canceled ? null : (result.filePaths[0] ?? null)
-    }
-    const requireString = (request: unknown, key: string): string => {
-      const value = typeof request === "object" && request !== null ? (request as Record<string, unknown>)[key] : undefined
-      if (typeof value !== "string" || value === "") throw new Error(`${key} is required`)
-      return value
-    }
-    ipcMain.handle(
-      PROJECT_FOLDER_CHANNELS.exportProject,
-      requireTrustedSender(async (request: unknown): Promise<ProjectFolderExportResult | null> => {
-        const workspaceId = requireString(request, "workspaceId")
-        const projectId = requireString(request, "projectId")
-        const folder = await chooseFolder("Export project to folder", "Export here")
-        return folder === null ? null : exportProjectFolder(deps.projects, workspaceId, projectId, folder)
-      }),
-    )
-    ipcMain.handle(
-      PROJECT_FOLDER_CHANNELS.importProject,
-      requireTrustedSender(async (request: unknown): Promise<ProjectFolderImportResult | null> => {
-        const workspaceId = requireString(request, "workspaceId")
-        const folder = await chooseFolder("Import project from folder", "Import")
-        return folder === null ? null : importProjectFolder(deps.projects, workspaceId, folder)
-      }),
-    )
-
-    // Version history. Off the router like projectFolder:* — see registerGitHandlers.
+    // Version history. Off the router like network:* — see registerGitHandlers.
     gitSync = createGitSync(
       app.getPath("userData"),
       {

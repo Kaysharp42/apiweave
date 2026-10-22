@@ -75,7 +75,7 @@ apiweave run smoke.json --iteration-count 5
 | `-n, --iteration-count <n>` | Run `n` times. With `--iteration-data`, run its first `n` rows. |
 | `--bail` | Stop at the first failed iteration (and, in a project, at the first failed workflow). |
 
-A project bundle runs the whole project once per row: every workflow of iteration 1, then every workflow of iteration 2. The exit code is `1` if any iteration failed. The console report lists every iteration's steps and adds an **Iterations** row to the summary; the JUnit and HTML reports have one test suite per workflow per iteration, named `Health check [iteration 2]`. See [Run APIWeave Tests in CI](../guides/ci.md).
+A project bundle runs the whole project once per row: every workflow of iteration 1, then every workflow of iteration 2. A workspace repository holds several projects, and a data run is one project's, so pick it with `--project <name|id>`; without it, a repository with more than one project to run exits `2` and names the flag. The exit code is `1` if any iteration failed. The console report lists every iteration's steps and adds an **Iterations** row to the summary; the JUnit and HTML reports have one test suite per workflow per iteration, named `Health check [iteration 2]`. See [Run APIWeave Tests in CI](../guides/ci.md).
 
 ## Agents
 

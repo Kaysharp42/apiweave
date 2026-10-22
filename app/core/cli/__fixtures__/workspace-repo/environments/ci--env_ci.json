@@ -1,0 +1,11 @@
+{
+  "environmentId": "env_ci",
+  "name": "CI",
+  "description": null,
+  "swaggerDocUrl": null,
+  "isDefault": true,
+  "variables": {
+    "baseUrl": "http://127.0.0.1:8787",
+    "tier": "ci"
+  }
+}

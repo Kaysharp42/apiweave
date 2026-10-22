@@ -1,0 +1,84 @@
+{
+  "workflowId": "wf_standalone",
+  "projectId": null,
+  "name": "Standalone ping",
+  "description": "",
+  "selectedEnvironmentId": "env_ci",
+  "tags": [],
+  "variables": {},
+  "nodes": [
+    {
+      "nodeId": "start",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "start"
+    },
+    {
+      "config": {
+        "headers": [
+          {
+            "key": "X-User",
+            "value": "standalone-{{env.tier}}"
+          }
+        ],
+        "method": "GET",
+        "url": "{{env.baseUrl}}/health.json"
+      },
+      "label": "GET Standalone ping",
+      "nodeId": "get",
+      "position": {
+        "x": 240,
+        "y": 0
+      },
+      "type": "http-request"
+    },
+    {
+      "config": {
+        "assertions": [
+          {
+            "expectedValue": "ok",
+            "operator": "equals",
+            "path": "response.body.status",
+            "source": "prev"
+          }
+        ]
+      },
+      "label": "Standalone ping is ok",
+      "nodeId": "check",
+      "position": {
+        "x": 480,
+        "y": 0
+      },
+      "type": "assertion"
+    },
+    {
+      "nodeId": "end",
+      "position": {
+        "x": 720,
+        "y": 0
+      },
+      "type": "end"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "e1",
+      "source": "start",
+      "target": "get"
+    },
+    {
+      "edgeId": "e2",
+      "source": "get",
+      "target": "check"
+    },
+    {
+      "edgeId": "e3",
+      "source": "check",
+      "sourceHandle": "pass",
+      "target": "end"
+    }
+  ],
+  "nodeTemplates": []
+}

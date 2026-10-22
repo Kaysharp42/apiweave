@@ -409,6 +409,9 @@ describe("reading a workspace repository", () => {
     expect(() => parseWorkspace(editJson(tree(), "projects/shop-api--proj-shop.json", (doc) => {
       (doc["workflowOrder"] as Record<string, unknown>[])[0]!["workflowId"] = "../../evil"
     }))).toThrow(/workflowOrder\.0\.workflowId: must be an APIWeave id/)
+    expect(() => parseWorkspace(editJson(tree(), "projects/shop-api--proj-shop.json", (doc) => {
+      (doc["workflowOrder"] as Record<string, unknown>[])[0]!["workflowId"] = "-c"
+    }))).toThrow(/workflowOrder\.0\.workflowId: must be an APIWeave id .*not starting with '-'/)
   })
 
   it("refuses a record file not named after its id, in a subfolder, or sharing its id with another", () => {

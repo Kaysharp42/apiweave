@@ -41,11 +41,12 @@ jobs:
         run: npm run lint
         working-directory: app
       # The headless runner, built and run under plain Node the way a user's
-      # CI runs it, against a fixture bundle served from a local server.
+      # CI runs it, against a fixture bundle and a fixture repository served
+      # from a local server.
       - name: Build CLI
         run: npm run build:cli
         working-directory: app
-      - name: Run CLI against the fixture
+      - name: Run CLI against the fixtures
         working-directory: app
         env:
           APIWEAVE_SECRET_API_TOKEN: ci-fixture-token
@@ -55,6 +56,13 @@ jobs:
           node dist/cli/apiweave.cjs run core/cli/__fixtures__/smoke.awecollection --env CI \
             --reporter cli,junit --reporter-junit-export "$RUNNER_TEMP/apiweave-junit.xml"
           grep -q 'failures="0"' "$RUNNER_TEMP/apiweave-junit.xml"
+          # A workspace repository: every project in one report, each suite named
+          # "<project>: <workflow>", the withheld credential a warning, not a failure.
+          node dist/cli/apiweave.cjs run core/cli/__fixtures__/workspace-repo --env CI \
+            --reporter cli,junit --reporter-junit-export "$RUNNER_TEMP/apiweave-repo-junit.xml"
+          grep -q 'failures="0"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
+          grep -q 'name="Billing: List invoices"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
+          grep -q 'name="Shop API: Health check"' "$RUNNER_TEMP/apiweave-repo-junit.xml"
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
         working-directory: app

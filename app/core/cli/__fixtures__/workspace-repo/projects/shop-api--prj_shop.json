@@ -1,0 +1,18 @@
+{
+  "projectId": "prj_shop",
+  "name": "Shop API",
+  "description": "Storefront checks",
+  "color": "#6366f1",
+  "workflowOrder": [
+    {
+      "continueOnFail": true,
+      "enabled": true,
+      "workflowId": "wf_health"
+    },
+    {
+      "continueOnFail": true,
+      "enabled": true,
+      "workflowId": "wf_orders"
+    }
+  ]
+}
