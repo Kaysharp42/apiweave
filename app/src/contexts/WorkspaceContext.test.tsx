@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   WorkspaceProvider,
@@ -9,14 +9,9 @@ import {
 import type { Workspace } from "../types/Workspace";
 
 const listWorkspaces = vi.fn();
-const onCloudStatusChanged = vi.fn(
-  (_callback: () => void): (() => void) => () => undefined,
-);
 
 vi.mock("../utils/apiweaveClient", () => ({
   apiweave: { workspaces: { list: () => listWorkspaces() } },
-  onCloudStatusChanged: (callback: () => void) =>
-    onCloudStatusChanged(callback),
 }));
 
 const workspaces: Workspace[] = [
@@ -95,43 +90,6 @@ describe("WorkspaceContext routing", () => {
 
     expect(screen.getByTestId("location-probe")).toHaveTextContent(
       "/personal/team-alpha/workflows",
-    );
-  });
-
-  it("refreshes available workspaces when cloud sync changes local data", async () => {
-    listWorkspaces.mockResolvedValue(workspaces);
-
-    render(
-      <MemoryRouter initialEntries={["/personal/workflows"]}>
-        <Routes>
-          <Route
-            path="/:workspaceSlug/workflows"
-            element={
-              <WorkspaceProvider>
-                <WorkspaceConsumer />
-              </WorkspaceProvider>
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    expect(await screen.findByTestId("workspace-count")).toHaveTextContent("2");
-
-    const cloudWorkspace: Workspace = {
-      ...workspaces[1]!,
-      workspaceId: "ws-cloud",
-      slug: "ws-cloud",
-      name: "Cloud workspace",
-    };
-    listWorkspaces.mockResolvedValue([...workspaces, cloudWorkspace]);
-
-    const listener = onCloudStatusChanged.mock.calls.at(-1)?.[0];
-    expect(listener).toBeDefined();
-    act(() => listener?.());
-
-    await waitFor(() =>
-      expect(screen.getByTestId("workspace-count")).toHaveTextContent("3"),
     );
   });
 });

@@ -10,5 +10,4 @@ export type TutorialDestinationPath =
   | "agents"
   | "canvas-settings"
   | "mcp-server"
-  | "updates"
-  | "cloud-sync";
+  | "updates";

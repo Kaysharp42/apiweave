@@ -523,7 +523,7 @@ export const requestsAndDataChapter: TutorialChapter = {
         {
           title: "Know where secrets never travel",
           instruction:
-            "Secret values are scrubbed before any result is persisted, never appear in .awecollection exports, never sync to Cloud, and are never returned by any read API or MCP tool.",
+            "Secret values are scrubbed before any result is persisted, never appear in .awecollection exports, never leave this machine, and are never returned by any read API or MCP tool.",
         },
       ],
       example: {

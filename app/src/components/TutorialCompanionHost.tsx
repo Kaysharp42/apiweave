@@ -88,8 +88,9 @@ function useTutorialCompanionLayout(
 
   const companionRef = useRef<HTMLDivElement>(null);
 
-  // Leaving the shell entirely (Cloud) unmounts this host. Pause rather than
-  // keep `isOpen`, so returning does not pop the companion back open.
+  // Leaving the shell entirely (a route with no chrome, so this host unmounts)
+  // pauses rather than keeps `isOpen`, so returning does not pop the companion
+  // back open.
   useEffect(() => () => pauseCompanion(), [pauseCompanion]);
 
   // Crossing from wide to compact while focus is in the workspace collapses to

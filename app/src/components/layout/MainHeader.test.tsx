@@ -12,10 +12,6 @@ vi.mock("../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
-vi.mock("./AccountMenu", () => ({
-  AccountMenu: () => <div data-testid="account-menu" />,
-}));
-
 vi.mock("../../stores/WindowChromeStore", () => ({
   useOwnWindowChrome: () => false,
 }));

@@ -1,13 +1,13 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 7 — App. Settings, optional Cloud sync, and updates/startup.
+ * Chapter 7 — App. Settings, and updates/startup.
  */
 export const appChapter: TutorialChapter = {
   id: "app",
   title: "App",
   summary:
-    "Preferences, optional Cloud collaboration, and keeping the app up to date.",
+    "Preferences and keeping the app up to date.",
   lessons: [
     {
       id: "settings",
@@ -84,107 +84,8 @@ export const appChapter: TutorialChapter = {
             "Environments are workspace-scoped. Switch to the workspace that owns it.",
         },
       ],
-      relatedLessonIds: ["canvas", "environments", "cloud", "updates"],
+      relatedLessonIds: ["canvas", "environments", "updates"],
       destination: { label: "Open Canvas settings", path: "canvas-settings" },
-    },
-    {
-      id: "cloud",
-      chapterId: "app",
-      title: "Optional Cloud sync",
-      summary:
-        "Signing in, Cloud Teams and Workspaces, linking and sync status, conflicts and dead letters, encryption/unlock, and what stays local.",
-      outcome:
-        "You can turn on structure sync across machines and resolve a conflict, while secret values and run history stay local.",
-      keywords: [
-        "cloud",
-        "sync",
-        "account",
-        "team",
-        "workspace",
-        "conflict",
-        "dead letter",
-        "encryption",
-        "unlock",
-        "collaboration",
-      ],
-      durationMinutes: 7,
-      prerequisites: [
-        "An optional APIWeave Cloud account. The desktop app is fully usable without one.",
-      ],
-      steps: [
-        {
-          title: "Know what syncs and what never does",
-          instruction:
-            "Understand that Cloud syncs test structure — workflows, environments, projects and secret references — while secret values and run history always stay local and are rejected from sync payloads.",
-          detail:
-            "Cloud never builds or runs tests; all execution stays on the desktop.",
-        },
-        {
-          title: "Sign in from the account menu",
-          instruction:
-            "Open the account menu in the header and sign in with a Cloud account. Signing in is optional and does not change local usage.",
-        },
-        {
-          title: "Understand Cloud Teams and Workspaces",
-          instruction:
-            "Know that shared Cloud Workspaces belong to a Cloud Team from the Cloud account, and let multiple machines collaborate.",
-          detail:
-            "Locally, work is organized into local workspaces; Cloud Workspaces are the collaboration layer on top.",
-        },
-        {
-          title: "Link and read sync status",
-          instruction:
-            "Open the Cloud sync page to see link state, binding, and sync status. Push and pull structure-only payloads over a durable outbox.",
-        },
-        {
-          title: "Resolve a conflict",
-          instruction:
-            "When a push detects a conflict, open the conflicts list and choose a winner for the affected record. A detail view shows the differences.",
-          detail:
-            "Resolution converges to the server-returned revision, so a keep-local choice does not loop back as the same conflict.",
-        },
-        {
-          title: "Handle dead letters",
-          instruction:
-            "If a record cannot be synced, it lands in the failed-records list with a real rejection reason. Open it to see what was rejected, fix the cause, then use Retry failed on the workspace row to try again.",
-        },
-        {
-          title: "Handle encryption and unlock where surfaced",
-          instruction:
-            "Where a Cloud Workspace requires it, the app surfaces an encryption decision or an unlock step. Complete it to enable sync for that workspace.",
-        },
-        {
-          title: "Rely on local execution",
-          instruction:
-            "Remember that a synced workflow still runs locally against the secrets stored on the machine that runs it. Nothing about sync changes where a run happens.",
-        },
-      ],
-      example: {
-        caption: "Synced versus local",
-        language: "text",
-        code: "Cloud syncs (structure)          Stays local (never synced)\n  workflows                        secret values\n  environments + plain variables   run history\n  projects                         node presets\n  secret references                run artifacts",
-      },
-      expectedResult:
-        "Structure appears on a second signed-in machine while each machine keeps its own secret values and run history, and a conflict resolves to a single winner without looping.",
-      troubleshooting: [
-        {
-          title: "A synced workflow fails on an unresolved secret",
-          instruction:
-            "Secret values do not sync. Re-enter each secret on the machine that runs it.",
-        },
-        {
-          title: "A record keeps failing to sync",
-          instruction:
-            "Open the failed-records list for the real rejection reason, fix the cause, and retry.",
-        },
-        {
-          title: "An environment's base link did not arrive",
-          instruction:
-            "The base-environment link is not part of the sync payload. Define the shared values on the environment itself for reproducible runs on another machine.",
-        },
-      ],
-      relatedLessonIds: ["settings", "environments", "secrets", "import-export"],
-      destination: { label: "Open Cloud sync", path: "cloud-sync" },
     },
     {
       id: "updates",
@@ -276,7 +177,7 @@ export const appChapter: TutorialChapter = {
             "Startup failed before a window opened. Read the error in the dialog, check the log file it names and the data folder's disk permissions, then relaunch.",
         },
       ],
-      relatedLessonIds: ["settings", "cloud"],
+      relatedLessonIds: ["settings"],
       destination: { label: "Open Updates", path: "updates" },
     },
   ],

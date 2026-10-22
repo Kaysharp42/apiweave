@@ -23,7 +23,6 @@ import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
-import { CloudAttentionBanner } from "./CloudAttentionBanner";
 import { TutorialCompanionHost } from "../TutorialCompanionHost";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
@@ -171,8 +170,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         <HorizontalDivider />
 
-        {/* Both render nothing unless there is something to act on. */}
-        <CloudAttentionBanner />
+        {/* Renders nothing unless there is an update to act on. */}
         <UpdateBanner />
 
         <div className="flex flex-1 min-h-0 overflow-hidden bg-surface dark:bg-surface-dark">

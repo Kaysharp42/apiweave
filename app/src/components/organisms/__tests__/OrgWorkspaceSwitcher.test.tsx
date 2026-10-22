@@ -12,11 +12,6 @@ import type { Workspace } from "../../../types/Workspace";
 
 const mockSwitchTo = vi.fn();
 const mockRefresh = vi.fn<() => Promise<void>>();
-const cloudState = vi.hoisted(() => ({ status: null as import("../../../types").CloudSyncStatus | null }));
-
-vi.mock("../../../hooks/useCloudSync", () => ({
-  useCloudSync: () => ({ status: cloudState.status }),
-}));
 
 const defaultContext: WorkspaceContextValue = {
   availableWorkspaces: [],
@@ -79,7 +74,6 @@ describe("OrgWorkspaceSwitcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRefresh.mockResolvedValue(undefined);
-    cloudState.status = null;
     setContext({
       availableWorkspaces: [],
       currentWorkspace: null,
@@ -158,54 +152,24 @@ describe("OrgWorkspaceSwitcher", () => {
     expect(mockSwitchTo).toHaveBeenCalledWith("main");
   });
 
-  it("shows the Team source when workspace names are duplicated", async () => {
+  it("describes a non-personal workspace as local to this device", async () => {
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ name: "Kyra", isPersonal: true });
-    const teamWs = makeWorkspace({
-      workspaceId: "ws-team",
-      slug: "kyra-team",
-      name: "Kyra",
+    const localWs = makeWorkspace({
+      workspaceId: "ws-local",
+      slug: "kyra-local",
+      name: "Kyra local",
       isPersonal: false,
     });
-    cloudState.status = {
-      linked: true,
-      active: true,
-      linkState: "linked",
-      syncState: "idle",
-      state: "idle",
-      pendingCount: 0,
-      deadLetterCount: 0,
-      conflictCount: 0,
-      workspaceIds: ["cloud-team-ws"],
-      bindings: [{
-        workspaceId: "ws-team",
-        workspaceName: "Kyra",
-        cloudWorkspaceId: "cloud-team-ws",
-        cloudWorkspaceName: "Kyra",
-        encryption: "plaintext",
-        teamId: "team-kyra",
-        teamName: "Kyra Team",
-        syncMode: "bi-directional",
-        initializationState: "initialized",
-        pendingCount: 0,
-        deadLetterCount: 0,
-        conflictCount: 0,
-        boundAt: "2026-07-29T00:00:00Z",
-      }],
-      workspaceCatalog: [],
-      teamCatalog: [],
-      encryptionDecisionPending: [],
-    };
     setContext({
-      availableWorkspaces: [makeEntry(personalWs), makeEntry(teamWs)],
-      currentWorkspace: teamWs,
+      availableWorkspaces: [makeEntry(personalWs), makeEntry(localWs)],
+      currentWorkspace: localWs,
     });
 
     renderSwitcher();
-    expect(screen.getByText("Team · Kyra Team")).toBeInTheDocument();
+    expect(screen.getByText("On this device")).toBeInTheDocument();
     await user.click(screen.getByLabelText("Switch workspace"));
-    expect(screen.getAllByText("Kyra")).toHaveLength(3);
-    expect(screen.getAllByText("Team · Kyra Team").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("On this device").length).toBeGreaterThanOrEqual(1);
   });
 
   it("closes dropdown on Escape key", async () => {
@@ -261,7 +225,6 @@ describe("OrgWorkspaceSwitcher", () => {
   });
 
   it("offers workspace creation and nothing else", async () => {
-    // Users create workspaces locally and cloud sync provisions them.
     const user = userEvent.setup();
     const personalWs = makeWorkspace({ isPersonal: true });
     setContext({

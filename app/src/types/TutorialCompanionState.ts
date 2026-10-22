@@ -20,8 +20,8 @@ export interface TutorialCompanionState {
   expandCompanion: () => void;
   closeCompanion: () => void;
   /**
-   * Hide the companion without ending practice. Used when navigating to a
-   * destination outside the shell (Cloud), where the companion cannot render.
+   * Hide the companion without ending practice. Used when navigating to a route
+   * that shows no chrome, where the companion cannot render.
    */
   pauseCompanion: () => void;
 }

@@ -26,5 +26,4 @@ export type TutorialLessonId =
   | "embedded-agents"
   | "mcp"
   | "settings"
-  | "cloud"
   | "updates";

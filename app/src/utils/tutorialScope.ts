@@ -17,11 +17,11 @@ const WORKSPACE_SECTION_SEGMENTS = new Set([
 ]);
 
 /**
- * Top-level routes that never belong to a workspace. Read as an `org/slug`
- * pair they would resolve to nonsense, so they take the fallback instead; for
- * example `/cloud/sync` is not org `cloud` in workspace `sync`.
+ * Top-level routes that never belong to a workspace. Read as a workspace slug
+ * they would resolve to nonsense, so they take the fallback instead; for
+ * example `/setup` is a page of its own, not a workspace named `setup`.
  */
-const TOP_LEVEL_SEGMENTS = new Set(["app", "cloud", "setup"]);
+const TOP_LEVEL_SEGMENTS = new Set(["app", "setup"]);
 
 /**
  * Resolve the organization and workspace slugs from a location pathname.

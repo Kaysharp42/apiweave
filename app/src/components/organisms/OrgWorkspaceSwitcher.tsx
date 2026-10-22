@@ -7,51 +7,34 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ChevronDown,
   HardDrive,
-  Lock,
   Plus,
   UserRound,
-  Users,
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { Button } from "../atoms/Button";
 import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import type { Workspace } from "../../types";
-import { useCloudSync } from "../../hooks/useCloudSync";
 
 /**
- * The current workspace's name and source, with the lock badge swapped in
- * when sync is paused. Split out of the switcher button so the open/close
- * chevron logic isn't sharing a render-prop arrow with this branching.
+ * The current workspace's name and source. Split out of the switcher button so
+ * the open/close chevron logic isn't sharing a render-prop arrow with this
+ * branching.
  */
 function WorkspaceSwitcherLabel({
   label,
-  locked,
   source,
 }: {
   label: string;
-  locked: boolean;
   source: string;
 }) {
   return (
     <span className="min-w-0 flex-1">
       <span className="flex items-center gap-1 text-xs font-medium text-text-primary dark:text-text-primary-dark">
         <span className="truncate">{label}</span>
-        {locked && (
-          <Lock
-            className="h-3 w-3 flex-shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]"
-            aria-hidden="true"
-          />
-        )}
       </span>
-      <span
-        className={`block truncate text-xxs ${
-          locked
-            ? "text-status-warning dark:text-[var(--aw-status-warning)]"
-            : "text-text-muted dark:text-text-muted-dark"
-        }`}
-      >
-        {locked ? "Sync paused · locked" : source}
+      <span className="block truncate text-xxs text-text-muted dark:text-text-muted-dark">
+        {source}
       </span>
     </span>
   );
@@ -74,7 +57,6 @@ export function OrgWorkspaceSwitcher() {
     switchTo,
     isLoading,
   } = useWorkspace();
-  const cloud = useCloudSync();
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -131,13 +113,8 @@ export function OrgWorkspaceSwitcher() {
     : undefined;
   const displayLabel = currentWorkspace?.name ?? "Personal";
   const displaySource = currentEntry
-    ? workspaceSource(currentEntry, cloud.status)
+    ? workspaceSource(currentEntry)
     : "Personal workspace";
-  // The workspace you are looking at is the one place a paused sync has to be
-  // legible without opening anything.
-  const displayLocked = currentEntry
-    ? workspaceLocked(currentEntry, cloud.status)
-    : false;
 
   return (
     <>
@@ -167,7 +144,6 @@ export function OrgWorkspaceSwitcher() {
 
               <WorkspaceSwitcherLabel
                 label={displayLabel}
-                locked={displayLocked}
                 source={displaySource}
               />
 
@@ -196,7 +172,7 @@ export function OrgWorkspaceSwitcher() {
                 aria-label="Workspaces"
               >
                 {flatList.map((entry, index) => {
-                  const source = workspaceSource(entry, cloud.status);
+                  const source = workspaceSource(entry);
                   return (
                     <WorkspaceItem
                       key={entry.workspace.workspaceId}
@@ -208,7 +184,6 @@ export function OrgWorkspaceSwitcher() {
                       }
                       icon={sourceIcon(source, "h-4 w-4")}
                       source={source}
-                      locked={workspaceLocked(entry, cloud.status)}
                       onSelect={(selected) => handleSelect(selected, close)}
                       onKeyDown={handleItemKeyDown}
                       itemRef={(el) => {
@@ -260,7 +235,6 @@ interface WorkspaceItemProps {
   isActive: boolean;
   icon: React.ReactNode;
   source: string;
-  locked: boolean;
   onSelect: (entry: WorkspaceEntry) => void;
   onKeyDown: (
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -276,7 +250,6 @@ function WorkspaceItem({
   isActive,
   icon,
   source,
-  locked,
   onSelect,
   onKeyDown,
   itemRef,
@@ -307,21 +280,9 @@ function WorkspaceItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 text-sm font-medium">
           <span className="truncate">{entry.workspace.name}</span>
-          {locked && (
-            <Lock
-              className="h-3 w-3 flex-shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]"
-              aria-hidden="true"
-            />
-          )}
         </div>
-        <div
-          className={`truncate text-xs ${
-            locked
-              ? "text-status-warning dark:text-[var(--aw-status-warning)]"
-              : "text-text-muted dark:text-text-muted-dark"
-          }`}
-        >
-          {locked ? "Sync paused · locked" : source}
+        <div className="truncate text-xs text-text-muted dark:text-text-muted-dark">
+          {source}
         </div>
       </div>
       {isActive && (
@@ -333,40 +294,13 @@ function WorkspaceItem({
 
 /** One icon vocabulary for the trigger and the list, so they read as the same thing. */
 function sourceIcon(source: string, className: string): React.ReactNode {
-  if (source.startsWith("Team ·"))
-    return <Users className={`${className} flex-shrink-0`} />;
   if (source === "On this device")
     return <HardDrive className={`${className} flex-shrink-0`} />;
   return <UserRound className={`${className} flex-shrink-0`} />;
 }
 
-/** True only for `locked` — `unknown` means "still checking", not "blocked". */
-function workspaceLocked(
-  entry: WorkspaceEntry,
-  status: import("../../types").CloudSyncStatus | null,
-): boolean {
-  return (
-    status?.bindings?.some(
-      (binding) =>
-        binding.workspaceId === entry.workspace.workspaceId &&
-        binding.encryption === "locked",
-    ) ?? false
-  );
-}
-
-function workspaceSource(
-  entry: WorkspaceEntry,
-  status: import("../../types").CloudSyncStatus | null,
-): string {
+/** Where a workspace lives, in the switcher's own vocabulary. */
+function workspaceSource(entry: WorkspaceEntry): string {
   if (entry.workspace.isPersonal) return "Personal workspace";
-  const binding = status?.bindings?.find(
-    (candidate) => candidate.workspaceId === entry.workspace.workspaceId,
-  );
-  const catalog = status?.workspaceCatalog?.find(
-    (candidate) => candidate.workspaceId === binding?.cloudWorkspaceId,
-  );
-  const teamName = binding?.teamName ?? catalog?.teamName;
-  if (teamName && teamName !== "Personal") return `Team · ${teamName}`;
-  if (binding) return "Personal Cloud space";
   return "On this device";
 }

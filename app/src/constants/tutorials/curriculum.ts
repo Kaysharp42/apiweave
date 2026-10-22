@@ -211,9 +211,7 @@ export function searchTutorialLessons(
  * `workspaceSlug` from the route or the current workspace.
  *
  * Workspace-scoped destinations use the org-prefixed route shape the rest of
- * the app already navigates with. `cloud-sync` is deliberately *not* scoped:
- * its route is a top-level `/cloud/sync`, and prefixing it would navigate to a
- * path the router does not match.
+ * the app already navigates with.
  */
 export function tutorialDestinationHref(
   path: TutorialDestinationPath,
@@ -236,8 +234,6 @@ export function tutorialDestinationHref(
       return `${base}/settings/mcp-server`;
     case "updates":
       return `${base}/settings/updates`;
-    case "cloud-sync":
-      return "/cloud/sync";
   }
 }
 

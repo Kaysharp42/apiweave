@@ -68,13 +68,6 @@ import type { Run } from "../types/Run";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
 import type { Workflow } from "../types/Workflow";
 import type { Workspace } from "../types/Workspace";
-import type {
-  CloudBindWorkspaceInput,
-  CloudCreateTeamWorkspaceInput,
-  CloudFailedRecord,
-  CloudSyncStatus,
-  CloudUnlinkOptions,
-} from "../types/cloud";
 
 type Environment = ScopedEnvironment;
 type JsonValue = unknown;
@@ -111,7 +104,6 @@ type IpcBridge = {
   readonly onAgentWrite?: (
     callback: (event: AgentWriteEvent) => void,
   ) => () => void;
-  readonly onCloudStatusChanged?: (callback: () => void) => () => void;
   readonly onWorkflowChanged?: (
     callback: (event: WorkflowChangedEvent) => void,
   ) => () => void;
@@ -848,55 +840,6 @@ export const apiweave = {
       readonly projectName?: string;
     }) => invoke<PostmanImportResult>("projects", "importPostman", input),
   },
-  cloud: {
-    status: () => invoke<CloudSyncStatus>("cloud", "status", {}),
-    link: (deviceLabel?: string) =>
-      invoke<CloudSyncStatus>("cloud", "link", deviceLabel ? { deviceLabel } : {}),
-    cancelLink: () => invoke<CloudSyncStatus>("cloud", "cancelLink", {}),
-    unlink: (options: CloudUnlinkOptions = {}) =>
-      invoke<CloudSyncStatus>("cloud", "unlink", {
-        ...(options.localOnly === true ? { localOnly: true } : {}),
-        ...(options.purgeLocalData === true ? { purgeLocalData: true } : {}),
-      }),
-    bindWorkspace: (input: CloudBindWorkspaceInput) =>
-      invoke<CloudSyncStatus>("cloud", "bindWorkspace", input),
-    createTeamWorkspace: (input: CloudCreateTeamWorkspaceInput) =>
-      invoke<Workspace>("cloud", "createTeamWorkspace", input),
-    // Encryption. Passphrases are write-only: they go straight to main, which
-    // stretches them into a KEK and drops them. Nothing here retains one.
-    setWorkspaceEncryption: (workspaceId: string, passphrase: string) =>
-      invoke<CloudSyncStatus>("cloud", "setWorkspaceEncryption", {
-        workspaceId,
-        passphrase,
-      }),
-    declineWorkspaceEncryption: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "declineWorkspaceEncryption", {
-        workspaceId,
-      }),
-    unlockWorkspace: (workspaceId: string, passphrase: string) =>
-      invoke<CloudSyncStatus>("cloud", "unlockWorkspace", {
-        workspaceId,
-        passphrase,
-      }),
-    lockWorkspace: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "lockWorkspace", { workspaceId }),
-    unbindWorkspace: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "unbindWorkspace", { workspaceId }),
-    initializeWorkspace: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "initializeWorkspace", { workspaceId }),
-    refreshWorkspaceCatalog: () =>
-      invoke<CloudSyncStatus>("cloud", "refreshWorkspaceCatalog", {}),
-    retryDeadLetters: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "retryDeadLetters", { workspaceId }),
-    discardDeadLetters: (workspaceId: string) =>
-      invoke<CloudSyncStatus>("cloud", "discardDeadLetters", { workspaceId }),
-    listFailedRecords: (workspaceId: string) =>
-      invoke<readonly CloudFailedRecord[]>("cloud", "listFailedRecords", {
-        workspaceId,
-      }),
-    pull: () => invoke<CloudSyncStatus>("cloud", "pull", {}),
-    push: () => invoke<CloudSyncStatus>("cloud", "push", {}),
-  },
 } as const;
 
 if (typeof window !== "undefined") {
@@ -940,13 +883,6 @@ export function onAgentWrite(
   callback: (event: AgentWriteEvent) => void,
 ): () => void {
   return getIpcBridge().onAgentWrite?.(callback) ?? (() => undefined);
-}
-
-/** Subscribe to the token-free main→renderer cloud-status-changed signal. The
- * renderer refetches authoritative status on each tick. No-op (returns an inert
- * unsubscribe) when the bridge or signal is absent, e.g. web preview. */
-export function onCloudStatusChanged(callback: () => void): () => void {
-  return getIpcBridge().onCloudStatusChanged?.(callback) ?? (() => undefined);
 }
 
 /** Subscribe to authoritative workflow writes made by another process or tab. */
