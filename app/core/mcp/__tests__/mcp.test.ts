@@ -307,7 +307,7 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
   })
 
   /**
-   * Version history runs git and, once a remote can be bound, decides where a
+   * Version history runs git and, through `connectRemote`, decides where a
    * workspace is pushed: an agent that could reach it could send the workspace
    * to a repository it controls. It lives off the router (GIT_CHANNELS, the
    * `__APIWEAVE_GIT__` preload world).
@@ -315,7 +315,14 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
   it("exposes no git tools — version history is not on the router", () => {
     for (const spec of MCP_TOOLS) {
       expect(spec.domain).not.toBe("git")
-      expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/git|track|sync/)
+      expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/git|track|sync|remote/)
+    }
+  })
+
+  it("keeps connecting and disconnecting a git remote off the router", () => {
+    const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
+    for (const channel of [GIT_CHANNELS.connectRemote, GIT_CHANNELS.disconnectRemote]) {
+      expect(published.has(channel), channel).toBe(false)
     }
   })
 

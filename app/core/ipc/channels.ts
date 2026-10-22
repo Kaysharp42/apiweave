@@ -85,8 +85,8 @@ export const NETWORK_CHANNELS = {
 /**
  * A workspace's version history in git. Privileged and off the router like
  * `NETWORK_CHANNELS`, so no local agent can reach it over MCP: main runs
- * git and writes files, and once a remote can be bound, whoever can call this
- * decides where a workspace is pushed.
+ * git and writes files, and whoever can call `connectRemote` decides where a
+ * workspace is pushed.
  */
 export const GIT_CHANNELS = {
   status: "git:status",
@@ -94,6 +94,8 @@ export const GIT_CHANNELS = {
   untrack: "git:untrack",
   setMode: "git:setMode",
   syncNow: "git:syncNow",
+  connectRemote: "git:connectRemote",
+  disconnectRemote: "git:disconnectRemote",
 } as const
 
 /** Every status `GIT_CHANNELS` calls and auto commits leave behind, pushed to the renderer. */

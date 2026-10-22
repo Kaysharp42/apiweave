@@ -13,6 +13,7 @@ import {
   GitNotInstalledError,
   GitPermissionDeniedError,
   GitTimeoutError,
+  isNoSuchRemote,
 } from "../git_errors"
 import { GitService } from "../git_service"
 import {
@@ -348,6 +349,35 @@ describe("remotes", () => {
     await sandbox.service.remoteAdd(dir, "origin", first.url)
     await sandbox.service.remoteSetUrl(dir, "origin", second.url)
     expect(rawGit(dir, sandbox.env, "remote", "get-url", "origin").trim()).toBe(second.url)
+  })
+
+  it("removes a remote with its fetched branches, and reports a remote that is not there", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main")
+    await sandbox.service.fetch(dir, "origin")
+
+    await sandbox.service.remoteRemove(dir, "origin")
+
+    expect(rawGit(dir, sandbox.env, "remote").trim()).toBe("")
+    expect(await sandbox.service.revParse(dir, "origin/main")).toBeUndefined()
+    const error = await sandbox.service.remoteRemove(dir, "origin").catch((caught: unknown) => caught)
+    expect(isNoSuchRemote(error)).toBe(true)
+  })
+
+  it("names one branch fetched from a remote, or none for an empty one", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.fetch(dir, "origin")
+    expect(await sandbox.service.firstRemoteRef(dir, "origin")).toBeUndefined()
+
+    await sandbox.service.push(dir, "origin", "main")
+    await sandbox.service.fetch(dir, "origin")
+    expect(await sandbox.service.firstRemoteRef(dir, "origin")).toMatch(/^refs\/remotes\/origin\/(?:HEAD|main)$/)
   })
 
   it("throws GitNonFastForwardError when the remote has moved on", async () => {

@@ -10,6 +10,8 @@ const untracked: WorkspaceGitStatus = {
   workspaceId: "ws-1",
   tracked: false,
   mode: "auto",
+  remoteUrl: null,
+  branch: "main",
   state: "idle",
   lastError: null,
   lastCommit: null,
@@ -37,6 +39,8 @@ function installBridge(initial: WorkspaceGitStatus): InstalledBridge {
     setMode: vi.fn(async (_workspaceId, mode) => tracked({ mode })),
     syncNow: vi.fn(async (_workspaceId, request) =>
       tracked({ mode: "manual", lastCommit: { sha: "fedcba9876543", subject: request?.message ?? "Update 1 file", authorDate: "2026-10-19T10:00:00+02:00" } })),
+    connectRemote: vi.fn(async (_workspaceId, url) => tracked({ remoteUrl: url })),
+    disconnectRemote: vi.fn(async () => tracked()),
     onStatusChanged: (callback) => {
       listener = callback;
       return () => {
@@ -128,6 +132,76 @@ describe("VersionHistoryPanel", () => {
 
     expect(bridge.untrack).toHaveBeenCalledWith("ws-1");
     expect(await screen.findByRole("button", { name: /track this workspace/i })).toBeInTheDocument();
+  });
+
+  it("connects a remote with the trimmed URL and shows the status it returns", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installBridge(tracked());
+    render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
+    const connect = screen.getByRole("button", { name: /connect to remote/i });
+    expect(connect).toBeDisabled();
+    const field = screen.getByRole("textbox", { name: /remote url/i });
+    expect(field).toHaveAttribute(
+      "placeholder",
+      "https://host/owner/repo.git or git@host:owner/repo.git",
+    );
+    await user.type(field, "  git@github.com:acme/tests.git  ");
+    await user.click(connect);
+
+    expect(bridge.connectRemote).toHaveBeenCalledWith(
+      "ws-1",
+      "git@github.com:acme/tests.git",
+    );
+    expect(await screen.findByText("git@github.com:acme/tests.git")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /remote url/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
+  });
+
+  it("shows why a connect was refused, and keeps the URL to correct", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installBridge(tracked());
+    vi.mocked(bridge.connectRemote).mockRejectedValueOnce(
+      new Error(
+        "That repository already has history this workspace did not come from. Open a workspace from git instead.",
+      ),
+    );
+    render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: /remote url/i }),
+      "https://example.com/other.git",
+    );
+    await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That repository already has history this workspace did not come from.",
+    );
+    expect(screen.getByRole("textbox", { name: /remote url/i })).toHaveValue(
+      "https://example.com/other.git",
+    );
+    expect(screen.getByText("Not connected")).toBeInTheDocument();
+  });
+
+  it("asks before it disconnects, then disconnects", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installBridge(
+      tracked({ remoteUrl: "https://example.com/acme/tests.git" }),
+    );
+    render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+    expect(await screen.findByText("https://example.com/acme/tests.git")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^disconnect$/i }));
+    expect(bridge.disconnectRemote).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Every local commit stays; only the connection is removed."),
+    ).toBeInTheDocument();
+    const confirm = await screen.findAllByRole("button", { name: /^disconnect$/i });
+    await user.click(confirm[confirm.length - 1]!);
+
+    expect(bridge.disconnectRemote).toHaveBeenCalledWith("ws-1");
+    expect(await screen.findByText("Not connected")).toBeInTheDocument();
   });
 
   it("shows a failed call's message", async () => {

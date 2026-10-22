@@ -52,6 +52,8 @@ function commitRequestOf(value: unknown): WorkspaceGitCommitRequest {
   return CommitRequestSchema.parse(value ?? {})
 }
 
+const RemoteUrlSchema = z.string().min(1, "a remote URL is required").max(2048, "a remote URL is at most 2048 characters")
+
 /** Track, resolving a missing author as the status that asks for one rather than as an error the renderer would have to read. */
 async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string): Promise<WorkspaceGitStatus> {
   try {
@@ -65,8 +67,8 @@ async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string)
 /**
  * The `__APIWEAVE_GIT__` handlers. Deliberately off the `core/ipc/handlers/`
  * registry, like `updates:*` and `agents:*`: the registry is also the MCP
- * bridge's handler list, and an agent that could reach git could, once a
- * remote can be bound, push a workspace to a repository it controls.
+ * bridge's handler list, and an agent that could reach git could connect a
+ * remote and push a workspace to a repository it controls.
  */
 export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard, gitSync: GitSyncService): void {
   ipcMain.handle(GIT_CHANNELS.status, guard((workspaceId: unknown) => gitSync.status(workspaceIdOf(workspaceId))))
@@ -82,5 +84,13 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
   ipcMain.handle(
     GIT_CHANNELS.syncNow,
     guard((workspaceId: unknown, request: unknown) => gitSync.syncNow(workspaceIdOf(workspaceId), commitRequestOf(request))),
+  )
+  ipcMain.handle(
+    GIT_CHANNELS.connectRemote,
+    guard((workspaceId: unknown, url: unknown) => gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url))),
+  )
+  ipcMain.handle(
+    GIT_CHANNELS.disconnectRemote,
+    guard((workspaceId: unknown) => gitSync.disconnectRemote(workspaceIdOf(workspaceId))),
   )
 }

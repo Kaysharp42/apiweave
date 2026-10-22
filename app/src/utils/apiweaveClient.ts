@@ -1232,6 +1232,15 @@ export const git = {
   ): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.syncNow(workspaceId, request).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
+  connectRemote: (
+    workspaceId: string,
+    url: string,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.connectRemote(workspaceId, url).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  disconnectRemote: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.disconnectRemote(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,
   ): (() => void) =>

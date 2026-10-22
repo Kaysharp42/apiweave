@@ -21,6 +21,9 @@ export interface WorkspaceGitBinding {
 const COLUMNS =
   "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at"
 
+/** What a remote left on the row: where a sync got to, and whether it refused our pushes. None of it carries over to another remote. */
+const CLEAR_SYNC_RECORD = "last_synced_commit = NULL, last_synced_at = NULL, read_only = 0"
+
 const STATES: readonly string[] = ["idle", "syncing", "merging", "error"] satisfies readonly WorkspaceGitState[]
 
 function isState(value: string): value is WorkspaceGitState {
@@ -71,6 +74,27 @@ export class WorkspaceGitRepository {
       lastError === null ? null : toJson({ code: lastError.code, message: lastError.message }),
       workspaceId,
     ]).changes > 0
+  }
+
+  /**
+   * Bind the workspace to a remote. A sync commit, a sync time and a read-only
+   * flag belong to the remote they came from, so none survives a change of
+   * remote. `state` and `last_error` are about the local repository's last
+   * cycle, which a remote does not undo: they are left as they are.
+   */
+  public setRemote(workspaceId: string, remoteUrl: string, branch: string): boolean {
+    return this.store.set(
+      `UPDATE workspace_git SET remote_url = ?, branch = ?, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`,
+      [remoteUrl, branch, workspaceId],
+    ).changes > 0
+  }
+
+  /** Back to local only. The branch stays: it is the local repository's own. */
+  public clearRemote(workspaceId: string): boolean {
+    return this.store.set(
+      `UPDATE workspace_git SET remote_url = NULL, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`,
+      [workspaceId],
+    ).changes > 0
   }
 
   public delete(workspaceId: string): boolean {

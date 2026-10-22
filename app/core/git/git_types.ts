@@ -8,6 +8,7 @@ export type GitCommand =
   | "commit"
   | "revParse"
   | "mergeBase"
+  | "forEachRef"
   | "show"
   | "fetch"
   | "push"
