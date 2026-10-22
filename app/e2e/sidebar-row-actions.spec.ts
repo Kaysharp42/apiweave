@@ -17,8 +17,6 @@ const PERSONAL = {
   name: "Personal",
   description: null,
   isPersonal: true,
-  origin: "local",
-  syncMode: "none",
   rev: 0,
   createdAt: "2026-07-20T00:00:00.000Z",
   updatedAt: "2026-07-20T00:00:00.000Z",

@@ -40,9 +40,9 @@ function seedWorkspace(): string {
 }
 
 describe("WorkspaceRepository", () => {
-  it("enforces origin/syncMode defaults on create", () => {
+  it("applies defaults on create", () => {
     const workspace = workspaces.create({ name: "Personal", slug: "personal" })
-    expect(workspace).toMatchObject({ origin: "local", syncMode: "none", isPersonal: true, rev: 1 })
+    expect(workspace).toMatchObject({ isPersonal: true, rev: 1 })
     expect(workspace.workspaceId).toHaveLength(26)
     expect(workspace.createdAt).toEqual(expect.any(String))
   })

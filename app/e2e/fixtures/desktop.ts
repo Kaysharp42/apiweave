@@ -6,8 +6,6 @@ export const DESKTOP_WORKSPACE = {
   name: "Personal",
   description: "Local workspace",
   isPersonal: true,
-  origin: "local",
-  syncMode: "local_only",
   rev: 0,
   createdAt: "2026-07-20T00:00:00.000Z",
   updatedAt: "2026-07-20T00:00:00.000Z",

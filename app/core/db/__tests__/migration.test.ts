@@ -4,8 +4,9 @@ import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, readMigrations, ThreadStore } from "../index"
 import { vacuumIfFragmented } from "../maintenance"
+import { CONTENT_TABLES, STATE_ONLY_TABLES } from "../migrations"
 import type { InitializedDatabase } from "../index"
-import type { BetterSqlite3Factory } from "../sqlite-types"
+import type { BetterSqlite3Factory, SqliteRow } from "../sqlite-types"
 
 vi.mock("../maintenance", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../maintenance")>()
@@ -34,13 +35,6 @@ describe("database migrations", () => {
         "agent_run_approvals",
         "agent_sessions",
         "app_settings",
-        "cloud_conflicts",
-        "cloud_devices",
-        "cloud_outbox",
-        "cloud_record_state",
-        "cloud_workspace_accounts",
-        "cloud_workspace_bindings",
-        "cloud_workspace_tombstones",
         "collections",
         "environments",
         "node_presets",
@@ -48,7 +42,6 @@ describe("database migrations", () => {
         "run_node_results",
         "run_responses",
         "runs",
-        "scoped_keys",
         "secrets_metadata",
         "workflow_revisions",
         "workflows",
@@ -70,10 +63,8 @@ describe("database migrations", () => {
         ])
       })
 
-      const workspace = store.get("SELECT id, origin, syncMode, rev, createdAt, updatedAt FROM workspaces WHERE id = ?", [
-        "workspace-1",
-      ])
-      expect(workspace).toMatchObject({ id: "workspace-1", origin: "local", syncMode: "none", rev: 1 })
+      const workspace = store.get("SELECT id, rev, createdAt, updatedAt FROM workspaces WHERE id = ?", ["workspace-1"])
+      expect(workspace).toMatchObject({ id: "workspace-1", rev: 1 })
       expect(workspace?.createdAt).toEqual(expect.any(String))
       expect(workspace?.updatedAt).toEqual(expect.any(String))
 
@@ -158,20 +149,10 @@ describe("database migrations", () => {
     }
   })
 
-  it("upgrades existing cloud bindings to initialized state without creating a baseline", () => {
+  it("upgrades a v5 database with duplicate cloud bindings and keeps every workspace", () => {
     const tempRoot = makeTempRoot()
-    const oldMigrationsPath = path.join(tempRoot, "migrations-v5")
-    fs.mkdirSync(oldMigrationsPath)
-    for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
-      if (/^00[1-5]_.*\.sql$/.test(fileName)) {
-        fs.copyFileSync(
-          path.join(__dirname, "..", "migrations", fileName),
-          path.join(oldMigrationsPath, fileName),
-        )
-      }
-    }
     const databasePath = path.join(tempRoot, "upgrade.db")
-    const old = initDatabase({ databasePath, migrationsPath: oldMigrationsPath })
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 5) })
     old.kvStore.set("INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)", ["workspace-1", "Local", "local"])
     old.kvStore.set("INSERT INTO workspaces (id, name, slug, origin, syncMode) VALUES (?, ?, ?, ?, ?)", [
       "workspace-2",
@@ -192,32 +173,27 @@ describe("database migrations", () => {
       "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       ["outbox-duplicate", "workflow", "workflow-dirty", "workspace-2", 0, "upsert", Buffer.from("{}"), Date.now()],
     )
+    old.kvStore.set("INSERT INTO workflows (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)", [
+      "workflow-dirty",
+      "workspace-2",
+      "workspace-2",
+      "Dirty",
+      "dirty",
+    ])
     old.close()
 
     const upgraded = initDatabase({ databasePath })
     try {
       expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
-      expect(upgraded.kvStore.get(
-        "SELECT initialization_state, cloud_workspace_name, local_origin FROM cloud_workspace_bindings WHERE workspace_id = ?",
-        ["workspace-1"],
-      )).toEqual({ initialization_state: "initialized", cloud_workspace_name: "", local_origin: "local" })
-      expect(upgraded.kvStore.get<{ total: number }>("SELECT COUNT(*) AS total FROM cloud_outbox")?.total).toBe(1)
-      expect(upgraded.kvStore.get(
-        "SELECT origin, syncMode FROM workspaces WHERE id = ?",
-        ["workspace-2"],
-      )).toEqual({ origin: "local", syncMode: "none" })
-      expect(upgraded.kvStore.get("SELECT 1 FROM cloud_workspace_bindings WHERE workspace_id = ?", ["workspace-2"]))
-        .toBeUndefined()
-      expect(upgraded.kvStore.get(
-        "SELECT id, retry_count, failure_reason FROM cloud_outbox WHERE id = ?",
-        ["outbox-duplicate"],
-      )).toEqual({
-        id: "outbox-duplicate",
-        retry_count: 10,
-        failure_reason: "cloud workspace binding was disconnected during migration",
-      })
-      expect(upgraded.kvStore.get("SELECT value FROM app_settings WHERE key = 'cloud.binding_migration_warning'"))
-        .toEqual({ value: "1 duplicate cloud workspace binding(s) were disconnected" })
+      expect(upgraded.kvStore.query("SELECT id, name FROM workspaces ORDER BY id")).toEqual([
+        { id: "workspace-1", name: "Local" },
+        { id: "workspace-2", name: "Duplicate" },
+      ])
+      expect(upgraded.kvStore.query("SELECT id, workspace_id FROM workflows")).toEqual([
+        { id: "workflow-dirty", workspace_id: "workspace-2" },
+      ])
+      expect(cloudLeftovers(upgraded)).toEqual([])
+      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
     } finally {
       upgraded.close()
     }
@@ -259,38 +235,176 @@ describe("database migrations", () => {
     }
   })
 
-  it("classifies legacy Team bindings as downloaded cloud copies", () => {
+  it("upgrades a v8 database with Team bindings, outbox rows and a linked account", () => {
     const tempRoot = makeTempRoot()
-    const oldMigrationsPath = path.join(tempRoot, "migrations-v8")
-    fs.mkdirSync(oldMigrationsPath)
-    for (const fileName of fs.readdirSync(path.join(__dirname, "..", "migrations"))) {
-      if (/^00[1-8]_.*\.sql$/.test(fileName)) {
-        fs.copyFileSync(
-          path.join(__dirname, "..", "migrations", fileName),
-          path.join(oldMigrationsPath, fileName),
-        )
-      }
-    }
     const databasePath = path.join(tempRoot, "team-binding-upgrade.db")
-    const old = initDatabase({ databasePath, migrationsPath: oldMigrationsPath })
-    old.kvStore.set(
-      "INSERT INTO workspaces (id, name, slug, origin, syncMode) VALUES (?, ?, ?, ?, ?)",
-      ["team-workspace", "Team", "team", "team", "bi-directional"],
-    )
-    old.kvStore.set(
-      "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, team_id, sync_mode) VALUES (?, ?, ?, ?)",
-      ["team-workspace", "cloud-team-workspace", "team-1", "bi-directional"],
-    )
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 8) })
+    old.kvStore.transaction((store) => {
+      store.set("INSERT INTO workspaces (id, name, slug, origin, syncMode) VALUES (?, ?, ?, ?, ?)", [
+        "team-workspace",
+        "Team",
+        "team",
+        "team",
+        "bi-directional",
+      ])
+      store.set("INSERT INTO workflows (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)", [
+        "team-workflow",
+        "team-workspace",
+        "team-workspace",
+        "Team flow",
+        "team-flow",
+      ])
+      store.set("INSERT INTO environments (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)", [
+        "team-env",
+        "team-workspace",
+        "team-workspace",
+        "Staging",
+        "staging",
+      ])
+      store.set(
+        "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, team_id, sync_mode) VALUES (?, ?, ?, ?)",
+        ["team-workspace", "cloud-team-workspace", "team-1", "bi-directional"],
+      )
+      store.set(
+        "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at, is_baseline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ["outbox-1", "workflow", "team-workflow", "team-workspace", 1, "upsert", Buffer.from("{}"), Date.now(), 1],
+      )
+      // 014 backfills cloud_workspace_accounts from the linked account.
+      store.set("INSERT INTO app_settings (key, value) VALUES (?, ?)", ["cloud.account_identity", '{"accountId":"acct-1"}'])
+    })
     old.close()
 
     const upgraded = initDatabase({ databasePath })
     try {
-      expect(upgraded.kvStore.get(
-        "SELECT local_origin FROM cloud_workspace_bindings WHERE workspace_id = ?",
-        ["team-workspace"],
-      )).toEqual({ local_origin: "team" })
+      expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      expect(upgraded.kvStore.query("SELECT id FROM workspaces")).toEqual([{ id: "team-workspace" }])
+      expect(upgraded.kvStore.query("SELECT id FROM workflows")).toEqual([{ id: "team-workflow" }])
+      expect(upgraded.kvStore.query("SELECT id FROM environments")).toEqual([{ id: "team-env" }])
+      expect(cloudLeftovers(upgraded)).toEqual([])
+      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
     } finally {
       upgraded.close()
+    }
+  })
+
+  // Each case upgrades its own copy of the fixture: two of them write to it.
+  describe("dropping the Cloud schema (pre-023 fixture with real Cloud rows)", () => {
+    const keptSettings = [
+      { key: "Cloud.Upper" },
+      { key: "agents.cloud.x" },
+      { key: "agents.default" },
+      { key: "cloud_underscore" },
+      { key: "cloudy.theme" },
+      { key: "mcp.enabled" },
+    ]
+
+    it("keeps every content row and leaves no foreign key dangling", () => {
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+        expect(upgraded.database.pragma("foreign_keys", { simple: true })).toBe(1)
+        expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+        expect(contentRows(upgraded)).toEqual({
+          ...before,
+          workspaces: (before["workspaces"] ?? []).map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
+          app_settings: (before["app_settings"] ?? []).filter((row) => !String(row["key"]).startsWith("cloud.")),
+        })
+      } finally {
+        upgraded.close()
+      }
+    })
+
+    it("drops the Cloud tables, the workspace columns and the cloud.* settings, and nothing near them", () => {
+      const { upgraded, cloudTables } = upgradeCloudFixture()
+      try {
+        const tables = tableNames(upgraded.kvStore)
+        for (const dropped of [...cloudTables, "scoped_keys"]) {
+          expect(tables).not.toContain(dropped)
+        }
+        expect(cloudLeftovers(upgraded)).toEqual([])
+        expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
+        const workspaceColumns = upgraded.kvStore.query("SELECT name FROM pragma_table_info('workspaces')").map((row) => row["name"])
+        expect(workspaceColumns).not.toContain("origin")
+        expect(workspaceColumns).not.toContain("syncMode")
+        expect(workspaceColumns).toEqual(["id", "name", "slug", "settings_json", "rev", "createdAt", "updatedAt"])
+      } finally {
+        upgraded.close()
+      }
+    })
+
+    it("drops Cloud's indexes and trigger and no others", () => {
+      const { upgraded, indexesBefore, triggersBefore } = upgradeCloudFixture()
+      try {
+        expect(schemaObjects(upgraded, "index")).toEqual(
+          indexesBefore.filter((name) => !name.startsWith("idx_cloud_") && name !== "idx_scoped_keys_scope"),
+        )
+        expect(schemaObjects(upgraded, "trigger")).toEqual(triggersBefore.filter((name) => name !== "scoped_keys_touch"))
+      } finally {
+        upgraded.close()
+      }
+    })
+
+    it("still bumps rev and updatedAt when a rebuilt workspace row changes", () => {
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        const workspaceBefore = before["workspaces"]?.find((row) => row["id"] === "ws-cloud")
+        upgraded.kvStore.set("UPDATE workspaces SET name = ? WHERE id = ?", ["Cloud renamed", "ws-cloud"])
+        const workspaceAfter = upgraded.kvStore.get("SELECT rev, updatedAt FROM workspaces WHERE id = ?", ["ws-cloud"])
+        expect(workspaceAfter?.["rev"]).toBe(Number(workspaceBefore?.["rev"]) + 1)
+        expect(workspaceAfter?.["updatedAt"]).not.toBe(workspaceBefore?.["updatedAt"])
+      } finally {
+        upgraded.close()
+      }
+    })
+
+    // The cascade from workspaces still reaches every child, directly or through
+    // workflows, runs and collections. agent_local_paths has no FK by design
+    // (015_agents.sql) and app_settings is not workspace-scoped: both stay.
+    it("still cascades a workspace delete to every child table", () => {
+      const cascaded = [
+        "workflows",
+        "workflow_revisions",
+        "collections",
+        "environments",
+        "secrets_metadata",
+        "runs",
+        "run_responses",
+        "run_node_results",
+        "project_runs",
+        "node_presets",
+        "agent_definitions",
+        "agent_sessions",
+        "agent_run_approvals",
+      ]
+      expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
+      const { upgraded, before } = upgradeCloudFixture()
+      try {
+        upgraded.kvStore.delete("DELETE FROM workspaces WHERE id = ?", ["ws-cloud"])
+        const afterDelete = contentRows(upgraded)
+        for (const table of cascaded) {
+          expect(afterDelete[table], `${table} must cascade from workspaces`).toEqual([])
+        }
+        expect(afterDelete["workspaces"]?.map((row) => row["id"])).toEqual(["ws-local"])
+        expect(afterDelete["agent_local_paths"]).toEqual(before["agent_local_paths"])
+        expect(upgraded.kvStore.query("SELECT key FROM app_settings ORDER BY key")).toEqual(keptSettings)
+        expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+      } finally {
+        upgraded.close()
+      }
+    })
+  })
+
+  it("classifies every table as content or state", () => {
+    const db = openTempDatabase()
+    try {
+      const tables = tableNames(db.kvStore)
+      const unclassified = tables.filter((name) => !CONTENT_TABLES.has(name) && !STATE_ONLY_TABLES.has(name))
+      expect(unclassified, "add each new table to CONTENT_TABLES or STATE_ONLY_TABLES in core/db/migrations.ts").toEqual([])
+      expect([...CONTENT_TABLES].filter((name) => !tables.includes(name))).toEqual([])
+      expect([...STATE_ONLY_TABLES].filter((name) => !tables.includes(name))).toEqual([])
+      expect([...CONTENT_TABLES].filter((name) => STATE_ONLY_TABLES.has(name))).toEqual([])
+    } finally {
+      db.close()
     }
   })
 
@@ -450,7 +564,249 @@ describe("database migrations", () => {
     fs.writeFileSync(path.join(migrationsPath, "001_bad.sql"), "DROP TABLE workflows;\n")
     expect(() => readMigrations(migrationsPath)).toThrow("migration contains forbidden DROP TABLE: 001_bad.sql")
   })
+
+  it.each([
+    ["IF EXISTS", "DROP TABLE IF EXISTS runs;", "runs"],
+    ["lower case without a semicolon", "drop table secrets_metadata", "secrets_metadata"],
+    ["a schema prefix", "DROP TABLE main.environments;", "environments"],
+    ["double quotes and mixed case", 'DROP TABLE IF EXISTS "main"."Workspaces";', "workspaces"],
+    ["backticks", "DROP TABLE `collections`;", "collections"],
+    ["brackets", "DROP TABLE [app_settings];", "app_settings"],
+    ["a statement after another on the same line", "SELECT 1; DROP TABLE\n  agent_sessions ;", "agent_sessions"],
+  ])("rejects a content-table drop written with %s", (_label, sql, table) => {
+    const migrationsPath = writeMigration(sql)
+    expect(() => readMigrations(migrationsPath)).toThrow(
+      `migration contains forbidden DROP TABLE: 001_drop.sql: ${table} holds user data`,
+    )
+  })
+
+  it.each([
+    ["an unterminated quote", 'DROP TABLE "workflows;\n'],
+    ["a single-quoted name", "DROP TABLE 'runs';"],
+  ])("refuses a DROP TABLE whose table name it cannot read: %s", (_label, sql) => {
+    const migrationsPath = writeMigration(sql)
+    expect(() => readMigrations(migrationsPath)).toThrow(
+      "migration contains forbidden DROP TABLE: 001_drop.sql: cannot read the table name",
+    )
+  })
+
+  it.each([
+    ["a plain rename", "ALTER TABLE workspaces RENAME TO workspaces_old;", "workspaces"],
+    ["lower case without a semicolon", "alter table runs rename to runs_old", "runs"],
+    ["a schema prefix", "ALTER TABLE main.workflows RENAME TO workflows_old;", "workflows"],
+    ["double quotes, mixed case and whitespace", 'ALTER\n\tTABLE "Workspaces"\n\tRENAME\tTO\n"old";', "workspaces"],
+    [
+      "the rename-then-drop that cascades every child away",
+      "ALTER TABLE workspaces RENAME TO workspaces_old;\nDROP TABLE workspaces_old;",
+      "workspaces",
+    ],
+  ])("rejects a content-table rename written with %s", (_label, sql, table) => {
+    const migrationsPath = writeMigration(sql)
+    expect(() => readMigrations(migrationsPath)).toThrow(`migration renames a content table: 001_drop.sql: ${table} holds user data`)
+  })
+
+  it("refuses a table rename whose table name it cannot read", () => {
+    const migrationsPath = writeMigration('ALTER TABLE "workspaces RENAME TO x;\n')
+    expect(() => readMigrations(migrationsPath)).toThrow("migration renames a content table: 001_drop.sql: cannot read the table name")
+  })
+
+  it.each([
+    ["a non-content table rename", "ALTER TABLE cloud_outbox RENAME TO cloud_outbox_old;"],
+    ["RENAME COLUMN", "ALTER TABLE workspaces RENAME COLUMN id TO x;"],
+    ["the legacy column rename", "ALTER TABLE workspaces RENAME id TO x;"],
+  ])("allows %s", (_label, sql) => {
+    const migrationsPath = writeMigration(sql)
+    expect(readMigrations(migrationsPath).map((migration) => migration.fileName)).toEqual(["001_drop.sql"])
+  })
+
+  it("allows dropping a table that holds no content, and ignores DROP TABLE in comments and strings", () => {
+    const migrationsPath = writeMigration(
+      [
+        "-- DROP TABLE workflows; the environment's rows stay",
+        "/* DROP TABLE runs; */",
+        "INSERT INTO app_settings (key, value) VALUES ('note', 'it''s fine; DROP TABLE workspaces');",
+        'CREATE TABLE "odd -- name" (id TEXT);',
+        "DROP TABLE IF EXISTS cloud_outbox;",
+        "",
+      ].join("\n"),
+    )
+    expect(readMigrations(migrationsPath).map((migration) => migration.fileName)).toEqual(["001_drop.sql"])
+  })
 })
+
+function writeMigration(sql: string): string {
+  const migrationsPath = path.join(makeTempRoot(), "migrations")
+  fs.mkdirSync(migrationsPath)
+  fs.writeFileSync(path.join(migrationsPath, "001_drop.sql"), sql)
+  return migrationsPath
+}
+
+function contentRows(db: InitializedDatabase): Record<string, readonly SqliteRow[]> {
+  const existing = new Set(tableNames(db.kvStore))
+  return Object.fromEntries(
+    [...CONTENT_TABLES]
+      .filter((table) => existing.has(table))
+      .map((table) => [table, db.kvStore.query(`SELECT * FROM "${table}" ORDER BY rowid`)]),
+  )
+}
+
+/** Anything Cloud left behind: its tables, the workspace columns, or `cloud.*` settings. */
+function cloudLeftovers(db: InitializedDatabase): readonly string[] {
+  const tables = tableNames(db.kvStore).filter((name) => name.startsWith("cloud_") || name === "scoped_keys")
+  const columns = db.kvStore
+    .query("SELECT name FROM pragma_table_info('workspaces') WHERE name IN ('origin', 'syncMode')")
+    .map((row) => `workspaces.${String(row["name"])}`)
+  const settings = db.kvStore
+    .query("SELECT key FROM app_settings WHERE key GLOB 'cloud.*'")
+    .map((row) => `app_settings:${String(row["key"])}`)
+  return [...tables, ...columns, ...settings]
+}
+
+function schemaObjects(db: InitializedDatabase, type: "index" | "trigger"): readonly string[] {
+  return db.kvStore
+    .query("SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' ORDER BY name", [type])
+    .map((row) => String(row["name"]))
+}
+
+interface CloudUpgrade {
+  readonly upgraded: InitializedDatabase
+  /** Every content table's rows in the v22 database. */
+  readonly before: Record<string, readonly SqliteRow[]>
+  readonly cloudTables: readonly string[]
+  readonly indexesBefore: readonly string[]
+  readonly triggersBefore: readonly string[]
+}
+
+/**
+ * Seeds the v22 fixture, checks it holds a row in every content and Cloud
+ * table — without them the assertions after the upgrade mean nothing — and
+ * opens it at the current schema. The caller closes `upgraded`.
+ */
+function upgradeCloudFixture(): CloudUpgrade {
+  const tempRoot = makeTempRoot()
+  const databasePath = path.join(tempRoot, "cloud-upgrade.db")
+  const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 22) })
+  expect(old.schemaVersion).toBe(22)
+  seedCloudFixture(old)
+  const before = contentRows(old)
+  for (const [table, rows] of Object.entries(before)) {
+    expect(rows.length, `${table} must be seeded for the check to mean anything`).toBeGreaterThan(0)
+  }
+  const indexesBefore = schemaObjects(old, "index")
+  const triggersBefore = schemaObjects(old, "trigger")
+  const cloudTables = tableNames(old.kvStore).filter((name) => name.startsWith("cloud_"))
+  expect(cloudTables).toHaveLength(7)
+  for (const table of [...cloudTables, "scoped_keys"]) {
+    expect(old.kvStore.get(`SELECT COUNT(*) AS n FROM "${table}"`)?.["n"], `${table} must be seeded`).toBeGreaterThan(0)
+  }
+  old.close()
+  return { upgraded: initDatabase({ databasePath }), before, cloudTables, indexesBefore, triggersBefore }
+}
+
+/** A v22 database as Cloud left it: a bound workspace with every kind of Cloud row, and content in every table. */
+function seedCloudFixture(db: InitializedDatabase): void {
+  const now = Date.now()
+  db.kvStore.transaction((store) => {
+    store.set("INSERT INTO workspaces (id, name, slug, origin, syncMode, settings_json) VALUES (?, ?, ?, ?, ?, ?)", [
+      "ws-cloud",
+      "Cloud",
+      "cloud",
+      "cloud",
+      "bi-directional",
+      '{"description":null,"isPersonal":false,"deletedAt":null}',
+    ])
+    store.set("INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)", ["ws-local", "Personal", "personal"])
+    store.set("INSERT INTO collections (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)", [
+      "project-1", "ws-cloud", "ws-cloud", "Project", "project",
+    ])
+    store.set("INSERT INTO environments (id, workspace_id, scopeId, name, slug) VALUES (?, ?, ?, ?, ?)", [
+      "env-1", "ws-cloud", "ws-cloud", "Staging", "staging",
+    ])
+    store.set("INSERT INTO workflows (id, workspace_id, scopeId, name, slug, graph_json) VALUES (?, ?, ?, ?, ?, ?)", [
+      "workflow-1", "ws-cloud", "ws-cloud", "Smoke", "smoke", '{"nodes":[],"edges":[]}',
+    ])
+    store.set(
+      "INSERT INTO workflow_revisions (id, workflow_id, source, workflow_rev, node_count, edge_count, snapshot, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["revision-1", "workflow-1", "cloud", 1, 0, 0, Buffer.from("snapshot"), "2026-01-01T00:00:00.000Z"],
+    )
+    store.set("INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status) VALUES (?, ?, ?, ?, ?)", [
+      "run-1", "ws-cloud", "workflow-1", "ws-cloud", "completed",
+    ])
+    store.set("INSERT INTO run_responses (run_id, node_id, body, size) VALUES (?, ?, ?, ?)", [
+      "run-1", "http-1", Buffer.from("body"), 4,
+    ])
+    store.set("INSERT INTO run_node_results (run_id, node_id, result_json) VALUES (?, ?, ?)", [
+      "run-1", "http-1", '{"nodeId":"http-1","status":"passed"}',
+    ])
+    store.set("INSERT INTO project_runs (id, project_id, environment_id, status) VALUES (?, ?, ?, ?)", [
+      "project-run-1", "project-1", "env-1", "passed",
+    ])
+    store.set(
+      "INSERT INTO secrets_metadata (id, workspace_id, scopeType, scopeId, key, label, sealed, key_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["secret-1", "ws-cloud", "environment", "env-1", "API_TOKEN", "API token", Buffer.from("sealed"), "key-1"],
+    )
+    store.set("INSERT INTO node_presets (id, workspace_id, name, node_type) VALUES (?, ?, ?, ?)", [
+      "preset-1", "ws-cloud", "Login", "http-request",
+    ])
+    store.set("INSERT INTO agent_definitions (id, workspace_id, agent_key, name, detect_cmd) VALUES (?, ?, ?, ?, ?)", [
+      "agent-def-1", "ws-cloud", "custom", "Custom", "custom --version",
+    ])
+    store.set("INSERT INTO agent_sessions (id, workspace_id, agent_key, launch_mode, status, cwd) VALUES (?, ?, ?, ?, ?, ?)", [
+      "agent-session-1", "ws-cloud", "custom", "embedded", "exited", "C:/work",
+    ])
+    store.set(
+      "INSERT INTO agent_run_approvals (id, workspace_id, agent, workflow_id, workflow_name, fingerprint, secret_names, destinations, runs_scripts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ["approval-1", "ws-cloud", "claude", "workflow-1", "Smoke", "fp", "[]", "[]", 0],
+    )
+    store.set("INSERT INTO agent_local_paths (scope_kind, scope_id, local_path) VALUES (?, ?, ?)", [
+      "project", "project-1", "C:/work/project",
+    ])
+
+    store.set(
+      "INSERT INTO cloud_devices (device_id, label, client_version, access_token, wrapped_dek) VALUES (?, ?, ?, ?, ?)",
+      ["device-1", "Laptop", "0.12.1", "token", "wrapped"],
+    )
+    store.set(
+      "INSERT INTO cloud_workspace_bindings (workspace_id, cloud_workspace_id, sync_mode, device_id, local_origin) VALUES (?, ?, ?, ?, ?)",
+      ["ws-cloud", "cloud-ws-1", "bi-directional", "device-1", "cloud"],
+    )
+    store.set("INSERT INTO cloud_record_state (workspace_id, kind, record_id, server_rev, local_rev, dirty) VALUES (?, ?, ?, ?, ?, ?)", [
+      "ws-cloud", "workflow", "workflow-1", 3, 4, 1,
+    ])
+    store.set(
+      "INSERT INTO cloud_outbox (id, kind, record_id, workspace_id, expected_rev, op, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["outbox-1", "workflow", "workflow-1", "ws-cloud", 3, "upsert", Buffer.from("{}"), now],
+    )
+    store.set(
+      "INSERT INTO cloud_conflicts (conflict_id, workspace_id, kind, record_id, base_rev, local_rev, cloud_rev, local_op, cloud_op) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ["conflict-1", "ws-cloud", "workflow", "workflow-1", 2, 4, 3, "upsert", "upsert"],
+    )
+    store.set(
+      "INSERT INTO cloud_workspace_tombstones (id, workspace_id, cloud_workspace_id, expected_rev, created_at) VALUES (?, ?, ?, ?, ?)",
+      ["tombstone-1", "ws-deleted", "cloud-ws-deleted", 5, now],
+    )
+    store.set("INSERT INTO cloud_workspace_accounts (workspace_id, account_id) VALUES (?, ?)", ["ws-cloud", "acct-1"])
+    store.set(
+      "INSERT INTO scoped_keys (id, workspace_id, scopeType, scopeId, public_key, encrypted_private_key) VALUES (?, ?, ?, ?, ?, ?)",
+      ["scoped-key-1", "ws-cloud", "workspace", "ws-cloud", Buffer.from("public"), Buffer.from("private")],
+    )
+    for (const [key, value] of [
+      ["cloud.account_identity", '{"accountId":"acct-1"}'],
+      ["cloud.device_id", "device-1"],
+      ["cloud.cursor.ws-cloud", "42"],
+      ["cloud.e2ee.wdek.ws-cloud", "c2VhbGVk"],
+      ["mcp.enabled", "true"],
+      ["agents.default", "agent-def-1"],
+      // Near Cloud's namespace but not in it: `GLOB 'cloud.*'` must keep them.
+      ["Cloud.Upper", "kept"],
+      ["cloudy.theme", "kept"],
+      ["cloud_underscore", "kept"],
+      ["agents.cloud.x", "kept"],
+    ]) {
+      store.set("INSERT INTO app_settings (key, value) VALUES (?, ?)", [key!, value!])
+    }
+  })
+}
 
 function openTempDatabase(): InitializedDatabase {
   return initDatabase({ databasePath: path.join(makeTempRoot(), "apiweave-test.db") })

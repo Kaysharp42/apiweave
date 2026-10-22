@@ -4,8 +4,6 @@ export interface Workspace {
   name: string;
   description: string | null;
   isPersonal: boolean;
-  origin: "local" | "cloud" | "team";
-  syncMode: "none" | "push" | "bi-directional";
   createdAt: string;
   updatedAt: string;
 }
