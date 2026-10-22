@@ -5,8 +5,6 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import { generateId } from "../../id"
 import { CollectionRepository, EnvironmentRepository, SecretRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import {
-  MAX_RECORD_ID_LENGTH,
-  RecordIdSchema,
   describeRecordFile,
   parseWorkspace,
   serializeWorkspace,
@@ -15,6 +13,8 @@ import {
   type WorkspaceSnapshot,
 } from "../workspace_repo_format"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { mergeTree } from "@shared/git-merge/tree"
+import { MAX_RECORD_ID_LENGTH, RecordIdSchema } from "@shared/workspace-repo/format"
 
 const FIXTURE_DIR = path.join(__dirname, "__fixtures__", "workspace-repo")
 
@@ -253,6 +253,29 @@ describe("workspace repository format", () => {
     expect(JSON.stringify(once)).not.toContain("live-variable-token")
   })
 
+  it("writes a clean semantic merge of two copies' edits back byte for byte", () => {
+    const snapshot = workspaceSnapshot(seededRecords())
+    const ours = serializeWorkspace({
+      ...snapshot,
+      workflows: snapshot.workflows.map((workflow) => (workflow.workflowId === "wf-orders" ? { ...workflow, name: "Orders", tags: ["nightly"] } : workflow)),
+    })
+    const theirs = serializeWorkspace({
+      ...snapshot,
+      environments: snapshot.environments.map((environment) =>
+        (environment.environmentId === "env-staging" ? { ...environment, variables: { ...environment.variables, region: "us" } } : environment)),
+      workflows: snapshot.workflows.map((workflow) => (workflow.workflowId === "wf-login" ? { ...workflow, description: "Signs in" } : workflow)),
+    })
+
+    const merged = mergeTree(serializeWorkspace(snapshot), ours, theirs)
+    const read = parseWorkspace(merged.files)
+
+    expect(merged.conflicts).toEqual([])
+    expect([...serializeWorkspace(read)]).toEqual([...merged.files])
+    expect(read.workflows.find((workflow) => workflow.workflowId === "wf-orders")).toMatchObject({ name: "Orders", tags: ["nightly"] })
+    expect(read.workflows.find((workflow) => workflow.workflowId === "wf-login")).toMatchObject({ description: "Signs in" })
+    expect(read.environments.find((environment) => environment.environmentId === "env-staging")?.variables).toMatchObject({ region: "us" })
+  })
+
   it("round-trips a tree that claims two default environments unchanged", () => {
     const snapshot = workspaceSnapshot(seededRecords())
     const twoDefaults: WorkspaceSnapshot = {
@@ -381,8 +404,12 @@ describe("reading a workspace repository", () => {
     "workflows\\login--wf-x.json",
     "a//b.json",
     "./workspace.json",
+    ".git/config",
+    "docs/.GIT/hooks/pre-commit",
   ])("refuses the path %j, which leaves the tree", (file) => {
-    expect(() => parseWorkspace(new Map([...tree(), [file, "{}"]]))).toThrow(/a repository path must be relative, '\/'-separated and stay inside the repository/)
+    expect(() => parseWorkspace(new Map([...tree(), [file, "{}"]]))).toThrow(
+      /a repository path must be relative, '\/'-separated, stay inside the repository and never name git's own \.git folder/,
+    )
   })
 
   it("refuses an oversized file, and an oversized tree", () => {

@@ -103,6 +103,16 @@ describe("readWorkspaceTree", () => {
     expect([...(await readWorkspaceTree(dir)).keys()]).toEqual(["workspace.json"])
   })
 
+  it("writeWorkspaceTree refuses a path into .git or out of the tree before writing anything", async () => {
+    for (const bad of [".git/config", ".GIT/config", "../outside.json"]) {
+      await expect(writeWorkspaceTree(dir, new Map([["workspace.json", "{}\n"], [bad, "[core]\n"]]))).rejects.toThrow(
+        `${bad}: is not a path a repository may hold`,
+      )
+    }
+
+    expect(fs.readdirSync(dir)).toEqual([])
+  })
+
   it("reads back what writeWorkspaceTree wrote", async () => {
     const files = new Map([
       [".apiweave/format.json", "{}\n"],

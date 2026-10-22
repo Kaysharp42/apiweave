@@ -5,6 +5,7 @@ import type { RequestInit, Response } from "undici"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Environment } from "@shared/types/Environment"
 import type { Workflow } from "@shared/types/Workflow"
+import { nameSlug } from "@shared/workspace-repo/format"
 import { initDatabase } from "../db"
 import {
   CollectionRepository,
@@ -17,7 +18,7 @@ import {
 import { ScopeResolver } from "../services/scope_resolver"
 import { ImportService, WorkflowBundleSchema } from "../services/import_service"
 import { ProjectExportService, type ProjectBundle } from "../services/project_export_service"
-import { nameSlug, parseWorkspace, type WorkspaceSnapshot } from "../services/workspace_repo_format"
+import { parseWorkspace, type WorkspaceSnapshot } from "../services/workspace_repo_format"
 import { WorkspaceRepoImporter } from "../services/workspace_repo_import"
 import { readWorkspaceTree } from "../git/workspace_tree"
 import { convertPostmanCollection, isPostmanCollection } from "../services/postman_import"

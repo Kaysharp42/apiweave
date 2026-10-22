@@ -5,6 +5,7 @@ import type { WorkflowEdge } from "@shared/types/WorkflowEdge"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { AssertionItem } from "@shared/types/AssertionItem"
+import { slugify } from "@shared/text/slugify"
 import { generateId } from "../id"
 import { getLogger } from "../logging/logger"
 import {
@@ -13,7 +14,6 @@ import {
   insertAndRead,
   parseJson,
   queryMapped,
-  slugify,
   toJson,
 } from "./helpers"
 import { holdNotificationsUntilCommit, sendOrHoldNotification } from "./transactionNotifications"
