@@ -7,7 +7,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { ImportService } from "../import_service"
 import type { WorkflowBundle } from "../import_service"
@@ -31,8 +30,7 @@ beforeEach(() => {
     environmentExists: (id) => environments.getById(id) !== undefined,
   }
   const scopeResolver = new ScopeResolver(existence)
-  const permissions = new LocalOwnerProvider()
-  service = new ImportService(workflows, environments, collections, permissions, scopeResolver)
+  service = new ImportService(workflows, environments, collections, scopeResolver)
   wsId = workspaces.create({ name: "test", slug: "test" }).workspaceId
 })
 

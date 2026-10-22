@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { Button } from "../atoms/Button";
-import type { WorkspaceEntry } from "../../types/WorkspaceContextValue";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import type { Workspace } from "../../types";
 
@@ -60,8 +59,8 @@ export function OrgWorkspaceSwitcher() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
-  const handleSelect = (entry: WorkspaceEntry, close: () => void) => {
-    switchTo(entry.workspace.slug);
+  const handleSelect = (workspace: Workspace, close: () => void) => {
+    switchTo(workspace.slug);
     close();
   };
 
@@ -95,25 +94,16 @@ export function OrgWorkspaceSwitcher() {
     );
   }
 
-  const personalWorkspace = availableWorkspaces.find(
-    (e) => e.workspace.isPersonal,
-  );
-  const otherWorkspaces = availableWorkspaces.filter(
-    (e) => !e.workspace.isPersonal,
-  );
+  const personalWorkspace = availableWorkspaces.find((ws) => ws.isPersonal);
+  const otherWorkspaces = availableWorkspaces.filter((ws) => !ws.isPersonal);
 
-  const flatList: WorkspaceEntry[] = [];
+  const flatList: Workspace[] = [];
   if (personalWorkspace) flatList.push(personalWorkspace);
   flatList.push(...otherWorkspaces);
 
-  const currentEntry = currentWorkspace
-    ? availableWorkspaces.find(
-        (entry) => entry.workspace.workspaceId === currentWorkspace.workspaceId,
-      )
-    : undefined;
   const displayLabel = currentWorkspace?.name ?? "Personal";
-  const displaySource = currentEntry
-    ? workspaceSource(currentEntry)
+  const displaySource = currentWorkspace
+    ? workspaceSource(currentWorkspace)
     : "Personal workspace";
 
   return (
@@ -171,16 +161,15 @@ export function OrgWorkspaceSwitcher() {
                 role="listbox"
                 aria-label="Workspaces"
               >
-                {flatList.map((entry, index) => {
-                  const source = workspaceSource(entry);
+                {flatList.map((workspace, index) => {
+                  const source = workspaceSource(workspace);
                   return (
                     <WorkspaceItem
-                      key={entry.workspace.workspaceId}
-                      entry={entry}
+                      key={workspace.workspaceId}
+                      workspace={workspace}
                       index={index}
                       isActive={
-                        currentWorkspace?.workspaceId ===
-                        entry.workspace.workspaceId
+                        currentWorkspace?.workspaceId === workspace.workspaceId
                       }
                       icon={sourceIcon(source, "h-4 w-4")}
                       source={source}
@@ -230,12 +219,12 @@ export function OrgWorkspaceSwitcher() {
 }
 
 interface WorkspaceItemProps {
-  entry: WorkspaceEntry;
+  workspace: Workspace;
   index: number;
   isActive: boolean;
   icon: React.ReactNode;
   source: string;
-  onSelect: (entry: WorkspaceEntry) => void;
+  onSelect: (workspace: Workspace) => void;
   onKeyDown: (
     event: ReactKeyboardEvent<HTMLButtonElement>,
     index: number,
@@ -245,7 +234,7 @@ interface WorkspaceItemProps {
 
 // fallow-ignore-next-line code-duplication
 function WorkspaceItem({
-  entry,
+  workspace,
   index,
   isActive,
   icon,
@@ -260,7 +249,7 @@ function WorkspaceItem({
       type="button"
       role="option"
       aria-selected={isActive}
-      onClick={() => onSelect(entry)}
+      onClick={() => onSelect(workspace)}
       onKeyDown={(e) => onKeyDown(e, index)}
       className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
         isActive
@@ -279,7 +268,7 @@ function WorkspaceItem({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1 text-sm font-medium">
-          <span className="truncate">{entry.workspace.name}</span>
+          <span className="truncate">{workspace.name}</span>
         </div>
         <div className="truncate text-xs text-text-muted dark:text-text-muted-dark">
           {source}
@@ -300,7 +289,7 @@ function sourceIcon(source: string, className: string): React.ReactNode {
 }
 
 /** Where a workspace lives, in the switcher's own vocabulary. */
-function workspaceSource(entry: WorkspaceEntry): string {
-  if (entry.workspace.isPersonal) return "Personal workspace";
+function workspaceSource(workspace: Workspace): string {
+  if (workspace.isPersonal) return "Personal workspace";
   return "On this device";
 }

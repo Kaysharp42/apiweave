@@ -31,12 +31,8 @@ import {
 } from "../agents/session_briefing"
 import { OPENCODE_CONFIG_SCRATCH, renderConfigEnv, writeOpenCodeSessionConfig } from "../agents/opencode_config"
 import type { PtyLauncher } from "../agents/pty_launcher"
-import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { Action } from "../auth/permissions"
-import { RESOURCE_AGENTS } from "../auth/permissions"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import type { AgentRepository, CollectionRepository, WorkflowRepository } from "../repositories"
-import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -104,7 +100,6 @@ export class AgentService {
     private readonly agents: AgentRepository,
     private readonly workflows: WorkflowRepository,
     private readonly collections: CollectionRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly environment: AgentEnvironment,
   ) {}
@@ -112,12 +107,12 @@ export class AgentService {
   // ── roster ──────────────────────────────────────────────────────────────
 
   async listRoster(workspaceId: string): Promise<readonly AgentRosterEntry[]> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.buildRoster(workspaceId, false)
   }
 
   async refreshAvailability(workspaceId: string): Promise<readonly AgentRosterEntry[]> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.buildRoster(workspaceId, true)
   }
 
@@ -139,7 +134,7 @@ export class AgentService {
    * lives behind a wrapper script had no way to point the roster at it.
    */
   async saveCustomAgent(workspaceId: string, input: AgentDefinition): Promise<AgentRosterEntry> {
-    await this.authorize(workspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const parsed = AgentDefinitionSchema.safeParse(input)
     if (!parsed.success) {
       throw new ValidationError("agent definition is not valid", parsed.error.issues)
@@ -172,7 +167,7 @@ export class AgentService {
    * for a row that exists.
    */
   async deleteCustomAgent(workspaceId: string, agentKey: string): Promise<void> {
-    await this.authorize(workspaceId, "delete")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (this.agents.getDefinition(workspaceId, agentKey) === undefined) {
       throw new NotFoundError(`agent ${agentKey} not found`)
     }
@@ -193,12 +188,12 @@ export class AgentService {
   }
 
   async getDefaultAgentKey(workspaceId: string): Promise<string> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.agents.getDefaultAgentKey(workspaceId) ?? DEFAULT_AGENT_KEY
   }
 
   async setDefaultAgentKey(workspaceId: string, agentKey: string): Promise<void> {
-    await this.authorize(workspaceId, "update")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGetDefinition(workspaceId, agentKey)
     this.agents.setDefaultAgentKey(workspaceId, agentKey)
   }
@@ -206,7 +201,7 @@ export class AgentService {
   // ── local paths ─────────────────────────────────────────────────────────
 
   async resolveLocalPath(workspaceId: string, scope: AgentScope): Promise<AgentPathResolution> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.resolvePathForScope(workspaceId, scope)
   }
 
@@ -215,7 +210,7 @@ export class AgentService {
    * main process, so the value comes from the OS rather than from the renderer.
    */
   async chooseLocalPath(workspaceId: string, scope: AgentScope): Promise<string | null> {
-    await this.authorize(workspaceId, "update")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(workspaceId, scope)
     const current = this.agents.getLocalPath(scope)
     const chosen = await this.environment.pickDirectory({
@@ -230,7 +225,7 @@ export class AgentService {
   }
 
   async clearLocalPath(workspaceId: string, scope: AgentScope): Promise<void> {
-    await this.authorize(workspaceId, "update")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(workspaceId, scope)
     this.agents.deleteLocalPath(scope)
   }
@@ -238,7 +233,7 @@ export class AgentService {
   // ── sessions ────────────────────────────────────────────────────────────
 
   async listSessions(workspaceId: string): Promise<readonly AgentSession[]> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.agents.listSessions(workspaceId)
   }
 
@@ -392,9 +387,7 @@ export class AgentService {
     if (pty === undefined) {
       throw new ValidationError("The embedded terminal is not available — launch in your own terminal instead")
     }
-    // `run`, not `read`: this starts a process. A role that may watch an agent
-    // does not thereby get to launch one.
-    const previous = await this.mustAuthorizeSession(sessionId, "run")
+    const previous = await this.mustResolveSession(sessionId)
     const ref = this.requireResumeRef(previous)
     this.assertSessionNotRunning(previous)
     this.assertResumable(previous)
@@ -444,14 +437,14 @@ export class AgentService {
     }
   }
 
-  /** Keystrokes. Authorized as `run`: typing at an agent is driving a process. */
+  /** Keystrokes. */
   async writeToSession(sessionId: string, data: string): Promise<void> {
-    await this.mustAuthorizeSession(sessionId, "run")
+    await this.mustResolveSession(sessionId)
     this.environment.pty?.write(sessionId, data)
   }
 
   async resizeSession(sessionId: string, cols: number, rows: number): Promise<void> {
-    await this.mustAuthorizeSession(sessionId, "run")
+    await this.mustResolveSession(sessionId)
     this.environment.pty?.resize(
       sessionId,
       clampDimension(cols, MIN_TERMINAL_COLS),
@@ -461,7 +454,7 @@ export class AgentService {
 
   /** Backpressure, driven by how fast the renderer's terminal can actually parse. */
   async setSessionPaused(sessionId: string, paused: boolean): Promise<void> {
-    await this.mustAuthorizeSession(sessionId, "run")
+    await this.mustResolveSession(sessionId)
     this.environment.pty?.setPaused(sessionId, paused)
   }
 
@@ -474,7 +467,7 @@ export class AgentService {
    * code it never had.
    */
   async killSession(sessionId: string): Promise<AgentSession> {
-    const session = await this.mustAuthorizeSession(sessionId, "run")
+    const session = await this.mustResolveSession(sessionId)
     // An external session has nothing here to kill. The pid APIWeave spawned was
     // the emulator's, it was never recorded, and the PTY host has no entry for a
     // session it did not start — so `pty.kill` matched nothing and returned, and
@@ -498,7 +491,7 @@ export class AgentService {
    * explicit second decision, not a side effect of tidying a list.
    */
   async deleteSession(sessionId: string): Promise<void> {
-    const session = await this.mustAuthorizeSession(sessionId, "delete")
+    const session = await this.mustResolveSession(sessionId)
     if (session.status === "starting" || session.status === "running") {
       throw new ValidationError("stop the session before removing it")
     }
@@ -515,16 +508,12 @@ export class AgentService {
   }
 
   /**
-   * Authorize reading one session's output, and report whether the PTY host can
-   * still serve it — a running process, or an exited one whose replay it
-   * retains. Only the first is something to type into, which is why the split
-   * stays `read`/`run` regardless of which side of this boolean a session is.
-   *
-   * `read` rather than `run`, which is the whole point of the split: a role that
-   * may watch what an agent is doing does not thereby get to type into it.
+   * Resolve one session for reading its output, and report whether the PTY host
+   * can still serve it — a running process, or an exited one whose replay it
+   * retains. Only the first is something to type into.
    */
   async authorizeSessionRead(sessionId: string): Promise<{ readonly session: AgentSession; readonly attachable: boolean }> {
-    const session = await this.mustAuthorizeSession(sessionId, "read")
+    const session = await this.mustResolveSession(sessionId)
     return { session, attachable: this.environment.pty?.canAttach(sessionId) ?? false }
   }
 
@@ -634,15 +623,6 @@ export class AgentService {
   // ── internals ───────────────────────────────────────────────────────────
 
   /**
-   * Authorize one action against the `agents` resource in a workspace — the
-   * first step of every method that takes a workspace, so the resource and the
-   * provider stay named in exactly one place.
-   */
-  private async authorize(workspaceId: string, action: Action): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_AGENTS)
-  }
-
-  /**
    * The session row both launch paths insert — same columns, same identity
    * semantics; only `launchMode` differs. See {@link sessionIdentityFor} for
    * how `agentSessionRef` arrives.
@@ -673,7 +653,7 @@ export class AgentService {
    * read and edit files the user never pointed it at.
    */
   private async prepareLaunch(request: AgentLaunchRequest): Promise<PreparedLaunch> {
-    await this.authorize(request.workspaceId, "run")
+    await this.scopeResolver.assertWorkspaceVisible(request.workspaceId)
     this.assertScopeInWorkspace(request.workspaceId, request.scope)
     this.ensureScratchSwept()
 
@@ -908,22 +888,17 @@ export class AgentService {
   }
 
   /**
-   * Resolve a renderer-supplied session id to its row, then authorize the caller
-   * against *that row's* workspace.
-   *
-   * The order is the point. Authorizing against a workspace the renderer names
-   * would prove only that the caller may act on some workspace of their own, and
-   * a session id is as renderer-controlled as a scope id was — the same hole
-   * that made every path method reachable across workspaces. Missing rather than
-   * denied for an id that does not exist, matching the existence-hiding the
-   * scope resolver already established.
+   * Resolve a renderer-supplied session id to its row, then check *that row's*
+   * workspace rather than one the renderer names. `not_found` for an id that
+   * does not exist, matching the existence-hiding the scope resolver
+   * established.
    */
-  private async mustAuthorizeSession(sessionId: string, action: Action): Promise<AgentSession> {
+  private async mustResolveSession(sessionId: string): Promise<AgentSession> {
     const session = this.agents.getSession(sessionId)
     if (session === undefined) {
       throw new NotFoundError(`agent session ${sessionId} not found`)
     }
-    await this.authorize(session.workspaceId, action)
+    await this.scopeResolver.assertWorkspaceVisible(session.workspaceId)
     return session
   }
 

@@ -1,15 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest"
-import type { ScopeRef } from "../../auth/PermissionProvider"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import {
-  getPermissionProvider,
-  resetPermissionProvider,
-  setPermissionProvider,
-} from "../../services-locator"
+import { describe, expect, it } from "vitest"
 import {
   LOCAL_OWNER_ID,
   ScopeResolver,
   type ScopeExistence,
+  type ScopeRef,
 } from "../scope_resolver"
 
 /** Fake existence source: workspace/environment ids present in the sets exist. */
@@ -61,30 +55,14 @@ describe("ScopeResolver existence-hiding", () => {
   })
 })
 
-describe("LocalOwnerProvider always-allow", () => {
-  const provider = new LocalOwnerProvider()
-  const scope: ScopeRef = { scopeType: "workspace", scopeId: "A" }
+describe("ScopeResolver.assertWorkspaceVisible", () => {
+  const resolver = new ScopeResolver(fakeExistence(["A"]))
 
-  it("allows every action on a known scope for the local owner", () => {
-    for (const action of ["read", "create", "update", "delete", "run"] as const) {
-      expect(provider.evaluate(action, scope, "workflows")).toEqual({ decision: "allow" })
-    }
-  })
-})
-
-describe("service-locator PermissionProvider singleton", () => {
-  afterEach(() => resetPermissionProvider())
-
-  it("defaults to LocalOwnerProvider", () => {
-    resetPermissionProvider()
-    expect(getPermissionProvider()).toBeInstanceOf(LocalOwnerProvider)
+  it("resolves for a known workspace", async () => {
+    await expect(resolver.assertWorkspaceVisible("A")).resolves.toBeUndefined()
   })
 
-  it("setPermissionProvider overrides and reset reseeds the default", () => {
-    const custom = new LocalOwnerProvider()
-    setPermissionProvider(custom)
-    expect(getPermissionProvider()).toBe(custom)
-    resetPermissionProvider()
-    expect(getPermissionProvider()).toBeInstanceOf(LocalOwnerProvider)
+  it("throws not_found — NOT denied — for an unknown workspace", async () => {
+    await expect(resolver.assertWorkspaceVisible("B")).rejects.toMatchObject({ code: "not_found" })
   })
 })

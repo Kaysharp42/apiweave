@@ -10,7 +10,6 @@ import {
   WorkspaceRepository,
 } from "../../../repositories"
 import { initDatabase } from "../../../db"
-import { LocalOwnerProvider } from "../../../auth/LocalOwnerProvider"
 import { ScopeResolver } from "../../../services/scope_resolver"
 import { WorkspaceService } from "../../../services/workspace_service"
 import { CollectionService } from "../../../services/collection_service"
@@ -165,26 +164,25 @@ function buildRouter(): IpcRouter {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
-  const permissions = new LocalOwnerProvider()
   const secretStore: SecretWriteStore = {
     put: () => ({}) as SecretMetadata,
     remove: () => false,
     listByScope: () => [],
     getByScopeAndName: () => null,
   }
-  const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
-  const runService = new RunService(runs, permissions, scopeResolver)
+  const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
+  const runService = new RunService(runs, scopeResolver)
   const deps: HandlerDeps = {
     workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
-    collections: new CollectionService(collections, workflows, permissions, scopeResolver),
+    collections: new CollectionService(collections, workflows, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-    environments: new EnvironmentService(environments, permissions, scopeResolver),
-    nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
+    environments: new EnvironmentService(environments, scopeResolver),
+    nodePresets: new NodePresetService(nodePresets, scopeResolver),
     runs: runService,
-    secrets: new SecretService(secretStore, permissions, scopeResolver, environments, new Uint8Array(32)),
-    projects: new ProjectExportService(collections, workflows, environments, permissions, scopeResolver),
+    secrets: new SecretService(secretStore, scopeResolver, environments, new Uint8Array(32)),
+    projects: new ProjectExportService(collections, workflows, environments, scopeResolver),
   }
   const router = new IpcRouter()
   registerAllHandlers(router, deps)

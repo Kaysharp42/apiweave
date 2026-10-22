@@ -43,7 +43,6 @@ import {
   OAuthService,
   NetworkSettingsService,
 } from "../core/services"
-import { LocalOwnerProvider } from "../core/auth"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
@@ -453,7 +452,6 @@ if (!hasSingleInstanceLock) {
       environmentExists: (id) => environments.getById(id) !== undefined,
     }
     const scopeResolver = new ScopeResolver(existence)
-    const permissions = new LocalOwnerProvider()
 
     // Keyfile: the persisted master KEK that deterministically derives the
     // sealed-box private seed. Seeded once on first run; read thereafter, and
@@ -468,7 +466,7 @@ if (!hasSingleInstanceLock) {
       app.exit(1)
       return
     }
-    const secretService = new SecretService(secretStore, permissions, scopeResolver, environments, keyfile.masterKek)
+    const secretService = new SecretService(secretStore, scopeResolver, environments, keyfile.masterKek)
 
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
@@ -580,29 +578,28 @@ if (!hasSingleInstanceLock) {
     // runs.create actually executes and runs.cancel aborts a live run. The
     // run-event broker gives runs.create/wait their event-driven observation
     // without DB polling; a disconnect or deadline never cancels the run.
-    const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
-    const runService = new RunService(runs, permissions, scopeResolver, scheduler, runEvents)
+    const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
+    const runService = new RunService(runs, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
       workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
-      collections: new CollectionService(collections, workflows, permissions, scopeResolver),
+      collections: new CollectionService(collections, workflows, scopeResolver),
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
       assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-      environments: new EnvironmentService(environments, permissions, scopeResolver, workflows, secretStore),
-      nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
+      environments: new EnvironmentService(environments, scopeResolver, workflows, secretStore),
+      nodePresets: new NodePresetService(nodePresets, scopeResolver),
       runs: runService,
       secrets: secretService,
       projects: new ProjectExportService(
         collections,
         workflows,
         environments,
-        permissions,
         scopeResolver,
         secretStore,
         () => clock.isoNow(),
       ),
-      imports: new ImportService(workflows, environments, collections, permissions, scopeResolver, http),
-      projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, permissions, scopeResolver),
+      imports: new ImportService(workflows, environments, collections, scopeResolver, http),
+      projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)
 
@@ -928,7 +925,7 @@ if (!hasSingleInstanceLock) {
       onEvent: (event) => agentEvents.publish(event),
     })
     agentProcesses = agentPtyHost
-    const agentService = new AgentService(agents, workflows, collections, permissions, scopeResolver, {
+    const agentService = new AgentService(agents, workflows, collections, scopeResolver, {
       // The picker runs here, in main, so the path the renderer eventually sees
       // came from the OS rather than from the renderer.
       pickDirectory: async ({ title, defaultPath }) => {

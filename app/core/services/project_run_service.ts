@@ -1,10 +1,7 @@
 import type { ProjectRun } from "@shared/types/ProjectRun"
 import type { CollectionRepository, ProjectRunRepository } from "../repositories"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import type { ProjectRunner } from "../runner/project_runner"
 import { NotFoundError } from "../ipc/errors"
-import { RESOURCE_RUNS, RESOURCE_WORKFLOWS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -17,31 +14,30 @@ export class ProjectRunService {
     private readonly runner: ProjectRunner,
     private readonly projectRuns: ProjectRunRepository,
     private readonly collections: CollectionRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
   ) {}
 
   /** Starts the run and returns at once with it `running`; progress arrives through the runner's `onChange`. */
   async start(workspaceId: string, projectId: string, environmentId: string | null, agent?: string): Promise<ProjectRun> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "run", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.runner.start({ workspaceId, projectId, environmentId, ...(agent !== undefined ? { agent } : {}) }).projectRun
   }
 
   /** Asks a live project run to stop and returns its record; the cancelled state follows once its current workflow run stops. */
   async cancel(workspaceId: string, projectRunId: string): Promise<ProjectRun> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "cancel", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, projectRunId)
     this.runner.cancel(projectRunId)
     return this.mustGet(workspaceId, projectRunId)
   }
 
   async get(workspaceId: string, projectRunId: string): Promise<ProjectRun> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.mustGet(workspaceId, projectRunId)
   }
 
   async list(workspaceId: string, projectId: string): Promise<{ items: readonly ProjectRun[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_RUNS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGetProject(workspaceId, projectId)
     const items = this.projectRuns.listByProject(projectId)
     return { items, total: items.length }

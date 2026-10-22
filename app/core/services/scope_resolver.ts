@@ -1,4 +1,4 @@
-import type { ScopeRef } from "../auth/PermissionProvider"
+import { NotFoundError } from "../ipc/errors"
 
 /**
  * Stable id of the single synthetic local owner (mirrors the backend's
@@ -8,13 +8,21 @@ import type { ScopeRef } from "../auth/PermissionProvider"
 export const LOCAL_OWNER_ID = "usr-single-user-owner"
 
 /**
+ * Scope reference — what the service is operating on. The `scopeType` +
+ * `scopeId` pair mirrors the Python `scope_resolver.py` contract.
+ */
+export interface ScopeRef {
+  readonly scopeType: "user" | "workspace" | "environment"
+  readonly scopeId: string
+}
+
+/**
  * Result of binding a `{ scopeType, scopeId }` pair to the local owner.
  *
  * Existence-hiding contract (ported from `backend/app/services/scope_resolver.py`):
  * a scope the caller can't see returns `not_found` — NEVER `denied`/`forbidden`.
- * `denied` is reserved for the rare "you can see it but can't touch it" path,
- * decided later by the `PermissionProvider`, not here. Leaking `denied` for a
- * non-existent scope would confirm its existence to an enumerator.
+ * Leaking `denied` for a non-existent scope would confirm its existence to an
+ * enumerator.
  */
 export type ScopeResolution =
   | { readonly ok: true; readonly scope: ScopeRef }
@@ -35,9 +43,7 @@ export interface ScopeExistence {
  *
  * The multi-tenant membership graph (org/team/outside-collaborator lookups in
  * the Python source) collapses here to a single owner: seeing a scope means
- * the scope exists. Action-level permission (`allow`/`denied`) is a separate
- * decision made by the `PermissionProvider` (LocalOwnerProvider = always-allow)
- * only after `resolve(...)` confirms visibility.
+ * the scope exists.
  */
 export class ScopeResolver {
   constructor(private readonly existence: ScopeExistence) {}
@@ -57,5 +63,16 @@ export class ScopeResolver {
           ? { ok: true, scope }
           : { ok: false, code: "not_found" }
     }
+  }
+
+  /**
+   * The gate every workspace-scoped service operation runs before touching a
+   * repository. Throws `NotFoundError` for a workspace that does not exist, so
+   * the router answers `not_found` rather than letting the write reach SQLite
+   * and fail on a foreign key.
+   */
+  async assertWorkspaceVisible(workspaceId: string): Promise<void> {
+    const resolution = await this.resolve({ scopeType: "workspace", scopeId: workspaceId })
+    if (!resolution.ok) throw new NotFoundError(`workspace ${workspaceId} not found`)
   }
 }

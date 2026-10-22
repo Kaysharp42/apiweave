@@ -16,7 +16,6 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
-import { AuthProvider } from "./auth/AuthProvider";
 import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
@@ -132,7 +131,7 @@ function DefaultWorkspaceRedirect() {
 }
 
 /**
- * Auth and the workspace list for every signed-in route, mounted once above the
+ * The workspace list for every app route, mounted once above the
  * router's outlet instead of once per route element.
  *
  * A pathless layout route, deliberately. When each route built its own
@@ -144,7 +143,7 @@ function DefaultWorkspaceRedirect() {
  * these instances mounted across those navigations and swaps only what
  * `<Outlet />` renders.
  */
-function AuthedRoutes() {
+function WorkspaceRoutes() {
   return (
     <WorkspaceProvider>
       <Outlet />
@@ -154,7 +153,7 @@ function AuthedRoutes() {
 
 /**
  * The app chrome — header, nav rail, sidebar, agent pane, footer — for the
- * routes that show it, nested inside `AuthedRoutes` so the providers above it
+ * routes that show it, nested inside `WorkspaceRoutes` so the providers above it
  * persist too. See the note there for why this is a layout route rather than a
  * wrapper each route renders for itself.
  */
@@ -287,124 +286,122 @@ function App() {
   return (
     <AppContext.Provider value={appContextValue}>
       <PaletteProvider>
-        <AuthProvider>
-          <HashRouter>
-            <Routes>
-              <Route path="/" element={<Navigate to="/app" replace />} />
+        <HashRouter>
+          <Routes>
+            <Route path="/" element={<Navigate to="/app" replace />} />
 
-              {/* Every signed-in route shares one auth + workspace parent, so
-                  moving between them never remounts the providers. */}
-              <Route element={<AuthedRoutes />}>
-                <Route path="/app" element={<DefaultWorkspaceRedirect />} />
+            {/* Every app route shares one workspace parent, so
+                moving between them never remounts the providers. */}
+            <Route element={<WorkspaceRoutes />}>
+              <Route path="/app" element={<DefaultWorkspaceRedirect />} />
 
-                {/* Slug-based workspace routes. Redirects only, kept outside
-                    the shell so they never paint an empty one on the way
-                    through. */}
+              {/* Slug-based workspace routes. Redirects only, kept outside
+                  the shell so they never paint an empty one on the way
+                  through. */}
+              <Route
+                path="/:orgSlug/personal"
+                element={<Navigate to="workflows" replace />}
+              />
+              <Route
+                path="/:orgSlug/:workspaceSlug"
+                element={<Navigate to="workflows" replace />}
+              />
+
+              {/* Everything that shows the app chrome. One shell element for
+                  all of them is what keeps a hop between the canvas and
+                  Settings from rebuilding the app. */}
+              <Route element={<AppShellRoutes />}>
+                {/* These match the shell and put nothing over the canvas
+                    it already holds — see `CanvasRoute`. */}
                 <Route
-                  path="/:orgSlug/personal"
-                  element={<Navigate to="workflows" replace />}
+                  path="/:workspaceSlug/workflows"
+                  element={<CanvasRoute />}
                 />
                 <Route
-                  path="/:orgSlug/:workspaceSlug"
-                  element={<Navigate to="workflows" replace />}
+                  path="/:workspaceSlug/workflows/:workflowId"
+                  element={<CanvasRoute />}
+                />
+                <Route
+                  path="/:workspaceSlug/tutorials"
+                  element={
+                    <WorkspacePageRoute navState="workflows">
+                      <TutorialPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:workspaceSlug/tutorials/:lessonId"
+                  element={
+                    <WorkspacePageRoute navState="workflows">
+                      <TutorialPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/workflows"
+                  element={<CanvasRoute />}
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/tutorials"
+                  element={
+                    <WorkspacePageRoute navState="workflows">
+                      <TutorialPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/tutorials/:lessonId"
+                  element={
+                    <WorkspacePageRoute navState="workflows">
+                      <TutorialPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
+                  element={<CanvasRoute />}
                 />
 
-                {/* Everything that shows the app chrome. One shell element for
-                    all of them is what keeps a hop between the canvas and
-                    Settings from rebuilding the app. */}
-                <Route element={<AppShellRoutes />}>
-                  {/* These match the shell and put nothing over the canvas
-                      it already holds — see `CanvasRoute`. */}
-                  <Route
-                    path="/:workspaceSlug/workflows"
-                    element={<CanvasRoute />}
-                  />
-                  <Route
-                    path="/:workspaceSlug/workflows/:workflowId"
-                    element={<CanvasRoute />}
-                  />
-                  <Route
-                    path="/:workspaceSlug/tutorials"
-                    element={
-                      <WorkspacePageRoute navState="workflows">
-                        <TutorialPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:workspaceSlug/tutorials/:lessonId"
-                    element={
-                      <WorkspacePageRoute navState="workflows">
-                        <TutorialPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/workflows"
-                    element={<CanvasRoute />}
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/tutorials"
-                    element={
-                      <WorkspacePageRoute navState="workflows">
-                        <TutorialPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/tutorials/:lessonId"
-                    element={
-                      <WorkspacePageRoute navState="workflows">
-                        <TutorialPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/workflows/:workflowId"
-                    element={<CanvasRoute />}
-                  />
-
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/settings/environments"
-                    element={
-                      <WorkspacePageRoute>
-                        <WorkspaceEnvironmentsPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/settings/secrets"
-                    element={
-                      <WorkspacePageRoute>
-                        <WorkspaceSecretsPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  {/* The app-scoped settings — one page each, matched after the
-                      two static workspace-scoped paths above. */}
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/settings/:section"
-                    element={
-                      <WorkspacePageRoute>
-                        <AppSettingsPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                  <Route
-                    path="/:orgSlug/:workspaceSlug/projects/:projectId"
-                    element={
-                      <WorkspacePageRoute navState="projects">
-                        <WorkspaceProjectPage />
-                      </WorkspacePageRoute>
-                    }
-                  />
-                </Route>
-
-                <Route path="/*" element={<NotFoundPage />} />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/environments"
+                  element={
+                    <WorkspacePageRoute>
+                      <WorkspaceEnvironmentsPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/secrets"
+                  element={
+                    <WorkspacePageRoute>
+                      <WorkspaceSecretsPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                {/* The app-scoped settings — one page each, matched after the
+                    two static workspace-scoped paths above. */}
+                <Route
+                  path="/:orgSlug/:workspaceSlug/settings/:section"
+                  element={
+                    <WorkspacePageRoute>
+                      <AppSettingsPage />
+                    </WorkspacePageRoute>
+                  }
+                />
+                <Route
+                  path="/:orgSlug/:workspaceSlug/projects/:projectId"
+                  element={
+                    <WorkspacePageRoute navState="projects">
+                      <WorkspaceProjectPage />
+                    </WorkspacePageRoute>
+                  }
+                />
               </Route>
-            </Routes>
-          </HashRouter>
-        </AuthProvider>
+
+              <Route path="/*" element={<NotFoundPage />} />
+            </Route>
+          </Routes>
+        </HashRouter>
         <Toast />
       </PaletteProvider>
     </AppContext.Provider>

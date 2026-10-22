@@ -4,7 +4,6 @@ import type {
   EnvironmentRepository,
   WorkflowRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ImportService } from "../import_service"
 import { SafeHttp } from "../../runner/safe_http"
@@ -95,7 +94,6 @@ beforeEach(() => {
     noRepo,
     noRepo,
     noRepo,
-    new LocalOwnerProvider(),
     new ScopeResolver({ workspaceExists: () => true, environmentExists: () => true }),
     safeHttp,
   )

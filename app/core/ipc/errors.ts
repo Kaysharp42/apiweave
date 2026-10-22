@@ -38,10 +38,3 @@ export class ConflictError extends AppError {
     super("conflict", message, details)
   }
 }
-
-/** Was HTTP 403 — rare in single-user, kept for the future cloud/teams seam. */
-export class DeniedError extends AppError {
-  constructor(message: string, details?: unknown) {
-    super("denied", message, details)
-  }
-}

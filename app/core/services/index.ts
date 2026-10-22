@@ -1,6 +1,5 @@
 export { ScopeResolver, LOCAL_OWNER_ID } from "./scope_resolver"
 export type { ScopeResolution, ScopeExistence } from "./scope_resolver"
-export { authorizeWorkspace } from "./authorize"
 export { AgentService } from "./agent_service"
 export type { AgentEnvironment } from "./agent_service"
 export { WorkflowService, mergeGraphPatch, graphTopologyChanged } from "./workflow_service"

@@ -3,10 +3,7 @@ import type { NodePreset } from "@shared/types/NodePreset"
 import { nodePresetConfigSchemaFor } from "@shared/zod-schemas/NodePresetSchema"
 import type { NodePresetCreate, NodePresetRepository, NodePresetUpdate } from "../repositories"
 import { canonicalizeNodeConfig } from "../repositories/helpers"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_NODE_PRESETS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -16,23 +13,22 @@ import type { ScopeResolver } from "./scope_resolver"
 export class NodePresetService {
   constructor(
     private readonly presets: NodePresetRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
   ) {}
 
   async create(workspaceId: string, input: Omit<NodePresetCreate, "workspaceId">): Promise<NodePreset> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_NODE_PRESETS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const config = this.canonicalConfig(input.nodeType, input.config ?? {})
     return this.presets.create({ ...input, workspaceId, config })
   }
 
   async list(workspaceId: string): Promise<{ items: readonly NodePreset[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_NODE_PRESETS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.presets.listByWorkspace(workspaceId)
   }
 
   async update(workspaceId: string, presetId: string, patch: NodePresetUpdate): Promise<NodePreset> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_NODE_PRESETS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const existing = this.mustGet(workspaceId, presetId)
     // The config must be legal for the node type it will have AFTER the patch,
     // so a nodeType-only patch can't strand an incompatible config on the row.
@@ -47,7 +43,7 @@ export class NodePresetService {
   }
 
   async delete(workspaceId: string, presetId: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_NODE_PRESETS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, presetId)
     this.presets.delete(presetId)
   }

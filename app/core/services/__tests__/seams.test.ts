@@ -7,7 +7,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { CollectionService } from "../collection_service"
 import { ProjectExportService } from "../project_export_service"
@@ -18,7 +17,6 @@ let workflows: WorkflowRepository
 let environments: EnvironmentRepository
 let collections: CollectionRepository
 let scopeResolver: ScopeResolver
-const permissions = new LocalOwnerProvider()
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -44,7 +42,7 @@ function seedWorkspace(slug: string): string {
 describe("Project === Collection alias (QA: task-7-seams)", () => {
   it("collectionId serves as projectId when no explicit projectId is set", async () => {
     const ws = seedWorkspace("proj-alias")
-    const collectionService = new CollectionService(collections, workflows, permissions, scopeResolver)
+    const collectionService = new CollectionService(collections, workflows, scopeResolver)
 
     const collection = await collectionService.create(ws, { name: "My Project" })
 
@@ -57,7 +55,6 @@ describe("Project === Collection alias (QA: task-7-seams)", () => {
       collections,
       workflows,
       environments,
-      permissions,
       scopeResolver,
       undefined,
       () => "2026-01-01T00:00:00.000Z",
@@ -99,7 +96,6 @@ describe("Export excludes secret plaintext (QA: task-7-secret-boundary)", () => 
       collections,
       workflows,
       environments,
-      permissions,
       scopeResolver,
       undefined,
       () => "2026-01-01T00:00:00.000Z",

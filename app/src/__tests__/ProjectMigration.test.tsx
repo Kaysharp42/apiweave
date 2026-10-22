@@ -30,7 +30,6 @@ const mockScope = vi.hoisted(
     workspaceSlug: "personal",
     orgId: null,
     orgSlug: null,
-    userId: "user-1",
     isReady: true,
   }),
 );

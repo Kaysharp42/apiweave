@@ -141,7 +141,6 @@ function scopeContext(
     workspaceSlug: workspaceId ? "personal" : null,
     orgId: null,
     orgSlug: null,
-    userId: "user-1",
     isReady,
   };
 }

@@ -26,13 +26,10 @@ import {
   sealSearchCursor,
   type NodeSearchRequest,
 } from "./workflow_reads"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
 import { canonicalizeNodeConfig } from "../repositories/helpers"
-import { RESOURCE_WORKFLOWS } from "../auth/permissions"
-import { authorizeWorkspace } from "./authorize"
 import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
@@ -237,14 +234,13 @@ function mergeById<T>(
 export class WorkflowService {
   constructor(
     private readonly workflows: WorkflowRepository,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly collections?: CollectionRepository,
     private readonly environments?: EnvironmentRepository,
   ) {}
 
   async create(workspaceId: string, input: Omit<WorkflowCreate, "workspaceId" | "workflowId">, options?: { readonly layout?: boolean }): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "create", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertCollectionInWorkspace(input.collectionId, workspaceId)
     this.assertEnvironmentInWorkspace(input.selectedEnvironmentId, workspaceId)
     this.assertCallWorkflowTargetsInWorkspace(input.nodes, workspaceId, undefined)
@@ -255,7 +251,7 @@ export class WorkflowService {
   }
 
   async get(workspaceId: string, workflowId: string): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.mustGet(workspaceId, workflowId)
   }
 
@@ -263,7 +259,7 @@ export class WorkflowService {
     workspaceId: string,
     includeAttached = false,
   ): Promise<{ items: readonly Workflow[]; total: number }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return this.workflows.listByWorkspace(workspaceId, includeAttached)
   }
 
@@ -280,7 +276,7 @@ export class WorkflowService {
     limit: number,
     cursor: string | undefined,
   ): Promise<{ items: readonly WorkflowSummaryRow[]; nextCursor: string | null }> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const snapshot = this.workflows.summariesSnapshot(workspaceId, filters)
     const after = cursor === undefined
       ? undefined
@@ -308,25 +304,25 @@ export class WorkflowService {
     nodeLimit: number,
     nodeCursor: string | undefined,
   ): Promise<WorkflowOutlineView> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return buildOutlineView(this.mustGet(workspaceId, workflowId), nodeLimit, nodeCursor)
   }
 
   /** Full configs for a small node set plus incident edges and boundary identities. */
   async getNodesView(workspaceId: string, workflowId: string, nodeIds: readonly string[]): Promise<WorkflowNodesView> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return buildNodesView(this.mustGet(workspaceId, workflowId), nodeIds)
   }
 
   /** Locate nodes by safe fields only — never bodies, headers, auth or values. */
   async searchNodes(workspaceId: string, workflowId: string, request: NodeSearchRequest): Promise<NodeSearchPage> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return searchWorkflowNodes(this.mustGet(workspaceId, workflowId), request)
   }
 
   /** `searchNodes` across every workflow of the workspace, project-attached ones included. */
   async searchWorkspaceNodes(workspaceId: string, query: string, limit: number): Promise<WorkspaceNodeSearchPage> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     return searchWorkspaceNodes(this.workflows.listByWorkspace(workspaceId, true).items, query, limit)
   }
 
@@ -343,7 +339,7 @@ export class WorkflowService {
     patch: WorkflowUpdate,
     options?: { readonly layout?: boolean; readonly expectedRevision?: number; readonly source?: WorkflowWriteSource },
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const existing = this.mustGet(workspaceId, workflowId)
     assertRevision(existing, options?.expectedRevision)
     if ("collectionId" in patch) this.assertCollectionInWorkspace(patch.collectionId ?? null, workspaceId)
@@ -382,7 +378,7 @@ export class WorkflowService {
     patch: WorkflowGraphPatch,
     source: WorkflowWriteSource = "canvas",
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const existing = this.mustGet(workspaceId, workflowId)
     assertRevision(existing, patch.expectedRevision)
 
@@ -417,7 +413,7 @@ export class WorkflowService {
     rules: readonly AssertionItem[],
     source: WorkflowWriteSource = "canvas",
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const existing = this.mustGet(workspaceId, workflowId)
     if (existing.rev !== expectedRevision) {
       throw new ConflictError("workflow revision is stale", {
@@ -450,14 +446,14 @@ export class WorkflowService {
 
   /** A workflow's earlier versions, newest first, without their content. */
   async listRevisions(workspaceId: string, workflowId: string): Promise<readonly WorkflowRevisionSummary[]> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, workflowId)
     return this.workflows.revisions.list(workflowId)
   }
 
   /** One earlier version of a workflow, with the content restoring it would write back. */
   async getRevision(workspaceId: string, workflowId: string, revisionId: string): Promise<WorkflowRevision> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "read", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, workflowId)
     const revision = this.workflows.revisions.get(workflowId, revisionId)
     if (revision === undefined) throw new NotFoundError(`revision ${revisionId} not found`)
@@ -478,7 +474,7 @@ export class WorkflowService {
     revisionId: string,
     expectedRevision: number,
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     assertRevision(this.mustGet(workspaceId, workflowId), expectedRevision)
     const revision = this.workflows.revisions.get(workflowId, revisionId)
     if (revision === undefined) throw new NotFoundError(`revision ${revisionId} not found`)
@@ -487,7 +483,7 @@ export class WorkflowService {
   }
 
   async delete(workspaceId: string, workflowId: string): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "delete", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, workflowId)
     this.workflows.delete(workflowId)
   }
@@ -498,7 +494,7 @@ export class WorkflowService {
     workflowId: string,
     collectionId: string | null,
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, workflowId)
     this.assertCollectionInWorkspace(collectionId, workspaceId)
     const updated = this.workflows.update(workflowId, { collectionId })
@@ -526,8 +522,8 @@ export class WorkflowService {
     targetWorkspaceId: string,
     targetCollectionId: string | null,
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
-    await authorizeWorkspace(this.scopeResolver, this.permissions, targetWorkspaceId, "create", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    await this.scopeResolver.assertWorkspaceVisible(targetWorkspaceId)
     const existing = this.mustGet(workspaceId, workflowId)
     if (targetWorkspaceId === workspaceId) {
       throw new ValidationError("workflow is already in this workspace")
@@ -552,7 +548,7 @@ export class WorkflowService {
     workflowId: string,
     environmentId: string | null,
   ): Promise<Workflow> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, "update", RESOURCE_WORKFLOWS)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.mustGet(workspaceId, workflowId)
     this.assertEnvironmentInWorkspace(environmentId, workspaceId)
     const updated = this.workflows.update(workflowId, { selectedEnvironmentId: environmentId })

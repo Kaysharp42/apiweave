@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto"
-import type { PermissionProvider } from "../auth/PermissionProvider"
 import { NotFoundError, ValidationError } from "../ipc/errors"
-import { RESOURCE_SECRETS } from "../auth/permissions"
 import {
   ScopedSecretResolver,
   type ResolvedSecret,
@@ -11,7 +9,6 @@ import {
 } from "../secrets/scoped_secret_resolver"
 import { ALGORITHM, openSealedBox, publicKeyFromSeed, seal } from "../secrets/sealed_box"
 import type { SecretWriteStore, SecretUpsert } from "../secrets/SecretStore"
-import { authorizeWorkspace } from "./authorize"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
@@ -66,7 +63,6 @@ export class SecretService {
 
   constructor(
     private readonly store: SecretWriteStore,
-    private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly environments: EnvironmentOwnershipLookup,
     masterKek: Uint8Array,
@@ -76,20 +72,12 @@ export class SecretService {
   }
 
   /**
-   * Reject scope IDs that don't belong to the caller's authorized workspace.
-   * `authorizeWorkspace` only checks the outer `workspaceId` param — every
+   * Reject scope IDs that don't belong to the caller's workspace.
+   * `assertWorkspaceVisible` only checks the outer `workspaceId` param — every
    * scopeId/chain entry passed alongside it must be bound here, or a caller
-   * authorized for one workspace can read/write another's secret metadata by
-   * naming a foreign scopeId.
+   * naming one workspace can read/write another's secret metadata by naming a
+   * foreign scopeId.
    */
-  /**
-   * The two-step gate every entry point here runs first, narrowed to this
-   * service's resource so call sites name only the action.
-   */
-  private async authorize(workspaceId: string, action: "read" | "create" | "update" | "delete"): Promise<void> {
-    await authorizeWorkspace(this.scopeResolver, this.permissions, workspaceId, action, RESOURCE_SECRETS)
-  }
-
   private assertScopeInWorkspace(scopeType: SecretScopeType, scopeId: string, workspaceId: string): void {
     if (scopeType === "workspace") {
       if (scopeId !== workspaceId) throw new NotFoundError(`workspace ${scopeId} not found`)
@@ -106,7 +94,7 @@ export class SecretService {
     scopeType: SecretScopeType,
     scopeId: string,
   ): Promise<SecretPublicKey> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const keyId = scopeKeyId(scopeType, scopeId)
     const publicKey = await publicKeyFromSeed(this.sealedBoxSeed)
     return { keyId, publicKey: Buffer.from(publicKey).toString("base64"), algorithm: ALGORITHM }
@@ -114,7 +102,7 @@ export class SecretService {
 
   /** Store (or overwrite) a sealed secret under `workspaceId`. Returns metadata only. */
   async set(workspaceId: string, input: Omit<SecretUpsert, "workspaceId">): Promise<SecretMetadata> {
-    await this.authorize(workspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     return this.store.put({ ...input, workspaceId })
   }
@@ -128,7 +116,7 @@ export class SecretService {
     workspaceId: string,
     input: { readonly scopeType: SecretScopeType; readonly scopeId: string; readonly name: string; readonly value: string; readonly label?: string },
   ): Promise<SecretMetadata> {
-    await this.authorize(workspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(input.scopeType, input.scopeId, workspaceId)
     const sealed = await seal(input.value, await publicKeyFromSeed(this.sealedBoxSeed))
     return this.store.put({
@@ -148,7 +136,7 @@ export class SecretService {
     scopeType: SecretScopeType,
     scopeId: string,
   ): Promise<readonly SecretMetadata[]> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
     return this.store.listByScope(scopeType, scopeId)
   }
@@ -160,7 +148,7 @@ export class SecretService {
     scopeId: string,
     name: string,
   ): Promise<void> {
-    await this.authorize(workspaceId, "delete")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
     if (!(await this.store.remove(scopeType, scopeId, name))) {
       throw new NotFoundError(`secret ${name} not found`)
@@ -178,8 +166,7 @@ export class SecretService {
    *
    * Contrast `EnvironmentService.duplicate`, which deliberately leaves secrets
    * behind: there the copy is incidental, here moving the value IS the request.
-   * Both ends are authorized, so this cannot reach a workspace the caller has no
-   * create right on.
+   * Both ends are checked, so this cannot reach a workspace that does not exist.
    */
   async duplicate(
     workspaceId: string,
@@ -188,13 +175,13 @@ export class SecretService {
     name: string,
     target: SecretScopeTarget,
   ): Promise<SecretMetadata> {
-    return this.copyAcross(workspaceId, scopeType, scopeId, name, target, "read", false)
+    return this.copyAcross(workspaceId, scopeType, scopeId, name, target, false)
   }
 
   /**
    * Move a secret into another scope: the copy, then the source row.
    */
-  // fallow-ignore-next-line code-duplication -- the public API is deliberately two same-shaped entry points (copy vs move) over one pipeline; the only difference is the source-scope action and whether the source row is removed, and the parallel shape is the contract callers see
+  // fallow-ignore-next-line code-duplication -- the public API is deliberately two same-shaped entry points (copy vs move) over one pipeline; the only difference is whether the source row is removed, and the parallel shape is the contract callers see
   async moveToScope(
     workspaceId: string,
     scopeType: SecretScopeType,
@@ -202,13 +189,12 @@ export class SecretService {
     name: string,
     target: SecretScopeTarget,
   ): Promise<SecretMetadata> {
-    return this.copyAcross(workspaceId, scopeType, scopeId, name, target, "delete", true)
+    return this.copyAcross(workspaceId, scopeType, scopeId, name, target, true)
   }
 
   /**
-   * The one copy pipeline `duplicate` and `moveToScope` differ on: the action
-   * the caller needs on the SOURCE scope (a copy reads it, a move deletes from
-   * it), and whether the source row is removed at the end.
+   * The one copy pipeline `duplicate` and `moveToScope` share; they differ only
+   * on whether the source row is removed at the end.
    *
    * Copy-then-remove, never remove-then-copy. A failure between the two leaves
    * the secret in both scopes, which the user can see and clean up; the other
@@ -220,10 +206,9 @@ export class SecretService {
     scopeId: string,
     name: string,
     target: SecretScopeTarget,
-    sourceAction: "read" | "delete",
     removeSource: boolean,
   ): Promise<SecretMetadata> {
-    await this.authorize(workspaceId, sourceAction)
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     const created = await this.copyInto(workspaceId, scopeType, scopeId, name, target)
     if (removeSource) {
       await this.store.remove(scopeType, scopeId, name)
@@ -238,7 +223,7 @@ export class SecretService {
     name: string,
     target: SecretScopeTarget,
   ): Promise<SecretMetadata> {
-    await this.authorize(target.workspaceId, "create")
+    await this.scopeResolver.assertWorkspaceVisible(target.workspaceId)
     this.assertScopeInWorkspace(scopeType, scopeId, workspaceId)
     this.assertScopeInWorkspace(target.scopeType, target.scopeId, target.workspaceId)
 
@@ -277,7 +262,7 @@ export class SecretService {
     chain: SecretScopeChain,
     name: string,
   ): Promise<ResolvedSecret | null> {
-    await this.authorize(workspaceId, "read")
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (chain.workspaceId !== undefined) this.assertScopeInWorkspace("workspace", chain.workspaceId, workspaceId)
     if (chain.environmentId !== undefined) this.assertScopeInWorkspace("environment", chain.environmentId, workspaceId)
     return this.resolver.resolve(chain, name)
