@@ -4,6 +4,7 @@ export type GitSyncKind =
   | "pending"
   | "syncing"
   | "incoming"
+  | "merging"
   | "diverged"
   | "read-only"
   | "error";

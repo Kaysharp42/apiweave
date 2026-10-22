@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- this is a registration table of parallel one-line `handleWorkspace(...)` calls; each channel's handler has its own signature, so a loop would lose the per-channel typing, and `handleWorkspace` already owns the sender guard.
 import { mkdirSync } from "node:fs"
 import path from "node:path"
 import type { IpcMain, IpcMainInvokeEvent } from "electron"
@@ -68,6 +69,18 @@ function commitRequestOf(value: unknown): WorkspaceGitCommitRequest {
 
 const RemoteUrlSchema = z.string().min(1, "a remote URL is required").max(2048, "a remote URL is at most 2048 characters")
 
+const MergePickSchema = z
+  .object({
+    // A file conflict names its path, which may run to 4096 characters.
+    recordId: z.string().min(1).max(4096),
+    path: z.string().max(4096),
+    side: z.enum(["ours", "theirs"]),
+  })
+  .strict()
+
+/** A resolution's picks, checked: each names one record or file (by id or path), one path in it, and which copy settles it. */
+const MergePicksSchema = z.array(MergePickSchema).max(10_000)
+
 /** Track, resolving a missing author as the status that asks for one rather than as an error the renderer would have to read. */
 async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string): Promise<WorkspaceGitStatus> {
   try {
@@ -92,6 +105,14 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
   handleWorkspace(GIT_CHANNELS.track, (workspaceId) => trackOrAskForAuthor(gitSync, workspaceId))
   handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
+  handleWorkspace(GIT_CHANNELS.mergeConflicts, (workspaceId) => gitSync.mergeConflicts(workspaceId))
+  handleWorkspace(GIT_CHANNELS.abandonMerge, (workspaceId) => gitSync.abandonMerge(workspaceId))
+  ipcMain.handle(
+    GIT_CHANNELS.resolveMerge,
+    guard((workspaceId: unknown, picks: unknown, request: unknown) =>
+      gitSync.resolveMerge(workspaceIdOf(workspaceId), MergePicksSchema.parse(picks), commitRequestOf(request)),
+    ),
+  )
   handleWorkspace(GIT_CHANNELS.disconnectRemote, (workspaceId) => gitSync.disconnectRemote(workspaceId))
   handleWorkspace(GIT_CHANNELS.discardLocalChanges, (workspaceId) => gitSync.discardLocalChanges(workspaceId))
   ipcMain.handle(

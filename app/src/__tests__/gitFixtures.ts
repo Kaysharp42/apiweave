@@ -55,6 +55,9 @@ export function installGitBridge(
     setMode: vi.fn(async (_workspaceId, mode) => trackedStatus({ mode })),
     syncNow: vi.fn(async () => trackedStatus()),
     pendingChanges: vi.fn(async () => []),
+    mergeConflicts: vi.fn(async () => []),
+    resolveMerge: vi.fn(async () => trackedStatus()),
+    abandonMerge: vi.fn(async () => trackedStatus({ state: "diverged" })),
     connectRemote: vi.fn(async (_workspaceId, url) =>
       trackedStatus({ remoteUrl: url }),
     ),

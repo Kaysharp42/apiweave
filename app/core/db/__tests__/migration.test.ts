@@ -46,6 +46,8 @@ describe("database migrations", () => {
         "workflow_revisions",
         "workflows",
         "workspace_git",
+        "workspace_merge",
+        "workspace_merge_pick",
         "workspaces",
       ])
 
@@ -309,8 +311,10 @@ describe("database migrations", () => {
           ...before,
           workspaces: (before["workspaces"] ?? []).map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
           app_settings: (before["app_settings"] ?? []).filter((row) => !String(row["key"]).startsWith("cloud.")),
-          // Created after the fixture's version, so it starts empty.
+          // Created after the fixture's version, so they start empty.
           workspace_git: [],
+          workspace_merge: [],
+          workspace_merge_pick: [],
         })
       } finally {
         upgraded.close()
@@ -379,12 +383,22 @@ describe("database migrations", () => {
         "agent_sessions",
         "agent_run_approvals",
         "workspace_git",
+        "workspace_merge",
+        "workspace_merge_pick",
       ]
       expect(new Set([...cascaded, "workspaces", "agent_local_paths", "app_settings"])).toEqual(CONTENT_TABLES)
       const { upgraded, before } = upgradeCloudFixture()
       try {
-        // The fixture predates workspace_git, so the row it must cascade is written here.
+        // The fixture predates the git tables, so the rows they must cascade are written here.
         upgraded.kvStore.set("INSERT INTO workspace_git (workspace_id) VALUES (?)", ["ws-cloud"])
+        upgraded.kvStore.set(
+          "INSERT INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES (?, ?, ?, ?)",
+          ["ws-cloud", "base", "ours", "theirs"],
+        )
+        upgraded.kvStore.set(
+          "INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)",
+          ["ws-cloud", "base", "wf", "name", "ours"],
+        )
         upgraded.kvStore.delete("DELETE FROM workspaces WHERE id = ?", ["ws-cloud"])
         const afterDelete = contentRows(upgraded)
         for (const table of cascaded) {

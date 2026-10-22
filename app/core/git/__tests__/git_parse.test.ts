@@ -6,6 +6,7 @@ import {
   parseLog,
   parseStatus,
   parseTreeEntries,
+  parseTreeListings,
   parseVersion,
 } from "../git_parse"
 
@@ -158,6 +159,30 @@ describe("parseTreeEntries", () => {
   it("refuses output that is not tree entries", () => {
     expect(parseTreeEntries("fatal: not a tree object\0")).toBeUndefined()
     expect(parseTreeEntries(`100644 blob ${oid} no-tab\0`)).toBeUndefined()
+  })
+})
+
+describe("parseTreeListings", () => {
+  const oid = "a".repeat(40)
+
+  it("lists every entry with its mode, type and size, a link and a submodule included", () => {
+    const output = [
+      `100644 blob ${oid}      12\tworkflows/a b.json`,
+      `100755 blob ${oid}       3\trun.sh`,
+      `120000 blob ${oid}       9\tdocs/link`,
+      `160000 commit ${oid}       -\tvendor/lib`,
+      "",
+    ].join("\0")
+    expect(parseTreeListings(output)).toEqual([
+      { path: "workflows/a b.json", oid, mode: "100644", type: "blob", size: 12 },
+      { path: "run.sh", oid, mode: "100755", type: "blob", size: 3 },
+      { path: "docs/link", oid, mode: "120000", type: "blob", size: 9 },
+      { path: "vendor/lib", oid, mode: "160000", type: "commit", size: 0 },
+    ])
+  })
+
+  it("refuses output that is not a listing", () => {
+    expect(parseTreeListings(`100644 blob ${oid}\tno-size\0`)).toBeUndefined()
   })
 })
 

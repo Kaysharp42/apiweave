@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- a pure types module: its interfaces are runs of `readonly field: type` lines by nature, and the run shared with an unrelated repository interface is suffix-array coincidence, not behaviour to extract.
 import type { GitIdentity } from "@shared/types/GitIdentity"
 
 export type GitCommand =
@@ -16,6 +17,7 @@ export type GitCommand =
   | "remote"
   | "mergeAbort"
   | "mergeFastForward"
+  | "mergeNoCommit"
   | "resetHard"
   | "revList"
   | "log"
@@ -63,6 +65,38 @@ export interface GitStatus {
 export interface GitTreeEntry {
   readonly path: string
   readonly oid: string
+}
+
+/**
+ * One entry of a recursive `ls-tree -l`, whatever it is: a file, a symbolic
+ * link or a submodule's commit, told apart by `mode` and `type`, with the size
+ * git reports for a blob — so a reader can refuse what is not a plain file, and
+ * an oversized tree, before reading it.
+ */
+export interface GitTreeListing extends GitTreeEntry {
+  /** `100644` or `100755` for a file, `120000` for a symbolic link, `160000` for a submodule. */
+  readonly mode: string
+  /** `blob`, or `commit` for a submodule. */
+  readonly type: string
+  /** Zero for what is not a blob, which git gives no size. */
+  readonly size: number
+}
+
+/** A commit's tree as a merge reads it: every plain file's text, and what is not a plain file as the entry git lists, never read. */
+export interface GitTreeContents {
+  readonly files: ReadonlyMap<string, string>
+  /** Symbolic links and submodules, by path. */
+  readonly otherEntries: ReadonlyMap<string, GitTreeListing>
+}
+
+/** The most a committed tree may hold before it is refused unread: the same caps the checkout walk enforces. */
+export interface GitTreeLimits {
+  /** At most this many files. */
+  readonly maxFiles: number
+  /** At most this many bytes in total. */
+  readonly maxTotalBytes: number
+  /** At most this many bytes in one file. */
+  readonly maxFileBytes: number
 }
 
 /** How two revisions stand apart: each side's commits the other does not reach. */

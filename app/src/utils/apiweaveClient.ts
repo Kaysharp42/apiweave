@@ -42,6 +42,8 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitBridge } from "@shared/types/GitBridge";
+import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
+import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
@@ -1238,6 +1240,21 @@ export const git = {
     workspaceId: string,
   ): Promise<readonly WorkspacePendingChange[]> =>
     getGitBridge()?.pendingChanges(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergeConflicts: (
+    workspaceId: string,
+  ): Promise<readonly GitMergeConflict[]> =>
+    getGitBridge()?.mergeConflicts(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  resolveMerge: (
+    workspaceId: string,
+    picks: readonly GitMergePick[],
+    request?: WorkspaceGitCommitRequest,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.resolveMerge(workspaceId, picks, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  abandonMerge: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.abandonMerge(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   connectRemote: (
     workspaceId: string,

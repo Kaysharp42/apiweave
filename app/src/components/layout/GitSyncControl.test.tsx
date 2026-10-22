@@ -302,7 +302,7 @@ describe("GitSyncControl", () => {
     renderControl();
 
     await user.click(await trigger("Diverged"));
-    expect(await screen.findByText(/Both this device and the remote changed.*later release/)).toBeInTheDocument();
+    expect(await screen.findByText(/Both this device and the remote changed.*merge was abandoned/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Discard local changes" }));
 
     const dialog = await screen.findByRole("dialog");
