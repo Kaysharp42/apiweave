@@ -14,9 +14,7 @@ const RANDOM_LEN = 16
  * randomness, 5 bits per char).
  *
  * Why ULID over UUIDv4: lexicographically sortable on time-of-birth, so
- * backends can stream stable client-generated ids without re-hashing. This
- * is baseline seam #1 of the refactor plan ("Architecture Baseline for
- * Future Cloud Sync + Teams + Real-Time").
+ * backends can stream stable client-generated ids without re-hashing.
  *
  * The `now` parameter is exposed for tests that need deterministic time
  * prefixes; production callers omit it.

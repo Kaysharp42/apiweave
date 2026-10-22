@@ -1,8 +1,8 @@
 # Roadmap
 
 This roadmap is subject to change. The current product is the local-first
-Electron desktop app; optional APIWeave Cloud sync and collaboration run as a
-separate Cloud control plane. Priorities shift based on user feedback.
+Electron desktop app, with git sync of a workspace coming (see [Later](#later)).
+Priorities shift based on user feedback.
 
 ## Shipped
 
@@ -10,27 +10,24 @@ The local-first desktop rewrite. Single Electron process: ReactFlow canvas,
 eight node types, workflow variables and extractors, projects with `.awecollection`
 export (references only), explicit per-run environment selection, the encrypted
 local secret store with `environment > workspace` scope chain, in-process runner,
-the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL import, optional APIWeave
-Cloud structure sync with desktop conflict resolution, and auto-update through
-the GitHub release channel. See the [Changelog](CHANGELOG.md) for the full
-current surface.
+the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL import, and auto-update
+through the GitHub release channel. See the [Changelog](CHANGELOG.md) for the
+full current surface.
 
 Reuse primitives (v0.6.0): a **Call Workflow** node that runs another workflow
 inline as one step, **environment inheritance** from a base environment for
 plain variables, and a workspace-scoped **node preset** library. All three are
-desktop-local for now — a preset never syncs, and an environment's base link is
-not yet part of the Cloud payload.
+desktop-local for now — a preset never syncs.
 
 Testing and observability (v0.7.x): **expected status** on HTTP Request nodes
 for negative tests, the **visualization and debugging** surface (run timeline,
-variable provenance, secret resolution confidence), the **run camera** that
-follows the active branch during runs, and sync **failure visibility** (dead-letter
-records and real rejection reasons).
+variable provenance, secret resolution confidence), and the **run camera** that
+follows the active branch during runs.
 
 Rerun and undo (1.0): **run from a node** and **rerun failed branches**, reusing
 the upstream results and variables of an earlier run, and **version history**
-for every workflow, restoring an earlier version after a bad save, agent edit,
-import or sync.
+for every workflow, restoring an earlier version after a bad save, agent edit
+or import.
 
 Teams and CI (1.0): **one-click project runs** with live progress, the headless
 **`apiweave run`** CLI with JUnit and HTML reports, **data-driven runs** from CSV
@@ -54,19 +51,20 @@ per-run cookie jar, and proxy, private CA and client-certificate support.
   webhook, no public port.
 - **Project templates.** Export a project as a reusable local template, with
   references only and no secret material.
-- **Cross-machine collaboration polish.** Sharing, roles, and conflict
-  workflows that build on the optional Cloud account and its Cloud Teams and
-  Cloud Workspaces.
+- **Git sync.** A workspace will be tracked by a local git repository, and every
+  change becomes a commit, so history is browsable with ordinary git tools and
+  `apiweave run` reads the repo. Remotes and sharing follow, with conflicts
+  resolved in the app — nothing hosted, nothing to sign in to.
 
 ## Out of scope
 
 The following were explored in earlier builds and are explicitly out of scope
-for the desktop app. They either contradict the local-first boundary or belong
-to the optional Cloud control plane rather than the desktop process:
+for the desktop app. They contradict the local-first boundary:
 
 - Webhooks or remote triggers. Runs start from the UI, the local MCP bridge
   or the `apiweave run` CLI in your own CI; local scheduling is planned (see Later).
-- Hosted execution or cloud-side run history. Cloud never builds or runs tests.
+- Hosted execution or server-side run history. APIWeave never builds or runs
+  your tests remotely.
 - Real-time canvas collaboration. The desktop canvas is single-user on the
   machine it runs on.
 - An append-only audit log, scoped service tokens, and environment protection

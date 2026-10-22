@@ -26,7 +26,6 @@ The IPC surface is grouped by resource. Every operation is a typed envelope with
 | Node presets | `nodePresets.*` | Workspace-scoped library of reusable node configurations (create, list, update, delete) |
 | Secrets | `secrets.*` | Metadata reads plus sealed-box writes for trusted renderer IPC |
 | Assertions | `assertions.*` | Suggest, validate, and apply assertion rules |
-| Cloud | `cloud.*` | Optional Cloud sync: status, link, bind, pull, push, conflict and dead-letter handling |
 
 The renderer never calls services directly. Every renderer call routes through a handler in `app/core/ipc/handlers/`, and the handler delegates to a service. The MCP bridge follows the same rule: every tool call maps to a handler, and the handler delegates to the same service.
 
@@ -42,14 +41,13 @@ The renderer never calls services directly. Every renderer call routes through a
 | Node presets | `app/core/ipc/handlers/node-presets.ts` | Create, list, update, delete; config canonicalised and validated per node type |
 | Secrets | `app/core/ipc/handlers/secrets.ts` | Metadata list/resolve, sealed-box set, delete, public key |
 | Assertions | `app/core/ipc/handlers/assertions.ts` | Suggest, validate, and apply assertion rules |
-| Cloud | `app/core/ipc/handlers/cloud.ts` | Status, link/cancel/unlink, workspace binding, push/pull, conflicts, dead letters |
 | Workspaces | `app/core/ipc/handlers/workspaces.ts` | List, get, create, update, delete |
 | Common | `app/core/ipc/handlers/common.ts` | Shared types, error shapes, helpers |
 | Index | `app/core/ipc/handlers/index.ts` | Registration entry point for `registerAllHandlers` |
 
 ## Common Patterns
 
-**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; work is organized into local workspaces, and cross-machine collaboration is handled by an optional APIWeave Cloud account, not by the local IPC surface. The MCP bridge uses a per-install bearer token that can be regenerated from Settings; see [MCP Integration](../features/mcp-integration.md).
+**Authentication.** There is no per-call auth between the renderer and the main process. The preload script is the only bridge: the renderer cannot call arbitrary Node.js APIs. The desktop app is single-user on this machine; work is organized into local workspaces. The MCP bridge uses a per-install bearer token that can be regenerated from Settings; see [MCP Integration](../features/mcp-integration.md).
 
 **Error format.** Every error returns a JSON shape: `{"error": {"code": "string", "message": "string", "details": {...}}}`. The IPC contract has four codes: `not_found`, `validation`, `conflict`, and `denied`. HTTP status codes appear only at the MCP transport boundary, where the HTTP server maps failures onto statuses such as 400, 401, 403, 404, 405, 413, and 503.
 

@@ -132,7 +132,7 @@ The runner resolves `{{secrets.NAME}}` through a fixed local chain. The first sc
 
 The chain lives entirely in the local SQLite database and the encrypted secret store. There are no other scopes. The chain is read-only: once written, a secret can be overwritten or deleted through the write flow, but never read back. The chain exists to let a workspace set a default and let a specific environment override it for one deployment.
 
-Secret values are never synced: when Cloud sync is in use, only secret references and structure travel, and secret values are rejected from sync payloads. Each machine keeps its own secrets, so a synced workflow resolves `{{secrets.NAME}}` against the store of the machine that runs it.
+Secret values stay on this machine: only the `{{secrets.NAME}}` reference is stored, never the value.
 
 ## Dynamic Functions
 

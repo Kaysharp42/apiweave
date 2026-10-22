@@ -140,10 +140,7 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 - `workspaces_update`
 - `workspaces_delete`
 
-`workspaces_delete` deletes local and personal workspaces, and with cloud sync
-linked the delete reaches the cloud copy too. It refuses (`denied`) a workspace
-bound to a shared cloud team, because that delete would remove the workspace
-for every member of the team.
+`workspaces_delete` deletes a workspace and the resources in it.
 
 ### Workflows
 

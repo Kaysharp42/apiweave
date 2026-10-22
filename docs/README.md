@@ -4,15 +4,15 @@
 
 ## What APIWeave Looks Like
 
-APIWeave is a local-first desktop app. There is no server to run, no cloud account to create, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
+APIWeave is a local-first desktop app. There is no server to run, no account to create, no deployment to plan. You download the installer, run it, and the app opens straight into the canvas. Everything — workflows, environments, secrets, run history — lives on your machine in a single SQLite database under your user data directory.
 
-Work is organized locally into **workspaces**: a personal workspace is created for you, and you can create more. No account is required, and everything stays on your computer by default.
+Work is organized locally into **workspaces**: a personal workspace is created for you, and you can create more. No account is required, and everything stays on your computer.
 
-Optional APIWeave Cloud sync and collaboration turn on when you sign in with an optional Cloud account. Cloud syncs test structure (workflows, environments, projects, and secret references) and lets multiple machines collaborate in shared **Cloud Workspaces**, which belong to a **Cloud Team** from the Cloud account; secret values and run history stay local and are rejected from sync payloads. Cloud never builds or runs tests — all execution stays on the desktop.
+Git sync is coming — see the [roadmap](../ROADMAP.md).
 
-There is no SSO and no webhook for local use. You run a workflow by clicking **Run** in the app, by having a local AI agent drive the app through the loopback MCP bridge, or from a CI pipeline with the headless [`apiweave run`](guides/ci.md) command. (Locally scheduled runs are on the roadmap.)
+There is no SSO and no webhook. You run a workflow by clicking **Run** in the app, by having a local AI agent drive the app through the loopback MCP bridge, or from a CI pipeline with the headless [`apiweave run`](guides/ci.md) command. (Locally scheduled runs are on the roadmap.)
 
-If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before. An optional Cloud account adds sync and collaboration across machines, but the desktop app is fully usable without it.
+If you have used an earlier web build of APIWeave, the things that changed are spelled out in the [changelog](../CHANGELOG.md). The short version: no login required, no hosted backend, no webhooks, no public ports. The canvas, the variables, the environments, the projects, the secret store, and the MCP integration are all the same shape they were before.
 
 ## Prerequisites
 
