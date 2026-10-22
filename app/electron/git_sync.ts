@@ -81,6 +81,10 @@ const MergePickSchema = z
 /** A resolution's picks, checked: each names one record or file (by id or path), one path in it, and which copy settles it. */
 const MergePicksSchema = z.array(MergePickSchema).max(10_000)
 
+const MergeRecordIdsSchema = z
+  .array(z.string().min(1, "a record id is required").max(4096))
+  .max(500, "at most 500 records are asked about at once")
+
 /** Track, resolving a missing author as the status that asks for one rather than as an error the renderer would have to read. */
 async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string): Promise<WorkspaceGitStatus> {
   try {
@@ -106,6 +110,13 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
   handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
   handleWorkspace(GIT_CHANNELS.mergeConflicts, (workspaceId) => gitSync.mergeConflicts(workspaceId))
+  handleWorkspace(GIT_CHANNELS.mergePicks, (workspaceId) => gitSync.mergePicks(workspaceId))
+  ipcMain.handle(
+    GIT_CHANNELS.mergeRecordCommits,
+    guard((workspaceId: unknown, recordIds: unknown) =>
+      gitSync.mergeRecordCommits(workspaceIdOf(workspaceId), MergeRecordIdsSchema.parse(recordIds)),
+    ),
+  )
   handleWorkspace(GIT_CHANNELS.abandonMerge, (workspaceId) => gitSync.abandonMerge(workspaceId))
   ipcMain.handle(
     GIT_CHANNELS.resolveMerge,

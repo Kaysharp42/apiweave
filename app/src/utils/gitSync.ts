@@ -14,6 +14,17 @@ const MERGING_EXPLANATION =
 const plural = (count: number, one: string, other: string): string =>
   `${count} ${count === 1 ? one : other}`;
 
+/**
+ * What the view's primary action is called: Review merge while conflicts wait,
+ * Retry when the last attempt got stuck, otherwise Sync now — Commit now when
+ * there is no remote to sync with.
+ */
+export function gitSyncPrimaryLabel(view: GitSyncView, connected: boolean): string {
+  if (view.kind === "merging") return "Review merge";
+  if (view.kind === "error" || view.kind === "read-only") return "Retry";
+  return connected ? "Sync now" : "Commit now";
+}
+
 /** What happens to edits that are waiting, which is the one thing the mode decides; manual mode's button is named for what it does. */
 function whenCommitted(status: WorkspaceGitStatus): string {
   if (status.mode === "auto") return "APIWeave commits them about 30 seconds after your last edit.";

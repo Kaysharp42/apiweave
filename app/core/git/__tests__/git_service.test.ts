@@ -244,6 +244,16 @@ describe("history", () => {
     expect((await sandbox.service.log(dir, { path: "b.json" })).map((entry) => entry.subject)).toEqual(["third"])
   })
 
+  it("takes a path literally, not as a glob", async () => {
+    const sandbox = makeSandbox()
+    const { dir } = await twoCommits(sandbox)
+
+    // A glob would match `a.json` and report the commit that touched it;
+    // taken literally, `*.json` names no file, so the answer is an empty
+    // history.
+    expect(await sandbox.service.log(dir, { path: "*.json" })).toEqual([])
+  })
+
   it("has an empty log before the first commit", async () => {
     const sandbox = makeSandbox()
     const dir = path.join(sandbox.root, "unborn")

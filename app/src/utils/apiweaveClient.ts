@@ -44,6 +44,7 @@ import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate"
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergePick } from "@shared/types/GitMergePick";
+import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
@@ -1245,6 +1246,17 @@ export const git = {
     workspaceId: string,
   ): Promise<readonly GitMergeConflict[]> =>
     getGitBridge()?.mergeConflicts(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergePicks: (
+    workspaceId: string,
+  ): Promise<readonly GitMergePick[]> =>
+    getGitBridge()?.mergePicks(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergeRecordCommits: (
+    workspaceId: string,
+    recordIds: readonly string[],
+  ): Promise<readonly MergeRecordCommits[]> =>
+    getGitBridge()?.mergeRecordCommits(workspaceId, recordIds).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   resolveMerge: (
     workspaceId: string,

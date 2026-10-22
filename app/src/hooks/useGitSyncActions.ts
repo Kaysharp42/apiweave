@@ -47,6 +47,7 @@ export function useGitSyncActions(
       if (status.mode === "manual" && status.uncommitted) setDialog("commit");
       else void run(() => git.syncNow(workspaceId));
     },
+    askToResolveMerge: () => setDialog("merge"),
     askToDiscard: () => setDialog("discard"),
     commit: (message) => {
       setDialog(null);
@@ -61,6 +62,7 @@ export function useGitSyncActions(
       setDialog(null);
       void run(() => git.discardLocalChanges(workspaceId));
     },
+    updateStatus: apply,
     closeDialog: () => setDialog(null),
   };
 }

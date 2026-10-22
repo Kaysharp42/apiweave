@@ -449,7 +449,11 @@ export class GitService {
     await this.run("resetHard", ["reset", "--hard", rev, "--"], repoDir)
   }
 
-  /** Newest first. An unborn branch has no history, not an error. */
+  /**
+   * Newest first. An unborn branch has no history, not an error. A path is
+   * taken literally, as every pathspec is (`GIT_LITERAL_PATHSPECS` in
+   * `gitEnvironment`): a conflict can name a file such as `*.json`.
+   */
   async log(repoDir: string, options: GitLogOptions = {}): Promise<GitLogEntry[]> {
     const rev = options.rev ?? "HEAD"
     assertRevision(rev)

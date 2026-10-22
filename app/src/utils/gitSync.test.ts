@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
-import { describeGitSync } from "./gitSync";
+import { describeGitSync, gitSyncPrimaryLabel } from "./gitSync";
 import { trackedStatus } from "../__tests__/gitFixtures";
 
 const kindOf = (overrides: Partial<WorkspaceGitStatus>) => describeGitSync(trackedStatus(overrides)).kind;
@@ -34,6 +34,17 @@ describe("describeGitSync", () => {
     ]) {
       expect(describeGitSync(status).explanation).not.toMatch(/\bsaved?\b|saves/i);
     }
+  });
+
+  it("names the primary action for the state", () => {
+    const label = (overrides: Partial<WorkspaceGitStatus>, connected = true) =>
+      gitSyncPrimaryLabel(describeGitSync(trackedStatus(overrides)), connected);
+
+    expect(label({ state: "merging" })).toBe("Review merge");
+    expect(label({ state: "error", lastError: { code: "timeout", message: "t" } })).toBe("Retry");
+    expect(label({ readOnly: true })).toBe("Retry");
+    expect(label({})).toBe("Sync now");
+    expect(label({ remoteUrl: null, lastSyncedAt: null }, false)).toBe("Commit now");
   });
 
   it("counts commits in the singular and the plural", () => {
