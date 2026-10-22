@@ -1,14 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MainHeader } from "./MainHeader";
 import { AppContext } from "../../App";
+import { installGitBridge, trackedStatus, untrackedStatus } from "../../__tests__/gitFixtures";
 
 vi.mock("../../contexts/WorkspaceContext", () => ({
   useWorkspace: () => ({
     currentOrg: { slug: "personal" },
-    currentWorkspace: { slug: "personal" },
+    currentWorkspace: { workspaceId: "ws-1", slug: "personal" },
   }),
 }));
 
@@ -21,6 +22,10 @@ vi.mock("./WindowControls", () => ({
   dragStyle: {},
   noDragStyle: {},
 }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 function LocationProbe() {
   const location = useLocation();
@@ -71,5 +76,33 @@ describe("MainHeader tutorial entry", () => {
     expect(screen.getByTestId("location-probe").textContent).toBe(
       "/personal/personal/tutorials",
     );
+  });
+});
+
+describe("MainHeader sync status", () => {
+  it("shows the current workspace's sync state when it is tracked", async () => {
+    installGitBridge(trackedStatus({ uncommitted: true }));
+    renderHeader();
+
+    expect(
+      await screen.findByRole("button", { name: "Version history: Pending" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows none for a workspace that is not tracked", async () => {
+    const { bridge } = installGitBridge(untrackedStatus);
+    renderHeader();
+
+    await vi.waitFor(() => expect(bridge.status).toHaveBeenCalledWith("ws-1"));
+    expect(screen.queryByRole("button", { name: /^Version history/ })).toBeNull();
+  });
+
+  it("follows its workspace through the one shared status feed", async () => {
+    const { bridge, subscriptions } = installGitBridge(trackedStatus());
+    renderHeader();
+
+    await screen.findByRole("button", { name: "Version history: Synced" });
+    expect(bridge.status).toHaveBeenCalledTimes(1);
+    expect(subscriptions()).toBe(1);
   });
 });

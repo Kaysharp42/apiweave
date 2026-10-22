@@ -2,7 +2,7 @@
 
 *How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
 
-> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message), **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. When both sides changed, the app stops and keeps both; when the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Sync now**, **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. The header shows [where the workspace stands](#the-sync-status-in-the-header) — synced, pending, syncing, incoming, diverged, read-only or an error — in words and an icon, never colour alone. When both sides changed, the app stops and keeps both; when the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@
 
 ## How it works
 
-APIWeave keeps everything in its local database, and the database stays the source of truth. A tracked workspace is also written as a tree of JSON files, a projection of the database that is the same on every machine, and each change to the workspace becomes a commit of that tree. In **auto** mode (the default) a commit is made about 30 seconds after your last edit; in **manual** mode only **Commit now** commits. Nothing is committed when the tree has not changed.
+APIWeave keeps everything in its local database, and the database stays the source of truth. A tracked workspace is also written as a tree of JSON files, a projection of the database that is the same on every machine, and each change to the workspace becomes a commit of that tree. In **auto** mode (the default) a commit is made about 30 seconds after your last edit; in **manual** mode only **Sync now** commits (a workspace with no remote calls it **Commit now**), after showing what it is about to commit. Nothing is committed when the tree has not changed.
 
 A repository is also a format other tools can read: `apiweave run` takes a folder with this layout directly, with no database at all. See [Run a repository in CI](#run-a-repository-in-ci).
 
@@ -59,7 +59,7 @@ A request that sends `<SECRET>` comes from a withheld credential. Replace it wit
 
 1. Open **Settings → Workspace settings → Version history (git)**.
 2. Click **Track this workspace**. The first commit holds the whole workspace.
-3. Leave **Commit automatically** on, or turn it off to commit only with **Commit now**, optionally with a message. Left empty, the message names the files the commit changed.
+3. Leave **Commit automatically** on, or turn it off to commit only when you choose: **Sync now** (**Commit now** while there is no remote) lists what changed and takes an optional message — see [Manual mode](#manual-mode-the-commit-dialog). Left empty, the message names the files the commit changed.
 
 If git does not know who you are, the panel asks for a name and email once and keeps them in this workspace's repository only; your global git configuration is not touched.
 
@@ -105,11 +105,58 @@ A connected workspace syncs by itself. In **auto** mode, about 30 seconds after 
 2. **Integrate**: when only the remote moved, fast-forward the clone to it and import its records into the database, so the two computers see the same projects, workflows and environments. The workspace list, the sidebar, an open project page and the environments page refresh as the import lands, as they do for an agent's write. If the app is closed or stops between moving the clone and finishing the import, the next start puts the clone back where the database is and the import runs again, so the remote's change is never committed away.
 3. **Push** this device's commits. If the remote moved in the meantime, the app fetches once more, brings it in, and pushes again; a rejection that only means the remote is ahead is retried this way.
 
-The app also runs a cycle when it launches and every 5 minutes while it is open. In **manual** mode an edit schedules no commit; the launches and the interval only fetch, so the workspace knows how many remote changes are waiting, and **Commit now** commits and syncs when you choose. When that sync stops short (diverged, refused or offline), the commit still happened locally, and the panel shows why the sync stopped.
+The app also runs a cycle when it launches and every 5 minutes while it is open. In **manual** mode an edit schedules no commit; the launches and the interval only fetch, so the workspace knows how many remote changes are waiting, and **Sync now** commits and syncs when you choose. When that sync stops short (diverged, refused or offline), the commit still happened locally, and the header and the panel show why the sync stopped.
 
-**Diverged.** If both this device and the remote gained commits since they last agreed, this version cannot combine them: the app stops with the state **diverged**, pushes nothing and imports nothing, and keeps both sides and their commits, so no work is lost. A cycle that cannot reach the remote leaves it **diverged**, with that cycle's reason as the message. An edit you make while a cycle is already under way is committed before anything is imported and counts as this device's side, so if the remote moved too, that cycle stops **diverged** rather than importing the remote over your edit. Bringing the two together — a merge, or discarding the local changes to match the remote — arrives with the sync status controls.
+**Diverged.** If both this device and the remote gained commits since they last agreed, this version cannot combine them: the app stops with the state **diverged**, pushes nothing and imports nothing, and keeps both sides and their commits, so no work is lost. A cycle that cannot reach the remote leaves it **diverged**, with that cycle's reason as the message. An edit you make while a cycle is already under way is committed before anything is imported and counts as this device's side, so if the remote moved too, that cycle stops **diverged** rather than importing the remote over your edit. Combining the two arrives in a later release; until then **Discard local changes** (see [the header](#the-sync-status-in-the-header)) loads the remote's version and throws this device's away.
 
-**Read-only.** A host can refuse a push, because you have no write access or because the branch is protected. The app then marks the workspace read-only: your edits save and commit locally as usual, the remote's commits still come in, and the automatic cycles push nothing, but an explicit sync (**Commit now** in manual mode) still attempts the push. Only a push that sends commits and succeeds clears read-only, because that is what proves the host accepts you again; a sync with nothing to send pushes nothing and leaves it set. The remote's commits come in only while this device has none of its own: once you edit a read-only workspace, those local commits never leave it, so the next commit anyone else pushes makes the workspace **diverged**. The refusal's message stays in the panel through later commits and pulls. Another failure, such as a fetch that fails or a divergence, replaces it with its own message, and once that failure is over the panel shows no message; the workspace stays read-only either way.
+**Read-only.** A host can refuse a push, because you have no write access or because the branch is protected. The app then marks the workspace read-only: your edits save and commit locally as usual, the remote's commits still come in, and the automatic cycles push nothing, but an explicit sync (**Retry**, or **Sync now** in manual mode) still attempts the push. Only a push that sends commits and succeeds clears read-only, because that is what proves the host accepts you again; a sync with nothing to send pushes nothing and leaves it set. The remote's commits come in only while this device has none of its own: once you edit a read-only workspace, those local commits never leave it, so the next commit anyone else pushes makes the workspace **diverged**. The refusal's message stays in the panel through later commits and pulls. Another failure, such as a fetch that fails or a divergence, replaces it with its own message, and once that failure is over the panel shows no message; the workspace stays read-only either way.
+
+## The sync status in the header
+
+A tracked workspace shows its state at the right of the header, as an icon and a word, so it never depends on colour alone. Click it for an explanation of the state and what to do about it, when the workspace last synced, its last commit, and a link to **Version history settings**. A workspace that is not tracked shows nothing.
+
+| State | Shown when | What the popover offers |
+| --- | --- | --- |
+| **Synced** | Nothing is waiting either way. | **Sync now** |
+| **Pending** | This device has work the remote does not: edits not yet committed, or commits not yet pushed. The label adds `(N to push)` when only commits are waiting. | **Sync now** |
+| **Syncing** | A cycle is running. | — |
+| **Incoming (N)** | Manual mode, and the remote has `N` new commits this device has not brought in. | **Sync now** brings them in |
+| **Diverged** | Both this device and the remote changed, and this version cannot combine them. Your changes stay on this device. | **Sync now**, **Discard local changes** |
+| **Read-only** | The host refused your push: *You can't push to this repo — your changes stay on this device.* If a later sync also failed, that failure is told after it, with git's text as detail; the state stays Read-only. | **Retry**, **Discard local changes** |
+| **Sync error** | The last cycle failed; the message says why and what to do (below). | **Retry** |
+
+**Retry** is **Sync now** under another name: in manual mode with edits waiting it opens the same commit dialog first.
+
+A workspace with no remote says **Committed**, **Pending**, **Committing** or **Commit error**, and its action is **Commit now**: there is nothing to push.
+
+**Pending is a flag with a count only where the count is known.** Whether the database holds edits the last commit does not is known cheaply and stays right across restarts, so **Pending** always shows. How many records changed means serializing the whole workspace and comparing it with the last commit, which is too much to repeat on every status, so it is not shown in the header: **Pending (N to push)** counts commits waiting for the remote, and the exact list of changed workflows, projects and environments is what [the commit dialog](#manual-mode-the-commit-dialog) shows.
+
+**Discard local changes** always asks first: it throws away every local commit and every change not yet committed, and loads the remote's version of the workspace in its place — a record you added here and never committed is gone too. It cannot be undone. It is offered from the header for a diverged or read-only workspace, and always from the settings panel while a remote is connected.
+
+### Manual mode: the commit dialog
+
+In manual mode, **Sync now** with edits waiting opens a dialog before anything is committed. It lists what the commit would hold by the records' names, not file paths — *Added workflow "Checkout"*, *Changed environment "Prod"*, *Deleted project "Billing"* — and has a **Commit message** field. Leave the message empty and the commit names the files it changed. **Commit and sync** (**Commit** with no remote) then commits, fetches, brings in what the remote has and pushes. A deleted record is named from the last commit, because the record itself is gone. The list is worked out in memory against the last commit and writes nothing into the repository, so looking at it, or cancelling it, changes nothing. Renaming a record is one *Changed* line, not a deletion and an addition. With nothing waiting, **Sync now** just syncs. In auto mode **Sync now** syncs straight away.
+
+### What the error messages say
+
+| Failure | Message |
+| --- | --- |
+| Git is not installed | *Git isn't installed — install Git and restart APIWeave.* |
+| Git does not know who you are | *Git doesn't know who you are on this machine — enter your name and email in the workspace's version history settings.* The popover links there, and offers no Retry until you have. |
+| The host did not accept your credentials | *Sign-in to github.com failed — your credential manager will ask again on retry.* |
+| The host refused a fetch or a clone | *github.com refused access to this repo — check the URL, and that you're signed in with an account that can read it.* A refused *push* is not an error: it makes the workspace read-only (above). |
+| The host cannot be reached | *Can't reach github.com — check your connection. APIWeave retries every 5 minutes.* |
+| The host did not answer in time | *github.com took too long to answer — check your connection and retry.* |
+| The remote moved at the same moment | *Someone pushed to the remote at the same moment — retry to bring their changes in first.* |
+| The local history folder is gone or damaged | *This workspace's history folder on this device is missing or damaged. If it is missing, restarting APIWeave recreates it; if it is damaged, stop tracking the workspace in its version history settings and track it again.* |
+| The remote address or branch name is unusable | *APIWeave can't use this remote address or branch name — check them in the workspace's version history settings.* |
+| Anything else git reported | *Git reported an error APIWeave doesn't recognise — retry, and see the details below if it persists.* |
+
+The host in the message is the one in the remote's URL (`github.com` for `https://github.com/…` and `git@github.com:…` alike), or "the remote" when the URL names none. Git's own text for the failure is shown under the message as detail. A failure that is not git's — a repository file that does not validate — shows its own message.
+
+### Where the settings are
+
+**Settings → Workspace settings → Version history (git)** holds the same state and actions as the header's popover, plus the **Commit automatically** switch, the **Remote** and its **Branch**, **Connect to remote** or **Disconnect**, and **Stop tracking**. The branch is shown, not chosen; see [Not covered](#not-covered-in-this-release).
 
 ## Open a workspace from git
 
@@ -139,7 +186,7 @@ git clone <your remote url> my-tests
 apiweave run ./my-tests
 ```
 
-Only committed changes travel: an auto-mode workspace commits about 30 seconds after your last edit, and in manual mode **Commit now** is what pushes.
+Only committed changes travel: an auto-mode workspace commits about 30 seconds after your last edit, and in manual mode **Sync now** is what commits and pushes.
 
 **Do not add or change a remote inside the app's own repository** (`<userData>/git/<workspace id>`) by hand, and do not edit or commit in it: **Connect to remote** and **Disconnect** are how its remote is set. Only APIWeave writes there; it is the app's working copy.
 
@@ -164,7 +211,7 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 
 ## Not covered in this release
 
-- **No merge of two changed sides.** When this device and the remote both gained commits since they last agreed, the cycle stops at **diverged** and keeps both sides. The merge that combines them, and a control to discard a divergence, arrive with the sync status UI.
+- **No merge of two changed sides.** When this device and the remote both gained commits since they last agreed, the cycle stops at **diverged** and keeps both sides. The merge that combines them arrives in a later release; **Discard local changes** is the way out until then.
 - **The branch is fixed.** A workspace syncs the branch its repository is on — `main` for one this app created, or the repository's default branch for one opened from git — and there is no branch picker.
 - **Environment inheritance is not carried.** An environment's base environment is not written; put the variables a run needs in the environment itself.
 - **Local history stays separate.** A workflow's [version history](../features/workflows-and-nodes.md#version-history) in the app is not the git history.
@@ -173,10 +220,10 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 
 - **If tracking fails because git is not found**, install git and make sure it is on your `PATH`.
 - **If connecting fails with an authentication error**, git could not sign in to the host without asking. Sign in once with your usual git tool (or add an SSH key to your agent), then connect again.
-- **If connecting says `Commit the workspace once before connecting a remote.`**, the workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email when the panel asks, or use **Commit now**, then connect.
+- **If connecting says `Commit the workspace once before connecting a remote.`**, the workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email when the panel asks, then connect.
 - **If connecting fails with `That repository already has history…`**, the repository already holds someone else's history. The workspace was left unconnected; create an empty repository and connect to that.
-- **If the panel says this workspace and its remote "have each changed since they last agreed"**, the two histories diverged. Both sides keep their commits and nothing is pushed or imported; reconciling them arrives with the sync status controls.
-- **If a push was refused**, the host does not accept pushes from your account to that repository, or the branch is protected. The workspace stays read-only — local commits continue, and the remote's changes still come in until this device has commits of its own, after which the next remote change makes it diverged — and read-only clears on the next push that sends commits and succeeds. Check that your account can write to the repository and that the branch is not protected. A fetch the host refuses is not this: it shows as an error, and the workspace is not marked read-only.
+- **If the header says Diverged**, the two histories diverged. Both sides keep their commits and nothing is pushed or imported. Combining them arrives in a later release; use **Discard local changes** to load the remote's version and give up this device's.
+- **If the header says Read-only (a push was refused)**, the host does not accept pushes from your account to that repository, or the branch is protected. The workspace stays read-only — local commits continue, and the remote's changes still come in until this device has commits of its own, after which the next remote change makes it diverged — and read-only clears on the next push that sends commits and succeeds. Check that your account can write to the repository and that the branch is not protected. A fetch the host refuses is not this: it shows as an error, and the workspace is not marked read-only.
 - **If opening says `.apiweave/format.json is missing: this is not an APIWeave workspace repository`**, the repository is empty or holds something other than a workspace. Check the URL, and that the workspace is on the repository's default branch.
 - **If opening says `written by a newer APIWeave`**, the repository uses a format version this build does not read. Update APIWeave.
 - **If opening names a file as invalid**, the file was edited by hand or has an unresolved merge conflict. Fix that file in the repository; the message names it and the problem.

@@ -71,6 +71,8 @@ export interface GitExecOptions {
   readonly cwd: string | undefined
   readonly env: NodeJS.ProcessEnv
   readonly timeoutMs: number
+  /** Written to git's stdin before it is closed: what a batch command reads. Nothing by default. */
+  readonly input?: string | undefined
 }
 
 export interface GitExecOutcome {
@@ -174,8 +176,8 @@ export function execGit(file: string, args: readonly string[], options: GitExecO
         }
       },
     )
-    // Nothing is ever written to git's stdin; closing it keeps a stray read from waiting for input.
-    child.stdin?.end()
+    // Closing stdin keeps a stray read from waiting for input; only a batch command is given any.
+    child.stdin?.end(options.input)
     const timer = setTimeout(() => {
       timedOut = true
       child.stdout?.destroy()

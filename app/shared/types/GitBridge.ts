@@ -2,6 +2,7 @@ import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { WorkspaceGitCommitRequest } from "./WorkspaceGitCommitRequest"
 import type { WorkspaceGitMode } from "./WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "./WorkspaceGitStatus"
+import type { WorkspacePendingChange } from "./WorkspacePendingChange"
 
 /**
  * The `window.__APIWEAVE_GIT__` contract: a workspace's version history.
@@ -25,6 +26,12 @@ export interface GitBridge {
    * `request.identity`.
    */
   readonly syncNow: (workspaceId: string, request?: WorkspaceGitCommitRequest) => Promise<WorkspaceGitStatus>
+  /**
+   * What the next commit would add, change or delete, as records with their
+   * names. Rejects for an untracked workspace. Read-only for the workspace's
+   * history: nothing is committed, and the status does not change.
+   */
+  readonly pendingChanges: (workspaceId: string) => Promise<readonly WorkspacePendingChange[]>
   readonly onStatusChanged: (callback: (status: WorkspaceGitStatus) => void) => () => void
   /**
    * Bind the workspace to a remote: a repository with no branches receives its

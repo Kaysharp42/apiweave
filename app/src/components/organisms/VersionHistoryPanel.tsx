@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { GitBranch, GitCommitHorizontal } from "lucide-react";
+import { useState } from "react";
+import { GitBranch } from "lucide-react";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
@@ -10,7 +10,12 @@ import { DetailField } from "../molecules/DetailField";
 import { FormField } from "../molecules/FormField";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
+import { GitSyncDialogs } from "./GitSyncDialogs";
+import { GitSyncStatusCard } from "./GitSyncStatusCard";
+import { useGitSyncActions } from "../../hooks/useGitSyncActions";
+import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { git } from "../../utils/apiweaveClient";
+import type { GitAuthorFormProps } from "../../types";
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -35,17 +40,11 @@ function Untracked({ busy, onTrack }: UntrackedProps) {
   );
 }
 
-interface CommitFormProps {
-  readonly busy: boolean;
-  /** Resolves whether the commit went through. */
-  readonly onCommit: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
-}
-
 /**
  * Asked for when git reports no author: written into this workspace's own
  * repository only (`git config --local`), then the commit is retried.
  */
-function AuthorForm({ busy, onCommit }: CommitFormProps) {
+function AuthorForm({ busy, onCommit }: GitAuthorFormProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   return (
@@ -89,43 +88,9 @@ function AuthorForm({ busy, onCommit }: CommitFormProps) {
   );
 }
 
-function CommitForm({ busy, onCommit }: CommitFormProps) {
-  const [message, setMessage] = useState("");
-  return (
-    <form
-      className="space-y-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void onCommit({ message }).then((committed) => {
-          if (committed) setMessage("");
-        });
-      }}
-    >
-      <FormField
-        label="Commit message"
-        hint="Optional — left empty, the commit names the files it changed."
-      >
-        <Input
-          aria-label="Commit message"
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Describe this change"
-        />
-      </FormField>
-      <Button
-        type="submit"
-        variant="primary"
-        loading={busy}
-        icon={<GitCommitHorizontal className="h-3.5 w-3.5" />}
-      >
-        Commit now
-      </Button>
-    </form>
-  );
-}
-
 interface RemoteSectionProps {
   readonly remoteUrl: string | null;
+  readonly branch: string;
   readonly busy: boolean;
   readonly onConnect: (url: string) => void;
   readonly onDisconnect: () => void;
@@ -133,6 +98,7 @@ interface RemoteSectionProps {
 
 function RemoteSection({
   remoteUrl,
+  branch,
   busy,
   onConnect,
   onDisconnect,
@@ -142,6 +108,9 @@ function RemoteSection({
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
         {remoteUrl ?? "Not connected"}
+      </DetailField>
+      <DetailField label="Branch" mono>
+        {branch}
       </DetailField>
       {remoteUrl === null ? (
         <form
@@ -182,8 +151,9 @@ function RemoteSection({
 interface TrackedProps {
   readonly status: WorkspaceGitStatus;
   readonly busy: boolean;
+  readonly apply: (status: WorkspaceGitStatus) => void;
   readonly onToggleMode: () => void;
-  readonly onCommit: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
+  readonly onAuthor: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
   readonly onConnect: (url: string) => void;
   readonly onDisconnect: () => void;
   readonly onUntrack: () => void;
@@ -192,14 +162,15 @@ interface TrackedProps {
 function Tracked({
   status,
   busy,
+  apply,
   onToggleMode,
-  onCommit,
+  onAuthor,
   onConnect,
   onDisconnect,
   onUntrack,
 }: TrackedProps) {
-  const { lastCommit, lastError } = status;
-  const needsAuthor = lastError?.code === "identity_missing";
+  const actions = useGitSyncActions(status, apply);
+  const needsAuthor = status.lastError?.code === "identity_missing";
   return (
     <div className="space-y-4">
       <ToggleSetting
@@ -209,22 +180,14 @@ function Tracked({
         onToggle={onToggleMode}
         disabled={busy}
       />
-      <DetailField label="Last commit" mono={lastCommit !== null}>
-        {lastCommit === null
-          ? "None yet"
-          : `${lastCommit.sha.slice(0, 7)} ${lastCommit.subject}`}
-      </DetailField>
-      {lastError !== null && !needsAuthor && (
-        <p className="text-xs text-status-error dark:text-[var(--aw-status-error)]">
-          {lastError.message}
-        </p>
-      )}
-      {needsAuthor && <AuthorForm busy={busy} onCommit={onCommit} />}
-      {status.mode === "manual" && !needsAuthor && (
-        <CommitForm busy={busy} onCommit={onCommit} />
+      {needsAuthor ? (
+        <AuthorForm busy={busy} onCommit={onAuthor} />
+      ) : (
+        <GitSyncStatusCard status={status} actions={actions} alwaysOfferDiscard />
       )}
       <RemoteSection
         remoteUrl={status.remoteUrl}
+        branch={status.branch}
         busy={busy}
         onConnect={onConnect}
         onDisconnect={onDisconnect}
@@ -234,43 +197,28 @@ function Tracked({
           Stop tracking
         </Button>
       </div>
+      <GitSyncDialogs status={status} actions={actions} />
     </div>
   );
 }
 
-/** Settings for a workspace's version history (git): track, auto or manual commits, the last commit, the remote. */
+/**
+ * Settings for a workspace's version history (git): track, auto or manual
+ * commits, the sync state and what to do about it, the remote and its branch.
+ * The state is worded by the same card the header's popover shows.
+ */
 export function VersionHistoryPanel({
   workspaceId,
 }: {
   readonly workspaceId: string;
 }) {
   const available = git.isAvailable();
-  const [status, setStatus] = useState<WorkspaceGitStatus | null>(null);
+  const { status, error: loadError, apply } = useWorkspaceGitStatus(workspaceId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
   );
-
-  useEffect(() => {
-    if (!available) return;
-    let cancelled = false;
-    git
-      .status(workspaceId)
-      .then((next) => {
-        if (!cancelled) setStatus(next);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(errorText(err));
-      });
-    const unsubscribe = git.onStatusChanged((next) => {
-      if (next.workspaceId === workspaceId) setStatus(next);
-    });
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [available, workspaceId]);
 
   /** Run one call; its status replaces the shown one, its failure is shown. Resolves to that status, or null when it threw. */
   const run = async (
@@ -280,7 +228,7 @@ export function VersionHistoryPanel({
     setError(null);
     try {
       const next = await action();
-      setStatus(next);
+      apply(next);
       return next;
     } catch (err) {
       setError(errorText(err));
@@ -290,6 +238,8 @@ export function VersionHistoryPanel({
     }
   };
 
+  const shownError = error ?? loadError;
+
   const body = (() => {
     if (!available) {
       return (
@@ -298,7 +248,7 @@ export function VersionHistoryPanel({
         </p>
       );
     }
-    if (status === null) return error === null ? <Spinner size="sm" /> : null;
+    if (status === null) return shownError === null ? <Spinner size="sm" /> : null;
     if (!status.tracked) {
       return (
         <Untracked busy={busy} onTrack={() => void run(() => git.track(workspaceId))} />
@@ -306,14 +256,16 @@ export function VersionHistoryPanel({
     }
     return (
       <Tracked
+        key={status.workspaceId}
         status={status}
         busy={busy}
+        apply={apply}
         onToggleMode={() =>
           void run(() =>
             git.setMode(workspaceId, status.mode === "auto" ? "manual" : "auto"),
           )
         }
-        onCommit={async (request) =>
+        onAuthor={async (request) =>
           (await run(() => git.syncNow(workspaceId, request)))?.lastError ===
           null
         }
@@ -328,12 +280,12 @@ export function VersionHistoryPanel({
     <Panel title="Version history (git)" icon={GitBranch}>
       <div className="space-y-4 p-4">
         {body}
-        {error !== null && (
+        {shownError !== null && (
           <p
             role="alert"
             className="text-xs text-status-error dark:text-[var(--aw-status-error)]"
           >
-            {error}
+            {shownError}
           </p>
         )}
       </div>

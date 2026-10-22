@@ -80,6 +80,8 @@ describe("GitSyncService", () => {
       readOnly: false,
       incoming: 0,
       outgoing: 0,
+      uncommitted: false,
+      lastSyncedAt: null,
       lastCommit: { sha: log[0]!.sha, subject: log[0]!.subject, authorDate: log[0]!.authorDate },
     })
     const tree = readTree(harness.dir)

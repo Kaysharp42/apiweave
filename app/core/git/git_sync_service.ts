@@ -9,6 +9,7 @@ import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommit
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
+import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
@@ -40,9 +41,10 @@ import {
 } from "./git_errors"
 import { awaitWithin } from "./git_process"
 import type { GitService } from "./git_service"
-import type { GitAheadBehind, GitStatusEntry } from "./git_types"
+import type { GitAheadBehind, GitStatusEntry, GitTreeEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
-import { readWorkspaceTree, writeWorkspaceTree } from "./workspace_tree"
+import { describePendingChanges, diffTrees } from "./pending_changes"
+import { FORMAT_PATHS, RECORD_FOLDERS, readWorkspaceTree, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
 export const AUTO_COMMIT_DELAY_MS = 30_000
@@ -122,6 +124,9 @@ export type GitSyncGit = Pick<
   | "status"
   | "commit"
   | "log"
+  | "lsTree"
+  | "readBlobs"
+  | "clean"
   | "fetch"
   | "push"
   | "remoteAdd"
@@ -212,6 +217,10 @@ export class GitSyncService {
    */
   private readonly writes = new Map<string, number>()
   private readonly committedWrites = new Map<string, number>()
+  /** The tail of each workspace's chain of status announces; see {@link announce}. */
+  private readonly announceChains = new Map<string, Promise<void>>()
+  /** The status reports an edit started, still running; they never reject. */
+  private readonly announcements = new Set<Promise<unknown>>()
   /** Opens run one at a time: the end of the chain, which never rejects. */
   private openQueue: Promise<void> = Promise.resolve()
   private passTimer: ReturnType<typeof setInterval> | undefined
@@ -226,25 +235,19 @@ export class GitSyncService {
     this.disposeWaitMs = options.disposeWaitMs ?? DISPOSE_WAIT_MS
   }
 
+  /**
+   * The git facts (what the remote holds, the last commit) are asked first,
+   * and the row and the write counters are read after them: an operation that
+   * finished while git was answering is then in the status, not overwritten by
+   * the state it started from.
+   */
   public async status(workspaceId: string): Promise<WorkspaceGitStatus> {
-    const binding = this.repositories.workspaceGit.get(workspaceId)
-    if (binding === undefined) {
-      return {
-        workspaceId,
-        tracked: false,
-        mode: "auto",
-        remoteUrl: null,
-        branch: "main",
-        state: "idle",
-        lastError: null,
-        readOnly: false,
-        incoming: 0,
-        outgoing: 0,
-        lastCommit: null,
-      }
-    }
+    const asked = this.repositories.workspaceGit.get(workspaceId)
+    if (asked === undefined) return untrackedStatus(workspaceId)
     const directory = this.cloneDir(workspaceId)
-    const { ahead, behind } = await this.divergence(directory, binding)
+    const [{ ahead, behind }, lastCommit] = await Promise.all([this.divergence(directory, asked), this.lastCommit(directory)])
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    if (binding === undefined) return untrackedStatus(workspaceId)
     return {
       workspaceId,
       tracked: true,
@@ -256,7 +259,9 @@ export class GitSyncService {
       readOnly: binding.readOnly,
       incoming: behind,
       outgoing: ahead,
-      lastCommit: await this.lastCommit(directory),
+      uncommitted: this.uncommittedWrites(workspaceId),
+      lastSyncedAt: binding.remoteUrl === null ? null : binding.lastSyncedAt,
+      lastCommit,
     }
   }
 
@@ -485,6 +490,10 @@ export class GitSyncService {
       if (head !== undefined) this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
       try {
         await this.git.resetHard(directory, remoteRef)
+        // `reset --hard` keeps files git does not track: a record file a cycle
+        // wrote and never staged (a crash between the two) would be imported
+        // back as if the remote held it.
+        await this.git.clean(directory, RECORD_FOLDERS)
         await this.importRemoteTree(workspaceId, directory)
       } catch (error) {
         // The reset moved the clone but the import did not take; left there, a
@@ -508,9 +517,33 @@ export class GitSyncService {
     return this.exclusive(workspaceId, () => this.commitCycle(workspaceId, directory, request))
   }
 
+  /**
+   * What the next commit would do, as records: the workspace's added, changed
+   * and deleted workflows, projects, environments and its own settings, named
+   * the way the user knows them. The workspace is serialized exactly as a
+   * commit would, in memory, and compared with the files HEAD holds: nothing
+   * is written into the clone, staged or committed, so the clone and the write
+   * counters stay exactly as they were. Reading HEAD takes two git calls
+   * however many records there are — `ls-tree` for the files and one
+   * `cat-file --batch` for the deleted records' names.
+   *
+   * Rejects for an untracked workspace, and when the clone cannot be moved
+   * back to the database after an import that never finished.
+   */
+  public async pendingChanges(workspaceId: string): Promise<WorkspacePendingChange[]> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.repositories.workspaceGit.get(workspaceId)
+      if (binding === undefined) throw notTracked(workspaceId)
+      const { tree, head } = await this.treeAgainstHead(workspaceId, directory, binding.branch)
+      return describePendingChanges(tree, head, (oids) => this.git.readBlobs(directory, oids))
+    })
+  }
+
   /** A repository write to the workspace committed. Wire to the Collection, Environment and Workspace repositories' `onChanged`. */
   public workspaceChanged(workspaceId: string): void {
     if (this.disposed) return
+    const wasCommitted = !this.uncommittedWrites(workspaceId)
     // Counted whatever the mode: a manual workspace's edit is exactly what a
     // cycle already running must commit before it may import anything.
     this.writes.set(workspaceId, (this.writes.get(workspaceId) ?? 0) + 1)
@@ -518,7 +551,19 @@ export class GitSyncService {
       this.forget(workspaceId)
       return
     }
-    if (this.repositories.workspaceGit.get(workspaceId)?.mode === "auto") this.scheduleAutoCommit(workspaceId)
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    if (binding?.mode === "auto") this.scheduleAutoCommit(workspaceId)
+    // The first edit after a commit is what turns a workspace's status to
+    // `uncommitted`; the ones after it change nothing a status says.
+    if (binding !== undefined && wasCommitted) this.announceEdit(workspaceId)
+  }
+
+  /** Tell the observer a workspace now has an edit waiting. Tracked, so {@link settled} and {@link dispose} wait for the git it runs. */
+  private announceEdit(workspaceId: string): void {
+    const announcing = this.announce(workspaceId)
+      .catch((error: unknown) => log.warn(`could not report the edit to workspace ${workspaceId}`, error))
+      .finally(() => this.announcements.delete(announcing))
+    this.announcements.add(announcing)
   }
 
   /** {@link workspaceChanged} for `WorkflowRepository`'s event: a move changes the workspace it left as well. */
@@ -558,10 +603,10 @@ export class GitSyncService {
     }
   }
 
-  /** Resolves once no call is running or queued for any workspace. */
+  /** Resolves once no call is running or queued for any workspace, and no edit's status report is still running. */
   public async settled(): Promise<void> {
     await this.openQueue
-    while (this.locks.size > 0) await Promise.all(this.locks.values())
+    while (this.locks.size > 0 || this.announcements.size > 0) await Promise.all([...this.locks.values(), ...this.announcements])
   }
 
   /**
@@ -732,6 +777,8 @@ export class GitSyncService {
         // The database and the clone hold exactly the remote's tip.
         if (head !== undefined) workspaceGit.recordSynced(workspaceId, head, new Date().toISOString())
       })
+      // The import announced its writes; the clone already holds what they wrote.
+      this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
       // The rows claim the clone now; a marker that will not go is removed by the next reconcile.
       await rm(openMarker(directory), { force: true }).catch((cleanupError: unknown) => {
         log.warn(`could not remove the open marker from the clone of workspace ${workspaceId}`, cleanupError)
@@ -814,21 +861,35 @@ export class GitSyncService {
       await rm(openMarker(directory), { force: true })
     }
     if (missing || binding.mode === "auto") {
-      // Moves a clone an import never caught up with back to the database first.
-      await this.commitCycle(binding.workspaceId, directory, missing ? { message: RECREATE_MESSAGE } : {})
-    } else {
       try {
-        await this.returnToDatabase(binding.workspaceId, directory)
+        // Moves a clone an import never caught up with back to the database first.
+        await this.commitCycle(binding.workspaceId, directory, missing ? { message: RECREATE_MESSAGE } : {})
       } catch (error) {
-        this.repositories.workspaceGit.setState(binding.workspaceId, "error", describeError(error))
-        await this.announce(binding.workspaceId)
+        // The edits are still waiting, and the status must say so.
+        await this.seedUncommitted(binding.workspaceId, directory, binding.branch)
+        await this.announce(binding.workspaceId).catch(() => undefined)
         throw error
       }
-      // The app quit, or crashed, in the middle of a cycle.
-      if (binding.state === "syncing") this.settleIdle(binding.workspaceId)
+    } else {
+      await this.reconcileManual(binding, directory)
     }
     // The row is the truth about the remote: a clone that was recreated or adopted gets it back. Local git only, no network.
     if (binding.remoteUrl !== null) await this.pointOriginAt(directory, binding.remoteUrl)
+  }
+
+  /** A manual workspace's startup: nothing is committed for it, but the clone is made right and its waiting edits are counted. */
+  private async reconcileManual(binding: WorkspaceGitBinding, directory: string): Promise<void> {
+    try {
+      await this.returnToDatabase(binding.workspaceId, directory)
+    } catch (error) {
+      this.repositories.workspaceGit.setState(binding.workspaceId, "error", describeError(error))
+      await this.announce(binding.workspaceId)
+      throw error
+    }
+    // The app quit, or crashed, in the middle of a cycle.
+    if (binding.state === "syncing") this.settleIdle(binding.workspaceId)
+    // Not committed, as an auto workspace's were just now: still waiting, and the status must say so.
+    await this.seedUncommitted(binding.workspaceId, directory, binding.branch)
   }
 
   /** The workspace's binding, or the refusal a remote operation on an untracked workspace gets. */
@@ -1244,14 +1305,49 @@ export class GitSyncService {
   private async writeAndCommit(workspaceId: string, directory: string, message?: string): Promise<string | undefined> {
     // Read and serialized synchronously, so the commit holds one consistent state of the database.
     const seen = this.writes.get(workspaceId) ?? 0
-    const files = serializeWorkspace(workspaceSnapshot(this.records(workspaceId)))
-    await writeWorkspaceTree(directory, files)
+    await writeWorkspaceTree(directory, serializeWorkspace(workspaceSnapshot(this.records(workspaceId))))
     await this.git.add(directory, ["."])
     const { entries } = await this.git.status(directory)
     const subject = message?.trim() ?? ""
     const sha = entries.length === 0 ? undefined : await this.git.commit(directory, subject === "" ? describeChanges(entries) : subject)
     this.committedWrites.set(workspaceId, seen)
     return sha
+  }
+
+  /**
+   * What a commit would hold, set against what HEAD holds, with nothing
+   * written: the clone moved back to the database first, as every cycle does
+   * before it serializes, then the database serialized exactly as a commit
+   * would and the files of HEAD listed. The clone, its index and the write
+   * counters are not touched. An unborn HEAD holds no files.
+   */
+  private async treeAgainstHead(
+    workspaceId: string,
+    directory: string,
+    branch: string,
+  ): Promise<{ readonly tree: ReadonlyMap<string, string>; readonly head: readonly GitTreeEntry[] }> {
+    await this.prepareClone(workspaceId, directory, branch, {})
+    const tree = serializeWorkspace(workspaceSnapshot(this.records(workspaceId)))
+    const head = (await this.git.revParse(directory, "HEAD")) === undefined ? [] : await this.git.lsTree(directory, "HEAD", FORMAT_PATHS)
+    return { tree, head }
+  }
+
+  /**
+   * After a restart the write counters say nothing about edits made before the
+   * quit — a manual workspace's wait for a commit, and so do an automatic
+   * one's when its startup commit failed — so ask whether the database holds
+   * any the last commit does not, and count them as writes the last commit
+   * lacks. Compared in memory, writing nothing. A report, never a failure of
+   * the startup.
+   */
+  private async seedUncommitted(workspaceId: string, directory: string, branch: string): Promise<void> {
+    try {
+      if (this.uncommittedWrites(workspaceId)) return
+      const { tree, head } = await this.treeAgainstHead(workspaceId, directory, branch)
+      if (diffTrees(tree, head).length > 0) this.writes.set(workspaceId, (this.writes.get(workspaceId) ?? 0) + 1)
+    } catch (error) {
+      log.warn(`could not tell whether workspace ${workspaceId} has uncommitted edits`, error)
+    }
   }
 
   /** A cycle is starting: `syncing`, keeping a read-only workspace's refusal — the cycle's outcome may replace it, starting does not. */
@@ -1340,26 +1436,29 @@ export class GitSyncService {
     }
   }
 
-  private async announce(workspaceId: string): Promise<WorkspaceGitStatus> {
-    const status = await this.status(workspaceId)
-    try {
-      this.options.onStatusChanged?.(status)
-    } catch (error) {
-      log.error("status observer failed for workspace", workspaceId, error)
-    }
-    return status
+  /**
+   * Compute the workspace's status and tell the observer. Announces of one
+   * workspace run one at a time, in the order they were asked for, each
+   * computing its status when its turn comes: a slower one can never emit
+   * after a later one with the older picture, so the last status emitted is
+   * the latest row's. They take no workspace lock, so one waits only for
+   * another announce, never for a cycle.
+   */
+  private announce(workspaceId: string): Promise<WorkspaceGitStatus> {
+    return enqueue(this.announceChains, workspaceId, async () => {
+      const status = await this.status(workspaceId)
+      try {
+        this.options.onStatusChanged?.(status)
+      } catch (error) {
+        log.error("status observer failed for workspace", workspaceId, error)
+      }
+      return status
+    })
   }
 
   /** Run `work` after everything already queued for the workspace, and before anything queued after it. */
   private exclusive<T>(workspaceId: string, work: () => Promise<T>): Promise<T> {
-    const previous = this.locks.get(workspaceId) ?? Promise.resolve()
-    const result = previous.then(work)
-    const tail = result.then(() => undefined, () => undefined)
-    this.locks.set(workspaceId, tail)
-    void tail.then(() => {
-      if (this.locks.get(workspaceId) === tail) this.locks.delete(workspaceId)
-    })
-    return result
+    return enqueue(this.locks, workspaceId, work)
   }
 
   /** The workspace's clone. The id becomes a path, so it must be an id and nothing path-like. */
@@ -1392,6 +1491,40 @@ class PushRefusedError extends Error {
     super(refusal.message)
     this.name = new.target.name
     this.refusal = refusal
+  }
+}
+
+/**
+ * Run `work` after everything already queued under `key`, and before anything
+ * queued after it. `queues` holds each key's tail, which never rejects, and
+ * drops it once nothing follows.
+ */
+function enqueue<T>(queues: Map<string, Promise<void>>, key: string, work: () => Promise<T>): Promise<T> {
+  const result = (queues.get(key) ?? Promise.resolve()).then(work)
+  const tail = result.then(() => undefined, () => undefined)
+  queues.set(key, tail)
+  void tail.then(() => {
+    if (queues.get(key) === tail) queues.delete(key)
+  })
+  return result
+}
+
+/** What an untracked workspace reports: the defaults a track would start from. */
+function untrackedStatus(workspaceId: string): WorkspaceGitStatus {
+  return {
+    workspaceId,
+    tracked: false,
+    mode: "auto",
+    remoteUrl: null,
+    branch: "main",
+    state: "idle",
+    lastError: null,
+    readOnly: false,
+    incoming: 0,
+    outgoing: 0,
+    uncommitted: false,
+    lastSyncedAt: null,
+    lastCommit: null,
   }
 }
 

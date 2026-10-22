@@ -1,6 +1,6 @@
 import { mkdir, stat } from "node:fs/promises"
 import path from "node:path"
-import { assertRefName, assertRevision, assertSafeRemoteUrl } from "./git_arguments"
+import { assertObjectId, assertRefName, assertRevision, assertSafeRemoteUrl } from "./git_arguments"
 import { gitFailure } from "./git_classify"
 import {
   GitCommandError,
@@ -13,7 +13,16 @@ import {
   type GitError,
   type GitFailureDetails,
 } from "./git_errors"
-import { LOG_FORMAT, parseAheadBehind, parseCommitCount, parseLog, parseStatus, parseVersion } from "./git_parse"
+import {
+  LOG_FORMAT,
+  parseAheadBehind,
+  parseBlobBatch,
+  parseCommitCount,
+  parseLog,
+  parseStatus,
+  parseTreeEntries,
+  parseVersion,
+} from "./git_parse"
 import { execGit, gitConfigArgs, gitEnvironment, timeoutFor, type GitExecOutcome } from "./git_process"
 import type {
   GitAheadBehind,
@@ -23,6 +32,7 @@ import type {
   GitLogOptions,
   GitServiceOptions,
   GitStatus,
+  GitTreeEntry,
   GitVersion,
 } from "./git_types"
 
@@ -46,6 +56,14 @@ function checkedIdentityField(field: "name" | "email", value: string): string {
     throw new GitInvalidArgumentError(`a commit author's ${field} must be non-empty, on one line, without '<' or '>'`)
   }
   return trimmed
+}
+
+/** What a parser made of git's output, or the failure that output is when it made nothing. */
+function parsedOrFailure<T>(command: string, args: readonly string[], parsed: T | undefined): T {
+  if (parsed === undefined) {
+    throw new GitCommandError(`unexpected output from git ${command}`, failureDetails(args, 0, "", ""))
+  }
+  return parsed
 }
 
 async function isDirectory(directory: string): Promise<boolean> {
@@ -220,6 +238,47 @@ export class GitService {
     }
   }
 
+  /**
+   * The files `rev`'s tree holds under `paths`, recursively, with the id of the
+   * blob behind each. A revision that names nothing — an unborn HEAD — is git's
+   * own failure: the caller asks `revParse` first.
+   */
+  async lsTree(repoDir: string, rev: string, paths: readonly string[]): Promise<GitTreeEntry[]> {
+    assertRevision(rev)
+    if (paths.length === 0) {
+      throw new GitInvalidArgumentError("ls-tree needs at least one path")
+    }
+    const args = ["ls-tree", "-r", "-z", rev, "--", ...paths]
+    return parsedOrFailure("ls-tree", args, parseTreeEntries(await this.run("lsTree", args, repoDir)))
+  }
+
+  /**
+   * The text of every blob in `oids`, by id, read by one `git cat-file --batch`
+   * however many there are; an id the repository lacks maps to undefined. The
+   * ids are checked before they reach git's stdin, and the output is capped
+   * like `show`'s.
+   */
+  async readBlobs(repoDir: string, oids: readonly string[]): Promise<Map<string, string | undefined>> {
+    const unique = [...new Set(oids)]
+    for (const oid of unique) {
+      assertObjectId(oid)
+    }
+    if (unique.length === 0) {
+      return new Map()
+    }
+    const args = ["cat-file", "--batch"]
+    const output = await this.run("catFile", args, repoDir, `${unique.join("\n")}\n`)
+    return parsedOrFailure("cat-file", args, parseBlobBatch(output, unique))
+  }
+
+  /** Delete the untracked files and folders under `paths`; tracked files and ignored ones stay. */
+  async clean(repoDir: string, paths: readonly string[]): Promise<void> {
+    if (paths.length === 0) {
+      throw new GitInvalidArgumentError("clean needs at least one path")
+    }
+    await this.run("clean", ["clean", "-f", "-d", "-q", "--", ...paths], repoDir)
+  }
+
   async fetch(repoDir: string, remote: string): Promise<void> {
     assertRefName(remote)
     await this.run("fetch", ["fetch", "--prune", "--", remote], repoDir)
@@ -343,9 +402,9 @@ export class GitService {
     }
   }
 
-  private async run(command: GitCommand, args: readonly string[], cwd?: string): Promise<string> {
+  private async run(command: GitCommand, args: readonly string[], cwd?: string, input?: string): Promise<string> {
     const timeoutMs = timeoutFor(command, this.timeouts)
-    const outcome = await execGit(this.gitPath, [...this.configArgs, ...args], { cwd, env: this.env, timeoutMs })
+    const outcome = await execGit(this.gitPath, [...this.configArgs, ...args], { cwd, env: this.env, timeoutMs, input })
     if (outcome.status === "exited" && outcome.exitCode === 0) {
       return outcome.stdout
     }

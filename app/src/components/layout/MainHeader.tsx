@@ -8,6 +8,7 @@ import type { AppContextType } from "../../types/AppContextType";
 import useNavigationStore from "../../stores/NavigationStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
+import { GitSyncControl } from "./GitSyncControl";
 import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
 
 /** A tooltip-and-icon toggle button in the drag-region header. Shared by the
@@ -112,6 +113,8 @@ export function MainHeader() {
           chrome could only disagree with it. Environments are managed from
           Settings → Environments. */}
       <div className="navbar-end min-w-0 flex-shrink gap-2">
+        <GitSyncControl />
+
         <div style={noDragStyle}>
           <IconButton
             tooltip="Tutorials"
