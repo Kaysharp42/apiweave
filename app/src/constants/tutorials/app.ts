@@ -1,7 +1,7 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 7 — App. Settings, and updates/startup.
+ * Chapter 8 — App. Settings, and updates/startup.
  */
 export const appChapter: TutorialChapter = {
   id: "app",
@@ -84,7 +84,7 @@ export const appChapter: TutorialChapter = {
             "Environments are workspace-scoped. Switch to the workspace that owns it.",
         },
       ],
-      relatedLessonIds: ["canvas", "environments", "updates"],
+      relatedLessonIds: ["canvas", "environments", "git-track", "updates"],
       destination: { label: "Open Canvas settings", path: "canvas-settings" },
     },
     {
