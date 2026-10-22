@@ -1,0 +1,41 @@
+{
+  "workflowId": "wf-orders",
+  "projectId": "proj-shop",
+  "name": "Orders / list",
+  "description": "",
+  "selectedEnvironmentId": null,
+  "tags": [],
+  "variables": {},
+  "nodes": [
+    {
+      "config": {
+        "headers": [],
+        "method": "GET",
+        "url": "{{env.baseUrl}}/orders?access_token=%3CSECRET%3E"
+      },
+      "label": "list",
+      "nodeId": "list",
+      "position": {
+        "x": 240,
+        "y": 11
+      },
+      "type": "http-request"
+    },
+    {
+      "nodeId": "start",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "start"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "e1",
+      "source": "start",
+      "target": "list"
+    }
+  ],
+  "nodeTemplates": []
+}

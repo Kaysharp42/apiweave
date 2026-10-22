@@ -1,0 +1,86 @@
+{
+  "workflowId": "wf-login",
+  "projectId": "proj-shop",
+  "name": "Login",
+  "description": "",
+  "selectedEnvironmentId": "env-staging",
+  "tags": [
+    "smoke"
+  ],
+  "variables": {
+    "password": "<SECRET>",
+    "user": "alice"
+  },
+  "nodes": [
+    {
+      "nodeId": "a-start",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "type": "start"
+    },
+    {
+      "config": {
+        "height": 200,
+        "width": 400
+      },
+      "nodeId": "y-frame",
+      "position": {
+        "x": 100,
+        "y": 0
+      },
+      "type": "group"
+    },
+    {
+      "nodeId": "z-end",
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "type": "end"
+    },
+    {
+      "config": {
+        "headers": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{secrets.API_TOKEN}}"
+          }
+        ],
+        "method": "GET",
+        "url": "{{env.baseUrl}}/login"
+      },
+      "label": "b-child",
+      "nodeId": "b-child",
+      "parentId": "y-frame",
+      "position": {
+        "x": 240,
+        "y": 11
+      },
+      "type": "http-request"
+    }
+  ],
+  "edges": [
+    {
+      "edgeId": "e1",
+      "source": "a-start",
+      "target": "b-child"
+    },
+    {
+      "edgeId": "e2",
+      "source": "b-child",
+      "target": "z-end"
+    }
+  ],
+  "nodeTemplates": [
+    {
+      "config": {
+        "headers": [],
+        "method": "GET",
+        "url": "{{env.baseUrl}}/login"
+      },
+      "name": "Login request"
+    }
+  ]
+}

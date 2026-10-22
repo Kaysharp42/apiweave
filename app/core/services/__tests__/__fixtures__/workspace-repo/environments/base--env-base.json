@@ -1,0 +1,10 @@
+{
+  "environmentId": "env-base",
+  "name": "Base",
+  "description": null,
+  "swaggerDocUrl": null,
+  "isDefault": false,
+  "variables": {
+    "region": "eu"
+  }
+}

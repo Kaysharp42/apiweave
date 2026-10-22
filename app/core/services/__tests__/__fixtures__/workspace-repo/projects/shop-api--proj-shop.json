@@ -1,0 +1,18 @@
+{
+  "projectId": "proj-shop",
+  "name": "Shop API",
+  "description": null,
+  "color": "#123456",
+  "workflowOrder": [
+    {
+      "continueOnFail": false,
+      "enabled": true,
+      "workflowId": "wf-orders"
+    },
+    {
+      "continueOnFail": true,
+      "enabled": false,
+      "workflowId": "wf-login"
+    }
+  ]
+}

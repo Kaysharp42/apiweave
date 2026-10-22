@@ -17,13 +17,12 @@ import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { callTargetClearedWarning, retargetCallWorkflows } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
-import { environmentFileText, stableJson, workflowFileText } from "./project_folder"
+import { environmentFileText, exportNode, exportWorkflow, stableJson, workflowFileText } from "./workspace_repo_format"
 import {
   assertNoSecretValues,
   collectSecretRefs,
   findRedactedPlaceholders,
   SECRET_PLACEHOLDER,
-  sanitizeExportValue,
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
@@ -104,27 +103,6 @@ export interface DryRunResult {
     readonly secretReferences: number
     readonly missingSecrets: number
   }
-}
-
-/** A workflow as a bundle (and a project folder) carries it: credentials withheld, ids kept. */
-function exportWorkflow(workflow: Workflow): ExportedWorkflow {
-  return {
-    workflowId: workflow.workflowId,
-    name: workflow.name,
-    description: workflow.description ?? "",
-    nodes: workflow.nodes.map(exportNode),
-    edges: workflow.edges.map((edge) => toPlain(edge)),
-    variables: sanitizeVariablesForExport(asRecord(toPlain(workflow.variables))),
-    tags: workflow.tags,
-    selectedEnvironmentId: workflow.selectedEnvironmentId ?? null,
-    nodeTemplates: workflow.nodeTemplates.map((template) => sanitizeExportValue(toPlain(template))),
-  }
-}
-
-function exportNode(node: WorkflowNode): JsonValue {
-  const plain = asRecord(toPlain(node))
-  if (plain["config"] !== undefined) plain["config"] = sanitizeExportValue(plain["config"])
-  return plain
 }
 
 /** An environment as a bundle carries it: variables only (secret-named ones withheld), never secrets. */
