@@ -7,7 +7,7 @@ import type { WorkflowRevisionSummary } from "@shared/types/WorkflowRevisionSumm
 import { generateId } from "../id"
 import { parseJson } from "./helpers"
 
-/** Who made a workflow write: `canvas`, `agent:<name>`, `import` or `restore` (`cloud` on revisions kept before sync was removed). */
+/** Who made a workflow write: `canvas`, `agent:<name>`, `git`, `import` or `restore` (`cloud` remains for old revisions). */
 export type WorkflowWriteSource = string
 
 const SUMMARY_COLUMNS = "id, workflow_id, source, workflow_rev, node_count, edge_count, createdAt"

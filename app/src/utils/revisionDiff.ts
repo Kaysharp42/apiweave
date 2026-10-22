@@ -26,6 +26,8 @@ export function revisionSourceLabel(source: string): string {
       return "canvas edits";
     case "cloud":
       return "cloud sync";
+    case "git":
+      return "git sync";
     case "import":
       return "import";
     case "restore":
