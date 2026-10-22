@@ -1,8 +1,7 @@
-import type { GitSyncKind } from "./GitSyncKind";
+import type { GitSyncIndicator } from "./GitSyncIndicator";
 
 export interface GitSyncKindIconProps {
-  readonly kind: GitSyncKind;
-  /** The workspace has no remote, so its settled state is "committed", not "synced". */
-  readonly local: boolean;
+  /** The state whose icon to draw; a state with no icon draws nothing. */
+  readonly indicator: GitSyncIndicator;
   readonly className?: string;
 }

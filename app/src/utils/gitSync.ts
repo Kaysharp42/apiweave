@@ -1,5 +1,14 @@
+import {
+  CloudAlert,
+  CloudCheck,
+  CloudDownload,
+  CloudUpload,
+  HardDrive,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
-import type { GitSyncView } from "../types";
+import type { GitSyncIntent, GitSyncKind, GitSyncView } from "../types";
 import { describeGitError, remoteHost } from "./gitErrorMessages";
 
 const READ_ONLY_EXPLANATION =
@@ -11,18 +20,30 @@ const DIVERGED_EXPLANATION =
 const MERGING_EXPLANATION =
   "Both this device and the remote changed, and some fields were changed differently in each. Those need your decision before the merge can finish; until then nothing is pushed and your changes stay on this device. Discard local changes loads the remote's version instead.";
 
+const LOCAL_HISTORY_EXPLANATION =
+  "Every change is committed to this workspace's history on this device. It isn't connected to a remote.";
+
+/** The text colour each intent takes where no Button supplies one, as the design tokens spell it. */
+export const GIT_SYNC_INTENT_TEXT: Readonly<Record<GitSyncIntent, string>> = {
+  default: "text-text-muted dark:text-text-muted-dark",
+  success: "text-status-success dark:text-[var(--aw-status-success)]",
+  info: "text-status-info dark:text-[var(--aw-status-info)]",
+  warning: "text-status-warning dark:text-[var(--aw-status-warning)]",
+  error: "text-status-error dark:text-[var(--aw-status-error)]",
+};
+
 const plural = (count: number, one: string, other: string): string =>
   `${count} ${count === 1 ? one : other}`;
 
 /**
- * What the view's primary action is called: Review merge while conflicts wait,
- * Retry when the last attempt got stuck, otherwise Sync now — Commit now when
- * there is no remote to sync with.
+ * What the workspace's primary action is called: Review merge while conflicts
+ * wait, Retry when the last attempt got stuck or the host refused the push,
+ * otherwise Sync now — Commit now when there is no remote to sync with.
  */
-export function gitSyncPrimaryLabel(view: GitSyncView, connected: boolean): string {
-  if (view.kind === "merging") return "Review merge";
-  if (view.kind === "error" || view.kind === "read-only") return "Retry";
-  return connected ? "Sync now" : "Commit now";
+export function gitSyncPrimaryLabel(status: WorkspaceGitStatus): string {
+  if (status.state === "merging") return "Review merge";
+  if (status.state === "diverged" || status.state === "error" || status.readOnly) return "Retry";
+  return status.remoteUrl === null ? "Commit now" : "Sync now";
 }
 
 /** What happens to edits that are waiting, which is the one thing the mode decides; manual mode's button is named for what it does. */
@@ -39,23 +60,29 @@ const WHEN_PUSHED: Readonly<Record<WorkspaceGitStatus["mode"], string>> = {
 
 /** A view with the fields most states leave empty. */
 function view(
-  kind: GitSyncView["kind"],
+  kind: GitSyncKind,
   label: string,
-  intent: GitSyncView["intent"],
+  intent: GitSyncIntent,
+  icon: LucideIcon | null,
   explanation: string,
   extra: Partial<Pick<GitSyncView, "detail" | "needsAuthor">> = {},
 ): GitSyncView {
-  return { kind, label, intent, explanation, detail: null, needsAuthor: false, ...extra };
+  return { kind, label, intent, icon, explanation, detail: null, needsAuthor: false, ...extra };
 }
 
 /** The remote's host, or what to call it when the URL names none. */
 const whereOf = (status: WorkspaceGitStatus): string =>
   remoteHost(status.remoteUrl) ?? "the remote";
 
+/** Nothing to report: the header shows no control, and the switcher keeps the row's own tile. */
+function untrackedView(): GitSyncView {
+  return view("untracked", "Not tracked", "default", null, "");
+}
+
 function syncingView(status: WorkspaceGitStatus): GitSyncView {
   return status.remoteUrl === null
-    ? view("syncing", "Committing", "info", "Committing your changes to this workspace's history…")
-    : view("syncing", "Syncing", "info", `Syncing with ${whereOf(status)}…`);
+    ? view("syncing", "Committing", "info", RefreshCw, "Committing your changes to this workspace's history…")
+    : view("syncing", "Syncing", "info", RefreshCw, `Syncing with ${whereOf(status)}…`);
 }
 
 /**
@@ -68,7 +95,7 @@ function syncingView(status: WorkspaceGitStatus): GitSyncView {
 function mergingView(status: WorkspaceGitStatus): GitSyncView {
   const { lastError } = status;
   const needsAuthor = lastError?.code === "identity_missing";
-  return view("merging", "Merge needed", "warning", MERGING_EXPLANATION, {
+  return view("attention", "Merge needed", "warning", CloudAlert, MERGING_EXPLANATION, {
     needsAuthor,
     detail: lastError !== null && !needsAuthor ? lastError.message : null,
   });
@@ -81,17 +108,17 @@ function divergedView(status: WorkspaceGitStatus): GitSyncView {
     lastError !== null && lastError.code !== null
       ? ` Last attempt: ${describeGitError(lastError, status.remoteUrl)}`
       : "";
-  return view("diverged", "Diverged", "warning", `${DIVERGED_EXPLANATION}${lastAttempt}`);
+  return view("attention", "Diverged", "warning", CloudAlert, `${DIVERGED_EXPLANATION}${lastAttempt}`);
 }
 
 function errorView(status: WorkspaceGitStatus): GitSyncView {
   const { lastError } = status;
   const label = status.remoteUrl === null ? "Commit error" : "Sync error";
   if (lastError === null) {
-    return view("error", label, "error", "The last sync didn't finish — retry.");
+    return view("error", label, "error", CloudAlert, "The last sync didn't finish — retry.");
   }
   const needsAuthor = lastError.code === "identity_missing";
-  return view("error", label, "error", describeGitError(lastError, status.remoteUrl), {
+  return view("error", label, "error", CloudAlert, describeGitError(lastError, status.remoteUrl), {
     needsAuthor,
     // A missing author is fully explained, and git's text for it is not help.
     detail: lastError.code !== null && !needsAuthor ? lastError.message : null,
@@ -111,7 +138,7 @@ function readOnlyView(status: WorkspaceGitStatus): GitSyncView {
       ? ` The last sync also failed: ${describeGitError(lastError, status.remoteUrl)}`
       : "";
   const needsAuthor = status.state === "error" && lastError?.code === "identity_missing";
-  return view("read-only", "Read-only", "warning", `${READ_ONLY_EXPLANATION}${failedSince}`, {
+  return view("attention", "Read-only", "warning", CloudAlert, `${READ_ONLY_EXPLANATION}${failedSince}`, {
     needsAuthor,
     detail: lastError !== null && lastError.code !== null && !needsAuthor ? lastError.message : null,
   });
@@ -123,11 +150,11 @@ function incomingView(status: WorkspaceGitStatus): GitSyncView {
   const explanation = status.uncommitted
     ? `${waiting} You also have edits that aren't committed yet.`
     : waiting;
-  return view("incoming", `Incoming (${incoming})`, "info", explanation);
+  return view("pending", `Incoming (${incoming})`, "info", CloudDownload, explanation);
 }
 
 function pendingView(status: WorkspaceGitStatus): GitSyncView {
-  const { outgoing, uncommitted, mode } = status;
+  const { outgoing, uncommitted, mode, remoteUrl } = status;
   const unsaved = uncommitted
     ? `You have edits that aren't committed yet. ${whenCommitted(status)}`
     : null;
@@ -136,19 +163,20 @@ function pendingView(status: WorkspaceGitStatus): GitSyncView {
       ? `${plural(outgoing, "commit hasn't", "commits haven't")} been pushed to the remote yet. ${WHEN_PUSHED[mode]}`
       : null;
   // The count is the one known without writing the workspace out: commits, not edited records.
-  const label = !uncommitted && outgoing > 0 ? `Pending (${outgoing} to push)` : "Pending";
-  return view("pending", label, "warning", [unsaved, unpushed].filter(Boolean).join(" "));
+  const label =
+    remoteUrl === null
+      ? "Local history · uncommitted"
+      : !uncommitted && outgoing > 0
+        ? `Pending (${outgoing} to push)`
+        : "Pending";
+  // A workspace with no remote keeps the local icon: its edits are going into this device's history, not a cloud.
+  return view("pending", label, "info", remoteUrl === null ? HardDrive : CloudUpload, [unsaved, unpushed].filter(Boolean).join(" "));
 }
 
-function syncedView(status: WorkspaceGitStatus): GitSyncView {
+function settledView(status: WorkspaceGitStatus): GitSyncView {
   return status.remoteUrl === null
-    ? view(
-        "synced",
-        "Committed",
-        "success",
-        "Every change is committed to this workspace's history on this device. It isn't connected to a remote.",
-      )
-    : view("synced", "Synced", "success", `This workspace matches ${whereOf(status)}.`);
+    ? view("local", "Local history", "default", HardDrive, LOCAL_HISTORY_EXPLANATION)
+    : view("synced", "Synced", "success", CloudCheck, `This workspace matches ${whereOf(status)}.`);
 }
 
 /**
@@ -156,10 +184,13 @@ function syncedView(status: WorkspaceGitStatus): GitSyncView {
  * cycle running, a divergence, a refused push (with any failure since told as
  * part of it), another failure, incoming changes (manual mode only — auto
  * mode brings them in itself), local work not yet committed or pushed, and
- * last, in sync. A workspace with no remote says
- * "committed", never "synced", and has no push to describe.
+ * last, in sync. This is the one mapping every surface uses; the kind is the
+ * plan's coarse vocabulary, the label the exact state, and the icon and intent
+ * follow the kind. A workspace with no remote says "Local history", never
+ * "Synced", and has no push to describe.
  */
 export function describeGitSync(status: WorkspaceGitStatus): GitSyncView {
+  if (!status.tracked) return untrackedView();
   if (status.state === "merging") return mergingView(status);
   if (status.state === "syncing") return syncingView(status);
   if (status.state === "diverged") return divergedView(status);
@@ -167,5 +198,5 @@ export function describeGitSync(status: WorkspaceGitStatus): GitSyncView {
   if (status.state === "error") return errorView(status);
   if (status.mode === "manual" && status.incoming > 0) return incomingView(status);
   if (status.uncommitted || status.outgoing > 0) return pendingView(status);
-  return syncedView(status);
+  return settledView(status);
 }
