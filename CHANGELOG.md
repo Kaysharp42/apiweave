@@ -9,6 +9,72 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.20.0] — 2026-10-22
+
+APIWeave Cloud is gone. A workspace now syncs through a git repository you own,
+on any git host. See [Keep Tests in a Git Repository](docs/guides/git-workflows.md).
+
+### Added
+
+- **Track a workspace in git.** **Settings > Workspace settings > Version
+  history (git) > Track this workspace** keeps the workspace as a git
+  repository on this machine: one JSON file per project, workflow and
+  environment, written the same way on every machine, so a change reviews as a
+  small diff. In auto mode a commit is made about 30 seconds after your last
+  edit; with **Commit automatically** off, **Sync now** commits after listing
+  what changed by name. Secret values never reach the repository:
+  `{{secrets.NAME}}` references stay as written, and a credential typed into a
+  request is written as `<SECRET>`. Git must be installed; APIWeave runs your
+  own `git`, so your credentials and author apply.
+- **Sync with a remote.** **Connect to remote** takes the HTTPS, SSH or
+  `file://` URL of an empty repository and pushes the workspace's history to
+  `main`. From then on the app fetches, brings in the remote's changes and
+  pushes after each commit, at launch and every 5 minutes. A URL that carries a
+  user name or password is refused.
+- **Open a workspace from git.** **Open from git…** in the workspace switcher
+  clones a repository that holds a workspace, checks every file before
+  anything is created, and adds it as a workspace that syncs from then on. The
+  repository holds no secret values: set the ones its `{{secrets.NAME}}`
+  references use, and the dialog lists any credential withheld as `<SECRET>`.
+- **Edits made on two machines merge.** When both sides changed, the app
+  merges them by record, node and field. Changes that don't overlap are
+  combined into a real merge commit, and nothing either side committed is
+  lost. A field both sides changed differently waits as **Merge needed**:
+  **Review merge** shows **Your copy** and **Remote copy** side by side, to
+  keep one per field or for a whole record. **Abandon merge** keeps every local
+  commit, and **Sync now** offers the merge again.
+- **Sync status in the header.** A tracked workspace shows **Synced**,
+  **Pending**, **Syncing**, **Incoming**, **Merging**, **Diverged**,
+  **Read-only** or **Sync error** as an icon and a word, with a popover that
+  says what it means and what to do. A host that refuses your push makes the
+  workspace read-only instead of failing: edits keep committing locally until
+  a push succeeds. Git failures are explained in plain words, with git's own
+  text underneath.
+- **`apiweave run` runs a workspace repository.** Point it at a checkout of
+  the connected repository: `apiweave run ./my-tests`. It runs every project
+  in the repository's order, or one with `--project` or `--workflow`, and
+  `--bail` stops at the first project that did not complete. JUnit suites are
+  named `<project>: <workflow>`. It needs no git and no database.
+
+### Removed
+
+- **APIWeave Cloud.** The Cloud account, Cloud sync, shared Team workspaces,
+  devices, roles, end-to-end-encrypted Cloud workspaces and the Cloud conflict
+  pages are gone. On upgrade the app deletes its Cloud tables and settings;
+  every workspace, workflow, environment and secret on this machine stays. To
+  share a workspace, track it in git and connect a remote.
+- **Export to Folder and Import from Folder.** A tracked workspace's
+  repository replaces them, and `apiweave run` reads it directly.
+  `.awecollection` bundles, single workflow exports and Postman collections
+  import and run as before.
+
+### Known limitations
+
+- A workspace syncs one branch: `main`, or the default branch of a repository
+  opened from git. There is no branch picker.
+- An environment's base environment is not written to the repository; put the
+  variables a run needs in the environment itself.
+
 ## [0.12.1] — 2026-10-13
 
 ### Added
@@ -1130,8 +1196,10 @@ desktop app:
   invites, and the append-only audit log.
 - Scoped service tokens, environment protection with required reviewers, and
   the trusted-token bypass.
-- OAuth/OIDC and SSO login on the desktop side (Cloud login is a separate,
-  optional Cloud account, not part of the desktop process).
+- OAuth/OIDC and SSO login on the desktop side.
+- APIWeave Cloud (removed in 0.20.0): the Cloud account and sync, shared Team
+  workspaces, devices and roles. A workspace syncs through a git repository
+  instead.
 - The `SECRET_ENCRYPTION_KEY` server env var, per-instance DEK/KEK envelope
   model, and the `environment > workspace > organization` secret scope chain.
   The desktop uses a per-install keyfile and the `environment > workspace` local
