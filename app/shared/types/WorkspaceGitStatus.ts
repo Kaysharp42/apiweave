@@ -15,6 +15,12 @@ export interface WorkspaceGitStatus {
   readonly state: WorkspaceGitState
   /** The last cycle's failure; null once a cycle succeeds. `identity_missing` asks the user who the author is. */
   readonly lastError: WorkspaceGitError | null
+  /** The host refused this user's pushes: commits stay local until one succeeds. */
+  readonly readOnly: boolean
+  /** Commits the remote's branch has that this workspace does not; 0 while there is no remote. */
+  readonly incoming: number
+  /** Commits this workspace has that the remote's branch does not; 0 while there is no remote. */
+  readonly outgoing: number
   /** HEAD of the workspace's repository; null when untracked or before the first commit. */
   readonly lastCommit: WorkspaceGitCommit | null
 }

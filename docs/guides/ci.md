@@ -176,7 +176,7 @@ A literal credential the repository withheld (`<SECRET>`) cannot authenticate a 
 
 ## GitHub Actions
 
-Check out the repository that holds the workspace files (or a `.awecollection` bundle), store each secret as a repository secret, and add a job. In this release the app pushes a workspace once, when you connect it to an empty repository (see [Connect a remote](git-workflows.md#connect-a-remote)), and never again, so see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how to keep a repository of your own up to date:
+Check out the repository the workspace is connected to (or a `.awecollection` bundle), store each secret as a repository secret, and add a job. The app pushes every commit to the connected remote, so the pipeline checks out the same repository you connected in [Connect a remote](git-workflows.md#connect-a-remote) — see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how that repository is kept up to date:
 
 ```yaml
 name: API tests

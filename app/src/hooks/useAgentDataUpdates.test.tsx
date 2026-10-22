@@ -89,6 +89,27 @@ describe("useAgentDataUpdates", () => {
     expect(signalCollectionsRefreshMock).toHaveBeenCalledTimes(1);
   });
 
+  it("refetches every list a git sync's import rewrote, and stays in the workspace", () => {
+    const publish = mount();
+
+    act(() => {
+      publish(
+        ...["workspaces", "projects", "workflows", "environments"].map((domain) => ({
+          domain,
+          action: "gitImport",
+          workspaceId: "ws1",
+        })),
+      );
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(refreshWorkspacesMock).toHaveBeenCalledTimes(1);
+    expect(signalWorkflowsRefreshMock).toHaveBeenCalledTimes(1);
+    expect(signalCollectionsRefreshMock).toHaveBeenCalledTimes(1);
+    expect(fetchEnvironmentsMock).toHaveBeenCalledWith("ws1");
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
   it("coalesces a burst of writes into one refetch per store", () => {
     const publish = mount();
 

@@ -42,7 +42,7 @@ export interface HarnessOptions {
   readonly anonymous?: boolean
   /** Told every status the service announces. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
-  /** How long dispose waits for an open in progress. */
+  /** How long `dispose` waits for a running cycle or open; a test that holds one passes a small value. */
   readonly disposeWaitMs?: number
 }
 
@@ -91,6 +91,10 @@ export function passthrough(git: GitService): GitSyncGit {
     remoteRemove: git.remoteRemove.bind(git),
     revParse: git.revParse.bind(git),
     mergeBase: git.mergeBase.bind(git),
+    mergeFastForward: git.mergeFastForward.bind(git),
+    resetHard: git.resetHard.bind(git),
+    countAheadBehind: git.countAheadBehind.bind(git),
+    countCommits: git.countCommits.bind(git),
     firstRemoteRef: git.firstRemoteRef.bind(git),
   }
 }

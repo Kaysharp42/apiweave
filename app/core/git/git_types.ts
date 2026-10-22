@@ -15,7 +15,9 @@ export type GitCommand =
   | "clone"
   | "remote"
   | "mergeAbort"
+  | "mergeFastForward"
   | "resetHard"
+  | "revList"
   | "log"
   | "config"
 
@@ -52,6 +54,14 @@ export interface GitStatus {
   readonly behind: number
   readonly entries: readonly GitStatusEntry[]
   readonly clean: boolean
+}
+
+/** How two revisions stand apart: each side's commits the other does not reach. */
+export interface GitAheadBehind {
+  /** Commits the first revision has that the second does not. */
+  readonly ahead: number
+  /** Commits the second revision has that the first does not. */
+  readonly behind: number
 }
 
 export interface GitLogOptions {

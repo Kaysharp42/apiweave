@@ -2,7 +2,7 @@
 
 *How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
 
-> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message), **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connecting a remote pushes the history **once**, to an empty repository; after that the app never pushes or pulls again. The workspace switcher's **Open from git…** goes the other way, once: it clones a repository and opens the workspace in it as a new one, and nothing is read from the repository after that. `apiweave run` runs a repository's files in CI, so a checkout of one is all a pipeline needs.
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Commit now** (with an optional message), **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. When both sides changed, the app stops and keeps both; when the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
 
 ## Prerequisites
 
@@ -67,7 +67,7 @@ The repository is an ordinary git repository at `<userData>/git/<workspace id>/`
 
 ## Connect a remote
 
-A tracked workspace can be connected to one remote repository on a git host, so its history is kept somewhere other than your machine.
+A tracked workspace can be connected to one remote repository on a git host, so its history is kept somewhere other than your machine and other machines can sync with it.
 
 1. Create an empty repository on your host (no README, no first commit).
 2. In **Version history (git)**, paste its URL under **Remote URL** and click **Connect to remote**.
@@ -83,8 +83,8 @@ Plain `http://` and `git://` are refused, and so is a bare path such as `C:\repo
 
 What happens next depends on what the repository holds:
 
-- **No branches at all:** the workspace's history is pushed to the `main` branch, once. This is the only push this release makes. It must be a bare repository (as every host creates), not a working copy somebody uses: git cannot push to a working copy's checked-out branch, and the connection is refused saying so.
-- **Already holding this workspace's history** (a copy of the app's repository, for instance): it is joined as it is and nothing is pushed.
+- **No branches at all:** the workspace's history is pushed to the `main` branch, and the connection becomes the workspace's sync target. It must be a bare repository (as every host creates), not a working copy somebody uses: git cannot push to a working copy's checked-out branch, and the connection is refused saying so.
+- **Already holding this workspace's history** (a copy of the app's repository, for instance): it is joined as it is, and the app syncs both ways from then on.
 - **Holding history this workspace did not come from:** the connection is refused with `That repository already has history this workspace did not come from.` That includes a repository with history on another branch only, such as `master`: only one with no branches at all counts as empty. To work on a repository that already holds a workspace, [open it from git](#open-a-workspace-from-git) instead.
 - **Unreachable, or refusing you:** the connection is refused with git's own message, and the workspace stays unconnected.
 
@@ -96,6 +96,20 @@ Two things to know about the history that is pushed:
 
 - The push creates `main`, but a new empty bare repository's own `HEAD` may name `master`. Someone cloning it then gets no checkout and must ask for the branch: `git clone --branch main <url>`.
 - **Stop tracking** deletes the app's repository, and tracking again starts a new history. A remote that holds the old one has nothing in common with the new one, so the next connect refuses it as someone else's history. Connect a fresh empty repository instead.
+
+## Sync with the remote
+
+A connected workspace syncs by itself. In **auto** mode, about 30 seconds after your last edit the app commits the workspace and then runs a full cycle:
+
+1. **Fetch** the remote's branch.
+2. **Integrate**: when only the remote moved, fast-forward the clone to it and import its records into the database, so the two computers see the same projects, workflows and environments. The workspace list, the sidebar, an open project page and the environments page refresh as the import lands, as they do for an agent's write. If the app is closed or stops between moving the clone and finishing the import, the next start puts the clone back where the database is and the import runs again, so the remote's change is never committed away.
+3. **Push** this device's commits. If the remote moved in the meantime, the app fetches once more, brings it in, and pushes again; a rejection that only means the remote is ahead is retried this way.
+
+The app also runs a cycle when it launches and every 5 minutes while it is open. In **manual** mode an edit schedules no commit; the launches and the interval only fetch, so the workspace knows how many remote changes are waiting, and **Commit now** commits and syncs when you choose. When that sync stops short (diverged, refused or offline), the commit still happened locally, and the panel shows why the sync stopped.
+
+**Diverged.** If both this device and the remote gained commits since they last agreed, this version cannot combine them: the app stops with the state **diverged**, pushes nothing and imports nothing, and keeps both sides and their commits, so no work is lost. A cycle that cannot reach the remote leaves it **diverged**, with that cycle's reason as the message. An edit you make while a cycle is already under way is committed before anything is imported and counts as this device's side, so if the remote moved too, that cycle stops **diverged** rather than importing the remote over your edit. Bringing the two together — a merge, or discarding the local changes to match the remote — arrives with the sync status controls.
+
+**Read-only.** A host can refuse a push, because you have no write access or because the branch is protected. The app then marks the workspace read-only: your edits save and commit locally as usual, the remote's commits still come in, and the automatic cycles push nothing, but an explicit sync (**Commit now** in manual mode) still attempts the push. Only a push that sends commits and succeeds clears read-only, because that is what proves the host accepts you again; a sync with nothing to send pushes nothing and leaves it set. The remote's commits come in only while this device has none of its own: once you edit a read-only workspace, those local commits never leave it, so the next commit anyone else pushes makes the workspace **diverged**. The refusal's message stays in the panel through later commits and pulls. Another failure, such as a fetch that fails or a divergence, replaces it with its own message, and once that failure is over the panel shows no message; the workspace stays read-only either way.
 
 ## Open a workspace from git
 
@@ -114,22 +128,20 @@ What happens:
 
 **A workspace that is already here.** Workspaces are identified by the id in `workspace.json`, not by their name or URL. If the repository's workspace is already in the app (the one you pushed from this machine, for instance), the repository is cloned into a scratch folder, checked, and removed again: nothing in the app changes. The dialog says **This workspace is already in APIWeave** and names it, and **Open it** takes you to that workspace; **Back** returns to the URL.
 
-**Nothing syncs yet.** Opening is a one-time import. The workspace is tracked like any other, so your later edits are committed in its local clone, but the app does not fetch from or push to the repository: commits made there afterwards do not come in, and yours do not go out.
+**It syncs from then on.** The open imports the repository once, and the workspace is tracked in **auto** mode and connected to that URL on the branch the clone is on, so later cycles push your commits and bring in other people's exactly as for any connected workspace; see [Sync with the remote](#sync-with-the-remote).
 
 ## Get a repository into CI
 
-Connecting an empty repository puts the history on your host once. The app does not push after that, so this is the route for getting later changes from the app's repository to a pipeline. Clone the app's repository out of its data folder into a checkout of your own, and push **that clone** to your host:
+Connecting a remote is all a pipeline needs: the app pushes every committed change to it, so a checkout of the connected repository holds the workspace files with the commit subjects as their history. Clone it anywhere and run the repository folder:
 
 ```bash
-git clone "<userData>/git/<workspace id>" my-tests    # your own copy; its origin is the app's repository
-cd my-tests
-git remote add host https://git.example.com/acme/my-tests.git
-git push -u host HEAD
+git clone <your remote url> my-tests
+apiweave run ./my-tests
 ```
 
-Run `apiweave run ./my-tests` there, or let your pipeline check out `host`. To bring in later changes, `git pull` inside the clone (its `origin` is the local path), then `git push host`. Only committed changes travel: in manual mode, use **Commit now** first.
+Only committed changes travel: an auto-mode workspace commits about 30 seconds after your last edit, and in manual mode **Commit now** is what pushes.
 
-**Do not add or change a remote inside the app's own repository** (`<userData>/git/<workspace id>`) by hand, and do not edit or commit in it: **Connect to remote** and **Disconnect** are how its remote is set. Only APIWeave writes there; it is the app's working copy, and the clone is the one that is yours.
+**Do not add or change a remote inside the app's own repository** (`<userData>/git/<workspace id>`) by hand, and do not edit or commit in it: **Connect to remote** and **Disconnect** are how its remote is set. Only APIWeave writes there; it is the app's working copy.
 
 ## Run a repository in CI
 
@@ -152,8 +164,8 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 
 ## Not covered in this release
 
-- **One push, then none.** Connecting to an empty repository pushes the history once. Later commits stay local, nothing is pulled, a diverged remote is not detected, and the branch is `main` with no way to change it.
-- **No import after the first open.** [Opening a workspace from git](#open-a-workspace-from-git) reads a repository once. Nothing is pulled afterwards, so a workspace never picks up what others push, and there is no merge or conflict handling.
+- **No merge of two changed sides.** When this device and the remote both gained commits since they last agreed, the cycle stops at **diverged** and keeps both sides. The merge that combines them, and a control to discard a divergence, arrive with the sync status UI.
+- **The branch is fixed.** A workspace syncs the branch its repository is on — `main` for one this app created, or the repository's default branch for one opened from git — and there is no branch picker.
 - **Environment inheritance is not carried.** An environment's base environment is not written; put the variables a run needs in the environment itself.
 - **Local history stays separate.** A workflow's [version history](../features/workflows-and-nodes.md#version-history) in the app is not the git history.
 
@@ -163,6 +175,8 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 - **If connecting fails with an authentication error**, git could not sign in to the host without asking. Sign in once with your usual git tool (or add an SSH key to your agent), then connect again.
 - **If connecting says `Commit the workspace once before connecting a remote.`**, the workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email when the panel asks, or use **Commit now**, then connect.
 - **If connecting fails with `That repository already has history…`**, the repository already holds someone else's history. The workspace was left unconnected; create an empty repository and connect to that.
+- **If the panel says this workspace and its remote "have each changed since they last agreed"**, the two histories diverged. Both sides keep their commits and nothing is pushed or imported; reconciling them arrives with the sync status controls.
+- **If a push was refused**, the host does not accept pushes from your account to that repository, or the branch is protected. The workspace stays read-only — local commits continue, and the remote's changes still come in until this device has commits of its own, after which the next remote change makes it diverged — and read-only clears on the next push that sends commits and succeeds. Check that your account can write to the repository and that the branch is not protected. A fetch the host refuses is not this: it shows as an error, and the workspace is not marked read-only.
 - **If opening says `.apiweave/format.json is missing: this is not an APIWeave workspace repository`**, the repository is empty or holds something other than a workspace. Check the URL, and that the workspace is on the repository's default branch.
 - **If opening says `written by a newer APIWeave`**, the repository uses a format version this build does not read. Update APIWeave.
 - **If opening names a file as invalid**, the file was edited by hand or has an unresolved merge conflict. Fix that file in the repository; the message names it and the problem.

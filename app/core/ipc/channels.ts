@@ -96,6 +96,7 @@ export const GIT_CHANNELS = {
   syncNow: "git:syncNow",
   connectRemote: "git:connectRemote",
   disconnectRemote: "git:disconnectRemote",
+  discardLocalChanges: "git:discardLocalChanges",
   openFromGit: "git:openFromGit",
 } as const
 
@@ -142,9 +143,13 @@ export const PROJECT_RUN_CHANGED_CHANNEL = "apiweave:project-run-changed"
  *
  * Unkeyed and coarse deliberately: the renderer is refetching a handful of
  * local SQLite lists, so an occasional refetch it did not strictly need is far
- * cheaper than the bookkeeping needed to prove it did. Only MCP writes are
- * published — the renderer's own writes already update its stores, and
- * announcing those would fight its optimistic updates.
+ * cheaper than the bookkeeping needed to prove it did. The renderer's own
+ * writes are never published: they already update its stores, and announcing
+ * them would fight its optimistic updates.
+ *
+ * Besides MCP writes there is one publisher: a workspace's import from its git
+ * remote rewrites records underneath the renderer the same way, and announces
+ * action `gitImport` once per domain the workspace's tree holds.
  */
 export const AGENT_WRITE_CHANNEL = "apiweave:agent-write"
 

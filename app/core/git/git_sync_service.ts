@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
+import type { GitErrorCode } from "@shared/types/GitErrorCode"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkspaceGitCommit } from "@shared/types/WorkspaceGitCommit"
@@ -8,7 +9,7 @@ import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommit
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
-import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
+import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
   CollectionRepository,
@@ -31,20 +32,29 @@ import { assertWorkspaceRemoteUrl } from "./git_arguments"
 import {
   GitError,
   GitIdentityMissingError,
+  GitNonFastForwardError,
   GitNotARepositoryError,
+  GitPermissionDeniedError,
   isCheckedOutBranchRefusal,
   isNoSuchRemote,
 } from "./git_errors"
 import { awaitWithin } from "./git_process"
 import type { GitService } from "./git_service"
-import type { GitStatusEntry } from "./git_types"
+import type { GitAheadBehind, GitStatusEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
 import { readWorkspaceTree, writeWorkspaceTree } from "./workspace_tree"
 
 /** How long auto mode waits after the last edit before it commits: one commit per burst of edits. */
 export const AUTO_COMMIT_DELAY_MS = 30_000
 
-/** How long {@link GitSyncService.dispose} waits for an open in progress before letting the app quit; the next startup's reconcile removes what it left behind. */
+/** How often the app looks at the remote by itself: a full cycle in auto mode, a fetch in manual mode. */
+export const SYNC_INTERVAL_MS = 5 * 60_000
+
+/**
+ * How long {@link GitSyncService.dispose} waits for a running cycle or open
+ * before letting the app quit; the next startup's reconcile repairs or
+ * removes what it left behind.
+ */
 export const DISPOSE_WAIT_MS = 5_000
 
 const TRACK_MESSAGE = "Start tracking this workspace in APIWeave"
@@ -63,6 +73,22 @@ const NOTHING_TO_DISCONNECT_MESSAGE = "This workspace has no version history, so
 const WORKING_COPY_MESSAGE =
   "That repository is a working copy, not a bare repository, so git cannot push to its checked-out branch. " +
   "Create a bare or empty repository on your host and connect to that."
+const NOT_CONNECTED_MESSAGE = "This workspace is not connected to a remote, so there is no remote state to restore."
+const NO_REMOTE_BRANCH_MESSAGE = "The remote does not have this workspace's branch yet, so there is no remote state to restore."
+
+/**
+ * §3.1 step 4's stop state, until a semantic merge exists: both sides hold
+ * commits since they last agreed, and neither the fast-forward nor the push
+ * can settle them. Nothing was pushed or pulled, and the local commits stay.
+ */
+const DIVERGED_MESSAGE =
+  "This workspace and its remote have each changed since they last agreed, and this version cannot combine the two. " +
+  "The workspace's changes stay on this device. Reconcile the two by hand, or discard the local changes to match the remote."
+
+/** The same stop, reached when the remote moved again while a retried push was running: it is the second failure's reason. */
+const LATE_DIVERGED_MESSAGE =
+  "The remote moved again while this workspace was pushing, and both sides now hold changes this version cannot combine. " +
+  "Nothing was pushed. Reconcile the two by hand, or discard the local changes to match the remote."
 
 /**
  * A scratch clone of an open in progress is `<cloneRoot>/.open-<random>`. No
@@ -103,6 +129,10 @@ export type GitSyncGit = Pick<
   | "remoteRemove"
   | "revParse"
   | "mergeBase"
+  | "mergeFastForward"
+  | "resetHard"
+  | "countAheadBehind"
+  | "countCommits"
   | "firstRemoteRef"
 >
 
@@ -121,10 +151,18 @@ export interface GitSyncServiceOptions {
   readonly repositories: GitSyncRepositories
   /** Defaults to {@link AUTO_COMMIT_DELAY_MS}. */
   readonly autoCommitDelayMs?: number
-  /** Defaults to {@link DISPOSE_WAIT_MS}; how long {@link GitSyncService.dispose} waits for an open in progress. */
+  /** Defaults to {@link SYNC_INTERVAL_MS}; {@link GitSyncService.start} polls at this rate. */
+  readonly syncIntervalMs?: number
+  /** Defaults to {@link DISPOSE_WAIT_MS}; how long {@link GitSyncService.dispose} waits for a running cycle or open. */
   readonly disposeWaitMs?: number
   /** Told every status a call or an auto commit leaves behind. Must not throw. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
+  /**
+   * Told when the remote's tree was imported into the workspace — by a
+   * fast-forward or a discard — and committed: its records changed underneath
+   * whatever the renderer holds. Not told for an import that rolled back.
+   */
+  readonly onImported?: (workspaceId: string) => void
 }
 
 /**
@@ -143,22 +181,48 @@ export interface GitSyncServiceOptions {
  * `workflowChanged`) starts a {@link AUTO_COMMIT_DELAY_MS} timer, and every
  * further write restarts it. The repositories announce only committed writes,
  * so a rolled-back transaction schedules nothing.
+ *
+ * With a remote, every cycle continues past the commit: fetch, fast-forward
+ * and import, push (§3.1 steps 3–5). {@link start} also runs a pass at startup
+ * and every {@link SYNC_INTERVAL_MS}: auto workspaces cycle, manual ones only
+ * fetch, so their status can report incoming changes. A workspace whose call
+ * is queued or running is skipped; the pass is a poll, not a second caller.
+ *
+ * Moving the clone to the remote's tip and importing that tree cannot be one
+ * atomic step, and a clone left ahead of its database would commit the
+ * inverse of the remote's change and push it. So the commit the clone is
+ * leaving is recorded on the row before it moves (`integratingFrom`) and
+ * cleared in the import's own transaction; every call that serializes or
+ * pushes the workspace first moves a clone that still carries it back there,
+ * and stops with `error` when it cannot.
  */
 export class GitSyncService {
   private readonly repositories: GitSyncRepositories
   private readonly git: GitSyncGit
   private readonly delayMs: number
+  private readonly intervalMs: number
   private readonly disposeWaitMs: number
   private readonly locks = new Map<string, Promise<void>>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * How many committed writes each workspace's repositories have announced,
+   * and the count the last commit saw. A cycle that finds them apart has an
+   * edit the database holds but the clone does not, and must commit it before
+   * anything — an import included — can replace it (§3.1 step 1).
+   */
+  private readonly writes = new Map<string, number>()
+  private readonly committedWrites = new Map<string, number>()
   /** Opens run one at a time: the end of the chain, which never rejects. */
   private openQueue: Promise<void> = Promise.resolve()
+  private passTimer: ReturnType<typeof setInterval> | undefined
+  private started = false
   private disposed = false
 
   public constructor(private readonly options: GitSyncServiceOptions) {
     this.repositories = options.repositories
     this.git = options.git
     this.delayMs = options.autoCommitDelayMs ?? AUTO_COMMIT_DELAY_MS
+    this.intervalMs = options.syncIntervalMs ?? SYNC_INTERVAL_MS
     this.disposeWaitMs = options.disposeWaitMs ?? DISPOSE_WAIT_MS
   }
 
@@ -173,9 +237,14 @@ export class GitSyncService {
         branch: "main",
         state: "idle",
         lastError: null,
+        readOnly: false,
+        incoming: 0,
+        outgoing: 0,
         lastCommit: null,
       }
     }
+    const directory = this.cloneDir(workspaceId)
+    const { ahead, behind } = await this.divergence(directory, binding)
     return {
       workspaceId,
       tracked: true,
@@ -184,7 +253,32 @@ export class GitSyncService {
       branch: binding.branch,
       state: binding.state,
       lastError: binding.lastError,
-      lastCommit: await this.lastCommit(this.cloneDir(workspaceId)),
+      readOnly: binding.readOnly,
+      incoming: behind,
+      outgoing: ahead,
+      lastCommit: await this.lastCommit(directory),
+    }
+  }
+
+  /**
+   * How this workspace stands against the remote branch. `countAheadBehind`
+   * treats a branch the remote has not got yet as empty, which would report
+   * 0/0 with unpushed commits: with no remote branch every local commit is
+   * outgoing. An unborn HEAD is nothing either way.
+   */
+  private async divergence(directory: string, binding: WorkspaceGitBinding): Promise<GitAheadBehind> {
+    if (binding.remoteUrl === null) return { ahead: 0, behind: 0 }
+    try {
+      const remoteRef = `${ORIGIN}/${binding.branch}`
+      if ((await this.git.revParse(directory, remoteRef)) === undefined) {
+        if ((await this.git.revParse(directory, "HEAD")) === undefined) return { ahead: 0, behind: 0 }
+        return { ahead: await this.git.countCommits(directory, "HEAD"), behind: 0 }
+      }
+      return await this.git.countAheadBehind(directory, "HEAD", remoteRef)
+    } catch (error) {
+      // A status is a report, not an operation: a missing clone or git is the next cycle's error to record.
+      if (error instanceof GitError) return { ahead: 0, behind: 0 }
+      throw error
     }
   }
 
@@ -233,6 +327,8 @@ export class GitSyncService {
     return this.exclusive(workspaceId, async () => {
       await removeDirectory(directory)
       this.repositories.workspaceGit.delete(workspaceId)
+      this.writes.delete(workspaceId)
+      this.committedWrites.delete(workspaceId)
       return this.announce(workspaceId)
     })
   }
@@ -260,6 +356,8 @@ export class GitSyncService {
       const binding = this.trackedBinding(workspaceId)
       if (binding.remoteUrl !== null) throw new ConflictError(ALREADY_CONNECTED_MESSAGE)
       const remoteUrl = assertWorkspaceRemoteUrl(url)
+      // A clone an earlier remote's fast-forward left moved holds commits the database does not: never push those.
+      await this.returnToDatabase(workspaceId, directory)
       // A workspace tracked without an author has no commit yet: nothing to push or compare.
       if ((await this.git.revParse(directory, "HEAD")) === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
       await this.removeOrigin(directory)
@@ -334,17 +432,73 @@ export class GitSyncService {
   }
 
   /**
-   * Commit what changed; a local commit is the whole sync cycle. A missing
-   * author is not thrown: it is the status's `lastError`, which is how the
-   * caller learns to ask for one and pass it back here.
+   * Run one full sync cycle, now: commit what changed and, for a connected
+   * workspace, fetch, integrate and push (§3.1 steps 1–5). An unconnected
+   * workspace stops after the commit.
+   *
+   * Resolves with the status the cycle left behind. A missing author, a
+   * divergence, a refused push, every other git failure and a remote tree that
+   * does not import are that status's `state` and `lastError`, not a
+   * rejection: the cycle recorded its outcome, and the caller reads it here.
+   * It rejects for an id that is not a workspace id, an untracked workspace,
+   * and an unexpected failure — a bug, which the status records as well.
+   *
+   * This is the one cycle that pushes a workspace the host refused (read-only):
+   * an automatic pass leaves its commits local, and a push that sends commits
+   * and succeeds clears the flag. With nothing to send nothing is pushed, so
+   * nothing is proved and the flag stays.
    */
   public async syncNow(workspaceId: string, request: WorkspaceGitCommitRequest = {}): Promise<WorkspaceGitStatus> {
-    try {
-      await this.commitLocal(workspaceId, request)
-    } catch (error) {
-      if (!(error instanceof GitIdentityMissingError)) throw error
-    }
-    return this.status(workspaceId)
+    this.cancelAutoCommit(workspaceId)
+    // The status this cycle left, read under its lock: a cycle queued behind it must not answer for it.
+    return this.exclusive(workspaceId, async () => {
+      await this.syncCycle(workspaceId, this.cloneDir(workspaceId), request, true)
+      return this.status(workspaceId)
+    })
+  }
+
+  /**
+   * Throw away everything this workspace has that the remote does not: every
+   * local commit and uncommitted change, then re-import the remote's tree.
+   * The offer read-only mode makes, and the recovery from a divergence.
+   *
+   * The clone is fetched first, so "the remote" is the remote as it is now,
+   * and the branch is reset to `origin/<branch>` — not to a configured
+   * upstream, which a joined remote may not have. The read-only flag stays:
+   * discarding proves nothing about whether the host now accepts a push.
+   * Rejects when the fetch fails or the remote's tree does not import; the
+   * workspace is then as it was.
+   */
+  public async discardLocalChanges(workspaceId: string): Promise<WorkspaceGitStatus> {
+    const directory = this.cloneDir(workspaceId)
+    this.cancelAutoCommit(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.trackedBinding(workspaceId)
+      if (binding.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_MESSAGE)
+      // An earlier move that never imported: `head` below must be where the database is.
+      await this.returnToDatabase(workspaceId, directory)
+      await this.git.fetch(directory, ORIGIN)
+      const remoteRef = `${ORIGIN}/${binding.branch}`
+      const remoteSha = await this.git.revParse(directory, remoteRef)
+      if (remoteSha === undefined) throw new ConflictError(NO_REMOTE_BRANCH_MESSAGE)
+      const head = await this.git.revParse(directory, "HEAD")
+      if (head !== undefined) this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
+      try {
+        await this.git.resetHard(directory, remoteRef)
+        await this.importRemoteTree(workspaceId, directory)
+      } catch (error) {
+        // The reset moved the clone but the import did not take; left there, a
+        // later cycle would push the local tree over the remote's. Put it back
+        // where it was and report the import's failure.
+        await this.rollBackTo(workspaceId, directory, head)
+        throw error
+      }
+      // The import's own writes announced themselves; this cycle already holds what they would commit.
+      this.cancelAutoCommit(workspaceId)
+      this.recordSynced(workspaceId, remoteSha)
+      this.settleIdle(workspaceId)
+      return this.announce(workspaceId)
+    })
   }
 
   /** The new commit's sha, or undefined when the workspace's tree already matches HEAD. Supersedes a pending auto commit. */
@@ -357,6 +511,9 @@ export class GitSyncService {
   /** A repository write to the workspace committed. Wire to the Collection, Environment and Workspace repositories' `onChanged`. */
   public workspaceChanged(workspaceId: string): void {
     if (this.disposed) return
+    // Counted whatever the mode: a manual workspace's edit is exactly what a
+    // cycle already running must commit before it may import anything.
+    this.writes.set(workspaceId, (this.writes.get(workspaceId) ?? 0) + 1)
     if (this.repositories.workspaces.getById(workspaceId) === undefined) {
       this.forget(workspaceId)
       return
@@ -385,10 +542,13 @@ export class GitSyncService {
    * the only copy of that history, and a later `track` adopts it. The one
    * exception is what an open that never finished leaves — a scratch clone,
    * or a clone that still carries {@link OPEN_MARKER} — which is the app's own
-   * download and is removed.
+   * download and is removed. That sweep waits its turn behind any open in
+   * progress, which it must not race, so it is queued rather than awaited: an
+   * open still cloning does not hold up the rest of startup. {@link settled}
+   * waits for it.
    */
   public async reconcile(): Promise<void> {
-    await this.inOpenQueue(() => this.sweepOpenScratch())
+    void this.inOpenQueue(() => this.sweepOpenScratch())
     const bindings = this.repositories.workspaceGit.listAll()
     const results = await Promise.allSettled(
       bindings.map((binding) => this.exclusive(binding.workspaceId, () => this.reconcileOne(binding))),
@@ -401,24 +561,100 @@ export class GitSyncService {
   /** Resolves once no call is running or queued for any workspace. */
   public async settled(): Promise<void> {
     await this.openQueue
-    await this.locksSettled()
+    while (this.locks.size > 0) await Promise.all(this.locks.values())
   }
 
   /**
-   * Stop auto commits and wait for what is running. An open is waited for at
-   * most {@link DISPOSE_WAIT_MS}: one still cloning can take minutes, and
-   * gives up by itself once the clone is done. What auto mode had pending is
-   * committed by the next {@link reconcile}.
+   * Begin syncing by itself: {@link reconcile} (repair, and commit what auto
+   * mode left pending), one pass now, then one every
+   * {@link SYNC_INTERVAL_MS}. In auto mode a pass is a full cycle; in manual
+   * mode it only fetches, so the status can report incoming changes.
+   */
+  public async start(): Promise<void> {
+    await this.reconcile()
+    if (this.disposed || this.started) return
+    this.started = true
+    await this.pass()
+    // A dispose during the pass must not leave a timer behind that nothing
+    // will clear: the app is quitting.
+    if (this.disposed) return
+    this.passTimer = setInterval(() => void this.pass(), this.intervalMs)
+  }
+
+  /** One pass over every tracked workspace, at startup and on the interval. Its failures are logged, never thrown. */
+  private async pass(): Promise<void> {
+    const bindings = this.repositories.workspaceGit.listAll()
+    await Promise.allSettled(bindings.map((binding) => this.passOne(binding.workspaceId)))
+  }
+
+  /**
+   * A workspace's share of a pass. One with a call queued or running is left
+   * to it: the pass is a poll, and a cycle already under way is fresher than
+   * this one would be. A workspace with no remote has nothing to fetch.
+   */
+  private async passOne(workspaceId: string): Promise<void> {
+    if (this.disposed || this.locks.has(workspaceId)) return
+    try {
+      await this.exclusive(workspaceId, async () => {
+        // The mode, the remote or the row itself can change while this waits for the lock.
+        const binding = this.repositories.workspaceGit.get(workspaceId)
+        if (binding === undefined || binding.remoteUrl === null) return
+        if (binding.mode === "manual") await this.fetchOnly(workspaceId)
+        else await this.syncCycle(workspaceId, this.cloneDir(workspaceId), {}, !binding.readOnly)
+      })
+    } catch (error) {
+      log.warn(`the periodic sync of workspace ${workspaceId} failed`, error)
+    }
+  }
+
+  /**
+   * Manual mode's share of a pass: fetch, so the status's incoming count is
+   * current, and integrate nothing — that is Sync now's job. A failed fetch is
+   * the state, except that `diverged` is about where the histories stand,
+   * which fetching does not change: a failed fetch keeps it, with the fetch's
+   * message. A good fetch settles only a failure to reach the remote; any
+   * other — a missing author, a push the remote turned away, a tree that did
+   * not import — is about something a fetch does not retry, and stays.
+   */
+  private async fetchOnly(workspaceId: string): Promise<void> {
+    try {
+      await this.git.fetch(this.cloneDir(workspaceId), ORIGIN)
+      const binding = this.repositories.workspaceGit.get(workspaceId)
+      if (binding !== undefined && binding.state !== "diverged" && (binding.lastError === null || isReachFailure(binding.lastError))) {
+        this.settleIdle(workspaceId)
+      }
+    } catch (error) {
+      const state = this.repositories.workspaceGit.get(workspaceId)?.state
+      this.repositories.workspaceGit.setState(workspaceId, state === "diverged" ? "diverged" : "error", describeError(error))
+      throw error
+    } finally {
+      await this.announce(workspaceId)
+    }
+  }
+
+  /**
+   * Stop auto commits and wait for what is running, but at most
+   * {@link DISPOSE_WAIT_MS}: a cycle blocked on a network timeout, or an open
+   * still cloning, must not hold the app open. Giving up leaves it running —
+   * an open gives up by itself once its clone is done — and the next
+   * startup's reconcile repairs or removes what it left behind. What auto
+   * mode had pending is committed by that reconcile.
    */
   public async dispose(): Promise<void> {
     this.disposed = true
+    if (this.passTimer !== undefined) {
+      clearInterval(this.passTimer)
+      this.passTimer = undefined
+    }
     for (const timer of this.timers.values()) clearTimeout(timer)
     this.timers.clear()
-    await Promise.all([awaitWithin(this.openQueue, this.disposeWaitMs), this.locksSettled()])
-  }
-
-  private async locksSettled(): Promise<void> {
-    while (this.locks.size > 0) await Promise.all(this.locks.values())
+    let settled = false
+    await awaitWithin(this.settled().then(() => {
+      settled = true
+    }), this.disposeWaitMs)
+    if (!settled) {
+      log.warn(`gave up waiting ${this.disposeWaitMs} ms for running sync calls to settle; they carry on in the background`)
+    }
   }
 
   private inOpenQueue<T>(work: () => Promise<T>): Promise<T> {
@@ -456,6 +692,7 @@ export class GitSyncService {
     // The binding needs a branch to name, and a detached HEAD has none.
     const branch = (await this.git.status(scratch)).branch
     if (branch === undefined) throw new ValidationError(NO_BRANCH_MESSAGE)
+    const head = await this.git.revParse(scratch, "HEAD")
 
     const directory = this.cloneDir(workspaceId)
     if (workspaceGit.get(workspaceId) !== undefined) {
@@ -492,6 +729,8 @@ export class GitSyncService {
         warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
         workspaceGit.insert(workspaceId, "auto")
         workspaceGit.setRemote(workspaceId, remoteUrl, branch)
+        // The database and the clone hold exactly the remote's tip.
+        if (head !== undefined) workspaceGit.recordSynced(workspaceId, head, new Date().toISOString())
       })
       // The rows claim the clone now; a marker that will not go is removed by the next reconcile.
       await rm(openMarker(directory), { force: true }).catch((cleanupError: unknown) => {
@@ -575,10 +814,18 @@ export class GitSyncService {
       await rm(openMarker(directory), { force: true })
     }
     if (missing || binding.mode === "auto") {
+      // Moves a clone an import never caught up with back to the database first.
       await this.commitCycle(binding.workspaceId, directory, missing ? { message: RECREATE_MESSAGE } : {})
-    } else if (binding.state === "syncing") {
+    } else {
+      try {
+        await this.returnToDatabase(binding.workspaceId, directory)
+      } catch (error) {
+        this.repositories.workspaceGit.setState(binding.workspaceId, "error", describeError(error))
+        await this.announce(binding.workspaceId)
+        throw error
+      }
       // The app quit, or crashed, in the middle of a cycle.
-      this.repositories.workspaceGit.setState(binding.workspaceId, "idle")
+      if (binding.state === "syncing") this.settleIdle(binding.workspaceId)
     }
     // The row is the truth about the remote: a clone that was recreated or adopted gets it back. Local git only, no network.
     if (binding.remoteUrl !== null) await this.pointOriginAt(directory, binding.remoteUrl)
@@ -642,7 +889,24 @@ export class GitSyncService {
     }
   }
 
-  /** One cycle: (re)create the repository if it is gone, write the tree, commit. Its outcome is the workspace's state. */
+  /**
+   * A cycle's clone, ready to commit in: back where the database is, a
+   * repository again if it was gone, and with the author the caller named.
+   * A failure here is the cycle's `error` whatever the histories did — above
+   * all a clone that cannot be moved back.
+   */
+  private async prepareClone(workspaceId: string, directory: string, branch: string, request: WorkspaceGitCommitRequest): Promise<void> {
+    await this.returnToDatabase(workspaceId, directory)
+    if (!(await isRepository(directory))) await this.git.init(directory, { initialBranch: branch })
+    if (request.identity !== undefined) await this.git.setIdentity(directory, request.identity)
+  }
+
+  /**
+   * One cycle: (re)create the repository if it is gone, write the tree,
+   * commit. Its outcome is the workspace's state — except that a local commit
+   * does not change where the histories stand, so a diverged workspace stays
+   * diverged, with a failure's message when there is one.
+   */
   private async commitCycle(
     workspaceId: string,
     directory: string,
@@ -650,32 +914,366 @@ export class GitSyncService {
   ): Promise<string | undefined> {
     const binding = this.repositories.workspaceGit.get(workspaceId)
     if (binding === undefined) throw notTracked(workspaceId)
-    this.repositories.workspaceGit.setState(workspaceId, "syncing")
+    let diverged = false
+    this.markSyncing(workspaceId)
     await this.announce(workspaceId)
     try {
-      if (!(await isRepository(directory))) await this.git.init(directory, { initialBranch: binding.branch })
-      if (request.identity !== undefined) await this.git.setIdentity(directory, request.identity)
+      await this.prepareClone(workspaceId, directory, binding.branch, request)
+      diverged = binding.state === "diverged"
       const sha = await this.writeAndCommit(workspaceId, directory, request.message)
-      this.repositories.workspaceGit.setState(workspaceId, "idle")
+      if (diverged) this.repositories.workspaceGit.setState(workspaceId, "diverged", binding.lastError)
+      else this.settleIdle(workspaceId)
       return sha
     } catch (error) {
-      this.repositories.workspaceGit.setState(workspaceId, "error", describeError(error))
+      this.repositories.workspaceGit.setState(workspaceId, diverged ? "diverged" : "error", describeError(error))
       throw error
     } finally {
       await this.announce(workspaceId)
     }
   }
 
-  /** Serialize the workspace into its clone and commit what changed; undefined when nothing did. */
+  /**
+   * One full cycle under the workspace's lock: (re)create the repository if it
+   * is gone, write the tree, commit, then sync with the remote — steps 1–5 of
+   * §3.1. Its outcome is recorded as the workspace's state. Thrown to the
+   * caller: an untracked workspace, and a failure that is neither git's nor
+   * the app's own classified error — a bug.
+   *
+   * `push` says whether this cycle may push: an automatic pass leaves the
+   * commits of a read-only workspace local, while a caller-initiated cycle
+   * still tries, because that is how the flag is cleared.
+   *
+   * A diverged workspace whose cycle fails before integrating — offline, say —
+   * stays diverged: where the histories stand is unchanged, so only the
+   * message is the failure's, as in {@link fetchOnly}.
+   */
+  private async syncCycle(
+    workspaceId: string,
+    directory: string,
+    request: WorkspaceGitCommitRequest,
+    push: boolean,
+  ): Promise<void> {
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    if (binding === undefined) throw notTracked(workspaceId)
+    let stillDiverged = false
+    this.markSyncing(workspaceId)
+    await this.announce(workspaceId)
+    try {
+      await this.prepareClone(workspaceId, directory, binding.branch, request)
+      stillDiverged = binding.state === "diverged"
+      await this.writeAndCommit(workspaceId, directory, request.message)
+      if (binding.remoteUrl !== null) {
+        await this.integrate(workspaceId, directory, binding.branch)
+        stillDiverged = false
+        if (push) await this.pushToRemote(workspaceId, directory, binding.branch)
+      }
+      this.settleIdle(workspaceId)
+    } catch (error) {
+      this.recordCycleFailure(workspaceId, error, stillDiverged)
+    } finally {
+      await this.announce(workspaceId)
+    }
+  }
+
+  /**
+   * A cycle's failure, as the workspace's state. A classified one — git's, or
+   * the app's own, such as a remote file that does not validate — is the
+   * cycle's outcome, which callers read from the status. Anything else is a
+   * bug: recorded too, and thrown.
+   */
+  private recordCycleFailure(workspaceId: string, error: unknown, stillDiverged: boolean): void {
+    if (error instanceof DivergedError) {
+      this.repositories.workspaceGit.setState(workspaceId, "diverged", error.lastError)
+      return
+    }
+    if (error instanceof PushRefusedError) {
+      // The host refuses this user's pushes: local commits keep working, and
+      // pulling continues, so the workspace is not in error — it is read-only.
+      this.repositories.workspaceGit.setReadOnly(workspaceId, true)
+      this.repositories.workspaceGit.setState(workspaceId, "idle", describeError(error.refusal))
+      log.warn(`the host refused the push of workspace ${workspaceId}`, error.refusal)
+      return
+    }
+    this.repositories.workspaceGit.setState(workspaceId, stillDiverged ? "diverged" : "error", describeError(error))
+    if (!(error instanceof GitError || error instanceof AppError)) throw error
+    log.warn(`the sync cycle of workspace ${workspaceId} failed`, error)
+  }
+
+  /**
+   * Step 5, past {@link integrate}: push what is local, and retry once when
+   * the remote moved during the cycle. A remote branch that does not exist yet
+   * is the push's to create; a HEAD the remote already holds is not pushed at
+   * all, since `git push` with nothing to send succeeds without asking the
+   * host anything. Throws {@link DivergedError} when the retry finds both
+   * sides hold commits, {@link PushRefusedError} when the host refuses this
+   * user, and the push's own classified error for anything else.
+   */
+  private async pushToRemote(workspaceId: string, directory: string, branch: string): Promise<void> {
+    if (await this.remoteHoldsHead(directory, branch)) return
+    const rejection = await this.pushOnce(directory, branch)
+    if (rejection === undefined) {
+      await this.recordPushed(workspaceId, directory)
+      return
+    }
+    // The remote moved while this cycle was running: fetch it again, take what
+    // is new, and push once more. Integrating may itself find a divergence.
+    await this.integrate(workspaceId, directory, branch)
+    if (await this.remoteHoldsHead(directory, branch)) return
+    const second = await this.pushOnce(directory, branch)
+    if (second === undefined) {
+      await this.recordPushed(workspaceId, directory)
+      return
+    }
+    if (await this.bothSidesHoldCommits(directory, branch)) throw new DivergedError(LATE_DIVERGED_MESSAGE)
+    throw second
+  }
+
+  /**
+   * Fetch the tracked branch and bring it in (§3.1 step 4). A remote that is
+   * ahead is fast-forwarded over and its tree imported as one transaction; a
+   * remote that is behind is left for the push; one that has diverged stops
+   * the cycle. Importing announces the writes it made, which would schedule a
+   * commit that has nothing to write: the cycle cancels it.
+   */
+  private async integrate(workspaceId: string, directory: string, branch: string): Promise<void> {
+    await this.git.fetch(directory, ORIGIN)
+    await this.integrateFetched(workspaceId, directory, branch)
+  }
+
+  /**
+   * {@link integrate} past its fetch. A write that landed while the fetch was
+   * in flight is in the database but not in the clone: it is committed first,
+   * before the remote is read, so a remote that moved is no longer a
+   * fast-forward and the decision yields `diverged`, importing nothing over the
+   * edit. A write that lands later, while the clone is moving, is caught just
+   * before the import: the clone goes back and the decision is taken again
+   * with that write committed.
+   */
+  private async integrateFetched(workspaceId: string, directory: string, branch: string): Promise<void> {
+    if (this.uncommittedWrites(workspaceId)) await this.writeAndCommit(workspaceId, directory)
+    const remoteRef = `${ORIGIN}/${branch}`
+    const remoteSha = await this.git.revParse(directory, remoteRef)
+    // No branch on the remote yet: the push creates it.
+    if (remoteSha === undefined) return
+    const head = await this.git.revParse(directory, "HEAD")
+    if (head === remoteSha) {
+      this.recordSynced(workspaceId, remoteSha)
+      return
+    }
+    // An unborn HEAD or a remote descendant is a fast-forward; a sibling is a divergence.
+    const base = head === undefined ? undefined : await this.git.mergeBase(directory, "HEAD", remoteRef)
+    if (base === head) {
+      if (await this.fastForward(workspaceId, directory, remoteRef, head)) this.recordSynced(workspaceId, remoteSha)
+      else await this.integrateFetched(workspaceId, directory, branch)
+      return
+    }
+    if (base !== remoteSha) throw new DivergedError(DIVERGED_MESSAGE)
+  }
+
+  /**
+   * Move the clone from `head` to the remote's tip and import that tree. False
+   * when a write landed while the clone was moving: the clone is back on
+   * `head`, nothing was imported, and the caller decides again.
+   */
+  private async fastForward(workspaceId: string, directory: string, remoteRef: string, head: string | undefined): Promise<boolean> {
+    // Durable before the clone moves: a crash, a kill or a quit from here until
+    // the import commits leaves the commit to go back to on the row.
+    if (head !== undefined) this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
+    let imported: boolean
+    try {
+      await this.git.mergeFastForward(directory, remoteRef)
+      imported = await this.importRemoteTree(workspaceId, directory, head !== undefined)
+    } catch (error) {
+      // The clone moved to the remote's tip but the database kept its own
+      // tree. Left there, a later cycle would serialize that tree and push a
+      // revert of the remote's change, so put the clone back where it was and
+      // report the import's own failure.
+      await this.rollBackTo(workspaceId, directory, head)
+      throw error
+    }
+    if (!imported && head !== undefined) {
+      // Not best effort: the caller commits next, which must never happen over a moved clone.
+      await this.returnTo(workspaceId, directory, head)
+      return false
+    }
+    this.cancelAutoCommit(workspaceId)
+    return true
+  }
+
+  /** Whether the workspace's repositories announced a write its last commit did not include. */
+  private uncommittedWrites(workspaceId: string): boolean {
+    return (this.writes.get(workspaceId) ?? 0) !== (this.committedWrites.get(workspaceId) ?? 0)
+  }
+
+  /**
+   * Put a clone that was moved past its database back where the database
+   * still is, without masking the error that called for it. A rollback that
+   * fails leaves `integratingFrom` set, so the next call that would serialize
+   * the workspace retries it first. An unborn local history has nothing to go
+   * back to.
+   */
+  private async rollBackTo(workspaceId: string, directory: string, rev: string | undefined): Promise<void> {
+    if (rev === undefined) {
+      log.warn(`workspace ${workspaceId} has no commit to move its clone back to after a failed import`)
+      return
+    }
+    try {
+      await this.returnTo(workspaceId, directory, rev)
+    } catch (error) {
+      log.warn(`could not move the clone of workspace ${workspaceId} back to ${rev} after a failed import; the next cycle retries`, error)
+    }
+  }
+
+  /**
+   * A clone an integration moved and whose import never committed — the app
+   * crashed or quit in between, or a rollback failed — goes back to the commit
+   * the database holds before anything is serialized over it. Throws when
+   * that fails: the caller must stop, and the next attempt retries. A clone
+   * that is gone has nothing to go back; the next commit recreates it from
+   * the database.
+   */
+  private async returnToDatabase(workspaceId: string, directory: string): Promise<void> {
+    const from = this.repositories.workspaceGit.get(workspaceId)?.integratingFrom ?? null
+    if (from === null) return
+    if (!(await isRepository(directory))) {
+      this.repositories.workspaceGit.setIntegratingFrom(workspaceId, null)
+      return
+    }
+    log.warn(`the clone of workspace ${workspaceId} moved without its import; moving it back to ${from}`)
+    await this.returnTo(workspaceId, directory, from)
+  }
+
+  /** The clone back on `rev`, where the database is; the mark goes only once it is there. */
+  private async returnTo(workspaceId: string, directory: string, rev: string): Promise<void> {
+    await this.git.resetHard(directory, rev)
+    this.repositories.workspaceGit.setIntegratingFrom(workspaceId, null)
+  }
+
+  /** Whether HEAD is already the remote branch's tip (or there is no HEAD): then there is nothing to push. */
+  private async remoteHoldsHead(directory: string, branch: string): Promise<boolean> {
+    const head = await this.git.revParse(directory, "HEAD")
+    return head === undefined || head === (await this.git.revParse(directory, `${ORIGIN}/${branch}`))
+  }
+
+  /**
+   * Push, coming back with the error only for a non-fast-forward: that
+   * rejection is the one a retry can settle. A permission refusal comes out as
+   * {@link PushRefusedError}, the one failure that makes a workspace read-only.
+   */
+  private async pushOnce(directory: string, branch: string): Promise<GitNonFastForwardError | undefined> {
+    try {
+      await this.git.push(directory, ORIGIN, branch)
+      return undefined
+    } catch (error) {
+      if (error instanceof GitNonFastForwardError) return error
+      if (error instanceof GitPermissionDeniedError) throw new PushRefusedError(error)
+      throw error
+    }
+  }
+
+  /**
+   * What tells the two ways a retried push can fail again apart: if only the
+   * remote holds commits the refusal is a race to retry (`error`), and if both
+   * sides hold them it is the state the user has to settle (`diverged`). Asks
+   * the remote again, because the second rejection says it moved.
+   */
+  private async bothSidesHoldCommits(directory: string, branch: string): Promise<boolean> {
+    try {
+      await this.git.fetch(directory, ORIGIN)
+    } catch (error) {
+      // The refs it already has are the ones the push was refused against.
+      if (!(error instanceof GitError)) throw error
+    }
+    const head = await this.git.revParse(directory, "HEAD")
+    const remoteSha = await this.git.revParse(directory, `${ORIGIN}/${branch}`)
+    if (head === undefined || remoteSha === undefined) return false
+    const base = await this.git.mergeBase(directory, "HEAD", `${ORIGIN}/${branch}`)
+    return base !== head && base !== remoteSha
+  }
+
+  /** The remote now holds our HEAD, so the push is what made the two agree; having sent commits, it also proves the host accepts this user again. */
+  private async recordPushed(workspaceId: string, directory: string): Promise<void> {
+    const head = await this.git.revParse(directory, "HEAD")
+    if (head === undefined) return
+    this.repositories.workspaceGit.setReadOnly(workspaceId, false)
+    this.recordSynced(workspaceId, head)
+  }
+
+  /** Where the two last agreed: the remote commit this cycle integrated or pushed, and when. */
+  private recordSynced(workspaceId: string, commit: string): void {
+    this.repositories.workspaceGit.recordSynced(workspaceId, commit, new Date().toISOString())
+  }
+
+  /**
+   * Apply the tree the clone holds now to the database, in one transaction —
+   * what a fast-forward or a discard left there. Warnings are the importer's
+   * withheld-credential notes, which only an open surfaces to the user.
+   *
+   * With `unlessWritten`, a write the last commit does not hold makes it apply
+   * nothing and resolve false. Reading the tree is the last await, so nothing
+   * can land between that check and the transaction; the writes the import
+   * announces are then the clone's tree, and count as committed.
+   *
+   * The transaction also clears `integratingFrom`: the database and the clone
+   * agree again at the same instant the import commits.
+   */
+  private async importRemoteTree(workspaceId: string, directory: string, unlessWritten = false): Promise<boolean> {
+    const snapshot = parseWorkspace(await readWorkspaceTree(directory))
+    if (unlessWritten && this.uncommittedWrites(workspaceId)) return false
+    const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
+    const warnings = workspaces.transaction(() => {
+      const applied = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+      workspaceGit.setIntegratingFrom(workspaceId, null)
+      return applied
+    })
+    this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
+    for (const warning of warnings) log.warn(`import of workspace ${workspaceId}: ${warning}`)
+    try {
+      this.options.onImported?.(workspaceId)
+    } catch (error) {
+      log.error("import observer failed for workspace", workspaceId, error)
+    }
+    return true
+  }
+
+  /**
+   * Serialize the workspace into its clone and commit what changed; undefined
+   * when nothing did. Either way, the write count it serialized is recorded:
+   * what arrives after that read is what {@link uncommittedWrites} reports.
+   */
   private async writeAndCommit(workspaceId: string, directory: string, message?: string): Promise<string | undefined> {
     // Read and serialized synchronously, so the commit holds one consistent state of the database.
+    const seen = this.writes.get(workspaceId) ?? 0
     const files = serializeWorkspace(workspaceSnapshot(this.records(workspaceId)))
     await writeWorkspaceTree(directory, files)
     await this.git.add(directory, ["."])
     const { entries } = await this.git.status(directory)
-    if (entries.length === 0) return undefined
     const subject = message?.trim() ?? ""
-    return this.git.commit(directory, subject === "" ? describeChanges(entries) : subject)
+    const sha = entries.length === 0 ? undefined : await this.git.commit(directory, subject === "" ? describeChanges(entries) : subject)
+    this.committedWrites.set(workspaceId, seen)
+    return sha
+  }
+
+  /** A cycle is starting: `syncing`, keeping a read-only workspace's refusal — the cycle's outcome may replace it, starting does not. */
+  private markSyncing(workspaceId: string): void {
+    this.repositories.workspaceGit.setState(workspaceId, "syncing", this.keptRefusal(workspaceId))
+  }
+
+  /** The workspace came to rest: `idle`, with `lastError` cleared but for a read-only workspace's refusal. */
+  private settleIdle(workspaceId: string): void {
+    if (this.repositories.workspaceGit.get(workspaceId) === undefined) return
+    this.repositories.workspaceGit.setState(workspaceId, "idle", this.keptRefusal(workspaceId))
+  }
+
+  /**
+   * The refusal a read-only workspace's message explains, which only a
+   * successful push can clear (§3.5): that push is what proves the host
+   * accepts this user again. Any other message — a failed fetch that replaced
+   * it — is about one cycle, and goes when a later one succeeds.
+   */
+  private keptRefusal(workspaceId: string): WorkspaceGitError | null {
+    const binding = this.repositories.workspaceGit.get(workspaceId)
+    return binding?.readOnly === true && binding.lastError?.code === "permission_denied" ? binding.lastError : null
   }
 
   private records(workspaceId: string): WorkspaceRecords {
@@ -694,7 +1292,7 @@ export class GitSyncService {
     this.cancelAutoCommit(workspaceId)
     this.timers.set(workspaceId, setTimeout(() => {
       this.timers.delete(workspaceId)
-      void this.autoCommit(workspaceId)
+      void this.autoSync(workspaceId)
     }, this.delayMs))
   }
 
@@ -705,22 +1303,25 @@ export class GitSyncService {
     this.timers.delete(workspaceId)
   }
 
-  /** The timer's commit. Its failure is already the workspace's `lastError`; there is no caller to throw to. */
-  private async autoCommit(workspaceId: string): Promise<void> {
+  /** The timer's cycle. Its failure is already the workspace's `lastError`; there is no caller to throw to. */
+  private async autoSync(workspaceId: string): Promise<void> {
     try {
       await this.exclusive(workspaceId, async () => {
         // The mode can have changed, or the workspace been untracked, while this waited for the lock.
-        if (this.disposed || this.repositories.workspaceGit.get(workspaceId)?.mode !== "auto") return
-        await this.commitCycle(workspaceId, this.cloneDir(workspaceId))
+        const binding = this.repositories.workspaceGit.get(workspaceId)
+        if (this.disposed || binding?.mode !== "auto") return
+        await this.syncCycle(workspaceId, this.cloneDir(workspaceId), {}, !binding.readOnly)
       })
     } catch (error) {
-      log.warn(`auto commit failed for workspace ${workspaceId}`, error)
+      log.warn(`auto sync failed for workspace ${workspaceId}`, error)
     }
   }
 
   /** The workspace was deleted: its row went with it (ON DELETE CASCADE), and its clone goes now. */
   private forget(workspaceId: string): void {
     this.cancelAutoCommit(workspaceId)
+    this.writes.delete(workspaceId)
+    this.committedWrites.delete(workspaceId)
     if (!RecordIdSchema.safeParse(workspaceId).success) return
     const directory = this.cloneDir(workspaceId)
     void this.exclusive(workspaceId, () => removeDirectory(directory)).catch((error: unknown) => {
@@ -768,6 +1369,32 @@ export class GitSyncService {
   }
 }
 
+/** §3.1 step 4's stop state, carried out of the sync helpers to the cycle that records it. */
+class DivergedError extends Error {
+  readonly lastError: WorkspaceGitError
+
+  constructor(message: string) {
+    super(message)
+    this.name = new.target.name
+    this.lastError = { code: null, message }
+  }
+}
+
+/**
+ * A push the host refused for this user: what makes a workspace read-only
+ * (§3.5). The same refusal from a fetch is an ordinary error — it says the
+ * remote cannot be read, not that it cannot be written.
+ */
+class PushRefusedError extends Error {
+  readonly refusal: GitPermissionDeniedError
+
+  constructor(refusal: GitPermissionDeniedError) {
+    super(refusal.message)
+    this.name = new.target.name
+    this.refusal = refusal
+  }
+}
+
 function notTracked(workspaceId: string): NotFoundError {
   return new NotFoundError(`workspace ${workspaceId} has no version history; track it first`)
 }
@@ -793,6 +1420,23 @@ function removeDirectory(directory: string): Promise<void> {
 function describeChanges(entries: readonly GitStatusEntry[]): string {
   const [only] = entries
   return entries.length === 1 && only !== undefined ? `Update ${only.path}` : `Update ${entries.length} files`
+}
+
+/**
+ * The failures that say only that the remote could not be reached or read —
+ * what a later good fetch proves over. A push can fail these ways too; its
+ * commits then still show as outgoing, and the next push retries them.
+ */
+const REACH_FAILURES: ReadonlySet<GitErrorCode> = new Set<GitErrorCode>([
+  "network_error",
+  "auth_failed",
+  "timeout",
+  "permission_denied",
+  "git_not_installed",
+])
+
+function isReachFailure(error: WorkspaceGitError): boolean {
+  return error.code !== null && REACH_FAILURES.has(error.code)
 }
 
 function describeError(error: unknown): WorkspaceGitError {

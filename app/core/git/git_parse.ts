@@ -1,4 +1,4 @@
-import type { GitLogEntry, GitStatus, GitStatusEntry, GitStatusEntryKind, GitVersion } from "./git_types"
+import type { GitAheadBehind, GitLogEntry, GitStatus, GitStatusEntry, GitStatusEntryKind, GitVersion } from "./git_types"
 
 export function parseVersion(output: string): GitVersion | undefined {
   const match = /^git version ((\d+)\.(\d+)(?:\.(\d+))?.*)$/m.exec(output)
@@ -116,6 +116,21 @@ export function parseStatus(output: string): GitStatus {
     }
   }
   return { ...status, clean: status.entries.length === 0 }
+}
+
+/**
+ * Parse `git rev-list --left-right --count <a>...<b>`: git prints the left
+ * count and the right count, tab-separated, on one line.
+ */
+export function parseAheadBehind(output: string): GitAheadBehind | undefined {
+  const match = /^(\d+)\t(\d+)\s*$/.exec(output)
+  return match === null ? undefined : { ahead: Number(match[1]), behind: Number(match[2]) }
+}
+
+/** Parse `git rev-list --count <rev>`: one decimal number on one line. */
+export function parseCommitCount(output: string): number | undefined {
+  const match = /^(\d+)\s*$/.exec(output)
+  return match === null ? undefined : Number(match[1])
 }
 
 /**

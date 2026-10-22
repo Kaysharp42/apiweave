@@ -14,6 +14,9 @@ const untracked: WorkspaceGitStatus = {
   branch: "main",
   state: "idle",
   lastError: null,
+  readOnly: false,
+  incoming: 0,
+  outgoing: 0,
   lastCommit: null,
 };
 
@@ -41,6 +44,7 @@ function installBridge(initial: WorkspaceGitStatus): InstalledBridge {
       tracked({ mode: "manual", lastCommit: { sha: "fedcba9876543", subject: request?.message ?? "Update 1 file", authorDate: "2026-10-19T10:00:00+02:00" } })),
     connectRemote: vi.fn(async (_workspaceId, url) => tracked({ remoteUrl: url })),
     disconnectRemote: vi.fn(async () => tracked()),
+    discardLocalChanges: vi.fn(async () => tracked()),
     openFromGit: vi.fn(async () => ({ kind: "opened" as const, workspaceId: "ws-2", slug: "opened", name: "Opened", warnings: [] })),
     onStatusChanged: (callback) => {
       listener = callback;
@@ -86,6 +90,39 @@ describe("VersionHistoryPanel", () => {
     await user.click(screen.getByRole("checkbox"));
     expect(bridge.setMode).toHaveBeenCalledWith("ws-1", "auto");
     await waitFor(() => expect(screen.queryByRole("button", { name: /commit now/i })).toBeNull());
+  });
+
+  it("shows why a sync stopped from the status it resolves with, and keeps the message", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installBridge(tracked({ mode: "manual" }));
+    vi.mocked(bridge.syncNow).mockResolvedValueOnce(
+      tracked({
+        mode: "manual",
+        state: "diverged",
+        incoming: 1,
+        outgoing: 1,
+        lastError: {
+          code: null,
+          message: "This workspace and its remote have each changed since they last agreed.",
+        },
+      }),
+    );
+    render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: /commit message/i }),
+      "Add the login flow",
+    );
+    await user.click(screen.getByRole("button", { name: /commit now/i }));
+
+    expect(
+      await screen.findByText(
+        "This workspace and its remote have each changed since they last agreed.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /commit message/i })).toHaveValue(
+      "Add the login flow",
+    );
   });
 
   it("follows the statuses main pushes for this workspace only", async () => {

@@ -64,6 +64,7 @@ import type { MCPPrompt } from "@shared/types/MCPPrompt"
 import type { MCPResource } from "@shared/types/MCPResource"
 import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
 import {
@@ -129,11 +130,14 @@ const ipcRouter = new IpcRouter({
   // Every MCP write, forwarded to the renderer so it can refetch what the agent
   // changed. Only workflow writes announce themselves from the repository layer;
   // this is what covers workspaces, projects, environments and node presets.
-  onAgentWrite: (event) => {
-    if (mainWindow === null || mainWindow.isDestroyed()) return
-    mainWindow.webContents.send(AGENT_WRITE_CHANNEL, event)
-  },
+  onAgentWrite: (event) => publishDataRefresh(event),
 })
+
+/** Tell the renderer to refetch a domain written underneath it: by an agent over MCP, or by an import from a workspace's remote. */
+function publishDataRefresh(event: AgentWriteEvent): void {
+  if (mainWindow === null || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(AGENT_WRITE_CHANNEL, event)
+}
 
 let database: InitializedDatabase | null = null
 let scheduler: RunScheduler | null = null
@@ -895,9 +899,10 @@ if (!hasSingleInstanceLock) {
           mainWindow.webContents.send(GIT_STATUS_CHANGED_CHANNEL, status)
         }
       },
+      publishDataRefresh,
     )
     registerGitHandlers(ipcMain, requireTrustedSender, gitSync)
-    gitSync.reconcile().catch((error: unknown) => bootstrapLog.warn("version history reconcile failed", error))
+    gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

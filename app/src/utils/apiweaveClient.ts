@@ -1242,6 +1242,9 @@ export const git = {
   disconnectRemote: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.disconnectRemote(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
+  discardLocalChanges: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.discardLocalChanges(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
   openFromGit: (url: string): Promise<OpenWorkspaceFromGitResult> =>
     getGitBridge()?.openFromGit(url).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
