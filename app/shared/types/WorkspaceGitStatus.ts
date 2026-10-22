@@ -1,3 +1,4 @@
+import type { GitAccountRef } from "./GitAccountRef"
 import type { WorkspaceGitCommit } from "./WorkspaceGitCommit"
 import type { WorkspaceGitError } from "./WorkspaceGitError"
 import type { WorkspaceGitMode } from "./WorkspaceGitMode"
@@ -12,6 +13,8 @@ export interface WorkspaceGitStatus {
   readonly remoteUrl: string | null
   /** The branch the workspace's history lives on, locally and on the remote. */
   readonly branch: string
+  /** The `gh`/`glab` account the remote is reached as; null: the user's own credential helper or SSH key. */
+  readonly account: GitAccountRef | null
   readonly state: WorkspaceGitState
   /** The last cycle's failure; null once a cycle succeeds. `identity_missing` asks the user who the author is. */
   readonly lastError: WorkspaceGitError | null

@@ -128,6 +128,12 @@ export interface GitCredential {
   readonly password: string
 }
 
+/** What a call that reaches a remote — `fetch`, `push`, `clone` — may carry. */
+export interface GitRemoteOptions {
+  /** The only credential git may use for this call: every helper the user configured is set aside. Absent, theirs answer as always. */
+  readonly credential?: GitCredential | undefined
+}
+
 export interface GitServiceOptions {
   /** An empty directory handed to `core.hooksPath`, so no hook ever runs. The caller owns it. */
   readonly hooksDir: string

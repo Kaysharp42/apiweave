@@ -42,6 +42,7 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitAccountList } from "@shared/types/GitAccountList";
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergePick } from "@shared/types/GitMergePick";
@@ -1272,8 +1273,15 @@ export const git = {
   connectRemote: (
     workspaceId: string,
     url: string,
+    account: GitAccountRef | null = null,
   ): Promise<WorkspaceGitStatus> =>
-    getGitBridge()?.connectRemote(workspaceId, url).catch(unwrapRemoteError) ??
+    getGitBridge()?.connectRemote(workspaceId, url, account).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  setAccount: (
+    workspaceId: string,
+    account: GitAccountRef | null,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.setAccount(workspaceId, account).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   disconnectRemote: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.disconnectRemote(workspaceId).catch(unwrapRemoteError) ??
@@ -1281,8 +1289,11 @@ export const git = {
   discardLocalChanges: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.discardLocalChanges(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
-  openFromGit: (url: string): Promise<OpenWorkspaceFromGitResult> =>
-    getGitBridge()?.openFromGit(url).catch(unwrapRemoteError) ??
+  openFromGit: (
+    url: string,
+    account: GitAccountRef | null = null,
+  ): Promise<OpenWorkspaceFromGitResult> =>
+    getGitBridge()?.openFromGit(url, account).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   listAccounts: (): Promise<GitAccountList> =>
     getGitBridge()?.listAccounts().catch(unwrapRemoteError) ??

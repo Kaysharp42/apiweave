@@ -52,6 +52,49 @@ describe("the git bridge's registration", () => {
   })
 })
 
+describe("the account a remote is reached as", () => {
+  const ACCOUNT = { provider: "github", host: "github.com", login: "octo" }
+  const URL = "https://github.com/acme/tests.git"
+
+  it("reaches connectRemote, setAccount and openFromGit checked, and as null when the renderer names none", async () => {
+    const connectRemote = vi.fn(async () => ({}))
+    const setAccount = vi.fn(async () => ({}))
+    const openFromGit = vi.fn(async () => ({}))
+    const handlers = handlersOf({ connectRemote, setAccount, openFromGit } as unknown as GitSyncService)
+    const call = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
+
+    await call(GIT_CHANNELS.connectRemote, "ws-1", URL, ACCOUNT)
+    await call(GIT_CHANNELS.connectRemote, "ws-1", URL)
+    await call(GIT_CHANNELS.setAccount, "ws-1", null)
+    await call(GIT_CHANNELS.openFromGit, URL, ACCOUNT)
+
+    expect(connectRemote.mock.calls).toEqual([
+      ["ws-1", URL, ACCOUNT],
+      ["ws-1", URL, null],
+    ])
+    expect(setAccount).toHaveBeenCalledWith("ws-1", null)
+    expect(openFromGit).toHaveBeenCalledWith(URL, ACCOUNT)
+  })
+
+  it.each([
+    { what: "a login that would read as an option", account: { ...ACCOUNT, login: "--upload-pack=x" } },
+    { what: "a host with a path", account: { ...ACCOUNT, host: "github.com/evil" } },
+    { what: "an unknown provider", account: { ...ACCOUNT, provider: "bitbucket" } },
+    { what: "a token riding along", account: { ...ACCOUNT, token: "gho_x" } },
+    { what: "something that is not an account", account: "octo" },
+  ])("refuses $what before the sync service sees it", async ({ account }) => {
+    const connectRemote = vi.fn(async () => ({}))
+    const setAccount = vi.fn(async () => ({}))
+    const handlers = handlersOf({ connectRemote, setAccount } as unknown as GitSyncService)
+
+    await expect(async () => handlers.get(GIT_CHANNELS.connectRemote)?.({} as IpcMainInvokeEvent, "ws-1", URL, account)).rejects.toThrow()
+    await expect(async () => handlers.get(GIT_CHANNELS.setAccount)?.({} as IpcMainInvokeEvent, "ws-1", account)).rejects.toThrow()
+
+    expect(connectRemote).not.toHaveBeenCalled()
+    expect(setAccount).not.toHaveBeenCalled()
+  })
+})
+
 describe("the listAccounts bridge", () => {
   it("answers with the accounts the host CLIs list", async () => {
     const list: GitAccountList = {

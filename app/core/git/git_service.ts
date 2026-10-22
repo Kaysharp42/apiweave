@@ -25,13 +25,24 @@ import {
   parseTreeListings,
   parseVersion,
 } from "./git_parse"
-import { execGit, gitConfigArgs, gitEnvironment, timeoutFor, type GitExecOutcome } from "./git_process"
+import {
+  credentialConfigArgs,
+  credentialEnvironment,
+  credentialSecrets,
+  execGit,
+  gitConfigArgs,
+  gitEnvironment,
+  timeoutFor,
+  type GitExecOutcome,
+} from "./git_process"
 import type {
   GitAheadBehind,
   GitCommand,
+  GitCredential,
   GitIdentity,
   GitLogEntry,
   GitLogOptions,
+  GitRemoteOptions,
   GitServiceOptions,
   GitStatus,
   GitTreeContents,
@@ -122,6 +133,11 @@ function batchesBySize(entries: readonly GitTreeListing[]): GitTreeListing[][] {
  * authenticates, so no `GIT_SSH_COMMAND` or `core.sshCommand` is set here —
  * forcing one would shadow the user's own and break their remotes. A helper
  * that hangs is bounded by the per-command timeout, which kills the tree.
+ *
+ * The one exception is a `fetch`, `push` or `clone` handed a `credential`
+ * (a workspace bound to a `gh`/`glab` account): that call alone sets every
+ * configured helper aside and answers with the credential instead
+ * ({@link credentialConfigArgs}). SSH and every other call are untouched.
  */
 export class GitService {
   private readonly gitPath: string
@@ -360,25 +376,25 @@ export class GitService {
     await this.run("clean", ["clean", "-f", "-d", "-q", "--", ...paths], repoDir)
   }
 
-  async fetch(repoDir: string, remote: string): Promise<void> {
+  async fetch(repoDir: string, remote: string, options: GitRemoteOptions = {}): Promise<void> {
     assertRefName(remote)
-    await this.run("fetch", ["fetch", "--prune", "--", remote], repoDir)
+    await this.run("fetch", ["fetch", "--prune", "--", remote], repoDir, undefined, options.credential)
   }
 
   async push(
     repoDir: string,
     remote: string,
     branch: string,
-    options: { readonly setUpstream?: boolean } = {},
+    options: GitRemoteOptions & { readonly setUpstream?: boolean } = {},
   ): Promise<void> {
     assertRefName(remote)
     assertRefName(branch)
     const flags = options.setUpstream === true ? ["--set-upstream"] : []
-    await this.run("push", ["push", ...flags, "--", remote, branch], repoDir)
+    await this.run("push", ["push", ...flags, "--", remote, branch], repoDir, undefined, options.credential)
   }
 
   /** Clone into `destination`, whose parent is created if missing. */
-  async clone(url: string, destination: string, options: { readonly branch?: string } = {}): Promise<void> {
+  async clone(url: string, destination: string, options: GitRemoteOptions & { readonly branch?: string } = {}): Promise<void> {
     assertSafeRemoteUrl(url)
     const branch = options.branch
     if (branch !== undefined) {
@@ -387,7 +403,7 @@ export class GitService {
     const parent = path.dirname(destination)
     await mkdir(parent, { recursive: true })
     const flags = branch === undefined ? [] : [`--branch=${branch}`]
-    await this.run("clone", ["clone", ...flags, "--", url, path.basename(destination)], parent)
+    await this.run("clone", ["clone", ...flags, "--", url, path.basename(destination)], parent, undefined, options.credential)
   }
 
   async remoteAdd(repoDir: string, name: string, url: string): Promise<void> {
@@ -501,13 +517,23 @@ export class GitService {
     }
   }
 
-  private async run(command: GitCommand, args: readonly string[], cwd?: string, input?: string): Promise<string> {
+  /**
+   * With a `credential`, the call carries {@link credentialConfigArgs} and the
+   * credential's values in its own environment ({@link credentialEnvironment}),
+   * and only this one process sees either. Without one, nothing differs from
+   * any other call: the user's own helpers answer.
+   */
+  private async run(command: GitCommand, args: readonly string[], cwd?: string, input?: string, credential?: GitCredential): Promise<string> {
     const timeoutMs = timeoutFor(command, this.timeouts)
-    const outcome = await execGit(this.gitPath, [...this.configArgs, ...args], { cwd, env: this.env, timeoutMs, input })
+    const outcome = await execGit(
+      this.gitPath,
+      [...this.configArgs, ...(credential === undefined ? [] : credentialConfigArgs()), ...args],
+      { cwd, env: credential === undefined ? this.env : { ...this.env, ...credentialEnvironment(credential) }, timeoutMs, input },
+    )
     if (outcome.status === "exited" && outcome.exitCode === 0) {
       return outcome.stdout
     }
-    throw await this.failureOf(command, args, cwd, timeoutMs, outcome)
+    throw await this.failureOf(command, args, cwd, timeoutMs, outcome, credential === undefined ? [] : credentialSecrets(credential))
   }
 
   private async failureOf(
@@ -516,8 +542,9 @@ export class GitService {
     cwd: string | undefined,
     timeoutMs: number,
     outcome: GitExecOutcome,
+    secrets: readonly string[],
   ): Promise<GitError> {
-    const details = failureDetails(args, outcome.exitCode, outcome.stdout, outcome.stderr)
+    const details = failureDetails(args, outcome.exitCode, outcome.stdout, outcome.stderr, secrets)
     if (outcome.status === "timeout") {
       return new GitTimeoutError(`git ${command} timed out after ${timeoutMs} ms`, details)
     }

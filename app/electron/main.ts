@@ -886,6 +886,7 @@ if (!hasSingleInstanceLock) {
     )
 
     // Version history. Off the router like network:* — see registerGitHandlers.
+    const hostCli = new HostCliService()
     gitSync = createGitSync(
       app.getPath("userData"),
       {
@@ -895,6 +896,7 @@ if (!hasSingleInstanceLock) {
         environments,
         workspaceGit: new WorkspaceGitRepository(database.kvStore),
       },
+      hostCli,
       (status) => {
         if (mainWindow !== null && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(GIT_STATUS_CHANGED_CHANNEL, status)
@@ -902,7 +904,7 @@ if (!hasSingleInstanceLock) {
       },
       publishDataRefresh,
     )
-    registerGitHandlers(ipcMain, requireTrustedSender, gitSync, new HostCliService())
+    registerGitHandlers(ipcMain, requireTrustedSender, gitSync, hostCli)
     gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*

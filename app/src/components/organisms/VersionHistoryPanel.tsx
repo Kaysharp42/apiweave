@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { GitBranch } from "lucide-react";
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
@@ -8,13 +9,16 @@ import { Spinner } from "../atoms/Spinner";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { DetailField } from "../molecules/DetailField";
 import { FormField } from "../molecules/FormField";
+import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
+import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { git } from "../../utils/apiweaveClient";
+import { remoteHost } from "../../utils/gitErrorMessages";
 import type { GitAuthorFormProps } from "../../types";
 
 const errorText = (error: unknown): string =>
@@ -91,19 +95,27 @@ function AuthorForm({ busy, onCommit }: GitAuthorFormProps) {
 interface RemoteSectionProps {
   readonly remoteUrl: string | null;
   readonly branch: string;
+  readonly account: GitAccountRef | null;
   readonly busy: boolean;
-  readonly onConnect: (url: string) => void;
+  readonly onConnect: (url: string, account: GitAccountRef | null) => void;
+  readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
 }
 
 function RemoteSection({
   remoteUrl,
   branch,
+  account,
   busy,
   onConnect,
+  onChangeAccount,
   onDisconnect,
 }: RemoteSectionProps) {
   const [url, setUrl] = useState("");
+  const [chosen, setChosen] = useState<GitAccountRef | null>(null);
+  const accounts = useGitAccounts();
+  // A bound account stays shown even when no tool lists it any more.
+  const offerAccounts = accounts.length > 0 || account !== null;
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -117,7 +129,7 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            onConnect(url.trim());
+            onConnect(url.trim(), chosen);
           }}
         >
           <FormField label="Remote URL">
@@ -130,6 +142,15 @@ function RemoteSection({
               spellCheck={false}
             />
           </FormField>
+          {offerAccounts && (
+            <GitAccountPicker
+              accounts={accounts}
+              host={remoteHost(url.trim())}
+              value={chosen}
+              onChange={setChosen}
+              disabled={busy}
+            />
+          )}
           <Button
             type="submit"
             variant="primary"
@@ -140,9 +161,20 @@ function RemoteSection({
           </Button>
         </form>
       ) : (
-        <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
-          Disconnect
-        </Button>
+        <>
+          {offerAccounts && (
+            <GitAccountPicker
+              accounts={accounts}
+              host={remoteHost(remoteUrl)}
+              value={account}
+              onChange={onChangeAccount}
+              disabled={busy}
+            />
+          )}
+          <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
+            Disconnect
+          </Button>
+        </>
       )}
     </div>
   );
@@ -154,7 +186,8 @@ interface TrackedProps {
   readonly apply: (status: WorkspaceGitStatus) => void;
   readonly onToggleMode: () => void;
   readonly onAuthor: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
-  readonly onConnect: (url: string) => void;
+  readonly onConnect: (url: string, account: GitAccountRef | null) => void;
+  readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
   readonly onUntrack: () => void;
 }
@@ -166,6 +199,7 @@ function Tracked({
   onToggleMode,
   onAuthor,
   onConnect,
+  onChangeAccount,
   onDisconnect,
   onUntrack,
 }: TrackedProps) {
@@ -188,8 +222,10 @@ function Tracked({
       <RemoteSection
         remoteUrl={status.remoteUrl}
         branch={status.branch}
+        account={status.account}
         busy={busy}
         onConnect={onConnect}
+        onChangeAccount={onChangeAccount}
         onDisconnect={onDisconnect}
       />
       <div className="border-t border-border pt-4 dark:border-border-dark">
@@ -269,7 +305,12 @@ export function VersionHistoryPanel({
           (await run(() => git.syncNow(workspaceId, request)))?.lastError ===
           null
         }
-        onConnect={(url) => void run(() => git.connectRemote(workspaceId, url))}
+        onConnect={(url, account) =>
+          void run(() => git.connectRemote(workspaceId, url, account))
+        }
+        onChangeAccount={(account) =>
+          void run(() => git.setAccount(workspaceId, account))
+        }
         onDisconnect={() => setConfirming("disconnect")}
         onUntrack={() => setConfirming("untrack")}
       />
