@@ -7,13 +7,15 @@ import { onAgentWrite } from "../utils/apiweaveClient";
 const COALESCE_MS = 200;
 
 /**
- * Re-run `refresh` when an agent writes one of `domains` over MCP.
+ * Re-run `refresh` when an agent writes one of `domains` over MCP, or a git
+ * sync imports the remote's records into a workspace.
  *
  * Only `WorkflowRepository` announces its own writes, and only to the open
- * canvas — so anything else an agent changes (a workspace, project,
- * environment, node preset) lands underneath a renderer with no observer and no
- * polling. Before this, those surfaces only caught up when the window lost and
- * regained focus.
+ * canvas — so anything else an agent or an import changes (a workspace,
+ * project, environment, node preset) lands underneath a renderer with no
+ * observer and no polling. Before this, those surfaces only caught up when the
+ * window lost and regained focus, and a form still holding the old values
+ * could save them back over the change.
  *
  * `refresh` is read from a ref, so a caller may pass a fresh closure each
  * render (the usual `useCallback` that closes over the current workspace)

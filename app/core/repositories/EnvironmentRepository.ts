@@ -1,8 +1,9 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
+import { slugify } from "@shared/text/slugify"
 import { generateId } from "../id"
-import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, slugify, toJson } from "./helpers"
+import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, toJson } from "./helpers"
 import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type EnvironmentCreate = Pick<Environment, "workspaceId" | "name"> &

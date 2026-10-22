@@ -2,9 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
+import { MAX_SLUG_LENGTH } from "@shared/workspace-repo/format"
 import { WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
-import { WorkspaceService } from "../workspace_service"
+import { WorkspaceService, uniqueWorkspaceSlug } from "../workspace_service"
 
 let db: InitializedDatabase
 let svc: WorkspaceService
@@ -78,6 +79,22 @@ describe("WorkspaceService — personal workspace invariant on update", () => {
     const updated = await svc.update(personal.workspaceId, { isPersonal: true })
 
     expect(updated.isPersonal).toBe(true)
+  })
+})
+
+describe("uniqueWorkspaceSlug", () => {
+  it("caps the base at MAX_SLUG_LENGTH, so a long untrusted name cannot grow the slug without bound", () => {
+    const workspaces = new WorkspaceRepository(db.kvStore)
+
+    expect(uniqueWorkspaceSlug(workspaces, "W".repeat(500))).toBe("w".repeat(MAX_SLUG_LENGTH))
+  })
+
+  it("disambiguates a capped base against a slug already here", () => {
+    const workspaces = new WorkspaceRepository(db.kvStore)
+    const taken = "w".repeat(MAX_SLUG_LENGTH)
+    workspaces.create({ name: "Taken", slug: taken, isPersonal: false })
+
+    expect(uniqueWorkspaceSlug(workspaces, "W".repeat(500))).toBe(`${taken}-2`)
   })
 })
 

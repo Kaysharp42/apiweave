@@ -1,4 +1,6 @@
+import { slugify } from "@shared/text/slugify"
 import type { Workspace } from "@shared/types/Workspace"
+import { MAX_SLUG_LENGTH } from "@shared/workspace-repo/format"
 import type { WorkflowRepository, WorkspaceRepository, WorkspaceUpdate } from "../repositories"
 import { ConflictError, NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
@@ -43,7 +45,7 @@ export class WorkspaceService {
 
     return this.workspaces.create({
       name: input.name,
-      slug: this.uniqueSlug(input.slug ?? input.name),
+      slug: uniqueWorkspaceSlug(this.workspaces, input.slug ?? input.name),
       description: input.description ?? null,
       isPersonal: wantPersonal,
     })
@@ -58,7 +60,7 @@ export class WorkspaceService {
   async update(workspaceId: string, patch: WorkspaceUpdate): Promise<Workspace> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
     if (patch.isPersonal !== undefined) this.assertPersonalInvariant(workspaceId, patch.isPersonal)
-    const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
+    const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: uniqueWorkspaceSlug(this.workspaces, patch.slug, workspaceId) } : patch
     const updated = this.workspaces.update(workspaceId, next)
     if (updated === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
     return updated
@@ -97,21 +99,18 @@ export class WorkspaceService {
       }
     }
   }
+}
 
-  /** Derive a URL-safe slug and disambiguate against existing workspaces. */
-  private uniqueSlug(source: string, selfId?: string): string {
-    const base =
-      source
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "workspace"
-    let candidate = base
-    let suffix = 2
-    while (true) {
-      const clash = this.workspaces.getBySlug(candidate)
-      if (clash === undefined || clash.workspaceId === selfId) return candidate
-      candidate = `${base}-${suffix}`
-      suffix += 1
-    }
+/** Derive a URL-safe slug and disambiguate against existing workspaces; `selfId` is a workspace allowed to keep its own slug. */
+export function uniqueWorkspaceSlug(workspaces: WorkspaceRepository, source: string, selfId?: string): string {
+  // The same slug a record file's name uses, so a long untrusted name cannot grow the base without bound.
+  const base = slugify(source, "workspace").slice(0, MAX_SLUG_LENGTH).replace(/-+$/, "")
+  let candidate = base
+  let suffix = 2
+  while (true) {
+    const clash = workspaces.getBySlug(candidate)
+    if (clash === undefined || clash.workspaceId === selfId) return candidate
+    candidate = `${base}-${suffix}`
+    suffix += 1
   }
 }

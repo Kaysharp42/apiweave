@@ -14,6 +14,7 @@ import {
   workspaceTabId,
 } from "../organisms/TabBar";
 import { KeyboardShortcutsHelp } from "../organisms/KeyboardShortcutsHelp";
+import { OpenWorkspaceFromGitModal } from "../organisms/OpenWorkspaceFromGitModal";
 import { WorkspaceEmptyState } from "../molecules/WorkspaceEmptyState";
 import { PromptDialog } from "../molecules/PromptDialog";
 import { Panel } from "../molecules/Panel";
@@ -69,13 +70,15 @@ export function Workspace({ active = true }: WorkspaceProps) {
     activePanelTab: string;
     showShortcutsHelp: boolean;
     showNewWorkflowPrompt: boolean;
+    showOpenFromGit: boolean;
   };
 
   type WorkspaceAction =
     | { type: "set-show-variables-panel"; value: boolean }
     | { type: "set-active-panel-tab"; value: string }
     | { type: "set-show-shortcuts-help"; value: boolean }
-    | { type: "set-show-new-workflow-prompt"; value: boolean };
+    | { type: "set-show-new-workflow-prompt"; value: boolean }
+    | { type: "set-show-open-from-git"; value: boolean };
 
   const [state, dispatch] = useReducer(
     (current: WorkspaceState, action: WorkspaceAction): WorkspaceState => {
@@ -88,6 +91,8 @@ export function Workspace({ active = true }: WorkspaceProps) {
           return { ...current, showShortcutsHelp: action.value };
         case "set-show-new-workflow-prompt":
           return { ...current, showNewWorkflowPrompt: action.value };
+        case "set-show-open-from-git":
+          return { ...current, showOpenFromGit: action.value };
         default:
           return current;
       }
@@ -97,11 +102,16 @@ export function Workspace({ active = true }: WorkspaceProps) {
       activePanelTab: "variables",
       showShortcutsHelp: false,
       showNewWorkflowPrompt: false,
+      showOpenFromGit: false,
     },
   );
 
   const handleNewWorkflow = useCallback(() => {
     dispatch({ type: "set-show-new-workflow-prompt", value: true });
+  }, []);
+
+  const handleOpenFromGit = useCallback(() => {
+    dispatch({ type: "set-show-open-from-git", value: true });
   }, []);
 
   const handleCreateWorkflow = useCallback(
@@ -263,6 +273,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
         ) : (
           <WorkspaceEmptyState
             onNewWorkflow={handleNewWorkflow}
+            onOpenFromGit={handleOpenFromGit}
             onOpenTutorials={handleOpenTutorials}
             tutorialsLabel={
               hasTutorialProgress ? "Continue tutorial" : "Start tutorial"
@@ -291,6 +302,13 @@ export function Workspace({ active = true }: WorkspaceProps) {
           submitLabel="Create"
         />
       )}
+
+      <OpenWorkspaceFromGitModal
+        isOpen={state.showOpenFromGit}
+        onClose={() =>
+          dispatch({ type: "set-show-open-from-git", value: false })
+        }
+      />
     </div>
   );
 }

@@ -3,11 +3,12 @@ import path from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import { parseWorkspace, serializeWorkspace } from "../../services/workspace_repo_format"
 import { WorkspaceRepoImporter } from "../../services/workspace_repo_import"
-import { AUTO_COMMIT_DELAY_MS, GitSyncService, type GitSyncGit } from "../git_sync_service"
+import { AUTO_COMMIT_DELAY_MS, GitSyncService, SYNC_INTERVAL_MS, type GitSyncGit } from "../git_sync_service"
 import { GitIdentityMissingError } from "../git_errors"
 import type { GitService } from "../git_service"
 import { writeWorkspaceTree } from "../workspace_tree"
 import { openHarness, passthrough, subjects, type Harness } from "./git_sync_harness"
+import { makeBareRemote, rawGit } from "./git_test_utils"
 
 /** Every file in a clone but git's own, by '/'-separated path. */
 function readTree(dir: string): Map<string, string> {
@@ -26,6 +27,26 @@ function failingCommits(git: GitService): GitSyncGit {
   return {
     ...passthrough(git),
     commit: () => Promise.reject(new Error("disk full")),
+  }
+}
+
+/** The one fetch the holder asked to block on, and how the test says it is inside it. */
+const hold: { on: boolean; entered?: () => void; release?: () => void } = { on: false }
+
+/** A git whose next fetch waits for `hold.release`: a cycle a test can hold open across a dispose. */
+function heldFetch(git: GitService): GitSyncGit {
+  return {
+    ...passthrough(git),
+    fetch: async (dir, remote) => {
+      if (hold.on) {
+        hold.on = false
+        await new Promise<void>((resolve) => {
+          hold.release = resolve
+          hold.entered?.()
+        })
+      }
+      return git.fetch(dir, remote)
+    },
   }
 }
 
@@ -56,6 +77,11 @@ describe("GitSyncService", () => {
       branch: "main",
       state: "idle",
       lastError: null,
+      readOnly: false,
+      incoming: 0,
+      outgoing: 0,
+      uncommitted: false,
+      lastSyncedAt: null,
       lastCommit: { sha: log[0]!.sha, subject: log[0]!.subject, authorDate: log[0]!.authorDate },
     })
     const tree = readTree(harness.dir)
@@ -353,6 +379,192 @@ describe("GitSyncService", () => {
 
     expect(fs.existsSync(harness.dir)).toBe(false)
     expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toBeUndefined()
+  })
+
+  it("with no remote, syncNow commits and never fetches or pushes", async () => {
+    let fetches = 0
+    let pushes = 0
+    const harness = openHarness({
+      wrap: (git) => ({
+        ...passthrough(git),
+        fetch: async (dir, remote) => {
+          fetches += 1
+          return git.fetch(dir, remote)
+        },
+        push: async (dir, remote, branch, options) => {
+          pushes += 1
+          return git.push(dir, remote, branch, options)
+        },
+      }),
+    })
+    await harness.sync.track(harness.workspaceId)
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Login" })
+
+    const status = await harness.sync.syncNow(harness.workspaceId)
+
+    expect(status).toMatchObject({ state: "idle", remoteUrl: null, incoming: 0, outgoing: 0 })
+    expect(fetches).toBe(0)
+    expect(pushes).toBe(0)
+    expect(await subjects(harness)).toHaveLength(2)
+  })
+
+  it("startup reconcile clears a stale syncing row without committing in manual mode", async () => {
+    const harness = openHarness()
+    await harness.sync.track(harness.workspaceId)
+    await harness.sync.setMode(harness.workspaceId, "manual")
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Pending" })
+    harness.repositories.workspaceGit.setState(harness.workspaceId, "syncing", { code: null, message: "a cycle was running" })
+
+    await harness.sync.reconcile()
+
+    expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ state: "idle", lastError: null })
+    expect(await subjects(harness)).toEqual(["Start tracking this workspace in APIWeave"])
+  })
+
+  it("start runs a pass and then polls at the sync interval", async () => {
+    const harness = openHarness()
+    await harness.sync.track(harness.workspaceId)
+    const interval = vi.spyOn(globalThis, "setInterval")
+
+    try {
+      await harness.sync.start()
+      expect(interval).toHaveBeenCalledWith(expect.any(Function), SYNC_INTERVAL_MS)
+    } finally {
+      interval.mockRestore()
+    }
+  })
+
+  it("a dispose during the running pass leaves no interval behind", async () => {
+    const harness = openHarness({ wrap: heldFetch })
+    await harness.sync.track(harness.workspaceId)
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    const interval = vi.spyOn(globalThis, "setInterval")
+
+    try {
+      const started = new Promise<void>((resolve) => {
+        hold.entered = resolve
+      })
+      hold.on = true
+      const starting = harness.sync.start()
+      await started
+
+      // The app quits while the pass is still running: no timer may survive it.
+      const disposing = harness.sync.dispose()
+      hold.release?.()
+      await starting
+      await disposing
+
+      expect(interval).not.toHaveBeenCalledWith(expect.any(Function), SYNC_INTERVAL_MS)
+    } finally {
+      interval.mockRestore()
+    }
+  })
+
+  it("dispose clears the auto commit that was waiting", async () => {
+    fakeTimers()
+    const harness = openHarness()
+    await harness.sync.track(harness.workspaceId)
+
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Login" })
+    await harness.sync.dispose()
+    await elapse(harness, AUTO_COMMIT_DELAY_MS * 2)
+
+    expect(await subjects(harness)).toHaveLength(1)
+  })
+
+  it("dispose gives up on a cycle that will not settle instead of holding the app open", async () => {
+    const harness = openHarness({ disposeWaitMs: 50, wrap: heldFetch })
+    await harness.sync.track(harness.workspaceId)
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+
+    const started = new Promise<void>((resolve) => {
+      hold.entered = resolve
+    })
+    let settled = false
+    hold.on = true
+    const cycle = harness.sync.syncNow(harness.workspaceId).then((status) => {
+      settled = true
+      return status
+    })
+    await started
+
+    await harness.sync.dispose()
+    // The cycle is still blocked on the network; dispose returned anyway.
+    expect(settled).toBe(false)
+
+    hold.release?.()
+    await cycle
+    expect(settled).toBe(true)
+  })
+
+  it("counts every local commit as outgoing when the clone has no remote-tracking branch", async () => {
+    const harness = openHarness()
+    await harness.sync.track(harness.workspaceId)
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Login" })
+    await harness.sync.commitLocal(harness.workspaceId, { message: "Add login" })
+    // The remote's branch is not in this clone: a fetch that never ran, or a branch that went away.
+    rawGit(harness.dir, harness.sandbox.env, "update-ref", "-d", "refs/remotes/origin/main")
+
+    const status = await harness.sync.status(harness.workspaceId)
+
+    expect(status).toMatchObject({ incoming: 0, outgoing: 2 })
+    expect(await harness.git.log(harness.dir)).toHaveLength(2)
+  })
+
+  it("reports 0/0 for a connected workspace with no commit, without asking git to count", async () => {
+    let counts = 0
+    const harness = openHarness({
+      wrap: (git) => ({
+        ...passthrough(git),
+        countCommits: async (dir, rev) => {
+          counts += 1
+          return git.countCommits(dir, rev)
+        },
+      }),
+    })
+    harness.repositories.workspaceGit.insert(harness.workspaceId, "auto")
+    harness.repositories.workspaceGit.setRemote(harness.workspaceId, "file:///nowhere.git", "main")
+    await harness.git.init(harness.dir, { initialBranch: "main" })
+
+    const status = await harness.sync.status(harness.workspaceId)
+
+    expect(status).toMatchObject({ tracked: true, incoming: 0, outgoing: 0, lastCommit: null })
+    expect(counts).toBe(0)
+  })
+
+  it("syncNow rejects only a request it cannot run: an id that is not a workspace, or one that is not tracked", async () => {
+    const harness = openHarness()
+
+    await expect(harness.sync.syncNow("../escape")).rejects.toThrow("is not a workspace id")
+    await expect(harness.sync.syncNow(harness.workspaceId)).rejects.toThrow("track it first")
+  })
+
+  it("syncNow rejects a failure that is not git's, and still records it; the auto commit's timer only logs it", async () => {
+    fakeTimers()
+    let failCommits = false
+    const harness = openHarness({
+      wrap: (git) => ({
+        ...passthrough(git),
+        // Not a GitError: what a bug in the cycle itself looks like.
+        commit: (dir, message) => (failCommits ? Promise.reject(new TypeError("a bug")) : git.commit(dir, message)),
+      }),
+    })
+    await harness.sync.track(harness.workspaceId)
+    failCommits = true
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Login" })
+
+    await expect(harness.sync.syncNow(harness.workspaceId)).rejects.toThrow("a bug")
+    expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ state: "error", lastError: { code: null, message: "a bug" } })
+
+    // Out of a timer there is no caller to reject to: an unhandled rejection would fail this test.
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Orders" })
+    await elapse(harness, AUTO_COMMIT_DELAY_MS)
+    expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ state: "error", lastError: { message: "a bug" } })
+    expect(await subjects(harness)).toHaveLength(1)
   })
 
   it("refuses an id that could name a path, and a mode change for an untracked workspace", async () => {

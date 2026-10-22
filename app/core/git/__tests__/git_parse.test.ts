@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { parseLog, parseStatus, parseVersion } from "../git_parse"
+import {
+  parseAheadBehind,
+  parseBlobBatch,
+  parseCommitCount,
+  parseLog,
+  parseStatus,
+  parseTreeEntries,
+  parseTreeListings,
+  parseVersion,
+} from "../git_parse"
 
 const SHA_A = "a".repeat(40)
 const SHA_B = "b".repeat(40)
@@ -124,5 +133,111 @@ describe("parseVersion", () => {
 
   it("refuses anything else", () => {
     expect(parseVersion("command not found")).toBeUndefined()
+  })
+})
+
+describe("parseTreeEntries", () => {
+  const oid = "a".repeat(40)
+
+  it("reads the files of a -z listing, paths verbatim", () => {
+    const output = [
+      `100644 blob ${oid}\tworkflows/a b.json`,
+      `100644 blob ${"b".repeat(64)}\tweird\nname.json`,
+      "",
+    ].join("\0")
+    expect(parseTreeEntries(output)).toEqual([
+      { path: "workflows/a b.json", oid },
+      { path: "weird\nname.json", oid: "b".repeat(64) },
+    ])
+  })
+
+  it("skips what is not a file, and reads nothing as nothing", () => {
+    expect(parseTreeEntries(`160000 commit ${oid}\tsubmodule\0`)).toEqual([])
+    expect(parseTreeEntries("")).toEqual([])
+  })
+
+  it("refuses output that is not tree entries", () => {
+    expect(parseTreeEntries("fatal: not a tree object\0")).toBeUndefined()
+    expect(parseTreeEntries(`100644 blob ${oid} no-tab\0`)).toBeUndefined()
+  })
+})
+
+describe("parseTreeListings", () => {
+  const oid = "a".repeat(40)
+
+  it("lists every entry with its mode, type and size, a link and a submodule included", () => {
+    const output = [
+      `100644 blob ${oid}      12\tworkflows/a b.json`,
+      `100755 blob ${oid}       3\trun.sh`,
+      `120000 blob ${oid}       9\tdocs/link`,
+      `160000 commit ${oid}       -\tvendor/lib`,
+      "",
+    ].join("\0")
+    expect(parseTreeListings(output)).toEqual([
+      { path: "workflows/a b.json", oid, mode: "100644", type: "blob", size: 12 },
+      { path: "run.sh", oid, mode: "100755", type: "blob", size: 3 },
+      { path: "docs/link", oid, mode: "120000", type: "blob", size: 9 },
+      { path: "vendor/lib", oid, mode: "160000", type: "commit", size: 0 },
+    ])
+  })
+
+  it("refuses output that is not a listing", () => {
+    expect(parseTreeListings(`100644 blob ${oid}\tno-size\0`)).toBeUndefined()
+  })
+})
+
+describe("parseBlobBatch", () => {
+  const one = "1".repeat(40)
+  const two = "2".repeat(40)
+  const three = "3".repeat(40)
+
+  it("reads each blob by the byte size its header gives, in order", () => {
+    const text = '{"name":"héllo ✓"}\n'
+    const output = `${one} blob ${Buffer.byteLength(text)}\n${text}\n${two} blob 0\n\n${three} missing\n`
+    expect([...(parseBlobBatch(output, [one, two, three]) ?? [])]).toEqual([
+      [one, text],
+      [two, ""],
+      [three, undefined],
+    ])
+  })
+
+  it("keeps a blob that holds a line break and one that looks like a header", () => {
+    const body = `a\n${two} missing\nb`
+    const output = `${one} blob ${body.length}\n${body}\n`
+    expect(parseBlobBatch(output, [one])?.get(one)).toBe(body)
+  })
+
+  it("refuses output that does not match what was asked for", () => {
+    expect(parseBlobBatch("", [one])).toBeUndefined()
+    expect(parseBlobBatch(`${two} blob 1\nx\n`, [one])).toBeUndefined()
+    expect(parseBlobBatch(`${one} blob 5\nabc\n`, [one])).toBeUndefined()
+    expect(parseBlobBatch(`${one} blob 1\nxy\n`, [one])).toBeUndefined()
+    expect(parseBlobBatch(`${one} blob 1\nx\nextra\n`, [one])).toBeUndefined()
+    expect(parseBlobBatch(`${one} commit 1\nx\n`, [one])).toBeUndefined()
+  })
+})
+
+describe("parseAheadBehind", () => {
+  it("reads the left and right counts", () => {
+    expect(parseAheadBehind("3\t2\n")).toEqual({ ahead: 3, behind: 2 })
+    expect(parseAheadBehind("0\t0\n")).toEqual({ ahead: 0, behind: 0 })
+  })
+
+  it("refuses anything else", () => {
+    expect(parseAheadBehind("3 2\n")).toBeUndefined()
+    expect(parseAheadBehind("")).toBeUndefined()
+  })
+})
+
+describe("parseCommitCount", () => {
+  it("reads one count", () => {
+    expect(parseCommitCount("1\n")).toBe(1)
+    expect(parseCommitCount("12")).toBe(12)
+  })
+
+  it("refuses anything else", () => {
+    expect(parseCommitCount("1\t2\n")).toBeUndefined()
+    expect(parseCommitCount("many\n")).toBeUndefined()
+    expect(parseCommitCount("")).toBeUndefined()
   })
 })

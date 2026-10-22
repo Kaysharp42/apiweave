@@ -1,8 +1,9 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { Collection } from "@shared/types/Collection"
 import type { WorkflowOrderItem } from "@shared/types/WorkflowOrderItem"
+import { slugify } from "@shared/text/slugify"
 import { generateId } from "../id"
-import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, slugify, toJson } from "./helpers"
+import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, toJson } from "./helpers"
 import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type CollectionCreate = Pick<Collection, "workspaceId" | "name"> &

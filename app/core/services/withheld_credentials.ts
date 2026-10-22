@@ -1,7 +1,8 @@
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
-import { exportNode, exportWorkflow, stableJson } from "./workspace_repo_format"
+import { stableJson } from "@shared/workspace-repo/format"
+import { exportNode, exportWorkflow } from "./workspace_repo_format"
 import { findRedactedPlaceholders, SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "./secret_utils"
 
 /** A withheld variable keeps its local literal only while the incoming value still matches its export. */

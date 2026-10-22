@@ -42,6 +42,8 @@ export interface HarnessOptions {
   readonly anonymous?: boolean
   /** Told every status the service announces. */
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
+  /** How long `dispose` waits for a running cycle or open; a test that holds one passes a small value. */
+  readonly disposeWaitMs?: number
 }
 
 /** A database whose repositories report their writes to a sync service over real git in a temporary root. */
@@ -60,7 +62,13 @@ export function openHarness(options: HarnessOptions = {}): Harness {
   }
   const workspaceId = repositories.workspaces.create({ name: "Acme QA", slug: "acme-qa" }).workspaceId
   const cloneRoot = path.join(sandbox.root, "clones")
-  sync = new GitSyncService({ cloneRoot, git: options.wrap?.(git) ?? git, repositories, onStatusChanged: options.onStatusChanged })
+  sync = new GitSyncService({
+    cloneRoot,
+    git: options.wrap?.(git) ?? git,
+    repositories,
+    onStatusChanged: options.onStatusChanged,
+    disposeWaitMs: options.disposeWaitMs,
+  })
   const harness = { db, sandbox, repositories, sync, git, cloneRoot, workspaceId, dir: path.join(cloneRoot, workspaceId) }
   harnesses.push(harness)
   return harness
@@ -70,11 +78,15 @@ export function openHarness(options: HarnessOptions = {}): Harness {
 export function passthrough(git: GitService): GitSyncGit {
   return {
     init: git.init.bind(git),
+    clone: git.clone.bind(git),
     setIdentity: git.setIdentity.bind(git),
     add: git.add.bind(git),
     status: git.status.bind(git),
     commit: git.commit.bind(git),
     log: git.log.bind(git),
+    lsTree: git.lsTree.bind(git),
+    readBlobs: git.readBlobs.bind(git),
+    clean: git.clean.bind(git),
     fetch: git.fetch.bind(git),
     push: git.push.bind(git),
     remoteAdd: git.remoteAdd.bind(git),
@@ -82,6 +94,13 @@ export function passthrough(git: GitService): GitSyncGit {
     remoteRemove: git.remoteRemove.bind(git),
     revParse: git.revParse.bind(git),
     mergeBase: git.mergeBase.bind(git),
+    mergeFastForward: git.mergeFastForward.bind(git),
+    mergeNoCommit: git.mergeNoCommit.bind(git),
+    mergeAbort: git.mergeAbort.bind(git),
+    readTreeFiles: git.readTreeFiles.bind(git),
+    resetHard: git.resetHard.bind(git),
+    countAheadBehind: git.countAheadBehind.bind(git),
+    countCommits: git.countCommits.bind(git),
     firstRemoteRef: git.firstRemoteRef.bind(git),
   }
 }

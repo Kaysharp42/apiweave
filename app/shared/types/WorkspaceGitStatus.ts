@@ -15,6 +15,20 @@ export interface WorkspaceGitStatus {
   readonly state: WorkspaceGitState
   /** The last cycle's failure; null once a cycle succeeds. `identity_missing` asks the user who the author is. */
   readonly lastError: WorkspaceGitError | null
+  /** The host refused this user's pushes: commits stay local until one succeeds. */
+  readonly readOnly: boolean
+  /** Commits the remote's branch has that this workspace does not; 0 while there is no remote. */
+  readonly incoming: number
+  /** Commits this workspace has that the remote's branch does not; 0 while there is no remote. */
+  readonly outgoing: number
+  /**
+   * The database holds an edit the repository's last commit does not. Cheap and
+   * correct across restarts, but a flag, not a count: how many records changed
+   * is what `pendingChanges` reads, because it takes serializing the workspace.
+   */
+  readonly uncommitted: boolean
+  /** When the workspace and its remote last agreed (an ISO timestamp); null while they never have, or there is no remote. */
+  readonly lastSyncedAt: string | null
   /** HEAD of the workspace's repository; null when untracked or before the first commit. */
   readonly lastCommit: WorkspaceGitCommit | null
 }

@@ -251,8 +251,16 @@ const gitBridge: GitBridge = {
   untrack: invokeBridge(GIT_CHANNELS.untrack),
   setMode: invokeBridge(GIT_CHANNELS.setMode),
   syncNow: invokeBridge(GIT_CHANNELS.syncNow),
+  pendingChanges: invokeBridge(GIT_CHANNELS.pendingChanges),
+  mergeConflicts: invokeBridge(GIT_CHANNELS.mergeConflicts),
+  mergePicks: invokeBridge(GIT_CHANNELS.mergePicks),
+  mergeRecordCommits: invokeBridge(GIT_CHANNELS.mergeRecordCommits),
+  resolveMerge: invokeBridge(GIT_CHANNELS.resolveMerge),
+  abandonMerge: invokeBridge(GIT_CHANNELS.abandonMerge),
   connectRemote: invokeBridge(GIT_CHANNELS.connectRemote),
   disconnectRemote: invokeBridge(GIT_CHANNELS.disconnectRemote),
+  discardLocalChanges: invokeBridge(GIT_CHANNELS.discardLocalChanges),
+  openFromGit: invokeBridge(GIT_CHANNELS.openFromGit),
   onStatusChanged: (callback) => subscribe<WorkspaceGitStatus>(GIT_STATUS_CHANGED_CHANNEL, callback),
 }
 

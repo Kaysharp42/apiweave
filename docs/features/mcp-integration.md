@@ -416,8 +416,13 @@ data the renderer throws away, and an occasional refetch it did not strictly
 need is cheaper than the bookkeeping to prove it. A burst of writes is coalesced
 into one refetch per surface.
 
-Only MCP writes are published. The renderer's own writes already update its
-stores, and announcing those would fight its optimistic updates.
+The renderer's own writes are never published: they already update its stores,
+and announcing them would fight its optimistic updates. Besides MCP writes, the
+one publisher is a workspace's [git sync](../guides/git-workflows.md#sync-with-the-remote):
+an import from the remote rewrites records underneath the renderer exactly as an
+agent does, so each import that commits announces `workspaces`, `projects`,
+`workflows` and `environments` with the action `gitImport` and the imported
+`workspaceId`.
 
 `secrets` is absent because MCP has no secret write tools, and run history is
 covered by the run channel above.

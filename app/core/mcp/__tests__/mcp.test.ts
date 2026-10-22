@@ -319,9 +319,9 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
     }
   })
 
-  it("keeps connecting and disconnecting a git remote off the router", () => {
+  it("keeps connecting, disconnecting and cloning from a git remote off the router", () => {
     const published = new Set(MCP_TOOLS.map((spec) => `${spec.domain}:${spec.action}`))
-    for (const channel of [GIT_CHANNELS.connectRemote, GIT_CHANNELS.disconnectRemote]) {
+    for (const channel of [GIT_CHANNELS.connectRemote, GIT_CHANNELS.disconnectRemote, GIT_CHANNELS.openFromGit]) {
       expect(published.has(channel), channel).toBe(false)
     }
   })

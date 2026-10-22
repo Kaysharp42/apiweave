@@ -1,4 +1,13 @@
-import type { GitLogEntry, GitStatus, GitStatusEntry, GitStatusEntryKind, GitVersion } from "./git_types"
+import type {
+  GitAheadBehind,
+  GitLogEntry,
+  GitStatus,
+  GitStatusEntry,
+  GitStatusEntryKind,
+  GitTreeEntry,
+  GitTreeListing,
+  GitVersion,
+} from "./git_types"
 
 export function parseVersion(output: string): GitVersion | undefined {
   const match = /^git version ((\d+)\.(\d+)(?:\.(\d+))?.*)$/m.exec(output)
@@ -116,6 +125,99 @@ export function parseStatus(output: string): GitStatus {
     }
   }
   return { ...status, clean: status.entries.length === 0 }
+}
+
+/**
+ * Parse `git rev-list --left-right --count <a>...<b>`: git prints the left
+ * count and the right count, tab-separated, on one line.
+ */
+export function parseAheadBehind(output: string): GitAheadBehind | undefined {
+  const match = /^(\d+)\t(\d+)\s*$/.exec(output)
+  return match === null ? undefined : { ahead: Number(match[1]), behind: Number(match[2]) }
+}
+
+/** Parse `git rev-list --count <rev>`: one decimal number on one line. */
+export function parseCommitCount(output: string): number | undefined {
+  const match = /^(\d+)\s*$/.exec(output)
+  return match === null ? undefined : Number(match[1])
+}
+
+// `<mode> SP <type> SP <oid> TAB <path>`; with -z the path is verbatim and may hold spaces or a line break.
+const TREE_ENTRY = /^\d+ (\w+) ([0-9a-f]+)\t([\s\S]+)$/
+
+/**
+ * One `git ls-tree` dialect: NUL-separated records, each matched by `record`
+ * and built by `entry`, which returns undefined for one to skip. Output that
+ * does not read as this dialect at all is refused, not guessed at.
+ */
+function parseTreeRecords<T>(output: string, record: RegExp, entry: (match: RegExpExecArray) => T | undefined): T[] | undefined {
+  const entries: T[] = []
+  for (const line of output.split("\0")) {
+    if (line === "") continue
+    const match = record.exec(line)
+    if (match === null) return undefined
+    const built = entry(match)
+    if (built !== undefined) entries.push(built)
+  }
+  return entries
+}
+
+/**
+ * Parse `git ls-tree -r -z`: the files (blobs) of a tree, by path. Anything
+ * that is not a file — a submodule's commit — is skipped, and output that does
+ * not read as tree entries at all is refused, not guessed at.
+ */
+export function parseTreeEntries(output: string): GitTreeEntry[] | undefined {
+  return parseTreeRecords(output, TREE_ENTRY, ([, type = "", oid = "", path = ""]) => (type === "blob" ? { path, oid } : undefined))
+}
+
+// `<mode> SP <type> SP <oid> SP <size> TAB <path>`; -l pads the size with spaces, and prints `-` for a submodule's commit.
+const TREE_LISTING = /^(\d+) (\w+) ([0-9a-f]+) +(\d+|-)\t([\s\S]+)$/
+
+/**
+ * Parse `git ls-tree -r -l -z`: every entry of a tree, by path, with its mode,
+ * its type and a blob's size. Nothing is skipped — a symbolic link and a
+ * submodule are listed as what they are, for the caller to tell apart — and output
+ * that does not read as a listing is refused, not guessed at.
+ */
+export function parseTreeListings(output: string): GitTreeListing[] | undefined {
+  return parseTreeRecords(output, TREE_LISTING, ([, mode = "", type = "", oid = "", size = "-", path = ""]) => ({
+    path,
+    oid,
+    mode,
+    type,
+    size: size === "-" ? 0 : Number(size),
+  }))
+}
+
+/**
+ * Parse `git cat-file --batch` for the objects asked for, in order: each is a
+ * `<oid> blob <size>` line, then exactly `size` bytes, then a line feed — or
+ * `<oid> missing`. The sizes are in bytes and the output arrives as text, so
+ * it is measured in bytes again; a blob that is not valid UTF-8 no longer
+ * measures as it did, and the output is refused rather than misread.
+ */
+export function parseBlobBatch(output: string, oids: readonly string[]): Map<string, string | undefined> | undefined {
+  const bytes = Buffer.from(output, "utf8")
+  const blobs = new Map<string, string | undefined>()
+  let offset = 0
+  for (const oid of oids) {
+    const lineEnd = bytes.indexOf(0x0a, offset)
+    if (lineEnd === -1) return undefined
+    const header = bytes.toString("utf8", offset, lineEnd)
+    offset = lineEnd + 1
+    if (header === `${oid} missing`) {
+      blobs.set(oid, undefined)
+      continue
+    }
+    const match = /^([0-9a-f]+) blob (\d+)$/.exec(header)
+    if (match === null || match[1] !== oid) return undefined
+    const end = offset + Number(match[2])
+    if (end >= bytes.length || bytes[end] !== 0x0a) return undefined
+    blobs.set(oid, bytes.toString("utf8", offset, end))
+    offset = end + 1
+  }
+  return offset === bytes.length ? blobs : undefined
 }
 
 /**

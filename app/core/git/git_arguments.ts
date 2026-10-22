@@ -107,6 +107,13 @@ export function assertRevision(rev: string): void {
   }
 }
 
+/** A full object id, as git prints one: 40 hex digits (SHA-1) or 64 (SHA-256). It reaches git's stdin, where a line break would be a second request. */
+export function assertObjectId(oid: string): void {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid)) {
+    throw new GitInvalidArgumentError("object id must be a full lowercase hex id")
+  }
+}
+
 /** A branch or remote name, which git requires to be a valid ref name. */
 export function assertRefName(name: string): void {
   assertPlainText("name", name)

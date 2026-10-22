@@ -1,6 +1,7 @@
 import { mkdir, stat } from "node:fs/promises"
 import path from "node:path"
-import { assertRefName, assertRevision, assertSafeRemoteUrl } from "./git_arguments"
+import { ValidationError } from "../ipc/errors"
+import { assertObjectId, assertRefName, assertRevision, assertSafeRemoteUrl } from "./git_arguments"
 import { gitFailure } from "./git_classify"
 import {
   GitCommandError,
@@ -13,17 +14,36 @@ import {
   type GitError,
   type GitFailureDetails,
 } from "./git_errors"
-import { LOG_FORMAT, parseLog, parseStatus, parseVersion } from "./git_parse"
+import {
+  LOG_FORMAT,
+  parseAheadBehind,
+  parseBlobBatch,
+  parseCommitCount,
+  parseLog,
+  parseStatus,
+  parseTreeEntries,
+  parseTreeListings,
+  parseVersion,
+} from "./git_parse"
 import { execGit, gitConfigArgs, gitEnvironment, timeoutFor, type GitExecOutcome } from "./git_process"
 import type {
+  GitAheadBehind,
   GitCommand,
   GitIdentity,
   GitLogEntry,
   GitLogOptions,
   GitServiceOptions,
   GitStatus,
+  GitTreeContents,
+  GitTreeEntry,
+  GitTreeLimits,
+  GitTreeListing,
   GitVersion,
 } from "./git_types"
+
+/** A `cat-file --batch` at most this large stays well inside the process output cap; the caps keep the whole tree below 100 MB. */
+const TREE_BATCH_BYTES = 32 * 1024 * 1024
+const TREE_BATCH_FILES = 512
 
 const NOTHING_TO_COMMIT = /nothing (?:added )?to commit|no changes added to commit/i
 const PATH_NOT_IN_REVISION = /does not exist in|exists on disk, but not in/i
@@ -47,12 +67,41 @@ function checkedIdentityField(field: "name" | "email", value: string): string {
   return trimmed
 }
 
+/** What a parser made of git's output, or the failure that output is when it made nothing. */
+function parsedOrFailure<T>(command: string, args: readonly string[], parsed: T | undefined): T {
+  if (parsed === undefined) {
+    throw new GitCommandError(`unexpected output from git ${command}`, failureDetails(args, 0, "", ""))
+  }
+  return parsed
+}
+
 async function isDirectory(directory: string): Promise<boolean> {
   try {
     return (await stat(directory)).isDirectory()
   } catch {
     return false
   }
+}
+
+/** The modes of a plain file: a regular one and an executable one. */
+const FILE_MODES: ReadonlySet<string> = new Set(["100644", "100755"])
+
+/** Split tree entries into batches a `cat-file` can hold: by file count and by the blobs' own sizes. */
+function batchesBySize(entries: readonly GitTreeListing[]): GitTreeListing[][] {
+  const batches: GitTreeListing[][] = []
+  let batch: GitTreeListing[] = []
+  let bytes = 0
+  for (const entry of entries) {
+    if (batch.length > 0 && (batch.length >= TREE_BATCH_FILES || bytes + entry.size > TREE_BATCH_BYTES)) {
+      batches.push(batch)
+      batch = []
+      bytes = 0
+    }
+    batch.push(entry)
+    bytes += entry.size
+  }
+  if (batch.length > 0) batches.push(batch)
+  return batches
 }
 
 /**
@@ -162,6 +211,39 @@ export class GitService {
     return this.runOptional("mergeBase", ["merge-base", a, b], repoDir)
   }
 
+  /**
+   * How many commits each side holds that the other does not, in one
+   * invocation: `ahead` counts `local`'s commits, `behind` counts `other`'s.
+   * Zeros when either revision names nothing — an unborn HEAD, or a branch the
+   * remote has not got yet — because git's `--ignore-missing` drops it from
+   * the comparison rather than failing.
+   */
+  async countAheadBehind(repoDir: string, local: string, other: string): Promise<GitAheadBehind> {
+    assertRevision(local)
+    assertRevision(other)
+    return this.revList(repoDir, ["rev-list", "--left-right", "--count", "--ignore-missing", `${local}...${other}`, "--"], parseAheadBehind)
+  }
+
+  /**
+   * How many commits `rev` reaches. The caller checks that `rev` names
+   * something first: `rev-list` fails on an unborn HEAD rather than counting
+   * zero for it.
+   */
+  async countCommits(repoDir: string, rev: string): Promise<number> {
+    assertRevision(rev)
+    return this.revList(repoDir, ["rev-list", "--count", rev, "--"], parseCommitCount)
+  }
+
+  /** A `git rev-list` whose output `parse` must accept: anything else is a failure, not a count. */
+  private async revList<T>(repoDir: string, args: string[], parse: (output: string) => T | undefined): Promise<T> {
+    const stdout = await this.run("revList", args, repoDir)
+    const parsed = parse(stdout)
+    if (parsed === undefined) {
+      throw new GitCommandError(`unexpected output from git rev-list: ${stdout.trim()}`, failureDetails(args, 0, stdout, ""))
+    }
+    return parsed
+  }
+
   /** One branch fetched from `remote` (`refs/remotes/<remote>/…`), or undefined when it has none: what tells an empty remote from one with other branches. */
   async firstRemoteRef(repoDir: string, remote: string): Promise<string | undefined> {
     assertRefName(remote)
@@ -184,6 +266,98 @@ export class GitService {
       }
       throw error
     }
+  }
+
+  /**
+   * The files `rev`'s tree holds under `paths`, recursively, with the id of the
+   * blob behind each. A revision that names nothing — an unborn HEAD — is git's
+   * own failure: the caller asks `revParse` first.
+   */
+  async lsTree(repoDir: string, rev: string, paths: readonly string[]): Promise<GitTreeEntry[]> {
+    assertRevision(rev)
+    if (paths.length === 0) {
+      throw new GitInvalidArgumentError("ls-tree needs at least one path")
+    }
+    const args = ["ls-tree", "-r", "-z", rev, "--", ...paths]
+    return parsedOrFailure("ls-tree", args, parseTreeEntries(await this.run("lsTree", args, repoDir)))
+  }
+
+  /**
+   * The text of every blob in `oids`, by id, read by one `git cat-file --batch`
+   * however many there are; an id the repository lacks maps to undefined. The
+   * ids are checked before they reach git's stdin, and the output is capped
+   * like `show`'s.
+   */
+  async readBlobs(repoDir: string, oids: readonly string[]): Promise<Map<string, string | undefined>> {
+    const unique = [...new Set(oids)]
+    for (const oid of unique) {
+      assertObjectId(oid)
+    }
+    if (unique.length === 0) {
+      return new Map()
+    }
+    const args = ["cat-file", "--batch"]
+    const output = await this.run("catFile", args, repoDir, `${unique.join("\n")}\n`)
+    return parsedOrFailure("cat-file", args, parseBlobBatch(output, unique))
+  }
+
+  /**
+   * Every file of `rev`'s committed tree, path to text — what the working tree
+   * would hold after checking it out, without touching the working tree. This
+   * is how a merge reads the ancestor and both sides: the database is committed
+   * first, so the committed tree is the truth about "ours", never the checkout.
+   *
+   * Only plain files are read. A symbolic link's blob is its target and a
+   * submodule is another repository's commit: read as text, either would be
+   * merged and written back as an ordinary file, so they come back unread, as
+   * `otherEntries`, for the caller to carry or refuse as tree entries.
+   *
+   * `ls-tree -r -l` reports each blob's size, so the caps are enforced before a
+   * byte is read: a tree over them is refused with {@link ValidationError}, the
+   * same classified refusal the checkout walk gives. Blobs then arrive in
+   * bounded batches — by count and by their own sizes — so one `cat-file` never
+   * has to hold a tree the process cannot buffer.
+   */
+  async readTreeFiles(repoDir: string, rev: string, limits: GitTreeLimits): Promise<GitTreeContents> {
+    assertRevision(rev)
+    const args = ["ls-tree", "-r", "-l", "-z", rev, "--", "."]
+    const listed = parsedOrFailure("ls-tree", args, parseTreeListings(await this.run("lsTree", args, repoDir)))
+    const isFile = (entry: GitTreeListing): boolean => entry.type === "blob" && FILE_MODES.has(entry.mode)
+    const entries = listed.filter(isFile)
+    const otherEntries = new Map(listed.filter((entry) => !isFile(entry)).map((entry) => [entry.path, entry]))
+    if (entries.length > limits.maxFiles) {
+      throw new ValidationError(`the tree at ${rev} holds ${entries.length} files; at most ${limits.maxFiles} are read`)
+    }
+    let totalBytes = 0
+    for (const entry of entries) {
+      if (entry.size > limits.maxFileBytes) {
+        throw new ValidationError(`${entry.path} at ${rev} is ${entry.size} bytes; at most ${limits.maxFileBytes} are read from one file`)
+      }
+      totalBytes += entry.size
+      if (totalBytes > limits.maxTotalBytes) {
+        throw new ValidationError(
+          `${entry.path} pushes the tree at ${rev} over its ${limits.maxTotalBytes}-byte limit (${totalBytes} bytes in total); at most ${limits.maxTotalBytes} are read`,
+        )
+      }
+    }
+    const files = new Map<string, string>()
+    for (const batch of batchesBySize(entries)) {
+      const blobs = await this.readBlobs(repoDir, batch.map((entry) => entry.oid))
+      for (const entry of batch) {
+        const text = blobs.get(entry.oid)
+        if (text === undefined) throw new GitCommandError(`the blob for ${entry.path} at ${rev} is missing`, failureDetails(args, 0, "", ""))
+        files.set(entry.path, text)
+      }
+    }
+    return { files, otherEntries }
+  }
+
+  /** Delete the untracked files and folders under `paths`; tracked files and ignored ones stay. */
+  async clean(repoDir: string, paths: readonly string[]): Promise<void> {
+    if (paths.length === 0) {
+      throw new GitInvalidArgumentError("clean needs at least one path")
+    }
+    await this.run("clean", ["clean", "-f", "-d", "-q", "--", ...paths], repoDir)
   }
 
   async fetch(repoDir: string, remote: string): Promise<void> {
@@ -245,13 +419,41 @@ export class GitService {
     await this.run("mergeAbort", ["merge", "--abort"], repoDir)
   }
 
+  /**
+   * Begin a merge of `rev` without touching the working tree or the index:
+   * git records the second parent and leaves `MERGE_HEAD`, and the `ours`
+   * strategy leaves the tree as it is. The caller writes the merged files over
+   * the checkout and commits, which is what turns this into a real two-parent
+   * merge commit. `git merge --abort` is the cancel.
+   */
+  async mergeNoCommit(repoDir: string, rev: string): Promise<void> {
+    assertRevision(rev)
+    // Identity, like `commit`: even without committing, git prepares the merge
+    // commit and refuses a machine with no author configured.
+    await this.run("mergeNoCommit", [...this.identityArgs(), "merge", "--no-commit", "--no-ff", "-s", "ours", rev, "--"], repoDir)
+  }
+
+  /**
+   * Fast-forward the checked-out branch to `rev`, leaving it otherwise alone:
+   * a descendant moves the branch, an ancestor (or the same commit) is already
+   * up to date, and a sibling is refused.
+   */
+  async mergeFastForward(repoDir: string, rev: string): Promise<void> {
+    assertRevision(rev)
+    await this.run("mergeFastForward", ["merge", "--ff-only", rev, "--"], repoDir)
+  }
+
   /** Discard every local change and move the branch to `rev` (default `HEAD`). */
   async resetHard(repoDir: string, rev = "HEAD"): Promise<void> {
     assertRevision(rev)
     await this.run("resetHard", ["reset", "--hard", rev, "--"], repoDir)
   }
 
-  /** Newest first. An unborn branch has no history, not an error. */
+  /**
+   * Newest first. An unborn branch has no history, not an error. A path is
+   * taken literally, as every pathspec is (`GIT_LITERAL_PATHSPECS` in
+   * `gitEnvironment`): a conflict can name a file such as `*.json`.
+   */
   async log(repoDir: string, options: GitLogOptions = {}): Promise<GitLogEntry[]> {
     const rev = options.rev ?? "HEAD"
     assertRevision(rev)
@@ -299,9 +501,9 @@ export class GitService {
     }
   }
 
-  private async run(command: GitCommand, args: readonly string[], cwd?: string): Promise<string> {
+  private async run(command: GitCommand, args: readonly string[], cwd?: string, input?: string): Promise<string> {
     const timeoutMs = timeoutFor(command, this.timeouts)
-    const outcome = await execGit(this.gitPath, [...this.configArgs, ...args], { cwd, env: this.env, timeoutMs })
+    const outcome = await execGit(this.gitPath, [...this.configArgs, ...args], { cwd, env: this.env, timeoutMs, input })
     if (outcome.status === "exited" && outcome.exitCode === 0) {
       return outcome.stdout
     }

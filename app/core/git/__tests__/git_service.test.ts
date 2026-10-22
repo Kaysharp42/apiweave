@@ -244,6 +244,16 @@ describe("history", () => {
     expect((await sandbox.service.log(dir, { path: "b.json" })).map((entry) => entry.subject)).toEqual(["third"])
   })
 
+  it("takes a path literally, not as a glob", async () => {
+    const sandbox = makeSandbox()
+    const { dir } = await twoCommits(sandbox)
+
+    // A glob would match `a.json` and report the commit that touched it;
+    // taken literally, `*.json` names no file, so the answer is an empty
+    // history.
+    expect(await sandbox.service.log(dir, { path: "*.json" })).toEqual([])
+  })
+
   it("has an empty log before the first commit", async () => {
     const sandbox = makeSandbox()
     const dir = path.join(sandbox.root, "unborn")
@@ -284,6 +294,76 @@ describe("history", () => {
     expect(fs.readFileSync(path.join(dir, "a.json"), "utf8")).toBe('{"v":1}\n')
   })
 
+  it("fast-forwards to a descendant, treats an ancestor as a no-op, and refuses a sibling", async () => {
+    const sandbox = makeSandbox()
+    const { dir, first, second } = await twoCommits(sandbox)
+    rawGit(dir, sandbox.env, "checkout", "-b", "side")
+    writeFile(dir, "b.json", "{}\n")
+    await sandbox.service.add(dir, ["b.json"])
+    const side = (await sandbox.service.commit(dir, "side")) ?? ""
+    rawGit(dir, sandbox.env, "checkout", "-b", "sibling", second)
+    writeFile(dir, "c.json", "{}\n")
+    await sandbox.service.add(dir, ["c.json"])
+    const sibling = (await sandbox.service.commit(dir, "sibling")) ?? ""
+    rawGit(dir, sandbox.env, "checkout", "main")
+
+    await sandbox.service.mergeFastForward(dir, side)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+
+    await sandbox.service.mergeFastForward(dir, side)
+    await sandbox.service.mergeFastForward(dir, second)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+
+    await expect(sandbox.service.mergeFastForward(dir, sibling)).rejects.toBeInstanceOf(GitCommandError)
+    expect(await sandbox.service.revParse(dir, "HEAD")).toBe(side)
+    expect((await sandbox.service.status(dir)).clean).toBe(true)
+    expect(first).not.toBe(side)
+    expect(sibling).not.toBe(side)
+  })
+
+  it("counts each side's commits in one call, and says zero when a side has no commit", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main", { setUpstream: true })
+    const other = path.join(sandbox.root, "other")
+    await sandbox.service.clone(remote.url, other)
+    writeFile(other, "b.json", "{}\n")
+    await sandbox.service.add(other, ["b.json"])
+    await sandbox.service.commit(other, "theirs")
+    await sandbox.service.push(other, "origin", "main")
+
+    await sandbox.service.fetch(dir, "origin")
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/main")).toEqual({ ahead: 0, behind: 1 })
+
+    writeFile(dir, "c.json", "{}\n")
+    await sandbox.service.add(dir, ["c.json"])
+    await sandbox.service.commit(dir, "ours")
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/main")).toEqual({ ahead: 1, behind: 1 })
+
+    expect(await sandbox.service.countAheadBehind(dir, "HEAD", "origin/no-such-branch")).toEqual({ ahead: 0, behind: 0 })
+    const unborn = path.join(sandbox.root, "unborn")
+    await sandbox.service.init(unborn, { initialBranch: "main" })
+    expect(await sandbox.service.countAheadBehind(unborn, "HEAD", "origin/main")).toEqual({ ahead: 0, behind: 0 })
+    await expect(sandbox.service.countAheadBehind(dir, "--output=pwned", "HEAD")).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    expect(fs.existsSync(path.join(dir, "pwned"))).toBe(false)
+  })
+
+  it("counts the commits a revision reaches, and refuses a revision that reads as an option", async () => {
+    const sandbox = makeSandbox()
+    const dir = await repoWithCommit(sandbox)
+    writeFile(dir, "b.json", "{}\n")
+    await sandbox.service.add(dir, ["b.json"])
+    await sandbox.service.commit(dir, "second")
+
+    expect(await sandbox.service.countCommits(dir, "HEAD")).toBe(2)
+    expect(await sandbox.service.countCommits(dir, "HEAD~1")).toBe(1)
+
+    await expect(sandbox.service.countCommits(dir, "--output=pwned")).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    expect(fs.existsSync(path.join(dir, "pwned"))).toBe(false)
+  })
+
   it("aborts a merge in progress", async () => {
     const sandbox = makeSandbox()
     const dir = await repoWithCommit(sandbox)
@@ -321,6 +401,45 @@ describe("remotes", () => {
     await sandbox.service.clone(remote.url, clone, { branch: "main" })
     expect(fs.readFileSync(path.join(clone, "a.json"), "utf8")).toBe('{"v":1}\n')
     expect(await sandbox.service.status(clone)).toMatchObject({ branch: "main", upstream: "origin/main", ahead: 0, behind: 0 })
+  })
+
+  it("clones a link the repository carries as a plain file holding its target", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    writeFile(dir, "target.txt", "../outside")
+    const blob = rawGit(dir, sandbox.env, "hash-object", "-w", "target.txt").trim()
+    rawGit(dir, sandbox.env, "update-index", "--add", "--cacheinfo", `120000,${blob},link`)
+    rawGit(dir, sandbox.env, ...WHO, "commit", "-m", "a link")
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main")
+
+    const clone = path.join(sandbox.root, "clone")
+    await sandbox.service.clone(remote.url, clone)
+
+    expect(fs.lstatSync(path.join(clone, "link")).isFile()).toBe(true)
+    expect(fs.readFileSync(path.join(clone, "link"), "utf8")).toBe("../outside")
+  })
+
+  it("fast-forwards over a link the remote gained as a plain file too", async () => {
+    const sandbox = makeSandbox()
+    const remote = makeBareRemote(sandbox)
+    const dir = await repoWithCommit(sandbox)
+    await sandbox.service.remoteAdd(dir, "origin", remote.url)
+    await sandbox.service.push(dir, "origin", "main")
+    const clone = path.join(sandbox.root, "clone")
+    await sandbox.service.clone(remote.url, clone)
+    writeFile(dir, "target.txt", "../outside")
+    const blob = rawGit(dir, sandbox.env, "hash-object", "-w", "target.txt").trim()
+    rawGit(dir, sandbox.env, "update-index", "--add", "--cacheinfo", `120000,${blob},workflows`)
+    rawGit(dir, sandbox.env, ...WHO, "commit", "-m", "a link where a folder belongs")
+    await sandbox.service.push(dir, "origin", "main")
+
+    await sandbox.service.fetch(clone, "origin")
+    await sandbox.service.mergeFastForward(clone, "origin/main")
+
+    expect(fs.lstatSync(path.join(clone, "workflows")).isFile()).toBe(true)
+    expect(fs.readFileSync(path.join(clone, "workflows"), "utf8")).toBe("../outside")
   })
 
   it("fetches new commits and reports behind", async () => {
@@ -548,5 +667,98 @@ describe("LC_ALL=C", () => {
     const error = await sandbox.service.status(sandbox.root).catch((caught: unknown) => caught)
     expect(error).toBeInstanceOf(GitNotARepositoryError)
     expect((error as GitNotARepositoryError).details.stderr).toContain("fatal: not a git repository")
+  })
+})
+
+describe("reading a tree without a checkout", () => {
+  /** A repository whose one commit holds files in two folders, a file with spaces and accents, an empty file and a copy of another. */
+  async function treeRepo(sandbox: GitSandbox): Promise<string> {
+    const dir = path.join(sandbox.root, "tree")
+    await sandbox.service.init(dir, { initialBranch: "main" })
+    fs.mkdirSync(path.join(dir, "workflows", "nested"), { recursive: true })
+    fs.mkdirSync(path.join(dir, "other"))
+    writeFile(dir, "workflows/a b é.json", '{"name":"héllo ✓"}\n')
+    writeFile(dir, "workflows/nested/deep.json", '{"deep":true}\n')
+    writeFile(dir, "workflows/empty.json", "")
+    writeFile(dir, "workflows/copy.json", '{"deep":true}\n')
+    writeFile(dir, "workspace.json", '{"id":1}\n')
+    writeFile(dir, "other/x.json", "{}\n")
+    await sandbox.service.add(dir, ["."])
+    await sandbox.service.commit(dir, "tree")
+    return dir
+  }
+
+  const blobOf = (sandbox: GitSandbox, dir: string, file: string): string => rawGit(dir, sandbox.env, "rev-parse", `HEAD:${file}`).trim()
+
+  it("lists a commit's files recursively under the paths asked for, with their blob ids", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+
+    const entries = await sandbox.service.lsTree(dir, "HEAD", ["workflows", "workspace.json", "nothing-here"])
+
+    expect(entries.map((entry) => entry.path).sort()).toEqual([
+      "workflows/a b é.json",
+      "workflows/copy.json",
+      "workflows/empty.json",
+      "workflows/nested/deep.json",
+      "workspace.json",
+    ])
+    for (const entry of entries) expect(entry.oid).toBe(blobOf(sandbox, dir, entry.path))
+  })
+
+  it("refuses no paths and a revision that reads as an option", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+
+    await expect(sandbox.service.lsTree(dir, "HEAD", [])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    await expect(sandbox.service.lsTree(dir, "--help", ["workflows"])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+  })
+
+  it("reads many blobs in one git call, multi-byte text, an empty file and a repeated id included", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    const accented = blobOf(sandbox, dir, "workflows/a b é.json")
+    const deep = blobOf(sandbox, dir, "workflows/nested/deep.json")
+    const empty = blobOf(sandbox, dir, "workflows/empty.json")
+    const missing = "0".repeat(40)
+
+    const blobs = await sandbox.service.readBlobs(dir, [accented, deep, empty, deep, missing])
+
+    expect(blobs.get(accented)).toBe('{"name":"héllo ✓"}\n')
+    expect(blobs.get(deep)).toBe('{"deep":true}\n')
+    expect(blobs.get(empty)).toBe("")
+    expect(blobs.has(missing)).toBe(true)
+    expect(blobs.get(missing)).toBeUndefined()
+    expect(blobs.size).toBe(4)
+    expect(await sandbox.service.readBlobs(dir, [])).toEqual(new Map())
+  })
+
+  it("refuses an id that is not a full hex id, before it reaches git's stdin", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    const real = blobOf(sandbox, dir, "workspace.json")
+
+    for (const bad of ["HEAD", `${real}\nHEAD`, real.slice(0, 10), real.toUpperCase(), "-p"]) {
+      await expect(sandbox.service.readBlobs(dir, [real, bad])).rejects.toBeInstanceOf(GitInvalidArgumentError)
+    }
+  })
+
+  it("cleans untracked files and folders under the paths it is given, and nothing else", async () => {
+    const sandbox = makeSandbox()
+    const dir = await treeRepo(sandbox)
+    fs.mkdirSync(path.join(dir, "workflows", "stray-dir"))
+    writeFile(dir, "workflows/stray.json", "{}\n")
+    writeFile(dir, "workflows/stray-dir/inner.json", "{}\n")
+    writeFile(dir, "other/untracked.json", "{}\n")
+    writeFile(dir, "workflows/copy.json", "edited\n")
+
+    await sandbox.service.clean(dir, ["workflows"])
+
+    expect(fs.existsSync(path.join(dir, "workflows", "stray.json"))).toBe(false)
+    expect(fs.existsSync(path.join(dir, "workflows", "stray-dir"))).toBe(false)
+    // A tracked file, even edited, and an untracked one outside the paths stay.
+    expect(fs.readFileSync(path.join(dir, "workflows", "copy.json"), "utf8")).toBe("edited\n")
+    expect(fs.existsSync(path.join(dir, "other", "untracked.json"))).toBe(true)
+    await expect(sandbox.service.clean(dir, [])).rejects.toBeInstanceOf(GitInvalidArgumentError)
   })
 })

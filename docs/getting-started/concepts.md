@@ -58,7 +58,7 @@ Project: "Checkout API"
 
 ## Workspace
 
-A workspace is the container for your workflows, environments, projects, and node presets on this machine. A personal workspace is created for you automatically, and you can create more. Workspaces are local structures — no account is required to use them. A workspace can be tracked in a local git repository, one commit per change (**Settings → Workspace settings → Version history (git)**); syncing with a remote is coming — see [Keep Tests in a Git Repository](../guides/git-workflows.md) and the [roadmap](../../ROADMAP.md).
+A workspace is the container for your workflows, environments, projects, and node presets on this machine. A personal workspace is created for you automatically, and you can create more, or open one from a git repository (the workspace switcher's **Open from git…**). Workspaces are local structures — no account is required to use them. A workspace can be tracked in a local git repository, one commit per change (**Settings → Workspace settings → Version history (git)**), and connected to a remote that other computers sync with; the header shows where it stands. Merging two sides that both changed is still to come — see [Keep Tests in a Git Repository](../guides/git-workflows.md) and the [roadmap](../../ROADMAP.md).
 
 ## Environment
 

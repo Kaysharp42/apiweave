@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { assertWorkspaceRemoteUrl } from "../git_arguments"
+import { assertObjectId, assertWorkspaceRemoteUrl } from "../git_arguments"
 import { GitInvalidArgumentError } from "../git_errors"
 
 function refusalOf(url: string): unknown {
@@ -106,4 +106,17 @@ describe("assertWorkspaceRemoteUrl", () => {
       "A remote URL must be https://…, ssh://…, file://… or scp-like user@host:path. Plain http:// is not accepted.",
     )
   })
+})
+
+describe("assertObjectId", () => {
+  it.each(["a".repeat(40), "0123456789abcdef".repeat(4)])("accepts the full id %s", (oid) => {
+    expect(() => assertObjectId(oid)).not.toThrow()
+  })
+
+  it.each(["", "HEAD", "abc123", "A".repeat(40), `${"a".repeat(40)}\n${"b".repeat(40)}`, `${"a".repeat(40)} `, "a".repeat(41), "-".repeat(40)])(
+    "refuses %j",
+    (oid) => {
+      expect(() => assertObjectId(oid)).toThrow(GitInvalidArgumentError)
+    },
+  )
 })

@@ -42,9 +42,14 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitBridge } from "@shared/types/GitBridge";
+import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
+import type { GitMergePick } from "@shared/types/GitMergePick";
+import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
+import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
+import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange";
 import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
@@ -1206,8 +1211,8 @@ const gitDesktopOnly = (): Promise<never> =>
 
 /**
  * A workspace's version history in git. A sibling of `network`, off
- * the router facade: see `GitBridge`. Every call resolves to the workspace's
- * status after it.
+ * the router facade: see `GitBridge`. Every call but `openFromGit` resolves to
+ * the workspace's status after it.
  */
 export const git = {
   isAvailable: (): boolean => getGitBridge() !== undefined,
@@ -1232,6 +1237,37 @@ export const git = {
   ): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.syncNow(workspaceId, request).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
+  pendingChanges: (
+    workspaceId: string,
+  ): Promise<readonly WorkspacePendingChange[]> =>
+    getGitBridge()?.pendingChanges(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergeConflicts: (
+    workspaceId: string,
+  ): Promise<readonly GitMergeConflict[]> =>
+    getGitBridge()?.mergeConflicts(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergePicks: (
+    workspaceId: string,
+  ): Promise<readonly GitMergePick[]> =>
+    getGitBridge()?.mergePicks(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergeRecordCommits: (
+    workspaceId: string,
+    recordIds: readonly string[],
+  ): Promise<readonly MergeRecordCommits[]> =>
+    getGitBridge()?.mergeRecordCommits(workspaceId, recordIds).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  resolveMerge: (
+    workspaceId: string,
+    picks: readonly GitMergePick[],
+    request?: WorkspaceGitCommitRequest,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.resolveMerge(workspaceId, picks, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  abandonMerge: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.abandonMerge(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
   connectRemote: (
     workspaceId: string,
     url: string,
@@ -1240,6 +1276,12 @@ export const git = {
     gitDesktopOnly(),
   disconnectRemote: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.disconnectRemote(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  discardLocalChanges: (workspaceId: string): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.discardLocalChanges(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  openFromGit: (url: string): Promise<OpenWorkspaceFromGitResult> =>
+    getGitBridge()?.openFromGit(url).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,

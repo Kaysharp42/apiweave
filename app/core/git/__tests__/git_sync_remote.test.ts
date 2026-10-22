@@ -398,6 +398,18 @@ describe("GitSyncService.disconnectRemote", () => {
     expect(binding(harness).readOnly).toBe(false)
   })
 
+  it("leaves a diverged workspace idle: diverging is about the remote it no longer has", async () => {
+    const harness = await trackedHarness()
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    harness.repositories.workspaceGit.setState(harness.workspaceId, "diverged", { code: null, message: "the remote's history was rewritten" })
+
+    const status = await harness.sync.disconnectRemote(harness.workspaceId)
+
+    expect(status).toMatchObject({ remoteUrl: null, state: "idle", lastError: null })
+    expect(binding(harness)).toMatchObject({ remoteUrl: null, state: "idle", lastError: null })
+  })
+
   it("needs a tracked workspace, and says it has nothing to disconnect rather than asking to connect", async () => {
     const harness = openHarness()
 
@@ -439,5 +451,30 @@ describe("GitSyncService.reconcile with a remote", () => {
     await harness.sync.reconcile()
 
     expect(remotesOf(harness)).toEqual([])
+  })
+})
+
+describe("GitSyncService.discardLocalChanges", () => {
+  it("keeps the read-only flag and the refusal's message: discarding says nothing about accepting a push", async () => {
+    const harness = await trackedHarness()
+    const remote = makeBareRemote(harness.sandbox)
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Unpushed" })
+    await harness.sync.commitLocal(harness.workspaceId, { message: "Local work" })
+    // What a refused push leaves behind.
+    harness.repositories.workspaceGit.setReadOnly(harness.workspaceId, true)
+    harness.repositories.workspaceGit.setState(harness.workspaceId, "idle", { code: "permission_denied", message: "the host refused the push" })
+
+    const status = await harness.sync.discardLocalChanges(harness.workspaceId)
+
+    expect(status).toMatchObject({
+      state: "idle",
+      readOnly: true,
+      lastError: { code: "permission_denied", message: "the host refused the push" },
+      incoming: 0,
+      outgoing: 0,
+    })
+    expect(await subjects(harness)).toEqual(["Start tracking this workspace in APIWeave"])
+    expect(headOf(harness, harness.dir)).toBe(headOf(harness, remote.dir, "main"))
   })
 })

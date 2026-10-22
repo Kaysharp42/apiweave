@@ -1,7 +1,8 @@
 # Roadmap
 
 This roadmap is subject to change. The current product is the local-first
-Electron desktop app, with git sync of a workspace coming (see [Later](#later)).
+Electron desktop app, with git sync of a workspace (tracking, a remote and a
+sync status in the header) and its merge still to come (see [Later](#later)).
 Priorities shift based on user feedback.
 
 ## Shipped
@@ -51,10 +52,13 @@ per-run cookie jar, and proxy, private CA and client-certificate support.
   webhook, no public port.
 - **Project templates.** Export a project as a reusable local template, with
   references only and no secret material.
-- **Git sync.** A workspace will be tracked by a local git repository, and every
-  change becomes a commit, so history is browsable with ordinary git tools and
-  `apiweave run` reads the repo. Remotes and sharing follow, with conflicts
-  resolved in the app — nothing hosted, nothing to sign in to.
+- **Git sync, the merge.** A workspace is tracked by a local git repository,
+  every change becomes a commit, `apiweave run` reads the repo, and a workspace
+  can be connected to a remote and kept in step with it from the header's sync
+  status — nothing hosted, nothing to sign in to. What remains is combining two
+  sides that both changed: an automatic merge, with a per-field picker for real
+  clashes. Until then a diverged workspace keeps both sides and offers
+  **Discard local changes**.
 
 ## Out of scope
 

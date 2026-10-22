@@ -4,7 +4,7 @@ import { GitInvalidArgumentError } from "../git_errors"
 import { DEFAULT_TIMEOUTS_MS, awaitWithin, execGit, gitConfigArgs, gitEnvironment, timeoutFor } from "../git_process"
 
 describe("gitConfigArgs", () => {
-  it("carries the five settings, each as its own -c", () => {
+  it("carries the seven settings, each as its own -c", () => {
     expect(gitConfigArgs("/app/empty-hooks")).toEqual([
       "-c",
       "core.hooksPath=/app/empty-hooks",
@@ -12,6 +12,8 @@ describe("gitConfigArgs", () => {
       "core.autocrlf=false",
       "-c",
       "core.fsmonitor=false",
+      "-c",
+      "core.symlinks=false",
       "-c",
       "protocol.ext.allow=never",
       "-c",
@@ -25,7 +27,7 @@ describe("gitConfigArgs", () => {
 describe("gitEnvironment", () => {
   it("forces the quiet, English environment over whatever was inherited", () => {
     const env = gitEnvironment({ PATH: "/bin", LC_ALL: "fr_FR.UTF-8", GIT_TERMINAL_PROMPT: "1", GIT_OPTIONAL_LOCKS: "1" })
-    expect(env).toMatchObject({ PATH: "/bin", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" })
+    expect(env).toMatchObject({ PATH: "/bin", GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", GIT_LFS_SKIP_SMUDGE: "1", LC_ALL: "C" })
   })
 
   it("drops variables that would aim git at another repository", () => {

@@ -6,6 +6,7 @@ import {
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import {
   ChevronDown,
+  GitBranch,
   HardDrive,
   Plus,
   UserRound,
@@ -13,6 +14,7 @@ import {
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { Button } from "../atoms/Button";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
+import { OpenWorkspaceFromGitModal } from "./OpenWorkspaceFromGitModal";
 import type { Workspace } from "../../types";
 
 /**
@@ -57,6 +59,7 @@ export function OrgWorkspaceSwitcher() {
     isLoading,
   } = useWorkspace();
   const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [openFromGitOpen, setOpenFromGitOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const handleSelect = (workspace: Workspace, close: () => void) => {
@@ -203,6 +206,19 @@ export function OrgWorkspaceSwitcher() {
                 >
                   New workspace
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  fullWidth
+                  className="justify-start text-xs"
+                  icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
+                  onClick={() => {
+                    close();
+                    setOpenFromGitOpen(true);
+                  }}
+                >
+                  Open from git…
+                </Button>
               </div>
             </PopoverPanel>
           </>
@@ -213,6 +229,11 @@ export function OrgWorkspaceSwitcher() {
         isOpen={createWsOpen}
         onClose={() => setCreateWsOpen(false)}
         onCreated={handleWorkspaceCreated}
+      />
+
+      <OpenWorkspaceFromGitModal
+        isOpen={openFromGitOpen}
+        onClose={() => setOpenFromGitOpen(false)}
       />
     </>
   );
