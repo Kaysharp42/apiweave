@@ -1,4 +1,5 @@
 // fallow-ignore-file code-duplication -- a bridge interface is a list of parallel one-line method signatures; the run is the interface's shape, not shared behaviour to extract.
+import type { GitAccountList } from "./GitAccountList"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { GitMergeConflict } from "./GitMergeConflict"
 import type { GitMergePick } from "./GitMergePick"
@@ -106,4 +107,10 @@ export interface GitBridge {
    * the repository cannot be reached, or it is not an APIWeave workspace.
    */
   readonly openFromGit: (url: string) => Promise<OpenWorkspaceFromGitResult>
+  /**
+   * Every account `gh` and `glab` are signed in to, and whether each tool is
+   * installed. A missing tool lists no accounts rather than rejecting. No
+   * token ever crosses this bridge: the tools keep them.
+   */
+  readonly listAccounts: () => Promise<GitAccountList>
 }

@@ -261,6 +261,7 @@ const gitBridge: GitBridge = {
   disconnectRemote: invokeBridge(GIT_CHANNELS.disconnectRemote),
   discardLocalChanges: invokeBridge(GIT_CHANNELS.discardLocalChanges),
   openFromGit: invokeBridge(GIT_CHANNELS.openFromGit),
+  listAccounts: invokeBridge(GIT_CHANNELS.listAccounts),
   onStatusChanged: (callback) => subscribe<WorkspaceGitStatus>(GIT_STATUS_CHANGED_CHANNEL, callback),
 }
 

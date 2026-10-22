@@ -74,6 +74,7 @@ export function installGitBridge(
       name: "Opened",
       warnings: [],
     })),
+    listAccounts: vi.fn(async () => ({ clis: [], accounts: [] })),
     onStatusChanged: (callback) => {
       listeners.add(callback);
       return () => {

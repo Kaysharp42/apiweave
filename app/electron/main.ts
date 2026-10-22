@@ -24,6 +24,7 @@ import {
   WorkspaceRepository,
 } from "../core/repositories"
 import type { GitSyncService } from "../core/git/git_sync_service"
+import { HostCliService } from "../core/git/accounts/host_cli_service"
 import { createGitSync, registerGitHandlers } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
@@ -901,7 +902,7 @@ if (!hasSingleInstanceLock) {
       },
       publishDataRefresh,
     )
-    registerGitHandlers(ipcMain, requireTrustedSender, gitSync)
+    registerGitHandlers(ipcMain, requireTrustedSender, gitSync, new HostCliService())
     gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*

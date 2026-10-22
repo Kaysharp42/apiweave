@@ -1,6 +1,8 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron"
 import { describe, expect, it, vi } from "vitest"
 import type { GitMergePick } from "@shared/types/GitMergePick"
+import type { GitAccountList } from "@shared/types/GitAccountList"
+import type { HostCliService } from "../../core/git/accounts/host_cli_service"
 import type { GitSyncService } from "../../core/git/git_sync_service"
 import { GIT_CHANNELS } from "../../core/ipc/channels"
 import { registerGitHandlers } from "../git_sync"
@@ -10,15 +12,15 @@ type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
  * The git handlers on a fake `ipcMain`, behind a guard that lets every sender
  * through, over a sync service that only records the call.
  */
-function handlersOf(gitSync: GitSyncService): Map<string, Handler> {
+function handlersOf(gitSync: GitSyncService, hostCli = {} as HostCliService): Map<string, Handler> {
   const handlers = new Map<string, Handler>()
   const ipcMain = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as unknown as IpcMain
-  registerGitHandlers(ipcMain, (handler) => (_event, ...args) => handler(...args), gitSync)
+  registerGitHandlers(ipcMain, (handler) => (_event, ...args) => handler(...args), gitSync, hostCli)
   return handlers
 }
 
-function handlerOf(gitSync: GitSyncService, channel: string): Handler {
-  const handler = handlersOf(gitSync).get(channel)
+function handlerOf(gitSync: GitSyncService, channel: string, hostCli?: HostCliService): Handler {
+  const handler = handlersOf(gitSync, hostCli).get(channel)
   if (handler === undefined) throw new Error(`${channel} is not registered`)
   return handler
 }
@@ -33,6 +35,35 @@ function bridge(): { readonly resolve: (picks: unknown) => Promise<unknown>; rea
 }
 
 const PICK: GitMergePick = { recordId: "wf-1", path: "name", side: "theirs" }
+
+describe("the git bridge's registration", () => {
+  it("registers every git channel, each behind the trusted-sender guard", () => {
+    const handlers = new Map<string, Handler>()
+    const ipcMain = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as unknown as IpcMain
+    const refuse = (): never => {
+      throw new Error("untrusted sender")
+    }
+    registerGitHandlers(ipcMain, () => refuse, {} as GitSyncService, {} as HostCliService)
+
+    expect([...handlers.keys()].sort()).toEqual(Object.values(GIT_CHANNELS).sort())
+    for (const [channel, handler] of handlers) {
+      expect(() => handler({} as IpcMainInvokeEvent, "ws-1"), channel).toThrow("untrusted sender")
+    }
+  })
+})
+
+describe("the listAccounts bridge", () => {
+  it("answers with the accounts the host CLIs list", async () => {
+    const list: GitAccountList = {
+      clis: [{ provider: "github", command: "gh", missing: false, version: "2.97.0", problem: null }],
+      accounts: [{ provider: "github", host: "github.com", login: "octo", gitProtocol: "https", active: true, problem: null }],
+    }
+    const listAccounts = vi.fn(async () => list)
+    const handler = handlerOf({} as GitSyncService, GIT_CHANNELS.listAccounts, { listAccounts } as unknown as HostCliService)
+
+    await expect(handler({} as IpcMainInvokeEvent)).resolves.toEqual(list)
+  })
+})
 
 describe("the mergePicks bridge", () => {
   it("reads the stored decisions for the workspace it is asked about", async () => {

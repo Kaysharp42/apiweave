@@ -32,6 +32,8 @@ const MESSAGES: Readonly<Record<GitErrorCode, (host: string) => string>> = {
     "Git doesn't know who you are on this machine — enter your name and email in the workspace's version history settings.",
   auth_failed: (host) =>
     `Sign-in to ${host} failed — your credential manager will ask again on retry.`,
+  account_unavailable: (host) =>
+    `APIWeave couldn't get this workspace's account's sign-in for ${host} from gh or glab — sign in to the account again, or choose another one in the workspace's version history settings.`,
   non_fast_forward: () =>
     "Someone pushed to the remote at the same moment — retry to bring their changes in first.",
   // A refused push is not this: it makes the workspace read-only, which explains itself. This is a fetch or a clone the host refused.

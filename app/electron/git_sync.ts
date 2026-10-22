@@ -7,6 +7,7 @@ import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
+import type { HostCliService } from "../core/git/accounts/host_cli_service"
 import { GitIdentityMissingError } from "../core/git/git_errors"
 import { GitService } from "../core/git/git_service"
 import { GitSyncService, type GitSyncRepositories } from "../core/git/git_sync_service"
@@ -99,9 +100,16 @@ async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string)
  * The `__APIWEAVE_GIT__` handlers. Deliberately off the `core/ipc/handlers/`
  * registry, like `updates:*` and `agents:*`: the registry is also the MCP
  * bridge's handler list, and an agent that could reach git could connect a
- * remote and push a workspace to a repository it controls.
+ * remote and push a workspace to a repository it controls. The same goes for
+ * the user's git accounts: an agent that could pick one could push wherever
+ * that account can write.
  */
-export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard, gitSync: GitSyncService): void {
+export function registerGitHandlers(
+  ipcMain: IpcMain,
+  guard: TrustedSenderGuard,
+  gitSync: GitSyncService,
+  hostCli: HostCliService,
+): void {
   const handleWorkspace = (channel: string, call: (workspaceId: string) => Promise<unknown>): void => {
     ipcMain.handle(channel, guard((workspaceId: unknown) => call(workspaceIdOf(workspaceId))))
   }
@@ -142,4 +150,5 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
     guard((workspaceId: unknown, url: unknown) => gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url))),
   )
   ipcMain.handle(GIT_CHANNELS.openFromGit, guard((url: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url))))
+  ipcMain.handle(GIT_CHANNELS.listAccounts, guard(() => hostCli.listAccounts()))
 }

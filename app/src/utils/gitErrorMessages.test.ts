@@ -6,6 +6,7 @@ const CODES: readonly GitErrorCode[] = [
   "git_not_installed",
   "identity_missing",
   "auth_failed",
+  "account_unavailable",
   "non_fast_forward",
   "permission_denied",
   "network_error",
