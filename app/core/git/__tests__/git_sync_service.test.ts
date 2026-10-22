@@ -536,6 +536,19 @@ describe("GitSyncService", () => {
     expect(counts).toBe(0)
   })
 
+  it("lists every tracked workspace's status for the switcher, and no untracked one", async () => {
+    const harness = openHarness()
+    const second = harness.repositories.workspaces.create({ name: "Second", slug: "second" }).workspaceId
+    harness.repositories.workspaces.create({ name: "Untracked", slug: "untracked" })
+    await harness.sync.track(harness.workspaceId)
+    await harness.sync.track(second)
+
+    const statuses = await harness.sync.statusAll()
+
+    expect(statuses.map((status) => status.workspaceId).sort()).toEqual([harness.workspaceId, second].sort())
+    expect(statuses.every((status) => status.tracked)).toBe(true)
+  })
+
   it("syncNow rejects only a request it cannot run: an id that is not a workspace, or one that is not tracked", async () => {
     const harness = openHarness()
 

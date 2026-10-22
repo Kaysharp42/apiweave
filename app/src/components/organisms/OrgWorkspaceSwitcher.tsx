@@ -12,9 +12,13 @@ import {
   UserRound,
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { useWorkspaceGitStatuses } from "../../hooks/useWorkspaceGitStatuses";
 import { Button } from "../atoms/Button";
+import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import { OpenWorkspaceFromGitModal } from "./OpenWorkspaceFromGitModal";
+import { describeGitSync, GIT_SYNC_INTENT_TEXT } from "../../utils/gitSync";
+import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import type { Workspace } from "../../types";
 
 /**
@@ -61,6 +65,7 @@ export function OrgWorkspaceSwitcher() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [openFromGitOpen, setOpenFromGitOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const gitStatuses = useWorkspaceGitStatuses();
 
   const handleSelect = (workspace: Workspace, close: () => void) => {
     switchTo(workspace.slug);
@@ -176,6 +181,7 @@ export function OrgWorkspaceSwitcher() {
                       }
                       icon={sourceIcon(source, "h-4 w-4")}
                       source={source}
+                      syncStatus={gitStatuses.get(workspace.workspaceId) ?? null}
                       onSelect={(selected) => handleSelect(selected, close)}
                       onKeyDown={handleItemKeyDown}
                       itemRef={(el) => {
@@ -245,6 +251,8 @@ interface WorkspaceItemProps {
   isActive: boolean;
   icon: React.ReactNode;
   source: string;
+  /** This row's git status; null while it is unknown or when the workspace is not tracked. */
+  syncStatus: WorkspaceGitStatus | null;
   onSelect: (workspace: Workspace) => void;
   onKeyDown: (
     event: ReactKeyboardEvent<HTMLButtonElement>,
@@ -260,10 +268,12 @@ function WorkspaceItem({
   isActive,
   icon,
   source,
+  syncStatus,
   onSelect,
   onKeyDown,
   itemRef,
 }: WorkspaceItemProps) {
+  const indicator = syncStatus === null ? null : describeGitSync(syncStatus);
   return (
     <button
       ref={itemRef}
@@ -295,6 +305,16 @@ function WorkspaceItem({
           {source}
         </div>
       </div>
+      {indicator !== null && indicator.icon !== null && (
+        <span
+          role="img"
+          aria-label={indicator.label}
+          title={indicator.label}
+          className={`flex flex-shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
+        >
+          <GitSyncKindIcon indicator={indicator} className="h-3.5 w-3.5" />
+        </span>
+      )}
       {isActive && (
         <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
       )}

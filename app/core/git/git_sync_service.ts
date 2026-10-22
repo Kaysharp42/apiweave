@@ -308,6 +308,17 @@ export class GitSyncService {
   }
 
   /**
+   * Every tracked workspace's status, for the switcher's icon on each row: the
+   * same report `status` gives one workspace, with no entry for an untracked
+   * one. Read-only: it runs no cycle and commits nothing.
+   */
+  public async statusAll(): Promise<readonly WorkspaceGitStatus[]> {
+    return Promise.all(
+      this.repositories.workspaceGit.listAll().map(({ workspaceId }) => this.status(workspaceId)),
+    )
+  }
+
+  /**
    * How this workspace stands against the remote branch. `countAheadBehind`
    * treats a branch the remote has not got yet as empty, which would report
    * 0/0 with unpushed commits: with no remote branch every local commit is

@@ -50,6 +50,9 @@ export function installGitBridge(
   const listeners = new Set<(status: WorkspaceGitStatus) => void>();
   const bridge: GitBridge = {
     status: vi.fn(async () => initial),
+    statusAll: vi.fn(async (): Promise<readonly WorkspaceGitStatus[]> =>
+      initial.tracked ? [initial] : [],
+    ),
     track: vi.fn(async () => trackedStatus()),
     untrack: vi.fn(async () => untrackedStatus),
     setMode: vi.fn(async (_workspaceId, mode) => trackedStatus({ mode })),

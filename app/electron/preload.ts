@@ -247,6 +247,7 @@ contextBridge.exposeInMainWorld("__APIWEAVE_NETWORK__", networkBridge)
 /** A workspace's version history: main runs git — a privileged world for the same reason as the network bridge. */
 const gitBridge: GitBridge = {
   status: invokeBridge(GIT_CHANNELS.status),
+  statusAll: invokeBridge(GIT_CHANNELS.statusAll),
   track: invokeBridge(GIT_CHANNELS.track),
   untrack: invokeBridge(GIT_CHANNELS.untrack),
   setMode: invokeBridge(GIT_CHANNELS.setMode),

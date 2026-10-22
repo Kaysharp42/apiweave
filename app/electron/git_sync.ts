@@ -106,6 +106,7 @@ export function registerGitHandlers(ipcMain: IpcMain, guard: TrustedSenderGuard,
     ipcMain.handle(channel, guard((workspaceId: unknown) => call(workspaceIdOf(workspaceId))))
   }
   handleWorkspace(GIT_CHANNELS.status, (workspaceId) => gitSync.status(workspaceId))
+  ipcMain.handle(GIT_CHANNELS.statusAll, guard(() => gitSync.statusAll()))
   handleWorkspace(GIT_CHANNELS.track, (workspaceId) => trackOrAskForAuthor(gitSync, workspaceId))
   handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))

@@ -90,6 +90,7 @@ export const NETWORK_CHANNELS = {
  */
 export const GIT_CHANNELS = {
   status: "git:status",
+  statusAll: "git:statusAll",
   track: "git:track",
   untrack: "git:untrack",
   setMode: "git:setMode",

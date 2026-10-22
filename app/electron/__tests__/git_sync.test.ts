@@ -59,6 +59,17 @@ describe("the mergePicks bridge", () => {
   })
 })
 
+describe("the statusAll bridge", () => {
+  it("reads every tracked workspace's status without taking an argument", async () => {
+    const statusAll = vi.fn(async () => [])
+    const handler = handlerOf({ statusAll } as unknown as GitSyncService, GIT_CHANNELS.statusAll)
+
+    await expect(handler({} as IpcMainInvokeEvent)).resolves.toEqual([])
+
+    expect(statusAll).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe("the resolveMerge bridge", () => {
   it("passes well-formed picks through to the sync service", async () => {
     const { resolve, resolveMerge } = bridge()
