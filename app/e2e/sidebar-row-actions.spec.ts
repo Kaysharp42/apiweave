@@ -141,20 +141,6 @@ async function installBridge(page: Page): Promise<void> {
         "projects.moveToWorkspace": () => seed.project,
         "environments.list": () => ({ items: [seed.env], total: 1 }),
         "secrets.list": () => [],
-        "cloud.status": () => ({
-          linked: false,
-          active: false,
-          linkState: "unlinked",
-          syncState: "idle",
-          state: "idle",
-          pendingCount: 0,
-          deadLetterCount: 0,
-          conflictCount: 0,
-          workspaceIds: [],
-          bindings: [],
-          workspaceCatalog: [],
-          teamCatalog: [],
-        }),
       };
       // Run history is polled under several suffixes (`listRecent`,
       // `getLatestForWorkflow`, …), so these match on the prefix.
@@ -181,7 +167,6 @@ async function installBridge(page: Page): Promise<void> {
           };
         },
         onRunProgress: () => () => undefined,
-        onCloudStatusChanged: () => () => undefined,
       };
     },
     {

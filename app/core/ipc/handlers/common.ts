@@ -9,7 +9,6 @@ import type { ProjectRunService } from "../../services/project_run_service"
 import type { SecretService } from "../../services/secret_service"
 import type { ProjectExportService } from "../../services/project_export_service"
 import type { ImportService } from "../../services/import_service"
-import type { CloudSyncControl } from "../../services/cloud_sync_control"
 import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { NotFoundError } from "../errors"
@@ -32,7 +31,6 @@ export interface HandlerDeps {
   readonly secrets: SecretService
   readonly projects: ProjectExportService
   readonly imports: ImportService
-  readonly cloud?: CloudSyncControl
   /** Absent where nothing executes runs (a test router without a scheduler). */
   readonly projectRuns?: ProjectRunService
 }

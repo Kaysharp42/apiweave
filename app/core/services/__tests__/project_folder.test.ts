@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { CollectionRepository, EnvironmentRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { ProjectExportService } from "../project_export_service"
 import { exportProjectFolder, importProjectFolder, PROJECT_FILE, writeProjectFolder } from "../project_folder"
@@ -35,7 +34,7 @@ function openStore(slug = "local"): Store {
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
   const projects = new ProjectExportService(
-    collections, workflows, environments, new LocalOnlySyncProvider(), new LocalOwnerProvider(), scopeResolver,
+    collections, workflows, environments, new LocalOwnerProvider(), scopeResolver,
   )
   const store = { db, workspaces, workflows, environments, collections, projects, workspaceId: workspaces.create({ name: slug, slug }).workspaceId }
   stores.push(store)

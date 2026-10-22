@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import { WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { WorkspaceService } from "../workspace_service"
 
@@ -22,7 +21,7 @@ beforeEach(() => {
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: () => false,
   }
-  svc = new WorkspaceService(workspaces, workflows, new LocalOnlySyncProvider(), new ScopeResolver(existence))
+  svc = new WorkspaceService(workspaces, workflows, new ScopeResolver(existence))
 })
 
 afterEach(() => db.close())
@@ -79,43 +78,6 @@ describe("WorkspaceService — personal workspace invariant on update", () => {
     const updated = await svc.update(personal.workspaceId, { isPersonal: true })
 
     expect(updated.isPersonal).toBe(true)
-  })
-})
-
-describe("WorkspaceService — provision hook", () => {
-  let hookDb: InitializedDatabase
-  let onCreated: ReturnType<typeof vi.fn>
-  let hookedSvc: WorkspaceService
-
-  beforeEach(() => {
-    hookDb = initDatabase({ databasePath: ":memory:" })
-    const workspaces = new WorkspaceRepository(hookDb.kvStore)
-    const existence: ScopeExistence = {
-      workspaceExists: (id) => workspaces.getById(id) !== undefined,
-      environmentExists: () => false,
-    }
-    onCreated = vi.fn()
-    hookedSvc = new WorkspaceService(
-      workspaces,
-      new WorkflowRepository(hookDb.kvStore),
-      new LocalOnlySyncProvider(),
-      new ScopeResolver(existence),
-      onCreated,
-    )
-  })
-
-  afterEach(() => hookDb.close())
-
-  it("fires the hook after creating a new workspace (cloud can provision it)", async () => {
-    await hookedSvc.create({ name: "Team", slug: "team", isPersonal: false })
-    expect(onCreated).toHaveBeenCalledOnce()
-  })
-
-  it("does not fire the hook when a personal create is a dedupe no-op", async () => {
-    await hookedSvc.create({ name: "Personal", slug: "personal", isPersonal: true })
-    onCreated.mockClear()
-    await hookedSvc.create({ name: "Personal", slug: "personal", isPersonal: true })
-    expect(onCreated).not.toHaveBeenCalled()
   })
 })
 

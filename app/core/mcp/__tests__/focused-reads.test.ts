@@ -11,7 +11,6 @@ import {
   WorkspaceRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../../services/scope_resolver"
 import { WorkspaceService } from "../../services/workspace_service"
 import { CollectionService } from "../../services/collection_service"
@@ -80,25 +79,23 @@ beforeEach(() => {
   }
   const scopeResolver = new ScopeResolver(existence)
   const permissions = new LocalOwnerProvider()
-  const sync = new LocalOnlySyncProvider()
   const secretStore = new FakeSecretStore()
-  const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
-  const runService = new RunService(runs, sync, permissions, scopeResolver)
+  const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
+  const runService = new RunService(runs, permissions, scopeResolver)
   const deps: HandlerDeps = {
-    workspaces: new WorkspaceService(workspaces, workflows, sync, scopeResolver),
-    collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
+    workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
+    collections: new CollectionService(collections, workflows, permissions, scopeResolver),
     workflows: workflowService,
     workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
     assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-    environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    environments: new EnvironmentService(environments, permissions, scopeResolver),
     nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
     runs: runService,
-    secrets: new SecretService(secretStore, sync, permissions, scopeResolver, environments, new Uint8Array(32)),
+    secrets: new SecretService(secretStore, permissions, scopeResolver, environments, new Uint8Array(32)),
     projects: new ProjectExportService(
       collections,
       workflows,
       environments,
-      sync,
       permissions,
       scopeResolver,
       secretStore,

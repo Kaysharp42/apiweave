@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { EnvironmentRepository, SecretRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { SecretService } from "../secret_service"
 import { OAuthService, SIGN_IN_TIMEOUT_MS, authorizeWithPkce } from "../oauth_service"
@@ -158,7 +157,7 @@ describe("OAuthService", () => {
       workspaceExists: (id) => workspaces.getById(id) !== undefined,
       environmentExists: (id) => environments.getById(id) !== undefined,
     })
-    secrets = new SecretService(new SecretRepository(db.kvStore), new LocalOnlySyncProvider(), new LocalOwnerProvider(), scopes, environments, new Uint8Array(32))
+    secrets = new SecretService(new SecretRepository(db.kvStore), new LocalOwnerProvider(), scopes, environments, new Uint8Array(32))
   })
   afterEach(async () => {
     await server.close()

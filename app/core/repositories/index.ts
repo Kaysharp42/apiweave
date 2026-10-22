@@ -35,22 +35,3 @@ export type { AgentRunApprovalCreate, AgentRunApprovalLookup } from "./AgentRunA
 export { NodePresetRepository } from "./NodePresetRepository"
 export type { NodePresetCreate, NodePresetUpdate } from "./NodePresetRepository"
 export { SecretRepository } from "./SecretRepository"
-export { CLOUD_OUTBOX_MAX_RETRIES, CloudSyncRepository, ErrForbiddenCloudPayload, ErrUnknownCloudKind }
-  from "./CloudSyncRepository"
-export type {
-  CloudChangeEnvelope,
-  CloudApplyResult,
-  CloudBindingInitializationState,
-  CloudConflict,
-  CloudConflictWinner,
-  CloudCursorState,
-  CloudFailedRecord,
-  CloudOutboxKind,
-  CloudOutboxOp,
-  CloudOutboxRow,
-  CloudWorkspaceBinding,
-  CloudWorkspaceTombstone,
-  CloudWorkspaceBindingUpsert,
-  CloudPushConflictInput,
-}
-  from "./CloudSyncRepository"

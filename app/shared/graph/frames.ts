@@ -1,10 +1,9 @@
 /**
  * Canvas-only nodes, from the runner's point of view: not there.
  *
- * A frame is a persisted node (`type: "group"`) because that is the only shape
- * the sync path already carries — the server validates node/edge ids and
- * dangling edges, and canvas-only nodes have no edges, so they round-trip
- * through cloud merge without a proto change. Every consumer that treats
+ * A frame is a persisted node (`type: "group"`) rather than a structure of its
+ * own, so it saves, exports and imports with the graph it annotates, and
+ * canvas-only nodes have no edges to leave dangling. Every consumer that treats
  * `nodes` as "the things that run" has to drop them first, or a note shows up
  * as an unreachable node in the validator and a `skipped` row in the run
  * timeline.

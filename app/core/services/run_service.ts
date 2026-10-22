@@ -7,7 +7,6 @@ import type { RunCreate, RunRepository, RunSummaryRow } from "../repositories"
 import { buildNodeEvidencePage, openHistoryCursor, sealHistoryCursor, type EvidenceSelection } from "./run_evidence"
 import { RUN_WAIT_DEFAULT_MS, RUN_WAIT_MAX_MS } from "./read_budgets"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
 import { ConflictError, NotFoundError } from "../ipc/errors"
 import { abortError } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
@@ -72,7 +71,6 @@ export class RunService {
 
   constructor(
     private readonly runs: RunRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly trigger?: RunTrigger,
@@ -232,7 +230,6 @@ export class RunService {
     this.trigger?.cancel(runId)
     const updated = this.runs.updateStatus(runId, "cancelled")
     if (updated === undefined) throw new NotFoundError(`run ${runId} not found`)
-    await this.syncProvider.push()
     return updated
   }
 

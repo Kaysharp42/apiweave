@@ -3,7 +3,6 @@ import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import { EnvironmentRepository, SecretRepository, WorkspaceRepository } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { SecretService } from "../secret_service"
 
@@ -20,7 +19,6 @@ let environments: EnvironmentRepository
 let store: SecretRepository
 let service: SecretService
 const permissions = new LocalOwnerProvider()
-const sync = new LocalOnlySyncProvider()
 const MASTER_KEK = new Uint8Array(32).fill(7)
 
 beforeEach(() => {
@@ -34,7 +32,6 @@ beforeEach(() => {
   }
   service = new SecretService(
     store,
-    sync,
     permissions,
     new ScopeResolver(existence),
     environments,

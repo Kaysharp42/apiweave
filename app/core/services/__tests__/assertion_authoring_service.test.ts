@@ -6,7 +6,6 @@ import {
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { AssertionAuthoringService } from "../assertion_authoring_service"
 import { RunService } from "../run_service"
 import { ScopeResolver } from "../scope_resolver"
@@ -29,9 +28,8 @@ beforeEach(() => {
     environmentExists: () => false,
   })
   const permissions = new LocalOwnerProvider()
-  const sync = new LocalOnlySyncProvider()
-  workflowService = new WorkflowService(workflowRepository, sync, permissions, scopeResolver)
-  const runService = new RunService(runRepository, sync, permissions, scopeResolver)
+  workflowService = new WorkflowService(workflowRepository, permissions, scopeResolver)
+  const runService = new RunService(runRepository, permissions, scopeResolver)
   authoring = new AssertionAuthoringService(workflowService, runService)
 })
 

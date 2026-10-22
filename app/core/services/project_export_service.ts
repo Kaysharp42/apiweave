@@ -1,4 +1,3 @@
-import type { Collection } from "@shared/types/Collection"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
@@ -16,8 +15,6 @@ import type {
 } from "../repositories"
 import type { SecretMetadataStore } from "../secrets/scoped_secret_resolver"
 import type { PermissionProvider } from "../auth/PermissionProvider"
-import type { SyncProvider } from "../sync/SyncProvider"
-import { recordCollectionUpsert, recordEnvironmentUpsert, recordWorkflowUpsert } from "../sync/cloud-mutations"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import { RESOURCE_COLLECTIONS } from "../auth/permissions"
 import { authorizeWorkspace } from "./authorize"
@@ -170,7 +167,6 @@ export class ProjectExportService {
     private readonly collections: CollectionRepository,
     private readonly workflows: WorkflowRepository,
     private readonly environments: EnvironmentRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly permissions: PermissionProvider,
     private readonly scopeResolver: ScopeResolver,
     private readonly secretStore?: SecretMetadataStore,
@@ -287,9 +283,6 @@ export class ProjectExportService {
         description: bundle.project.description ?? null,
         color: bundle.project.color ?? null,
       })
-      if (existingProject === undefined) {
-        recordCollectionUpsert(this.syncProvider, project)
-      }
 
       const envMapping = new Map<string, string>()
       for (const environment of bundle.environments ?? []) {
@@ -301,7 +294,6 @@ export class ProjectExportService {
           variables: environment.variables ?? {},
           secrets: {},
         })
-        recordEnvironmentUpsert(this.syncProvider, created)
         envMapping.set(environment.environmentId, created.environmentId)
       }
 
@@ -343,8 +335,7 @@ export class ProjectExportService {
           return null
         })
         const changed = nodes.some((node, index) => node !== created.nodes[index])
-        const final = !changed ? created : this.workflows.update(created.workflowId, { nodes }) ?? created
-        recordWorkflowUpsert(this.syncProvider, final)
+        if (changed) this.workflows.update(created.workflowId, { nodes })
       }
 
       const importedOrder = buildImportedWorkflowOrder(bundle, workflowMapping)
@@ -355,7 +346,6 @@ export class ProjectExportService {
         workflowCount: this.workflows.countByCollection(targetWorkspaceId, project.collectionId),
         workflowOrder,
       }) ?? project
-      recordCollectionUpsert(this.syncProvider, updatedProject)
 
       return {
         projectId: updatedProject.collectionId,
@@ -364,7 +354,6 @@ export class ProjectExportService {
       }
     })
 
-    await this.syncProvider.push()
     return {
       projectId: imported.projectId,
       workflowCount: imported.workflowCount,
@@ -419,7 +408,7 @@ export class ProjectExportService {
     }
 
     const counts = this.collections.transaction(() => {
-      const project = this.upsertFolderProject(workspaceId, bundle.project)
+      this.upsertFolderProject(workspaceId, bundle.project)
       for (const incoming of bundle.environments) this.upsertFolderEnvironment(workspaceId, incoming)
 
       const folderIds = new Set(bundle.workflows.map((workflow) => workflow.workflowId))
@@ -431,18 +420,15 @@ export class ProjectExportService {
       const detached = this.detachWorkflowsNotInFolder(workspaceId, projectId, folderIds, warnings)
 
       for (const collectionId of previousProjects) {
-        const previous = this.collections.update(collectionId, { workflowCount: this.workflows.countByCollection(workspaceId, collectionId) })
-        if (previous !== undefined) recordCollectionUpsert(this.syncProvider, previous)
+        this.collections.update(collectionId, { workflowCount: this.workflows.countByCollection(workspaceId, collectionId) })
       }
-      const final = this.collections.update(projectId, {
+      this.collections.update(projectId, {
         workflowCount: this.workflows.countByCollection(workspaceId, projectId),
         workflowOrder: buildImportedWorkflowOrder(bundle, new Map([...folderIds].map((id) => [id, id]))),
-      }) ?? project
-      recordCollectionUpsert(this.syncProvider, final)
+      })
       return { ...tally, detached }
     })
 
-    await this.syncProvider.push()
     return {
       projectId,
       ...counts,
@@ -452,16 +438,17 @@ export class ProjectExportService {
     }
   }
 
-  private upsertFolderProject(workspaceId: string, incoming: ProjectBundle["project"]): Collection {
-    const existingProject = this.collections.getById(incoming.projectId)
+  private upsertFolderProject(workspaceId: string, incoming: ProjectBundle["project"]): void {
     const projectFields = {
       name: incoming.name,
       description: incoming.description || null,
       color: incoming.color || null,
     }
-    return existingProject === undefined
-      ? this.collections.create({ collectionId: incoming.projectId, workspaceId, ...projectFields })
-      : this.collections.update(incoming.projectId, projectFields) ?? existingProject
+    if (this.collections.getById(incoming.projectId) === undefined) {
+      this.collections.create({ collectionId: incoming.projectId, workspaceId, ...projectFields })
+    } else {
+      this.collections.update(incoming.projectId, projectFields)
+    }
   }
 
   private upsertFolderEnvironment(workspaceId: string, incoming: ExportedEnvironment): void {
@@ -473,10 +460,11 @@ export class ProjectExportService {
       swaggerDocUrl: incoming.swaggerDocUrl ?? null,
       variables: keepWithheldVariables(stored?.variables ?? {}, incoming.variables),
     }
-    const written = stored === undefined
-      ? this.environments.create({ environmentId: incoming.environmentId, workspaceId, ...fields, secrets: {} })
-      : this.environments.update(stored.environmentId, fields) ?? stored
-    recordEnvironmentUpsert(this.syncProvider, written)
+    if (stored === undefined) {
+      this.environments.create({ environmentId: incoming.environmentId, workspaceId, ...fields, secrets: {} })
+    } else {
+      this.environments.update(stored.environmentId, fields)
+    }
   }
 
   private upsertFolderWorkflow(
@@ -504,19 +492,19 @@ export class ProjectExportService {
     const placeholderWarning = withheldPlaceholderWarning(incoming.name, stored, fields)
     if (placeholderWarning !== undefined) warnings.push(placeholderWarning)
     if (stored?.collectionId && stored.collectionId !== projectId) previousProjects.add(stored.collectionId)
-    const written = stored === undefined
-      ? this.workflows.create({ workflowId: incoming.workflowId, workspaceId, ...fields })
-      : this.workflows.update(stored.workflowId, fields, "import") ?? stored
-    recordWorkflowUpsert(this.syncProvider, written)
-    return stored === undefined ? "created" : "updated"
+    if (stored === undefined) {
+      this.workflows.create({ workflowId: incoming.workflowId, workspaceId, ...fields })
+      return "created"
+    }
+    this.workflows.update(stored.workflowId, fields, "import")
+    return "updated"
   }
 
   private detachWorkflowsNotInFolder(workspaceId: string, projectId: string, folderIds: ReadonlySet<string>, warnings: string[]): number {
     let detached = 0
     for (const member of this.workflows.listByCollection(workspaceId, projectId).items) {
       if (folderIds.has(member.workflowId)) continue
-      const moved = this.workflows.update(member.workflowId, { collectionId: null }, "import")
-      if (moved !== undefined) recordWorkflowUpsert(this.syncProvider, moved)
+      this.workflows.update(member.workflowId, { collectionId: null }, "import")
       warnings.push(`Workflow '${member.name}' is not in the folder; it was moved out of the project (not deleted)`)
       detached += 1
     }

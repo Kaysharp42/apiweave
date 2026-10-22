@@ -1,8 +1,6 @@
 import type { Workspace } from "@shared/types/Workspace"
 import type { WorkflowRepository, WorkspaceRepository, WorkspaceUpdate } from "../repositories"
-import type { SyncProvider } from "../sync/SyncProvider"
-import { recordWorkspaceTombstone, recordWorkspaceUpsert } from "../sync/cloud-mutations"
-import { ConflictError, DeniedError, NotFoundError } from "../ipc/errors"
+import { ConflictError, NotFoundError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
 
 /** Input for creating a workspace. `slug` is derived from `name` when omitted. */
@@ -26,14 +24,7 @@ export class WorkspaceService {
     // Only needed by `delete`, to announce the workflows the workspace takes
     // with it — see the comment there.
     private readonly workflows: WorkflowRepository,
-    private readonly syncProvider: SyncProvider,
     private readonly scopeResolver: ScopeResolver,
-    // Called after a workspace is created so cloud sync can provision + bind it
-    // when linked. No-op when unlinked; fire-and-forget (never blocks create).
-    private readonly onWorkspaceCreated?: () => void,
-    // True when the workspace is bound to a cloud team other than the account's
-    // personal one. Absent when there is no cloud (CLI, tests): nothing is shared.
-    private readonly isSharedTeamWorkspace?: (workspaceId: string) => boolean,
   ) {}
 
   async list(): Promise<readonly Workspace[]> {
@@ -51,21 +42,12 @@ export class WorkspaceService {
       if (existing !== undefined) return existing
     }
 
-    const created = this.workspaces.transaction(() => {
-      const workspace = this.workspaces.create({
-        name: input.name,
-        slug: this.uniqueSlug(input.slug ?? input.name),
-        description: input.description ?? null,
-        isPersonal: wantPersonal,
-      })
-      recordWorkspaceUpsert(this.syncProvider, workspace)
-      return workspace
+    return this.workspaces.create({
+      name: input.name,
+      slug: this.uniqueSlug(input.slug ?? input.name),
+      description: input.description ?? null,
+      isPersonal: wantPersonal,
     })
-    await this.syncProvider.push()
-    // When cloud is linked this local-only push is a no-op (no binding yet);
-    // the hook provisions + binds + pushes the baseline in the background.
-    this.onWorkspaceCreated?.()
-    return created
   }
 
   async get(workspaceId: string): Promise<Workspace> {
@@ -78,35 +60,14 @@ export class WorkspaceService {
     await this.mustResolve(workspaceId)
     if (patch.isPersonal !== undefined) this.assertPersonalInvariant(workspaceId, patch.isPersonal)
     const next: WorkspaceUpdate = patch.slug ? { ...patch, slug: this.uniqueSlug(patch.slug, workspaceId) } : patch
-    const updated = this.workspaces.transaction(() => {
-      const workspace = this.workspaces.update(workspaceId, next)
-      if (workspace !== undefined) recordWorkspaceUpsert(this.syncProvider, workspace)
-      return workspace
-    })
+    const updated = this.workspaces.update(workspaceId, next)
     if (updated === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
-    await this.syncProvider.push()
     return updated
   }
 
   async delete(workspaceId: string): Promise<void> {
     await this.mustResolve(workspaceId)
-    const existing = this.workspaces.getById(workspaceId)
-    if (existing === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
-    // The tombstone below deletes the cloud workspace for every member, and the
-    // only caller is an agent over MCP with nobody confirming. Shared team
-    // workspaces are therefore not this path's to delete.
-    if (this.isSharedTeamWorkspace?.(workspaceId) === true) {
-      throw new DeniedError(
-        `workspace ${workspaceId} belongs to a shared cloud team; deleting it would remove it for every member, so it cannot be deleted here`,
-      )
-    }
-    // One transaction: the tombstone is queued exactly when the workspace is
-    // really gone, never for a delete that rolled back.
-    this.workspaces.transaction(() => {
-      recordWorkspaceTombstone(this.syncProvider, existing)
-      this.deleteLocally(workspaceId)
-    })
-    await this.syncProvider.push()
+    this.workspaces.transaction(() => this.deleteLocally(workspaceId))
   }
 
   private deleteLocally(workspaceId: string): void {
@@ -117,9 +78,7 @@ export class WorkspaceService {
     // `delete` events the canvas already handles (`onDetached` closes the tab
     // with a notice) and leaves the cascade nothing to do.
     //
-    // `includeAttached` so project-owned workflows are covered too. No
-    // per-workflow cloud tombstone: the workspace tombstone recorded above is
-    // what the server cascades on, exactly as when the FK did this.
+    // `includeAttached` so project-owned workflows are covered too.
     for (const workflow of this.workflows.listByWorkspace(workspaceId, true).items) {
       this.workflows.delete(workflow.workflowId)
     }

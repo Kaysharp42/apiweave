@@ -210,7 +210,6 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 - **If you get `environment 'X' is not in the file`**, the message lists the environments the file has. A workflow export only carries the environment it was saved with, and only when it was exported with its environment.
 - **If a variable shows `<SECRET>` in the request**, the export replaced a secret-looking environment value with a placeholder. Supply the real value with `--var`, or move it to a secret.
 - **If the CLI exits `2` with `Unknown option`**, check the spelling against `apiweave --help`.
-- **If `npm ci` fails on `@apiweave/proto` with npm 12 or later**, allow the remote tarball: `npm config set allow-remote all` (what `scripts/setup.sh` does).
 - **If a Call Workflow node fails with `Call Workflow node has no target workflow configured`**, its target was not in the file. A workflow export carries none of its Call Workflow targets: export the project that holds both workflows instead, and run the caller with `--workflow`.
 
 ## Related

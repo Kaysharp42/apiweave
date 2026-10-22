@@ -44,7 +44,6 @@ import {
   NetworkSettingsService,
 } from "../core/services"
 import { LocalOwnerProvider } from "../core/auth"
-import { LocalOnlySyncProvider, SwitchableSyncProvider } from "../core/sync"
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
@@ -68,14 +67,11 @@ import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest"
 import type { ProjectFolderExportResult } from "@shared/types/ProjectFolderExportResult"
 import type { ProjectFolderImportResult } from "@shared/types/ProjectFolderImportResult"
 import { exportProjectFolder, importProjectFolder } from "../core/services/project_folder"
-import { cloudDefaults, DesktopCloudSyncControl } from "./cloud/cloud-sync-control"
-import { registerConflictUiHandlers } from "./cloud/conflict-ui-bridge"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
-  CLOUD_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
   PROJECT_FOLDER_CHANNELS,
@@ -434,28 +430,11 @@ if (!hasSingleInstanceLock) {
 
     // Repositories — the only DB touchpoint.
     const workspaces = new WorkspaceRepository(database.kvStore)
-    // One broadcast for every workflow write, wherever it came from: the
-    // repository (renderer saves, MCP tools, imports) and the cloud pull
-    // (raw SQL in CloudSyncRepository) both land here. A pulled tombstone
-    // leaves no row to read, so it is announced as a delete directly.
+    // One broadcast for every workflow write, wherever it came from: renderer
+    // saves, MCP tools and imports all go through the repository.
     const sendWorkflowChanged = (event: WorkflowChangedEvent): void => {
       if (mainWindow !== null && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(WORKFLOW_CHANGED_CHANNEL, event)
-      }
-    }
-    // Raw SQL writers (cloud pull, conflict resolution) only know which row
-    // changed; resolve it here — or report its absence as a delete — so the
-    // broadcast always carries an authoritative snapshot.
-    const onRawWorkflowWrite = (
-      workspaceId: string,
-      workflowId: string,
-      deleted: boolean,
-    ): void => {
-      const workflow = deleted ? undefined : workflows.getById(workflowId)
-      if (workflow !== undefined) {
-        sendWorkflowChanged({ kind: "upsert", workflow })
-      } else {
-        sendWorkflowChanged({ kind: "delete", workspaceId, workflowId })
       }
     }
     const workflows = new WorkflowRepository(database.kvStore, sendWorkflowChanged)
@@ -468,14 +447,13 @@ if (!hasSingleInstanceLock) {
     const appSettings = new AppSettingsRepository(database.kvStore)
     const agentRunApprovals = new AgentRunApprovalRepository(database.kvStore)
 
-    // Auth + sync seams: single-owner always-allow, local-only no-op.
+    // Auth seam: single-owner always-allow.
     const existence: ScopeExistence = {
       workspaceExists: (id) => workspaces.getById(id) !== undefined,
       environmentExists: (id) => environments.getById(id) !== undefined,
     }
     const scopeResolver = new ScopeResolver(existence)
     const permissions = new LocalOwnerProvider()
-    const sync = new SwitchableSyncProvider(new LocalOnlySyncProvider())
 
     // Keyfile: the persisted master KEK that deterministically derives the
     // sealed-box private seed. Seeded once on first run; read thereafter, and
@@ -490,19 +468,7 @@ if (!hasSingleInstanceLock) {
       app.exit(1)
       return
     }
-    const secretService = new SecretService(secretStore, sync, permissions, scopeResolver, environments, keyfile.masterKek)
-    const cloud = new DesktopCloudSyncControl({
-      store: database.kvStore,
-      masterKek: keyfile.masterKek,
-      defaults: cloudDefaults(app.getVersion()),
-      setSyncProviderTarget: (provider) => sync.setTarget(provider),
-      onWorkflowChanged: onRawWorkflowWrite,
-      onStatusChanged: () => {
-        if (mainWindow !== null && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send(CLOUD_STATUS_CHANGED_CHANNEL)
-        }
-      },
-    })
+    const secretService = new SecretService(secretStore, permissions, scopeResolver, environments, keyfile.masterKek)
 
     // Runner: in-process scheduler drives the executor.
     const clock = new WallClockProvider()
@@ -614,22 +580,15 @@ if (!hasSingleInstanceLock) {
     // runs.create actually executes and runs.cancel aborts a live run. The
     // run-event broker gives runs.create/wait their event-driven observation
     // without DB polling; a disconnect or deadline never cancels the run.
-    const workflowService = new WorkflowService(workflows, sync, permissions, scopeResolver, collections, environments)
-    const runService = new RunService(runs, sync, permissions, scopeResolver, scheduler, runEvents)
+    const workflowService = new WorkflowService(workflows, permissions, scopeResolver, collections, environments)
+    const runService = new RunService(runs, permissions, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
-      workspaces: new WorkspaceService(
-        workspaces,
-        workflows,
-        sync,
-        scopeResolver,
-        () => cloud.syncNewWorkspace(),
-        (workspaceId) => cloud.isSharedTeamWorkspace(workspaceId),
-      ),
-      collections: new CollectionService(collections, workflows, sync, permissions, scopeResolver),
+      workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
+      collections: new CollectionService(collections, workflows, permissions, scopeResolver),
       workflows: workflowService,
       workflowAnalysis: new WorkflowAnalysisService(workflowService, runService),
       assertionAuthoring: new AssertionAuthoringService(workflowService, runService),
-      environments: new EnvironmentService(environments, sync, permissions, scopeResolver, workflows, secretStore),
+      environments: new EnvironmentService(environments, permissions, scopeResolver, workflows, secretStore),
       nodePresets: new NodePresetService(nodePresets, permissions, scopeResolver),
       runs: runService,
       secrets: secretService,
@@ -637,26 +596,15 @@ if (!hasSingleInstanceLock) {
         collections,
         workflows,
         environments,
-        sync,
         permissions,
         scopeResolver,
         secretStore,
         () => clock.isoNow(),
       ),
-      imports: new ImportService(workflows, environments, collections, sync, permissions, scopeResolver, http),
-      cloud,
+      imports: new ImportService(workflows, environments, collections, permissions, scopeResolver, http),
       projectRuns: new ProjectRunService(projectRunner, projectRuns, collections, permissions, scopeResolver),
     }
     registerAllHandlers(ipcRouter, deps)
-    // Conflict/loser-retrieval IPC lives in a separate bridge (repository-backed
-    // reads plus a server-side resolve for conflicts that have a cloud ID). The
-    // renderer's conflict pages already call cloud.conflict-* — without this the
-    // actions are unregistered.
-    registerConflictUiHandlers(ipcRouter, {
-      store: database.kvStore,
-      syncService: cloud.getConflictResolver(),
-      onWorkflowChanged: onRawWorkflowWrite,
-    })
 
     attachIpcRouter(ipcMain, ipcRouter)
 

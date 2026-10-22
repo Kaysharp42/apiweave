@@ -4,7 +4,7 @@
   "plaintextSize": 0,
   "masterKeySha256Base64": "ayqWOX3muYms08l7v/JBBRQbPzuevr9IA4bJxrfSduo=",
   "kekId": "kek-task-4",
-  "wrappedDekBase64": "AAECAwQFBgcICQoLKEEYBpqgGXtbzBf72LrGmtVyfTiI2Wh2Eq_x-7c876HVhI-fCohrjZuM3Ytd3d_C",
+  "dekBase64": "kty/csrr+IN4BLaZfFUL0DhGtHjGIM05NJvWip18VTk=",
   "secretNonceBase64": "EBESExQVFhcYGRob",
   "plaintextBase64": "",
   "aes256GcmCiphertextBase64": "8SZAEORitdpo1fCJsCMUgw==",

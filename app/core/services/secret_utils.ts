@@ -18,7 +18,7 @@ export const SECRET_PLACEHOLDER = "<SECRET>"
  * Which consumer a sanitizer pass is serving. Both withhold every credential
  * value; they differ in what they do to the surrounding structure.
  *
- * - `export` — an `.awecollection` bundle or sync payload leaving the machine.
+ * - `export` — a workflow or `.awecollection` bundle leaving the app.
  *   Fail closed and drop, so nothing downstream can mistake a placeholder for a
  *   working credential.
  * - `agent-read` — a read crossing the local MCP bridge. Keep the shape intact
@@ -88,9 +88,9 @@ export function isForbiddenSecretStorageKey(key: string): boolean {
 /**
  * Walk a record's own entries, dropping any whose key names secret *storage*
  * ({@link isForbiddenSecretStorageKey}) and transforming the rest. Every
- * redaction pass that recurses into records (export, push-sync, snapshot,
- * agent-read) shares this shape so a vault field can't survive one walk by
- * accident of a hand-rolled loop.
+ * redaction pass that recurses into records (export, agent-read) shares this
+ * shape so a vault field can't survive one walk by accident of a hand-rolled
+ * loop.
  */
 export function mapForbiddenKeyFilteredEntries<V, T>(
   entries: Record<string, V>,
@@ -136,51 +136,37 @@ function containsIndirectionRef(value: string): boolean {
 }
 
 /* ------------------------------------------------------------------------- *
- * Cloud-sync redaction contract
+ * Payload redaction contract
  *
- * Three components decide what may cross the wire, and they must agree
- * exactly or a workflow breaks in one of two ways: the push sanitizer emits
- * something a validator rejects (the record dead-letters after 10 retries and
- * every later edit to it is blocked behind it), or a validator rejects
- * something the sanitizer kept (the receiving device throws mid-pull, never
- * advances its cursor, and stops syncing that workspace entirely).
- *
- *   1. push sanitizer   `core/sync/cloud-mutations.ts`
- *   2. pull validator   `core/repositories/CloudSyncRepository.ts`
- *   3. server validator `apps/api/internal/sync/workflow_service.go`
- *      (apiweave-cloud — a hand-mirrored copy of the three predicates below;
- *      change both sides together, and mirror the fixture table in
- *      `core/sync/__tests__/sync-redaction-contract.test.ts`)
+ * Secrets must not leave the app. A workflow or project export, an
+ * `.awecollection` bundle, or any other payload handed out may carry only what
+ * these predicates allow, and this is the one place that decision is made.
  *
  * The contract, stated once:
  *
  *   - Under a sync-sensitive key name, the only non-empty SCALAR allowed is a
- *     credential-free indirection reference. The sanitizer blanks everything
- *     else in place, keeping the key so the receiving machine still shows the
- *     operator which slot to fill.
+ *     credential-free indirection reference. Everything else is blanked in
+ *     place, keeping the key so the reader still sees which slot to fill.
  *   - A container under such a key is walked, not judged. Some sensitive names
  *     hold config rather than a value — `auth.apiKey` is `{key, value, in}` —
- *     and a validator that rejected the container outright would make that
- *     block unsyncable. The sanitizer is free to be stricter and blank a whole
- *     container (it does, for request bodies): push may withhold more than the
- *     validators demand, never less.
+ *     so a container rejected outright would lose that block. Redaction may be
+ *     stricter and blank a whole container (it does, for request bodies): it
+ *     may withhold more than the named keys demand, never less.
  *   - Under any other key name, a string is kept unless it carries credential
  *     material outside of its `{{...}}` references.
  * ------------------------------------------------------------------------- */
 
 /**
- * Key names whose values are withheld from a sync payload. Matched against a
- * camelCase-normalized key, so `apiKeys`, `userTokens` and `masterKek` are
- * caught the same way their snake_case spellings are — the validators
- * normalize too, and a predicate that misses a spelling one of them catches is
- * exactly what strands a workflow mid-sync.
+ * Key names whose values are withheld from a payload leaving the app. Matched
+ * against a camelCase-normalized key, so `apiKeys`, `userTokens` and
+ * `masterKek` are caught the same way their snake_case spellings are.
  */
 const SYNC_SENSITIVE_NAME_RE = /(?:^|[_-])(token|password|secret|api[_-]?key|private[_-]?key|client[_-]?secret|credential)s?$/
 
 /**
  * Exact names that carry credentials without matching the pattern above:
  * transport auth/session headers, and this app's own vault field names (a
- * payload naming one of those is either a bug or a hostile server).
+ * payload naming one of those is either a bug or a hostile import).
  * Exact-match on purpose — `cookies` is the config array holding cookie
  * entries, not a credential, and must survive.
  */
@@ -190,7 +176,7 @@ const SYNC_SENSITIVE_EXACT: ReadonlySet<string> = new Set([
   "secret_value", "encrypted_value", "encrypted_private_key",
 ])
 
-/** True if a sync payload must not carry a literal value under this key name. */
+/** True if a redacted payload must not carry a literal value under this key name. */
 export function isSyncSensitiveKey(key: string): boolean {
   const normalized = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").trim().toLowerCase()
   return isSecretKey(key) || SYNC_SENSITIVE_NAME_RE.test(normalized) || SYNC_SENSITIVE_EXACT.has(normalized)
@@ -206,9 +192,9 @@ export function isSyncSensitiveKey(key: string): boolean {
 const URL_REFERENCE_TOKEN_STEM = "apiweave-ref-"
 
 /**
- * What all three components count as "already empty", and therefore always
- * allowed under a sync-sensitive key. Note what is absent: a number or boolean
- * is not empty, so `{"password": 0}` still has to be withheld.
+ * What redaction counts as "already empty", and therefore always allowed under
+ * a sync-sensitive key. Note what is absent: a number or boolean is not empty,
+ * so `{"password": 0}` still has to be withheld.
  */
 export function isEmptySyncValue(value: unknown): boolean {
   return value === undefined || value === null || value === ""
@@ -228,7 +214,7 @@ export function isCredentialFreeReference(value: unknown): boolean {
 /**
  * The reference-preserving replacement shared by every redaction surface: a
  * credential-free `{{...}}` indirection keeps its value, everything else is
- * written back as `blank` (the sync blank, `<SECRET>`, or `[FILTERED]`). Keeping
+ * written back as `blank` (the empty string, `<SECRET>`, or `[FILTERED]`). Keeping
  * the slot is the point — a dropped variable or header orphans the
  * `{{variables.NAME}}`/`{{secrets.NAME}}` reference elsewhere in the workflow.
  */
@@ -267,9 +253,9 @@ export function isTemplatedUrl(value: string): boolean {
 /**
  * Sanitize an `extractors` mapping. Each value is a response path by schema, so
  * a valid path — or a `{{...}}` reference inside it — survives; a value that
- * carries credential material is withheld. This matters because the validators
- * exempt extractor *names* from the sensitive-key rule but still scan every
- * string, so a credential left here dead-letters the push.
+ * carries credential material is withheld. Extractor *names* are exempt from
+ * the sensitive-key rule (a `token` extractor names a variable, not a
+ * credential), so this value scan is what keeps a pasted credential out.
  */
 export function sanitizeExtractorValues(
   value: Record<string, JsonValue>,
@@ -283,19 +269,6 @@ export function sanitizeExtractorValues(
 }
 
 /**
- * True if a value under a sync-sensitive key breaks the contract and must have
- * been withheld before the payload was pushed. Containers answer `false` — they
- * are walked instead, so a config block that happens to sit under a sensitive
- * name (`auth.apiKey`) can still cross the wire.
- */
-export function isWithheldSyncValue(value: unknown): boolean {
-  if (value !== null && typeof value === "object") {
-    return false
-  }
-  return !isEmptySyncValue(value) && !isCredentialFreeReference(value)
-}
-
-/**
  * Redact a request body leaf-by-leaf, writing `blank` in place of each withheld
  * value. A body is workflow *config* that has to round-trip between devices, so
  * flattening it wholesale destroys the thing redaction is meant to protect;
@@ -304,11 +277,11 @@ export function isWithheldSyncValue(value: unknown): boolean {
  * credential material, and a body with nothing to redact comes back
  * byte-for-byte so redaction never shows up as a spurious diff.
  *
- * Shared by the cloud-sync push sanitizer (which blanks to `""`) and the export
- * bundler (which writes `<SECRET>`, so {@link findRedactedPlaceholders} can
- * catch that placeholder being written back). Only the blank token differs: a
- * body that syncs but cannot be exported — or the reverse — is exactly the
- * drift this one function exists to prevent.
+ * Shared by the export bundler (which writes `<SECRET>`, so
+ * {@link findRedactedPlaceholders} can catch that placeholder being written
+ * back) and the import parsers (which write `[FILTERED]`). Only the blank token
+ * differs: the same leaves are withheld whether the body is bundled or
+ * imported.
  */
 export function redactBodyLeaves(body: string, blank: string): string {
   let parsed: unknown
@@ -345,8 +318,8 @@ function redactBodyValue(value: unknown, keyName: string | null, tally: Redactio
 }
 
 function redactBodyRecord(record: Record<string, JsonValue>, tally: RedactionTally): JsonValue {
-  // Mirror the validators' `{key, value}` pair semantics: the sensitivity of a
-  // pair lives in its sibling `key`, not in the literal name `value`.
+  // The sensitivity of a `{key, value}` pair lives in its sibling `key`, not in
+  // the literal name `value`.
   const pairKey = record["key"]
   const pairSensitive = typeof pairKey === "string" && isSyncSensitiveKey(pairKey)
   const sanitized: Record<string, JsonValue> = {}
@@ -359,10 +332,10 @@ function redactBodyRecord(record: Record<string, JsonValue>, tally: RedactionTal
 }
 
 // In a body, a sensitive key name withholds its WHOLE value rather than its
-// string leaves. The validators are content to walk a container and judge its
-// leaves by name, which is what lets `auth.apiKey` sync; but inside a request
-// body there is no schema to lean on, so an opaque credential one level down
-// (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
+// string leaves. Elsewhere a container under a sensitive name is walked and its
+// leaves judged by name, which is what keeps `auth.apiKey`'s config block; but
+// inside a request body there is no schema to lean on, so an opaque credential
+// one level down (`{"apiKey":{"v":"..."}}`) would have no leaf name to catch it.
 function withheldBodyValue(value: unknown, tally: RedactionTally): JsonValue {
   if (isEmptySyncValue(value) || isCredentialFreeReference(value)) {
     return value as JsonValue
@@ -409,9 +382,10 @@ export function scriptSecretNames(source: string): string[] {
 /**
  * Recursively replace values whose *key* matches a secret pattern with the
  * `<SECRET>` placeholder. Also inspects string values under innocuous keys
- * (e.g. a JWT or tokenized URL under `BASE_URL`) so manual exports redact the
- * same secret-looking values the cloud-sync sanitizer does, and strips
- * credentials/query-string secrets from URL-shaped strings.
+ * (e.g. a JWT or tokenized URL under `BASE_URL`) so a variables pass redacts
+ * the same secret-looking values the deep export walk
+ * ({@link sanitizeExportValue}) does, and strips credentials/query-string
+ * secrets from URL-shaped strings.
  */
 export function sanitizeVariablesForExport(data: Record<string, JsonValue>): Record<string, JsonValue> {
   return mapForbiddenKeyFilteredEntries(data, (key, value) => sanitizeExportVariableValue(value, key))
@@ -527,7 +501,7 @@ function sanitizeAuthConfigForExport(auth: Record<string, JsonValue>): Record<st
 
 /**
  * Redact `FileUpload.value` (the base64 payload or local filesystem path) from
- * an export/sync bundle, keeping name/type/fieldName/mimeType/description so
+ * an export bundle, keeping name/type/fieldName/mimeType/description so
  * the attachment slot round-trips. A `variable` reference just names a
  * workflow variable, not file content, so it passes through unredacted.
  */
@@ -663,8 +637,9 @@ function sanitizeUrlForExport(value: string): string {
 }
 
 /**
- * The shared URL redactor for both export and cloud sync, differing only in the
- * `blank` token and which key names count as sensitive.
+ * The shared URL redactor, parameterized by the `blank` token and which key
+ * names count as sensitive; {@link sanitizeUrlForExport} fixes both for an
+ * export bundle.
  *
  * A `URL` round-trip reconstructs its query string through `URLSearchParams`,
  * which percent-encodes the braces of a `{{variables.token}}` reference and
@@ -833,7 +808,7 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
   // schema definition — never credentials — and the `token`-ish variable names
   // they map from would otherwise be redacted by the key-name heuristic below.
   // The path itself is still scanned: a credential pasted as a path is withheld
-  // so it cannot dead-letter a push or ride an export bundle.
+  // so it cannot ride an export bundle.
   extractors: (value) => (isRecord(value) ? sanitizeExtractorValues(value, SECRET_PLACEHOLDER) : undefined),
   url: (value) => (typeof value === "string" ? sanitizeUrlForExport(value) : undefined),
   // Export redacts a body leaf-by-leaf rather than flattening it to the
@@ -841,8 +816,8 @@ const FIELD_SANITIZERS: Readonly<Record<string, (value: JsonValue, mode: Sanitiz
   // rebuilds that workflow on another machine — flattening loses every request
   // payload in the project and, because `<SECRET>` is a valid string for
   // `HTTPNodeDataSchema.body`, re-importing it writes the placeholder back as
-  // if it were real config. The credential floor is unchanged: this is the same
-  // walk, and the same contract, that the cloud-sync push sanitizer applies.
+  // if it were real config. The credential floor is unchanged: the same
+  // predicates decide what a body may carry as decide every other field.
   body: (value, mode) => {
     if (typeof value !== "string" || value.trim().length === 0) return undefined
     return mode === "export" ? redactBodyLeaves(value, SECRET_PLACEHOLDER) : sanitizeBodyForAgentRead(value)

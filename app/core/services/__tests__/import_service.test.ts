@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { initDatabase } from "../../db"
 import type { InitializedDatabase } from "../../db"
 import {
@@ -8,12 +8,9 @@ import {
   WorkspaceRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver, type ScopeExistence } from "../scope_resolver"
 import { ImportService } from "../import_service"
 import type { WorkflowBundle } from "../import_service"
-import type { SyncProvider } from "../../sync/SyncProvider"
-import { RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 
 let db: InitializedDatabase
 let service: ImportService
@@ -22,7 +19,6 @@ let environments: EnvironmentRepository
 let workflows: WorkflowRepository
 let collections: CollectionRepository
 let workspaces: WorkspaceRepository
-let rebuild: (sync: SyncProvider) => ImportService
 
 beforeEach(() => {
   db = initDatabase({ databasePath: ":memory:" })
@@ -36,9 +32,7 @@ beforeEach(() => {
   }
   const scopeResolver = new ScopeResolver(existence)
   const permissions = new LocalOwnerProvider()
-  const sync = new LocalOnlySyncProvider()
-  rebuild = (provider) => new ImportService(workflows, environments, collections, provider, permissions, scopeResolver)
-  service = rebuild(sync)
+  service = new ImportService(workflows, environments, collections, permissions, scopeResolver)
   wsId = workspaces.create({ name: "test", slug: "test" }).workspaceId
 })
 
@@ -101,14 +95,10 @@ describe("ImportService — workflow bundle export/import", () => {
     const invalidNode = [{ nodeId: "n1", type: "no-such-type", label: "x", position: { x: 0, y: 0 }, config: {} }] as unknown as WorkflowBundle["workflow"]["nodes"]
     await expect(service.importWorkflow(wsId, bundle(invalidNode), true, true)).rejects.toThrow()
 
-    const workflowWriteFails: SyncProvider = {
-      recordMutation: (mutation) => {
-        if (mutation.kind === RecordKind.WORKFLOW) throw new Error("workflow write failed")
-      },
-      pull: async () => undefined,
-      push: async () => undefined,
-    }
-    await expect(rebuild(workflowWriteFails).importWorkflow(wsId, bundle([]), true, true)).rejects.toThrow("workflow write failed")
+    vi.spyOn(workflows, "create").mockImplementation(() => {
+      throw new Error("workflow write failed")
+    })
+    await expect(service.importWorkflow(wsId, bundle([]), true, true)).rejects.toThrow("workflow write failed")
 
     expect(environments.listByWorkspace(wsId).items).toEqual([])
   })

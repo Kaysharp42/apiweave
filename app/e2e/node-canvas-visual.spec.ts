@@ -147,12 +147,6 @@ async function installRunnableIpc(
         "runs.getLatest": () => ok(null),
         "runs.getLatestFailed": () => ok(null),
         "secrets.list": () => ok([]),
-        "cloud.status": () =>
-          ok({
-            linked: false, active: false, linkState: "unlinked", syncState: "idle",
-            state: "idle", pendingCount: 0, deadLetterCount: 0, conflictCount: 0,
-            workspaceIds: [], bindings: [], workspaceCatalog: [], teamCatalog: [],
-          }),
       };
 
       window.__APIWEAVE_IPC__ = {
@@ -170,7 +164,6 @@ async function installRunnableIpc(
           listeners.push(callback);
           return () => listeners.splice(listeners.indexOf(callback), 1);
         },
-        onCloudStatusChanged: () => () => undefined,
       };
 
       window.__EMIT_RUN__ = (event) => {

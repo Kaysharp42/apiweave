@@ -123,24 +123,6 @@ export async function installDesktopIpc(
             data = [];
             handled = true;
           }
-          if (domain === "cloud" && action === "status") {
-            data = {
-              linked: false,
-              active: false,
-              linkState: "unlinked",
-              syncState: "idle",
-              state: "idle",
-              pendingCount: 0,
-              deadLetterCount: 0,
-              conflictCount: 0,
-              workspaceIds: [],
-              bindings: [],
-              workspaceCatalog: [],
-              teamCatalog: [],
-              encryptionDecisionPending: [],
-            };
-            handled = true;
-          }
           if (!handled) {
             return {
               ok: false as const,
@@ -153,7 +135,6 @@ export async function installDesktopIpc(
           return { ok: true as const, data };
         },
         onRunProgress: () => () => undefined,
-        onCloudStatusChanged: () => () => undefined,
         onWorkflowChanged: () => () => undefined,
       };
     },

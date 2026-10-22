@@ -6,7 +6,6 @@
 
 /** The single request channel. Streaming (per-run topics) is the only exception. */
 export const INVOKE_CHANNEL = "apiweave:invoke"
-export const CLOUD_STATUS_CHANGED_CHANNEL = "apiweave:cloud-status-changed"
 export const UPDATE_STATUS_CHANGED_CHANNEL = "apiweave:update-status-changed"
 export const WORKFLOW_CHANGED_CHANNEL = "apiweave:workflow-changed"
 

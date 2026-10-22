@@ -24,7 +24,6 @@ import {
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
-  CLOUD_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
@@ -85,7 +84,6 @@ type IpcBridge = {
   readonly onRunStarted: (callback: (event: RunStartedEvent) => void) => () => void
   readonly onProjectRunChanged: (callback: (projectRun: ProjectRun) => void) => () => void
   readonly onAgentWrite: (callback: (event: AgentWriteEvent) => void) => () => void
-  readonly onCloudStatusChanged: (callback: () => void) => () => void
   readonly onWorkflowChanged: (callback: (event: WorkflowChangedEvent) => void) => () => void
 }
 
@@ -97,8 +95,6 @@ const ipcBridge: IpcBridge = {
   onRunStarted: (callback) => subscribe<RunStartedEvent>(RUN_STARTED_CHANNEL, callback),
   onProjectRunChanged: (callback) => subscribe<ProjectRun>(PROJECT_RUN_CHANGED_CHANNEL, callback),
   onAgentWrite: (callback) => subscribe<AgentWriteEvent>(AGENT_WRITE_CHANNEL, callback),
-  onCloudStatusChanged: (callback) =>
-    subscribe<void>(CLOUD_STATUS_CHANGED_CHANNEL, () => callback()),
   onWorkflowChanged: (callback) =>
     subscribe<WorkflowChangedEvent>(WORKFLOW_CHANGED_CHANNEL, callback),
 }

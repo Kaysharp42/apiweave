@@ -2,14 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { gunzipSync } from "node:zlib"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
-  CloudSyncRepository,
   EnvironmentRepository,
   RunRepository,
   WorkflowRepository,
   WorkspaceRepository,
 } from "../../repositories"
 import { LocalOwnerProvider } from "../../auth/LocalOwnerProvider"
-import { LocalOnlySyncProvider } from "../../sync/LocalOnlySyncProvider"
 import { ScopeResolver } from "../scope_resolver"
 import { WorkflowService } from "../workflow_service"
 import { RunService } from "../run_service"
@@ -18,7 +16,6 @@ import { IpcRouter } from "../../ipc/router"
 import { registerWorkflowHandlers } from "../../ipc/handlers/workflows"
 import type { HandlerDeps } from "../../ipc/handlers/common"
 import { ConflictError } from "../../ipc/errors"
-import { ChangeOp, RecordKind } from "@apiweave/proto/apiweave/v1/sync_service_pb"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 const MINUTE = 60_000
@@ -46,13 +43,12 @@ beforeEach(() => {
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
   const permissions = new LocalOwnerProvider()
-  const sync = new LocalOnlySyncProvider()
-  service = new WorkflowService(workflows, sync, permissions, scopeResolver)
+  service = new WorkflowService(workflows, permissions, scopeResolver)
   router = new IpcRouter()
   registerWorkflowHandlers(router, {
     workflows: service,
-    runs: new RunService(new RunRepository(db.kvStore), sync, permissions, scopeResolver),
-    environments: new EnvironmentService(environments, sync, permissions, scopeResolver),
+    runs: new RunService(new RunRepository(db.kvStore), permissions, scopeResolver),
+    environments: new EnvironmentService(environments, permissions, scopeResolver),
   } as unknown as HandlerDeps)
   workspaceId = workspaces.create({ name: "Local", slug: "local" }).workspaceId
   workflowId = workflows.create({ workspaceId, name: "Orders", nodes: [node("a")] }).workflowId
@@ -163,26 +159,31 @@ describe("workflow revisions", () => {
     expect(nodeIds(undone.nodes)).toEqual(["a", "b"])
   })
 
-  it("keeps the local workflow before a cloud pull replaces it, and nothing secret is in a revision", async () => {
+  it("keeps nothing secret in a revision", async () => {
     await service.update(workspaceId, workflowId, {
       nodes: [{ ...node("a"), type: "http-request", config: { url: "https://x", headers: [{ key: "Authorization", value: "Bearer {{secrets.TOKEN}}", active: true }] } } as WorkflowNode],
     })
     const before = (await service.get(workspaceId, workflowId)).rev
-    new CloudSyncRepository(db.kvStore).applyChange({
-      cursor: 1n,
-      workspaceId,
-      kind: RecordKind.WORKFLOW,
-      recordId: workflowId,
-      rev: BigInt(before + 5),
-      op: ChangeOp.UPSERT,
-      payload: new TextEncoder().encode(JSON.stringify({ name: "Pulled", nodes: [], edges: [], variables: {} })),
-    })
+    await service.update(workspaceId, workflowId, { name: "Agent", nodes: [] }, { source: "agent:a" })
 
-    expect(revisions()[0]).toMatchObject({ source: "cloud", nodeCount: 1, workflowRev: before })
+    expect(revisions()[0]).toMatchObject({ source: "agent:a", nodeCount: 1, workflowRev: before })
     // A revision holds the workflow's own references-only config, as the row does.
     const stored = db.kvStore.query<{ snapshot: Buffer }>("SELECT snapshot FROM workflow_revisions")
     const text = stored.map((row) => gunzipSync(row.snapshot).toString("utf8")).join("\n")
     expect(text).toContain("{{secrets.TOKEN}}")
+  })
+
+  it("keeps no revision of a write that failed", async () => {
+    const set = db.kvStore.set.bind(db.kvStore)
+    vi.spyOn(db.kvStore, "set").mockImplementation((sql, params) => {
+      if (sql.startsWith("UPDATE workflows SET name")) throw new Error("workflow write failed")
+      return set(sql, params)
+    })
+
+    await expect(canvasSave("lost")).rejects.toThrow("workflow write failed")
+
+    expect(revisions()).toEqual([])
+    expect(workflows.getById(workflowId)?.name).toBe("Orders")
   })
 
   it("lists revisions over IPC, and refuses one of another workflow", async () => {
