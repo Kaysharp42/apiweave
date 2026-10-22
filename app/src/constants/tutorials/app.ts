@@ -33,7 +33,7 @@ export const appChapter: TutorialChapter = {
         {
           title: "Find the two settings groups",
           instruction:
-            "Open Settings from the left navigation rail. The sidebar splits into Workspace settings (Projects, Environments, Secrets, Version history (git)) and App settings (Agents, Canvas, MCP Server, Updates).",
+            "Open Settings from the left navigation rail. The sidebar splits into Workspace (Projects, Environments, Secrets, Version history (git)) and App (Agents, Canvas, MCP Server, Updates).",
           detail:
             "Workspace settings are scoped to the workspace you are in; app settings are per-machine.",
         },

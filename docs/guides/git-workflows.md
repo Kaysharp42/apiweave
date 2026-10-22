@@ -2,7 +2,7 @@
 
 *How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
 
-> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace settings → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Sync now**, **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, merges the two field by field when both moved, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. The header shows [where the workspace stands](#the-sync-status-in-the-header) — synced, pending, syncing, incoming, merge needed, diverged, read-only or an error — in words and an icon, never colour alone. When both sides changed, non-overlapping edits survive as a real merge commit; a field both sides changed differently waits for a decision, and nothing is overwritten. When the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Sync now**, **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, merges the two field by field when both moved, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. The header shows [where the workspace stands](#the-sync-status-in-the-header) — synced, pending, syncing, incoming, merge needed, diverged, read-only or an error — in words and an icon, never colour alone. When both sides changed, non-overlapping edits survive as a real merge commit; a field both sides changed differently waits for a decision, and nothing is overwritten. When the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
 
 ## Prerequisites
 
@@ -57,7 +57,7 @@ A request that sends `<SECRET>` comes from a withheld credential. Replace it wit
 
 ## Track a workspace
 
-1. Open **Settings → Workspace settings → Version history (git)**.
+1. Open **Settings → Workspace → Version history (git)**.
 2. Click **Track this workspace**. The first commit holds the whole workspace.
 3. Leave **Commit automatically** on, or turn it off to commit only when you choose: **Sync now** (**Commit now** while there is no remote) lists what changed and takes an optional message — see [Manual mode](#manual-mode-the-commit-dialog). Left empty, the message names the files the commit changed.
 
@@ -140,9 +140,9 @@ In manual mode, **Sync now** with edits waiting opens a dialog before anything i
 
 ### Resolving a merge
 
-**Review merge** opens the picker over whatever you were doing — from the header's popover or from **Version history settings** — and closing it leaves everything as it was, with the decisions made so far stored with the merge. Opening the picker again keeps those decisions, so closing and reopening loses nothing.
+**Review merge** opens the picker over whatever you were doing — from the header's popover or from **Version history settings** — and closing it changes nothing in the workspace. Choices are only stored when **Finish merge** sends them, so closing loses decisions you have not sent; decisions sent by a finish that then left conflicts are kept, and reopening starts from them.
 
-It lists one card per conflicted record or file. Each conflicted place shows both copies side by side under **Your copy** and **Remote copy**; a copy that side deleted or never had says *Not present*. Under each place are **Keep your copy** and **Keep remote copy**, and the card's header has **Keep your copy for all conflicts** and **Keep remote copy for all conflicts** for the whole record: one choice there settles every **conflicted** field in it, and every other change from both sides is already merged. A field choice overrides the record choice for that field only. Above each card are the author, short commit and subject of the commit each side last made to it, read from the merge's two commits; if those details cannot be read the card says *Commit details unavailable* and the choices still work. A record whose two copies cannot make a valid record together says why and offers only the whole-record choice.
+It lists one card per conflicted record or file. Each conflicted place shows both copies side by side under **Your copy** and **Remote copy**; a copy that side deleted or never had says *Not present*. Under each place are **Keep your copy** and **Keep remote copy**, and the card's header has **Keep your copy for all conflicts** and **Keep remote copy for all conflicts** for the whole record: one choice there settles every **conflicted** field in it and clears that record's earlier field choices, while every other change from both sides is already merged. A field choice overrides the record choice for that field only. In the card's header are the author, short commit and subject of the commit each side last made to it, read from the merge's two commits; if those details cannot be read the card says *Commit details unavailable* and the choices still work. A record whose two copies cannot make a valid record together says why and offers only the whole-record choice.
 
 **Finish merge** is enabled only when every listed conflict has a decision, and sends all of them together. A resolve that leaves conflicts — because the merge was redone on top of edits made while it waited, for instance — lists what is left and keeps the decisions already made, so the next **Finish merge** sends the complete set again; a failure says why and keeps the decisions, so a retry costs nothing. When the last conflict is settled, the merge commit is created, imported and pushed.
 
@@ -167,7 +167,7 @@ The host in the message is the one in the remote's URL (`github.com` for `https:
 
 ### Where the settings are
 
-**Settings → Workspace settings → Version history (git)** holds the same state and actions as the header's popover, plus the **Commit automatically** switch, the **Remote** and its **Branch**, **Connect to remote** or **Disconnect**, and **Stop tracking**. The branch is shown, not chosen; see [Not covered](#not-covered-in-this-release).
+**Settings → Workspace → Version history (git)** holds the same state and actions as the header's popover, plus the **Commit automatically** switch, the **Remote** and its **Branch**, **Connect to remote** or **Disconnect**, and **Stop tracking**. The branch is shown, not chosen; see [Not covered](#not-covered-in-this-release).
 
 ## Open a workspace from git
 

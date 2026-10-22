@@ -35,15 +35,12 @@ export const versionHistoryChapter: TutorialChapter = {
         "<secret>",
       ],
       durationMinutes: 6,
-      prerequisites: [
-        "Git installed on this machine.",
-        "The desktop app: the browser build has no git bridge.",
-      ],
+      prerequisites: ["Git installed on this machine."],
       steps: [
         {
           title: "Open the version history panel",
           instruction:
-            "Open Settings from the left navigation rail and choose Version history (git) under Workspace settings.",
+            "Open Settings from the left navigation rail and choose Version history (git) under Workspace.",
           detail:
             "The settings row, the page header and the panel all read Version history (git).",
         },
@@ -52,7 +49,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Click Track this workspace. The first commit holds the whole workspace.",
           detail:
-            "The repository is an ordinary git repository at <userData>/git/<workspace id>/. It is browsable with any git tool, and only APIWeave should write there.",
+            "The repository is an ordinary git repository in the app's data folder at <userData>/git/<workspace id>/, where <userData> is %APPDATA%\\APIWeave on Windows, ~/Library/Application Support/APIWeave on macOS and ~/.config/APIWeave on Linux. It is browsable with any git tool, and only APIWeave should write there.",
         },
         {
           title: "Choose when commits happen",
@@ -98,7 +95,7 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "What tracking gives you, and what it leaves out",
         language: "text",
-        code: "Settings -> Workspace settings -> Version history (git)\n\nRepository on this machine   <userData>/git/<workspace id>/\nCommit automatically on      a commit about 30 seconds after your last edit\nCommit automatically off     only Sync now (Commit now) commits\nIn a commit                  workspace.json, projects/, workflows/, environments/\nNever in a commit            secret values; {{secrets.NAME}} stays a reference",
+        code: "Settings → Workspace → Version history (git)\n\nRepository on this machine   <userData>/git/<workspace id>/\nCommit automatically on      a commit about 30 seconds after your last edit\nCommit automatically off     only Sync now (Commit now) commits\nIn a commit                  workspace.json, projects/, workflows/, environments/\nNever in a commit            secret values; {{secrets.NAME}} stays a reference",
       },
       expectedResult:
         "The workspace has a local git history you can browse with any git tool, each edit committed on the schedule you chose, and no secret value in any commit.",
@@ -107,11 +104,6 @@ export const versionHistoryChapter: TutorialChapter = {
           title: "A commit asks who you are",
           instruction:
             "Enter a name and email in the panel's form and save; they are written into this workspace's repository only.",
-        },
-        {
-          title: "Version history is only available in the desktop app",
-          instruction:
-            "The browser build has no git bridge. Open the workspace in the desktop app.",
         },
         {
           title: "A request sends <SECRET>",
@@ -195,14 +187,14 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "The header shows the workspace's state as an icon and a word. Click it for an explanation, when the workspace last synced, its last commit, and a link to Version history settings.",
           detail:
-            "A workspace with no remote has nothing to push: the same control reports its local state and its action is Commit now.",
+            "With a remote it reads Synced, Pending, Pending (N to push) when only commits are waiting, Syncing, Incoming (N) when the remote has new commits in manual mode, Merge needed, Diverged, Read-only or Sync error. With no remote it reads Committed, Pending, Committing or Commit error, and its action is Commit now.",
         },
         {
           title: "Handle a refused push",
           instruction:
-            "If the host refuses a push, the workspace becomes Read-only. Edits still save and commit here, the remote's commits still merge in, but nothing is pushed until a push that sends commits succeeds.",
+            "If the host refuses a push, the workspace becomes Read-only. Edits still save and commit here, the remote's commits still come in and merge, and automatic cycles stop pushing.",
           detail:
-            "Check that your account can write to the repository and that the branch is not protected; then use Retry.",
+            "Retry, or Sync now in manual mode, still attempts the push. Only a push that sends commits and succeeds clears Read-only; one that sends nothing proves nothing, so the flag stays.",
         },
         {
           title: "Disconnect or discard",
@@ -306,9 +298,11 @@ export const versionHistoryChapter: TutorialChapter = {
             "If the repository's workspace is already in the app, the dialog says This workspace is already in APIWeave and names it. Open it goes there and Back returns to the URL; nothing in the app changes.",
         },
         {
-          title: "Review what the import kept",
+          title: "Review what the import reports",
           instruction:
-            "When a withheld credential survives the import, the dialog lists the file or workflow it is in before switching. Open workspace switches to it; Close leaves you where you are.",
+            "When the import has something to report — a credential withheld as <SECRET>, or a default environment it had to pick — the dialog lists it before switching. Open workspace switches to it; Close leaves you where you are.",
+          detail:
+            "With nothing to report the app switches straight to the new workspace.",
         },
         {
           title: "Set the secrets it references",
@@ -379,7 +373,7 @@ export const versionHistoryChapter: TutorialChapter = {
       ],
       durationMinutes: 7,
       prerequisites: [
-        "A connected workspace you edited on another machine since the two last agreed.",
+        "A connected workspace changed both on this machine and on another since the two last agreed.",
       ],
       steps: [
         {
@@ -399,26 +393,28 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Click Review merge in the header's popover or in the panel. The Resolve merge dialog opens over whatever you were doing.",
           detail:
-            "Closing it leaves everything as it was and keeps the decisions made so far, so reopening loses nothing.",
+            "Closing it changes nothing in the workspace, but choices you have not sent with Finish merge are lost. Decisions sent by a Finish that left conflicts are stored, and reopening starts from them.",
         },
         {
           title: "Read a card",
           instruction:
             "Each card is one conflicted record or file, with both copies side by side under Your copy and Remote copy. A side that deleted it or never had it says Not present.",
           detail:
-            "Above each card are the author, short commit and subject of the commit each side last made to it. Commit details unavailable means those could not be read; the choices still work.",
+            "The card's header carries the author, short commit and subject of the commit each side last made to it. Commit details unavailable means those could not be read; the choices still work.",
         },
         {
           title: "Pick per field",
           instruction:
             "Use Keep your copy or Keep remote copy under a conflicted field. A field choice overrides the record choice for that field only.",
+          detail:
+            "Every change that did not conflict is already part of the merge, from both sides.",
         },
         {
           title: "Or settle a whole record",
           instruction:
             "Use Keep your copy for all conflicts or Keep remote copy for all conflicts in a card's header to settle every conflicted field in it at once.",
           detail:
-            "Every change that did not conflict is already part of the merge, from both sides.",
+            "A card reading Whole record or Whole file, or holding copies that cannot be combined into a valid record, offers only those buttons. Choosing one clears that card's earlier field choices, so the record choice is not beaten by an old field pick.",
         },
         {
           title: "Finish the merge",
@@ -461,7 +457,7 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Merge needed survived a restart",
           instruction:
-            "It is stored, not lost: reopen Review merge and the decisions made so far are there.",
+            "It is stored, not lost: reopen Review merge. Decisions sent with an earlier Finish merge are still there; others must be made again.",
         },
       ],
       relatedLessonIds: ["git-remote", "git-track"],
@@ -474,7 +470,7 @@ export const versionHistoryChapter: TutorialChapter = {
       summary:
         "Run a checkout with apiweave run, pick projects, workflows and environments, fail fast, supply secrets from the environment, and write a JUnit report.",
       outcome:
-        "A pipeline clones the connected repository and runs the API tests with no database, no app and no git installed on the runner.",
+        "A pipeline checks out the connected repository and runs its API tests from the files alone, with no database, no app and no git needed on the runner.",
       keywords: [
         "ci",
         "apiweave run",
@@ -490,12 +486,20 @@ export const versionHistoryChapter: TutorialChapter = {
         "github actions",
         "secret",
       ],
-      durationMinutes: 6,
+      durationMinutes: 7,
       prerequisites: [
-        "The apiweave command available on the CI machine.",
+        "Node.js 22 or later on the CI machine.",
+        "A checkout of the APIWeave repository to build the command from: it is not published to npm yet.",
         "A checkout of a repository that holds a workspace.",
       ],
       steps: [
+        {
+          title: "Build the command",
+          instruction:
+            "In the APIWeave checkout's app/ folder run npm ci --ignore-scripts, then npm run build:cli, which writes dist/cli/apiweave.cjs. Run npm link in that folder to put apiweave on PATH, or call node dist/cli/apiweave.cjs instead.",
+          detail:
+            "--ignore-scripts skips the Electron download, which the CLI does not need.",
+        },
         {
           title: "Run the folder",
           instruction:
@@ -530,9 +534,9 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Write a JUnit report",
           instruction:
-            "Add --reporter junit, or name a file with --reporter-junit-export <path>; without a path it writes apiweave-report.xml, and the pipeline can read the results.",
+            "Add --reporter-junit-export <path>: the JUnit XML goes to that file and the console output stays. With --reporter junit and no export path, the report goes to apiweave-report.xml and the console report is replaced.",
           detail:
-            "Reporters are a comma-separated list. --reporter html and --reporter-html-export <path> write an HTML report the same way.",
+            "Reporters are a comma-separated list, and --reporter replaces the default cli reporter: --reporter junit,html writes both reports and no console output. --reporter-html-export <path> writes an HTML report the same way.",
         },
         {
           title: "Only committed changes travel",
@@ -548,10 +552,10 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "A pipeline's test step, from broadest to narrowest",
         language: "bash",
-        code: "APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project \"Shop API\" --env Staging\napiweave run ./tests --workflow \"Login\" --bail\napiweave run ./tests --reporter junit --reporter-junit-export reports/junit.xml",
+        code: "APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project \"Shop API\" --env Staging\napiweave run ./tests --workflow \"Login\" --bail\napiweave run ./tests --reporter-junit-export reports/junit.xml",
       },
       expectedResult:
-        "A CI job clones the repository, runs the chosen tests against the chosen environment with its secrets supplied from the environment, fails the build on a failed test, and leaves a JUnit report behind.",
+        "A CI job checks out the repository, runs the chosen tests against the chosen environment with its secrets supplied from the environment, fails the build on a failed test, and leaves a JUnit report behind.",
       troubleshooting: [
         {
           title: "apiweave run says .apiweave/format.json is missing",
