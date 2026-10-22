@@ -34,6 +34,10 @@ export function gitConfigArgs(hooksDir: string): string[] {
     "core.autocrlf=false",
     "-c",
     "core.fsmonitor=false",
+    // A link a repository carries is checked out as a plain file holding its
+    // target, so no clone or pull can make the app write through it.
+    "-c",
+    "core.symlinks=false",
     "-c",
     "protocol.ext.allow=never",
     "-c",
@@ -45,7 +49,7 @@ export function gitConfigArgs(hooksDir: string): string[] {
   ]
 }
 
-/** What git inherits: the caller's environment, minus repository redirection, plus the three that keep it quiet and English. */
+/** What git inherits: the caller's environment, minus repository redirection, plus the settings that keep it quiet, literal and English. */
 export function gitEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...base }
   for (const name of REPOSITORY_LOCATION_VARIABLES) {
@@ -57,6 +61,8 @@ export function gitEnvironment(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     GIT_OPTIONAL_LOCKS: "0",
     // Every path an argument names is a path, never a glob or `:(magic)`.
     GIT_LITERAL_PATHSPECS: "1",
+    // A cloned `.gitattributes` naming `filter=lfs` must not run the LFS smudge filter.
+    GIT_LFS_SKIP_SMUDGE: "1",
     LC_ALL: "C",
   }
 }

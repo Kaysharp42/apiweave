@@ -2,8 +2,17 @@ import fs from "node:fs"
 import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
+import { generateId } from "../../id"
 import { CollectionRepository, EnvironmentRepository, SecretRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
-import { parseWorkspace, serializeWorkspace, workspaceSnapshot, type WorkspaceRecords, type WorkspaceSnapshot } from "../workspace_repo_format"
+import {
+  MAX_RECORD_ID_LENGTH,
+  RecordIdSchema,
+  parseWorkspace,
+  serializeWorkspace,
+  workspaceSnapshot,
+  type WorkspaceRecords,
+  type WorkspaceSnapshot,
+} from "../workspace_repo_format"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 
 const FIXTURE_DIR = path.join(__dirname, "__fixtures__", "workspace-repo")
@@ -382,6 +391,57 @@ describe("reading a workspace repository", () => {
     const parts = Array.from({ length: 10 }, (_, index): [string, string] => [`docs/part-${index}.txt`, part])
     // The tenth part is the file that crosses the cumulative limit, and the error names it.
     expect(() => parseWorkspace(new Map([...tree(), ...parts]))).toThrow(/docs\/part-9\.txt pushes the repository over its 104857600-byte limit/)
+  })
+
+  it("refuses a name or description over its length limit, for the workspace and every record", () => {
+    const files = tree()
+    const tooLongName = "n".repeat(201)
+    const tooLongDescription = "d".repeat(2001)
+
+    expect(() => parseWorkspace(editJson(files, "workspace.json", (doc) => {
+      doc["name"] = tooLongName
+    }))).toThrow(/workspace\.json: name: a name may be at most 200 characters/)
+    expect(() => parseWorkspace(editJson(files, "workspace.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/workspace\.json: description: a description may be at most 2000 characters/)
+    expect(() => parseWorkspace(editJson(files, "projects/shop-api--proj-shop.json", (doc) => {
+      doc["name"] = tooLongName
+    }))).toThrow(/projects\/shop-api--proj-shop\.json: name: a name may be at most 200 characters/)
+    expect(() => parseWorkspace(editJson(files, "environments/staging--env-staging.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/environments\/staging--env-staging\.json: description: a description may be at most 2000 characters/)
+    expect(() => parseWorkspace(editJson(files, "workflows/login--wf-login.json", (doc) => {
+      doc["description"] = tooLongDescription
+    }))).toThrow(/workflows\/login--wf-login\.json: description: a description may be at most 2000 characters/)
+  })
+
+  it.each(["NUL", "con", "Aux", "prn", "COM1", "lpt9", "com0"])("refuses the Windows device name %s as an id, saying why", (id) => {
+    expect(() => parseWorkspace(editJson(tree(), "workspace.json", (doc) => {
+      doc["workspaceId"] = id
+    }))).toThrow(/workspace\.json: workspaceId: must be an APIWeave id, not a name Windows reserves for a device/)
+  })
+
+  it("accepts an id that only starts like a device name", () => {
+    for (const id of ["NULL", "console", "COM10", "lpt-1", "aux_files"]) {
+      expect(parseWorkspace(editJson(tree(), "workspace.json", (doc) => {
+        doc["workspaceId"] = id
+      })).workspace.workspaceId).toBe(id)
+    }
+  })
+
+  it("caps an id's length far above the ids the app generates", () => {
+    expect(RecordIdSchema.safeParse(generateId()).success).toBe(true)
+    expect(RecordIdSchema.safeParse("a".repeat(MAX_RECORD_ID_LENGTH)).success).toBe(true)
+    expect(() => parseWorkspace(editJson(tree(), "workspace.json", (doc) => {
+      doc["workspaceId"] = "a".repeat(MAX_RECORD_ID_LENGTH + 1)
+    }))).toThrow(/workspace\.json: workspaceId: must be an APIWeave id of at most 128 characters/)
+  })
+
+  it("refuses to write a name or description over its length limit too", () => {
+    const snapshot = workspaceSnapshot(seededRecords())
+
+    expect(() => serializeWorkspace({ ...snapshot, workspace: { ...snapshot.workspace, name: "n".repeat(201) } }))
+      .toThrow(/workspace\.json: name: a name may be at most 200 characters/)
   })
 
   it("refuses a repository that is not one, or one a newer APIWeave wrote", () => {

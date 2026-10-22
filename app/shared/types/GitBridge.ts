@@ -1,3 +1,4 @@
+import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { WorkspaceGitCommitRequest } from "./WorkspaceGitCommitRequest"
 import type { WorkspaceGitMode } from "./WorkspaceGitMode"
 import type { WorkspaceGitStatus } from "./WorkspaceGitStatus"
@@ -6,7 +7,7 @@ import type { WorkspaceGitStatus } from "./WorkspaceGitStatus"
  * The `window.__APIWEAVE_GIT__` contract: a workspace's version history.
  * Off the IPC router, so no local agent can reach it over MCP — git writes
  * files and, once a remote is connected, decides where the workspace is pushed.
- * Every call resolves to the workspace's status after it.
+ * Every call but `openFromGit` resolves to the workspace's status after it.
  */
 export interface GitBridge {
   readonly status: (workspaceId: string) => Promise<WorkspaceGitStatus>
@@ -30,4 +31,13 @@ export interface GitBridge {
   readonly connectRemote: (workspaceId: string, url: string) => Promise<WorkspaceGitStatus>
   /** Remove the connection. Every local commit stays; nothing on the remote is touched. */
   readonly disconnectRemote: (workspaceId: string) => Promise<WorkspaceGitStatus>
+  /**
+   * Clone the repository at `url` and open the workspace it holds, tracked in
+   * auto mode and bound to that remote. Resolves `duplicate`, creating
+   * nothing, when the repository's workspace is already in this app; `opened`
+   * carries the import's warnings for the caller to show before switching.
+   * Rejects, and leaves nothing behind, when the URL is not an accepted form,
+   * the repository cannot be reached, or it is not an APIWeave workspace.
+   */
+  readonly openFromGit: (url: string) => Promise<OpenWorkspaceFromGitResult>
 }

@@ -62,7 +62,7 @@ The diagram shows the components that make up APIWeave and the paths a request c
 
 ## Resource Model
 
-APIWeave is a local-first app built around seven stored resource types, organized into workspaces. Every resource lives in the local SQLite database on your machine. A **workspace** is the container for your workflows, environments, projects, and presets; a personal workspace is created for you, and you can create more. Git sync is coming — see the [roadmap](../../ROADMAP.md).
+APIWeave is a local-first app built around seven stored resource types, organized into workspaces. Every resource lives in the local SQLite database on your machine. A **workspace** is the container for your workflows, environments, projects, and presets; a personal workspace is created for you, and you can create more, or open one from a git repository. A workspace can be tracked in a local git repository, one commit per change; continuous sync with a remote is coming — see [Keep Tests in a Git Repository](../guides/git-workflows.md) and the [roadmap](../../ROADMAP.md).
 
 | Resource | Visible to | Owner |
 |----------|-----------|-------|
@@ -126,7 +126,7 @@ APIWeave exposes two surfaces, both local:
 
 Outside the app, the headless CLI (`apiweave run`, `app/core/cli/`) reuses the importers, repositories, scheduler, project runner and reporters under plain Node, with an in-memory SQLite database and secrets from its environment. It never imports Electron, the keychain or the MCP bridge; its build fails if anything on its import graph does. See [Run Tests in CI](../guides/ci.md).
 
-Two outbound-only connections exist beyond those: the auto-update manager polls the GitHub release channel for updates, and connecting a workspace to a git remote runs your own `git` against that host, once, when you click **Connect to remote** (see [Keep Tests in a Git Repository](../guides/git-workflows.md#connect-a-remote)). Neither accepts inbound connections.
+Two kinds of outbound-only connection exist beyond those: the auto-update manager polls the GitHub release channel for updates, and the app runs your own `git` against a host you name, once per click, to push a workspace's history when you click **Connect to remote** (see [Keep Tests in a Git Repository](../guides/git-workflows.md#connect-a-remote)) or to clone a repository when you click **Open workspace** in **Open from git…** (see [Open a workspace from git](../guides/git-workflows.md#open-a-workspace-from-git)). Both git operations are bridged to the renderer through a privileged preload world that is not on the IPC router, so the MCP bridge cannot reach them. None of these accepts inbound connections.
 
 ## Related
 

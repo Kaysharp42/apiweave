@@ -2,7 +2,7 @@ import type { Stats } from "node:fs"
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { ValidationError } from "../ipc/errors"
-import { checkFileSize } from "../services/workspace_repo_format"
+import { checkFileSize, MAX_TREE_BYTES, MAX_TREE_FILES } from "../services/workspace_repo_format"
 
 /** The folders whose `.json` files belong to the format: a file there that maps to no record is the format's to remove. */
 const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
@@ -87,6 +87,14 @@ async function readPlainFile(directory: string, relative: string): Promise<strin
   }
 }
 
+/** The caps the tree walk enforces as it reads files; both default to the format's own limits. */
+export interface ReadWorkspaceTreeOptions {
+  /** At most this many bytes in total. Defaults to {@link MAX_TREE_BYTES}. */
+  readonly maxTotalBytes?: number
+  /** At most this many files. Defaults to {@link MAX_TREE_FILES}. */
+  readonly maxFiles?: number
+}
+
 /**
  * The files of `directory` for `parseWorkspace`: the format's root files that
  * exist and every entry under the record folders, nested ones too, so a file
@@ -96,15 +104,34 @@ async function readPlainFile(directory: string, relative: string): Promise<strin
  * Nothing is followed out of the tree: a link or a non-regular file is
  * refused, and so is an oversized one before it is read. A missing file is
  * simply absent; `parseWorkspace` says what a repository lacks.
+ *
+ * The tree's own caps are enforced as files are read, not afterwards by
+ * `parseWorkspace`: bytes and a file count accumulate per file, and the walk
+ * refuses the file that crosses either, so an untrusted repository cannot make
+ * the app hold a whole tree's contents before the totals are known. The
+ * entries are listed and `lstat`ed first, before either cap applies: the
+ * listing holds names only, never contents.
  */
-export async function readWorkspaceTree(directory: string): Promise<Map<string, string>> {
+export async function readWorkspaceTree(
+  directory: string,
+  options: ReadWorkspaceTreeOptions = {},
+): Promise<Map<string, string>> {
+  const maxTotalBytes = options.maxTotalBytes ?? MAX_TREE_BYTES
+  const maxFiles = options.maxFiles ?? MAX_TREE_FILES
   const paths: string[] = [...ROOT_FILES]
   if (!(await requirePlainFolder(directory, ".apiweave"))) paths.splice(paths.indexOf(".apiweave/format.json"), 1)
   for (const folder of RECORD_FOLDERS) paths.push(...(await recordEntries(directory, folder)))
   const files = new Map<string, string>()
+  let totalBytes = 0
   for (const relative of paths.sort()) {
     const text = await readPlainFile(directory, relative)
-    if (text !== undefined) files.set(relative, text)
+    if (text === undefined) continue
+    if (files.size >= maxFiles) throw new ValidationError(`${relative} pushes the repository over its ${maxFiles}-file limit; at most ${maxFiles} files are read`)
+    totalBytes += Buffer.byteLength(text, "utf8")
+    if (totalBytes > maxTotalBytes) {
+      throw new ValidationError(`${relative} pushes the repository over its ${maxTotalBytes}-byte limit (${totalBytes} bytes in total); at most ${maxTotalBytes} are read`)
+    }
+    files.set(relative, text)
   }
   return files
 }

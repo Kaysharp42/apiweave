@@ -96,6 +96,7 @@ export const GIT_CHANNELS = {
   syncNow: "git:syncNow",
   connectRemote: "git:connectRemote",
   disconnectRemote: "git:disconnectRemote",
+  openFromGit: "git:openFromGit",
 } as const
 
 /** Every status `GIT_CHANNELS` calls and auto commits leave behind, pushed to the renderer. */

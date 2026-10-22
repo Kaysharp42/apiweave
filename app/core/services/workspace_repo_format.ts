@@ -81,14 +81,33 @@ const WORKSPACE_FORMAT_VERSION = 1
 const FORMAT_FILE = ".apiweave/format.json"
 const ATTRIBUTES_FILE = ".gitattributes"
 const WORKSPACE_FILE = "workspace.json"
-const MAX_FILE_BYTES = 10 * 1024 * 1024
-const MAX_TREE_BYTES = 100 * 1024 * 1024
-const MAX_SLUG_LENGTH = 60
+/** One repository file's limit. Shared with the tree walk, which enforces it before reading a file. */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024
+/** The whole tree's limit. Shared with the tree walk, which enforces it while it reads. */
+export const MAX_TREE_BYTES = 100 * 1024 * 1024
+/** How many files a tree may hold. Enforced by the tree walk file by file, as it reads them. */
+export const MAX_TREE_FILES = 10_000
+/** The longest slug a record file's name (and a workspace's slug) may carry. */
+export const MAX_SLUG_LENGTH = 60
+const MAX_NAME_LENGTH = 200
+const MAX_DESCRIPTION_LENGTH = 2000
 
-/** What an id generated here looks like (a ULID), loosely: an id also names files and rows, so nothing path-like gets in. */
+/** Far above the 26 characters of an id generated here (a ULID, `core/id.ts`). */
+export const MAX_RECORD_ID_LENGTH = 128
+
+/** The names Windows reserves for devices, with or without an extension: a folder cannot be named after one. */
+const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i
+
+/**
+ * What an id generated here looks like (a ULID), loosely: an id also names
+ * files, rows and a workspace's repository folder, so nothing path-like gets
+ * in, and nothing a folder cannot be named on Windows.
+ */
 export const RecordIdSchema = z
   .string()
+  .max(MAX_RECORD_ID_LENGTH, `must be an APIWeave id of at most ${MAX_RECORD_ID_LENGTH} characters`)
   .regex(/^[A-Za-z0-9_][A-Za-z0-9_-]*$/, "must be an APIWeave id (letters, digits, '-' and '_', not starting with '-')")
+  .refine((id) => !WINDOWS_DEVICE_NAME.test(id), "must be an APIWeave id, not a name Windows reserves for a device (such as NUL, CON or COM1)")
 
 /**
  * A JSON value that must also satisfy `schema`, kept exactly as written:
@@ -112,10 +131,16 @@ const FormatFileSchema = z
   })
   .strict()
 
-const NameSchema = z.string().min(1)
+const NameSchema = z
+  .string()
+  .min(1)
+  .max(MAX_NAME_LENGTH, { message: `a name may be at most ${MAX_NAME_LENGTH} characters` })
+const DescriptionSchema = z
+  .string()
+  .max(MAX_DESCRIPTION_LENGTH, { message: `a description may be at most ${MAX_DESCRIPTION_LENGTH} characters` })
 const VariablesSchema = z.record(z.string(), JsonValueSchema)
 /** The name and optional description the workspace, its projects and its environments carry alike. */
-const titled = { name: NameSchema, description: z.string().nullable() }
+const titled = { name: NameSchema, description: DescriptionSchema.nullable() }
 
 const WorkspaceFileSchema = z.object({ workspaceId: RecordIdSchema, ...titled }).strict()
 
@@ -133,7 +158,7 @@ const WorkflowFileSchema = z
     workflowId: RecordIdSchema,
     projectId: RecordIdSchema.nullable(),
     name: NameSchema,
-    description: z.string(),
+    description: DescriptionSchema,
     selectedEnvironmentId: RecordIdSchema.nullable(),
     tags: z.array(z.string()),
     variables: VariablesSchema,

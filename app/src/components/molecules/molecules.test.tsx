@@ -649,6 +649,14 @@ describe("WorkspaceEmptyState", () => {
     expect(onOpenCollection).toHaveBeenCalledTimes(1);
   });
 
+  it("invokes onOpenFromGit when the Open from git button is clicked", async () => {
+    const onOpenFromGit = vi.fn();
+    const user = userEvent.setup();
+    render(<WorkspaceEmptyState onOpenFromGit={onOpenFromGit} />);
+    await user.click(screen.getByRole("button", { name: /Open from git/i }));
+    expect(onOpenFromGit).toHaveBeenCalledTimes(1);
+  });
+
   it("hides buttons whose handler is not provided", () => {
     render(<WorkspaceEmptyState onNewWorkflow={() => {}} />);
     expect(
@@ -656,6 +664,9 @@ describe("WorkspaceEmptyState", () => {
     ).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Open Collection/i }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Open from git/i }),
     ).toBeNull();
   });
 });

@@ -18,6 +18,7 @@ export type {
 export type { AssertionEvaluation } from "./AssertionEvaluation"
 export type { SchemaViolation } from "./SchemaViolation"
 export type { OpenApiNodeMeta } from "./OpenApiNodeMeta"
+export type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 export type { AssertionApplyResult } from "./AssertionApplyResult"
 export type { AssertionItem } from "./AssertionItem"
 export type { AssertionOperator } from "./AssertionOperator"
