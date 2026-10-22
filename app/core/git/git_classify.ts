@@ -1,6 +1,7 @@
 import {
   GitAuthFailedError,
   GitCommandError,
+  GitIdentityMissingError,
   GitNetworkError,
   GitNonFastForwardError,
   GitNotARepositoryError,
@@ -30,6 +31,18 @@ const RULES: readonly FailureRule[] = [
   {
     patterns: [/not a git repository/i],
     create: (message, details) => new GitNotARepositoryError(message, details),
+  },
+  {
+    patterns: [
+      // "Author identity unknown" / "Committer identity unknown", then "*** Please tell me who you are."
+      /(?:Author|Committer) identity unknown/i,
+      /Please tell me who you are/i,
+      // With user.useConfigOnly: "no email was given and auto-detection is disabled".
+      /no (?:email|name) was given and auto-detection is disabled/i,
+      /unable to auto-detect email address/i,
+      /empty ident name/i,
+    ],
+    create: (message, details) => new GitIdentityMissingError(message, details),
   },
   {
     patterns: [

@@ -19,11 +19,15 @@ import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import type { NetworkBridge } from "@shared/types/NetworkBridge"
 import type { ProjectFolderBridge } from "@shared/types/ProjectFolderBridge"
+import type { GitBridge } from "@shared/types/GitBridge"
+import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import {
   AGENT_CHANNELS,
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
+  GIT_CHANNELS,
+  GIT_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
@@ -249,6 +253,18 @@ const projectFolderBridge: ProjectFolderBridge = {
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_PROJECT_FOLDERS__", projectFolderBridge)
+
+/** A workspace's version history: main runs git — a privileged world for the same reason as the project-folder bridge. */
+const gitBridge: GitBridge = {
+  status: invokeBridge(GIT_CHANNELS.status),
+  track: invokeBridge(GIT_CHANNELS.track),
+  untrack: invokeBridge(GIT_CHANNELS.untrack),
+  setMode: invokeBridge(GIT_CHANNELS.setMode),
+  syncNow: invokeBridge(GIT_CHANNELS.syncNow),
+  onStatusChanged: (callback) => subscribe<WorkspaceGitStatus>(GIT_STATUS_CHANGED_CHANNEL, callback),
+}
+
+contextBridge.exposeInMainWorld("__APIWEAVE_GIT__", gitBridge)
 
 /**
  * The one thing that cannot travel over `contextBridge`: a session's output port.

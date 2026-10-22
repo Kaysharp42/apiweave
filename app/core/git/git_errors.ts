@@ -1,13 +1,4 @@
-export type GitErrorCode =
-  | "git_not_installed"
-  | "auth_failed"
-  | "non_fast_forward"
-  | "permission_denied"
-  | "network_error"
-  | "not_a_repository"
-  | "timeout"
-  | "invalid_argument"
-  | "command_failed"
+import type { GitErrorCode } from "@shared/types/GitErrorCode"
 
 export interface GitFailureDetails {
   /** The arguments after the configuration prefix, credentials in URLs removed. */
@@ -51,6 +42,15 @@ export class GitNotInstalledError extends GitProcessError {
     super(message, details)
     this.installUrl = installUrl
   }
+}
+
+/**
+ * A commit refused because git knows no author: no `user.name`/`user.email` in
+ * any config it reads. Every call runs with `user.useConfigOnly`, so git never
+ * guesses one from the login and host name instead.
+ */
+export class GitIdentityMissingError extends GitProcessError {
+  readonly code = "identity_missing"
 }
 
 export class GitAuthFailedError extends GitProcessError {

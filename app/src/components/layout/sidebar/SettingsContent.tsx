@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { FolderKanban, Key, Globe, type LucideIcon } from "lucide-react";
+import { FolderKanban, GitBranch, Key, Globe, type LucideIcon } from "lucide-react";
 import { useParams } from "react-router-dom";
 import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
@@ -65,7 +65,7 @@ function SettingItem({
 
 /**
  * Renders the settings section of the sidebar.
- * Shows workspace-scoped settings (Projects, Environments, Secrets).
+ * Shows workspace-scoped settings (Projects, Environments, Secrets, Version history).
  */
 export function SettingsContent({
   onNavigate,
@@ -109,6 +109,12 @@ export function SettingsContent({
           title="Secrets"
           description="Manage encrypted secrets"
           onClick={() => onNavigate(`${wsBase}/settings/secrets`)}
+        />
+        <SettingItem
+          icon={GitBranch}
+          title="Version history (git)"
+          description="Keep this workspace's history in git"
+          onClick={() => onNavigate(`${wsBase}/settings/version-history`)}
         />
       </ul>
 

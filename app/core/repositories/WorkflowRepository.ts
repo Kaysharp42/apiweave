@@ -329,7 +329,8 @@ export class WorkflowRepository {
    * (see `create`), so the two move together or the row's scope goes stale.
    */
   public setWorkspace(workflowId: string, workspaceId: string): Workflow | undefined {
-    if (this.getById(workflowId) === undefined) return undefined
+    const existing = this.getById(workflowId)
+    if (existing === undefined) return undefined
     this.store.set(
       "UPDATE workflows SET workspace_id = ?, scopeId = ? WHERE id = ?",
       [workspaceId, workspaceId, workflowId],
@@ -337,7 +338,7 @@ export class WorkflowRepository {
     const moved = this.getById(workflowId)
     // A move takes the row out of the workspace the open canvas scoped itself
     // to; the renderer needs the event to recognize that and let go of it.
-    if (moved !== undefined) this.notifyChanged(moved)
+    if (moved !== undefined) this.notifyChanged(moved, existing.workspaceId)
     return moved
   }
 
@@ -356,10 +357,10 @@ export class WorkflowRepository {
    * failure. Inside a transaction they wait for the commit — announcing a write
    * that can still roll back would hand the renderer a phantom snapshot.
    */
-  private notifyChanged(workflow: Workflow): void {
+  private notifyChanged(workflow: Workflow, movedFrom?: string): void {
     sendOrHoldNotification(this.store, () => {
       try {
-        this.onChanged?.({ kind: "upsert", workflow })
+        this.onChanged?.(movedFrom === undefined ? { kind: "upsert", workflow } : { kind: "upsert", workflow, movedFrom })
       } catch (error) {
         getLogger("workflow-notify").error("observer failed for workflow", workflow.workflowId, error)
       }

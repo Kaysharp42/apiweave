@@ -16,6 +16,8 @@ describe("gitConfigArgs", () => {
       "protocol.ext.allow=never",
       "-c",
       "credential.interactive=auto",
+      "-c",
+      "user.useConfigOnly=true",
     ])
   })
 })

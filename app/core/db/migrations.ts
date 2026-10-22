@@ -37,6 +37,7 @@ export const CONTENT_TABLES: ReadonlySet<string> = new Set([
   "agent_run_approvals",
   "agent_local_paths",
   "app_settings",
+  "workspace_git",
 ])
 
 /**

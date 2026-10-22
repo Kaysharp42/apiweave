@@ -2,8 +2,8 @@ import type { KVStore, SqliteRow } from "../db"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
-import { mustExist, parseJson, slugify, toJson } from "./helpers"
-import { holdNotificationsUntilCommit } from "./transactionNotifications"
+import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, slugify, toJson } from "./helpers"
+import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type EnvironmentCreate = Pick<Environment, "workspaceId" | "name"> &
   Partial<
@@ -44,7 +44,11 @@ interface EnvironmentSettings {
 }
 
 export class EnvironmentRepository {
-  public constructor(private readonly store: KVStore) {}
+  /** `onChanged` hears the workspace of every committed write, as `WorkflowRepository`'s observer does. */
+  public constructor(
+    private readonly store: KVStore,
+    private readonly onChanged?: WorkspaceWriteObserver,
+  ) {}
 
   public create(input: EnvironmentCreate): Environment {
     const id = input.environmentId ?? generateId()
@@ -59,7 +63,9 @@ export class EnvironmentRepository {
       "INSERT INTO environments (id, workspace_id, scopeId, name, slug, variables_json, settings_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [id, input.workspaceId, input.workspaceId, input.name, slugify(input.name, id), toJson(input.variables ?? {}), toJson(settings)],
     )
-    return mustExist(this.getById(id), `environment ${id} missing after insert`)
+    const created = mustExist(this.getById(id), `environment ${id} missing after insert`)
+    this.notifyChanged(input.workspaceId)
+    return created
   }
 
   public getById(environmentId: string): Environment | undefined {
@@ -94,6 +100,7 @@ export class EnvironmentRepository {
       "UPDATE environments SET name = ?, slug = ?, variables_json = ?, settings_json = ? WHERE id = ?",
       [merged.name, slugify(merged.name, environmentId), toJson(merged.variables), toJson(settings), environmentId],
     )
+    this.notifyChanged(existing.workspaceId)
     return this.getById(environmentId)
   }
 
@@ -124,15 +131,9 @@ export class EnvironmentRepository {
    * move together or the row's scope goes stale.
    */
   public setWorkspace(environmentId: string, workspaceId: string): Environment | undefined {
-    if (this.getById(environmentId) === undefined) {
-      return undefined
-    }
-    this.store.set("UPDATE environments SET workspace_id = ?, scopeId = ? WHERE id = ?", [
-      workspaceId,
-      workspaceId,
-      environmentId,
-    ])
-    return this.getById(environmentId)
+    return moveToWorkspace(this.store, "environments", environmentId, workspaceId, this.notifyChanged)
+      ? this.getById(environmentId)
+      : undefined
   }
 
   /** Same contract as `WorkflowRepository.transaction`. */
@@ -141,7 +142,7 @@ export class EnvironmentRepository {
   }
 
   public delete(environmentId: string): boolean {
-    return this.store.delete("DELETE FROM environments WHERE id = ?", [environmentId]).changes > 0
+    return deleteFromWorkspace(this.store, "environments", environmentId, this.notifyChanged)
   }
 
   /**
@@ -165,6 +166,10 @@ export class EnvironmentRepository {
       effective = { ...effective, ...environment.variables }
     }
     return effective
+  }
+
+  private readonly notifyChanged = (workspaceId: string): void => {
+    notifyWorkspaceWrite(this.store, this.onChanged, workspaceId, "environment-notify")
   }
 }
 

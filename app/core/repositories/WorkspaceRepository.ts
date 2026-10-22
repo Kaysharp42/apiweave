@@ -3,7 +3,7 @@ import type { KVStore, SqliteRow } from "../db"
 import type { Workspace } from "@shared/types/Workspace"
 import { generateId } from "../id"
 import { mustExist, parseJson, toJson } from "./helpers"
-import { holdNotificationsUntilCommit } from "./transactionNotifications"
+import { holdNotificationsUntilCommit, notifyWorkspaceWrite, type WorkspaceWriteObserver } from "./transactionNotifications"
 
 export type WorkspaceCreate = Pick<Workspace, "name" | "slug"> & Partial<Pick<Workspace, "description" | "isPersonal">>
 
@@ -28,7 +28,11 @@ interface WorkspaceSettings {
 }
 
 export class WorkspaceRepository {
-  public constructor(private readonly store: KVStore) {}
+  /** `onChanged` hears every committed create, update and delete, as `WorkflowRepository`'s observer does. */
+  public constructor(
+    private readonly store: KVStore,
+    private readonly onChanged?: WorkspaceWriteObserver,
+  ) {}
 
   /** Same contract as `WorkflowRepository.transaction`. */
   public transaction<T>(fn: () => T): T {
@@ -46,7 +50,9 @@ export class WorkspaceRepository {
       "INSERT INTO workspaces (id, name, slug, settings_json) VALUES (?, ?, ?, ?)",
       [id, input.name, input.slug, toJson(settings)],
     )
-    return mustExist(this.getById(id), `workspace ${id} missing after insert`)
+    const created = mustExist(this.getById(id), `workspace ${id} missing after insert`)
+    this.notifyChanged(id)
+    return created
   }
 
   public getById(workspaceId: string): Workspace | undefined {
@@ -80,11 +86,18 @@ export class WorkspaceRepository {
       "UPDATE workspaces SET name = ?, slug = ?, settings_json = ? WHERE id = ?",
       [merged.name, merged.slug, toJson(settings), workspaceId],
     )
+    this.notifyChanged(workspaceId)
     return this.getById(workspaceId)
   }
 
   public delete(workspaceId: string): boolean {
-    return this.store.delete("DELETE FROM workspaces WHERE id = ?", [workspaceId]).changes > 0
+    const deleted = this.store.delete("DELETE FROM workspaces WHERE id = ?", [workspaceId]).changes > 0
+    if (deleted) this.notifyChanged(workspaceId)
+    return deleted
+  }
+
+  private notifyChanged(workspaceId: string): void {
+    notifyWorkspaceWrite(this.store, this.onChanged, workspaceId, "workspace-notify")
   }
 }
 

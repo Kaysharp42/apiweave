@@ -73,6 +73,19 @@ export function makeSandbox(overrides: Partial<GitServiceOptions> = {}): GitSand
   return { root, env, hooksDir, service }
 }
 
+/**
+ * A service over the sandbox whose git names no author anywhere: no identity
+ * option, the isolated global config is empty, and the variables that would
+ * name one are gone — a machine where nobody ran `git config user.name`.
+ */
+export function anonymousService(sandbox: GitSandbox): GitService {
+  const env = { ...sandbox.env }
+  for (const name of ["GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"]) {
+    delete env[name]
+  }
+  return new GitService({ hooksDir: sandbox.hooksDir, env })
+}
+
 /** Plain git, outside the service, for setting up fixtures and proving what the service prevents. */
 export function rawGit(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })

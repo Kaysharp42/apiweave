@@ -20,8 +20,11 @@ import {
   ProjectRunRepository,
   SecretRepository,
   WorkflowRepository,
+  WorkspaceGitRepository,
   WorkspaceRepository,
 } from "../core/repositories"
+import type { GitSyncService } from "../core/git/git_sync_service"
+import { createGitSync, registerGitHandlers } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
 import {
@@ -71,6 +74,7 @@ import {
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
+  GIT_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
   PROJECT_FOLDER_CHANNELS,
@@ -141,6 +145,9 @@ let mcpHost: McpHost | null = null
 // Module scope for the same reason `mcpHost` is: `before-quit` has to reach it,
 // and it is built inside the composition root.
 let agentProcesses: AgentProcessManager | null = null
+// Module scope for the same reason, and because the repositories built before
+// it already report their writes to it.
+let gitSync: GitSyncService | null = null
 let isQuitting = false
 
 if (process.platform === "linux") {
@@ -427,19 +434,22 @@ if (!hasSingleInstanceLock) {
       bootstrapLog.info(`canonicalised ${canonicalised} workflow graph(s) to KeyValuePair[] form`)
     }
 
-    // Repositories — the only DB touchpoint.
-    const workspaces = new WorkspaceRepository(database.kvStore)
+    // Repositories — the only DB touchpoint. Every write to a workspace's
+    // content is also reported to git sync, which commits it in auto mode.
+    const noteWorkspaceWrite = (workspaceId: string): void => gitSync?.workspaceChanged(workspaceId)
+    const workspaces = new WorkspaceRepository(database.kvStore, noteWorkspaceWrite)
     // One broadcast for every workflow write, wherever it came from: renderer
     // saves, MCP tools and imports all go through the repository.
     const sendWorkflowChanged = (event: WorkflowChangedEvent): void => {
+      gitSync?.workflowChanged(event)
       if (mainWindow !== null && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send(WORKFLOW_CHANGED_CHANNEL, event)
       }
     }
     const workflows = new WorkflowRepository(database.kvStore, sendWorkflowChanged)
     const runs = new RunRepository(database.kvStore)
-    const environments = new EnvironmentRepository(database.kvStore)
-    const collections = new CollectionRepository(database.kvStore)
+    const environments = new EnvironmentRepository(database.kvStore, noteWorkspaceWrite)
+    const collections = new CollectionRepository(database.kvStore, noteWorkspaceWrite)
     const nodePresets = new NodePresetRepository(database.kvStore)
     const agents = new AgentRepository(database.kvStore)
     const secretStore = new SecretRepository(database.kvStore)
@@ -906,6 +916,25 @@ if (!hasSingleInstanceLock) {
       }),
     )
 
+    // Version history. Off the router like projectFolder:* — see registerGitHandlers.
+    gitSync = createGitSync(
+      app.getPath("userData"),
+      {
+        workspaces,
+        collections,
+        workflows,
+        environments,
+        workspaceGit: new WorkspaceGitRepository(database.kvStore),
+      },
+      (status) => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(GIT_STATUS_CHANGED_CHANNEL, status)
+        }
+      },
+    )
+    registerGitHandlers(ipcMain, requireTrustedSender, gitSync)
+    gitSync.reconcile().catch((error: unknown) => bootstrapLog.warn("version history reconcile failed", error))
+
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so
     // registering "spawn a process with this working directory" there would put
@@ -1168,6 +1197,12 @@ app.on("before-quit", (event) => {
 
   if (scheduler && scheduler.getActiveCount() > 0) {
     shutdowns.push(scheduler.shutdown(2000))
+  }
+
+  // A commit in flight still writes its outcome to the database.
+  if (gitSync !== null) {
+    shutdowns.push(gitSync.dispose())
+    gitSync = null
   }
 
   if (shutdowns.length > 0) {

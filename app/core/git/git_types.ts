@@ -1,3 +1,5 @@
+import type { GitIdentity } from "@shared/types/GitIdentity"
+
 export type GitCommand =
   | "version"
   | "init"
@@ -14,11 +16,9 @@ export type GitCommand =
   | "mergeAbort"
   | "resetHard"
   | "log"
+  | "config"
 
-export interface GitIdentity {
-  readonly name: string
-  readonly email: string
-}
+export type { GitIdentity }
 
 export interface GitVersion {
   /** The text after `git version `, e.g. `2.55.0.windows.4` or `2.39.5 (Apple Git-154)`. */

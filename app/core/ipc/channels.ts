@@ -94,6 +94,23 @@ export const PROJECT_FOLDER_CHANNELS = {
 } as const
 
 /**
+ * A workspace's version history in git. Privileged and off the router like
+ * `PROJECT_FOLDER_CHANNELS`, so no local agent can reach it over MCP: main runs
+ * git and writes files, and once a remote can be bound, whoever can call this
+ * decides where a workspace is pushed.
+ */
+export const GIT_CHANNELS = {
+  status: "git:status",
+  track: "git:track",
+  untrack: "git:untrack",
+  setMode: "git:setMode",
+  syncNow: "git:syncNow",
+} as const
+
+/** Every status `GIT_CHANNELS` calls and auto commits leave behind, pushed to the renderer. */
+export const GIT_STATUS_CHANGED_CHANNEL = "apiweave:git-status-changed"
+
+/**
  * A run began — broadcast for EVERY run, whoever started it (the canvas's own
  * Run button, or an agent through the MCP `runs_create` tool).
  *

@@ -38,6 +38,10 @@ export function gitConfigArgs(hooksDir: string): string[] {
     "protocol.ext.allow=never",
     "-c",
     "credential.interactive=auto",
+    // The author is the one the user configured, or none: never a name and
+    // address guessed from the login and host name.
+    "-c",
+    "user.useConfigOnly=true",
   ]
 }
 
