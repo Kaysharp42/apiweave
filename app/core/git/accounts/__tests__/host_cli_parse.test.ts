@@ -221,6 +221,12 @@ describe("parseSignInPrompt", () => {
     expect(parseSignInPrompt("! First copy your one-time code: 3F2A-9C1B\nOpen this URL: https://github.com/lo", "github.com")).toBeUndefined()
   })
 
+  it("does not take a device page without its code: it waits for the code's line", () => {
+    expect(parseSignInPrompt("Open this URL to continue in your web browser: https://github.com/login/device\n", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("Then open this URL on any device to authorize: https://gitlab.com/oauth/device\n", "gitlab.com")).toBeUndefined()
+    expect(parseSignInPrompt("Open this URL: https://ghe.example.com/login/device/\n", "ghe.example.com")).toBeUndefined()
+  })
+
   it("reads the code from gh's clipboard line too (gh 2.103's `clipboard` setting)", () => {
     // gh v2.103.0 internal/authflow/flow.go, when the copy succeeds.
     const clipboard = "! One-time code (3F2A-9C1B) copied to clipboard\nOpen this URL to continue in your web browser: https://github.com/login/device\n"

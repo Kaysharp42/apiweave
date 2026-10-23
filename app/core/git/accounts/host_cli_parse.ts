@@ -174,6 +174,8 @@ const ANSI_ESCAPE = /\x1b\[[0-9;]*[A-Za-z]/g
 /** `one-time code: ABCD-1234`, and gh's clipboard form `One-time code (ABCD-1234) copied to clipboard`. */
 const ONE_TIME_CODE = /one-time code(?::\s*|\s*\()([A-Z0-9][A-Z0-9-]{3,})/i
 const HTTPS_URL = /https:\/\/[^\s"'<>)]+/g
+/** Where a code is entered: GitHub's `verification_uri` (`/login/device`, which gh prints) and GitLab's (`/oauth/device`, which glab prints). */
+const DEVICE_PAGE = /^\/(?:login|oauth)\/device\/?$/
 
 /**
  * The page a sign-in asks the user to open, and the one-time code to enter
@@ -209,7 +211,10 @@ export function parseSignInPrompt(stderr: string, host: string): { readonly code
     .map((match) => match[0])
     .find((candidate) => URL.canParse(candidate) && new URL(candidate).hostname.toLowerCase() === hostname)
   if (url === undefined) return undefined
-  return { code: ONE_TIME_CODE.exec(output)?.[1] ?? null, url }
+  const code = ONE_TIME_CODE.exec(output)?.[1] ?? null
+  // A device page is useless without its code: the web flow's page is the only one that comes alone.
+  if (code === null && DEVICE_PAGE.test(new URL(url).pathname)) return undefined
+  return { code, url }
 }
 
 /** `✓ Logged in as octocat`, which both tools print last: who the sign-in was for. */

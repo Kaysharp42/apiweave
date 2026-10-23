@@ -1,7 +1,7 @@
 // fallow-ignore-file code-duplication -- this is a registration table of parallel one-line `handleWorkspace(...)` calls; each channel's handler has its own signature, so a loop would lose the per-channel typing, and `handleWorkspace` already owns the sender guard.
 import { mkdirSync } from "node:fs"
 import path from "node:path"
-import type { IpcMain, IpcMainInvokeEvent } from "electron"
+import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron"
 import { z } from "zod"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
@@ -197,6 +197,20 @@ export function registerGitHandlers(
   return signIns
 }
 
+/**
+ * A sign-in's dialog lives in the window's document. Once the document goes
+ * — a reload, a crash — nothing can show its code or cancel it, so `cancel`
+ * is called and its gh or glab stopped rather than left waiting for a code
+ * nobody sees. A navigation within the document (a hash or history change)
+ * or in a sub-frame leaves the dialog where it is, and the sign-in running.
+ */
+export function cancelSignInWhenDocumentGoes(contents: Pick<WebContents, "on">, cancel: () => void): void {
+  contents.on("render-process-gone", () => cancel())
+  contents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) cancel()
+  })
+}
+
 /** What a sign-in needs from the composition root. */
 export interface GitSignInPorts {
   /** Opens a page in the user's browser (`shell.openExternal`). */
@@ -235,11 +249,30 @@ export class GitSignIns {
    * crash — and would otherwise hold the tool, and lock out every new
    * attempt, until its code expired.
    */
-  public async signIn(provider: GitProvider, host: string): Promise<GitAccountRef> {
-    while (this.current !== undefined) await this.cancel()
+  public signIn(provider: GitProvider, host: string): Promise<GitAccountRef> {
+    // Current at once, before the one it replaces has gone: a Cancel pressed
+    // while that tool is still exiting is for this sign-in, and must stop it
+    // before its own tool ever starts.
+    const previous = this.current
     const session: SignInSession = { controller: new AbortController(), url: null, settled: Promise.resolve() }
     this.current = session
-    const running = this.hostCli.signIn(provider, host, {
+    const running = this.replaceAndRun(session, previous, provider, host)
+    session.settled = running.then(
+      () => undefined,
+      () => undefined,
+    )
+    return running.finally(() => {
+      if (this.current === session) this.current = undefined
+    })
+  }
+
+  private async replaceAndRun(session: SignInSession, previous: SignInSession | undefined, provider: GitProvider, host: string): Promise<GitAccountRef> {
+    if (previous !== undefined) {
+      previous.controller.abort()
+      await previous.settled
+    }
+    if (session.controller.signal.aborted) throw new Error("Sign-in was cancelled.")
+    const account = await this.hostCli.signIn(provider, host, {
       signal: session.controller.signal,
       onPrompt: ({ code, url }) => {
         session.url = url
@@ -247,17 +280,8 @@ export class GitSignIns {
         this.openQuietly(url)
       },
     })
-    session.settled = running.then(
-      () => undefined,
-      () => undefined,
-    )
-    try {
-      const account = await running
-      this.ports.focus()
-      return account
-    } finally {
-      if (this.current === session) this.current = undefined
-    }
+    this.ports.focus()
+    return account
   }
 
   /** Stop the sign-in in progress, if any — its `signIn` rejects as cancelled — and resolve once its tool has gone. */

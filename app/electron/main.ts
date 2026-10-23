@@ -25,7 +25,7 @@ import {
 } from "../core/repositories"
 import type { GitSyncService } from "../core/git/git_sync_service"
 import { HostCliService } from "../core/git/accounts/host_cli_service"
-import { createGitSync, registerGitHandlers, type GitSignIns } from "./git_sync"
+import { cancelSignInWhenDocumentGoes, createGitSync, registerGitHandlers, type GitSignIns } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
 import {
@@ -332,14 +332,7 @@ async function createWindow(): Promise<boolean> {
       })
   })
 
-  // A sign-in's dialog lives in this document. Once the document goes — a
-  // reload, a crash — nothing can show its code or cancel it, so its gh or
-  // glab is stopped rather than left waiting for a code nobody sees.
-  const dropSignIn = (): void => void gitSignIns?.cancel()
-  win.webContents.on("render-process-gone", dropSignIn)
-  win.webContents.on("did-start-navigation", (details) => {
-    if (details.isMainFrame && !details.isSameDocument) dropSignIn()
-  })
+  cancelSignInWhenDocumentGoes(win.webContents, () => void gitSignIns?.cancel())
 
   // Never let the privileged app:// document navigate to attacker-controlled
   // content — that content would inherit the same preload/IPC bridge.

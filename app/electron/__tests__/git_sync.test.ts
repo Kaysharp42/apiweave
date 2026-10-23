@@ -1,11 +1,12 @@
-import type { IpcMain, IpcMainInvokeEvent } from "electron"
+import { EventEmitter } from "node:events"
+import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron"
 import { describe, expect, it, vi } from "vitest"
 import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitAccountList } from "@shared/types/GitAccountList"
 import type { HostCliService, HostCliSignInOptions } from "../../core/git/accounts/host_cli_service"
 import type { GitSyncService } from "../../core/git/git_sync_service"
 import { GIT_CHANNELS } from "../../core/ipc/channels"
-import { GitSignIns, registerGitHandlers, type GitSignInPorts } from "../git_sync"
+import { GitSignIns, cancelSignInWhenDocumentGoes, registerGitHandlers, type GitSignInPorts } from "../git_sync"
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 /**
@@ -171,6 +172,29 @@ describe("signing in", () => {
     await expect(second).resolves.toEqual(ACCOUNT)
   })
 
+  it("stops a new sign-in before its tool starts when Cancel comes while the one it replaces is still exiting", async () => {
+    // A tool that takes its time to exit once aborted, as a real taskkill does.
+    const exits: (() => void)[] = []
+    const signIn = vi.fn(
+      (_provider: string, _host: string, given: HostCliSignInOptions) =>
+        new Promise<typeof ACCOUNT>((_resolve, reject) => {
+          given.signal?.addEventListener("abort", () => exits.push(() => reject(new Error("Sign-in was cancelled."))))
+        }),
+    )
+    const signIns = new GitSignIns({ signIn } as unknown as HostCliService, NO_PORTS)
+    const abandoned = signIns.signIn("github", "github.com").catch((error: unknown) => error)
+
+    const replacement = signIns.signIn("github", "github.com").catch((error: unknown) => error)
+    const cancelled = signIns.cancel()
+    exits.forEach((exit) => exit())
+
+    expect(await replacement).toMatchObject({ message: "Sign-in was cancelled." })
+    await cancelled
+    expect(await abandoned).toMatchObject({ message: "Sign-in was cancelled." })
+    // The replacement's own tool never ran.
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
   it("refuses a provider or host it has no business with before any tool runs, and takes no page from the renderer", async () => {
     const run = pendingSignIn()
     const handlers = handlersOf({} as GitSyncService, { signIn: run.signIn } as unknown as HostCliService, run.ports)
@@ -183,6 +207,32 @@ describe("signing in", () => {
 
     await call(GIT_CHANNELS.openSignInPage, "https://evil.example/")
     expect(run.ports.openExternal).not.toHaveBeenCalled()
+  })
+})
+
+describe("cancelSignInWhenDocumentGoes", () => {
+  function windowContents() {
+    const contents = new EventEmitter()
+    const cancel = vi.fn()
+    cancelSignInWhenDocumentGoes(contents as unknown as Pick<WebContents, "on">, cancel)
+    return { contents, cancel }
+  }
+
+  it("cancels when the window's document is replaced — a reload — or its renderer dies", () => {
+    const reload = windowContents()
+    reload.contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false })
+    expect(reload.cancel).toHaveBeenCalledOnce()
+
+    const crash = windowContents()
+    crash.contents.emit("render-process-gone", {}, { reason: "crashed" })
+    expect(crash.cancel).toHaveBeenCalledOnce()
+  })
+
+  it("leaves the sign-in alone for a navigation within the document, or in a sub-frame", () => {
+    const { contents, cancel } = windowContents()
+    contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true })
+    contents.emit("did-start-navigation", { isMainFrame: false, isSameDocument: false })
+    expect(cancel).not.toHaveBeenCalled()
   })
 })
 
