@@ -116,6 +116,7 @@ export type { MainLayoutProps } from "./MainLayoutProps";
 export type { MainHeaderProps } from "./MainHeaderProps";
 export type { MainFooterProps } from "./MainFooterProps";
 export type { WorkspaceProps } from "./WorkspaceProps";
+export type { WorkspaceItemProps } from "./WorkspaceItemProps";
 export type { TabBarProps } from "./TabBarProps";
 export type { CanvasToolbarProps } from "./CanvasToolbarProps";
 export type { CanvasTipContext } from "./CanvasTipContext";

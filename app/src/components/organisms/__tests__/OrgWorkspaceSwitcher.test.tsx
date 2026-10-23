@@ -262,7 +262,9 @@ describe("OrgWorkspaceSwitcher", () => {
     await user.click(screen.getByLabelText("Switch workspace"));
 
     const personal = await screen.findByRole("option", { name: /Personal/ });
-    expect(within(personal).getByRole("img", { name: "Synced" })).toHaveAttribute("title", "Synced");
+    const synced = within(personal).getByRole("img", { name: "Synced" });
+    await user.hover(synced);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Synced");
     const main = screen.getByRole("option", { name: /Main/ });
     expect(
       within(main).getByRole("img", { name: "Local history · uncommitted" }),

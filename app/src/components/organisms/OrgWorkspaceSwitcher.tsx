@@ -1,4 +1,4 @@
-import {
+﻿import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -14,12 +14,12 @@ import {
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useWorkspaceGitStatuses } from "../../hooks/useWorkspaceGitStatuses";
 import { Button } from "../atoms/Button";
+import { Tooltip } from "../atoms/Tooltip";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import { OpenWorkspaceFromGitModal } from "./OpenWorkspaceFromGitModal";
 import { describeGitSync, GIT_SYNC_INTENT_TEXT } from "../../utils/gitSync";
-import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
-import type { Workspace } from "../../types";
+import type { Workspace, WorkspaceItemProps } from "../../types";
 
 /**
  * The current workspace's name and source. Split out of the switcher button so
@@ -245,22 +245,6 @@ export function OrgWorkspaceSwitcher() {
   );
 }
 
-interface WorkspaceItemProps {
-  workspace: Workspace;
-  index: number;
-  isActive: boolean;
-  icon: React.ReactNode;
-  source: string;
-  /** This row's git status; null while it is unknown or when the workspace is not tracked. */
-  syncStatus: WorkspaceGitStatus | null;
-  onSelect: (workspace: Workspace) => void;
-  onKeyDown: (
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) => void;
-  itemRef: (el: HTMLButtonElement | null) => void;
-}
-
 // fallow-ignore-next-line code-duplication
 function WorkspaceItem({
   workspace,
@@ -306,14 +290,15 @@ function WorkspaceItem({
         </div>
       </div>
       {indicator !== null && indicator.icon !== null && (
-        <span
-          role="img"
-          aria-label={indicator.label}
-          title={indicator.label}
-          className={`flex flex-shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
-        >
-          <GitSyncKindIcon indicator={indicator} className="h-3.5 w-3.5" />
-        </span>
+        <Tooltip content={indicator.label}>
+          <span
+            role="img"
+            aria-label={indicator.label}
+            className={`flex flex-shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
+          >
+            <GitSyncKindIcon indicator={indicator} className="h-3.5 w-3.5" />
+          </span>
+        </Tooltip>
       )}
       {isActive && (
         <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
