@@ -92,6 +92,44 @@ function AuthorForm({ busy, onCommit }: GitAuthorFormProps) {
   );
 }
 
+const HTTPS_REMOTE = /^https:\/\//i;
+
+interface RemoteAccountProps {
+  readonly remoteUrl: string;
+  readonly value: GitAccountRef | null;
+  readonly onChange: (account: GitAccountRef | null) => void;
+  readonly busy: boolean;
+}
+
+/**
+ * Which account an `https://` remote is reached as, and why gh or glab could
+ * not say, when they could not. An SSH remote signs in with the user's SSH
+ * key, so it is offered no account. A bound account stays shown even when no
+ * tool lists it any more.
+ */
+function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps) {
+  const { accounts, problems } = useGitAccounts();
+  if (!HTTPS_REMOTE.test(remoteUrl)) return null;
+  return (
+    <>
+      {(accounts.length > 0 || value !== null) && (
+        <GitAccountPicker
+          accounts={accounts}
+          host={remoteHost(remoteUrl)}
+          value={value}
+          onChange={onChange}
+          disabled={busy}
+        />
+      )}
+      {problems.map((problem) => (
+        <p key={problem} className="text-xs text-status-warning">
+          {problem}
+        </p>
+      ))}
+    </>
+  );
+}
+
 interface RemoteSectionProps {
   readonly remoteUrl: string | null;
   readonly branch: string;
@@ -113,9 +151,6 @@ function RemoteSection({
 }: RemoteSectionProps) {
   const [url, setUrl] = useState("");
   const [chosen, setChosen] = useState<GitAccountRef | null>(null);
-  const accounts = useGitAccounts();
-  // A bound account stays shown even when no tool lists it any more.
-  const offerAccounts = accounts.length > 0 || account !== null;
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -129,7 +164,7 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            onConnect(url.trim(), chosen);
+            onConnect(url.trim(), HTTPS_REMOTE.test(url.trim()) ? chosen : null);
           }}
         >
           <FormField label="Remote URL">
@@ -142,15 +177,7 @@ function RemoteSection({
               spellCheck={false}
             />
           </FormField>
-          {offerAccounts && (
-            <GitAccountPicker
-              accounts={accounts}
-              host={remoteHost(url.trim())}
-              value={chosen}
-              onChange={setChosen}
-              disabled={busy}
-            />
-          )}
+          <RemoteAccount remoteUrl={url.trim()} value={chosen} onChange={setChosen} busy={busy} />
           <Button
             type="submit"
             variant="primary"
@@ -162,15 +189,7 @@ function RemoteSection({
         </form>
       ) : (
         <>
-          {offerAccounts && (
-            <GitAccountPicker
-              accounts={accounts}
-              host={remoteHost(remoteUrl)}
-              value={account}
-              onChange={onChangeAccount}
-              disabled={busy}
-            />
-          )}
+          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={onChangeAccount} busy={busy} />
           <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
             Disconnect
           </Button>

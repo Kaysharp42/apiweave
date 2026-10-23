@@ -199,6 +199,38 @@ describe("VersionHistoryPanel", () => {
       expect(bridge.setAccount).toHaveBeenLastCalledWith("ws-1", null);
     });
 
+    it("offers no account for an SSH remote, which signs in with the user's SSH key", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), { listAccounts });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      const field = await screen.findByRole("textbox", { name: /remote url/i });
+      await user.type(field, "https://github.com/acme/tests.git");
+      await user.selectOptions(await screen.findByRole("combobox", { name: /account/i }), "github|github.com|octo-work");
+      await user.clear(field);
+      await user.type(field, "git@github.com:acme/tests.git");
+
+      expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+      expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "git@github.com:acme/tests.git", null);
+    });
+
+    it("says why a tool could not list its accounts, rather than just showing none", async () => {
+      installGitBridge(trackedStatus(), {
+        listAccounts: vi.fn(async () => ({
+          clis: [
+            { provider: "github" as const, command: "gh" as const, missing: false, version: "2.97.0", problem: "gh did not answer in time" },
+            { provider: "gitlab" as const, command: "glab" as const, missing: true, version: null, problem: null },
+          ],
+          accounts: [],
+        })),
+      });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      expect(await screen.findByText("gh: gh did not answer in time")).toBeInTheDocument();
+      expect(screen.queryByText(/glab/)).toBeNull();
+    });
+
     it("keeps showing a bound account that is no longer signed in, rather than changing it", async () => {
       installGitBridge(trackedStatus({ account: { provider: "github", host: "github.com", login: "gone" } }));
       render(<VersionHistoryPanel workspaceId="ws-1" />);

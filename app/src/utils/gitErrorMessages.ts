@@ -1,3 +1,4 @@
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitErrorCode } from "@shared/types/GitErrorCode";
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError";
 
@@ -56,11 +57,19 @@ const MESSAGES: Readonly<Record<GitErrorCode, (host: string) => string>> = {
  * record the repository format refused, say — and its own text already says
  * what happened, so that is the message. `lastError.message` is git's raw
  * text: it belongs under the message as detail, never in place of it.
+ *
+ * A workspace bound to an account signs in with that account, never with the
+ * credential manager, so a refused sign-in names the account instead.
  */
 export function describeGitError(
   error: WorkspaceGitError,
   remoteUrl: string | null,
+  account: GitAccountRef | null = null,
 ): string {
   if (error.code === null) return error.message;
-  return MESSAGES[error.code](remoteHost(remoteUrl) ?? UNNAMED_REMOTE);
+  const host = remoteHost(remoteUrl) ?? UNNAMED_REMOTE;
+  if (error.code === "auth_failed" && account !== null) {
+    return `${host} turned down ${account.login}'s sign-in — sign in to that account again, or choose another account in the workspace's version history settings.`;
+  }
+  return MESSAGES[error.code](host);
 }
