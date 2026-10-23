@@ -26,7 +26,9 @@ function TrackedGitSyncControl({
             <PopoverButton
               as={Button}
               variant="outline"
-              intent={view.intent}
+              // The sync vocabulary's `default` is the muted tone a local-only
+              // history takes; the Button's own `default` is the action accent.
+              intent={view.intent === "default" ? "muted" : view.intent}
               size="sm"
               className="h-9"
               aria-label={`Version history: ${view.label}`}

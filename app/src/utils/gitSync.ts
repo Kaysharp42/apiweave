@@ -4,6 +4,7 @@ import {
   CloudDownload,
   CloudUpload,
   HardDrive,
+  HardDriveUpload,
   RefreshCw,
   type LucideIcon,
 } from "lucide-react";
@@ -37,12 +38,13 @@ const plural = (count: number, one: string, other: string): string =>
 
 /**
  * What the workspace's primary action is called: Review merge while conflicts
- * wait, Retry when the last attempt got stuck or the host refused the push,
- * otherwise Sync now — Commit now when there is no remote to sync with.
+ * wait, Retry when the last attempt failed or the host refused the push,
+ * otherwise Sync now — which is also what offers the merge again after one was
+ * abandoned — or Commit now when there is no remote to sync with.
  */
 export function gitSyncPrimaryLabel(status: WorkspaceGitStatus): string {
   if (status.state === "merging") return "Review merge";
-  if (status.state === "diverged" || status.state === "error" || status.readOnly) return "Retry";
+  if (status.state === "error" || status.readOnly) return "Retry";
   return status.remoteUrl === null ? "Commit now" : "Sync now";
 }
 
@@ -169,8 +171,10 @@ function pendingView(status: WorkspaceGitStatus): GitSyncView {
       : !uncommitted && outgoing > 0
         ? `Pending (${outgoing} to push)`
         : "Pending";
-  // A workspace with no remote keeps the local icon: its edits are going into this device's history, not a cloud.
-  return view("pending", label, "info", remoteUrl === null ? HardDrive : CloudUpload, [unsaved, unpushed].filter(Boolean).join(" "));
+  // A workspace with no remote keeps a local shape: its edits go into this
+  // device's history, not a cloud. Upload says there is work to write down, so
+  // a settled local history and one with edits waiting differ by shape too.
+  return view("pending", label, "info", remoteUrl === null ? HardDriveUpload : CloudUpload, [unsaved, unpushed].filter(Boolean).join(" "));
 }
 
 function settledView(status: WorkspaceGitStatus): GitSyncView {
@@ -186,8 +190,8 @@ function settledView(status: WorkspaceGitStatus): GitSyncView {
  * mode brings them in itself), local work not yet committed or pushed, and
  * last, in sync. This is the one mapping every surface uses; the kind is the
  * plan's coarse vocabulary, the label the exact state, and the icon and intent
- * follow the kind. A workspace with no remote says "Local history", never
- * "Synced", and has no push to describe.
+ * are chosen with the state. A workspace with no remote says "Local history",
+ * never "Synced", and has no push to describe.
  */
 export function describeGitSync(status: WorkspaceGitStatus): GitSyncView {
   if (!status.tracked) return untrackedView();

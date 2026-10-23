@@ -371,4 +371,12 @@ describe("GitSyncControl", () => {
     expect(await screen.findByRole("button", { name: "Commit now" })).toBeInTheDocument();
     expect(screen.queryByText(/push|remote/i)).toBeNull();
   });
+
+  it("draws a local-only workspace in the muted tone, not the action accent", async () => {
+    installGitBridge(trackedStatus(local));
+    renderControl();
+
+    // The plan's vocabulary says muted for `local`; the Button is what has to carry it.
+    expect((await trigger("Local history")).className).toContain("text-text-muted");
+  });
 });

@@ -38,6 +38,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
             "bg-[var(--aw-primary)] text-white dark:text-primary-dark border border-[var(--aw-primary)] hover:bg-[var(--aw-primary-hover)] shadow-raised hover:shadow-overlay",
+          muted:
+            "bg-text-muted dark:bg-text-muted-dark text-surface-raised dark:text-surface-dark border border-text-muted dark:border-text-muted-dark hover:bg-text-secondary dark:hover:bg-text-secondary-dark",
           success:
             "bg-status-success dark:bg-[var(--aw-status-success)] text-white dark:text-surface-dark border border-status-success dark:border-[var(--aw-status-success)] hover:brightness-95 dark:hover:brightness-105 shadow-raised hover:shadow-overlay",
           error:
@@ -53,6 +55,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
             "bg-primary/5 dark:bg-primary-light/10 text-primary dark:text-primary-light border border-primary dark:border-primary-light hover:bg-primary/10 dark:hover:bg-primary-light/20",
+          muted:
+            "bg-text-muted/5 dark:bg-text-muted-dark/10 text-text-muted dark:text-text-muted-dark border border-text-muted/30 dark:border-text-muted-dark/30 hover:bg-text-muted/10 dark:hover:bg-text-muted-dark/20",
           success:
             "bg-status-success/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-[var(--aw-status-success)] border border-status-success dark:border-[var(--aw-status-success)] hover:bg-status-success/10 dark:hover:bg-[var(--aw-status-success)]/20",
           error:
@@ -68,6 +72,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
             "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
+          muted:
+            "text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
           success:
             "text-status-success dark:text-[var(--aw-status-success)] hover:bg-status-success/5 dark:hover:bg-[var(--aw-status-success)]/10",
           error:
@@ -83,6 +89,8 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
             "bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-text-primary dark:hover:bg-text-primary-dark hover:text-surface-raised dark:hover:text-surface-dark hover:border-text-primary dark:hover:border-text-primary-dark",
+          muted:
+            "bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
           success:
             "bg-surface-raised dark:bg-surface-dark-raised text-status-success dark:text-[var(--aw-status-success)] border border-status-success/40 dark:border-[var(--aw-status-success)]/40 hover:bg-status-success/10 dark:hover:bg-[var(--aw-status-success)]/10",
           error:
