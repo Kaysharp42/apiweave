@@ -16,7 +16,12 @@ const GhEntrySchema = z.object({
   host: z.string(),
   login: z.string(),
   gitProtocol: z.string(),
+  /** `keyring`, a hosts.yml path, or the environment variable the token came from (`GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, …). */
+  tokenSource: z.string().default(""),
 })
+
+/** gh's own test for a token it did not store (`authTokenWriteable`): the source is an environment variable. */
+const FROM_ENVIRONMENT = /_TOKEN$/
 
 const GhStatusSchema = z.object({ hosts: z.record(z.string(), z.array(GhEntrySchema)) })
 
@@ -79,26 +84,46 @@ interface ListedAccount {
   readonly active: boolean
 }
 
-/** The usable accounts, and a line naming the host of each one that names no one. */
-function collectAccounts(provider: GitProvider, cli: "gh" | "glab", listed: readonly ListedAccount[]): ParsedAccounts {
-  const accounts: GitAccount[] = []
-  const problems: string[] = []
+/**
+ * The usable accounts — each host and login once — and a line naming the
+ * host of each one that names no one.
+ */
+function collectAccounts(
+  provider: GitProvider,
+  cli: "gh" | "glab",
+  listed: readonly ListedAccount[],
+  problems: readonly string[] = [],
+): ParsedAccounts {
+  const accounts = new Map<string, GitAccount>()
+  const unnamed: string[] = []
   for (const { host, login, state, error, gitProtocol, active } of listed) {
     const problem = problemOf(cli, state, error)
-    if (login === "") problems.push(`${host}: ${problem ?? `${cli} could not tell whose token it holds`}`)
-    else accounts.push({ provider, host, login, gitProtocol, active, problem })
+    if (login === "") unnamed.push(`${host}: ${problem ?? `${cli} could not tell whose token it holds`}`)
+    else if (!accounts.has(`${host}\n${login}`)) accounts.set(`${host}\n${login}`, { provider, host, login, gitProtocol, active, problem })
   }
-  return { accounts, problems }
+  return { accounts: [...accounts.values()], problems: [...problems, ...unnamed] }
 }
 
-/** `gh auth status --json hosts`, or undefined when that is not what it printed. */
+/**
+ * `gh auth status --json hosts`, or undefined when that is not what it
+ * printed. A token gh reads from the environment (`GH_TOKEN`,
+ * `GH_ENTERPRISE_TOKEN`, …) is listed as the host's active account, but it is
+ * not one gh stores: `gh auth token --user` can never hand it over, and its
+ * owner may be listed again as a stored account. So it is not offered — the
+ * host says why instead — and the stored account stands.
+ */
 export function parseGhAccounts(stdout: string): ParsedAccounts | undefined {
   const parsed = GhStatusSchema.safeParse(parseJson(stdout))
   if (!parsed.success) return undefined
-  const listed = Object.values(parsed.data.hosts)
-    .flat()
+  const entries = Object.values(parsed.data.hosts).flat()
+  const fromEnvironment = entries.filter((entry) => FROM_ENVIRONMENT.test(entry.tokenSource))
+  const listed = entries
+    .filter((entry) => !FROM_ENVIRONMENT.test(entry.tokenSource))
     .map((entry) => ({ ...entry, error: entry.error, gitProtocol: ghProtocol(entry.gitProtocol) }))
-  return collectAccounts("github", "gh", listed)
+  const problems = fromEnvironment.map(
+    (entry) => `${entry.host}: gh is using the token in ${entry.tokenSource}, which is not an account APIWeave can choose; only the accounts gh stores are listed`,
+  )
+  return collectAccounts("github", "gh", listed, problems)
 }
 
 /** `glab auth status --output json`, for every host or one, or undefined when that is not what it printed. */
