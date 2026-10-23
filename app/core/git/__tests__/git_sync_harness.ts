@@ -95,6 +95,8 @@ export function passthrough(git: GitService): GitSyncGit {
     remoteAdd: git.remoteAdd.bind(git),
     remoteSetUrl: git.remoteSetUrl.bind(git),
     remoteRemove: git.remoteRemove.bind(git),
+    remoteUrl: git.remoteUrl.bind(git),
+    resolvedUrl: git.resolvedUrl.bind(git),
     revParse: git.revParse.bind(git),
     mergeBase: git.mergeBase.bind(git),
     mergeFastForward: git.mergeFastForward.bind(git),

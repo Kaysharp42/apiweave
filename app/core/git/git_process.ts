@@ -78,13 +78,47 @@ const CREDENTIAL_HELPER = [
  * collects into the same list — and `-c` is read after every file. So
  * {@link CREDENTIAL_HELPER} is the only helper left to answer.
  */
-export function credentialConfigArgs(): string[] {
-  return ["-c", "credential.helper=", "-c", `credential.helper=${CREDENTIAL_HELPER}`]
+export function credentialConfigArgs(credential: GitCredential): string[] {
+  return [
+    "-c",
+    "credential.helper=",
+    "-c",
+    `credential.helper=${CREDENTIAL_HELPER}`,
+    // When the helper declines — a redirect to another host — git must fail,
+    // not ask: no prompt program (VS Code sets one), no interactive helper.
+    "-c",
+    "core.askPass=",
+    "-c",
+    "credential.interactive=false",
+    // A user's `http.extraHeader: Authorization …` would be sent instead of
+    // the bound account. An empty value empties the list, but only of entries
+    // no more URL-specific than its own key: the bare one clears the unscoped
+    // headers, and one keyed on the whole URL — as specific as any can be —
+    // clears every `http.<url>.extraHeader` that matches it.
+    "-c",
+    "http.extraHeader=",
+    "-c",
+    `http.${credential.url}.extraHeader=`,
+  ]
 }
 
-/** What {@link CREDENTIAL_HELPER} reads, for the one git process that carries the credential (and its transport and helper children). */
-export function credentialEnvironment(credential: GitCredential): NodeJS.ProcessEnv {
+/** Tracing that would write what git sends — the Authorization header among it, with `GIT_TRACE_REDACT=0` — to wherever the user pointed it. */
+const TRACE_VARIABLE = /^GIT_TRACE|^GIT_CURL_VERBOSE$/
+
+/**
+ * The environment of the one git process that carries a credential (and its
+ * transport and helper children): `base` without tracing, without a prompt
+ * program to fall back to, and with what {@link CREDENTIAL_HELPER} reads.
+ * Calls without a credential keep `base` untouched, tracing included: what
+ * the user's own helpers send is theirs to trace.
+ */
+export function credentialEnvironment(base: NodeJS.ProcessEnv, credential: GitCredential): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(base).filter(([name]) => !TRACE_VARIABLE.test(name)))
   return {
+    ...env,
+    // Empty, not unset: git then neither runs it nor falls back to `core.askPass` or SSH_ASKPASS.
+    GIT_ASKPASS: "",
+    SSH_ASKPASS: "",
     APIWEAVE_GIT_PROTOCOL: credential.protocol,
     APIWEAVE_GIT_HOST: credential.host,
     APIWEAVE_GIT_USERNAME: credential.username,

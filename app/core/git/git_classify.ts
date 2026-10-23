@@ -48,6 +48,8 @@ const RULES: readonly FailureRule[] = [
     patterns: [
       // Prompts are off, so a host that wants credentials ends here.
       /could not read (?:Username|Password) for/i,
+      // The same, with `credential.interactive=false` (a call that carries an account's credential).
+      /unable to get (?:username|password) from user/i,
       /Authentication failed/i,
       // GitHub: "Invalid username or password.", "Invalid username or token. Password authentication is not supported…"
       /Invalid username or (?:password|token)/i,

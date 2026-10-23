@@ -4,7 +4,7 @@ import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import { GitAccountUnavailableError } from "../git_errors"
 import type { GitService } from "../git_service"
 import type { GitSyncGit } from "../git_sync_service"
-import type { GitCredential, GitRemoteOptions } from "../git_types"
+import type { GitAccountToken, GitCredential, GitRemoteOptions } from "../git_types"
 import { openHarness, passthrough, type Harness } from "./git_sync_harness"
 import { credentialServer, makeBareRemote, rawGit } from "./git_test_utils"
 
@@ -43,6 +43,8 @@ interface Routes {
 function routed(git: GitService, routes: Routes, calls: NetworkCall[]): GitSyncGit {
   const real = passthrough(git)
   const route = (url: string): string => routes.urls.get(url) ?? url
+  // What git resolves is the local stand-in; the service must see the URL it stands for. Anything else (a rewrite) passes as git said it.
+  const unroute = (url: string): string => [...routes.urls].find(([, target]) => target === url)?.[0] ?? url
   const withCredential = (command: NetworkCall["command"], options: GitRemoteOptions | undefined): GitRemoteOptions => {
     calls.push({ command, credential: options?.credential })
     return { credential: routes.rewrite(options?.credential) }
@@ -51,6 +53,8 @@ function routed(git: GitService, routes: Routes, calls: NetworkCall[]): GitSyncG
     ...real,
     remoteAdd: (directory, name, url) => real.remoteAdd(directory, name, route(url)),
     remoteSetUrl: (directory, name, url) => real.remoteSetUrl(directory, name, route(url)),
+    remoteUrl: async (directory, name, options) => unroute(await real.remoteUrl(directory, name, options)),
+    resolvedUrl: async (url, cwd) => unroute(await real.resolvedUrl(route(url), cwd)),
     fetch: (directory, remote, options) => real.fetch(directory, remote, withCredential("fetch", options)),
     push: (directory, remote, branch, options) =>
       real.push(directory, remote, branch, { ...withCredential("push", options), ...(options?.setUpstream === true ? { setUpstream: true } : {}) }),
@@ -59,7 +63,7 @@ function routed(git: GitService, routes: Routes, calls: NetworkCall[]): GitSyncG
 }
 
 async function accountHarness(
-  credentials: (account: GitAccountRef) => Promise<GitCredential> = async () => ({
+  credentials: (account: GitAccountRef) => Promise<GitAccountToken> = async () => ({
     protocol: "https",
     host: ACCOUNT.host,
     username: "x-access-token",
@@ -81,7 +85,7 @@ function rowText(harness: Harness): string {
   return JSON.stringify(harness.db.kvStore.get("SELECT * FROM workspace_git WHERE workspace_id = ?", [harness.workspaceId]))
 }
 
-const EXPECTED_CREDENTIAL: GitCredential = { protocol: "https", host: "git.example.test", username: "x-access-token", password: TOKEN }
+const EXPECTED_CREDENTIAL: GitCredential = { protocol: "https", host: "git.example.test", url: REMOTE_URL, username: "x-access-token", password: TOKEN }
 
 describe("a workspace bound to an account", () => {
   it("connects as the account: its token on the fetch and the first push, its name on the row, its token nowhere", async () => {
@@ -137,7 +141,8 @@ describe("a workspace bound to an account", () => {
     await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT)
     const server = await credentialServer((credential) => `you sent ${credential}`)
     rawGit(harness.dir, harness.sandbox.env, "remote", "set-url", "origin", server.url)
-    routes.rewrite = (credential) => (credential === undefined ? undefined : { ...credential, protocol: "http", host: server.host })
+    routes.urls.set(REMOTE_URL, server.url)
+    routes.rewrite = (credential) => (credential === undefined ? undefined : { ...credential, protocol: "http", host: server.host, url: server.url })
     const logged = [vi.spyOn(console, "warn"), vi.spyOn(console, "error")]
 
     const status = await harness.sync.syncNow(harness.workspaceId)
@@ -167,16 +172,50 @@ describe("a workspace bound to an account", () => {
     expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ remoteUrl: null, account: null })
   })
 
-  it("over SSH carries no token: the user's own key answers whichever account is bound", async () => {
-    const { harness, calls, credentials, routes, remote } = await accountHarness()
-    const sshUrl = "git@git.example.test:acme/tests.git"
-    routes.urls.set(sshUrl, remote.url)
+  it("is refused for an SSH remote, which signs in with the user's SSH key whichever account is named", async () => {
+    const { harness, calls, credentials } = await accountHarness()
 
-    const status = await harness.sync.connectRemote(harness.workspaceId, sshUrl, ACCOUNT)
+    for (const sshUrl of ["git@git.example.test:acme/tests.git", "ssh://git@git.example.test/acme/tests.git"]) {
+      await expect(harness.sync.connectRemote(harness.workspaceId, sshUrl, ACCOUNT)).rejects.toThrow("SSH remotes sign in with your SSH key")
+    }
 
-    expect(status).toMatchObject({ remoteUrl: sshUrl, account: ACCOUNT })
-    expect(calls.map((call) => call.credential)).toEqual([undefined, undefined])
+    expect(calls).toEqual([])
     expect(credentials).not.toHaveBeenCalled()
+    expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ remoteUrl: null, account: null })
+  })
+
+  it("refuses to connect as the account when the user's git rewrites the remote to SSH, before anything is sent", async () => {
+    const { harness, calls, credentials, routes } = await accountHarness()
+    // The remote as the user gave it, so that git, not the stand-in, decides where it goes.
+    routes.urls.delete(REMOTE_URL)
+    // `url.<base>.insteadOf`, as many set to push over SSH: git would reach the remote with the SSH key's identity.
+    rawGit(harness.sandbox.root, harness.sandbox.env, "config", "--global", "url.git@git.example.test:.insteadOf", "https://git.example.test/")
+
+    const error = await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(GitAccountUnavailableError)
+    expect((error as Error).message).toContain("resolves to ssh://git.example.test, which octo-personal cannot sign in to")
+    expect(calls).toEqual([])
+    expect(credentials).not.toHaveBeenCalled()
+    expect(harness.repositories.workspaceGit.get(harness.workspaceId)).toMatchObject({ remoteUrl: null, account: null })
+  })
+
+  it("fails a bound workspace's sync, sending nothing, once a rewrite or a pushInsteadOf sends it elsewhere", async () => {
+    const { harness, calls, credentials, remote } = await accountHarness()
+    await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT)
+    harness.repositories.workspaces.update(harness.workspaceId, { name: "Renamed" })
+    calls.length = 0
+    credentials.mockClear()
+    // Underneath the stand-in, git now pushes over SSH.
+    rawGit(harness.sandbox.root, harness.sandbox.env, "config", "--global", "url.git@git.example.test:acme/tests.git.pushInsteadOf", remote.url)
+
+    const status = await harness.sync.syncNow(harness.workspaceId)
+
+    expect(status).toMatchObject({ state: "error", account: ACCOUNT, lastError: { code: "account_unavailable" } })
+    expect(status.lastError?.message).toContain("resolves to ssh://git.example.test")
+    // The fetch still went as the account; the push was never attempted.
+    expect(calls.map((call) => call.command)).toEqual(["fetch"])
+    expect(credentials).toHaveBeenCalledTimes(1)
   })
 
   it("changes account on a connected workspace, clears a refusal that was the old account's, and goes back to none", async () => {

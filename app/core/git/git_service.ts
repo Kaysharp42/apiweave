@@ -406,6 +406,24 @@ export class GitService {
     await this.run("clone", ["clone", ...flags, "--", url, path.basename(destination)], parent, undefined, options.credential)
   }
 
+  /**
+   * The URL git will really reach for `remote` — to fetch, or with `push` to
+   * push — with the user's `url.<base>.insteadOf` and `pushInsteadOf` rules
+   * applied, which can turn an `https://` remote into an SSH one. Local: no
+   * network.
+   */
+  async remoteUrl(repoDir: string, remote: string, options: { readonly push?: boolean } = {}): Promise<string> {
+    assertRefName(remote)
+    const flags = options.push === true ? ["--push"] : []
+    return (await this.run("remote", ["remote", "get-url", ...flags, "--", remote], repoDir)).trim()
+  }
+
+  /** The URL git will really clone `url` from, `insteadOf` rules applied, run in `cwd`. Local: no network. */
+  async resolvedUrl(url: string, cwd: string): Promise<string> {
+    assertSafeRemoteUrl(url)
+    return (await this.run("lsRemote", ["ls-remote", "--get-url", "--", url], cwd)).trim()
+  }
+
   async remoteAdd(repoDir: string, name: string, url: string): Promise<void> {
     await this.remoteCommand(repoDir, "add", name, url)
   }
@@ -527,8 +545,8 @@ export class GitService {
     const timeoutMs = timeoutFor(command, this.timeouts)
     const outcome = await execGit(
       this.gitPath,
-      [...this.configArgs, ...(credential === undefined ? [] : credentialConfigArgs()), ...args],
-      { cwd, env: credential === undefined ? this.env : { ...this.env, ...credentialEnvironment(credential) }, timeoutMs, input },
+      [...this.configArgs, ...(credential === undefined ? [] : credentialConfigArgs(credential)), ...args],
+      { cwd, env: credential === undefined ? this.env : credentialEnvironment(this.env, credential), timeoutMs, input },
     )
     if (outcome.status === "exited" && outcome.exitCode === 0) {
       return outcome.stdout
