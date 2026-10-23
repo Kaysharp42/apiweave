@@ -407,15 +407,18 @@ export class GitService {
   }
 
   /**
-   * The URL git will really reach for `remote` — to fetch, or with `push` to
-   * push — with the user's `url.<base>.insteadOf` and `pushInsteadOf` rules
-   * applied, which can turn an `https://` remote into an SSH one. Local: no
+   * Every URL git will really reach for `remote` — to fetch, or with `push`
+   * to push — with the user's `url.<base>.insteadOf` and `pushInsteadOf`
+   * rules applied, which can turn an `https://` remote into an SSH one. All of
+   * them: a `[remote "origin"]` url or pushurl in the user's own config adds
+   * one ahead of the repository's, and a push goes to every one. Local: no
    * network.
    */
-  async remoteUrl(repoDir: string, remote: string, options: { readonly push?: boolean } = {}): Promise<string> {
+  async remoteUrls(repoDir: string, remote: string, options: { readonly push?: boolean } = {}): Promise<string[]> {
     assertRefName(remote)
-    const flags = options.push === true ? ["--push"] : []
-    return (await this.run("remote", ["remote", "get-url", ...flags, "--", remote], repoDir)).trim()
+    const flags = options.push === true ? ["--push", "--all"] : ["--all"]
+    const output = await this.run("remote", ["remote", "get-url", ...flags, "--", remote], repoDir)
+    return output.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0)
   }
 
   /** The URL git will really clone `url` from, `insteadOf` rules applied, run in `cwd`. Local: no network. */

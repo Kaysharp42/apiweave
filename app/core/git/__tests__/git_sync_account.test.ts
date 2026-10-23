@@ -53,7 +53,7 @@ function routed(git: GitService, routes: Routes, calls: NetworkCall[]): GitSyncG
     ...real,
     remoteAdd: (directory, name, url) => real.remoteAdd(directory, name, route(url)),
     remoteSetUrl: (directory, name, url) => real.remoteSetUrl(directory, name, route(url)),
-    remoteUrl: async (directory, name, options) => unroute(await real.remoteUrl(directory, name, options)),
+    remoteUrls: async (directory, name, options) => (await real.remoteUrls(directory, name, options)).map(unroute),
     resolvedUrl: async (url, cwd) => unroute(await real.resolvedUrl(route(url), cwd)),
     fetch: (directory, remote, options) => real.fetch(directory, remote, withCredential("fetch", options)),
     push: (directory, remote, branch, options) =>
@@ -216,6 +216,63 @@ describe("a workspace bound to an account", () => {
     // The fetch still went as the account; the push was never attempted.
     expect(calls.map((call) => call.command)).toEqual(["fetch"])
     expect(credentials).toHaveBeenCalledTimes(1)
+  })
+
+  it("fails a bound workspace's sync when git would reach more than one URL, sending nothing", async () => {
+    const { harness, calls, credentials } = await accountHarness()
+    await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT)
+    calls.length = 0
+    credentials.mockClear()
+    // A [remote "origin"] url in the user's own config: git fetches from it, and pushes to it as well.
+    rawGit(harness.sandbox.root, harness.sandbox.env, "config", "--global", "remote.origin.url", "https://mirror.example/acme/tests.git")
+
+    const status = await harness.sync.syncNow(harness.workspaceId)
+
+    expect(status).toMatchObject({ state: "error", lastError: { code: "account_unavailable" } })
+    expect(status.lastError?.message).toContain("resolves to 2 URLs (https://mirror.example, https://git.example.test)")
+    expect(calls).toEqual([])
+    expect(credentials).not.toHaveBeenCalled()
+  })
+
+  it("does not push as the account when a second pushurl would send the push elsewhere too", async () => {
+    const { harness, calls, remote } = await accountHarness()
+    await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT)
+    harness.repositories.workspaces.update(harness.workspaceId, { name: "Renamed" })
+    calls.length = 0
+    rawGit(harness.dir, harness.sandbox.env, "config", "--add", "remote.origin.pushurl", remote.url)
+    rawGit(harness.dir, harness.sandbox.env, "config", "--add", "remote.origin.pushurl", "https://backup.example/acme/tests.git")
+
+    const status = await harness.sync.syncNow(harness.workspaceId)
+
+    expect(status).toMatchObject({ state: "error", lastError: { code: "account_unavailable" } })
+    expect(calls.map((call) => call.command)).toEqual(["fetch"])
+  })
+
+  it("tells host and port apart: another port is another server, and :443 is HTTPS's own", async () => {
+    const { harness, calls, routes } = await accountHarness()
+    await expect(harness.sync.connectRemote(harness.workspaceId, "https://git.example.test:8443/acme/tests.git", ACCOUNT)).rejects.toThrow(
+      "this remote is on git.example.test:8443",
+    )
+
+    const explicitPort = "https://git.example.test:443/acme/tests.git"
+    routes.urls.set(explicitPort, makeBareRemote(harness.sandbox, "port-443.git").url)
+    const status = await harness.sync.connectRemote(harness.workspaceId, explicitPort, ACCOUNT)
+
+    expect(status).toMatchObject({ remoteUrl: explicitPort, account: ACCOUNT, state: "idle" })
+    // As git names the host to the helper: the URL's own text, port and all.
+    expect(calls.map((call) => call.credential?.host)).toEqual(["git.example.test:443", "git.example.test:443"])
+  })
+
+  it("fails the call when a rewrite moves a bound remote to another port", async () => {
+    const { harness, calls, routes } = await accountHarness()
+    routes.urls.delete(REMOTE_URL)
+    rawGit(harness.sandbox.root, harness.sandbox.env, "config", "--global", "url.https://git.example.test:8443/.insteadOf", "https://git.example.test/")
+
+    const error = await harness.sync.connectRemote(harness.workspaceId, REMOTE_URL, ACCOUNT).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(GitAccountUnavailableError)
+    expect((error as Error).message).toContain("resolves to https://git.example.test:8443")
+    expect(calls).toEqual([])
   })
 
   it("changes account on a connected workspace, clears a refusal that was the old account's, and goes back to none", async () => {

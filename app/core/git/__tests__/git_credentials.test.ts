@@ -210,10 +210,24 @@ describe("the URL git will really use", () => {
     rawGit(sandbox.root, sandbox.env, "config", "--global", "url.git@github.com:.insteadOf", "https://github.com/")
     rawGit(sandbox.root, sandbox.env, "config", "--global", "url.ssh://push.example/.pushInsteadOf", "https://github.com/")
 
-    expect(await sandbox.service.remoteUrl(dir, "origin")).toBe("git@github.com:acme/tests.git")
-    expect(await sandbox.service.remoteUrl(dir, "origin", { push: true })).toBe("ssh://push.example/acme/tests.git")
+    expect(await sandbox.service.remoteUrls(dir, "origin")).toEqual(["git@github.com:acme/tests.git"])
+    expect(await sandbox.service.remoteUrls(dir, "origin", { push: true })).toEqual(["ssh://push.example/acme/tests.git"])
     expect(await sandbox.service.resolvedUrl("https://github.com/acme/tests.git", sandbox.root)).toBe("git@github.com:acme/tests.git")
     expect(await sandbox.service.resolvedUrl("https://gitlab.com/acme/tests.git", sandbox.root)).toBe("https://gitlab.com/acme/tests.git")
+  })
+
+  it("lists every URL a push goes to, the user's own [remote \"origin\"] entries first", async () => {
+    const sandbox = makeSandbox()
+    const dir = await repoWithRemote(sandbox, "https://github.com/acme/tests.git")
+    rawGit(sandbox.root, sandbox.env, "config", "--global", "remote.origin.url", "https://mirror.example/acme/tests.git")
+
+    expect(await sandbox.service.remoteUrls(dir, "origin")).toEqual(["https://mirror.example/acme/tests.git", "https://github.com/acme/tests.git"])
+    rawGit(dir, sandbox.env, "config", "--add", "remote.origin.pushurl", "https://github.com/acme/tests.git")
+    rawGit(dir, sandbox.env, "config", "--add", "remote.origin.pushurl", "https://backup.example/acme/tests.git")
+    expect(await sandbox.service.remoteUrls(dir, "origin", { push: true })).toEqual([
+      "https://github.com/acme/tests.git",
+      "https://backup.example/acme/tests.git",
+    ])
   })
 })
 
