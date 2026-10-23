@@ -5,6 +5,7 @@ import {
   CloudDownload,
   CloudUpload,
   HardDrive,
+  HardDriveUpload,
   RefreshCw,
 } from "lucide-react";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
@@ -58,7 +59,7 @@ describe("describeGitSync", () => {
       gitSyncPrimaryLabel(trackedStatus(overrides));
 
     expect(label({ state: "merging" })).toBe("Review merge");
-    expect(label({ state: "diverged" })).toBe("Retry");
+    expect(label({ state: "diverged" })).toBe("Sync now");
     expect(label({ state: "error", lastError: { code: "timeout", message: "t" } })).toBe("Retry");
     expect(label({ readOnly: true })).toBe("Retry");
     expect(label({})).toBe("Sync now");
@@ -173,8 +174,10 @@ describe("describeGitSync", () => {
 
   it("keeps a local history's uncommitted edits local, and says so", () => {
     const view = describeGitSync(trackedStatus({ ...noRemote, uncommitted: true }));
-    expect(view).toMatchObject({ kind: "pending", label: "Local history · uncommitted", intent: "info", icon: HardDrive });
+    // Upload, not the settled local shape: an icon-only row still tells the two apart.
+    expect(view).toMatchObject({ kind: "pending", label: "Local history · uncommitted", intent: "info", icon: HardDriveUpload });
     expect(view.explanation).toMatch(/^You have edits that aren't committed yet\. APIWeave commits them about 30 seconds after your last edit\.$/);
+    expect(describeGitSync(trackedStatus(noRemote)).icon).toBe(HardDrive);
   });
 
   it("reports nothing for an untracked workspace: the header has no control and the switcher keeps its tile", () => {
