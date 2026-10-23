@@ -161,7 +161,7 @@ describe("describeGitSync", () => {
     expect(describeGitSync(trackedStatus(noRemote))).toMatchObject({
       kind: "local",
       label: "Local history",
-      intent: "default",
+      intent: "muted",
       icon: HardDrive,
     });
     expect(describeGitSync(trackedStatus({ ...noRemote, uncommitted: true })).explanation).not.toMatch(/push|remote/i);
@@ -181,6 +181,6 @@ describe("describeGitSync", () => {
   });
 
   it("reports nothing for an untracked workspace: the header has no control and the switcher keeps its tile", () => {
-    expect(describeGitSync(untrackedStatus)).toMatchObject({ kind: "untracked", label: "Not tracked", intent: "default", icon: null });
+    expect(describeGitSync(untrackedStatus)).toMatchObject({ kind: "untracked", label: "Not tracked", intent: "muted", icon: null });
   });
 });
