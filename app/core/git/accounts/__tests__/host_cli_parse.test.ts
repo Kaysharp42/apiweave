@@ -2,11 +2,14 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  lastLine,
   parseCliVersion,
   parseGhAccounts,
   parseGhToken,
   parseGlabAccounts,
   parseGlabCredential,
+  parseSignedInLogin,
+  parseSignInPrompt,
 } from "../host_cli_parse"
 
 /** Recorded from gh 2.97.0 with two github.com accounts signed in; the two logins are renamed, nothing else is changed. */
@@ -133,6 +136,70 @@ describe("parseGlabCredential", () => {
     ["nothing", ""],
   ])("refuses an answer with %s", (_what, output) => {
     expect(parseGlabCredential(output)).toBeUndefined()
+  })
+})
+
+/**
+ * Not recorded — no real sign-in was run. gh 2.97's lines with no terminal are
+ * `internal/authflow/flow.go`'s `DisplayCode` and non-interactive `BrowseURL`;
+ * the last are `pkg/cmd/auth/shared/login_flow.go`'s. glab's are
+ * `internal/oauth2/device.go`'s and `internal/commands/auth/login/login.go`'s.
+ */
+const GH_SIGN_IN = [
+  "",
+  "! First copy your one-time code: 3F2A-9C1B",
+  "Open this URL to continue in your web browser: https://github.com/login/device",
+  "✓ Authentication complete.",
+  "✓ Logged in as octo-personal",
+  "",
+].join("\n")
+
+const GLAB_SIGN_IN = [
+  "- Signing into gitlab.com",
+  "",
+  "First copy your one-time code: WXYZ-ABCD",
+  "Then open this URL on any device to authorize: https://gitlab.com/oauth/device",
+  "",
+  "Waiting for authorization...",
+  "✓ Logged in as tanuki",
+  "✓ Stored your credentials in the operating system keyring.",
+].join("\n")
+
+describe("parseSignInPrompt", () => {
+  it("reads gh's code and page", () => {
+    expect(parseSignInPrompt(GH_SIGN_IN, "github.com")).toEqual({ code: "3F2A-9C1B", url: "https://github.com/login/device" })
+  })
+
+  it("reads glab's device-flow code and page", () => {
+    expect(parseSignInPrompt(GLAB_SIGN_IN, "gitlab.com")).toEqual({ code: "WXYZ-ABCD", url: "https://gitlab.com/oauth/device" })
+  })
+
+  it("reads through colour codes, and a self-hosted host with a port", () => {
+    const coloured = "\x1b[0;33m!\x1b[0m First copy your one-time code: \x1b[0;1mAB12-CD34\x1b[0m\n\x1b[1mOpen this URL\x1b[0m to continue in your web browser: https://ghe.example.com/login/device\n"
+    expect(parseSignInPrompt(coloured, "ghe.example.com:8443")).toEqual({ code: "AB12-CD34", url: "https://ghe.example.com/login/device" })
+  })
+
+  it("waits until both the code and the page have arrived, each on a finished line", () => {
+    expect(parseSignInPrompt("! First copy your one-time code: 3F2A-9C1B\n", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("! First copy your one-time code: 3F2A-9C1B\nOpen this URL: https://github.com/lo", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("Open this URL to continue in your web browser: https://github.com/login/device\n", "github.com")).toBeUndefined()
+  })
+
+  it("refuses a page on another host, or over plain http: main would open it", () => {
+    expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen https://evil.example/login/device\n", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen https://github.com.evil.example/x\n", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen http://github.com/login/device\n", "github.com")).toBeUndefined()
+  })
+})
+
+describe("parseSignedInLogin and lastLine", () => {
+  it("read who signed in, and why a sign-in failed", () => {
+    expect(parseSignedInLogin(GH_SIGN_IN)).toBe("octo-personal")
+    expect(parseSignedInLogin(GLAB_SIGN_IN)).toBe("tanuki")
+    expect(parseSignedInLogin("! First copy your one-time code: 3F2A-9C1B\n")).toBeUndefined()
+    expect(lastLine("! First copy your one-time code: 3F2A-9C1B\nfailed to authenticate via web browser: access_denied\n\n")).toBe(
+      "failed to authenticate via web browser: access_denied",
+    )
   })
 })
 

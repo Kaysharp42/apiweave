@@ -3,18 +3,21 @@ import type { GitAccountList } from "@shared/types/GitAccountList"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import type { GitHostCli } from "@shared/types/GitHostCli"
 import type { GitProvider } from "@shared/types/GitProvider"
-import { GitAccountRefSchema } from "@shared/zod-schemas/GitAccountRefSchema"
+import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
 import { resolveExecutable, spawnCommandFor } from "../../agents/executable"
 import { GitAccountUnavailableError } from "../git_errors"
 import { execGit, type GitExecOutcome } from "../git_process"
 import type { GitCredential } from "../git_types"
 import {
   firstLine,
+  lastLine,
   parseCliVersion,
   parseGhAccounts,
   parseGhToken,
   parseGlabAccounts,
   parseGlabCredential,
+  parseSignedInLogin,
+  parseSignInPrompt,
   type ParsedAccounts,
 } from "./host_cli_parse"
 
@@ -24,6 +27,17 @@ export interface HostCliRunOptions {
   /** Written to the tool's stdin before it is closed. */
   readonly input?: string
   readonly timeoutMs: number
+  /** Told each piece of stderr as it arrives. */
+  readonly onStderr?: (text: string) => void
+  /** Aborting it kills the tool's process tree; the outcome is `cancelled`. */
+  readonly signal?: AbortSignal | undefined
+}
+
+export interface HostCliSignInOptions {
+  /** Told the one-time code and the page to enter it on, once the tool prints them. */
+  readonly onPrompt: (prompt: { readonly code: string; readonly url: string }) => void
+  /** Aborting it cancels the sign-in: the tool's process tree is killed. */
+  readonly signal?: AbortSignal | undefined
 }
 
 /** Runs `gh` or `glab` and reports how it went; never rejects. A tool that is not on PATH is a `spawn_failed` with `ENOENT`. */
@@ -38,6 +52,13 @@ const PROVIDERS: readonly GitProvider[] = ["github", "gitlab"]
 const COMMANDS: Readonly<Record<GitProvider, HostCliCommand>> = { github: "gh", gitlab: "glab" }
 
 const VERSION_TIMEOUT_MS = 10_000
+/** A one-time code lives 15 minutes on GitHub and GitLab; the tool gives up then, and this a little after. */
+const SIGN_IN_TIMEOUT_MS = 16 * 60_000
+
+const SIGN_IN_ARGS: Readonly<Record<GitProvider, (host: string) => readonly string[]>> = {
+  github: (host) => ["auth", "login", `--hostname=${host}`, "--web", "--skip-ssh-key"],
+  gitlab: (host) => ["auth", "login", `--hostname=${host}`, "--device", "--git-protocol=https"],
+}
 /** Both status commands ask the host about every account they hold. */
 const STATUS_TIMEOUT_MS = 30_000
 const TOKEN_TIMEOUT_MS = 30_000
@@ -78,6 +99,8 @@ export function hostCliRunner(env: NodeJS.ProcessEnv = process.env): HostCliRunn
       timeoutMs: options.timeoutMs,
       input: options.input,
       verbatim: spawn.verbatim,
+      onStderr: options.onStderr,
+      signal: options.signal,
     })
   }
 }
@@ -89,6 +112,7 @@ function succeeded(outcome: GitExecOutcome): boolean {
 /** Why a tool did not answer, from stderr alone: stdout is where a token would be. */
 function failureText(command: HostCliCommand, outcome: GitExecOutcome): string {
   if (outcome.status === "timeout") return `${command} did not answer in time`
+  if (outcome.status === "cancelled") return `${command} was stopped`
   if (outcome.status === "spawn_failed") {
     return outcome.errorCode === "ENOENT" ? `${command} is not installed` : `${command} could not start (${outcome.errorCode ?? "unknown error"})`
   }
@@ -156,6 +180,50 @@ export class HostCliService {
     const checked = GitAccountRefSchema.safeParse({ provider: account.provider, host: account.host, login: account.login })
     if (!checked.success) throw new GitAccountUnavailableError("that is not an account APIWeave can sign in as")
     return checked.data.provider === "github" ? this.githubToken(checked.data) : this.gitlabToken(checked.data)
+  }
+
+  /**
+   * Sign in to `host` with the provider's own tool, in the browser, and
+   * resolve with the account it signed in as. The tool runs with no terminal
+   * and prints a one-time code and a page; `onPrompt` is told both, once, and
+   * the tool then waits — for as long as the code lives — until the user has
+   * entered it there. Aborting `signal` kills the tool's process tree.
+   *
+   * gh: `auth login --web` (the device flow; with no terminal it neither
+   * waits for Enter nor offers to configure git) — and, as from a terminal,
+   * the account becomes gh's active one on the host. `--git-protocol` is not
+   * passed: gh keeps one protocol per host for every account on it, and the
+   * user's choice stays theirs. glab: `auth login --device`, the flow that
+   * prints a code (`--web` opens a browser from a fixed local port and prints
+   * none); `--git-protocol=https`, since glab keeps one account per host and
+   * the setting is that account's. Neither touches git's configuration.
+   *
+   * Rejects with the tool's own last words when it fails, and when cancelled.
+   */
+  async signIn(provider: GitProvider, host: string, options: HostCliSignInOptions): Promise<GitAccountRef> {
+    const checked = GitHostSchema.safeParse(host)
+    if (!checked.success) throw new Error(`'${host}' is not a host name APIWeave can sign in to`)
+    const command = COMMANDS[provider]
+    let stderr = ""
+    let prompted = false
+    const outcome = await this.run(command, SIGN_IN_ARGS[provider](checked.data), {
+      timeoutMs: SIGN_IN_TIMEOUT_MS,
+      signal: options.signal,
+      onStderr: (text) => {
+        stderr += text
+        const prompt = prompted ? undefined : parseSignInPrompt(stderr, checked.data)
+        if (prompt === undefined) return
+        prompted = true
+        options.onPrompt(prompt)
+      },
+    })
+    if (outcome.status === "cancelled") throw new Error("Sign-in was cancelled.")
+    if (outcome.status === "timeout") throw new Error(`${command} gave up waiting for the code to be entered. Start the sign-in again.`)
+    const login = succeeded(outcome) ? parseSignedInLogin(outcome.stderr) : undefined
+    if (login === undefined) {
+      throw new Error(`${command} could not sign in to ${checked.data}: ${lastLine(outcome.stderr) ?? failureText(command, outcome)}`)
+    }
+    return { provider, host: checked.data, login }
   }
 
   private async detectOne(provider: GitProvider): Promise<GitHostCli> {

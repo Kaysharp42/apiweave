@@ -5,7 +5,9 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron"
 import { z } from "zod"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
-import { GitAccountRefSchema } from "@shared/zod-schemas/GitAccountRefSchema"
+import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
+import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -14,6 +16,9 @@ import { GitIdentityMissingError } from "../core/git/git_errors"
 import { GitService } from "../core/git/git_service"
 import { GitSyncService, type GitSyncRepositories } from "../core/git/git_sync_service"
 import { GIT_CHANNELS } from "../core/ipc/channels"
+import { getLogger } from "../core/logging/logger"
+
+const log = getLogger("git-sign-in")
 
 /** `requireTrustedSender` from the composition root: refuses any sender but the app's own document. */
 type TrustedSenderGuard = <Args extends unknown[], R>(
@@ -84,6 +89,8 @@ function accountOf(value: unknown): GitAccountRef | null {
   return AccountSchema.parse(value ?? null)
 }
 
+const ProviderSchema = z.enum(["github", "gitlab"])
+
 const MergePickSchema = z
   .object({
     // A file conflict names its path, which may run to 4096 characters.
@@ -123,7 +130,8 @@ export function registerGitHandlers(
   guard: TrustedSenderGuard,
   gitSync: GitSyncService,
   hostCli: HostCliService,
-): void {
+  signInPorts: GitSignInPorts,
+): GitSignIns {
   const handleWorkspace = (channel: string, call: (workspaceId: string) => Promise<unknown>): void => {
     ipcMain.handle(channel, guard((workspaceId: unknown) => call(workspaceIdOf(workspaceId))))
   }
@@ -174,4 +182,74 @@ export function registerGitHandlers(
     guard((url: unknown, account: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url), accountOf(account))),
   )
   ipcMain.handle(GIT_CHANNELS.listAccounts, guard(() => hostCli.listAccounts()))
+  const signIns = new GitSignIns(hostCli, signInPorts)
+  ipcMain.handle(
+    GIT_CHANNELS.signIn,
+    guard((provider: unknown, host: unknown) => signIns.signIn(ProviderSchema.parse(provider), GitHostSchema.parse(host))),
+  )
+  ipcMain.handle(GIT_CHANNELS.cancelSignIn, guard(() => signIns.cancel()))
+  ipcMain.handle(GIT_CHANNELS.openSignInPage, guard(() => signIns.openPage()))
+  return signIns
+}
+
+/** What a sign-in needs from the composition root. */
+export interface GitSignInPorts {
+  /** Opens a page in the user's browser (`shell.openExternal`). */
+  readonly openExternal: (url: string) => Promise<void>
+  /** Shows the code to the renderer (`GIT_SIGN_IN_PROMPT_CHANNEL`). */
+  readonly showPrompt: (prompt: GitSignInPrompt) => void
+  /** Brings the app back to the front once the browser part is done. */
+  readonly focus: () => void
+}
+
+/**
+ * The one sign-in that may run at a time. Main opens the page the tool
+ * printed, and is the only one that can: "Open browser again" asks main to
+ * reopen the page it holds, so no URL from the renderer ever reaches
+ * `openExternal`. {@link cancel} kills the tool's process tree; so does
+ * quitting the app.
+ */
+export class GitSignIns {
+  private current: { readonly controller: AbortController; url: string | null } | undefined
+
+  public constructor(
+    private readonly hostCli: HostCliService,
+    private readonly ports: GitSignInPorts,
+  ) {}
+
+  public async signIn(provider: GitProvider, host: string): Promise<GitAccountRef> {
+    if (this.current !== undefined) throw new Error("A sign-in is already in progress. Finish or cancel it first.")
+    const session: { readonly controller: AbortController; url: string | null } = { controller: new AbortController(), url: null }
+    this.current = session
+    try {
+      const account = await this.hostCli.signIn(provider, host, {
+        signal: session.controller.signal,
+        onPrompt: ({ code, url }) => {
+          session.url = url
+          this.ports.showPrompt({ provider, host, code, url })
+          this.openQuietly(url)
+        },
+      })
+      this.ports.focus()
+      return account
+    } finally {
+      this.current = undefined
+    }
+  }
+
+  /** Stop the sign-in in progress, if any; its `signIn` rejects as cancelled. */
+  public cancel(): void {
+    this.current?.controller.abort()
+  }
+
+  /** Open the page of the sign-in in progress again, once the tool has printed one. */
+  public openPage(): void {
+    const url = this.current?.url ?? null
+    if (url !== null) this.openQuietly(url)
+  }
+
+  /** A browser that does not open is not a failed sign-in: the dialog shows the page to open by hand. */
+  private openQuietly(url: string): void {
+    void this.ports.openExternal(url).catch((error: unknown) => log.warn("could not open the sign-in page in the browser", error))
+  }
 }

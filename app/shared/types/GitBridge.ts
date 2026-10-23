@@ -1,6 +1,8 @@
 // fallow-ignore-file code-duplication -- a bridge interface is a list of parallel one-line method signatures; the run is the interface's shape, not shared behaviour to extract.
 import type { GitAccountList } from "./GitAccountList"
 import type { GitAccountRef } from "./GitAccountRef"
+import type { GitProvider } from "./GitProvider"
+import type { GitSignInPrompt } from "./GitSignInPrompt"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { GitMergeConflict } from "./GitMergeConflict"
 import type { GitMergePick } from "./GitMergePick"
@@ -125,4 +127,19 @@ export interface GitBridge {
    * token ever crosses this bridge: the tools keep them.
    */
   readonly listAccounts: () => Promise<GitAccountList>
+  /**
+   * Sign in to `host` with `gh` or `glab`, in the browser: main runs the tool,
+   * pushes its one-time code through `onSignInPrompt`, opens the host's page,
+   * and resolves with the account once the code has been entered there. One
+   * at a time. Rejects with the tool's reason, and when cancelled. gh makes
+   * the new account its active one on the host, as `gh auth login` does in a
+   * terminal; glab replaces the one account it keeps for the host. Neither
+   * changes git's configuration.
+   */
+  readonly signIn: (provider: GitProvider, host: string) => Promise<GitAccountRef>
+  /** Stop the sign-in in progress: its tool is killed, and `signIn` rejects. */
+  readonly cancelSignIn: () => Promise<void>
+  /** Open the sign-in in progress's page in the browser again. Only main's own copy of it is opened. */
+  readonly openSignInPage: () => Promise<void>
+  readonly onSignInPrompt: (callback: (prompt: GitSignInPrompt) => void) => () => void
 }

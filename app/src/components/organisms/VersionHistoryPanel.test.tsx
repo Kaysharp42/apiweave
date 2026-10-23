@@ -199,6 +199,24 @@ describe("VersionHistoryPanel", () => {
       expect(bridge.setAccount).toHaveBeenLastCalledWith("ws-1", null);
     });
 
+    it("signs in to the remote's host from the connect form, and connects as the account just added", async () => {
+      const user = userEvent.setup();
+      const added = vi.fn().mockResolvedValueOnce({ clis: [], accounts: [] }).mockResolvedValue({ clis: [], accounts: [PERSONAL] });
+      const { bridge } = installGitBridge(local(), { listAccounts: added, signIn: vi.fn(async () => ref(PERSONAL)) });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      await user.type(await screen.findByRole("textbox", { name: /remote url/i }), "https://github.com/acme/tests.git");
+      await user.click(screen.getByRole("button", { name: /sign in to github/i }));
+      expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("github.com");
+      await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+      await user.click(await screen.findByRole("button", { name: /^done$/i }));
+
+      const picker = await screen.findByRole("combobox", { name: /account/i });
+      await waitFor(() => expect(picker).toHaveValue("github|github.com|octo-personal"));
+      await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+      expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "https://github.com/acme/tests.git", ref(PERSONAL));
+    });
+
     it("keeps showing a bound account that is no longer signed in, rather than changing it", async () => {
       installGitBridge(trackedStatus({ account: { provider: "github", host: "github.com", login: "gone" } }));
       render(<VersionHistoryPanel workspaceId="ws-1" />);

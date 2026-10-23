@@ -123,10 +123,15 @@ export interface GitExecOptions {
   readonly input?: string | undefined
   /** `args` is an escaped cmd.exe command line (`spawnCommandFor` on a `.cmd` shim), passed as it is. */
   readonly verbatim?: boolean
+  /** Told each piece of stderr as it arrives, for a process whose output matters before it exits. */
+  readonly onStderr?: ((text: string) => void) | undefined
+  /** Aborting it kills the process tree, as the timeout does, and resolves `cancelled`. */
+  readonly signal?: AbortSignal | undefined
 }
 
 export interface GitExecOutcome {
-  readonly status: "exited" | "timeout" | "spawn_failed"
+  /** `cancelled` only when the caller's `signal` aborted it; git itself is never given one. */
+  readonly status: "exited" | "timeout" | "cancelled" | "spawn_failed"
   readonly exitCode: number | undefined
   /** The errno string (`ENOENT`) when git could not be started. */
   readonly errorCode: string | undefined
@@ -209,13 +214,14 @@ async function terminateAndWait(child: ChildProcess): Promise<void> {
  * every outcome and never rejects, so the caller decides what a non-zero exit
  * means.
  *
- * The timeout resolves on its own path instead of waiting for execFile's
- * callback: a `git-remote-http` helper inherits the stderr pipe, so a pipe left
- * open would keep the callback from ever coming.
+ * The timeout, and a cancel through `signal`, resolve on their own path
+ * instead of waiting for execFile's callback: a `git-remote-http` helper
+ * inherits the stderr pipe, so a pipe left open would keep the callback from
+ * ever coming.
  */
 export function execGit(file: string, args: readonly string[], options: GitExecOptions): Promise<GitExecOutcome> {
   return new Promise((resolve) => {
-    let timedOut = false
+    let stopped = false
     const child = execFile(
       file,
       [...args],
@@ -229,21 +235,31 @@ export function execGit(file: string, args: readonly string[], options: GitExecO
       },
       (error, stdout, stderr) => {
         clearTimeout(timer)
-        if (!timedOut) {
+        options.signal?.removeEventListener("abort", cancel)
+        if (!stopped) {
           resolve(outcomeOf(error, stdout, stderr))
         }
       },
     )
+    const { onStderr } = options
+    if (onStderr !== undefined) child.stderr?.on("data", (chunk: string | Buffer) => onStderr(String(chunk)))
     // Closing stdin keeps a stray read from waiting for input; only a batch command is given any.
     child.stdin?.end(options.input)
-    const timer = setTimeout(() => {
-      timedOut = true
+    const stop = (status: "timeout" | "cancelled"): void => {
+      if (stopped) return
+      stopped = true
+      clearTimeout(timer)
+      options.signal?.removeEventListener("abort", cancel)
       child.stdout?.destroy()
       child.stderr?.destroy()
-      // Bounded: the terminate stage reports the timeout even if the kill never completes.
+      // Bounded: the terminate stage reports the outcome even if the kill never completes.
       void awaitWithin(terminateAndWait(child), TERMINATE_TIMEOUT_MS).then(() =>
-        resolve({ status: "timeout", exitCode: undefined, errorCode: undefined, stdout: "", stderr: "" }),
+        resolve({ status, exitCode: undefined, errorCode: undefined, stdout: "", stderr: "" }),
       )
-    }, options.timeoutMs)
+    }
+    const cancel = (): void => stop("cancelled")
+    const timer = setTimeout(() => stop("timeout"), options.timeoutMs)
+    if (options.signal?.aborted === true) cancel()
+    else options.signal?.addEventListener("abort", cancel, { once: true })
   })
 }

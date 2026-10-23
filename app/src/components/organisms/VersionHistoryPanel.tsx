@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { GitBranch } from "lucide-react";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
+import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
@@ -12,6 +13,7 @@ import { FormField } from "../molecules/FormField";
 import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
+import { GitSignInDialog } from "./GitSignInDialog";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
@@ -92,6 +94,17 @@ function AuthorForm({ busy, onCommit }: GitAuthorFormProps) {
   );
 }
 
+const DEFAULT_HOSTS: Readonly<Record<GitProvider, string>> = {
+  github: "github.com",
+  gitlab: "gitlab.com",
+};
+
+/** The remote's host, unless it is the other provider's own — then the provider's default. */
+function signInHost(provider: GitProvider, remote: string | null): string {
+  const other = provider === "github" ? DEFAULT_HOSTS.gitlab : DEFAULT_HOSTS.github;
+  return remote === null || remote === other ? DEFAULT_HOSTS[provider] : remote;
+}
+
 interface RemoteSectionProps {
   readonly remoteUrl: string | null;
   readonly branch: string;
@@ -113,9 +126,34 @@ function RemoteSection({
 }: RemoteSectionProps) {
   const [url, setUrl] = useState("");
   const [chosen, setChosen] = useState<GitAccountRef | null>(null);
-  const accounts = useGitAccounts();
+  const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
+  const { accounts, reload } = useGitAccounts();
   // A bound account stays shown even when no tool lists it any more.
   const offerAccounts = accounts.length > 0 || account !== null;
+  const host = remoteHost(remoteUrl ?? url.trim());
+  const signIn = (
+    <div className="flex flex-wrap gap-2">
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("github")}>
+        Sign in to GitHub…
+      </Button>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("gitlab")}>
+        Sign in to GitLab…
+      </Button>
+      {signingIn !== null && (
+        <GitSignInDialog
+          isOpen
+          provider={signingIn}
+          defaultHost={signInHost(signingIn, host)}
+          onClose={() => setSigningIn(null)}
+          onSignedIn={(signedIn) => {
+            reload();
+            // A new account is what the user is about to connect with; a connected workspace's stays theirs to change.
+            if (remoteUrl === null) setChosen(signedIn);
+          }}
+        />
+      )}
+    </div>
+  );
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -151,6 +189,7 @@ function RemoteSection({
               disabled={busy}
             />
           )}
+          {signIn}
           <Button
             type="submit"
             variant="primary"
@@ -171,6 +210,7 @@ function RemoteSection({
               disabled={busy}
             />
           )}
+          {signIn}
           <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
             Disconnect
           </Button>
