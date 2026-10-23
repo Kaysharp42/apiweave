@@ -12,7 +12,9 @@ import { git } from "../utils/apiweaveClient";
  *
  * The map is empty with no bridge (the browser build) and stays empty on a
  * failed load: the icons are an addition to the rows, never a reason to show
- * an error where a workspace list should be.
+ * an error where a workspace list should be. A failed load is not retried —
+ * the list is read once, when the switcher mounts — but a status main pushes
+ * later still reaches its row.
  */
 export function useWorkspaceGitStatuses(): ReadonlyMap<string, WorkspaceGitStatus> {
   const available = git.isAvailable();
