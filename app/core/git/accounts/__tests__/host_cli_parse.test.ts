@@ -216,15 +216,30 @@ describe("parseSignInPrompt", () => {
     expect(parseSignInPrompt(coloured, "ghe.example.com:8443")).toEqual({ code: "AB12-CD34", url: "https://ghe.example.com/login/device" })
   })
 
-  it("waits until both the code and the page have arrived, each on a finished line", () => {
+  it("waits until the page's line has ended", () => {
     expect(parseSignInPrompt("! First copy your one-time code: 3F2A-9C1B\n", "github.com")).toBeUndefined()
     expect(parseSignInPrompt("! First copy your one-time code: 3F2A-9C1B\nOpen this URL: https://github.com/lo", "github.com")).toBeUndefined()
-    expect(parseSignInPrompt("Open this URL to continue in your web browser: https://github.com/login/device\n", "github.com")).toBeUndefined()
   })
 
-  it("refuses a page on another host, or over plain http: main would open it", () => {
+  it("reads the code from gh's clipboard line too (gh 2.103's `clipboard` setting)", () => {
+    // gh v2.103.0 internal/authflow/flow.go, when the copy succeeds.
+    const clipboard = "! One-time code (3F2A-9C1B) copied to clipboard\nOpen this URL to continue in your web browser: https://github.com/login/device\n"
+    expect(parseSignInPrompt(clipboard, "github.com")).toEqual({ code: "3F2A-9C1B", url: "https://github.com/login/device" })
+  })
+
+  it("reads a page with no code: a GitHub Enterprise Server with no device flow, whose browser redirect finishes the sign-in", () => {
+    // cli/oauth v1.2.2 falls back to WebAppFlow, which only calls BrowseURL.
+    const webFlow = "\nOpen this URL to continue in your web browser: https://ghe.example.com/login/oauth/authorize?client_id=178c6fc778ccc68e1d6a&redirect_uri=http%3A%2F%2Flocalhost%2F&scope=repo&state=abc\n"
+    expect(parseSignInPrompt(webFlow, "ghe.example.com")).toEqual({
+      code: null,
+      url: "https://ghe.example.com/login/oauth/authorize?client_id=178c6fc778ccc68e1d6a&redirect_uri=http%3A%2F%2Flocalhost%2F&scope=repo&state=abc",
+    })
+  })
+
+  it("refuses a page anywhere but exactly the host, or over plain http: main would open it", () => {
     expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen https://evil.example/login/device\n", "github.com")).toBeUndefined()
     expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen https://github.com.evil.example/x\n", "github.com")).toBeUndefined()
+    expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen https://gist.github.com/login/device\n", "github.com")).toBeUndefined()
     expect(parseSignInPrompt("one-time code: 3F2A-9C1B\nOpen http://github.com/login/device\n", "github.com")).toBeUndefined()
   })
 })

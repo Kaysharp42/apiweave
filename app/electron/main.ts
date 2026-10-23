@@ -332,6 +332,15 @@ async function createWindow(): Promise<boolean> {
       })
   })
 
+  // A sign-in's dialog lives in this document. Once the document goes — a
+  // reload, a crash — nothing can show its code or cancel it, so its gh or
+  // glab is stopped rather than left waiting for a code nobody sees.
+  const dropSignIn = (): void => void gitSignIns?.cancel()
+  win.webContents.on("render-process-gone", dropSignIn)
+  win.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) dropSignIn()
+  })
+
   // Never let the privileged app:// document navigate to attacker-controlled
   // content — that content would inherit the same preload/IPC bridge.
   win.webContents.on("will-navigate", (event, url) => {
@@ -1186,8 +1195,11 @@ app.on("before-quit", (event) => {
     shutdowns.push(scheduler.shutdown(2000))
   }
 
-  gitSignIns?.cancel()
-  gitSignIns = null
+  // A sign-in's gh or glab is killed, and the quit waits until it has gone.
+  if (gitSignIns !== null) {
+    shutdowns.push(gitSignIns.cancel())
+    gitSignIns = null
+  }
 
   // A commit in flight still writes its outcome to the database.
   if (gitSync !== null) {

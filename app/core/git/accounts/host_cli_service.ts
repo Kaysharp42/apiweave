@@ -35,7 +35,7 @@ export interface HostCliRunOptions {
 
 export interface HostCliSignInOptions {
   /** Told the one-time code and the page to enter it on, once the tool prints them. */
-  readonly onPrompt: (prompt: { readonly code: string; readonly url: string }) => void
+  readonly onPrompt: (prompt: { readonly code: string | null; readonly url: string }) => void
   /** Aborting it cancels the sign-in: the tool's process tree is killed. */
   readonly signal?: AbortSignal | undefined
 }
@@ -56,7 +56,7 @@ const VERSION_TIMEOUT_MS = 10_000
 const SIGN_IN_TIMEOUT_MS = 16 * 60_000
 
 const SIGN_IN_ARGS: Readonly<Record<GitProvider, (host: string) => readonly string[]>> = {
-  github: (host) => ["auth", "login", `--hostname=${host}`, "--web", "--skip-ssh-key"],
+  github: (host) => ["auth", "login", `--hostname=${host}`, "--web", "--skip-ssh-key", "--clipboard=false"],
   gitlab: (host) => ["auth", "login", `--hostname=${host}`, "--device", "--git-protocol=https"],
 }
 /** Both status commands ask the host about every account they hold. */
@@ -185,13 +185,17 @@ export class HostCliService {
   /**
    * Sign in to `host` with the provider's own tool, in the browser, and
    * resolve with the account it signed in as. The tool runs with no terminal
-   * and prints a one-time code and a page; `onPrompt` is told both, once, and
-   * the tool then waits — for as long as the code lives — until the user has
-   * entered it there. Aborting `signal` kills the tool's process tree.
+   * and prints a page, with a one-time code to enter there when the host has
+   * a device flow; `onPrompt` is told them once, and the tool then waits —
+   * for as long as the code lives — until the user has finished in the
+   * browser. Aborting `signal` kills the tool's process tree.
    *
    * gh: `auth login --web` (the device flow; with no terminal it neither
-   * waits for Enter nor offers to configure git) — and, as from a terminal,
-   * the account becomes gh's active one on the host. `--git-protocol` is not
+   * waits for Enter nor offers to configure git; on a GitHub Enterprise
+   * Server without one, the web flow, which prints the page alone) — and, as
+   * from a terminal, the account becomes gh's active one on the host.
+   * `--clipboard=false`: gh 2.103's `clipboard` setting would otherwise
+   * overwrite the user's clipboard with the code. `--git-protocol` is not
    * passed: gh keeps one protocol per host for every account on it, and the
    * user's choice stays theirs. glab: `auth login --device`, the flow that
    * prints a code (`--web` opens a browser from a fixed local port and prints
@@ -219,11 +223,13 @@ export class HostCliService {
     })
     if (outcome.status === "cancelled") throw new Error("Sign-in was cancelled.")
     if (outcome.status === "timeout") throw new Error(`${command} gave up waiting for the code to be entered. Start the sign-in again.`)
-    const login = succeeded(outcome) ? parseSignedInLogin(outcome.stderr) : undefined
-    if (login === undefined) {
+    if (!succeeded(outcome)) {
       throw new Error(`${command} could not sign in to ${checked.data}: ${lastLine(outcome.stderr) ?? failureText(command, outcome)}`)
     }
-    return { provider, host: checked.data, login }
+    // Checked like any account from outside main: it is bound, stored and passed to `--user` later.
+    const account = GitAccountRefSchema.safeParse({ provider, host: checked.data, login: parseSignedInLogin(outcome.stderr) })
+    if (!account.success) throw new Error(`${command} signed in to ${checked.data} but did not say as whom; check its accounts and try again.`)
+    return account.data
   }
 
   private async detectOne(provider: GitProvider): Promise<GitHostCli> {

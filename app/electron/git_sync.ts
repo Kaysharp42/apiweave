@@ -89,7 +89,6 @@ function accountOf(value: unknown): GitAccountRef | null {
   return AccountSchema.parse(value ?? null)
 }
 
-const ProviderSchema = z.enum(["github", "gitlab"])
 
 const MergePickSchema = z
   .object({
@@ -185,7 +184,13 @@ export function registerGitHandlers(
   const signIns = new GitSignIns(hostCli, signInPorts)
   ipcMain.handle(
     GIT_CHANNELS.signIn,
-    guard((provider: unknown, host: unknown) => signIns.signIn(ProviderSchema.parse(provider), GitHostSchema.parse(host))),
+    guard((provider: unknown, host: unknown) => {
+      const checkedProvider = GitAccountRefSchema.shape.provider.safeParse(provider)
+      if (!checkedProvider.success) throw new Error("APIWeave signs in to GitHub or GitLab only.")
+      const checkedHost = GitHostSchema.safeParse(host)
+      if (!checkedHost.success) throw new Error("That is not a host name APIWeave can sign in to, such as github.com or gitlab.example.com.")
+      return signIns.signIn(checkedProvider.data, checkedHost.data)
+    }),
   )
   ipcMain.handle(GIT_CHANNELS.cancelSignIn, guard(() => signIns.cancel()))
   ipcMain.handle(GIT_CHANNELS.openSignInPage, guard(() => signIns.openPage()))
@@ -202,44 +207,65 @@ export interface GitSignInPorts {
   readonly focus: () => void
 }
 
+/** One sign-in's tool: how to stop it, the page it printed, and when it has ended. */
+interface SignInSession {
+  readonly controller: AbortController
+  url: string | null
+  settled: Promise<void>
+}
+
 /**
  * The one sign-in that may run at a time. Main opens the page the tool
  * printed, and is the only one that can: "Open browser again" asks main to
  * reopen the page it holds, so no URL from the renderer ever reaches
- * `openExternal`. {@link cancel} kills the tool's process tree; so does
- * quitting the app.
+ * `openExternal`. {@link cancel} kills the tool's process tree, as do a new
+ * sign-in, the window reloading or its renderer dying, and quitting the app.
  */
 export class GitSignIns {
-  private current: { readonly controller: AbortController; url: string | null } | undefined
+  private current: SignInSession | undefined
 
   public constructor(
     private readonly hostCli: HostCliService,
     private readonly ports: GitSignInPorts,
   ) {}
 
+  /**
+   * A new sign-in replaces one still waiting: only the app's own window can
+   * ask, so the one waiting belongs to a dialog that is gone — a reload, a
+   * crash — and would otherwise hold the tool, and lock out every new
+   * attempt, until its code expired.
+   */
   public async signIn(provider: GitProvider, host: string): Promise<GitAccountRef> {
-    if (this.current !== undefined) throw new Error("A sign-in is already in progress. Finish or cancel it first.")
-    const session: { readonly controller: AbortController; url: string | null } = { controller: new AbortController(), url: null }
+    while (this.current !== undefined) await this.cancel()
+    const session: SignInSession = { controller: new AbortController(), url: null, settled: Promise.resolve() }
     this.current = session
+    const running = this.hostCli.signIn(provider, host, {
+      signal: session.controller.signal,
+      onPrompt: ({ code, url }) => {
+        session.url = url
+        this.ports.showPrompt({ provider, host, code, url })
+        this.openQuietly(url)
+      },
+    })
+    session.settled = running.then(
+      () => undefined,
+      () => undefined,
+    )
     try {
-      const account = await this.hostCli.signIn(provider, host, {
-        signal: session.controller.signal,
-        onPrompt: ({ code, url }) => {
-          session.url = url
-          this.ports.showPrompt({ provider, host, code, url })
-          this.openQuietly(url)
-        },
-      })
+      const account = await running
       this.ports.focus()
       return account
     } finally {
-      this.current = undefined
+      if (this.current === session) this.current = undefined
     }
   }
 
-  /** Stop the sign-in in progress, if any; its `signIn` rejects as cancelled. */
-  public cancel(): void {
-    this.current?.controller.abort()
+  /** Stop the sign-in in progress, if any — its `signIn` rejects as cancelled — and resolve once its tool has gone. */
+  public async cancel(): Promise<void> {
+    const session = this.current
+    if (session === undefined) return
+    session.controller.abort()
+    await session.settled
   }
 
   /** Open the page of the sign-in in progress again, once the tool has printed one. */

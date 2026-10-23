@@ -41,7 +41,9 @@ describe("GitSignInDialog", () => {
     const { bridge, prompt } = installGitBridge(untrackedStatus, { signIn: run.signIn });
     const { onSignedIn } = renderDialog();
 
-    expect(screen.getByText(/gh makes this account its active account on github\.com/)).toBeInTheDocument();
+    expect(screen.getByText(/gh makes this account its active account on github\.com/)).toHaveTextContent(
+      "gh commands, and repositories that use gh's credential helper, will act as this account",
+    );
     expect(screen.getByText(/Your git configuration is not changed/)).toBeInTheDocument();
     expect(run.signIn).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
@@ -62,6 +64,51 @@ describe("GitSignInDialog", () => {
     expect(await screen.findByText(/Signed in to github\.com as/)).toHaveTextContent("Signed in to github.com as octo.");
     expect(onSignedIn).toHaveBeenCalledWith(ACCOUNT);
     expect(bridge.cancelSignIn).not.toHaveBeenCalled();
+  });
+
+  it("copies the code, and reads it out as the step changes", async () => {
+    // user-event puts a clipboard of its own in place, which the copy writes to.
+    const user = userEvent.setup();
+    const { prompt } = installGitBridge(untrackedStatus, { signIn: pending().signIn });
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+    act(() => prompt(PROMPT));
+    expect(screen.getByLabelText("One-time code").closest("[aria-live]")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByText("One-time code")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Copy one-time code" }));
+
+    expect(await navigator.clipboard.readText()).toBe("3F2A-9C1B");
+  });
+
+  it("sends the user to the browser alone when the host has no device flow and so no code", async () => {
+    const user = userEvent.setup();
+    const { bridge, prompt } = installGitBridge(untrackedStatus, { signIn: pending().signIn });
+    renderDialog("github", "ghe.example.com");
+
+    await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+    act(() => prompt({ provider: "github", host: "ghe.example.com", code: null, url: "https://ghe.example.com/login/oauth/authorize?client_id=x" }));
+
+    expect(screen.getByText(/Finish signing in in your browser/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("One-time code")).toBeNull();
+    await user.click(screen.getByRole("button", { name: /open browser again/i }));
+    expect(bridge.openSignInPage).toHaveBeenCalledOnce();
+  });
+
+  it("will not start on a host that is not a host name", async () => {
+    const user = userEvent.setup();
+    const { bridge } = installGitBridge(untrackedStatus);
+    renderDialog();
+
+    const host = screen.getByRole("textbox", { name: "Host" });
+    await user.clear(host);
+    await user.type(host, "github.com/acme");
+
+    expect(screen.getByRole("button", { name: /sign in in the browser/i })).toBeDisabled();
+    expect(screen.getByText(/Enter a host name/)).toBeInTheDocument();
+    await user.clear(host);
+    expect(screen.getByRole("button", { name: /sign in in the browser/i })).toBeDisabled();
+    expect(bridge.signIn).not.toHaveBeenCalled();
   });
 
   it("cancels: the tool is stopped and the dialog closes once it has", async () => {
@@ -86,7 +133,9 @@ describe("GitSignInDialog", () => {
     const { bridge } = installGitBridge(untrackedStatus, { signIn: run.signIn });
     renderDialog("gitlab", "gitlab.com");
 
-    expect(screen.getByText(/glab keeps one account per host: this replaces any account it already has for gitlab\.com/)).toBeInTheDocument();
+    expect(screen.getByText(/glab keeps one account per host: this replaces any account it already has for gitlab\.com/)).toHaveTextContent(
+      "It also sets glab's Git protocol for gitlab.com to HTTPS, and may make gitlab.com glab's default host.",
+    );
     const host = screen.getByRole("textbox", { name: "Host" });
     await user.clear(host);
     await user.type(host, "gitlab.example.com");

@@ -214,7 +214,7 @@ describe("signIn", () => {
     expect(account).toEqual({ provider: "github", host: "github.com", login: "octo-personal" })
     expect(prompts).toEqual([{ code: "3F2A-9C1B", url: "https://github.com/login/device" }])
     expect(calls[0]?.command).toBe("gh")
-    expect(calls[0]?.args).toEqual(["auth", "login", "--hostname=github.com", "--web", "--skip-ssh-key"])
+    expect(calls[0]?.args).toEqual(["auth", "login", "--hostname=github.com", "--web", "--skip-ssh-key", "--clipboard=false"])
     expect(calls[0]?.options.timeoutMs).toBeGreaterThanOrEqual(15 * 60_000)
   })
 
@@ -245,6 +245,12 @@ describe("signIn", () => {
     await expect(service.signIn("github", "github.com", { onPrompt: () => undefined })).rejects.toThrow(
       "gh could not sign in to github.com: failed to authenticate via web browser: access_denied",
     )
+  })
+
+  it("does not take a login it cannot use as an account", async () => {
+    const { service } = signingIn(["! First copy your one-time code: 3F2A-9C1B\n", "✓ Logged in as --upload-pack=x\n"])
+
+    await expect(service.signIn("github", "github.com", { onPrompt: () => undefined })).rejects.toThrow("did not say as whom")
   })
 
   it("says glab needs installing when it is not there", async () => {

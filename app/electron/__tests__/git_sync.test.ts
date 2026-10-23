@@ -143,17 +143,30 @@ describe("signing in", () => {
     expect(run.ports.openExternal).toHaveBeenCalledTimes(2)
   })
 
-  it("runs one sign-in at a time, and cancels it by aborting the tool", async () => {
+  it("cancels by aborting the tool, and resolves the cancel once the tool has gone", async () => {
     const run = pendingSignIn()
     const first = run.signIns.signIn("github", "github.com")
+    const firstSignal = run.signal()
 
-    await expect(run.signIns.signIn("gitlab", "gitlab.com")).rejects.toThrow("already in progress")
-    run.signIns.cancel()
+    const cancelled = run.signIns.cancel()
 
-    expect(run.signal()?.aborted).toBe(true)
+    expect(firstSignal?.aborted).toBe(true)
     await expect(first).rejects.toThrow("cancelled")
+    await expect(cancelled).resolves.toBeUndefined()
     expect(run.ports.focus).not.toHaveBeenCalled()
+  })
+
+  it("lets a new sign-in replace one still waiting — a reloaded window's — rather than lock it out", async () => {
+    const run = pendingSignIn()
+    const abandoned = run.signIns.signIn("github", "github.com")
+    const abandonedSignal = run.signal()
+
     const second = run.signIns.signIn("gitlab", "gitlab.com")
+
+    await expect(abandoned).rejects.toThrow("cancelled")
+    expect(abandonedSignal?.aborted).toBe(true)
+    await vi.waitFor(() => expect(run.signIn).toHaveBeenCalledTimes(2))
+    expect(run.signal()?.aborted).toBe(false)
     run.finish()
     await expect(second).resolves.toEqual(ACCOUNT)
   })
@@ -163,8 +176,9 @@ describe("signing in", () => {
     const handlers = handlersOf({} as GitSyncService, { signIn: run.signIn } as unknown as HostCliService, run.ports)
     const call = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
 
-    await expect(async () => call(GIT_CHANNELS.signIn, "bitbucket", "bitbucket.org")).rejects.toThrow()
-    await expect(async () => call(GIT_CHANNELS.signIn, "github", "--hostname=evil")).rejects.toThrow()
+    // Plain sentences for the dialog to show, never a zod error's JSON.
+    await expect(async () => call(GIT_CHANNELS.signIn, "bitbucket", "bitbucket.org")).rejects.toThrow("APIWeave signs in to GitHub or GitLab only.")
+    await expect(async () => call(GIT_CHANNELS.signIn, "github", "--hostname=evil")).rejects.toThrow(/^That is not a host name APIWeave can sign in to/)
     expect(run.signIn).not.toHaveBeenCalled()
 
     await call(GIT_CHANNELS.openSignInPage, "https://evil.example/")

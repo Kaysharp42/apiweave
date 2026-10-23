@@ -171,36 +171,45 @@ export function parseCliVersion(stdout: string): string | undefined {
 }
 
 const ANSI_ESCAPE = /\x1b\[[0-9;]*[A-Za-z]/g
-const ONE_TIME_CODE = /one-time code:\s*([A-Z0-9][A-Z0-9-]{3,})/i
-const HTTPS_URL = /https:\/\/[^\s"'<>]+/
+/** `one-time code: ABCD-1234`, and gh's clipboard form `One-time code (ABCD-1234) copied to clipboard`. */
+const ONE_TIME_CODE = /one-time code(?::\s*|\s*\()([A-Z0-9][A-Z0-9-]{3,})/i
+const HTTPS_URL = /https:\/\/[^\s"'<>)]+/g
 
 /**
- * The one-time code and the page to enter it on, once a sign-in has printed
- * both — gh 2.97 (`internal/authflow/flow.go`, no terminal):
+ * The page a sign-in asks the user to open, and the one-time code to enter
+ * there when it has one — gh 2.97's device flow (`internal/authflow/flow.go`,
+ * no terminal):
  *
  *     ! First copy your one-time code: ABCD-1234
  *     Open this URL to continue in your web browser: https://github.com/login/device
  *
- * and glab's device flow (`internal/oauth2/device.go`):
+ * gh with its `clipboard` setting on (2.103+), which this does not ask for:
+ *
+ *     ! One-time code (ABCD-1234) copied to clipboard
+ *
+ * glab's device flow (`internal/oauth2/device.go`):
  *
  *     First copy your one-time code: ABCD-EFGH
  *     Then open this URL on any device to authorize: https://gitlab.com/oauth/device
  *
- * Undefined until both are there. The page must be on the host being signed
- * in to (or a subdomain of it): main opens it in the browser, and a page
- * anywhere else is not one to send the user to.
+ * and gh against a GitHub Enterprise Server with no device flow, where
+ * cli/oauth falls back to the web application flow: the page alone, no code,
+ * and the browser's redirect to gh's local callback finishes it.
+ *
+ * Read from complete lines only, so undefined until the page's line has
+ * ended; the code, when there is one, is printed before it. The page must be
+ * on exactly the host being signed in to: main opens it in the browser, and a
+ * page anywhere else is not one to send the user to.
  */
-export function parseSignInPrompt(stderr: string, host: string): { readonly code: string; readonly url: string } | undefined {
+export function parseSignInPrompt(stderr: string, host: string): { readonly code: string | null; readonly url: string } | undefined {
   // Complete lines only: stderr arrives in pieces, and a URL cut mid-way is still a URL.
   const output = stderr.slice(0, stderr.lastIndexOf("\n") + 1).replace(ANSI_ESCAPE, "")
-  const code = ONE_TIME_CODE.exec(output)
-  if (code?.[1] === undefined) return undefined
-  const url = HTTPS_URL.exec(output.slice(code.index + code[0].length))?.[0]
-  if (url === undefined) return undefined
   const hostname = host.replace(/:\d+$/, "").toLowerCase()
-  const pageHost = URL.canParse(url) ? new URL(url).hostname.toLowerCase() : ""
-  if (pageHost !== hostname && !pageHost.endsWith(`.${hostname}`)) return undefined
-  return { code: code[1], url }
+  const url = [...output.matchAll(HTTPS_URL)]
+    .map((match) => match[0])
+    .find((candidate) => URL.canParse(candidate) && new URL(candidate).hostname.toLowerCase() === hostname)
+  if (url === undefined) return undefined
+  return { code: ONE_TIME_CODE.exec(output)?.[1] ?? null, url }
 }
 
 /** `✓ Logged in as octocat`, which both tools print last: who the sign-in was for. */

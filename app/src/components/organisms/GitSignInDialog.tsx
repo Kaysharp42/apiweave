@@ -1,22 +1,15 @@
-import { useEffect, useRef, useState } from "react";
-import { KeyRound } from "lucide-react";
-import type { GitAccountRef } from "@shared/types/GitAccountRef";
+import { useEffect, useId, useRef, useState } from "react";
+import { Copy, KeyRound } from "lucide-react";
 import type { GitProvider } from "@shared/types/GitProvider";
+import { GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema";
 import { Button } from "../atoms/Button";
+import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
 import { Spinner } from "../atoms/Spinner";
 import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
 import { git } from "../../utils/apiweaveClient";
-import type { GitSignInDialogProps } from "../../types";
-
-/** Where a sign-in is: about to start, waiting for the tool's code, waiting for the browser, or over. */
-type Phase =
-  | { readonly kind: "ready" }
-  | { readonly kind: "starting" }
-  | { readonly kind: "code"; readonly code: string; readonly url: string }
-  | { readonly kind: "done"; readonly account: GitAccountRef }
-  | { readonly kind: "failed"; readonly message: string };
+import type { GitSignInDialogProps, GitSignInPhase } from "../../types";
 
 const TOOLS: Readonly<Record<GitProvider, { readonly name: string; readonly command: string }>> = {
   github: { name: "GitHub", command: "gh" },
@@ -26,16 +19,63 @@ const TOOLS: Readonly<Record<GitProvider, { readonly name: string; readonly comm
 /** What signing in changes outside APIWeave, said before it happens — what the tool does from a terminal too. */
 function sideEffects(provider: GitProvider, host: string): string {
   return provider === "github"
-    ? `gh makes this account its active account on ${host}, as gh auth login does in a terminal. Your git configuration is not changed.`
-    : `glab keeps one account per host: this replaces any account it already has for ${host}. Your git configuration is not changed.`;
+    ? `gh makes this account its active account on ${host}, as gh auth login does in a terminal: gh commands, and repositories that use gh's credential helper, will act as this account. Your git configuration is not changed.`
+    : `glab keeps one account per host: this replaces any account it already has for ${host}. It also sets glab's Git protocol for ${host} to HTTPS, and may make ${host} glab's default host. Your git configuration is not changed.`;
+}
+
+/** The browser step: the one-time code to enter, when the host has one, and the page it goes on. */
+function BrowserStep({ code, url }: { readonly code: string | null; readonly url: string }) {
+  const codeLabel = useId();
+  if (code === null) {
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+          Finish signing in in your browser, on the page that opened, then
+          come back here.
+        </p>
+        <p className="break-all font-mono text-xs text-text-muted dark:text-text-muted-dark">{url}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+        Enter this code on the page that opened in your browser, then come back
+        here.
+      </p>
+      <div>
+        <span id={codeLabel} className="text-xs text-text-muted dark:text-text-muted-dark">
+          One-time code
+        </span>
+        <div className="flex items-center gap-2">
+          <p
+            aria-labelledby={codeLabel}
+            className="select-all font-mono text-2xl font-semibold tracking-widest text-text-primary dark:text-text-primary-dark"
+          >
+            {code}
+          </p>
+          <IconButton
+            size="sm"
+            tooltip="Copy one-time code"
+            onClick={() => void navigator.clipboard.writeText(code).catch(() => undefined)}
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        </div>
+      </div>
+      <p className="break-all font-mono text-xs text-text-muted dark:text-text-muted-dark">{url}</p>
+    </div>
+  );
 }
 
 /**
  * Sign in to GitHub or GitLab with `gh` or `glab`, run by APIWeave — the user
  * never opens a terminal. Main runs the tool, opens the host's page in the
- * browser and shows its one-time code here; the dialog waits until the code
- * has been entered there. Cancel (or closing the dialog) stops the tool.
- * Mount it once per sign-in: it starts from `defaultHost` and the ready step.
+ * browser and shows its one-time code here (a GitHub Enterprise Server with
+ * no device flow has none: the browser alone finishes it); the dialog waits
+ * until the browser part is done. Cancel (or closing the dialog) stops the
+ * tool. Mount it once per sign-in: it starts from `defaultHost` and the
+ * ready step.
  */
 export function GitSignInDialog({
   isOpen,
@@ -45,9 +85,10 @@ export function GitSignInDialog({
   onSignedIn,
 }: GitSignInDialogProps) {
   const [host, setHost] = useState(defaultHost);
-  const [phase, setPhase] = useState<Phase>({ kind: "ready" });
+  const [phase, setPhase] = useState<GitSignInPhase>({ kind: "ready" });
   const cancelling = useRef(false);
-  const running = phase.kind === "starting" || phase.kind === "code";
+  const running = phase.kind === "starting" || phase.kind === "browser";
+  const hostValid = GitHostSchema.safeParse(host.trim()).success;
   const tool = TOOLS[provider];
 
   // Unmounting with a sign-in still waiting stops its tool.
@@ -68,7 +109,7 @@ export function GitSignInDialog({
     setPhase({ kind: "starting" });
     const unsubscribe = git.onSignInPrompt((prompt) => {
       if (prompt.provider === provider && prompt.host === target) {
-        setPhase({ kind: "code", code: prompt.code, url: prompt.url });
+        setPhase({ kind: "browser", code: prompt.code, url: prompt.url });
       }
     });
     try {
@@ -100,7 +141,7 @@ export function GitSignInDialog({
           </Button>
           <Button
             variant="secondary"
-            disabled={phase.kind !== "code"}
+            disabled={phase.kind !== "browser"}
             onClick={() => void git.openSignInPage().catch(() => undefined)}
           >
             Open browser again
@@ -114,7 +155,7 @@ export function GitSignInDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={host.trim() === ""} onClick={() => void start()}>
+          <Button disabled={!hostValid} onClick={() => void start()}>
             Sign in in the browser
           </Button>
         </>
@@ -136,7 +177,11 @@ export function GitSignInDialog({
     switch (phase.kind) {
       case "ready":
         return (
-          <FormField label="Host" hint={`The ${tool.name} instance to sign in to.`}>
+          <FormField
+            label="Host"
+            hint={`The ${tool.name} instance to sign in to.`}
+            {...(host.trim() === "" || hostValid ? {} : { error: "Enter a host name, such as github.com or gitlab.example.com." })}
+          >
             <Input
               aria-label="Host"
               value={host}
@@ -153,24 +198,8 @@ export function GitSignInDialog({
             Starting {tool.command}…
           </div>
         );
-      case "code":
-        return (
-          <div className="space-y-2">
-            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              Enter this code on the page that opened in your browser, then
-              come back here:
-            </p>
-            <p
-              aria-label="One-time code"
-              className="select-all font-mono text-2xl font-semibold tracking-widest text-text-primary dark:text-text-primary-dark"
-            >
-              {phase.code}
-            </p>
-            <p className="break-all font-mono text-xs text-text-muted dark:text-text-muted-dark">
-              {phase.url}
-            </p>
-          </div>
-        );
+      case "browser":
+        return <BrowserStep code={phase.code} url={phase.url} />;
       case "done":
         return (
           <p className="text-sm text-text-primary dark:text-text-primary-dark">
@@ -205,7 +234,7 @@ export function GitSignInDialog({
       footer={footer}
     >
       <div className="space-y-4 p-5">
-        {body}
+        <div aria-live="polite">{body}</div>
         {(phase.kind === "ready" || running) && (
           <p className="text-xs text-text-muted dark:text-text-muted-dark">
             {sideEffects(provider, host.trim() || defaultHost)}
