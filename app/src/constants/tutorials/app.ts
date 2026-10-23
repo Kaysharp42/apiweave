@@ -68,7 +68,7 @@ export const appChapter: TutorialChapter = {
       example: {
         caption: "What lives where",
         language: "text",
-        code: "Workspace settings          App settings (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     MCP Server\n  Version history             Updates",
+        code: "Workspace                   App (per machine)\n  Projects                    Agents\n  Environments                Canvas\n  Secrets                     MCP Server\n  Version history (git)       Updates",
       },
       expectedResult:
         "Canvas interaction feels the way you configured it, and you can tell a per-machine preference from a per-workspace resource at a glance.",

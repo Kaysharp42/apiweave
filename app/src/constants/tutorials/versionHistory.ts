@@ -194,7 +194,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "If the host refuses a push, the workspace becomes Read-only. Edits still save and commit here, the remote's commits still come in and merge, and automatic cycles stop pushing.",
           detail:
-            "Retry, or Sync now in manual mode, still attempts the push. Only a push that sends commits and succeeds clears Read-only; one that sends nothing proves nothing, so the flag stays.",
+            "Retry still attempts the push, in either mode. Only a push that sends commits and succeeds clears Read-only; one that sends nothing proves nothing, so the flag stays.",
         },
         {
           title: "Disconnect or discard",
@@ -470,7 +470,7 @@ export const versionHistoryChapter: TutorialChapter = {
       summary:
         "Run a checkout with apiweave run, pick projects, workflows and environments, fail fast, supply secrets from the environment, and write a JUnit report.",
       outcome:
-        "A pipeline checks out the connected repository and runs its API tests from the files alone, with no database, no app and no git needed on the runner.",
+        "A pipeline checks out the connected repository and runs its API tests from the files alone: apiweave run needs no database, no app and no git.",
       keywords: [
         "ci",
         "apiweave run",
