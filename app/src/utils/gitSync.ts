@@ -26,7 +26,7 @@ const LOCAL_HISTORY_EXPLANATION =
 
 /** The text colour each intent takes where no Button supplies one, as the design tokens spell it. */
 export const GIT_SYNC_INTENT_TEXT: Readonly<Record<GitSyncIntent, string>> = {
-  default: "text-text-muted dark:text-text-muted-dark",
+  muted: "text-text-muted dark:text-text-muted-dark",
   success: "text-status-success dark:text-[var(--aw-status-success)]",
   info: "text-status-info dark:text-[var(--aw-status-info)]",
   warning: "text-status-warning dark:text-[var(--aw-status-warning)]",
@@ -78,7 +78,7 @@ const whereOf = (status: WorkspaceGitStatus): string =>
 
 /** Nothing to report: the header shows no control, and the switcher keeps the row's own tile. */
 function untrackedView(): GitSyncView {
-  return view("untracked", "Not tracked", "default", null, "");
+  return view("untracked", "Not tracked", "muted", null, "");
 }
 
 function syncingView(status: WorkspaceGitStatus): GitSyncView {
@@ -179,7 +179,7 @@ function pendingView(status: WorkspaceGitStatus): GitSyncView {
 
 function settledView(status: WorkspaceGitStatus): GitSyncView {
   return status.remoteUrl === null
-    ? view("local", "Local history", "default", HardDrive, LOCAL_HISTORY_EXPLANATION)
+    ? view("local", "Local history", "muted", HardDrive, LOCAL_HISTORY_EXPLANATION)
     : view("synced", "Synced", "success", CloudCheck, `This workspace matches ${whereOf(status)}.`);
 }
 
