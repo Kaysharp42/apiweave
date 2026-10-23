@@ -238,4 +238,31 @@ test.describe("git sync status", () => {
     await expect(page.getByRole("button", { name: "Tutorials" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Version history:/ })).toHaveCount(0);
   });
+
+  test("shows a tracked workspace's sync state on its row in the switcher", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, SETTLED);
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await page.getByRole("button", { name: "Switch workspace" }).click();
+
+    // The row is icon-only for this: the state is its accessible name and its tooltip.
+    const icon = page.getByRole("option", { name: /Personal/ }).getByRole("img", { name: "Synced" });
+    await expect(icon).toBeVisible();
+    await icon.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Synced");
+    await captureEvidence(page, "git-sync-switcher-row.png");
+  });
+
+  test("leaves an untracked workspace's switcher row without a sync icon", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, { ...SETTLED, tracked: false, remoteUrl: null });
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await page.getByRole("button", { name: "Switch workspace" }).click();
+
+    const row = page.getByRole("option", { name: /Personal/ });
+    await expect(row).toBeVisible();
+    await expect(row.getByRole("img")).toHaveCount(0);
+  });
 });
