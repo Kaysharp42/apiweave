@@ -91,4 +91,27 @@ describe("useWorkspaceGitStatuses", () => {
 
     expect(subscriptions()).toBe(0);
   });
+
+  it("ignores a list that arrives after it was torn down", async () => {
+    let release: (statuses: readonly ReturnType<typeof trackedStatus>[]) => void = () => undefined;
+    installGitBridge(trackedStatus(), {
+      statusAll: vi.fn(
+        () =>
+          new Promise<readonly ReturnType<typeof trackedStatus>[]>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { result, unmount } = renderHook(() => useWorkspaceGitStatuses());
+    expect(result.current.size).toBe(0);
+
+    unmount();
+    await act(async () => release([trackedStatus()]));
+
+    // A dead hook neither takes the list nor complains about a state update on it.
+    expect(result.current.size).toBe(0);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
 });
