@@ -165,7 +165,7 @@ export type GitSyncGit = Pick<
   | "remoteAdd"
   | "remoteSetUrl"
   | "remoteRemove"
-  | "remoteUrl"
+  | "remoteUrls"
   | "resolvedUrl"
   | "revParse"
   | "mergeBase"
@@ -1083,7 +1083,7 @@ export class GitSyncService {
 
   private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string): Promise<OpenWorkspaceFromGitResult> {
     const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
-    const credential = await this.credentialFor(account, () => this.git.resolvedUrl(remoteUrl, this.options.cloneRoot))
+    const credential = await this.credentialFor(account, async () => [await this.git.resolvedUrl(remoteUrl, this.options.cloneRoot)])
     await this.git.clone(remoteUrl, scratch, { credential })
     this.assertNotDisposed()
     await this.assertCheckedOut(scratch)
@@ -1330,9 +1330,9 @@ export class GitSyncService {
     return this.originCredential(directory, binding.account, push)
   }
 
-  /** {@link credentialFor} for `origin`, at the URL git will fetch from or, with `push`, push to. */
+  /** {@link credentialFor} for `origin`, at the URLs git will fetch from or, with `push`, push to. */
   private originCredential(directory: string, account: GitAccountRef | null, push: boolean): Promise<GitCredential | undefined> {
-    return this.credentialFor(account, () => this.git.remoteUrl(directory, ORIGIN, { push }))
+    return this.credentialFor(account, () => this.git.remoteUrls(directory, ORIGIN, { push }))
   }
 
   /**
@@ -1340,20 +1340,29 @@ export class GitSyncService {
    * and for this call alone. None without an account — the user's own
    * helpers answer, as before accounts.
    *
-   * With one, the URL that matters is the one git will really use, which
+   * With one, the URLs that matter are the ones git will really use, which
    * `resolve` asks git for: a `url.<base>.insteadOf` or `pushInsteadOf` rule
    * can turn the stored `https://` remote into an SSH one, which would push
-   * as the SSH key's owner while the status names the account. Anything but
-   * `https://` on the account's own host fails the call with
+   * as the SSH key's owner while the status names the account, and a
+   * `[remote "origin"]` url or pushurl in the user's own config adds another
+   * that a push also goes to. So there must be exactly one, `https://` on the
+   * account's own host and port; anything else fails the call with
    * `account_unavailable`, before a token is asked for or a byte is sent. The
-   * credential's host is that URL's, as git names it to its helper, so the
-   * helper answers for that host and no other.
+   * credential's host is that URL's authority, exactly as git names it to
+   * its helper, so the helper answers for that host and port and no other.
    */
-  private async credentialFor(account: GitAccountRef | null, resolve: () => Promise<string>): Promise<GitCredential | undefined> {
+  private async credentialFor(account: GitAccountRef | null, resolve: () => Promise<readonly string[]>): Promise<GitCredential | undefined> {
     if (account === null) return undefined
-    const url = await resolve()
+    const urls = await resolve()
+    const [url] = urls
+    if (url === undefined || urls.length > 1) {
+      throw new GitAccountUnavailableError(
+        `This workspace's remote resolves to ${urls.length} URLs (${urls.map(describeRemote).join(", ")}), and ${account.login} signs in to one. ` +
+          'A [remote "origin"] url or pushurl in your git configuration can add one; remove it, or choose no account.',
+      )
+    }
     const host = HTTPS_AUTHORITY.exec(url)?.[1]
-    if (host === undefined || hostnameOf(host) !== hostnameOf(account.host) || url.includes("=")) {
+    if (host === undefined || authorityOf(host) !== authorityOf(account.host) || url.includes("=")) {
       throw new GitAccountUnavailableError(
         `This workspace's remote resolves to ${describeRemote(url)}, which ${account.login} cannot sign in to: an account signs in over https:// to ${account.host} only. ` +
           "A url.insteadOf or pushInsteadOf rule in your git configuration can cause this; remove it, or choose no account.",
@@ -2259,18 +2268,22 @@ const HTTPS_AUTHORITY = /^https:\/\/([^/]+)/i
 const SCP_LIKE = /^[^@\s/]+@([^:/\s]+):/
 const SSH_URL = /^ssh:\/\//i
 
-/** `github.com:8443` → `github.com`, lower case: what two host names are compared by. */
-function hostnameOf(host: string): string {
-  return host.replace(/:\d+$/, "").toLowerCase()
+/**
+ * A host and port as an HTTPS account and remote are compared by: lower
+ * case, and `:443` — HTTPS's own port — the same as none. `github.com:8443`
+ * is another server, not `github.com`.
+ */
+function authorityOf(host: string): string {
+  return host.toLowerCase().replace(/:443$/, "")
 }
 
-/** A remote URL as scheme and host only — `ssh://github.com`, `https://gitlab.com` — for a message that must not repeat a whole URL. */
+/** A remote URL as scheme and host (and port) only — `ssh://github.com`, `https://gitlab.com:8443` — for a message that must not repeat a whole URL. */
 function describeRemote(url: string): string {
   const scpLike = SCP_LIKE.exec(url)?.[1]
   if (scpLike !== undefined) return `ssh://${scpLike.toLowerCase()}`
   if (!URL.canParse(url)) return "a local path"
-  const { protocol, hostname } = new URL(url)
-  return hostname === "" ? "a local path" : `${protocol}//${hostname.toLowerCase()}`
+  const { protocol, host } = new URL(url)
+  return host === "" ? "a local path" : `${protocol}//${host.toLowerCase()}`
 }
 
 /**
@@ -2291,8 +2304,8 @@ function assertAccountFitsRemote(remoteUrl: string, account: GitAccountRef | nul
         : `This remote is not on a git host, so it needs no account. Connect it without ${account.login}.`,
     )
   }
-  const host = hostnameOf(authority)
-  if (host !== hostnameOf(account.host)) {
+  const host = authorityOf(authority)
+  if (host !== authorityOf(account.host)) {
     throw new ValidationError(`${account.login} signs in to ${account.host}, but this remote is on ${host}. Choose an account on ${host}, or none.`)
   }
   if (remoteUrl.includes("=")) throw new ValidationError(`APIWeave cannot sign in as ${account.login} to a remote URL with '=' in it. Connect without an account.`)
