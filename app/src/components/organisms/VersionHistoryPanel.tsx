@@ -105,6 +105,67 @@ function signInHost(provider: GitProvider, remote: string | null): string {
   return remote === null || remote === other ? DEFAULT_HOSTS[provider] : remote;
 }
 
+const HTTPS_REMOTE = /^https:\/\//i;
+
+interface RemoteAccountProps {
+  readonly remoteUrl: string;
+  readonly value: GitAccountRef | null;
+  readonly onChange: (account: GitAccountRef | null) => void;
+  /** Choose an account just signed in to: the connect form's, not a connected workspace's, which stays the user's to change. */
+  readonly chooseSignedIn: boolean;
+  readonly busy: boolean;
+}
+
+/**
+ * Which account an `https://` remote is reached as, signing in to another,
+ * and why gh or glab could not say, when they could not. An SSH remote signs
+ * in with the user's SSH key, so it is offered no account. A bound account
+ * stays shown even when no tool lists it any more.
+ */
+function RemoteAccount({ remoteUrl, value, onChange, chooseSignedIn, busy }: RemoteAccountProps) {
+  const { accounts, problems, reload } = useGitAccounts();
+  const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
+  if (!HTTPS_REMOTE.test(remoteUrl)) return null;
+  return (
+    <>
+      {(accounts.length > 0 || value !== null) && (
+        <GitAccountPicker
+          accounts={accounts}
+          host={remoteHost(remoteUrl)}
+          value={value}
+          onChange={onChange}
+          disabled={busy}
+        />
+      )}
+      {problems.map((problem) => (
+        <p key={problem} className="text-xs text-status-warning">
+          {problem}
+        </p>
+      ))}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("github")}>
+          Sign in to GitHub…
+        </Button>
+        <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("gitlab")}>
+          Sign in to GitLab…
+        </Button>
+      </div>
+      {signingIn !== null && (
+        <GitSignInDialog
+          isOpen
+          provider={signingIn}
+          defaultHost={signInHost(signingIn, remoteHost(remoteUrl))}
+          onClose={() => setSigningIn(null)}
+          onSignedIn={(signedIn) => {
+            reload();
+            if (chooseSignedIn) onChange(signedIn);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 interface RemoteSectionProps {
   readonly remoteUrl: string | null;
   readonly branch: string;
@@ -126,34 +187,6 @@ function RemoteSection({
 }: RemoteSectionProps) {
   const [url, setUrl] = useState("");
   const [chosen, setChosen] = useState<GitAccountRef | null>(null);
-  const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
-  const { accounts, reload } = useGitAccounts();
-  // A bound account stays shown even when no tool lists it any more.
-  const offerAccounts = accounts.length > 0 || account !== null;
-  const host = remoteHost(remoteUrl ?? url.trim());
-  const signIn = (
-    <div className="flex flex-wrap gap-2">
-      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("github")}>
-        Sign in to GitHub…
-      </Button>
-      <Button variant="ghost" size="sm" disabled={busy} onClick={() => setSigningIn("gitlab")}>
-        Sign in to GitLab…
-      </Button>
-      {signingIn !== null && (
-        <GitSignInDialog
-          isOpen
-          provider={signingIn}
-          defaultHost={signInHost(signingIn, host)}
-          onClose={() => setSigningIn(null)}
-          onSignedIn={(signedIn) => {
-            reload();
-            // A new account is what the user is about to connect with; a connected workspace's stays theirs to change.
-            if (remoteUrl === null) setChosen(signedIn);
-          }}
-        />
-      )}
-    </div>
-  );
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -167,7 +200,7 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            onConnect(url.trim(), chosen);
+            onConnect(url.trim(), HTTPS_REMOTE.test(url.trim()) ? chosen : null);
           }}
         >
           <FormField label="Remote URL">
@@ -180,16 +213,7 @@ function RemoteSection({
               spellCheck={false}
             />
           </FormField>
-          {offerAccounts && (
-            <GitAccountPicker
-              accounts={accounts}
-              host={remoteHost(url.trim())}
-              value={chosen}
-              onChange={setChosen}
-              disabled={busy}
-            />
-          )}
-          {signIn}
+          <RemoteAccount remoteUrl={url.trim()} value={chosen} onChange={setChosen} chooseSignedIn busy={busy} />
           <Button
             type="submit"
             variant="primary"
@@ -201,16 +225,7 @@ function RemoteSection({
         </form>
       ) : (
         <>
-          {offerAccounts && (
-            <GitAccountPicker
-              accounts={accounts}
-              host={remoteHost(remoteUrl)}
-              value={account}
-              onChange={onChangeAccount}
-              disabled={busy}
-            />
-          )}
-          {signIn}
+          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={onChangeAccount} chooseSignedIn={false} busy={busy} />
           <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
             Disconnect
           </Button>

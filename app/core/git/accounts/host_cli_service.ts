@@ -7,7 +7,7 @@ import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccou
 import { resolveExecutable, spawnCommandFor } from "../../agents/executable"
 import { GitAccountUnavailableError } from "../git_errors"
 import { execGit, type GitExecOutcome } from "../git_process"
-import type { GitCredential } from "../git_types"
+import type { GitAccountToken } from "../git_types"
 import {
   firstLine,
   lastLine,
@@ -175,7 +175,7 @@ export class HostCliService {
    * that account, or — `glab` keeping one account per host — signed in there
    * as someone else.
    */
-  async token(account: GitAccountRef): Promise<GitCredential> {
+  async token(account: GitAccountRef): Promise<GitAccountToken> {
     // Only the three fields that name the account: a listed `GitAccount` carries more.
     const checked = GitAccountRefSchema.safeParse({ provider: account.provider, host: account.host, login: account.login })
     if (!checked.success) throw new GitAccountUnavailableError("that is not an account APIWeave can sign in as")
@@ -245,7 +245,7 @@ export class HostCliService {
   }
 
   /** `gh auth token --user` reads that account's token without touching which account is active. */
-  private async githubToken(account: GitAccountRef): Promise<GitCredential> {
+  private async githubToken(account: GitAccountRef): Promise<GitAccountToken> {
     const outcome = await this.run("gh", ["auth", "token", `--hostname=${account.host}`, `--user=${account.login}`], {
       timeoutMs: TOKEN_TIMEOUT_MS,
     })
@@ -264,7 +264,7 @@ export class HostCliService {
    * access token. `auth status --show-token` is not used: it prints the token
    * it read before renewing it, on stderr, in prose.
    */
-  private async gitlabToken(account: GitAccountRef): Promise<GitCredential> {
+  private async gitlabToken(account: GitAccountRef): Promise<GitAccountToken> {
     const status = await this.run("glab", ["auth", "status", `--hostname=${account.host}`, "--output", "json"], {
       timeoutMs: STATUS_TIMEOUT_MS,
     })

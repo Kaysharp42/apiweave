@@ -16,9 +16,13 @@ import {
 const GH_RECORDED = fs.readFileSync(path.join(__dirname, "fixtures", "gh-auth-status.json"), "utf8")
 
 /**
- * glab is not recorded: this is the shape its `hostStatus` struct marshals to
- * (gitlab-org/cli `internal/commands/auth/status/status.go`): `user`, `error`
- * and `git_protocol` are `omitempty`, `token` is never in the JSON.
+ * Not recorded — derived from source, because glab is not installed where
+ * this was written. A recorded fixture from a real `glab auth status --all
+ * --output json` is still to come. This is the shape glab's `hostStatus`
+ * struct marshals to in gitlab-org/cli `internal/commands/auth/status/status.go`
+ * as of b479524a (2026-10-08, "feat(auth): add JSON output to auth status" —
+ * glab before it has no `--output json` here): `user`, `error` and
+ * `git_protocol` are `omitempty`, and `token` is never in the JSON.
  */
 const GLAB_FROM_SOURCE = JSON.stringify({
   hosts: [
@@ -69,7 +73,7 @@ describe("parseGhAccounts", () => {
           { state: "error", error: "HTTP 401: Bad credentials (https://api.github.com/)", active: true, host: "github.com", login: "octo-work", tokenSource: "keyring", gitProtocol: "ssh" },
           { state: "timeout", active: false, host: "github.com", login: "octo-personal", tokenSource: "keyring", gitProtocol: "https" },
         ],
-        "ghe.example.com": [{ state: "error", error: "HTTP 401", active: true, host: "ghe.example.com", login: "", tokenSource: "GH_ENTERPRISE_TOKEN", gitProtocol: "https" }],
+        "ghe.example.com": [{ state: "error", error: "HTTP 401", active: true, host: "ghe.example.com", login: "", tokenSource: "/home/u/.config/gh/hosts.yml", gitProtocol: "https" }],
       },
     })
 
@@ -80,6 +84,39 @@ describe("parseGhAccounts", () => {
       ],
       problems: ["ghe.example.com: HTTP 401"],
     })
+  })
+
+  it("does not offer a token gh reads from the environment, and lists its stored owner once", () => {
+    // With GH_TOKEN set, gh lists the token's owner as active (looked up over
+    // the API), then every stored account — the same login among them.
+    const output = JSON.stringify({
+      hosts: {
+        "github.com": [
+          { state: "success", active: true, host: "github.com", login: "octo-work", tokenSource: "GH_TOKEN", gitProtocol: "https" },
+          { state: "success", active: false, host: "github.com", login: "octo-work", tokenSource: "keyring", gitProtocol: "https" },
+          { state: "success", active: false, host: "github.com", login: "octo-personal", tokenSource: "keyring", gitProtocol: "https" },
+        ],
+        "ghe.example.com": [
+          { state: "success", active: true, host: "ghe.example.com", login: "ops", tokenSource: "GH_ENTERPRISE_TOKEN", gitProtocol: "https" },
+        ],
+      },
+    })
+
+    const parsed = parseGhAccounts(output)
+
+    expect(parsed?.accounts.map((account) => `${account.host}:${account.login}:${account.active}`)).toEqual([
+      "github.com:octo-work:false",
+      "github.com:octo-personal:false",
+    ])
+    expect(parsed?.problems).toEqual([
+      "github.com: gh is using the token in GH_TOKEN, which is not an account APIWeave can choose; only the accounts gh stores are listed",
+      "ghe.example.com: gh is using the token in GH_ENTERPRISE_TOKEN, which is not an account APIWeave can choose; only the accounts gh stores are listed",
+    ])
+  })
+
+  it("lists an account gh repeats only once", () => {
+    const entry = { state: "success", active: false, host: "github.com", login: "octo", tokenSource: "keyring", gitProtocol: "https" }
+    expect(parseGhAccounts(JSON.stringify({ hosts: { "github.com": [entry, entry] } }))?.accounts).toHaveLength(1)
   })
 
   it("reads no account when gh is signed in nowhere", () => {

@@ -52,7 +52,7 @@ import {
 } from "./git_errors"
 import { awaitWithin } from "./git_process"
 import type { GitService } from "./git_service"
-import type { GitAheadBehind, GitCredential, GitStatusEntry, GitTreeEntry } from "./git_types"
+import type { GitAccountToken, GitAheadBehind, GitCredential, GitStatusEntry, GitTreeEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
 import { describePendingChanges, diffTrees } from "./pending_changes"
 import { settleTreeEntries, withoutPaths } from "./tree_entries"
@@ -165,6 +165,8 @@ export type GitSyncGit = Pick<
   | "remoteAdd"
   | "remoteSetUrl"
   | "remoteRemove"
+  | "remoteUrl"
+  | "resolvedUrl"
   | "revParse"
   | "mergeBase"
   | "mergeFastForward"
@@ -219,7 +221,7 @@ export interface GitSyncServiceOptions {
    * `account_unavailable` — when there is none. Without it, a bound account
    * cannot be used and every such call fails that way.
    */
-  readonly credentials?: (account: GitAccountRef) => Promise<GitCredential>
+  readonly credentials?: (account: GitAccountRef) => Promise<GitAccountToken>
 }
 
 /**
@@ -428,7 +430,7 @@ export class GitSyncService {
       await this.removeOrigin(directory)
       await this.git.remoteAdd(directory, ORIGIN, remoteUrl)
       try {
-        await this.joinRemote(directory, binding.branch, await this.credentialFor(remoteUrl, account))
+        await this.joinRemote(directory, binding.branch, account)
         this.repositories.workspaceGit.setRemote(workspaceId, remoteUrl, binding.branch, account)
       } catch (error) {
         await this.git.remoteRemove(directory, ORIGIN).catch((rollbackError: unknown) => {
@@ -1081,7 +1083,8 @@ export class GitSyncService {
 
   private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string): Promise<OpenWorkspaceFromGitResult> {
     const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
-    await this.git.clone(remoteUrl, scratch, { credential: await this.credentialFor(remoteUrl, account) })
+    const credential = await this.credentialFor(account, () => this.git.resolvedUrl(remoteUrl, this.options.cloneRoot))
+    await this.git.clone(remoteUrl, scratch, { credential })
     this.assertNotDisposed()
     await this.assertCheckedOut(scratch)
     const snapshot = parseWorkspace(await readWorkspaceTree(scratch))
@@ -1317,33 +1320,49 @@ export class GitSyncService {
 
   /** Fetch `origin`, as the workspace's bound account when it has one. */
   private async fetchOrigin(workspaceId: string, directory: string): Promise<void> {
-    await this.git.fetch(directory, ORIGIN, { credential: await this.boundCredential(workspaceId) })
+    await this.git.fetch(directory, ORIGIN, { credential: await this.boundCredential(workspaceId, directory, false) })
   }
 
-  /** The credential the workspace's own remote and account call for, if any. */
-  private async boundCredential(workspaceId: string): Promise<GitCredential | undefined> {
+  /** The credential the workspace's account calls for on a fetch, or with `push` a push, of `origin`; none without an account. */
+  private async boundCredential(workspaceId: string, directory: string, push: boolean): Promise<GitCredential | undefined> {
     const binding = this.repositories.workspaceGit.get(workspaceId)
     if (binding === undefined || binding.remoteUrl === null) return undefined
-    return this.credentialFor(binding.remoteUrl, binding.account)
+    return this.originCredential(directory, binding.account, push)
+  }
+
+  /** {@link credentialFor} for `origin`, at the URL git will fetch from or, with `push`, push to. */
+  private originCredential(directory: string, account: GitAccountRef | null, push: boolean): Promise<GitCredential | undefined> {
+    return this.credentialFor(account, () => this.git.remoteUrl(directory, ORIGIN, { push }))
   }
 
   /**
-   * The credential a call to `remoteUrl` carries: the bound account's token,
-   * asked for now and for this call alone, when the remote is reached over
-   * HTTPS. None without an account — the user's own helpers answer — and none
-   * for an SSH remote, which is reached with the user's own key whichever
-   * account is bound. The host is the URL's own, as git names it to its
-   * credential helper, so the helper answers for that host and no other.
+   * The credential a call carries: the bound account's token, asked for now
+   * and for this call alone. None without an account — the user's own
+   * helpers answer, as before accounts.
+   *
+   * With one, the URL that matters is the one git will really use, which
+   * `resolve` asks git for: a `url.<base>.insteadOf` or `pushInsteadOf` rule
+   * can turn the stored `https://` remote into an SSH one, which would push
+   * as the SSH key's owner while the status names the account. Anything but
+   * `https://` on the account's own host fails the call with
+   * `account_unavailable`, before a token is asked for or a byte is sent. The
+   * credential's host is that URL's, as git names it to its helper, so the
+   * helper answers for that host and no other.
    */
-  private async credentialFor(remoteUrl: string, account: GitAccountRef | null): Promise<GitCredential | undefined> {
+  private async credentialFor(account: GitAccountRef | null, resolve: () => Promise<string>): Promise<GitCredential | undefined> {
     if (account === null) return undefined
-    const host = HTTPS_AUTHORITY.exec(remoteUrl)?.[1]
-    if (host === undefined) return undefined
-    assertAccountFitsRemote(remoteUrl, account)
+    const url = await resolve()
+    const host = HTTPS_AUTHORITY.exec(url)?.[1]
+    if (host === undefined || hostnameOf(host) !== hostnameOf(account.host) || url.includes("=")) {
+      throw new GitAccountUnavailableError(
+        `This workspace's remote resolves to ${describeRemote(url)}, which ${account.login} cannot sign in to: an account signs in over https:// to ${account.host} only. ` +
+          "A url.insteadOf or pushInsteadOf rule in your git configuration can cause this; remove it, or choose no account.",
+      )
+    }
     if (this.options.credentials === undefined) {
       throw new GitAccountUnavailableError(`no account service is available to sign in to ${account.host} as ${account.login}`)
     }
-    return { ...(await this.options.credentials(account)), protocol: "https", host }
+    return { ...(await this.options.credentials(account)), protocol: "https", host, url }
   }
 
   /** The clone with no `origin`: one that has none is already there. */
@@ -1362,18 +1381,19 @@ export class GitSyncService {
    * someone else's project, which an empty-looking `origin/<branch>` must not
    * hide.
    */
-  private async joinRemote(directory: string, branch: string, credential: GitCredential | undefined): Promise<void> {
-    await this.git.fetch(directory, ORIGIN, { credential })
+  private async joinRemote(directory: string, branch: string, account: GitAccountRef | null): Promise<void> {
+    await this.git.fetch(directory, ORIGIN, { credential: await this.originCredential(directory, account, false) })
     const remoteBranch = `${ORIGIN}/${branch}`
     if ((await this.git.revParse(directory, remoteBranch)) === undefined) {
       if ((await this.git.firstRemoteRef(directory, ORIGIN)) !== undefined) throw new ConflictError(UNRELATED_HISTORY_MESSAGE)
-      await this.pushFirstTime(directory, branch, credential)
+      await this.pushFirstTime(directory, branch, account)
     } else if ((await this.git.mergeBase(directory, "HEAD", remoteBranch)) === undefined) {
       throw new ConflictError(UNRELATED_HISTORY_MESSAGE)
     }
   }
 
-  private async pushFirstTime(directory: string, branch: string, credential: GitCredential | undefined): Promise<void> {
+  private async pushFirstTime(directory: string, branch: string, account: GitAccountRef | null): Promise<void> {
+    const credential = await this.originCredential(directory, account, true)
     try {
       await this.git.push(directory, ORIGIN, branch, { setUpstream: true, credential })
     } catch (error) {
@@ -1877,7 +1897,7 @@ export class GitSyncService {
    * {@link PushRefusedError}, the one failure that makes a workspace read-only.
    */
   private async pushOnce(workspaceId: string, directory: string, branch: string): Promise<GitNonFastForwardError | undefined> {
-    const credential = await this.boundCredential(workspaceId)
+    const credential = await this.boundCredential(workspaceId, directory, true)
     try {
       await this.git.push(directory, ORIGIN, branch, { credential })
       return undefined
@@ -2236,34 +2256,46 @@ const REACH_FAILURES: ReadonlySet<GitErrorCode> = new Set<GitErrorCode>([
 /** An `https://` URL's authority — host, and port when it has one — as git hands it to a credential helper. The URL never carries user info. */
 const HTTPS_AUTHORITY = /^https:\/\/([^/]+)/i
 
-/** The host a remote URL names: `github.com` for `https://github.com/a/b.git`, `ssh://git@github.com:22/a/b.git` and `git@github.com:a/b.git` alike. */
-function remoteHostname(remoteUrl: string): string | undefined {
-  const scpLike = /^[^@\s/]+@([^:/\s]+):/.exec(remoteUrl)
-  if (scpLike?.[1] !== undefined) return scpLike[1].toLowerCase()
-  try {
-    const { hostname } = new URL(remoteUrl)
-    return hostname === "" ? undefined : hostname.toLowerCase()
-  } catch {
-    return undefined
-  }
+const SCP_LIKE = /^[^@\s/]+@([^:/\s]+):/
+const SSH_URL = /^ssh:\/\//i
+
+/** `github.com:8443` → `github.com`, lower case: what two host names are compared by. */
+function hostnameOf(host: string): string {
+  return host.replace(/:\d+$/, "").toLowerCase()
+}
+
+/** A remote URL as scheme and host only — `ssh://github.com`, `https://gitlab.com` — for a message that must not repeat a whole URL. */
+function describeRemote(url: string): string {
+  const scpLike = SCP_LIKE.exec(url)?.[1]
+  if (scpLike !== undefined) return `ssh://${scpLike.toLowerCase()}`
+  if (!URL.canParse(url)) return "a local path"
+  const { protocol, hostname } = new URL(url)
+  return hostname === "" ? "a local path" : `${protocol}//${hostname.toLowerCase()}`
 }
 
 /**
- * An account signs in to one host. Bound to a remote anywhere else it would
- * sign in to nothing — or, over HTTPS, offer its token to a host it is not
- * for — so it is refused, as it is for a local `file://` remote, which needs
- * no sign-in.
+ * An account signs in over HTTPS to one host, so it is bound to an
+ * `https://` remote on that host and nothing else: an SSH remote signs in
+ * with the user's SSH key whichever account is named, a local one needs no
+ * sign-in, and an HTTPS remote elsewhere would be offered a token it is not
+ * for. A URL with `=` is refused too: it cannot key the per-call reset of
+ * URL-scoped settings (`credentialConfigArgs`).
  */
 function assertAccountFitsRemote(remoteUrl: string, account: GitAccountRef | null): void {
   if (account === null) return
-  const host = remoteHostname(remoteUrl)
-  const accountHost = account.host.replace(/:\d+$/, "").toLowerCase()
-  if (host === accountHost) return
-  throw new ValidationError(
-    host === undefined
-      ? `This remote is not on a git host, so it needs no account. Connect it without ${account.login}.`
-      : `${account.login} signs in to ${account.host}, but this remote is on ${host}. Choose an account on ${host}, or none.`,
-  )
+  const authority = HTTPS_AUTHORITY.exec(remoteUrl)?.[1]
+  if (authority === undefined) {
+    throw new ValidationError(
+      SSH_URL.test(remoteUrl) || SCP_LIKE.test(remoteUrl)
+        ? `SSH remotes sign in with your SSH key, not an account. Connect without ${account.login}, or use the repository's https:// URL.`
+        : `This remote is not on a git host, so it needs no account. Connect it without ${account.login}.`,
+    )
+  }
+  const host = hostnameOf(authority)
+  if (host !== hostnameOf(account.host)) {
+    throw new ValidationError(`${account.login} signs in to ${account.host}, but this remote is on ${host}. Choose an account on ${host}, or none.`)
+  }
+  if (remoteUrl.includes("=")) throw new ValidationError(`APIWeave cannot sign in as ${account.login} to a remote URL with '=' in it. Connect without an account.`)
 }
 
 function isReachFailure(error: WorkspaceGitError): boolean {

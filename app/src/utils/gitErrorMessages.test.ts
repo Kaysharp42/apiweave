@@ -48,6 +48,19 @@ describe("describeGitError", () => {
     expect(describeGitError({ code: "timeout", message: "" }, url)).toContain("github.com");
   });
 
+  it("names the bound account, not the credential manager, when a bound workspace's sign-in is turned down", () => {
+    const account = { provider: "github" as const, host: "github.com", login: "octo-personal" };
+    const message = describeGitError({ code: "auth_failed", message: "" }, "https://github.com/acme/tests.git", account);
+    expect(message).toBe(
+      "github.com turned down octo-personal's sign-in — sign in to that account again, or choose another account in the workspace's version history settings.",
+    );
+    expect(message).not.toMatch(/credential manager/);
+    // Other failures read the same either way.
+    expect(describeGitError({ code: "timeout", message: "" }, "https://github.com/a.git", account)).toBe(
+      describeGitError({ code: "timeout", message: "" }, "https://github.com/a.git"),
+    );
+  });
+
   it("falls back to 'the remote' when the URL names no host, or there is none", () => {
     expect(describeGitError({ code: "network_error", message: "" }, "file:///srv/git/tests.git")).toContain("Can't reach the remote");
     expect(describeGitError({ code: "auth_failed", message: "" }, null)).toContain("Sign-in to the remote failed");

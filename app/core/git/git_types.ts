@@ -25,6 +25,7 @@ export type GitCommand =
   | "catFile"
   | "clean"
   | "config"
+  | "lsRemote"
 
 export type { GitIdentity }
 
@@ -124,9 +125,14 @@ export interface GitCredential {
   readonly protocol: "https" | "http"
   /** As git names it in the credential protocol: the host, and `:port` when the URL has one. */
   readonly host: string
+  /** The URL the call reaches, as git resolves it: what a reset of URL-scoped settings is keyed on. */
+  readonly url: string
   readonly username: string
   readonly password: string
 }
+
+/** A credential as `gh`/`glab` hand it over: for an account's host, before any call says which URL it will reach. */
+export type GitAccountToken = Omit<GitCredential, "url">
 
 /** What a call that reaches a remote — `fetch`, `push`, `clone` — may carry. */
 export interface GitRemoteOptions {
