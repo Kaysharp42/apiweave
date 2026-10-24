@@ -9,7 +9,7 @@ import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateReposito
 import type { GitProvider } from "@shared/types/GitProvider"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
-import { GitCreateRepositoryRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
+import { GitCreateRepositoryRequestSchema, GitRepositoryListRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -217,6 +217,12 @@ export function registerGitHandlers(
     GIT_CHANNELS.createRepository,
     guard((account: unknown, request: unknown) =>
       hostCli.createRepository(requiredAccountOf(account), createRepositoryRequestOf(request)),
+    ),
+  )
+  ipcMain.handle(
+    GIT_CHANNELS.listRepositories,
+    guard((account: unknown, request: unknown) =>
+      hostCli.listRepositories(requiredAccountOf(account), GitRepositoryListRequestSchema.parse(request)),
     ),
   )
   return signIns

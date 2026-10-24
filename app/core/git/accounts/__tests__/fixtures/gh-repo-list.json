@@ -1,0 +1,29 @@
+[
+  {
+    "isEmpty": false,
+    "name": "api-tests",
+    "nameWithOwner": "octo-work/api-tests",
+    "sshUrl": "git@github.com:octo-work/api-tests.git",
+    "url": "https://github.com/octo-work/api-tests",
+    "viewerPermission": "ADMIN",
+    "visibility": "PUBLIC"
+  },
+  {
+    "isEmpty": true,
+    "name": "shop-api",
+    "nameWithOwner": "octo-work/shop-api",
+    "sshUrl": "git@github.com:octo-work/shop-api.git",
+    "url": "https://github.com/octo-work/shop-api",
+    "viewerPermission": "ADMIN",
+    "visibility": "PRIVATE"
+  },
+  {
+    "isEmpty": true,
+    "name": "read-only",
+    "nameWithOwner": "octo-work/read-only",
+    "sshUrl": "git@github.com:octo-work/read-only.git",
+    "url": "https://github.com/octo-work/read-only",
+    "viewerPermission": "READ",
+    "visibility": "PRIVATE"
+  }
+]

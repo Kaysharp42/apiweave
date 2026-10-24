@@ -299,3 +299,144 @@ describe("hostCliRunner's environment", () => {
     }
   })
 })
+
+describe("listRepositories", () => {
+  const GH_LIST = fixture("gh-repo-list.json")
+  const ghList = (owner: string, tagged: boolean): string =>
+    [
+      "gh repo list",
+      ...(tagged ? ["--topic=apiweave-workspace"] : []),
+      "--no-archived --json=name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility --limit=100 --",
+      owner,
+    ].join(" ")
+
+  it("lists the account's and each organization's repositories, with the topic when asked, as the account", async () => {
+    const { service, calls } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited(GH_ORGS),
+      [ghList("octo-work", true)]: exited(GH_LIST),
+      [ghList("acme", true)]: exited("[]"),
+      [ghList("octo-org", true)]: exited("[]"),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: true, emptyOnly: false })
+
+    expect(list.problems).toEqual([])
+    expect(list.repositories.map((repository) => repository.fullName)).toEqual(["octo-work/api-tests", "octo-work/shop-api", "octo-work/read-only"])
+    expect(list.repositories[0]).toEqual({
+      owner: "octo-work",
+      name: "api-tests",
+      fullName: "octo-work/api-tests",
+      httpsUrl: "https://github.com/octo-work/api-tests.git",
+      sshUrl: "git@github.com:octo-work/api-tests.git",
+      private: false,
+      empty: false,
+      canPush: true,
+    })
+    // One token for the whole listing, in each call's environment.
+    expect(calls.filter((call) => call.args[0] === "auth")).toHaveLength(1)
+    expect(calls.filter((call) => call.args[0] === "repo").every((call) => call.env?.GH_TOKEN === TOKEN)).toBe(true)
+  })
+
+  it("keeps only empty repositories the account can push to for a connect", async () => {
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited("[]"),
+      [ghList("octo-work", false)]: exited(GH_LIST),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: false, emptyOnly: true })
+
+    expect(list.repositories.map((repository) => repository.fullName)).toEqual(["octo-work/shop-api"])
+  })
+
+  it("says which owner could not be listed and which list stopped at its cap, and keeps the rest", async () => {
+    const hundred = JSON.stringify(
+      Array.from({ length: 100 }, (_, index) => ({
+        isEmpty: false,
+        name: `r${index}`,
+        nameWithOwner: `acme/r${index}`,
+        sshUrl: `git@github.com:acme/r${index}.git`,
+        url: `https://github.com/acme/r${index}`,
+        viewerPermission: "WRITE",
+        visibility: "PRIVATE",
+      })),
+    )
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited(GH_ORGS),
+      [ghList("octo-work", false)]: exited(GH_LIST),
+      [ghList("acme", false)]: exited(hundred),
+      [ghList("octo-org", false)]: exited("", 1, "GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.\n"),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: false, emptyOnly: false })
+
+    expect(list.repositories).toHaveLength(103)
+    expect(list.problems).toEqual([
+      "acme: only the first 100 repositories are listed. Use a URL for one that is not.",
+      "octo-org: GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.",
+    ])
+  })
+
+  it("lists GitLab projects the account is a member of in one request, Developer or more for a connect", async () => {
+    const project = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
+    const projects = JSON.stringify([
+      project,
+      { ...project, path: "reporter-only", path_with_namespace: "acme/qa/reporter-only", permissions: { project_access: { access_level: 20 }, group_access: null } },
+      { ...project, path: "full", path_with_namespace: "acme/qa/full", empty_repo: false },
+    ])
+    const { service, calls } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=30&per_page=100&order_by=last_activity_at": exited(projects),
+    })
+
+    const list = await service.listRepositories(GITLAB, { tagged: false, emptyOnly: true })
+
+    expect(list).toEqual({
+      repositories: [
+        {
+          owner: "acme/qa",
+          name: "api-tests",
+          fullName: "acme/qa/api-tests",
+          httpsUrl: "https://gitlab.com/acme/qa/api-tests.git",
+          sshUrl: "git@gitlab.com:acme/qa/api-tests.git",
+          private: true,
+          empty: true,
+          canPush: true,
+        },
+      ],
+      problems: [],
+    })
+    expect(calls).toHaveLength(2)
+  })
+
+  it("asks GitLab for the topic, Reporter or more, to open from git", async () => {
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=20&topic=apiweave-workspace&per_page=100&order_by=last_activity_at": exited("[]"),
+    })
+
+    await expect(service.listRepositories(GITLAB, { tagged: true, emptyOnly: false })).resolves.toEqual({ repositories: [], problems: [] })
+  })
+
+  it("reports a GitLab list that failed as a problem, not as no projects", async () => {
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=20&per_page=100&order_by=last_activity_at": exited(
+        '{"message":"403 Forbidden"}',
+        1,
+        "glab: 403 Forbidden (HTTP 403)\n",
+      ),
+    })
+
+    await expect(service.listRepositories(GITLAB, { tagged: false, emptyOnly: false })).resolves.toEqual({ repositories: [], problems: ["gitlab.com: 403 Forbidden"] })
+  })
+
+  it("refuses a request that is not two flags before any tool runs", async () => {
+    const { service, calls } = fakeCli({})
+
+    await expect(service.listRepositories(GITHUB, { tagged: "yes", emptyOnly: false } as never)).rejects.toThrow()
+    expect(calls).toEqual([])
+  })
+})

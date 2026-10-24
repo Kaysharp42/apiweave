@@ -2,13 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { GitBranch } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../atoms/Button";
-import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
-import { FormField } from "../molecules/FormField";
+import { GitRemotePicker } from "./GitRemotePicker";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { git } from "../../utils/apiweaveClient";
 import type {
   ExistingWorkspace,
+  GitRemoteSelection,
   OpenWorkspaceFromGitModalProps,
   PendingWorkspaceOpen,
 } from "../../types";
@@ -18,7 +18,7 @@ export function OpenWorkspaceFromGitModal({
   onClose,
 }: OpenWorkspaceFromGitModalProps) {
   const { refresh, switchTo } = useWorkspace();
-  const [url, setUrl] = useState("");
+  const [selection, setSelection] = useState<GitRemoteSelection | null>(null);
   const [existing, setExisting] = useState<ExistingWorkspace | null>(null);
   const [pending, setPending] = useState<PendingWorkspaceOpen | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function OpenWorkspaceFromGitModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setUrl("");
+      setSelection(null);
       setExisting(null);
       setPending(null);
       setServerError(null);
@@ -34,8 +34,7 @@ export function OpenWorkspaceFromGitModal({
     }
   }, [isOpen]);
 
-  const trimmedUrl = url.trim();
-  const canSubmit = Boolean(trimmedUrl) && !isSubmitting;
+  const canSubmit = selection !== null && !isSubmitting;
 
   const goToWorkspace = async (slug: string): Promise<void> => {
     await refresh();
@@ -57,10 +56,10 @@ export function OpenWorkspaceFromGitModal({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (selection === null || isSubmitting) return;
 
     await run(async () => {
-      const result = await git.openFromGit(trimmedUrl);
+      const result = await git.openFromGit(selection.url, selection.account);
       if (result.kind === "duplicate") {
         setExisting({ slug: result.slug, name: result.name });
         return;
@@ -191,19 +190,11 @@ export function OpenWorkspaceFromGitModal({
           >
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
               The workspace and its API tests are cloned from the repository
-              into this app.
+              into this app, and sync with it as the account you choose.
             </p>
 
-            <FormField label="Repository URL" required>
-              <Input
-                aria-label="Repository URL"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://host/owner/repo.git or git@host:owner/repo.git"
-                disabled={isSubmitting}
-                autoFocus
-              />
-            </FormField>
+            {/* Back from a duplicate remounts the picker on what was chosen. */}
+            <GitRemotePicker mode="open" initial={selection} onChange={setSelection} disabled={isSubmitting} />
           </form>
         )}
       </div>

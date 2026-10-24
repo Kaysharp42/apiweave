@@ -4,6 +4,8 @@ import type { GitAccountRef } from "./GitAccountRef"
 import type { GitCreatedRepository } from "./GitCreatedRepository"
 import type { GitCreateRepositoryRequest } from "./GitCreateRepositoryRequest"
 import type { GitProvider } from "./GitProvider"
+import type { GitRepositoryList } from "./GitRepositoryList"
+import type { GitRepositoryListRequest } from "./GitRepositoryListRequest"
 import type { GitRepositoryOwnerList } from "./GitRepositoryOwnerList"
 import type { GitSignInPrompt } from "./GitSignInPrompt"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
@@ -164,4 +166,12 @@ export interface GitBridge {
    * created is ever deleted; connecting to it is the caller's next call.
    */
   readonly createRepository: (account: GitAccountRef, request: GitCreateRepositoryRequest) => Promise<GitCreatedRepository>
+  /**
+   * The repositories `account` can see, none archived, capped per owner:
+   * `tagged` keeps only `apiweave-workspace` ones, `emptyOnly` only empty
+   * ones it can push to. An owner that could not be listed, and a list cut
+   * at its cap, are each a line in `problems`. Rejects when the account's
+   * tool cannot hand it over.
+   */
+  readonly listRepositories: (account: GitAccountRef, request: GitRepositoryListRequest) => Promise<GitRepositoryList>
 }

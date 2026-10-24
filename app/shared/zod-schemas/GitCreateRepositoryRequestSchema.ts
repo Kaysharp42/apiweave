@@ -26,6 +26,9 @@ export const GitRepositoryOwnerSchema = z
   .max(255)
   .regex(new RegExp(`^${SEGMENT}(?:/${SEGMENT})*$`), "not a user, organization or group name")
 
+/** A {@link GitRepositoryListRequest} from the renderer: two flags, nothing else. */
+export const GitRepositoryListRequestSchema = z.object({ tagged: z.boolean(), emptyOnly: z.boolean() }).strict()
+
 /** A {@link GitCreateRepositoryRequest} from the renderer, checked before any tool sees it. */
 export const GitCreateRepositoryRequestSchema = z
   .object({

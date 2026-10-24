@@ -33,9 +33,16 @@ const openedWithWarnings: OpenWorkspaceFromGitResult = {
 };
 const duplicate: OpenWorkspaceFromGitResult = { ...opened, kind: "duplicate", slug: "acme-qa" };
 
-function installBridge(result: OpenWorkspaceFromGitResult): GitBridge["openFromGit"] {
+/** No account signed in: the picker is the URL field, as before accounts. */
+const NO_ACCOUNTS: Pick<GitBridge, "listAccounts" | "listRepositories" | "onSignInPrompt"> = {
+  listAccounts: async () => ({ clis: [], accounts: [] }),
+  listRepositories: async () => ({ repositories: [], problems: [] }),
+  onSignInPrompt: () => () => undefined,
+};
+
+function installBridge(result: OpenWorkspaceFromGitResult, overrides: Partial<GitBridge> = {}): GitBridge["openFromGit"] {
   const openFromGit = vi.fn<GitBridge["openFromGit"]>(async () => result);
-  vi.stubGlobal("__APIWEAVE_GIT__", { openFromGit });
+  vi.stubGlobal("__APIWEAVE_GIT__", { ...NO_ACCOUNTS, openFromGit, ...overrides });
   return openFromGit;
 }
 
@@ -48,12 +55,16 @@ function urlField(): HTMLElement {
   return screen.getByRole("textbox", { name: "Repository URL" });
 }
 
+async function findUrlField(): Promise<HTMLElement> {
+  return screen.findByRole("textbox", { name: "Repository URL" });
+}
+
 function queryUrlField(): HTMLElement | null {
   return screen.queryByRole("textbox", { name: "Repository URL" });
 }
 
 async function submit(user: ReturnType<typeof userEvent.setup>, url = REPOSITORY): Promise<void> {
-  await user.type(urlField(), url);
+  await user.type(await findUrlField(), url);
   await user.click(screen.getByRole("button", { name: "Open workspace" }));
 }
 
@@ -76,7 +87,7 @@ describe("OpenWorkspaceFromGitModal", () => {
     expect(screen.getByText(/cloned from the repository into this app/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open workspace" })).toBeDisabled();
 
-    await user.type(urlField(), "   ");
+    await user.type(await findUrlField(), "   ");
     expect(screen.getByRole("button", { name: "Open workspace" })).toBeDisabled();
 
     await user.type(urlField(), REPOSITORY);
@@ -91,7 +102,7 @@ describe("OpenWorkspaceFromGitModal", () => {
     await submit(user, `  ${REPOSITORY}  `);
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    // No account picker yet (Phase 4): the clone is the user's own credentials.
+    // No account is signed in: the clone is the user's own credentials.
     expect(openFromGit).toHaveBeenCalledWith(REPOSITORY, null);
     expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(mockSwitchTo).toHaveBeenCalledWith("acme-qa-2");
@@ -101,7 +112,7 @@ describe("OpenWorkspaceFromGitModal", () => {
   it("shows the button busy and the field locked while the clone runs", async () => {
     let finish: (result: OpenWorkspaceFromGitResult) => void = () => undefined;
     const openFromGit = vi.fn<GitBridge["openFromGit"]>(() => new Promise((resolve) => { finish = resolve; }));
-    vi.stubGlobal("__APIWEAVE_GIT__", { openFromGit });
+    vi.stubGlobal("__APIWEAVE_GIT__", { ...NO_ACCOUNTS, openFromGit });
     const user = userEvent.setup();
     const onClose = renderModal();
 
@@ -165,7 +176,7 @@ describe("OpenWorkspaceFromGitModal", () => {
     await submit(user);
     await user.click(await screen.findByRole("button", { name: "Back" }));
 
-    expect(urlField()).toHaveValue(REPOSITORY);
+    expect(await findUrlField()).toHaveValue(REPOSITORY);
     expect(screen.queryByText(/already in APIWeave/)).not.toBeInTheDocument();
   });
 
@@ -208,6 +219,51 @@ describe("OpenWorkspaceFromGitModal", () => {
     expect(await screen.findAllByText("Set the secret TOKEN.")).toHaveLength(2);
     expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/two children with the same key/);
     consoleError.mockRestore();
+  });
+
+  describe("with an account", () => {
+    const WORK = { provider: "github" as const, host: "github.com", login: "octo-work", gitProtocol: "https" as const, active: true, problem: null };
+    const tagged = {
+      owner: "acme",
+      name: "api-tests",
+      fullName: "acme/api-tests",
+      httpsUrl: "https://github.com/acme/api-tests.git",
+      sshUrl: "git@github.com:acme/api-tests.git",
+      private: true,
+      empty: false,
+      canPush: true,
+    };
+    const other = { ...tagged, name: "website", fullName: "acme/website", httpsUrl: "https://github.com/acme/website.git", private: false };
+
+    it("lists the account's apiweave-workspace repositories and clones the one chosen as the account", async () => {
+      const listRepositories = vi.fn<GitBridge["listRepositories"]>(async () => ({ repositories: [tagged], problems: [] }));
+      const openFromGit = installBridge(opened, { listAccounts: async () => ({ clis: [], accounts: [WORK] }), listRepositories });
+      const user = userEvent.setup();
+      const onClose = renderModal();
+
+      await user.selectOptions(await screen.findByRole("combobox", { name: "Repository" }), await screen.findByRole("option", { name: "acme/api-tests (private)" }));
+      await user.click(screen.getByRole("button", { name: "Open workspace" }));
+
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+      expect(listRepositories).toHaveBeenCalledWith({ provider: "github", host: "github.com", login: "octo-work" }, { tagged: true, emptyOnly: false });
+      expect(openFromGit).toHaveBeenCalledWith("https://github.com/acme/api-tests.git", { provider: "github", host: "github.com", login: "octo-work" });
+    });
+
+    it("shows every repository with Show all repositories, and says when none is tagged", async () => {
+      const listRepositories = vi.fn<GitBridge["listRepositories"]>(async (_account, request) => ({
+        repositories: request.tagged ? [] : [tagged, other],
+        problems: [],
+      }));
+      installBridge(opened, { listAccounts: async () => ({ clis: [], accounts: [WORK] }), listRepositories });
+      const user = userEvent.setup();
+      renderModal();
+
+      expect(await screen.findByRole("option", { name: "No repository tagged apiweave-workspace" })).toBeInTheDocument();
+      await user.click(screen.getByRole("checkbox", { name: "Show all repositories" }));
+
+      expect(await screen.findByRole("option", { name: "acme/website" })).toBeInTheDocument();
+      expect(listRepositories).toHaveBeenLastCalledWith(expect.anything(), { tagged: false, emptyOnly: false });
+    });
   });
 
   it("closes from the warnings without switching, the workspace already in the list", async () => {

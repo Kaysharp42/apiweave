@@ -33,6 +33,7 @@ export function ToggleSetting({
         onChange={onToggle}
         disabled={disabled}
         variant="success"
+        aria-label={title}
       />
     </div>
   );

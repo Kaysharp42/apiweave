@@ -16,6 +16,7 @@ import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
+import { GitRemotePicker } from "./GitRemotePicker";
 import { GitSignInDialog } from "./GitSignInDialog";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
@@ -115,18 +116,17 @@ interface RemoteAccountProps {
   readonly remoteUrl: string;
   readonly value: GitAccountRef | null;
   readonly onChange: (account: GitAccountRef | null) => void;
-  /** Choose an account just signed in to: the connect form's, not a connected workspace's, which stays the user's to change. */
-  readonly chooseSignedIn: boolean;
   readonly busy: boolean;
 }
 
 /**
- * Which account an `https://` remote is reached as, signing in to another,
- * and why gh or glab could not say, when they could not. An SSH remote signs
- * in with the user's SSH key, so it is offered no account. A bound account
- * stays shown even when no tool lists it any more.
+ * Which account a connected `https://` remote is reached as, signing in to
+ * another, and why gh or glab could not say, when they could not. An SSH
+ * remote signs in with the user's SSH key, so it is offered no account. A
+ * bound account stays shown even when no tool lists it any more, and one
+ * just signed in to is offered, not chosen: the change is the user's.
  */
-function RemoteAccount({ remoteUrl, value, onChange, chooseSignedIn, busy }: RemoteAccountProps) {
+function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps) {
   const { accounts, problems, reload } = useGitAccounts();
   const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
   if (!HTTPS_REMOTE.test(remoteUrl)) return null;
@@ -160,10 +160,7 @@ function RemoteAccount({ remoteUrl, value, onChange, chooseSignedIn, busy }: Rem
           provider={signingIn}
           defaultHost={signInHost(signingIn, remoteHost(remoteUrl))}
           onClose={() => setSigningIn(null)}
-          onSignedIn={(signedIn) => {
-            reload();
-            if (chooseSignedIn) onChange(signedIn);
-          }}
+          onSignedIn={reload}
         />
       )}
     </>
@@ -178,11 +175,17 @@ interface RemoteSectionProps {
   /** What the connect form starts with: a repository just created that could not be connected to. */
   readonly prefill: GitRemoteSelection | null;
   readonly onConnect: (url: string, account: GitAccountRef | null) => void;
-  readonly onCreateRepository: () => void;
+  readonly onCreateRepository: (account: GitAccount) => void;
   readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
 }
 
+/**
+ * The remote and its branch; for a workspace with none, the connect form —
+ * Account, then Repository (its empty repositories, Create repository…
+ * first), or Use a URL instead — and for a connected one, its account and
+ * Disconnect.
+ */
 function RemoteSection({
   remoteUrl,
   branch,
@@ -194,8 +197,7 @@ function RemoteSection({
   onChangeAccount,
   onDisconnect,
 }: RemoteSectionProps) {
-  const [url, setUrl] = useState(prefill?.url ?? "");
-  const [chosen, setChosen] = useState<GitAccountRef | null>(prefill?.account ?? null);
+  const [selection, setSelection] = useState<GitRemoteSelection | null>(prefill);
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -209,37 +211,23 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            onConnect(url.trim(), HTTPS_REMOTE.test(url.trim()) ? chosen : null);
+            if (selection !== null) onConnect(selection.url, selection.account);
           }}
         >
-          <FormField label="Remote URL">
-            <Input
-              aria-label="Remote URL"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://host/owner/repo.git or git@host:owner/repo.git"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </FormField>
-          <RemoteAccount remoteUrl={url.trim()} value={chosen} onChange={setChosen} chooseSignedIn busy={busy} />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              variant="primary"
-              loading={busy}
-              disabled={url.trim() === ""}
-            >
-              Connect to remote
-            </Button>
-            <Button variant="secondary" disabled={busy} onClick={onCreateRepository}>
-              Create repository…
-            </Button>
-          </div>
+          <GitRemotePicker
+            mode="connect"
+            initial={prefill}
+            onChange={setSelection}
+            onCreateRepository={onCreateRepository}
+            disabled={busy}
+          />
+          <Button type="submit" variant="primary" loading={busy} disabled={selection === null}>
+            Connect to remote
+          </Button>
         </form>
       ) : (
         <>
-          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={onChangeAccount} chooseSignedIn={false} busy={busy} />
+          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={onChangeAccount} busy={busy} />
           <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
             Disconnect
           </Button>
@@ -257,7 +245,7 @@ interface TrackedProps {
   readonly onToggleMode: () => void;
   readonly onAuthor: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
   readonly onConnect: (url: string, account: GitAccountRef | null) => void;
-  readonly onCreateRepository: () => void;
+  readonly onCreateRepository: (account: GitAccount) => void;
   readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
   readonly onUntrack: () => void;
@@ -333,7 +321,8 @@ export function VersionHistoryPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  // The account Create repository… was chosen for in the picker; null while the dialog is closed.
+  const [creatingAs, setCreatingAs] = useState<GitAccount | null>(null);
   const [prefill, setPrefill] = useState<GitRemoteSelection | null>(null);
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
@@ -345,7 +334,7 @@ export function VersionHistoryPanel({
    * it, so Connect to remote is the retry.
    */
   const connectCreated = async (created: GitCreatedRepository, account: GitAccount): Promise<void> => {
-    setCreating(false);
+    setCreatingAs(null);
     const remote = remoteForRepository(account, created.repository);
     setBusy(true);
     setError(null);
@@ -404,7 +393,7 @@ export function VersionHistoryPanel({
         busy={busy}
         apply={apply}
         prefill={prefill}
-        onCreateRepository={() => setCreating(true)}
+        onCreateRepository={setCreatingAs}
         onToggleMode={() =>
           void run(() =>
             git.setMode(workspaceId, status.mode === "auto" ? "manual" : "auto"),
@@ -444,11 +433,11 @@ export function VersionHistoryPanel({
           </p>
         )}
       </div>
-      {creating && status !== null && (
+      {creatingAs !== null && (
         <CreateRepositoryDialog
-          onClose={() => setCreating(false)}
+          onClose={() => setCreatingAs(null)}
           defaultName={workspaceSlug}
-          defaultAccount={status.account}
+          defaultAccount={creatingAs}
           onCreated={(created, account) => void connectCreated(created, account)}
         />
       )}
