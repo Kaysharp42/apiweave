@@ -115,6 +115,19 @@ export interface GitLogOptions {
   readonly path?: string
 }
 
+/**
+ * A user name and token for one host, held in memory for the one git process
+ * that needs it: never in argv, a file, the database or an error.
+ */
+export interface GitCredential {
+  /** `https` for every real remote; `http` only for a test server on the loopback interface. */
+  readonly protocol: "https" | "http"
+  /** As git names it in the credential protocol: the host, and `:port` when the URL has one. */
+  readonly host: string
+  readonly username: string
+  readonly password: string
+}
+
 export interface GitServiceOptions {
   /** An empty directory handed to `core.hooksPath`, so no hook ever runs. The caller owns it. */
   readonly hooksDir: string

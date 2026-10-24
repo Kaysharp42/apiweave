@@ -104,6 +104,7 @@ export const GIT_CHANNELS = {
   disconnectRemote: "git:disconnectRemote",
   discardLocalChanges: "git:discardLocalChanges",
   openFromGit: "git:openFromGit",
+  listAccounts: "git:listAccounts",
 } as const
 
 /** Every status `GIT_CHANNELS` calls and auto commits leave behind, pushed to the renderer. */

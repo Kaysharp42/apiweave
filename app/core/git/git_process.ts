@@ -73,6 +73,8 @@ export interface GitExecOptions {
   readonly timeoutMs: number
   /** Written to git's stdin before it is closed: what a batch command reads. Nothing by default. */
   readonly input?: string | undefined
+  /** `args` is an escaped cmd.exe command line (`spawnCommandFor` on a `.cmd` shim), passed as it is. */
+  readonly verbatim?: boolean
 }
 
 export interface GitExecOutcome {
@@ -155,8 +157,9 @@ async function terminateAndWait(child: ChildProcess): Promise<void> {
 }
 
 /**
- * Run git without a shell. Resolves for every outcome and never rejects, so the
- * caller decides what a non-zero exit means.
+ * Run git — or a host's CLI, `gh` or `glab` — without a shell. Resolves for
+ * every outcome and never rejects, so the caller decides what a non-zero exit
+ * means.
  *
  * The timeout resolves on its own path instead of waiting for execFile's
  * callback: a `git-remote-http` helper inherits the stderr pipe, so a pipe left
@@ -168,7 +171,14 @@ export function execGit(file: string, args: readonly string[], options: GitExecO
     const child = execFile(
       file,
       [...args],
-      { cwd: options.cwd, env: options.env, maxBuffer: MAX_OUTPUT_BYTES, encoding: "utf8", windowsHide: true },
+      {
+        cwd: options.cwd,
+        env: options.env,
+        maxBuffer: MAX_OUTPUT_BYTES,
+        encoding: "utf8",
+        windowsHide: true,
+        windowsVerbatimArguments: options.verbatim === true,
+      },
       (error, stdout, stderr) => {
         clearTimeout(timer)
         if (!timedOut) {

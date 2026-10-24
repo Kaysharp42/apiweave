@@ -57,6 +57,16 @@ export class GitAuthFailedError extends GitProcessError {
   readonly code = "auth_failed"
 }
 
+/**
+ * `gh` or `glab` would not hand over a token for the account a call is bound
+ * to: missing, signed out, or signed in as someone else. Git never ran, so
+ * there is no output to carry — and the message never holds what the tool
+ * printed on stdout, which is where a token would be.
+ */
+export class GitAccountUnavailableError extends GitError {
+  readonly code = "account_unavailable"
+}
+
 export class GitNonFastForwardError extends GitProcessError {
   readonly code = "non_fast_forward"
 }
