@@ -61,7 +61,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "With Commit automatically off, Sync now (Commit now while there is no remote) commits. With edits waiting it first lists what the commit would hold by record name, takes an optional Commit message, and commits with Commit and sync (Commit with no remote).",
           detail:
-            "Leave the message empty and the commit names the files it changed. With nothing waiting, Sync now just syncs.",
+            "Leave the message empty and the commit names the files it changed. With nothing waiting, Sync now just syncs, and a local history with nothing uncommitted has nothing to commit and offers no action.",
         },
         {
           title: "Name your commits",
@@ -187,7 +187,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "The header shows the workspace's state as an icon and a word. Click it for an explanation, when the workspace last synced, its last commit, and a link to Version history settings.",
           detail:
-            "With a remote it reads Synced, Pending, Pending (N to push) when only commits are waiting, Syncing, Incoming (N) when the remote has new commits in manual mode, Merge needed, Diverged, Read-only or Sync error. With no remote it reads Committed, Pending, Committing or Commit error, and its action is Commit now.",
+            "With a remote it reads Synced, Pending, Pending (N to push) when only commits are waiting, Syncing, Incoming (N) when the remote has new commits in manual mode, Merge needed, Diverged, Read-only or Sync error. With no remote it reads Local history, Local history · uncommitted, Committing or Commit error. Commit now is offered only while edits are waiting, so a settled local history has nothing to commit and offers no action, and Commit error offers Retry.",
         },
         {
           title: "Handle a refused push",
