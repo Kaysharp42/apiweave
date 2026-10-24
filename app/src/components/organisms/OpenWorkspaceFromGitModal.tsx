@@ -19,8 +19,9 @@ export function OpenWorkspaceFromGitModal({
   onClose,
 }: OpenWorkspaceFromGitModalProps) {
   const { refresh, switchTo } = useWorkspace();
-  // Held here, so a sign-in made in the picker lists its account straight away.
-  const accounts = useGitAccounts();
+  // Held here, so a sign-in made in the picker lists its account straight away. Asked only while the
+  // dialog is open, and again each time it opens: an account signed in since is not missed.
+  const accounts = useGitAccounts({ enabled: isOpen });
   const [selection, setSelection] = useState<GitRemoteSelection | null>(null);
   const [existing, setExisting] = useState<ExistingWorkspace | null>(null);
   const [pending, setPending] = useState<PendingWorkspaceOpen | null>(null);
@@ -197,7 +198,13 @@ export function OpenWorkspaceFromGitModal({
             </p>
 
             {/* Back from a duplicate remounts the picker on what was chosen. */}
-            <GitRemotePicker mode="open" initial={selection} onChange={setSelection} accounts={accounts} disabled={isSubmitting} />
+            <GitRemotePicker
+              mode="open"
+              initial={selection}
+              onChange={setSelection}
+              accounts={accounts}
+              disabled={isSubmitting}
+            />
           </form>
         )}
       </div>

@@ -18,12 +18,21 @@ import type { GitRepositoryListFeed } from "../types";
  * earlier ask cannot land on top of the new one. While a list is being asked
  * for again, its old failure is not shown, and the list reads as loading.
  */
-export function useGitRepositoryList(account: GitAccountRef | null, request: GitRepositoryListRequest): GitRepositoryListFeed {
-  const key = account === null ? null : `${gitAccountKey(account)}|${String(request.tagged)}|${String(request.emptyOnly)}`;
+export function useGitRepositoryList(
+  account: GitAccountRef | null,
+  request: GitRepositoryListRequest,
+): GitRepositoryListFeed {
+  const key =
+    account === null
+      ? null
+      : `${gitAccountKey(account)}|${String(request.tagged)}|${String(request.emptyOnly)}`;
   const cache = useRef(new Map<string, GitRepositoryList>());
   // The ask under way for each key: an effect that runs twice (React's strict mode) waits on the first.
   const pending = useRef(new Map<string, Promise<GitRepositoryList>>());
-  const [failure, setFailure] = useState<{ readonly key: string; readonly message: string } | null>(null);
+  const [failure, setFailure] = useState<{
+    readonly key: string;
+    readonly message: string;
+  } | null>(null);
   const [, setAnswered] = useState(0);
   const [attempt, setAttempt] = useState(0);
 
@@ -34,7 +43,10 @@ export function useGitRepositoryList(account: GitAccountRef | null, request: Git
     let live = true;
     let asked = pending.current.get(key);
     if (asked === undefined) {
-      const started = git.listRepositories(gitAccountRef(account), { tagged: request.tagged, emptyOnly: request.emptyOnly });
+      const started = git.listRepositories(gitAccountRef(account), {
+        tagged: request.tagged,
+        emptyOnly: request.emptyOnly,
+      });
       asked = started;
       pending.current.set(key, asked);
       // Once it is answered or refused, the next ask starts fresh; a refresh has already replaced it.
@@ -50,7 +62,11 @@ export function useGitRepositoryList(account: GitAccountRef | null, request: Git
         setAnswered((count) => count + 1);
       },
       (error: unknown) => {
-        if (live) setFailure({ key, message: error instanceof Error ? error.message : String(error) });
+        if (live)
+          setFailure({
+            key,
+            message: error instanceof Error ? error.message : String(error),
+          });
       },
     );
     return () => {
@@ -68,10 +84,15 @@ export function useGitRepositoryList(account: GitAccountRef | null, request: Git
   }, [key]);
 
   const list = key === null ? undefined : cache.current.get(key);
-  const failed = failure !== null && failure.key === key ? failure.message : null;
+  const failed =
+    failure !== null && failure.key === key ? failure.message : null;
   return {
     repositories: list?.repositories ?? [],
-    problems: failed === null ? (list?.problems ?? []) : [`The repositories could not be listed: ${failed}`],
+    problems:
+      failed === null
+        ? (list?.problems ?? [])
+        : [`The repositories could not be listed: ${failed}`],
+    failed: failed !== null,
     loading: key !== null && list === undefined && failed === null,
     refresh,
   };

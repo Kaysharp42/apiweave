@@ -6,10 +6,16 @@ import { FormField } from "../molecules/FormField";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import type { GitRepositoryFieldProps } from "../../types";
 
-
 /** What the list's first, unchoosable line says: listing, nothing to list, or choose. */
-function placeholder({ mode, list, showAll }: Pick<GitRepositoryFieldProps, "mode" | "list" | "showAll">): string {
+function placeholder({
+  mode,
+  list,
+  showAll,
+}: Pick<GitRepositoryFieldProps, "mode" | "list" | "showAll">): string {
   if (list.loading) return "Listing repositories…";
+  // Nothing to choose from because nothing could be read is not the same as nothing to choose.
+  if (list.failed)
+    return "The repository list could not be read — Refresh tries again";
   if (list.repositories.length > 0) return "Choose a repository";
   if (mode === "connect") return "No empty repository you can push to";
   return showAll ? "No repository" : "No repository tagged apiweave-workspace";
@@ -40,7 +46,13 @@ export function GitRepositoryField({
             aria-label="Repository"
             value={picked}
             disabled={disabled || list.loading}
-            onChange={(event) => onPick(list.repositories.find((repository) => repository.fullName === event.target.value) ?? null)}
+            onChange={(event) =>
+              onPick(
+                list.repositories.find(
+                  (repository) => repository.fullName === event.target.value,
+                ) ?? null,
+              )
+            }
           >
             <option value="" disabled>
               {placeholder({ mode, list, showAll })}
@@ -68,7 +80,11 @@ export function GitRepositoryField({
       {/* A button, not an option: a native select fires a chosen option on ArrowDown, which would open a dialog. */}
       {mode === "connect" && onCreateRepository !== undefined && (
         <Button
-          variant={list.repositories.length === 0 && !list.loading ? "primary" : "secondary"}
+          variant={
+            list.repositories.length === 0 && !list.loading
+              ? "primary"
+              : "secondary"
+          }
           size="sm"
           icon={<GitBranchPlus className="h-4 w-4" aria-hidden="true" />}
           disabled={disabled}
@@ -88,7 +104,8 @@ export function GitRepositoryField({
       )}
       {account.gitProtocol === "ssh" && (
         <p className="text-xs text-text-muted dark:text-text-muted-dark">
-          {account.login} uses SSH: the repository is reached by its SSH URL, signed in with your SSH key.
+          {account.login} uses SSH: the repository is reached by its SSH URL,
+          signed in with your SSH key.
         </p>
       )}
       <Button variant="ghost" size="xs" disabled={disabled} onClick={onUseUrl}>

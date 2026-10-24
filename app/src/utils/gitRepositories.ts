@@ -11,13 +11,21 @@ import type { GitRemoteSelection } from "../types";
  * binding, because an account is bound to an `https://` remote only, as
  * Phase 3 refuses any other, and the user's SSH key answers for SSH.
  */
-export function remoteForRepository(account: GitAccount, repository: GitRepository): GitRemoteSelection {
-  return account.gitProtocol === "https" && HTTPS_REMOTE.test(repository.httpsUrl)
+export function remoteForRepository(
+  account: GitAccount,
+  repository: GitRepository,
+): GitRemoteSelection {
+  return account.gitProtocol === "https" &&
+    HTTPS_REMOTE.test(repository.httpsUrl)
     ? { url: repository.httpsUrl, account: gitAccountRef(account) }
     : { url: repository.sshUrl, account: null };
 }
 
 /** What to say when a repository was created but the workspace could not be connected to it: it stays, and connecting is retried by hand. */
-export function connectFailedMessage(account: GitAccount, repository: GitRepository, reason: string): string {
+export function connectFailedMessage(
+  account: GitAccount,
+  repository: GitRepository,
+  reason: string,
+): string {
   return `${account.host}/${repository.fullName} was created, but connecting this workspace to it failed. The repository was kept: connect to it from Version history to try again. Why: ${reason}`;
 }

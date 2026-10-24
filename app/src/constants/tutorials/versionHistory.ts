@@ -116,7 +116,12 @@ export const versionHistoryChapter: TutorialChapter = {
             "Stop tracking deletes the repository and its commits by design. Track again for a new history, and connect a fresh empty remote rather than the one holding the old history.",
         },
       ],
-      relatedLessonIds: ["workspaces", "secrets", "git-remote", "import-export"],
+      relatedLessonIds: [
+        "workspaces",
+        "secrets",
+        "git-remote",
+        "import-export",
+      ],
       destination: { label: "Open Version history", path: "version-history" },
     },
     {
@@ -209,7 +214,8 @@ export const versionHistoryChapter: TutorialChapter = {
         "The workspace pushes to the remote on its own schedule and brings other machines' commits in, and the header says what it is doing and what to do when it stops short.",
       troubleshooting: [
         {
-          title: "Connecting says Commit the workspace once before connecting a remote",
+          title:
+            "Connecting says Commit the workspace once before connecting a remote",
           instruction:
             "The workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email in the panel, then connect again.",
         },
@@ -548,7 +554,7 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "A pipeline's test step, from broadest to narrowest",
         language: "bash",
-        code: "APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project \"Shop API\" --env Staging\napiweave run ./tests --workflow \"Login\" --bail\napiweave run ./tests --reporter-junit-export reports/junit.xml",
+        code: 'APIWEAVE_SECRET_API_TOKEN=... apiweave run ./tests\napiweave run ./tests --project "Shop API" --env Staging\napiweave run ./tests --workflow "Login" --bail\napiweave run ./tests --reporter-junit-export reports/junit.xml',
       },
       expectedResult:
         "A CI job checks out the repository, runs the chosen tests against the chosen environment with its secrets supplied from the environment, fails the build on a failed test, and leaves a JUnit report behind.",

@@ -16,8 +16,14 @@ import type { GitAccountsFeed } from "../types";
  * `loaded` is false until the first answer, so "no accounts" is never said
  * while the tools are still being asked; `loading` is true while any ask,
  * a reload's included, is under way.
+ *
+ * `enabled` is for a caller that is always mounted but only sometimes shown
+ * — a dialog: with it false nothing runs, and each time it turns true the
+ * tools are asked again, so an account signed in since the last time is
+ * there.
  */
-export function useGitAccounts(): GitAccountsFeed {
+export function useGitAccounts(options: { readonly enabled?: boolean } = {}): GitAccountsFeed {
+  const enabled = options.enabled ?? true;
 
   const [accounts, setAccounts] = useState<readonly GitAccount[]>([]);
   const [clis, setClis] = useState<readonly GitHostCli[]>([]);
@@ -26,6 +32,7 @@ export function useGitAccounts(): GitAccountsFeed {
   const [answered, setAnswered] = useState(-1);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     git
       .listAccounts()
@@ -44,7 +51,7 @@ export function useGitAccounts(): GitAccountsFeed {
     return () => {
       live = false;
     };
-  }, [generation]);
+  }, [generation, enabled]);
   const reload = useCallback(() => setGeneration((current) => current + 1), []);
   const problems = [
     ...clis.flatMap((cli) => (cli.missing || cli.problem === null ? [] : [cliProblemLine(cli.command, cli.problem)])),
