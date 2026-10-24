@@ -11,11 +11,16 @@ import { FormField } from "../molecules/FormField";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { isRepositoryDraftReady } from "./CreateRepositoryFields";
 import { CreateRepositorySection } from "./CreateRepositorySection";
+import { GitAuthorForm } from "./GitAuthorForm";
+import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { apiweave, git } from "../../utils/apiweaveClient";
 import { gitAccountRef } from "../../utils/gitAccounts";
 import { connectFailedMessage, remoteForRepository } from "../../utils/gitRepositories";
-import type { CreateWorkspaceModalProps, GitRepositoryDraft } from "../../types";
+import type { GitIdentity } from "@shared/types/GitIdentity";
+import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
+import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
+import type { CreateWorkspaceModalProps, GitRepositoryDraft, UnfinishedWorkspaceSync, WorkspaceSyncOutcome } from "../../types";
 
 // Workspace slugs use lowercase letters, numbers, and hyphens.
 function toWorkspaceSlug(value: string): string {
@@ -42,42 +47,38 @@ const NO_REPOSITORY: GitRepositoryDraft = { account: null, owner: "", name: "", 
  * leaves the ones before it in place — the workspace tracked, the repository
  * created — because each can be finished from Version history, and
  * APIWeave never deletes a repository.
+ *
+ * A git that knows no author is the one stop that is not a failure: the
+ * commit that is the first thing to push is retried with `identity`, so the
+ * sync carries on where it left off rather than sending the user elsewhere.
  */
 async function syncNewWorkspace(
   workspaceId: string,
   account: GitAccount,
   draft: GitRepositoryDraft,
-): Promise<{ readonly failure: string | null; readonly note: string | null }> {
-  let commitless: boolean;
+  identity?: GitIdentity,
+): Promise<WorkspaceSyncOutcome> {
+  const stop = (failure: string): WorkspaceSyncOutcome => ({ failure, note: null, identityMissing: false });
+  let status: WorkspaceGitStatus;
   try {
-    commitless = (await git.track(workspaceId)).lastCommit === null;
+    status = identity === undefined ? await git.track(workspaceId) : await git.syncNow(workspaceId, { identity });
   } catch (error) {
-    return { failure: `The workspace was created, but it could not be tracked: ${errorText(error)}`, note: null };
+    return stop(`The workspace was created, but it could not be tracked: ${errorText(error)}`);
   }
-  // A missing git author leaves no commit to push: creating the repository now would only strand it.
-  if (commitless) {
-    return {
-      failure:
-        "The workspace was created and tracked, but git doesn't know who you are on this computer, so it has nothing to push yet. Enter your name and email in Version history, then create the repository there.",
-      note: null,
-    };
-  }
+  if (status.lastError?.code === "identity_missing") return { failure: null, note: null, identityMissing: true };
   let created;
   try {
     created = await git.createRepository(gitAccountRef(account), { owner: draft.owner, name: draft.name.trim(), private: draft.private });
   } catch (error) {
-    return {
-      failure: `The workspace was created and tracked, but the repository could not be created: ${errorText(error)} Create it from Version history.`,
-      note: null,
-    };
+    return stop(`The workspace was created and tracked, but the repository could not be created: ${errorText(error)} Create it from Version history.`);
   }
   const remote = remoteForRepository(account, created.repository);
   try {
     await git.connectRemote(workspaceId, remote.url, remote.account);
   } catch (error) {
-    return { failure: connectFailedMessage(account, created.repository, errorText(error)), note: null };
+    return stop(connectFailedMessage(account, created.repository, errorText(error)));
   }
-  return { failure: null, note: created.problem };
+  return { failure: null, note: created.problem, identityMissing: false };
 }
 
 export function CreateWorkspaceModal({
@@ -87,6 +88,8 @@ export function CreateWorkspaceModal({
 }: CreateWorkspaceModalProps) {
   const navigate = useNavigate();
   const { currentOrg } = useWorkspace();
+  // One list of accounts for the dialog: the sync section and any sign-in in it share it.
+  const accounts = useGitAccounts();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
@@ -97,7 +100,9 @@ export function CreateWorkspaceModal({
   // The repository is named after the slug until its name is edited.
   const [nameEdited, setNameEdited] = useState(false);
   // A workspace created whose sync did not finish: the form is done, and Version history is where to finish it.
-  const [unfinished, setUnfinished] = useState<{ readonly slug: string; readonly message: string } | null>(null);
+  const [unfinished, setUnfinished] = useState<UnfinishedWorkspaceSync | null>(null);
+  // A workspace created whose sync waits on the author: its id and slug, while the dialog asks.
+  const [awaitingAuthor, setAwaitingAuthor] = useState<{ readonly workspaceId: string; readonly slug: string } | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,6 +115,7 @@ export function CreateWorkspaceModal({
       setRepository(NO_REPOSITORY);
       setNameEdited(false);
       setUnfinished(null);
+      setAwaitingAuthor(null);
     }
   }, [isOpen]);
 
@@ -121,7 +127,7 @@ export function CreateWorkspaceModal({
       : null;
   const draft: GitRepositoryDraft = nameEdited ? repository : { ...repository, name: trimmedSlug };
   const canSubmit =
-    Boolean(trimmedName && trimmedSlug && !slugError) && !isSubmitting && unfinished === null && (!sync || isRepositoryDraftReady(draft));
+    Boolean(trimmedName && trimmedSlug && !slugError) && !isSubmitting && unfinished === null && awaitingAuthor === null && (!sync || isRepositoryDraftReady(draft));
 
   const changeRepository = useCallback(
     (next: GitRepositoryDraft) => {
@@ -150,15 +156,22 @@ export function CreateWorkspaceModal({
         description: description.trim() || null,
         isPersonal: false,
       });
-      const synced = sync && draft.account !== null ? await syncNewWorkspace(workspace.workspaceId, draft.account, draft) : null;
+      const account = draft.account;
+      const synced = sync && account !== null ? await syncNewWorkspace(workspace.workspaceId, account, draft) : null;
       // The workspace exists whatever its sync came to: the list knows it, and the app is on it.
       await onCreated(workspace);
+      if (synced?.identityMissing === true) {
+        // The one stop that can be cleared here: ask who the commit is by, then carry on.
+        setAwaitingAuthor({ workspaceId: workspace.workspaceId, slug: workspace.slug });
+        setSync(false);
+        return;
+      }
       if (synced !== null && synced.failure !== null) {
-        setUnfinished({ slug: workspace.slug, message: synced.failure });
+        setUnfinished({ slug: workspace.slug, message: synced.failure, draft });
         return;
       }
       toast.success(
-        synced === null ? `Workspace "${workspace.name}" created` : `Workspace "${workspace.name}" created and synced with ${draft.account?.host ?? "its repository"}`,
+        synced === null ? `Workspace "${workspace.name}" created` : `Workspace "${workspace.name}" created and synced with ${account?.host ?? "its repository"}`,
         synced === null || synced.note === null ? undefined : { description: synced.note },
       );
       onClose();
@@ -172,9 +185,39 @@ export function CreateWorkspaceModal({
     }
   };
 
+  /** Ask who the commit is by, then finish the sync with it: create the repository and connect. */
+  const commitAsAuthor = async (request: WorkspaceGitCommitRequest): Promise<boolean> => {
+    if (awaitingAuthor === null || draft.account === null) return false;
+    setIsSubmitting(true);
+    setServerError(null);
+    try {
+      const synced = await syncNewWorkspace(awaitingAuthor.workspaceId, draft.account, draft, request.identity);
+      setAwaitingAuthor(null);
+      if (synced.identityMissing) {
+        setServerError("Git still doesn't know who you are. Check the name and email, and try again.");
+        return false;
+      }
+      if (synced.failure !== null) {
+        setUnfinished({ slug: awaitingAuthor.slug, message: synced.failure, draft });
+        return false;
+      }
+      toast.success(`Workspace created and synced with ${draft.account.host}`, synced.note === null ? undefined : { description: synced.note });
+      onClose();
+      return true;
+    } catch (error) {
+      setServerError(errorText(error));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const openVersionHistory = (): void => {
     if (unfinished === null) return;
-    navigate(`/${currentOrg?.slug ?? "personal"}/${unfinished.slug}/settings/version-history`);
+    // The repository the form was to create goes with it: Version history starts its Create repository from it.
+    navigate(`/${currentOrg?.slug ?? "personal"}/${unfinished.slug}/settings/version-history`, {
+      state: { gitRepositoryDraft: unfinished.draft },
+    });
     onClose();
   };
 
@@ -220,8 +263,21 @@ export function CreateWorkspaceModal({
         </p>
 
         {serverError && (
-          <div className="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20">
+          <div
+            role="alert"
+            className="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
+          >
             {serverError}
+          </div>
+        )}
+
+        {awaitingAuthor !== null && (
+          <div className="space-y-2 rounded border border-border px-3 py-2 dark:border-border-dark">
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+              The workspace is created and tracked. Tell git who is making its commits, and APIWeave creates the
+              repository and connects it straight away.
+            </p>
+            <GitAuthorForm busy={isSubmitting} onCommit={commitAsAuthor} />
           </div>
         )}
 
@@ -285,6 +341,7 @@ export function CreateWorkspaceModal({
                 value={draft}
                 onChange={changeRepository}
                 defaultAccount={null}
+                accounts={accounts}
                 disabled={isSubmitting || unfinished !== null}
               />
             )}

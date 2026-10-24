@@ -30,7 +30,7 @@ const created: Workspace = {
 } as unknown as Workspace;
 
 const WORK: GitAccount = { provider: "github", host: "github.com", login: "octo-work", gitProtocol: "https", active: true, problem: null };
-const WORK_REF = { provider: "github", host: "github.com", login: "octo-work" };
+const WORK_REF = { provider: "github" as const, host: "github.com", login: "octo-work" };
 
 function stubBridge() {
   const invoke = vi.fn(async () => ({ ok: true as const, data: created }));
@@ -47,7 +47,13 @@ function stubBridge() {
 }
 
 function LocationProbe() {
-  return <div data-testid="location">{useLocation().pathname}</div>;
+  const location = useLocation();
+  return (
+    <>
+      <div data-testid="location">{location.pathname}</div>
+      <div data-testid="location-state">{JSON.stringify(location.state)}</div>
+    </>
+  );
 }
 
 function renderModal(onCreated = vi.fn().mockResolvedValue(undefined), onClose = vi.fn()) {
@@ -139,7 +145,8 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
     expect(bridge.track).not.toHaveBeenCalled();
-    expect(bridge.listAccounts).not.toHaveBeenCalled();
+    expect(bridge.createRepository).not.toHaveBeenCalled();
+    expect(bridge.connectRemote).not.toHaveBeenCalled();
   });
 
   it("creates the workspace, tracks it, creates a private repository named after its slug and connects as the account", async () => {
@@ -193,6 +200,10 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Version history" }));
     expect(screen.getByTestId("location")).toHaveTextContent("/personal/qa-workspace/settings/version-history");
+    // The repository it was going to make goes with it, for Version history to start from.
+    expect(JSON.parse(screen.getByTestId("location-state").textContent ?? "{}")).toMatchObject({
+      gitRepositoryDraft: { owner: "octo-work", name: "qa-workspace", private: true },
+    });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -209,18 +220,28 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     );
   });
 
-  it("creates no repository when git does not know who the user is, and says what to do", async () => {
+  it("asks who the commit is by when git knows no author, then creates and connects, instead of stopping halfway", async () => {
     const { bridge } = installGit({
       track: vi.fn(async () => trackedStatus({ workspaceId: "ws-new", remoteUrl: null, lastCommit: null, lastError: { code: "identity_missing", message: "Author identity unknown" } })),
+      syncNow: vi.fn(async () => trackedStatus({ workspaceId: "ws-new", remoteUrl: "https://github.com/octo-work/qa-workspace.git", account: WORK_REF })),
     });
     const user = userEvent.setup();
-    renderModal();
+    const { onClose } = renderModal();
 
     await fillAndSync(user);
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/git doesn't know who you are on this computer/);
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByText(/Tell git who is making its commits/)).toBeInTheDocument();
     expect(bridge.createRepository).not.toHaveBeenCalled();
-    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Open Version history" })).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: "Your name" }), "Ada Lovelace");
+    await user.type(within(dialog).getByRole("textbox", { name: "Your email address" }), "ada@example.com");
+    await user.click(within(dialog).getByRole("button", { name: "Save and commit" }));
+
+    await waitFor(() =>
+      expect(bridge.syncNow).toHaveBeenCalledWith("ws-new", { identity: { name: "Ada Lovelace", email: "ada@example.com" } }),
+    );
+    await waitFor(() => expect(bridge.connectRemote).toHaveBeenCalledWith("ws-new", "https://github.com/octo-work/qa-workspace.git", WORK_REF));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
 });

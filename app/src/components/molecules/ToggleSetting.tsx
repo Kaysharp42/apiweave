@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Toggle } from "../atoms/Toggle";
 
 interface ToggleSettingProps {
@@ -18,13 +18,14 @@ export function ToggleSetting({
   onToggle,
   disabled = false,
 }: ToggleSettingProps) {
+  const descriptionId = useId();
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
         <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
           {title}
         </p>
-        <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
+        <p id={descriptionId} className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
           {description}
         </p>
       </div>
@@ -34,6 +35,7 @@ export function ToggleSetting({
         disabled={disabled}
         variant="success"
         aria-label={title}
+        aria-describedby={descriptionId}
       />
     </div>
   );

@@ -424,6 +424,10 @@ export type { CreateRepositorySectionProps } from "./CreateRepositorySectionProp
 export type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 export type { GitRemotePickerProps } from "./GitRemotePickerProps";
 export type { GitAccountsFeed } from "./GitAccountsFeed";
+export type { WorkspaceSyncOutcome } from "./WorkspaceSyncOutcome";
+export type { UnfinishedWorkspaceSync } from "./UnfinishedWorkspaceSync";
+export type { GitRepositoryRouteState } from "./GitRepositoryRouteState";
+export { routeRepositoryDraft } from "./GitRepositoryRouteState";
 export type { RemoteSectionProps } from "./RemoteSectionProps";
 export type { RemoteAccountProps } from "./RemoteAccountProps";
 export type { GitRepositoryFieldProps } from "./GitRepositoryFieldProps";

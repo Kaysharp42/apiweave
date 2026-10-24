@@ -6,12 +6,11 @@ import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
-import { Input } from "../atoms/Input";
 import { Spinner } from "../atoms/Spinner";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { DetailField } from "../molecules/DetailField";
-import { FormField } from "../molecules/FormField";
 import { GitAccountPicker } from "../molecules/GitAccountPicker";
+import { GitAuthorForm } from "./GitAuthorForm";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
@@ -27,7 +26,14 @@ import { GIT_PROVIDERS } from "../../utils/gitAccounts";
 import { HTTPS_REMOTE, errorText } from "../../utils/gitRemote";
 import { remoteHost } from "../../utils/gitErrorMessages";
 import { connectFailedMessage, remoteForRepository } from "../../utils/gitRepositories";
-import type { GitAuthorFormProps, GitRemoteSelection, GitRepositoryCreation, PanelMessage, RemoteAccountProps, RemoteSectionProps } from "../../types";
+import type {
+  GitRemoteSelection,
+  GitRepositoryCreation,
+  GitRepositoryDraft,
+  PanelMessage,
+  RemoteAccountProps,
+  RemoteSectionProps,
+} from "../../types";
 
 
 interface UntrackedProps {
@@ -47,54 +53,6 @@ function Untracked({ busy, onTrack }: UntrackedProps) {
         Track this workspace
       </Button>
     </div>
-  );
-}
-
-/**
- * Asked for when git reports no author: written into this workspace's own
- * repository only (`git config --local`), then the commit is retried.
- */
-function AuthorForm({ busy, onCommit }: GitAuthorFormProps) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  return (
-    <form
-      className="space-y-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void onCommit({ identity: { name, email } });
-      }}
-    >
-      <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-        Git doesn&apos;t know who you are on this machine. Commits in this
-        workspace&apos;s history will name the author below.
-      </p>
-      <FormField label="Your name" required>
-        <Input
-          aria-label="Your name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          autoComplete="name"
-        />
-      </FormField>
-      <FormField label="Your email address" required>
-        <Input
-          aria-label="Your email address"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          autoComplete="email"
-        />
-      </FormField>
-      <Button
-        type="submit"
-        variant="primary"
-        loading={busy}
-        disabled={name.trim() === "" || email.trim() === ""}
-      >
-        Save and commit
-      </Button>
-    </form>
   );
 }
 
@@ -216,7 +174,7 @@ function Tracked({ status, busy, apply, onToggleMode, onAuthor, remote, onUntrac
         disabled={busy}
       />
       {needsAuthor ? (
-        <AuthorForm busy={busy} onCommit={onAuthor} />
+        <GitAuthorForm busy={busy} onCommit={onAuthor} />
       ) : (
         <GitSyncStatusCard status={status} actions={actions} alwaysOfferDiscard />
       )}
@@ -239,10 +197,13 @@ function Tracked({ status, busy, apply, onToggleMode, onAuthor, remote, onUntrac
 export function VersionHistoryPanel({
   workspaceId,
   workspaceSlug,
+  handedOn = null,
 }: {
   readonly workspaceId: string;
   /** What a repository created for the workspace is called unless the user says otherwise. */
   readonly workspaceSlug: string;
+  /** The repository Create workspace was going to make before its sync stopped: the dialog starts on it. */
+  readonly handedOn?: GitRepositoryDraft | null;
 }) {
   const available = git.isAvailable();
   const { status, error: loadError, apply } = useWorkspaceGitStatus(workspaceId);
@@ -250,7 +211,9 @@ export function VersionHistoryPanel({
   const accounts = useGitAccounts();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<PanelMessage | null>(null);
-  const [creation, setCreation] = useState<GitRepositoryCreation>({ step: "idle" });
+  const [creation, setCreation] = useState<GitRepositoryCreation>(
+    handedOn === null ? { step: "idle" } : { step: "dialog", account: handedOn.account as GitAccount },
+  );
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(null);
   const prefill = creation.step === "unconnected" ? creation.remote : null;
 
@@ -370,6 +333,7 @@ export function VersionHistoryPanel({
           defaultName={workspaceSlug}
           defaultAccount={creation.account}
           accounts={accounts}
+          {...(handedOn === null ? {} : { initialDraft: handedOn })}
           onCreated={(created, account) => void connectCreated(created, account)}
         />
       )}
