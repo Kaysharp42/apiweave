@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import "../../../__tests__/setup";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +14,11 @@ import { toast } from "sonner";
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitBridge } from "@shared/types/GitBridge";
 import { CreateWorkspaceModal } from "../CreateWorkspaceModal";
-import { installGitBridge, trackedStatus, untrackedStatus } from "../../../__tests__/gitFixtures";
+import {
+  installGitBridge,
+  trackedStatus,
+  untrackedStatus,
+} from "../../../__tests__/gitFixtures";
 import type { Workspace } from "../../../types/Workspace";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -29,8 +39,19 @@ const created: Workspace = {
   updatedAt: "2026-07-19T00:00:00.000Z",
 } as unknown as Workspace;
 
-const WORK: GitAccount = { provider: "github", host: "github.com", login: "octo-work", gitProtocol: "https", active: true, problem: null };
-const WORK_REF = { provider: "github" as const, host: "github.com", login: "octo-work" };
+const WORK: GitAccount = {
+  provider: "github",
+  host: "github.com",
+  login: "octo-work",
+  gitProtocol: "https",
+  active: true,
+  problem: null,
+};
+const WORK_REF = {
+  provider: "github" as const,
+  host: "github.com",
+  login: "octo-work",
+};
 
 function stubBridge() {
   const invoke = vi.fn(async () => ({ ok: true as const, data: created }));
@@ -56,7 +77,10 @@ function LocationProbe() {
   );
 }
 
-function renderModal(onCreated = vi.fn().mockResolvedValue(undefined), onClose = vi.fn()) {
+function renderModal(
+  onCreated = vi.fn().mockResolvedValue(undefined),
+  onClose = vi.fn(),
+) {
   render(
     <MemoryRouter initialEntries={["/personal/personal/workflows"]}>
       <Routes>
@@ -64,7 +88,11 @@ function renderModal(onCreated = vi.fn().mockResolvedValue(undefined), onClose =
           path="*"
           element={
             <>
-              <CreateWorkspaceModal isOpen onClose={onClose} onCreated={onCreated} />
+              <CreateWorkspaceModal
+                isOpen
+                onClose={onClose}
+                onCreated={onCreated}
+              />
               <LocationProbe />
             </>
           }
@@ -118,20 +146,34 @@ describe("CreateWorkspaceModal (desktop)", () => {
     stubBridge();
     renderModal();
 
-    expect(screen.queryByRole("checkbox", { name: "Sync with GitHub or GitLab" })).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+    ).toBeNull();
   });
 });
 
 describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
   function installGit(overrides: Partial<GitBridge> = {}) {
     stubBridge();
-    return installGitBridge(untrackedStatus, { listAccounts: vi.fn(async () => ({ clis: [], accounts: [WORK] })), ...overrides });
+    return installGitBridge(untrackedStatus, {
+      listAccounts: vi.fn(async () => ({ clis: [], accounts: [WORK] })),
+      ...overrides,
+    });
   }
 
   async function fillAndSync(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByPlaceholderText("QA Workspace"), "QA Workspace");
-    await user.click(screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }));
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue("octo-work"));
+    await user.type(
+      screen.getByPlaceholderText("QA Workspace"),
+      "QA Workspace",
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
+        "octo-work",
+      ),
+    );
   }
 
   it("is off by default, and then creates the workspace alone", async () => {
@@ -139,8 +181,13 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     const user = userEvent.setup();
     const { onCreated } = renderModal();
 
-    expect(screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" })).not.toBeChecked();
-    await user.type(screen.getByPlaceholderText("QA Workspace"), "QA Workspace");
+    expect(
+      screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+    ).not.toBeChecked();
+    await user.type(
+      screen.getByPlaceholderText("QA Workspace"),
+      "QA Workspace",
+    );
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created));
@@ -155,15 +202,28 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     const { onCreated, onClose } = renderModal();
 
     await fillAndSync(user);
-    expect(screen.getByRole("textbox", { name: "Repository name" })).toHaveValue("qa-workspace");
+    expect(
+      screen.getByRole("textbox", { name: "Repository name" }),
+    ).toHaveValue("qa-workspace");
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(bridge.track).toHaveBeenCalledWith("ws-new");
-    expect(bridge.createRepository).toHaveBeenCalledWith(WORK_REF, { owner: "octo-work", name: "qa-workspace", private: true });
-    expect(bridge.connectRemote).toHaveBeenCalledWith("ws-new", "https://github.com/octo-work/qa-workspace.git", WORK_REF);
+    expect(bridge.createRepository).toHaveBeenCalledWith(WORK_REF, {
+      owner: "octo-work",
+      name: "qa-workspace",
+      private: true,
+    });
+    expect(bridge.connectRemote).toHaveBeenCalledWith(
+      "ws-new",
+      "https://github.com/octo-work/qa-workspace.git",
+      WORK_REF,
+    );
     expect(onCreated).toHaveBeenCalledWith(created);
-    expect(toast.success).toHaveBeenCalledWith('Workspace "QA Workspace" created and synced with github.com', undefined);
+    expect(toast.success).toHaveBeenCalledWith(
+      'Workspace "QA Workspace" created and synced with github.com',
+      undefined,
+    );
   });
 
   it("names the repository after the slug until the name is edited", async () => {
@@ -182,7 +242,11 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
 
   it("keeps the workspace, tracked, when the repository cannot be created, and sends the user to Version history", async () => {
     const { bridge } = installGit({
-      createRepository: vi.fn().mockRejectedValueOnce(new Error("github.com/octo-work/qa-workspace already exists.")),
+      createRepository: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error("github.com/octo-work/qa-workspace already exists."),
+        ),
     });
     const user = userEvent.setup();
     const { onCreated, onClose } = renderModal();
@@ -196,19 +260,35 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     expect(onCreated).toHaveBeenCalledWith(created);
     expect(bridge.connectRemote).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "Create workspace" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Create workspace" }),
+    ).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Open Version history" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/personal/qa-workspace/settings/version-history");
+    await user.click(
+      screen.getByRole("button", { name: "Open Version history" }),
+    );
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/personal/qa-workspace/settings/version-history",
+    );
     // The repository it was going to make goes with it, for Version history to start from.
-    expect(JSON.parse(screen.getByTestId("location-state").textContent ?? "{}")).toMatchObject({
-      gitRepositoryDraft: { owner: "octo-work", name: "qa-workspace", private: true },
+    expect(
+      JSON.parse(screen.getByTestId("location-state").textContent ?? "{}"),
+    ).toMatchObject({
+      gitRepositoryDraft: {
+        owner: "octo-work",
+        name: "qa-workspace",
+        private: true,
+      },
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("keeps a repository it could not connect to, and says so", async () => {
-    installGit({ connectRemote: vi.fn().mockRejectedValueOnce(new Error("Could not reach github.com.")) });
+    installGit({
+      connectRemote: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Could not reach github.com.")),
+    });
     const user = userEvent.setup();
     renderModal();
 
@@ -222,8 +302,24 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
 
   it("asks who the commit is by when git knows no author, then creates and connects, instead of stopping halfway", async () => {
     const { bridge } = installGit({
-      track: vi.fn(async () => trackedStatus({ workspaceId: "ws-new", remoteUrl: null, lastCommit: null, lastError: { code: "identity_missing", message: "Author identity unknown" } })),
-      syncNow: vi.fn(async () => trackedStatus({ workspaceId: "ws-new", remoteUrl: "https://github.com/octo-work/qa-workspace.git", account: WORK_REF })),
+      track: vi.fn(async () =>
+        trackedStatus({
+          workspaceId: "ws-new",
+          remoteUrl: null,
+          lastCommit: null,
+          lastError: {
+            code: "identity_missing",
+            message: "Author identity unknown",
+          },
+        }),
+      ),
+      syncNow: vi.fn(async () =>
+        trackedStatus({
+          workspaceId: "ws-new",
+          remoteUrl: "https://github.com/octo-work/qa-workspace.git",
+          account: WORK_REF,
+        }),
+      ),
     });
     const user = userEvent.setup();
     const { onClose } = renderModal();
@@ -232,16 +328,168 @@ describe("CreateWorkspaceModal's sync with GitHub or GitLab", () => {
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
 
     const dialog = screen.getByRole("dialog");
-    expect(await within(dialog).findByText(/Tell git who is making its commits/)).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText(/Tell git who is making its commits/),
+    ).toBeInTheDocument();
     expect(bridge.createRepository).not.toHaveBeenCalled();
-    await user.type(within(dialog).getByRole("textbox", { name: "Your name" }), "Ada Lovelace");
-    await user.type(within(dialog).getByRole("textbox", { name: "Your email address" }), "ada@example.com");
-    await user.click(within(dialog).getByRole("button", { name: "Save and commit" }));
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Your name" }),
+      "Ada Lovelace",
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Your email address" }),
+      "ada@example.com",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save and commit" }),
+    );
 
     await waitFor(() =>
-      expect(bridge.syncNow).toHaveBeenCalledWith("ws-new", { identity: { name: "Ada Lovelace", email: "ada@example.com" } }),
+      expect(bridge.syncNow).toHaveBeenCalledWith("ws-new", {
+        identity: { name: "Ada Lovelace", email: "ada@example.com" },
+      }),
     );
-    await waitFor(() => expect(bridge.connectRemote).toHaveBeenCalledWith("ws-new", "https://github.com/octo-work/qa-workspace.git", WORK_REF));
+    await waitFor(() =>
+      expect(bridge.connectRemote).toHaveBeenCalledWith(
+        "ws-new",
+        "https://github.com/octo-work/qa-workspace.git",
+        WORK_REF,
+      ),
+    );
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  });
+
+  describe("Create workspace's sync, when git stops it", () => {
+    function identityStatus() {
+      return trackedStatus({
+        workspaceId: "ws-new",
+        remoteUrl: null,
+        lastCommit: null,
+        lastError: {
+          code: "identity_missing",
+          message: "Author identity unknown",
+        },
+      });
+    }
+
+    it("keeps the author form and the plain submit disabled when git still knows no author", async () => {
+      stubBridge();
+      const { bridge } = installGitBridge(identityStatus(), {
+        track: vi.fn(async () => identityStatus()),
+        syncNow: vi.fn(async () => identityStatus()),
+        listAccounts: vi.fn(async () => ({ clis: [], accounts: [WORK] })),
+      });
+      const user = userEvent.setup();
+      renderModal();
+
+      await user.type(
+        screen.getByPlaceholderText("QA Workspace"),
+        "QA Workspace",
+      );
+      await user.click(
+        screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
+          "octo-work",
+        ),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Create workspace" }),
+      );
+
+      const dialog = screen.getByRole("dialog");
+      await user.type(
+        await within(dialog).findByRole("textbox", { name: "Your name" }),
+        "Ada",
+      );
+      await user.type(
+        within(dialog).getByRole("textbox", { name: "Your email address" }),
+        "ada@example.com",
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: "Save and commit" }),
+      );
+
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "Git still doesn't know who you are",
+      );
+      expect(
+        within(dialog).getByRole("textbox", { name: "Your name" }),
+      ).toBeInTheDocument();
+      expect(bridge.createRepository).not.toHaveBeenCalled();
+      // The plain submit is not re-armed behind the form.
+      expect(
+        within(dialog).getByRole("button", { name: "Create workspace" }),
+      ).toBeDisabled();
+    });
+
+    it("creates no repository when the first commit fails for another reason, and says which", async () => {
+      stubBridge();
+      const failed = trackedStatus({
+        workspaceId: "ws-new",
+        remoteUrl: null,
+        lastError: {
+          code: "network_error",
+          message: "fatal: unable to access the remote",
+        },
+      });
+      const { bridge } = installGitBridge(failed, {
+        track: vi.fn(async () => failed),
+        syncNow: vi.fn(async () => failed),
+        listAccounts: vi.fn(async () => ({ clis: [], accounts: [WORK] })),
+      });
+      const user = userEvent.setup();
+      const { onCreated } = renderModal();
+
+      await user.type(
+        screen.getByPlaceholderText("QA Workspace"),
+        "QA Workspace",
+      );
+      await user.click(
+        screen.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: "Owner" })).toHaveValue(
+          "octo-work",
+        ),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Create workspace" }),
+      );
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "The workspace was created, but its first commit failed: fatal: unable to access the remote",
+      );
+      expect(bridge.createRepository).not.toHaveBeenCalled();
+      expect(onCreated).toHaveBeenCalledWith(created);
+      expect(
+        screen.getByRole("button", { name: "Open Version history" }),
+      ).toBeInTheDocument();
+    });
+
+    it("asks for accounts only while it is open, and again each time it opens", async () => {
+      stubBridge();
+      const { bridge } = installGitBridge(untrackedStatus, {
+        listAccounts: vi.fn(async () => ({ clis: [], accounts: [WORK] })),
+      });
+      const element = (isOpen: boolean) => (
+        <MemoryRouter>
+          <CreateWorkspaceModal
+            isOpen={isOpen}
+            onClose={vi.fn()}
+            onCreated={vi.fn()}
+          />
+        </MemoryRouter>
+      );
+      const view = render(element(false));
+
+      expect(bridge.listAccounts).not.toHaveBeenCalled();
+      view.rerender(element(true));
+      await waitFor(() => expect(bridge.listAccounts).toHaveBeenCalledTimes(1));
+      view.rerender(element(false));
+      view.rerender(element(true));
+      await waitFor(() => expect(bridge.listAccounts).toHaveBeenCalledTimes(2));
+    });
   });
 });
