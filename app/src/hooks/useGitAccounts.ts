@@ -15,8 +15,13 @@ import { cliProblemLine } from "../utils/gitAccounts";
  * `loaded` is false until the first answer, so "no accounts" is never said
  * while the tools are still being asked; `loading` is true while any ask,
  * a reload's included, is under way.
+ *
+ * `enabled` is for a caller that is always mounted but only sometimes shown
+ * — a dialog: with it false nothing runs, and each time it turns true the
+ * tools are asked again, so an account signed in since the last time is
+ * there.
  */
-export function useGitAccounts(): {
+export function useGitAccounts(options: { readonly enabled?: boolean } = {}): {
   readonly accounts: readonly GitAccount[];
   readonly clis: readonly GitHostCli[];
   readonly problems: readonly string[];
@@ -25,6 +30,7 @@ export function useGitAccounts(): {
   readonly loading: boolean;
   readonly reload: () => void;
 } {
+  const enabled = options.enabled ?? true;
   const [accounts, setAccounts] = useState<readonly GitAccount[]>([]);
   const [clis, setClis] = useState<readonly GitHostCli[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
@@ -32,6 +38,7 @@ export function useGitAccounts(): {
   const [answered, setAnswered] = useState(-1);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     git
       .listAccounts()
@@ -42,7 +49,8 @@ export function useGitAccounts(): {
         setFailure(null);
       })
       .catch((error: unknown) => {
-        if (live) setFailure(error instanceof Error ? error.message : String(error));
+        if (live)
+          setFailure(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (live) setAnswered(generation);
@@ -50,11 +58,25 @@ export function useGitAccounts(): {
     return () => {
       live = false;
     };
-  }, [generation]);
+  }, [generation, enabled]);
   const reload = useCallback(() => setGeneration((current) => current + 1), []);
   const problems = [
-    ...clis.flatMap((cli) => (cli.missing || cli.problem === null ? [] : [cliProblemLine(cli.command, cli.problem)])),
-    ...(failure === null ? [] : [`Your gh and glab accounts could not be listed: ${failure}`]),
+    ...clis.flatMap((cli) =>
+      cli.missing || cli.problem === null
+        ? []
+        : [cliProblemLine(cli.command, cli.problem)],
+    ),
+    ...(failure === null
+      ? []
+      : [`Your gh and glab accounts could not be listed: ${failure}`]),
   ];
-  return { accounts, clis, problems, failure, loaded: answered >= 0, loading: answered !== generation, reload };
+  return {
+    accounts,
+    clis,
+    problems,
+    failure,
+    loaded: answered >= 0,
+    loading: answered !== generation,
+    reload,
+  };
 }
