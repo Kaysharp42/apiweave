@@ -288,12 +288,21 @@ const GitLabListedProjectSchema = GitLabProjectSchema.extend({
 /** One of `GET /groups` (docs.gitlab.com/api/groups): its id, which `POST /projects` takes as `namespace_id`, and its path. */
 const GitLabGroupSchema = z.object({ id: z.number(), full_path: z.string() })
 
-/** A repository GitHub's REST API returned, or undefined for anything else. */
+/** `value` as `schema` reads it, or undefined when it is not that. */
+function readAs<T>(schema: z.ZodType<T>, value: unknown): T | undefined {
+  const parsed = schema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
+}
+
+/** What `stdout` holds as `schema` reads it, or undefined when it is not JSON of that shape. */
+function parseAs<T>(schema: z.ZodType<T>, stdout: string): T | undefined {
+  return readAs(schema, parseJson(stdout))
+}
+
+/** A repository GitHub's REST API returned — one just created, so empty and the account's — or undefined for anything else. */
 export function parseGhRestRepository(stdout: string): GitRepository | undefined {
-  const parsed = GhRestRepositorySchema.safeParse(parseJson(stdout))
-  if (!parsed.success) return undefined
-  const repository = parsed.data
-  return {
+  const repository = parseAs(GhRestRepositorySchema, stdout)
+  return repository && {
     owner: repository.owner.login,
     name: repository.name,
     fullName: repository.full_name,
@@ -307,15 +316,11 @@ export function parseGhRestRepository(stdout: string): GitRepository | undefined
 
 /** The organizations `GET /user/orgs` listed, or undefined for anything else. */
 export function parseGhOrganizations(stdout: string): readonly string[] | undefined {
-  const parsed = GhOrganizationsSchema.safeParse(parseJson(stdout))
-  return parsed.success ? parsed.data.map((organization) => organization.login) : undefined
+  return parseAs(GhOrganizationsSchema, stdout)?.map((organization) => organization.login)
 }
 
-/** A project GitLab's REST API returned, or undefined for anything else. */
-export function parseGitLabProject(stdout: string): GitRepository | undefined {
-  const parsed = GitLabProjectSchema.safeParse(parseJson(stdout))
-  if (!parsed.success) return undefined
-  const project = parsed.data
+/** A project of GitLab's REST API as a repository; whether the account may push is the caller's to say. */
+function gitLabRepository(project: z.infer<typeof GitLabProjectSchema>, canPush: boolean): GitRepository {
   return {
     owner: project.namespace.full_path,
     name: project.path,
@@ -324,15 +329,19 @@ export function parseGitLabProject(stdout: string): GitRepository | undefined {
     sshUrl: project.ssh_url_to_repo,
     private: project.visibility !== "public",
     empty: project.empty_repo,
-    canPush: true,
+    canPush,
   }
+}
+
+/** A project GitLab's REST API returned for a create, which the account may push to, or undefined for anything else. */
+export function parseGitLabProject(stdout: string): GitRepository | undefined {
+  const project = parseAs(GitLabProjectSchema, stdout)
+  return project && gitLabRepository(project, true)
 }
 
 /** The repositories `gh repo list --json …` printed, or undefined for anything else. */
 export function parseGhRepositoryList(stdout: string): readonly GitRepository[] | undefined {
-  const parsed = z.array(GhListedRepositorySchema).safeParse(parseJson(stdout))
-  if (!parsed.success) return undefined
-  return parsed.data.map((repository) => ({
+  return parseAs(z.array(GhListedRepositorySchema), stdout)?.map((repository) => ({
     owner: repository.nameWithOwner.slice(0, repository.nameWithOwner.lastIndexOf("/")),
     name: repository.name,
     fullName: repository.nameWithOwner,
@@ -344,35 +353,42 @@ export function parseGhRepositoryList(stdout: string): readonly GitRepository[] 
   }))
 }
 
-/** The projects `GET /projects?membership=true` listed, or undefined for anything else. */
+/** The projects `GET /projects?membership=true` listed, each pushable for a Developer or more, or undefined for anything else. */
 export function parseGitLabProjectList(stdout: string): readonly GitRepository[] | undefined {
-  const parsed = z.array(GitLabListedProjectSchema).safeParse(parseJson(stdout))
-  if (!parsed.success) return undefined
-  return parsed.data.map((project) => {
+  return parseAs(z.array(GitLabListedProjectSchema), stdout)?.map((project) => {
     const access = Math.max(project.permissions?.project_access?.access_level ?? 0, project.permissions?.group_access?.access_level ?? 0)
-    return {
-      owner: project.namespace.full_path,
-      name: project.path,
-      fullName: project.path_with_namespace,
-      httpsUrl: project.http_url_to_repo,
-      sshUrl: project.ssh_url_to_repo,
-      private: project.visibility !== "public",
-      empty: project.empty_repo,
-      canPush: access >= GITLAB_DEVELOPER,
-    }
+    return gitLabRepository(project, access >= GITLAB_DEVELOPER)
   })
 }
 
 /** The groups `GET /groups` listed, or undefined for anything else. */
 export function parseGitLabGroups(stdout: string): readonly { readonly id: number; readonly path: string }[] | undefined {
-  const parsed = z.array(GitLabGroupSchema).safeParse(parseJson(stdout))
-  return parsed.success ? parsed.data.map((group) => ({ id: group.id, path: group.full_path })) : undefined
+  return parseAs(z.array(GitLabGroupSchema), stdout)?.map((group) => ({ id: group.id, path: group.full_path }))
 }
 
 /** One GitLab group, as `GET /groups/:id` returns it. */
 export function parseGitLabGroup(stdout: string): { readonly id: number; readonly path: string } | undefined {
-  const parsed = GitLabGroupSchema.safeParse(parseJson(stdout))
-  return parsed.success ? { id: parsed.data.id, path: parsed.data.full_path } : undefined
+  const group = parseAs(GitLabGroupSchema, stdout)
+  return group && { id: group.id, path: group.full_path }
+}
+
+/**
+ * The body both tools print on stdout when a request fails: GitHub's
+ * `message` and `errors`, GitLab's `message` (a sentence, or for a refused
+ * field an object of its complaints) and an OAuth `error`.
+ */
+const ApiErrorBodySchema = z.object({
+  message: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
+  errors: z.array(z.unknown()).optional(),
+  error: z.string().optional(),
+})
+
+/** One of GitHub's `errors`: a sentence, or an object whose `message` is one; anything else says nothing. */
+const ApiErrorEntrySchema = z.union([z.string(), z.object({ message: z.string() }).transform((entry) => entry.message)])
+
+/** GitLab's `{"name": ["has already been taken"]}` as `name has already been taken`. */
+function fieldComplaints(message: Readonly<Record<string, unknown>>): string[] {
+  return Object.entries(message).map(([field, complaints]) => `${field} ${Array.isArray(complaints) ? complaints.join(", ") : String(complaints)}`)
 }
 
 /**
@@ -383,25 +399,12 @@ export function parseGitLabGroup(stdout: string): { readonly id: number; readonl
  * Undefined when the body says nothing readable.
  */
 export function parseApiError(stdout: string): string | undefined {
-  const body = parseJson(stdout)
-  if (typeof body !== "object" || body === null) return undefined
-  const { message, errors, error } = body as { message?: unknown; errors?: unknown; error?: unknown }
-  const parts: string[] = []
-  if (typeof message === "string") parts.push(message)
-  else if (typeof message === "object" && message !== null) {
-    for (const [field, complaints] of Object.entries(message)) {
-      parts.push(`${field} ${Array.isArray(complaints) ? complaints.join(", ") : String(complaints)}`)
-    }
-  }
-  if (Array.isArray(errors)) {
-    for (const entry of errors) {
-      if (typeof entry === "string") parts.push(entry)
-      else if (typeof entry === "object" && entry !== null && typeof (entry as { message?: unknown }).message === "string") {
-        parts.push((entry as { message: string }).message)
-      }
-    }
-  }
-  if (parts.length === 0 && typeof error === "string") parts.push(error)
+  const body = parseAs(ApiErrorBodySchema, stdout)
+  if (body === undefined) return undefined
+  const messages = typeof body.message === "string" ? [body.message] : fieldComplaints(body.message ?? {})
+  const errors = (body.errors ?? []).flatMap((entry) => readAs(ApiErrorEntrySchema, entry) ?? [])
+  const parts = [...messages, ...errors]
+  if (parts.length === 0 && body.error !== undefined) parts.push(body.error)
   return parts.length === 0 ? undefined : parts.join("; ")
 }
 

@@ -4,8 +4,8 @@ import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { Settings, UserRound } from "lucide-react";
 import type { GitProvider } from "@shared/types/GitProvider";
 import { Button } from "../atoms/Button";
-import { Spinner } from "../atoms/Spinner";
 import { GitAccountRow } from "../molecules/GitAccountRow";
+import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { GitSignInDialog } from "../organisms/GitSignInDialog";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
@@ -28,18 +28,7 @@ function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMen
   return (
     <div className="space-y-3">
       <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">Git accounts</p>
-      <div aria-live="polite" className="space-y-3">
-        {!loaded && (
-          <div className="flex items-center gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
-            <Spinner size="sm" />
-            Asking gh and glab…
-          </div>
-        )}
-        {loaded && groups.length === 0 && (
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            No GitHub or GitLab account is signed in on this computer.
-          </p>
-        )}
+      <div className="space-y-3">
         {groups.map((group) => (
           <section key={`${group.provider}|${group.host}`} aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}>
             <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
@@ -59,11 +48,12 @@ function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMen
             </ul>
           </section>
         ))}
-        {problems.map((problem) => (
-          <p key={problem} className="text-xs text-status-warning">
-            {problem}
-          </p>
-        ))}
+        <GitAccountsNotice
+          loaded={loaded}
+          empty={groups.length === 0}
+          emptyText="No GitHub or GitLab account is signed in on this computer."
+          problems={problems}
+        />
       </div>
       <div className="space-y-1 border-t border-border pt-3 dark:border-border-dark">
         {(["github", "gitlab"] as const).map((provider) => {
