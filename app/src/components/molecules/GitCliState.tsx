@@ -9,6 +9,7 @@ export function GitCliState({ cli }: GitCliStateProps) {
   if (cli.missing) {
     return (
       <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+<<<<<<< HEAD
         <strong className="font-semibold text-status-warning">The {tool.cliName} is not installed.</strong> APIWeave
         signs in to {tool.name} with it. Install it from <GitCliInstallLink provider={cli.provider} />, then refresh.
         Until then, connect a remote by its URL, signed in with your own git credentials.

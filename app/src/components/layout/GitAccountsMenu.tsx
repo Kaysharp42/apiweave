@@ -13,35 +13,59 @@ import { GitSignInDialog } from "../organisms/GitSignInDialog";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { git } from "../../utils/apiweaveClient";
-import { GIT_PROVIDERS, gitAccountInitials, groupGitAccountsByHost, sameGitAccount } from "../../utils/gitAccounts";
+import {
+  GIT_PROVIDERS,
+  gitAccountInitials,
+  groupGitAccountsByHost,
+  sameGitAccount,
+} from "../../utils/gitAccounts";
 import { GIT_SYNC_INTENT_TEXT, describeGitSync } from "../../utils/gitSync";
 import { noDragStyle } from "./WindowControls";
-import type { GitAccountsMenuPanelProps, GitAccountsMenuProps, GitSyncView } from "../../types";
+import type {
+  GitAccountsMenuPanelProps,
+  GitAccountsMenuProps,
+  GitSyncView,
+} from "../../types";
 
 /**
  * What the panel lists: read when it opens, so a sign-in made in a terminal
  * since shows up, and nothing runs `gh` or `glab` while the menu is closed.
  */
-function GitAccountsMenuPanel({ titleId, current, onAdd, onOpenSettings, onSetUpSync }: GitAccountsMenuPanelProps) {
+function GitAccountsMenuPanel({
+  titleId,
+  current,
+  onAdd,
+  onOpenSettings,
+  onSetUpSync,
+}: GitAccountsMenuPanelProps) {
   const { accounts, clis, problems, loaded } = useGitAccounts();
   const groups = groupGitAccountsByHost(accounts, current);
   const hasGitLab = accounts.some((account) => account.provider === "gitlab");
 
   return (
     <div className="space-y-3">
-      <h2 id={titleId} className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+      <h2
+        id={titleId}
+        className="text-sm font-semibold text-text-primary dark:text-text-primary-dark"
+      >
         Git accounts
       </h2>
       <div className="space-y-3">
         {groups.map((group) => (
-          <section key={`${group.provider}|${group.host}`} aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}>
+          <section
+            key={`${group.provider}|${group.host}`}
+            aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}
+          >
             <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
               {group.host}
             </h3>
             <ul className="space-y-2">
               {group.accounts.map((account) => (
                 <li key={account.login}>
-                  <GitAccountRow account={account} current={sameGitAccount(account, current)} />
+                  <GitAccountRow
+                    account={account}
+                    current={sameGitAccount(account, current)}
+                  />
                 </li>
               ))}
               {group.signedOut !== null && (
@@ -73,7 +97,8 @@ function GitAccountsMenuPanel({ titleId, current, onAdd, onOpenSettings, onSetUp
           </Button>
         )}
         {(["github", "gitlab"] as const).map((provider) => {
-          const missing = clis.find((cli) => cli.provider === provider)?.missing === true;
+          const missing =
+            clis.find((cli) => cli.provider === provider)?.missing === true;
           return (
             <div key={provider}>
               <Button
@@ -88,7 +113,8 @@ function GitAccountsMenuPanel({ titleId, current, onAdd, onOpenSettings, onSetUp
               </Button>
               {missing && (
                 <p className="px-3 text-xs text-text-muted dark:text-text-muted-dark">
-                  The {GIT_PROVIDERS[provider].cliName} is not installed; Settings &gt; Git accounts says where to get it.
+                  The {GIT_PROVIDERS[provider].cliName} is not installed;
+                  Settings &gt; Git accounts says where to get it.
                 </p>
               )}
             </div>
@@ -96,7 +122,8 @@ function GitAccountsMenuPanel({ titleId, current, onAdd, onOpenSettings, onSetUp
         })}
         {hasGitLab && (
           <p className="px-3 text-xs text-text-muted dark:text-text-muted-dark">
-            glab keeps one account per host: signing in to the same GitLab host again replaces its account.
+            glab keeps one account per host: signing in to the same GitLab host
+            again replaces its account.
           </p>
         )}
         <Button
@@ -126,10 +153,15 @@ function needsSyncSetup(status: WorkspaceGitStatus | null): boolean {
 }
 
 /** The trigger's name: the menu, the workspace's account, and its sync state, whichever there are. */
-function triggerLabel(account: GitAccountRef | null, synced: GitSyncView | null): string {
+function triggerLabel(
+  account: GitAccountRef | null,
+  synced: GitSyncView | null,
+): string {
   return [
     "Git accounts",
-    account === null ? null : `this workspace uses ${account.login} on ${account.host}`,
+    account === null
+      ? null
+      : `this workspace uses ${account.login} on ${account.host}`,
     synced === null ? null : synced.label,
   ]
     .filter((part): part is string => part !== null)
@@ -171,9 +203,15 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
               title={label}
             >
               {account === null ? (
-                <UserRound className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />
+                <UserRound
+                  className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
+                  aria-hidden="true"
+                />
               ) : (
-                <span className="select-none text-xs font-semibold text-primary dark:text-primary-light" aria-hidden="true">
+                <span
+                  className="select-none text-xs font-semibold text-primary dark:text-primary-light"
+                  aria-hidden="true"
+                >
                   {gitAccountInitials(account.login)}
                 </span>
               )}
@@ -189,6 +227,8 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
             )}
             <PopoverPanel
               anchor={{ to: "bottom end", gap: 6, padding: 8 }}
+              // A plain div, not a dialog: a group named by its own title, which is what it is.
+              role="group"
               aria-labelledby={titleId}
               className="z-50 w-80 rounded border border-border bg-surface-raised p-3 shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
             >
