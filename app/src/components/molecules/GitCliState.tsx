@@ -8,8 +8,10 @@ export function GitCliState({ cli }: GitCliStateProps) {
   if (cli.missing) {
     return (
       <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-        <strong className="font-semibold text-status-warning">The {tool.cliName} is not installed.</strong> APIWeave
-        signs in to {tool.name} with it. Install it from{" "}
+        <strong className="font-semibold text-status-warning">
+          The {tool.cliName} is not installed.
+        </strong>{" "}
+        APIWeave signs in to {tool.name} with it. Install it from{" "}
         <a
           href={tool.installUrl}
           target="_blank"
@@ -18,7 +20,8 @@ export function GitCliState({ cli }: GitCliStateProps) {
         >
           {tool.installUrl.replace(/^https:\/\//, "")}
         </a>
-        , then refresh. Until then, connect a remote by its URL, signed in with your own git credentials.
+        , then refresh. Until then, connect a remote by its URL, signed in with
+        your own git credentials.
       </p>
     );
   }
