@@ -30,9 +30,7 @@ function TrackedGitSyncControl({
               size="sm"
               className="h-9"
               aria-label={`Version history: ${view.label}`}
-              icon={
-                <GitSyncKindIcon kind={view.kind} local={status.remoteUrl === null} />
-              }
+              icon={<GitSyncKindIcon indicator={view} />}
             >
               <span className="hidden sm:inline">{view.label}</span>
             </PopoverButton>

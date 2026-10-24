@@ -62,8 +62,8 @@ const STATES: readonly StateCase[] = [
     status: trackedStatus({ state: "error", lastError: { code: "network_error", message: "fatal: unable to access" } }),
     label: "Sync error",
   },
-  { name: "local only, committed", status: trackedStatus(local), label: "Committed" },
-  { name: "local only, uncommitted", status: trackedStatus({ ...local, uncommitted: true }), label: "Pending" },
+  { name: "local history", status: trackedStatus(local), label: "Local history" },
+  { name: "local history with uncommitted edits", status: trackedStatus({ ...local, uncommitted: true }), label: "Local history · uncommitted" },
 ];
 
 describe("GitSyncControl", () => {
@@ -268,7 +268,7 @@ describe("GitSyncControl", () => {
     let finish: (status: WorkspaceGitStatus) => void = () => undefined;
     const { bridge } = installGitBridge(trackedStatus({ uncommitted: true }), {
       status: vi.fn(async (workspaceId: string) =>
-        workspaceId === "ws-1" ? trackedStatus({ uncommitted: true }) : trackedStatus({ workspaceId, remoteUrl: null, lastSyncedAt: null }),
+        workspaceId === "ws-1" ? trackedStatus({ uncommitted: true }) : trackedStatus({ workspaceId, remoteUrl: null, lastSyncedAt: null, uncommitted: true }),
       ),
       syncNow: vi.fn(
         () =>
@@ -284,14 +284,14 @@ describe("GitSyncControl", () => {
 
     workspace.current = { workspaceId: "ws-2", slug: "other" };
     view.rerender(routed());
-    await trigger("Committed");
+    await trigger("Local history · uncommitted");
     // The first workspace's call lands: its result belongs to it, not to what is on screen.
     await act(async () => finish(trackedStatus({ state: "error", lastError: { code: "timeout", message: "t" } })));
 
-    expect(screen.getByRole("button", { name: "Version history: Committed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Version history: Local history · uncommitted" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     // And nothing it was doing — busy, a failure — followed the control to the next workspace.
-    await user.click(screen.getByRole("button", { name: "Version history: Committed" }));
+    await user.click(screen.getByRole("button", { name: "Version history: Local history · uncommitted" }));
     expect(await screen.findByRole("button", { name: "Commit now" })).toBeEnabled();
   });
 
@@ -348,14 +348,35 @@ describe("GitSyncControl", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("workspace is not tracked");
   });
 
+  it("offers no Commit now for a local history with nothing to commit", async () => {
+    const user = userEvent.setup();
+    installGitBridge(trackedStatus(local));
+    renderControl();
+
+    await user.click(await trigger("Local history"));
+
+    expect(
+      await screen.findByText(/Every change is committed to this workspace's history on this device/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Commit now" })).toBeNull();
+  });
+
   it("calls a local-only workspace's action Commit now, with no push wording", async () => {
     const user = userEvent.setup();
     installGitBridge(trackedStatus({ ...local, uncommitted: true }));
     renderControl();
 
-    await user.click(await trigger("Pending"));
+    await user.click(await trigger("Local history · uncommitted"));
 
     expect(await screen.findByRole("button", { name: "Commit now" })).toBeInTheDocument();
     expect(screen.queryByText(/push|remote/i)).toBeNull();
+  });
+
+  it("draws a local-only workspace in the muted tone, not the action accent", async () => {
+    installGitBridge(trackedStatus(local));
+    renderControl();
+
+    // The plan's vocabulary says muted for `local`; the Button is what has to carry it.
+    expect((await trigger("Local history")).className).toContain("text-text-muted");
   });
 });

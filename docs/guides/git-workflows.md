@@ -128,7 +128,7 @@ A tracked workspace shows its state at the right of the header, as an icon and a
 
 **Retry** is **Sync now** under another name: in manual mode with edits waiting it opens the same commit dialog first.
 
-A workspace with no remote says **Committed**, **Pending**, **Committing** or **Commit error**, and its action is **Commit now**: there is nothing to push.
+A workspace with no remote says **Local history** (or **Local history · uncommitted** while edits are waiting), **Committing** or **Commit error**, and offers **Commit now** only when there is something to commit: there is nothing to push.
 
 **Pending is a flag with a count only where the count is known.** Whether the database holds edits the last commit does not is known cheaply and stays right across restarts, so **Pending** always shows. How many records changed means serializing the whole workspace and comparing it with the last commit, which is too much to repeat on every status, so it is not shown in the header: **Pending (N to push)** counts commits waiting for the remote, and the exact list of changed workflows, projects and environments is what [the commit dialog](#manual-mode-the-commit-dialog) shows.
 

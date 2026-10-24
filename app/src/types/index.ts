@@ -392,6 +392,8 @@ export type { PostmanImportPanelProps } from "./PostmanImportPanelProps";
 export type { LoadedJsonFile } from "./LoadedJsonFile";
 export type { SecretNameFieldProps } from "./SecretNameFieldProps";
 export type { GitSyncKind } from "./GitSyncKind";
+export type { GitSyncIntent } from "./GitSyncIntent";
+export type { GitSyncIndicator } from "./GitSyncIndicator";
 export type { GitSyncDialog } from "./GitSyncDialog";
 export type { GitSyncView } from "./GitSyncView";
 export type { WorkspaceGitStatusFeed } from "./WorkspaceGitStatusFeed";

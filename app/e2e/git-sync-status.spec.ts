@@ -125,6 +125,18 @@ const SCENARIOS: readonly StateScenario[] = [
     label: "Sync error",
     explanation: /Sign-in to github\.com failed — your credential manager will ask again on retry/,
   },
+  {
+    name: "local-history",
+    status: { ...SETTLED, remoteUrl: null, lastSyncedAt: null },
+    label: "Local history",
+    explanation: /Every change is committed to this workspace's history on this device/,
+  },
+  {
+    name: "local-history-uncommitted",
+    status: { ...SETTLED, remoteUrl: null, lastSyncedAt: null, uncommitted: true },
+    label: "Local history · uncommitted",
+    explanation: /You have edits that aren't committed yet/,
+  },
 ];
 
 async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> {

@@ -36,6 +36,7 @@ import type {
 const _validVariants: ButtonVariant[] = ["primary", "secondary", "ghost"];
 const _validIntents: ButtonIntent[] = [
   "default",
+  "muted",
   "success",
   "error",
   "warning",

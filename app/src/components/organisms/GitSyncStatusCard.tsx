@@ -2,15 +2,8 @@ import { Link } from "react-router-dom";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
-import { describeGitSync, gitSyncPrimaryLabel } from "../../utils/gitSync";
+import { describeGitSync, GIT_SYNC_INTENT_TEXT, gitSyncPrimaryLabel } from "../../utils/gitSync";
 import type { GitSyncStatusCardProps, SyncButtonsProps } from "../../types";
-
-const INTENT_TEXT = {
-  success: "text-status-success dark:text-[var(--aw-status-success)]",
-  warning: "text-status-warning dark:text-[var(--aw-status-warning)]",
-  info: "text-status-info dark:text-[var(--aw-status-info)]",
-  error: "text-status-error dark:text-[var(--aw-status-error)]",
-} as const;
 
 /** When the workspace last agreed with its remote, and the commit it is at. */
 function lastSyncLines(status: WorkspaceGitStatus): string[] {
@@ -31,21 +24,22 @@ function lastSyncLines(status: WorkspaceGitStatus): string[] {
  * action under several names, so a retry in manual mode with edits waiting asks
  * for its commit message too — and Discard local changes where that is the way
  * out. A missing author has neither primary action: only the settings form
- * settles it.
+ * settles it. A local history with nothing uncommitted has nothing to commit,
+ * so it offers no primary action either.
  */
-function SyncButtons({ view, connected, offerDiscard, actions }: SyncButtonsProps) {
+function SyncButtons({ status, view, offerDiscard, actions }: SyncButtonsProps) {
   const running = view.kind === "syncing";
-  const merging = view.kind === "merging";
+  const merging = status.state === "merging";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {!view.needsAuthor && (
+      {!view.needsAuthor && view.kind !== "local" && (
         <Button
           variant="primary"
           size="sm"
           loading={actions.busy || running}
           onClick={merging ? actions.askToResolveMerge : actions.sync}
         >
-          {gitSyncPrimaryLabel(view, connected)}
+          {gitSyncPrimaryLabel(status)}
         </Button>
       )}
       {offerDiscard && (
@@ -77,14 +71,12 @@ export function GitSyncStatusCard({
 }: GitSyncStatusCardProps) {
   const view = describeGitSync(status);
   const connected = status.remoteUrl !== null;
-  const offerDiscard =
-    connected &&
-    (alwaysOfferDiscard || view.kind === "merging" || view.kind === "diverged" || view.kind === "read-only");
+  const offerDiscard = connected && (alwaysOfferDiscard || view.kind === "attention");
 
   return (
     <div className="space-y-3">
-      <div className={`flex items-center gap-2 text-sm font-semibold ${INTENT_TEXT[view.intent]}`}>
-        <GitSyncKindIcon kind={view.kind} local={!connected} />
+      <div className={`flex items-center gap-2 text-sm font-semibold ${GIT_SYNC_INTENT_TEXT[view.intent]}`}>
+        <GitSyncKindIcon indicator={view} />
         <span>{view.label}</span>
       </div>
       <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
@@ -108,8 +100,8 @@ export function GitSyncStatusCard({
         </p>
       )}
       <SyncButtons
+        status={status}
         view={view}
-        connected={connected}
         offerDiscard={offerDiscard}
         actions={actions}
       />

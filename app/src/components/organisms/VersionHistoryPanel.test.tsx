@@ -58,10 +58,10 @@ describe("VersionHistoryPanel", () => {
 
   it("syncs straight away in manual mode when nothing is waiting to be committed", async () => {
     const user = userEvent.setup();
-    const { bridge } = installGitBridge(local({ mode: "manual" }));
+    const { bridge } = installGitBridge(trackedStatus({ mode: "manual" }));
     render(<VersionHistoryPanel workspaceId="ws-1" />);
 
-    await user.click(await screen.findByRole("button", { name: /^commit now$/i }));
+    await user.click(await screen.findByRole("button", { name: /^sync now$/i }));
 
     expect(bridge.syncNow).toHaveBeenCalledWith("ws-1", undefined);
     expect(bridge.pendingChanges).not.toHaveBeenCalled();
@@ -317,11 +317,11 @@ describe("VersionHistoryPanel", () => {
     expect(bridge.discardLocalChanges).toHaveBeenCalledWith("ws-1");
   });
 
-  it("has no Discard for a workspace with no remote, and says it is committed", async () => {
+  it("has no Discard for a workspace with no remote, and says its history is local", async () => {
     installGitBridge(local());
     render(<VersionHistoryPanel workspaceId="ws-1" />);
 
-    expect(await screen.findByText("Committed")).toBeInTheDocument();
+    expect(await screen.findByText("Local history")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /discard local changes/i })).toBeNull();
   });
 
