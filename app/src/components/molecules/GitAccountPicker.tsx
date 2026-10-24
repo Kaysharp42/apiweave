@@ -1,15 +1,9 @@
-import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitAccountPickerProps } from "../../types";
+import { gitAccountKey as keyOf, gitAccountRef, sameGitAccount } from "../../utils/gitAccounts";
 import { FormField } from "./FormField";
 
 /** The option a choice of no account stands for: whatever git would do on its own. */
 const OWN_CREDENTIALS = "";
-
-const keyOf = (account: GitAccountRef): string =>
-  `${account.provider}|${account.host}|${account.login}`;
-
-const sameAccount = (a: GitAccountRef, b: GitAccountRef): boolean =>
-  keyOf(a) === keyOf(b);
 
 const hostname = (host: string): string => host.replace(/:\d+$/, "").toLowerCase();
 
@@ -26,7 +20,7 @@ export function GitAccountPicker({
   onChange,
   disabled = false,
 }: GitAccountPickerProps) {
-  const listed = value === null ? undefined : accounts.find((account) => sameAccount(account, value));
+  const listed = accounts.find((account) => sameGitAccount(account, value));
   // The chosen account stays an option even when the URL now names another host: the server says why it does not fit.
   const offered = accounts.filter(
     (account) =>
@@ -46,12 +40,7 @@ export function GitAccountPicker({
           const picked = [...offered, ...(value === null ? [] : [value])].find(
             (account) => keyOf(account) === event.target.value,
           );
-          // Only what names the account crosses the bridge, which refuses anything more.
-          onChange(
-            picked === undefined
-              ? null
-              : { provider: picked.provider, host: picked.host, login: picked.login },
-          );
+          onChange(picked === undefined ? null : gitAccountRef(picked));
         }}
         className="w-full rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
       >
