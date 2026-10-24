@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { Settings, UserRound } from "lucide-react";
+import { GitBranch, Settings, UserRound } from "lucide-react";
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitProvider } from "@shared/types/GitProvider";
+import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitAccountRow } from "../molecules/GitAccountRow";
 import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
@@ -14,20 +16,22 @@ import { git } from "../../utils/apiweaveClient";
 import { GIT_PROVIDERS, gitAccountInitials, groupGitAccountsByHost, sameGitAccount } from "../../utils/gitAccounts";
 import { GIT_SYNC_INTENT_TEXT, describeGitSync } from "../../utils/gitSync";
 import { noDragStyle } from "./WindowControls";
-import type { GitAccountsMenuPanelProps, GitAccountsMenuProps } from "../../types";
+import type { GitAccountsMenuPanelProps, GitAccountsMenuProps, GitSyncView } from "../../types";
 
 /**
  * What the panel lists: read when it opens, so a sign-in made in a terminal
  * since shows up, and nothing runs `gh` or `glab` while the menu is closed.
  */
-function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMenuPanelProps) {
+function GitAccountsMenuPanel({ titleId, current, onAdd, onOpenSettings, onSetUpSync }: GitAccountsMenuPanelProps) {
   const { accounts, clis, problems, loaded } = useGitAccounts();
   const groups = groupGitAccountsByHost(accounts, current);
   const hasGitLab = accounts.some((account) => account.provider === "gitlab");
 
   return (
     <div className="space-y-3">
-      <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">Git accounts</p>
+      <h2 id={titleId} className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
+        Git accounts
+      </h2>
       <div className="space-y-3">
         {groups.map((group) => (
           <section key={`${group.provider}|${group.host}`} aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}>
@@ -56,6 +60,18 @@ function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMen
         />
       </div>
       <div className="space-y-1 border-t border-border pt-3 dark:border-border-dark">
+        {onSetUpSync !== null && (
+          <Button
+            variant="ghost"
+            size="sm"
+            fullWidth
+            className="!justify-start"
+            icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
+            onClick={onSetUpSync}
+          >
+            Set up sync for this workspace…
+          </Button>
+        )}
         {(["github", "gitlab"] as const).map((provider) => {
           const missing = clis.find((cli) => cli.provider === provider)?.missing === true;
           return (
@@ -65,14 +81,14 @@ function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMen
                 size="sm"
                 fullWidth
                 className="!justify-start"
-                disabled={missing}
+                disabled={!loaded || missing}
                 onClick={() => onAdd(provider)}
               >
                 Add {GIT_PROVIDERS[provider].name} account
               </Button>
               {missing && (
                 <p className="px-3 text-xs text-text-muted dark:text-text-muted-dark">
-                  {GIT_PROVIDERS[provider].command} is not installed; Settings &gt; Git accounts says where to get it.
+                  The {GIT_PROVIDERS[provider].cliName} is not installed; Settings &gt; Git accounts says where to get it.
                 </p>
               )}
             </div>
@@ -98,6 +114,28 @@ function GitAccountsMenuPanel({ current, onAdd, onOpenSettings }: GitAccountsMen
   );
 }
 
+/** The workspace's sync state for the trigger's badge; null when it has none to show. */
+function syncBadge(status: WorkspaceGitStatus | null): GitSyncView | null {
+  const view = status === null ? null : describeGitSync(status);
+  return view !== null && view.icon !== null ? view : null;
+}
+
+/** Untracked, or tracked with no remote: the menu is where someone looking for sync starts. */
+function needsSyncSetup(status: WorkspaceGitStatus | null): boolean {
+  return status !== null && (!status.tracked || status.remoteUrl === null);
+}
+
+/** The trigger's name: the menu, the workspace's account, and its sync state, whichever there are. */
+function triggerLabel(account: GitAccountRef | null, synced: GitSyncView | null): string {
+  return [
+    "Git accounts",
+    account === null ? null : `this workspace uses ${account.login} on ${account.host}`,
+    synced === null ? null : synced.label,
+  ]
+    .filter((part): part is string => part !== null)
+    .join(" — ");
+}
+
 /**
  * The header's accounts menu, where the Cloud account menu used to be: the
  * initials of the account the current workspace syncs as (a neutral person
@@ -110,19 +148,14 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
   const navigate = useNavigate();
   const { currentOrg, currentWorkspace } = useWorkspace();
   const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
+  const titleId = useId();
   if (!git.isAvailable()) return null;
 
   const account = status?.account ?? null;
-  const view = status === null ? null : describeGitSync(status);
-  const synced = view !== null && view.icon !== null ? view : null;
-  const settingsPath = `/${currentOrg?.slug ?? "personal"}/${currentWorkspace?.slug ?? "personal"}/settings/git-accounts`;
-  const label = [
-    "Git accounts",
-    account === null ? null : `this workspace uses ${account.login} on ${account.host}`,
-    synced === null ? null : synced.label,
-  ]
-    .filter((part): part is string => part !== null)
-    .join(" — ");
+  const synced = syncBadge(status);
+  const settingsBase = `/${currentOrg?.slug ?? "personal"}/${currentWorkspace?.slug ?? "personal"}/settings`;
+  const unsynced = currentWorkspace !== null && needsSyncSetup(status);
+  const label = triggerLabel(account, synced);
 
   return (
     <div style={noDragStyle} className="flex items-center">
@@ -156,9 +189,11 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
             )}
             <PopoverPanel
               anchor={{ to: "bottom end", gap: 6, padding: 8 }}
+              aria-labelledby={titleId}
               className="z-50 w-80 rounded border border-border bg-surface-raised p-3 shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
             >
               <GitAccountsMenuPanel
+                titleId={titleId}
                 current={account}
                 onAdd={(provider) => {
                   close();
@@ -166,8 +201,16 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
                 }}
                 onOpenSettings={() => {
                   close();
-                  navigate(settingsPath);
+                  navigate(`${settingsBase}/git-accounts`);
                 }}
+                onSetUpSync={
+                  unsynced
+                    ? () => {
+                        close();
+                        navigate(`${settingsBase}/version-history`);
+                      }
+                    : null
+                }
               />
             </PopoverPanel>
           </>

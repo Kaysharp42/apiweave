@@ -1,3 +1,4 @@
+import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -55,9 +56,9 @@ describe("GitAccountsSettingsPanel", () => {
     const personal = screen.getByText("octo-personal").closest("li") as HTMLElement;
     expect(within(personal).getByText("No workspace uses this account.")).toBeInTheDocument();
     expect(within(personal).getByText(/SSH/)).toBeInTheDocument();
-    expect(screen.getByText("gh 2.97.0 is installed.")).toBeInTheDocument();
+    expect(screen.getByText("GitHub CLI (gh) 2.97.0 is installed.")).toBeInTheDocument();
 
-    expect(screen.getByText("glab is not installed.")).toBeInTheDocument();
+    expect(screen.getByText("The GitLab CLI (glab) is not installed.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "gitlab.com/gitlab-org/cli" })).toHaveAttribute(
       "href",
       "https://gitlab.com/gitlab-org/cli",
@@ -96,4 +97,18 @@ describe("GitAccountsSettingsPanel", () => {
     expect(await within(dialog).findByText(/Signed in to github.com as/)).toBeInTheDocument();
     await vi.waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
   });
-});
+  it("shows Refresh working while the tools are asked again", async () => {
+    let answer: (list: GitAccountList) => void = () => undefined;
+    const listAccounts = vi.fn().mockResolvedValueOnce(LIST).mockImplementationOnce(() => new Promise<GitAccountList>((resolve) => { answer = resolve; }));
+    installGitBridge(untrackedStatus, { listAccounts });
+    render(<GitAccountsSettingsPanel />);
+
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    await vi.waitFor(() => expect(refresh).toBeEnabled());
+    await userEvent.click(refresh);
+
+    expect(refresh).toBeDisabled();
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    act(() => answer(LIST));
+    await vi.waitFor(() => expect(refresh).toBeEnabled());
+  });});

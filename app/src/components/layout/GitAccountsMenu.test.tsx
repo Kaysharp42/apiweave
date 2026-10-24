@@ -1,3 +1,4 @@
+import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { render, screen, within } from "@testing-library/react";
@@ -153,5 +154,37 @@ describe("GitAccountsMenu", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Settings > Git accounts" }));
 
     expect(screen.getByTestId("location")).toHaveTextContent("/personal/acme/settings/git-accounts");
+  });
+  it("is a panel labelled by its title, and offers sign-in only once the tools have answered", async () => {
+    let answer: (list: GitAccountList) => void = () => undefined;
+    installGitBridge(untrackedStatus, {
+      listAccounts: vi.fn(() => new Promise<GitAccountList>((resolve) => { answer = resolve; })),
+    });
+    renderMenu();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Git accounts" }));
+
+    expect(await screen.findByText("Checking your GitHub and GitLab sign-ins…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add GitHub account" })).toBeDisabled();
+    const title = screen.getByRole("heading", { level: 2, name: "Git accounts" });
+    expect(title.closest("[aria-labelledby]")).toHaveAttribute("aria-labelledby", title.id);
+    act(() => answer(LIST));
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Add GitHub account" })).toBeEnabled());
+  });
+
+  it("offers to set up sync for a workspace with no remote, and not for one that syncs", async () => {
+    installGitBridge(trackedStatus({ remoteUrl: null }));
+    renderMenu();
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Git accounts/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Set up sync for this workspace…" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/personal/acme/settings/version-history");
+    vi.unstubAllGlobals();
+
+    installGitBridge(trackedStatus({ account: WORK }));
+    renderMenu();
+    await userEvent.click(await screen.findByRole("button", { name: /this workspace uses octo-work/ }));
+    await screen.findByRole("button", { name: "Settings > Git accounts" });
+    expect(screen.queryByRole("button", { name: "Set up sync for this workspace…" })).toBeNull();
   });
 });
