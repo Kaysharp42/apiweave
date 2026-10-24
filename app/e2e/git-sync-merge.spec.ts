@@ -137,6 +137,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
       window.__gitPicks__ = () => picks;
       window.__APIWEAVE_GIT__ = {
         status: async () => current,
+        statusAll: async () => [current],
         track: async () => current,
         untrack: async () => current,
         setMode: async () => current,
