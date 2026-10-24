@@ -245,7 +245,8 @@ describe("VersionHistoryPanel", () => {
       });
       render(<VersionHistoryPanel workspaceId="ws-1" />);
 
-      expect(await screen.findByText("gh: gh did not answer in time")).toBeInTheDocument();
+      // The tool's own words already name it: no "gh: gh …".
+      expect(await screen.findByText("gh did not answer in time")).toBeInTheDocument();
       expect(screen.queryByText(/glab/)).toBeNull();
     });
 
