@@ -20,6 +20,12 @@ import type { WorkspacePendingChange } from "./WorkspacePendingChange"
  */
 export interface GitBridge {
   readonly status: (workspaceId: string) => Promise<WorkspaceGitStatus>
+  /**
+   * Every tracked workspace's status, for the switcher's icon on each row; an
+   * untracked workspace is not in the list. Read-only: nothing is committed or
+   * fetched.
+   */
+  readonly statusAll: () => Promise<readonly WorkspaceGitStatus[]>
   /** Like `syncNow`, a missing author resolves: the workspace is tracked, and its status asks for one. */
   readonly track: (workspaceId: string) => Promise<WorkspaceGitStatus>
   readonly untrack: (workspaceId: string) => Promise<WorkspaceGitStatus>

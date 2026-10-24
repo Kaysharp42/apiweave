@@ -7,7 +7,9 @@ import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
 import useNavigationStore from "../../stores/NavigationStore";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
+import { GitAccountsMenu } from "./GitAccountsMenu";
 import { GitSyncControl } from "./GitSyncControl";
 import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
 
@@ -70,6 +72,9 @@ export function MainHeader() {
 
   const navigate = useNavigate();
   const tutorialsPath = useTutorialsPath();
+  // One feed for the header: the sync control and the accounts menu's badge show the same status.
+  const { currentWorkspace } = useWorkspace();
+  const gitStatus = useWorkspaceGitStatus(currentWorkspace?.workspaceId ?? null);
 
   return (
     <header
@@ -113,7 +118,7 @@ export function MainHeader() {
           chrome could only disagree with it. Environments are managed from
           Settings → Environments. */}
       <div className="navbar-end min-w-0 flex-shrink gap-2">
-        <GitSyncControl />
+        <GitSyncControl feed={gitStatus} />
 
         <div style={noDragStyle}>
           <IconButton
@@ -152,6 +157,8 @@ export function MainHeader() {
           className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
           icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         />
+
+        <GitAccountsMenu status={gitStatus.status} />
       </div>
 
       {/* Flush to the window's top-right corner (the header drops its right

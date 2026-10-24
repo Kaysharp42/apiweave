@@ -149,6 +149,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
     };
     window.__APIWEAVE_GIT__ = {
       status: async () => current,
+      statusAll: async () => [current],
       track: async () => current,
       untrack: async () => current,
       setMode: async () => current,
@@ -162,6 +163,17 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
       disconnectRemote: async () => current,
       discardLocalChanges: async () => current,
       openFromGit: async () => ({ kind: "opened", workspaceId: "x", slug: "x", name: "x", warnings: [] }),
+      listAccounts: async () => ({
+        clis: [
+          { provider: "github", command: "gh", missing: false, version: "2.97.0", problem: null },
+          { provider: "gitlab", command: "glab", missing: true, version: null, problem: null },
+        ],
+        accounts: [
+          { provider: "github", host: "github.com", login: "octo-work", gitProtocol: "https", active: true, problem: null },
+          { provider: "github", host: "github.com", login: "octo-personal", gitProtocol: "https", active: false, problem: null },
+        ],
+      }),
+      onSignInPrompt: () => () => undefined,
       onStatusChanged: (callback: (status: unknown) => void) => {
         listeners.add(callback);
         return () => listeners.delete(callback);
@@ -238,5 +250,56 @@ test.describe("git sync status", () => {
 
     await expect(page.getByRole("button", { name: "Tutorials" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Version history:/ })).toHaveCount(0);
+  });
+
+  test("shows a tracked workspace's sync state on its row in the switcher", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, SETTLED);
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await page.getByRole("button", { name: "Switch workspace" }).click();
+
+    // The row is icon-only for this: the state is its accessible name and its tooltip.
+    const icon = page.getByRole("option", { name: /Personal/ }).getByRole("img", { name: "Synced" });
+    await expect(icon).toBeVisible();
+    await icon.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Synced");
+    await captureEvidence(page, "git-sync-switcher-row.png");
+  });
+
+  test("shows the workspace's account in the header's accounts menu, with its sync state as a badge", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, {
+      ...SETTLED,
+      account: { provider: "github", host: "github.com", login: "octo-work" },
+    });
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    const trigger = page.getByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com — Synced" });
+    await expect(trigger).toHaveText("OW");
+    await trigger.click();
+
+    const github = page.getByRole("region", { name: "GitHub on github.com" });
+    await expect(github.getByRole("listitem").filter({ hasText: "octo-work" })).toContainText("This workspace");
+    await expect(github.getByRole("listitem").filter({ hasText: "octo-personal" })).not.toContainText("This workspace");
+    await expect(page.getByRole("button", { name: "Add GitLab account" })).toBeDisabled();
+    await captureEvidence(page, "git-accounts-menu.png");
+
+    await page.getByRole("button", { name: "Settings > Git accounts" }).click();
+    await expect(page.getByRole("heading", { name: "Git accounts" })).toBeVisible();
+    await expect(page.getByText("glab is not installed.")).toBeVisible();
+    await captureEvidence(page, "git-accounts-settings.png");
+  });
+
+  test("leaves an untracked workspace's switcher row without a sync icon", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, { ...SETTLED, tracked: false, remoteUrl: null });
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await page.getByRole("button", { name: "Switch workspace" }).click();
+
+    const row = page.getByRole("option", { name: /Personal/ });
+    await expect(row).toBeVisible();
+    await expect(row.getByRole("img")).toHaveCount(0);
   });
 });

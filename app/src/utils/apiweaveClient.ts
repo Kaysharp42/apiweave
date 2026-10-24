@@ -1223,6 +1223,8 @@ export const git = {
   status: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.status(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
+  statusAll: (): Promise<readonly WorkspaceGitStatus[]> =>
+    getGitBridge()?.statusAll().catch(unwrapRemoteError) ?? gitDesktopOnly(),
   track: (workspaceId: string): Promise<WorkspaceGitStatus> =>
     getGitBridge()?.track(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
