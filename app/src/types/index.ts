@@ -422,6 +422,10 @@ export type { CreateRepositoryFieldsProps } from "./CreateRepositoryFieldsProps"
 export type { CreateRepositoryDialogProps } from "./CreateRepositoryDialogProps";
 export type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 export type { GitRemotePickerProps } from "./GitRemotePickerProps";
+export type { GitRepositoryFieldProps } from "./GitRepositoryFieldProps";
+export type { GitRemoteUrlFieldProps } from "./GitRemoteUrlFieldProps";
+export type { GitRemoteAccountSelectProps } from "./GitRemoteAccountSelectProps";
+export type { GitRemotePickerState } from "./GitRemotePickerState";
 export type { CreateRepositorySectionProps } from "./CreateRepositorySectionProps";
 export type { GitAccountsNoticeProps } from "./GitAccountsNoticeProps";
 export type { ModalFormFooterProps } from "./ModalFormFooterProps";

@@ -15,7 +15,7 @@ export function GitAccountsNotice({ loaded, empty, emptyText, problems }: GitAcc
           Asking gh and glab…
         </div>
       )}
-      {loaded && empty && <p className="text-sm text-text-secondary dark:text-text-secondary-dark">{emptyText}</p>}
+      {loaded && empty && emptyText !== null && <p className="text-sm text-text-secondary dark:text-text-secondary-dark">{emptyText}</p>}
       {problems.map((problem) => (
         <p key={problem} className="text-xs text-status-warning">
           {problem}
