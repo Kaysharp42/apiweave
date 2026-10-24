@@ -396,9 +396,13 @@ export class HostCliService {
    */
   async listRepositories(account: GitAccountRef, request: GitRepositoryListRequest): Promise<GitRepositoryList> {
     const checked = checkedAccount(account)
-    const { tagged, emptyOnly } = GitRepositoryListRequestSchema.parse(request)
+    const parsed = GitRepositoryListRequestSchema.safeParse(request)
+    if (!parsed.success) throw new ValidationError("That is not a repository list APIWeave can read: `tagged` and `emptyOnly` are two true-or-false values.")
+    const { tagged, emptyOnly } = parsed.data
     const api = await this.apiAs(checked)
-    const usable = (repository: GitRepository): boolean => !emptyOnly || (repository.empty && repository.canPush)
+    // GitLab's query already asks for Developer or more when only empty ones are wanted, and its
+    // permissions do not show access inherited through a parent group; GitHub's list says where.
+    const usable = (repository: GitRepository): boolean => checked.provider === "gitlab" ? !emptyOnly || repository.empty : !emptyOnly || (repository.empty && repository.canPush)
     if (checked.provider === "gitlab") {
       const query = [
         "membership=true",
@@ -411,27 +415,29 @@ export class HostCliService {
       const outcome = await api.call([`projects?${query}`])
       const listed = succeeded(outcome) ? parseGitLabProjectList(outcome.stdout) : undefined
       if (listed === undefined) return { repositories: [], problems: [`${checked.host}: ${api.failure(outcome)}`] }
-      return { repositories: listed.filter(usable), problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(checked.host)] : [] }
+      return {
+        repositories: listed.filter(usable).map((repository) => (emptyOnly ? { ...repository, canPush: true } : repository)),
+        problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(checked.host)] : [],
+      }
     }
     const { owners, problem } = await this.ownersOf(checked, api)
-    const lists = await Promise.all(
-      owners.map(async ({ path }) => {
-        const outcome = await api.run([
-          "repo",
-          "list",
-          ...(tagged ? [`--topic=${APIWEAVE_REPOSITORY_TOPIC}`] : []),
-          "--no-archived",
-          "--json=name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility",
-          `--limit=${REPOSITORY_LIST_CAP}`,
-          // The owner came from the host, and is still never read as a flag.
-          "--",
-          path,
-        ])
-        const listed = succeeded(outcome) ? parseGhRepositoryList(outcome.stdout) : undefined
-        if (listed === undefined) return { repositories: [], problems: [`${path}: ${api.failure(outcome)}`] }
-        return { repositories: listed.filter(usable), problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(path)] : [] }
-      }),
-    )
+    // One gh process per owner would be a hundred at once for an account with many organizations.
+    const lists = await withinPool(owners, OWNER_LIST_CONCURRENCY, async ({ path }) => {
+      const outcome = await api.run([
+        "repo",
+        "list",
+        ...(tagged ? [`--topic=${APIWEAVE_REPOSITORY_TOPIC}`] : []),
+        "--no-archived",
+        "--json=name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility",
+        `--limit=${REPOSITORY_LIST_CAP}`,
+        // The owner came from the host, and is still never read as a flag.
+        "--",
+        path,
+      ])
+      const listed = succeeded(outcome) ? parseGhRepositoryList(outcome.stdout) : undefined
+      if (listed === undefined) return { repositories: [], problems: [`${path}: ${api.failure(outcome)}`] }
+      return { repositories: listed.filter(usable), problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(path)] : [] }
+    })
     return {
       repositories: lists.flatMap((list) => list.repositories),
       problems: [...(problem === null ? [] : [problem]), ...lists.flatMap((list) => list.problems)],
@@ -543,6 +549,23 @@ interface HostApi {
 
 /** How many repositories a list holds per GitHub owner, and in all on GitLab: one page of each host's API. */
 const REPOSITORY_LIST_CAP = 100
+
+/** How many of an account's owners are asked for their repositories at once: no more than a handful of tools at a time. */
+const OWNER_LIST_CONCURRENCY = 4
+
+/** `work` over `items`, at most `limit` at a time, the results in `items`' order. */
+async function withinPool<T, R>(items: readonly T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length)
+  let next = 0
+  const run = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await work(items[index] as T)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run))
+  return results
+}
 
 function capReached(owner: string): string {
   return `${owner}: only the first ${REPOSITORY_LIST_CAP} repositories are listed. Use a URL for one that is not.`

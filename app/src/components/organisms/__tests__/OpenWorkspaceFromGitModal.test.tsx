@@ -87,6 +87,8 @@ describe("OpenWorkspaceFromGitModal", () => {
     expect(screen.getByText(/cloned from the repository into this app/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open workspace" })).toBeDisabled();
 
+    // No account signed in: no account to choose, and the URL field stands in for the list.
+    expect(screen.queryByRole("combobox", { name: "Account" })).toBeNull();
     await user.type(await findUrlField(), "   ");
     expect(screen.getByRole("button", { name: "Open workspace" })).toBeDisabled();
 

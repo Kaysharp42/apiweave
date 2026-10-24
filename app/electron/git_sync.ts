@@ -7,6 +7,7 @@ import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
 import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitRepositoryListRequest } from "@shared/types/GitRepositoryListRequest"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
 import { GitCreateRepositoryRequestSchema, GitRepositoryListRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
@@ -95,6 +96,13 @@ function accountOf(value: unknown): GitAccountRef | null {
 function requiredAccountOf(value: unknown): GitAccountRef {
   const checked = GitAccountRefSchema.safeParse(value)
   if (!checked.success) throw new Error("That is not an account APIWeave can sign in as.")
+  return checked.data
+}
+
+/** Which repositories to list, checked: two true-or-false values, said plainly when they are not. */
+function listRequestOf(value: unknown): GitRepositoryListRequest {
+  const checked = GitRepositoryListRequestSchema.safeParse(value)
+  if (!checked.success) throw new Error("That is not a repository list APIWeave can read: `tagged` and `emptyOnly` are two true-or-false values.")
   return checked.data
 }
 
@@ -221,9 +229,7 @@ export function registerGitHandlers(
   )
   ipcMain.handle(
     GIT_CHANNELS.listRepositories,
-    guard((account: unknown, request: unknown) =>
-      hostCli.listRepositories(requiredAccountOf(account), GitRepositoryListRequestSchema.parse(request)),
-    ),
+    guard((account: unknown, request: unknown) => hostCli.listRepositories(requiredAccountOf(account), listRequestOf(request))),
   )
   return signIns
 }

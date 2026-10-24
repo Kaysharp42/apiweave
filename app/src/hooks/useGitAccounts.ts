@@ -3,6 +3,7 @@ import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitHostCli } from "@shared/types/GitHostCli";
 import { git } from "../utils/apiweaveClient";
 import { cliProblemLine } from "../utils/gitAccounts";
+import type { GitAccountsFeed } from "../types";
 
 /**
  * The accounts `gh` and `glab` are signed in to, and each tool's state, read
@@ -16,15 +17,8 @@ import { cliProblemLine } from "../utils/gitAccounts";
  * while the tools are still being asked; `loading` is true while any ask,
  * a reload's included, is under way.
  */
-export function useGitAccounts(): {
-  readonly accounts: readonly GitAccount[];
-  readonly clis: readonly GitHostCli[];
-  readonly problems: readonly string[];
-  readonly failure: string | null;
-  readonly loaded: boolean;
-  readonly loading: boolean;
-  readonly reload: () => void;
-} {
+export function useGitAccounts(): GitAccountsFeed {
+
   const [accounts, setAccounts] = useState<readonly GitAccount[]>([]);
   const [clis, setClis] = useState<readonly GitHostCli[]>([]);
   const [failure, setFailure] = useState<string | null>(null);

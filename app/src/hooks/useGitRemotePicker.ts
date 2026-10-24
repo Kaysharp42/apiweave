@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitRepository } from "@shared/types/GitRepository";
-import { useGitAccounts } from "./useGitAccounts";
 import { useGitRepositoryList } from "./useGitRepositoryList";
 import { gitAccountKey, gitAccountRef } from "../utils/gitAccounts";
 import { remoteForRepository } from "../utils/gitRepositories";
+import { HTTPS_REMOTE } from "../utils/gitRemote";
 import type { GitRemotePickerProps, GitRemotePickerState, GitRemoteSelection } from "../types";
 
 /** The account option that stands for none: a URL on any host, with the user's own git sign-in. */
 const NO_ACCOUNT = "";
-const HTTPS_URL = /^https:\/\//i;
 
 /** A typed URL, reached as the account when it is an `https://` one and the account signs in over HTTPS; the server checks the host. */
 function typedRemote(url: string, account: GitAccount | null): GitRemoteSelection | null {
   const trimmed = url.trim();
   if (trimmed === "") return null;
-  return { url: trimmed, account: account !== null && account.gitProtocol === "https" && HTTPS_URL.test(trimmed) ? gitAccountRef(account) : null };
+  return { url: trimmed, account: account !== null && account.gitProtocol === "https" && HTTPS_REMOTE.test(trimmed) ? gitAccountRef(account) : null };
 }
 
 /** The account option a starting remote stands for: its account, or none; null when there is no starting remote. */
@@ -42,8 +41,8 @@ function selectionKey(selection: GitRemoteSelection | null): string {
  * remote that comes to — told to `onChange` whenever it changes. A starting
  * remote opens on the URL field, filled in, with its account.
  */
-export function useGitRemotePicker({ mode, initial, onChange }: Pick<GitRemotePickerProps, "mode" | "initial" | "onChange">): GitRemotePickerState {
-  const { accounts, problems: accountProblems, loaded, reload } = useGitAccounts();
+export function useGitRemotePicker({ mode, initial, onChange, accounts: feed }: Pick<GitRemotePickerProps, "mode" | "initial" | "onChange" | "accounts">): GitRemotePickerState {
+  const { accounts, clis, problems: accountProblems, loaded, reload } = feed;
   const [chosenKey, setChosenKey] = useState<string | null>(initialAccountKey(initial));
   const [urlMode, setUrlMode] = useState(initial !== null);
   const [url, setUrl] = useState(initial?.url ?? "");
@@ -54,7 +53,9 @@ export function useGitRemotePicker({ mode, initial, onChange }: Pick<GitRemotePi
   const account = accounts.find((candidate) => gitAccountKey(candidate) === accountKey) ?? null;
   // Listing needs an account; without one, or asked for a URL, the URL field stands in.
   const listedAccount = urlMode ? null : account;
-  const list = useGitRepositoryList(listedAccount, { tagged: mode === "open" && !showAll, emptyOnly: mode === "connect" });
+  const loadedList = useGitRepositoryList(listedAccount, { tagged: mode === "open" && !showAll, emptyOnly: mode === "connect" });
+  // Asking again starts the choice over: what was picked belongs to the list being replaced.
+  const list = { ...loadedList, refresh: () => { setPicked(null); loadedList.refresh(); } };
 
   const selection = listedAccount === null ? typedRemote(url, account) : picked && remoteForRepository(listedAccount, picked);
   const key = selectionKey(selection);
@@ -71,6 +72,7 @@ export function useGitRemotePicker({ mode, initial, onChange }: Pick<GitRemotePi
 
   return {
     accounts,
+    clis,
     loaded,
     problems: [...accountProblems, ...list.problems],
     accountKey,

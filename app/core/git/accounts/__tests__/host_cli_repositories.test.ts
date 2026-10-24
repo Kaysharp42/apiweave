@@ -460,13 +460,10 @@ describe("listRepositories", () => {
     ])
   })
 
-  it("lists GitLab projects the account is a member of in one request, Developer or more for a connect", async () => {
+  it("lists the empty GitLab projects the account can push to in one request, which is where its access is asked for", async () => {
     const project = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
-    const projects = JSON.stringify([
-      project,
-      { ...project, path: "reporter-only", path_with_namespace: "acme/qa/reporter-only", permissions: { project_access: { access_level: 20 }, group_access: null } },
-      { ...project, path: "full", path_with_namespace: "acme/qa/full", empty_repo: false },
-    ])
+    // The query asks for Developer or more, so everything it answers with can be pushed to.
+    const projects = JSON.stringify([project, { ...project, path: "full", path_with_namespace: "acme/qa/full", empty_repo: false }])
     const { service, calls } = fakeCli({
       ...GLAB_STATUS_CALL,
       "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=30&per_page=100&order_by=last_activity_at": exited(projects),
@@ -514,10 +511,48 @@ describe("listRepositories", () => {
     await expect(service.listRepositories(GITLAB, { tagged: false, emptyOnly: false })).resolves.toEqual({ repositories: [], problems: ["gitlab.com: 403 Forbidden"] })
   })
 
-  it("refuses a request that is not two flags before any tool runs", async () => {
+  it("trusts GitLab's own access filter for a connect, rather than its permissions object", async () => {
+    const project = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
+    // An empty project whose access is inherited from a parent group, which `permissions` does not show.
+    const inherited = JSON.stringify({ ...project, permissions: { project_access: null, group_access: null } })
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=30&per_page=100&order_by=last_activity_at": exited(`[${inherited}]`),
+    })
+
+    const list = await service.listRepositories(GITLAB, { tagged: false, emptyOnly: true })
+
+    expect(list.repositories.map((repository) => [repository.fullName, repository.canPush])).toEqual([["acme/qa/api-tests", true]])
+  })
+
+  it("refuses a request that is not two flags, in a plain sentence, before any tool runs", async () => {
     const { service, calls } = fakeCli({})
 
-    await expect(service.listRepositories(GITHUB, { tagged: "yes", emptyOnly: false } as never)).rejects.toThrow()
+    await expect(service.listRepositories(GITHUB, { tagged: "yes", emptyOnly: false } as never)).rejects.toThrow(
+      "That is not a repository list APIWeave can read: `tagged` and `emptyOnly` are two true-or-false values.",
+    )
     expect(calls).toEqual([])
+  })
+
+  it("asks at most four owners for their repositories at once", async () => {
+    const orgs = JSON.stringify(Array.from({ length: 9 }, (_, index) => ({ login: `org-${index}` })))
+    const owners = ["octo-work", ...Array.from({ length: 9 }, (_, index) => `org-${index}`)]
+    let running = 0
+    let peak = 0
+    const run = async (command: HostCliCommand, args: readonly string[]): Promise<GitExecOutcome> => {
+      if (args[0] === "api") return exited(orgs)
+      if (args[0] === "auth") return exited(`${TOKEN}\n`)
+      running += 1
+      peak = Math.max(peak, running)
+      // Long enough for the pool's other slots to fill before this one is let go.
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      running -= 1
+      return exited("[]")
+    }
+
+    await new HostCliService({ run }).listRepositories(GITHUB, { tagged: false, emptyOnly: false })
+
+    expect(peak).toBe(4)
+    expect(owners).toHaveLength(10)
   })
 })

@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 import type { GitAccount } from "@shared/types/GitAccount";
-import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
@@ -25,12 +24,11 @@ import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { git } from "../../utils/apiweaveClient";
 import { GIT_PROVIDERS } from "../../utils/gitAccounts";
+import { HTTPS_REMOTE, errorText } from "../../utils/gitRemote";
 import { remoteHost } from "../../utils/gitErrorMessages";
 import { connectFailedMessage, remoteForRepository } from "../../utils/gitRepositories";
-import type { GitAuthorFormProps, GitRemoteSelection, GitRepositoryCreation, PanelMessage } from "../../types";
+import type { GitAuthorFormProps, GitRemoteSelection, GitRepositoryCreation, PanelMessage, RemoteAccountProps, RemoteSectionProps } from "../../types";
 
-const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 interface UntrackedProps {
   readonly busy: boolean;
@@ -106,14 +104,7 @@ function signInHost(provider: GitProvider, remote: string | null): string {
   return remote === null || remote === other ? GIT_PROVIDERS[provider].defaultHost : remote;
 }
 
-const HTTPS_REMOTE = /^https:\/\//i;
 
-interface RemoteAccountProps {
-  readonly remoteUrl: string;
-  readonly value: GitAccountRef | null;
-  readonly onChange: (account: GitAccountRef | null) => void;
-  readonly busy: boolean;
-}
 
 /**
  * Which account a connected `https://` remote is reached as, signing in to
@@ -122,8 +113,8 @@ interface RemoteAccountProps {
  * bound account stays shown even when no tool lists it any more, and one
  * just signed in to is offered, not chosen: the change is the user's.
  */
-function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps) {
-  const { accounts, clis, problems, reload } = useGitAccounts();
+function RemoteAccount({ remoteUrl, value, onChange, busy, accounts: feed }: RemoteAccountProps) {
+  const { accounts, clis, problems, reload } = feed;
   if (!HTTPS_REMOTE.test(remoteUrl)) return null;
   return (
     <>
@@ -151,18 +142,6 @@ function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps)
   );
 }
 
-interface RemoteSectionProps {
-  readonly remoteUrl: string | null;
-  readonly branch: string;
-  readonly account: GitAccountRef | null;
-  readonly busy: boolean;
-  /** What the connect form starts with: a repository just created that could not be connected to. */
-  readonly prefill: GitRemoteSelection | null;
-  readonly onConnect: (url: string, account: GitAccountRef | null) => void;
-  readonly onCreateRepository: (account: GitAccount) => void;
-  readonly onChangeAccount: (account: GitAccountRef | null) => void;
-  readonly onDisconnect: () => void;
-}
 
 /**
  * The remote and its branch; for a workspace with none, the connect form —
@@ -170,17 +149,8 @@ interface RemoteSectionProps {
  * first), or Use a URL instead — and for a connected one, its account and
  * Disconnect.
  */
-function RemoteSection({
-  remoteUrl,
-  branch,
-  account,
-  busy,
-  prefill,
-  onConnect,
-  onCreateRepository,
-  onChangeAccount,
-  onDisconnect,
-}: RemoteSectionProps) {
+function RemoteSection(props: RemoteSectionProps) {
+  const { remoteUrl, branch, account, busy, prefill } = props;
   const [selection, setSelection] = useState<GitRemoteSelection | null>(prefill);
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
@@ -195,14 +165,15 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            if (selection !== null) onConnect(selection.url, selection.account);
+            if (selection !== null) props.onConnect(selection.url, selection.account);
           }}
         >
           <GitRemotePicker
             mode="connect"
             initial={prefill}
+            accounts={props.accounts}
             onChange={setSelection}
-            onCreateRepository={onCreateRepository}
+            onCreateRepository={props.onCreateRepository}
             disabled={busy}
           />
           <Button type="submit" variant="primary" loading={busy} disabled={selection === null}>
@@ -211,8 +182,8 @@ function RemoteSection({
         </form>
       ) : (
         <>
-          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={onChangeAccount} busy={busy} />
-          <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
+          <RemoteAccount remoteUrl={remoteUrl} value={account} onChange={props.onChangeAccount} busy={busy} accounts={props.accounts} />
+          <Button variant="ghost" disabled={busy} onClick={props.onDisconnect}>
             Disconnect
           </Button>
         </>
@@ -275,6 +246,8 @@ export function VersionHistoryPanel({
 }) {
   const available = git.isAvailable();
   const { status, error: loadError, apply } = useWorkspaceGitStatus(workspaceId);
+  // One list of accounts for the page: a sign-in in the dialog is one the picker can use straight away.
+  const accounts = useGitAccounts();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<PanelMessage | null>(null);
   const [creation, setCreation] = useState<GitRepositoryCreation>({ step: "idle" });
@@ -365,6 +338,7 @@ export function VersionHistoryPanel({
             onCreateRepository={(account) => setCreation({ step: "dialog", account })}
             onChangeAccount={(account) => void run(() => git.setAccount(workspaceId, account))}
             onDisconnect={() => setConfirming("disconnect")}
+            accounts={accounts}
           />
         }
         onUntrack={() => setConfirming("untrack")}
@@ -395,6 +369,7 @@ export function VersionHistoryPanel({
           onClose={() => setCreation({ step: "idle" })}
           defaultName={workspaceSlug}
           defaultAccount={creation.account}
+          accounts={accounts}
           onCreated={(created, account) => void connectCreated(created, account)}
         />
       )}

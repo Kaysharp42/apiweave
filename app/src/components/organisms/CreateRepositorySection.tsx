@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
 import { CreateRepositoryFields } from "./CreateRepositoryFields";
 import { GitSignInButtons } from "./GitSignInButtons";
-import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { gitAccountKey, sameGitAccount } from "../../utils/gitAccounts";
 import type { CreateRepositorySectionProps } from "../../types";
 
@@ -13,8 +12,8 @@ import type { CreateRepositorySectionProps } from "../../types";
  * Version history's Create repository dialog is this, and so is Create
  * workspace's sync section.
  */
-export function CreateRepositorySection({ value, onChange, defaultAccount, disabled = false }: CreateRepositorySectionProps) {
-  const { accounts, clis, problems, loaded, reload } = useGitAccounts();
+export function CreateRepositorySection({ value, onChange, defaultAccount, accounts: feed, disabled = false }: CreateRepositorySectionProps) {
+  const { accounts, clis, problems, loaded, reload } = feed;
   // An account just signed in to, chosen as soon as the tools list it.
   const [signedIn, setSignedIn] = useState<string | null>(null);
 

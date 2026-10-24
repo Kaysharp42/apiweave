@@ -20,7 +20,8 @@ export function GitRemoteAccountSelect({ accounts, value, onChange, disabled }: 
             {accountLabel(account)}
           </option>
         ))}
-        <option value="">Another host — your own git sign-in</option>
+        {/* The same words as the account picker's own choice of no account; last, because it is the way out. */}
+        <option value="">Your own git sign-in (credential manager or SSH key) — another host</option>
       </Select>
     </FormField>
   );

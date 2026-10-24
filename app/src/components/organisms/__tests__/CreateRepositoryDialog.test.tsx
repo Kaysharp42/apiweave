@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import type { GitAccount } from "@shared/types/GitAccount";
 import { CreateRepositoryDialog } from "../CreateRepositoryDialog";
 import { installGitBridge, untrackedStatus } from "../../../__tests__/gitFixtures";
+import { useGitAccounts } from "../../../hooks/useGitAccounts";
+import type { GitAccountsFeed } from "../../../types";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -14,7 +16,13 @@ const LAB: GitAccount = { provider: "gitlab", host: "gitlab.com", login: "tanuki
 
 function renderDialog(defaultAccount: GitAccount | null = null) {
   const onCreated = vi.fn();
-  render(<CreateRepositoryDialog onClose={vi.fn()} defaultName="shop-api" defaultAccount={defaultAccount} onCreated={onCreated} />);
+  // The page holds the accounts; the dialog is handed them.
+  let feed: GitAccountsFeed | undefined;
+  function Feed() {
+    feed = useGitAccounts();
+    return feed.accounts.length < 0 ? null : <CreateRepositoryDialog onClose={vi.fn()} defaultName="shop-api" defaultAccount={defaultAccount} accounts={feed} onCreated={onCreated} />;
+  }
+  render(<Feed />);
   return { onCreated };
 }
 

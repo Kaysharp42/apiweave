@@ -1,11 +1,14 @@
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitRepository } from "@shared/types/GitRepository";
+import type { GitHostCli } from "@shared/types/GitHostCli";
 import type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 
 /** What `GitRemotePicker` shows and what its controls do, as `useGitRemotePicker` keeps them. */
 export interface GitRemotePickerState {
   readonly accounts: readonly GitAccount[];
+  /** Each tool's state, so a sign-in is offered only with the tool that runs it. */
+  readonly clis: readonly GitHostCli[];
   readonly loaded: boolean;
   /** Why the accounts, or the shown account's repositories, could not all be listed. */
   readonly problems: readonly string[];

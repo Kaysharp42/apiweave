@@ -182,7 +182,7 @@ describe("VersionHistoryPanel", () => {
       problems: [],
     }));
 
-    it("starts on the first account, lists its empty repositories with Create repository… first, and connects to one as it", async () => {
+    it("starts on the first account, lists its empty repositories with Create repository… above them, and connects to one as it", async () => {
       const user = userEvent.setup();
       const { bridge } = installGitBridge(local(), { listAccounts, listRepositories });
       render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
@@ -191,10 +191,11 @@ describe("VersionHistoryPanel", () => {
       await waitFor(() => expect(within(picker).getByRole("option", { name: "acme/billing (private)" })).toBeInTheDocument());
       expect([...picker.querySelectorAll("option")].map((option) => option.textContent)).toEqual([
         "Choose a repository",
-        "Create repository…",
         "octo-work/shop-api (private)",
         "acme/billing (private)",
       ]);
+      // A button above the list, not an option in it: a native select fires an option on ArrowDown.
+      expect(screen.getByRole("button", { name: "Create repository…" })).toBeInTheDocument();
       expect(bridge.listRepositories).toHaveBeenCalledWith(ref(WORK), { tagged: false, emptyOnly: true });
       await user.selectOptions(picker, "acme/billing");
       await user.click(screen.getByRole("button", { name: /connect to remote/i }));
@@ -417,9 +418,9 @@ describe("Create repository", () => {
     const installed = installGitBridge(local(), { listAccounts: vi.fn(async () => ({ clis: [], accounts: [HTTPS, SSH] })), ...overrides });
     render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
 
-    // Create repository… is the first entry of the account's repository list.
+    // Create repository… sits above the account's repository list, for that account.
     await user.selectOptions(await screen.findByRole("combobox", { name: "Account" }), `${account.provider}|${account.host}|${account.login}`);
-    await user.selectOptions(await screen.findByRole("combobox", { name: "Repository" }), "Create repository…");
+    await user.click(await screen.findByRole("button", { name: "Create repository…" }));
     const dialog = await screen.findByRole("dialog", { name: "Create repository" });
     expect(within(dialog).getByRole("combobox", { name: "Account" })).toHaveValue(`${account.provider}|${account.host}|${account.login}`);
     await waitFor(() => expect(within(dialog).getByRole("combobox", { name: "Owner" })).toHaveValue(account.login));

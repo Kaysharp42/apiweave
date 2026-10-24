@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { GitBranchPlus, RefreshCw } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Select } from "../atoms/Select";
@@ -6,8 +6,6 @@ import { FormField } from "../molecules/FormField";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import type { GitRepositoryFieldProps } from "../../types";
 
-/** The repository option that opens Create repository… instead of choosing one. */
-const CREATE = "create";
 
 /** What the list's first, unchoosable line says: listing, nothing to list, or choose. */
 function placeholder({ mode, list, showAll }: Pick<GitRepositoryFieldProps, "mode" | "list" | "showAll">): string {
@@ -42,15 +40,12 @@ export function GitRepositoryField({
             aria-label="Repository"
             value={picked}
             disabled={disabled || list.loading}
-            onChange={(event) => {
-              if (event.target.value === CREATE) onCreateRepository?.(account);
-              else onPick(list.repositories.find((repository) => repository.fullName === event.target.value) ?? null);
-            }}
+            onChange={(event) => onPick(list.repositories.find((repository) => repository.fullName === event.target.value) ?? null)}
           >
             <option value="" disabled>
               {placeholder({ mode, list, showAll })}
             </option>
-            {mode === "connect" && onCreateRepository !== undefined && <option value={CREATE}>Create repository…</option>}
+
             {list.repositories.map((repository) => (
               <option key={repository.fullName} value={repository.fullName}>
                 {repository.fullName}
@@ -70,6 +65,18 @@ export function GitRepositoryField({
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
         </IconButton>
       </div>
+      {/* A button, not an option: a native select fires a chosen option on ArrowDown, which would open a dialog. */}
+      {mode === "connect" && onCreateRepository !== undefined && (
+        <Button
+          variant={list.repositories.length === 0 && !list.loading ? "primary" : "secondary"}
+          size="sm"
+          icon={<GitBranchPlus className="h-4 w-4" aria-hidden="true" />}
+          disabled={disabled}
+          onClick={() => onCreateRepository(account)}
+        >
+          Create repository…
+        </Button>
+      )}
       {mode === "open" && (
         <ToggleSetting
           title="Show all repositories"

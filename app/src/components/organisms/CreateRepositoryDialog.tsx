@@ -14,7 +14,7 @@ import type { CreateRepositoryDialogProps, GitRepositoryDraft } from "../../type
  * already taken is refused by name; nothing existing is ever adopted. Mount
  * it per use: it starts from the workspace's slug and the account given.
  */
-export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, onCreated }: CreateRepositoryDialogProps) {
+export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, accounts, onCreated }: CreateRepositoryDialogProps) {
   const [draft, setDraft] = useState<GitRepositoryDraft>({ account: null, owner: "", name: defaultName, private: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, o
             {error}
           </div>
         )}
-        <CreateRepositorySection value={draft} onChange={setDraft} defaultAccount={defaultAccount} disabled={busy} />
+        <CreateRepositorySection value={draft} onChange={setDraft} defaultAccount={defaultAccount} accounts={accounts} disabled={busy} />
       </form>
     </Modal>
   );

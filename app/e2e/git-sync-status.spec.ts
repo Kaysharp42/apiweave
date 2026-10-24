@@ -344,9 +344,9 @@ test.describe("git sync status", () => {
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
     await navigateDesktop(page, "/personal/personal/settings/version-history");
 
-    // Create repository… is the first entry of the account's repository list.
+    // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
     await expect(page.getByRole("option", { name: "acme/empty-tests (private)" })).toBeAttached();
-    await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "Create repository…" });
+    await page.getByRole("button", { name: "Create repository…" }).click();
     const dialog = page.getByRole("dialog", { name: "Create repository" });
     await expect(dialog.getByRole("combobox", { name: "Account" })).toHaveValue("github|github.com|octo-work");
     await dialog.getByRole("combobox", { name: "Owner" }).selectOption("acme");

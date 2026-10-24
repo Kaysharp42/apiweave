@@ -15,18 +15,18 @@ import type { GitRemotePickerProps } from "../../types";
  * bound to it; an SSH account's is its SSH URL, bound to none. Each list is
  * kept for as long as the picker is open, with Refresh.
  */
-export function GitRemotePicker({ mode, initial, onChange, onCreateRepository, disabled = false }: GitRemotePickerProps) {
-  const picker = useGitRemotePicker({ mode, initial, onChange });
+export function GitRemotePicker({ mode, initial, onChange, accounts, onCreateRepository, disabled = false }: GitRemotePickerProps) {
+  const picker = useGitRemotePicker({ mode, initial, onChange, accounts });
   return (
     <div className="space-y-3">
-      <GitRemoteAccountSelect
-        accounts={picker.accounts}
-        value={picker.accountKey}
-        onChange={picker.chooseAccount}
-        disabled={disabled || !picker.loaded}
-      />
-      <GitSignInButtons disabled={disabled} onSignedIn={picker.signedIn} />
-      {picker.listedAccount === null ? (
+      {picker.accounts.length > 0 && (
+        <GitRemoteAccountSelect accounts={picker.accounts} value={picker.accountKey} onChange={picker.chooseAccount} disabled={disabled} />
+      )}
+      {picker.loaded && (
+        <GitSignInButtons clis={picker.clis} disabled={disabled} onSignedIn={picker.signedIn} />
+      )}
+      {/* Nothing before the tools answer: the URL field would stand in for an account list about to arrive. */}
+      {!picker.loaded ? null : picker.listedAccount === null ? (
         <GitRemoteUrlField
           url={picker.url}
           onChange={picker.setUrl}
