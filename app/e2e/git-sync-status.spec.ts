@@ -287,7 +287,7 @@ test.describe("git sync status", () => {
 
     await page.getByRole("button", { name: "Settings > Git accounts" }).click();
     await expect(page.getByRole("heading", { name: "Git accounts" })).toBeVisible();
-    await expect(page.getByText("glab is not installed.")).toBeVisible();
+    await expect(page.getByText("The GitLab CLI (glab) is not installed.")).toBeVisible();
     await captureEvidence(page, "git-accounts-settings.png");
   });
 

@@ -415,6 +415,7 @@ export type { GitAccountsMenuPanelProps } from "./GitAccountsMenuPanelProps";
 export type { GitAccountsMenuProps } from "./GitAccountsMenuProps";
 export type { GitSyncControlProps } from "./GitSyncControlProps";
 export type { GitHostCliCardProps } from "./GitHostCliCardProps";
+export type { GitCliStateProps } from "./GitCliStateProps";
 export type { GitSignInDialogProps } from "./GitSignInDialogProps";
 export type { GitSignInPhase } from "./GitSignInPhase";
 export type { GitMergeDialogProps } from "./GitMergeDialogProps";
