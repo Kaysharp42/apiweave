@@ -256,10 +256,23 @@ describe("the repository bridges", () => {
   function repositoryHandlers() {
     const listOwners = vi.fn(async () => ({ owners: [], problem: null }))
     const createRepository = vi.fn(async () => ({}))
-    const handlers = handlersOf({} as GitSyncService, { listOwners, createRepository } as unknown as HostCliService)
+    const listRepositories = vi.fn(async () => ({ repositories: [], problems: [] }))
+    const handlers = handlersOf({} as GitSyncService, { listOwners, createRepository, listRepositories } as unknown as HostCliService)
     const call = async (channel: string, ...args: unknown[]): Promise<unknown> => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
-    return { listOwners, createRepository, call }
+    return { listOwners, createRepository, listRepositories, call }
   }
+
+  it("lists repositories for a checked account and two flags, and nothing else", async () => {
+    const { listRepositories, call } = repositoryHandlers()
+
+    await call(GIT_CHANNELS.listRepositories, ACCOUNT, { tagged: true, emptyOnly: false })
+    await expect(call(GIT_CHANNELS.listRepositories, ACCOUNT, { tagged: true, emptyOnly: false, topic: "x" })).rejects.toThrow()
+    await expect(call(GIT_CHANNELS.listRepositories, { ...ACCOUNT, login: "-x" }, { tagged: true, emptyOnly: false })).rejects.toThrow(
+      "That is not an account APIWeave can sign in as.",
+    )
+
+    expect(listRepositories.mock.calls).toEqual([[ACCOUNT, { tagged: true, emptyOnly: false }]])
+  })
 
   it("passes a checked account and request through to the host CLI service", async () => {
     const { listOwners, createRepository, call } = repositoryHandlers()

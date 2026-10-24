@@ -46,6 +46,8 @@ import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest";
 import type { GitProvider } from "@shared/types/GitProvider";
+import type { GitRepositoryList } from "@shared/types/GitRepositoryList";
+import type { GitRepositoryListRequest } from "@shared/types/GitRepositoryListRequest";
 import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList";
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt";
 import type { GitBridge } from "@shared/types/GitBridge";
@@ -1326,6 +1328,12 @@ export const git = {
     request: GitCreateRepositoryRequest,
   ): Promise<GitCreatedRepository> =>
     getGitBridge()?.createRepository(account, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  listRepositories: (
+    account: GitAccountRef,
+    request: GitRepositoryListRequest,
+  ): Promise<GitRepositoryList> =>
+    getGitBridge()?.listRepositories(account, request).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,

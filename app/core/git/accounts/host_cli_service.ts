@@ -5,10 +5,13 @@ import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository"
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
 import type { GitHostCli } from "@shared/types/GitHostCli"
 import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitRepository } from "@shared/types/GitRepository"
+import type { GitRepositoryList } from "@shared/types/GitRepositoryList"
+import type { GitRepositoryListRequest } from "@shared/types/GitRepositoryListRequest"
 import type { GitRepositoryOwner } from "@shared/types/GitRepositoryOwner"
 import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
-import { GitCreateRepositoryRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
+import { GitCreateRepositoryRequestSchema, GitRepositoryListRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
 import { resolveExecutable, spawnCommandFor } from "../../agents/executable"
 import { ConflictError, ValidationError } from "../../ipc/errors"
 import { GitAccountUnavailableError, redactCredentials } from "../git_errors"
@@ -21,11 +24,13 @@ import {
   parseCliVersion,
   parseGhAccounts,
   parseGhOrganizations,
+  parseGhRepositoryList,
   parseGhRestRepository,
   parseGhToken,
   parseGitLabGroup,
   parseGitLabGroups,
   parseGitLabProject,
+  parseGitLabProjectList,
   parseGlabAccounts,
   parseGlabCredential,
   parseSignedInLogin,
@@ -327,7 +332,10 @@ export class HostCliService {
    */
   async listOwners(account: GitAccountRef): Promise<GitRepositoryOwnerList> {
     const checked = checkedAccount(account)
-    const api = await this.apiAs(checked)
+    return this.ownersOf(checked, await this.apiAs(checked))
+  }
+
+  private async ownersOf(checked: GitAccountRef, api: HostApi): Promise<GitRepositoryOwnerList> {
     const self: GitRepositoryOwner = { path: checked.login, kind: "user" }
     if (checked.provider === "github") {
       const outcome = await api.call(["user/orgs?per_page=100"])
@@ -339,6 +347,64 @@ export class HostCliService {
     const groups = succeeded(outcome) ? parseGitLabGroups(outcome.stdout) : undefined
     if (groups === undefined) return { owners: [self], problem: `The groups of ${checked.login} could not be listed: ${api.failure(outcome)}` }
     return { owners: [self, ...groups.map((group) => ({ path: group.path, kind: "group" as const }))], problem: null }
+  }
+
+  /**
+   * The repositories `account` can see, for a picker: with `tagged`, only
+   * those with the `apiweave-workspace` topic; with `emptyOnly`, only empty
+   * ones it can push to — the ones a workspace can be connected to. None
+   * archived. At most {@link REPOSITORY_LIST_CAP} per GitHub owner (the
+   * account and each organization) and in all on GitLab; a list that reaches
+   * the cap says so in `problems`, and an owner that cannot be listed is a
+   * line there too, never an empty list that looks complete.
+   *
+   * GitHub: `gh repo list <owner> [--topic] --no-archived --json … -L 100`
+   * for the account and each organization, with the account's token. GitLab:
+   * `GET /projects?membership=true&archived=false[&topic=…]` with
+   * `min_access_level` Reporter (Developer for `emptyOnly`), one page of 100.
+   */
+  async listRepositories(account: GitAccountRef, request: GitRepositoryListRequest): Promise<GitRepositoryList> {
+    const checked = checkedAccount(account)
+    const { tagged, emptyOnly } = GitRepositoryListRequestSchema.parse(request)
+    const api = await this.apiAs(checked)
+    const usable = (repository: GitRepository): boolean => !emptyOnly || (repository.empty && repository.canPush)
+    if (checked.provider === "gitlab") {
+      const query = [
+        "membership=true",
+        "archived=false",
+        `min_access_level=${emptyOnly ? 30 : 20}`,
+        ...(tagged ? [`topic=${APIWEAVE_REPOSITORY_TOPIC}`] : []),
+        `per_page=${REPOSITORY_LIST_CAP}`,
+        "order_by=last_activity_at",
+      ].join("&")
+      const outcome = await api.call([`projects?${query}`])
+      const listed = succeeded(outcome) ? parseGitLabProjectList(outcome.stdout) : undefined
+      if (listed === undefined) return { repositories: [], problems: [`${checked.host}: ${api.failure(outcome)}`] }
+      return { repositories: listed.filter(usable), problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(checked.host)] : [] }
+    }
+    const { owners, problem } = await this.ownersOf(checked, api)
+    const lists = await Promise.all(
+      owners.map(async ({ path }) => {
+        const outcome = await api.run([
+          "repo",
+          "list",
+          ...(tagged ? [`--topic=${APIWEAVE_REPOSITORY_TOPIC}`] : []),
+          "--no-archived",
+          "--json=name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility",
+          `--limit=${REPOSITORY_LIST_CAP}`,
+          // The owner came from the host, and is still never read as a flag.
+          "--",
+          path,
+        ])
+        const listed = succeeded(outcome) ? parseGhRepositoryList(outcome.stdout) : undefined
+        if (listed === undefined) return { repositories: [], problems: [`${path}: ${api.failure(outcome)}`] }
+        return { repositories: listed.filter(usable), problems: listed.length >= REPOSITORY_LIST_CAP ? [capReached(path)] : [] }
+      }),
+    )
+    return {
+      repositories: lists.flatMap((list) => list.repositories),
+      problems: [...(problem === null ? [] : [problem]), ...lists.flatMap((list) => list.problems)],
+    }
   }
 
   /**
@@ -430,22 +496,34 @@ export class HostCliService {
     } else {
       await this.assertGlabSignedInAs(account)
     }
+    const run = (args: readonly string[], body?: unknown): Promise<GitExecOutcome> =>
+      this.run(command, args, {
+        timeoutMs: API_TIMEOUT_MS,
+        ...(body === undefined ? {} : { input: JSON.stringify(body) }),
+        ...(env === undefined ? {} : { env }),
+      })
     return {
-      call: (args, body) =>
-        this.run(command, ["api", `--hostname=${account.host}`, ...args], {
-          timeoutMs: API_TIMEOUT_MS,
-          ...(body === undefined ? {} : { input: JSON.stringify(body) }),
-          ...(env === undefined ? {} : { env }),
-        }),
+      run,
+      call: (args, body) => run(["api", `--hostname=${account.host}`, ...args], body),
       failure: (outcome) => redactCredentials(parseApiError(outcome.stdout) ?? failureText(command, outcome), secrets),
     }
   }
 }
 
-/** One account's API, as {@link HostCliService.apiAs} sets it up. */
+/** One account's tool, as {@link HostCliService.apiAs} sets it up. */
 interface HostApi {
+  /** Any command of the account's tool, as the account. */
+  readonly run: (args: readonly string[], body?: unknown) => Promise<GitExecOutcome>
+  /** One REST request, `api --hostname=<host>` and `args`. */
   readonly call: (args: readonly string[], body?: unknown) => Promise<GitExecOutcome>
   readonly failure: (outcome: GitExecOutcome) => string
+}
+
+/** How many repositories a list holds per GitHub owner, and in all on GitLab: one page of each host's API. */
+const REPOSITORY_LIST_CAP = 100
+
+function capReached(owner: string): string {
+  return `${owner}: only the first ${REPOSITORY_LIST_CAP} repositories are listed. Use a URL for one that is not.`
 }
 
 /** Only the three fields that name an account, checked: a listed `GitAccount` carries more, and the bridge refuses more. */
