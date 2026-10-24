@@ -10,4 +10,5 @@ export type TutorialDestinationPath =
   | "agents"
   | "canvas-settings"
   | "mcp-server"
+  | "version-history"
   | "updates";

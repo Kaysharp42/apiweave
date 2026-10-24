@@ -5,5 +5,6 @@ export type TutorialChapterId =
   | "control-flow"
   | "debug-and-observe"
   | "organize"
+  | "version-history"
   | "agents"
   | "app";

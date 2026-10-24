@@ -1,7 +1,7 @@
 import type { TutorialChapter } from "../../types";
 
 /**
- * Chapter 6 — Agents. Embedded coding-agent sessions and the local MCP bridge.
+ * Chapter 7 — Agents. Embedded coding-agent sessions and the local MCP bridge.
  */
 export const agentsChapter: TutorialChapter = {
   id: "agents",
