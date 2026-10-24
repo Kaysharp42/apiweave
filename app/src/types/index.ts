@@ -420,6 +420,7 @@ export type { GitRemoteSelection } from "./GitRemoteSelection";
 export type { GitRepositoryOwnersFeed } from "./GitRepositoryOwnersFeed";
 export type { CreateRepositoryFieldsProps } from "./CreateRepositoryFieldsProps";
 export type { CreateRepositoryDialogProps } from "./CreateRepositoryDialogProps";
+export type { CreateRepositorySectionProps } from "./CreateRepositorySectionProps";
 export type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 export type { GitRemotePickerProps } from "./GitRemotePickerProps";
 export type { GitHostCliCardProps } from "./GitHostCliCardProps";
