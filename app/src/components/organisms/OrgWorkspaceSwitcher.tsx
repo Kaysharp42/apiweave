@@ -12,10 +12,14 @@ import {
   UserRound,
 } from "lucide-react";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
+import { useWorkspaceGitStatuses } from "../../hooks/useWorkspaceGitStatuses";
 import { Button } from "../atoms/Button";
+import { Tooltip } from "../atoms/Tooltip";
+import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
 import { OpenWorkspaceFromGitModal } from "./OpenWorkspaceFromGitModal";
-import type { Workspace } from "../../types";
+import { describeGitSync, GIT_SYNC_INTENT_TEXT } from "../../utils/gitSync";
+import type { Workspace, WorkspaceItemProps } from "../../types";
 
 /**
  * The current workspace's name and source. Split out of the switcher button so
@@ -61,6 +65,7 @@ export function OrgWorkspaceSwitcher() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [openFromGitOpen, setOpenFromGitOpen] = useState(false);
   const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const gitStatuses = useWorkspaceGitStatuses();
 
   const handleSelect = (workspace: Workspace, close: () => void) => {
     switchTo(workspace.slug);
@@ -176,6 +181,7 @@ export function OrgWorkspaceSwitcher() {
                       }
                       icon={sourceIcon(source, "h-4 w-4")}
                       source={source}
+                      syncStatus={gitStatuses.get(workspace.workspaceId) ?? null}
                       onSelect={(selected) => handleSelect(selected, close)}
                       onKeyDown={handleItemKeyDown}
                       itemRef={(el) => {
@@ -239,20 +245,6 @@ export function OrgWorkspaceSwitcher() {
   );
 }
 
-interface WorkspaceItemProps {
-  workspace: Workspace;
-  index: number;
-  isActive: boolean;
-  icon: React.ReactNode;
-  source: string;
-  onSelect: (workspace: Workspace) => void;
-  onKeyDown: (
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) => void;
-  itemRef: (el: HTMLButtonElement | null) => void;
-}
-
 // fallow-ignore-next-line code-duplication
 function WorkspaceItem({
   workspace,
@@ -260,10 +252,12 @@ function WorkspaceItem({
   isActive,
   icon,
   source,
+  syncStatus,
   onSelect,
   onKeyDown,
   itemRef,
 }: WorkspaceItemProps) {
+  const indicator = syncStatus === null ? null : describeGitSync(syncStatus);
   return (
     <button
       ref={itemRef}
@@ -295,6 +289,17 @@ function WorkspaceItem({
           {source}
         </div>
       </div>
+      {indicator !== null && indicator.icon !== null && (
+        <Tooltip content={indicator.label}>
+          <span
+            role="img"
+            aria-label={indicator.label}
+            className={`flex flex-shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
+          >
+            <GitSyncKindIcon indicator={indicator} className="h-3.5 w-3.5" />
+          </span>
+        </Tooltip>
+      )}
       {isActive && (
         <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
       )}

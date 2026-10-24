@@ -537,6 +537,69 @@ describe("GitSyncService", () => {
     expect(counts).toBe(0)
   })
 
+  it("lists every tracked workspace's status for the switcher, and no untracked one", async () => {
+    const harness = openHarness()
+    const second = harness.repositories.workspaces.create({ name: "Second", slug: "second" }).workspaceId
+    harness.repositories.workspaces.create({ name: "Untracked", slug: "untracked" })
+    await harness.sync.track(harness.workspaceId)
+    await harness.sync.track(second)
+
+    const statuses = await harness.sync.statusAll()
+
+    expect(statuses.map((status) => status.workspaceId).sort()).toEqual([harness.workspaceId, second].sort())
+    expect(statuses.every((status) => status.tracked)).toBe(true)
+  })
+
+  it("asks for one workspace's status at a time, not all of them at once", async () => {
+    let reading = 0
+    let peak = 0
+    const harness = openHarness({
+      wrap: (git) => ({
+        ...passthrough(git),
+        log: async (dir: string) => {
+          reading += 1
+          peak = Math.max(peak, reading)
+          try {
+            return await git.log(dir)
+          } finally {
+            reading -= 1
+          }
+        },
+      }),
+    })
+    const second = harness.repositories.workspaces.create({ name: "Second", slug: "second" }).workspaceId
+    await harness.sync.track(harness.workspaceId)
+    await harness.sync.track(second)
+
+    expect(await harness.sync.statusAll()).toHaveLength(2)
+
+    // A status runs git; a list of statuses must not start one per workspace at once.
+    expect(peak).toBe(1)
+  })
+
+  it("leaves out a workspace that is untracked while the list is being read", async () => {
+    const harness = openHarness()
+    const second = harness.repositories.workspaces.create({ name: "Second", slug: "second" }).workspaceId
+    await harness.sync.track(harness.workspaceId)
+    await harness.sync.track(second)
+    const [first, other] = harness.repositories.workspaceGit.listAll()
+    if (first === undefined || other === undefined) throw new Error("harness did not track both workspaces")
+
+    const get = harness.repositories.workspaceGit.get.bind(harness.repositories.workspaceGit)
+    let reads = 0
+    vi.spyOn(harness.repositories.workspaceGit, "get").mockImplementation((workspaceId) => {
+      // The first read belongs to the first workspace, which is still tracked; by the
+      // time the list reaches the other one, it has been untracked.
+      if (++reads === 1) harness.repositories.workspaceGit.delete(other.workspaceId)
+      return get(workspaceId)
+    })
+
+    const statuses = await harness.sync.statusAll()
+
+    expect(statuses.map((status) => status.workspaceId)).toEqual([first.workspaceId])
+    expect(statuses.every((status) => status.tracked)).toBe(true)
+  })
+
   it("syncNow rejects only a request it cannot run: an id that is not a workspace, or one that is not tracked", async () => {
     const harness = openHarness()
 
