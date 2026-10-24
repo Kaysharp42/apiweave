@@ -25,7 +25,7 @@ import {
 } from "../core/repositories"
 import type { GitSyncService } from "../core/git/git_sync_service"
 import { HostCliService } from "../core/git/accounts/host_cli_service"
-import { createGitSync, registerGitHandlers } from "./git_sync"
+import { cancelSignInWhenDocumentGoes, createGitSync, registerGitHandlers, type GitSignIns } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
 import {
@@ -73,6 +73,7 @@ import {
   AGENT_OUTPUT_PORT_CHANNEL,
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
+  GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
   NETWORK_CHANNELS,
   OAUTH_CHANNELS,
@@ -149,6 +150,8 @@ let agentProcesses: AgentProcessManager | null = null
 // Module scope for the same reason, and because the repositories built before
 // it already report their writes to it.
 let gitSync: GitSyncService | null = null
+// A sign-in's gh or glab waits up to 15 minutes for its code; quitting stops it.
+let gitSignIns: GitSignIns | null = null
 let isQuitting = false
 
 if (process.platform === "linux") {
@@ -328,6 +331,8 @@ async function createWindow(): Promise<boolean> {
         app.quit()
       })
   })
+
+  cancelSignInWhenDocumentGoes(win.webContents, () => void gitSignIns?.cancel())
 
   // Never let the privileged app:// document navigate to attacker-controlled
   // content — that content would inherit the same preload/IPC bridge.
@@ -904,7 +909,19 @@ if (!hasSingleInstanceLock) {
       },
       publishDataRefresh,
     )
-    registerGitHandlers(ipcMain, requireTrustedSender, gitSync, hostCli)
+    gitSignIns = registerGitHandlers(ipcMain, requireTrustedSender, gitSync, hostCli, {
+      // Only ever a page gh or glab printed for the host being signed in to.
+      openExternal: (url) => shell.openExternal(url),
+      showPrompt: (prompt) => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(GIT_SIGN_IN_PROMPT_CHANNEL, prompt)
+        }
+      },
+      // The user signed in in the browser; bring them back to where they started.
+      focus: () => {
+        if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.focus()
+      },
+    })
     gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
@@ -1169,6 +1186,12 @@ app.on("before-quit", (event) => {
 
   if (scheduler && scheduler.getActiveCount() > 0) {
     shutdowns.push(scheduler.shutdown(2000))
+  }
+
+  // A sign-in's gh or glab is killed, and the quit waits until it has gone.
+  if (gitSignIns !== null) {
+    shutdowns.push(gitSignIns.cancel())
+    gitSignIns = null
   }
 
   // A commit in flight still writes its outcome to the database.

@@ -86,6 +86,63 @@ describe("execGit", () => {
     })
     expect(outcome).toMatchObject({ status: "timeout", exitCode: undefined, stdout: "", stderr: "" })
   })
+
+  it("streams stderr as it comes, and on a cancel kills the whole tree — a grandchild included — and resolves cancelled", async () => {
+    // A parent that starts a grandchild, says its pid, and waits: what a sign-in's gh or glab waiting for a code looks like.
+    const parent = [
+      "const { spawn } = require('node:child_process')",
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' })",
+      "process.stderr.write('grandchild ' + child.pid + '\\n')",
+      "setInterval(() => undefined, 1000)",
+    ].join(";")
+    const controller = new AbortController()
+    let grandchild: number | undefined
+    const started = Date.now()
+
+    const outcome = await execGit(process.execPath, ["-e", parent], {
+      cwd: undefined,
+      env: process.env,
+      timeoutMs: 60_000,
+      signal: controller.signal,
+      onStderr: (text) => {
+        const pid = /grandchild (\d+)/.exec(text)?.[1]
+        if (pid === undefined) return
+        grandchild = Number(pid)
+        controller.abort()
+      },
+    })
+
+    expect(outcome).toMatchObject({ status: "cancelled", exitCode: undefined })
+    expect(Date.now() - started).toBeLessThan(20_000)
+    expect(grandchild).toBeDefined()
+    const alive = (): boolean => {
+      try {
+        process.kill(grandchild ?? 0, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    // POSIX has no tree kill: there the grandchild is the tool's own to reap, as git's helpers are.
+    if (process.platform === "win32") {
+      for (let tries = 0; alive() && tries < 50; tries++) await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(alive()).toBe(false)
+    } else if (alive()) {
+      process.kill(grandchild ?? 0)
+    }
+  }, 30_000)
+
+  it("resolves cancelled at once for a signal already aborted", async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const outcome = await execGit(process.execPath, ["-e", "setTimeout(() => undefined, 60_000)"], {
+      cwd: undefined,
+      env: process.env,
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    })
+    expect(outcome.status).toBe("cancelled")
+  })
 })
 
 describe("argument checks", () => {

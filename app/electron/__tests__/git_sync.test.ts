@@ -1,21 +1,24 @@
-import type { IpcMain, IpcMainInvokeEvent } from "electron"
+import { EventEmitter } from "node:events"
+import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron"
 import { describe, expect, it, vi } from "vitest"
 import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitAccountList } from "@shared/types/GitAccountList"
-import type { HostCliService } from "../../core/git/accounts/host_cli_service"
+import type { HostCliService, HostCliSignInOptions } from "../../core/git/accounts/host_cli_service"
 import type { GitSyncService } from "../../core/git/git_sync_service"
 import { GIT_CHANNELS } from "../../core/ipc/channels"
-import { registerGitHandlers } from "../git_sync"
+import { GitSignIns, cancelSignInWhenDocumentGoes, registerGitHandlers, type GitSignInPorts } from "../git_sync"
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 /**
  * The git handlers on a fake `ipcMain`, behind a guard that lets every sender
  * through, over a sync service that only records the call.
  */
-function handlersOf(gitSync: GitSyncService, hostCli = {} as HostCliService): Map<string, Handler> {
+const NO_PORTS: GitSignInPorts = { openExternal: async () => undefined, showPrompt: () => undefined, focus: () => undefined }
+
+function handlersOf(gitSync: GitSyncService, hostCli = {} as HostCliService, ports = NO_PORTS): Map<string, Handler> {
   const handlers = new Map<string, Handler>()
   const ipcMain = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) } as unknown as IpcMain
-  registerGitHandlers(ipcMain, (handler) => (_event, ...args) => handler(...args), gitSync, hostCli)
+  registerGitHandlers(ipcMain, (handler) => (_event, ...args) => handler(...args), gitSync, hostCli, ports)
   return handlers
 }
 
@@ -43,7 +46,7 @@ describe("the git bridge's registration", () => {
     const refuse = (): never => {
       throw new Error("untrusted sender")
     }
-    registerGitHandlers(ipcMain, () => refuse, {} as GitSyncService, {} as HostCliService)
+    registerGitHandlers(ipcMain, () => refuse, {} as GitSyncService, {} as HostCliService, NO_PORTS)
 
     expect([...handlers.keys()].sort()).toEqual(Object.values(GIT_CHANNELS).sort())
     for (const [channel, handler] of handlers) {
@@ -92,6 +95,144 @@ describe("the account a remote is reached as", () => {
 
     expect(connectRemote).not.toHaveBeenCalled()
     expect(setAccount).not.toHaveBeenCalled()
+  })
+})
+
+describe("signing in", () => {
+  const ACCOUNT = { provider: "github" as const, host: "github.com", login: "octo" }
+  const PAGE = "https://github.com/login/device"
+
+  /** A host CLI whose sign-in prints its code when told to, and finishes when told to. */
+  function pendingSignIn() {
+    let options: HostCliSignInOptions | undefined
+    let finish: (() => void) | undefined
+    const signIn = vi.fn(
+      (_provider: string, _host: string, given: HostCliSignInOptions) =>
+        new Promise<typeof ACCOUNT>((resolve, reject) => {
+          options = given
+          finish = () => resolve(ACCOUNT)
+          given.signal?.addEventListener("abort", () => reject(new Error("Sign-in was cancelled.")))
+        }),
+    )
+    const ports = { openExternal: vi.fn(async () => undefined), showPrompt: vi.fn(), focus: vi.fn() }
+    const signIns = new GitSignIns({ signIn } as unknown as HostCliService, ports)
+    return {
+      signIns,
+      signIn,
+      ports,
+      prompt: () => options?.onPrompt({ code: "3F2A-9C1B", url: PAGE }),
+      finish: () => finish?.(),
+      signal: () => options?.signal,
+    }
+  }
+
+  it("shows the code, opens the page the tool printed, reopens only that page, and brings the app back when done", async () => {
+    const run = pendingSignIn()
+    const signedIn = run.signIns.signIn("github", "github.com")
+    run.signIns.openPage()
+    expect(run.ports.openExternal).not.toHaveBeenCalled()
+
+    run.prompt()
+    run.signIns.openPage()
+
+    expect(run.ports.showPrompt).toHaveBeenCalledWith({ provider: "github", host: "github.com", code: "3F2A-9C1B", url: PAGE })
+    expect(run.ports.openExternal.mock.calls).toEqual([[PAGE], [PAGE]])
+    run.finish()
+    await expect(signedIn).resolves.toEqual(ACCOUNT)
+    expect(run.ports.focus).toHaveBeenCalledOnce()
+    run.signIns.openPage()
+    expect(run.ports.openExternal).toHaveBeenCalledTimes(2)
+  })
+
+  it("cancels by aborting the tool, and resolves the cancel once the tool has gone", async () => {
+    const run = pendingSignIn()
+    const first = run.signIns.signIn("github", "github.com")
+    const firstSignal = run.signal()
+
+    const cancelled = run.signIns.cancel()
+
+    expect(firstSignal?.aborted).toBe(true)
+    await expect(first).rejects.toThrow("cancelled")
+    await expect(cancelled).resolves.toBeUndefined()
+    expect(run.ports.focus).not.toHaveBeenCalled()
+  })
+
+  it("lets a new sign-in replace one still waiting — a reloaded window's — rather than lock it out", async () => {
+    const run = pendingSignIn()
+    const abandoned = run.signIns.signIn("github", "github.com")
+    const abandonedSignal = run.signal()
+
+    const second = run.signIns.signIn("gitlab", "gitlab.com")
+
+    await expect(abandoned).rejects.toThrow("cancelled")
+    expect(abandonedSignal?.aborted).toBe(true)
+    await vi.waitFor(() => expect(run.signIn).toHaveBeenCalledTimes(2))
+    expect(run.signal()?.aborted).toBe(false)
+    run.finish()
+    await expect(second).resolves.toEqual(ACCOUNT)
+  })
+
+  it("stops a new sign-in before its tool starts when Cancel comes while the one it replaces is still exiting", async () => {
+    // A tool that takes its time to exit once aborted, as a real taskkill does.
+    const exits: (() => void)[] = []
+    const signIn = vi.fn(
+      (_provider: string, _host: string, given: HostCliSignInOptions) =>
+        new Promise<typeof ACCOUNT>((_resolve, reject) => {
+          given.signal?.addEventListener("abort", () => exits.push(() => reject(new Error("Sign-in was cancelled."))))
+        }),
+    )
+    const signIns = new GitSignIns({ signIn } as unknown as HostCliService, NO_PORTS)
+    const abandoned = signIns.signIn("github", "github.com").catch((error: unknown) => error)
+
+    const replacement = signIns.signIn("github", "github.com").catch((error: unknown) => error)
+    const cancelled = signIns.cancel()
+    exits.forEach((exit) => exit())
+
+    expect(await replacement).toMatchObject({ message: "Sign-in was cancelled." })
+    await cancelled
+    expect(await abandoned).toMatchObject({ message: "Sign-in was cancelled." })
+    // The replacement's own tool never ran.
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it("refuses a provider or host it has no business with before any tool runs, and takes no page from the renderer", async () => {
+    const run = pendingSignIn()
+    const handlers = handlersOf({} as GitSyncService, { signIn: run.signIn } as unknown as HostCliService, run.ports)
+    const call = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
+
+    // Plain sentences for the dialog to show, never a zod error's JSON.
+    await expect(async () => call(GIT_CHANNELS.signIn, "bitbucket", "bitbucket.org")).rejects.toThrow("APIWeave signs in to GitHub or GitLab only.")
+    await expect(async () => call(GIT_CHANNELS.signIn, "github", "--hostname=evil")).rejects.toThrow(/^That is not a host name APIWeave can sign in to/)
+    expect(run.signIn).not.toHaveBeenCalled()
+
+    await call(GIT_CHANNELS.openSignInPage, "https://evil.example/")
+    expect(run.ports.openExternal).not.toHaveBeenCalled()
+  })
+})
+
+describe("cancelSignInWhenDocumentGoes", () => {
+  function windowContents() {
+    const contents = new EventEmitter()
+    const cancel = vi.fn()
+    cancelSignInWhenDocumentGoes(contents as unknown as Pick<WebContents, "on">, cancel)
+    return { contents, cancel }
+  }
+
+  it("cancels when the window's document is replaced — a reload — or its renderer dies", () => {
+    const reload = windowContents()
+    reload.contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false })
+    expect(reload.cancel).toHaveBeenCalledOnce()
+
+    const crash = windowContents()
+    crash.contents.emit("render-process-gone", {}, { reason: "crashed" })
+    expect(crash.cancel).toHaveBeenCalledOnce()
+  })
+
+  it("leaves the sign-in alone for a navigation within the document, or in a sub-frame", () => {
+    const { contents, cancel } = windowContents()
+    contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: true })
+    contents.emit("did-start-navigation", { isMainFrame: false, isSameDocument: false })
+    expect(cancel).not.toHaveBeenCalled()
   })
 })
 

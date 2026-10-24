@@ -170,6 +170,63 @@ export function parseCliVersion(stdout: string): string | undefined {
   return /\b(\d+\.\d+\.\d+[\w.+-]*)/.exec(stdout)?.[1]
 }
 
+const ANSI_ESCAPE = /\x1b\[[0-9;]*[A-Za-z]/g
+/** `one-time code: ABCD-1234`, and gh's clipboard form `One-time code (ABCD-1234) copied to clipboard`. */
+const ONE_TIME_CODE = /one-time code(?::\s*|\s*\()([A-Z0-9][A-Z0-9-]{3,})/i
+const HTTPS_URL = /https:\/\/[^\s"'<>)]+/g
+/** Where a code is entered: GitHub's `verification_uri` (`/login/device`, which gh prints) and GitLab's (`/oauth/device`, which glab prints). */
+const DEVICE_PAGE = /^\/(?:login|oauth)\/device\/?$/
+
+/**
+ * The page a sign-in asks the user to open, and the one-time code to enter
+ * there when it has one — gh 2.97's device flow (`internal/authflow/flow.go`,
+ * no terminal):
+ *
+ *     ! First copy your one-time code: ABCD-1234
+ *     Open this URL to continue in your web browser: https://github.com/login/device
+ *
+ * gh with its `clipboard` setting on (2.103+), which this does not ask for:
+ *
+ *     ! One-time code (ABCD-1234) copied to clipboard
+ *
+ * glab's device flow (`internal/oauth2/device.go`):
+ *
+ *     First copy your one-time code: ABCD-EFGH
+ *     Then open this URL on any device to authorize: https://gitlab.com/oauth/device
+ *
+ * and gh against a GitHub Enterprise Server with no device flow, where
+ * cli/oauth falls back to the web application flow: the page alone, no code,
+ * and the browser's redirect to gh's local callback finishes it.
+ *
+ * Read from complete lines only, so undefined until the page's line has
+ * ended; the code, when there is one, is printed before it. The page must be
+ * on exactly the host being signed in to: main opens it in the browser, and a
+ * page anywhere else is not one to send the user to.
+ */
+export function parseSignInPrompt(stderr: string, host: string): { readonly code: string | null; readonly url: string } | undefined {
+  // Complete lines only: stderr arrives in pieces, and a URL cut mid-way is still a URL.
+  const output = stderr.slice(0, stderr.lastIndexOf("\n") + 1).replace(ANSI_ESCAPE, "")
+  const hostname = host.replace(/:\d+$/, "").toLowerCase()
+  const url = [...output.matchAll(HTTPS_URL)]
+    .map((match) => match[0])
+    .find((candidate) => URL.canParse(candidate) && new URL(candidate).hostname.toLowerCase() === hostname)
+  if (url === undefined) return undefined
+  const code = ONE_TIME_CODE.exec(output)?.[1] ?? null
+  // A device page is useless without its code: the web flow's page is the only one that comes alone.
+  if (code === null && DEVICE_PAGE.test(new URL(url).pathname)) return undefined
+  return { code, url }
+}
+
+/** `✓ Logged in as octocat`, which both tools print last: who the sign-in was for. */
+export function parseSignedInLogin(stderr: string): string | undefined {
+  return /Logged in as (\S+)/.exec(stderr.replace(ANSI_ESCAPE, ""))?.[1]
+}
+
+/** The last line of a tool's own explanation: a failed sign-in ends with why, after the code it printed first. */
+export function lastLine(stderr: string): string | undefined {
+  return stderr.replace(ANSI_ESCAPE, "").split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0).at(-1)
+}
+
 /** The first line of a tool's own explanation, for a message. Never stdout: that is where a token would be. */
 export function firstLine(stderr: string): string | undefined {
   return stderr.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length > 0)

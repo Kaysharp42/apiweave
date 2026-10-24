@@ -406,6 +406,8 @@ export type { GitStatusLoadFailure } from "./GitStatusLoadFailure";
 export type { TrackedGitSyncControlProps } from "./TrackedGitSyncControlProps";
 export type { GitAuthorFormProps } from "./GitAuthorFormProps";
 export type { GitAccountPickerProps } from "./GitAccountPickerProps";
+export type { GitSignInDialogProps } from "./GitSignInDialogProps";
+export type { GitSignInPhase } from "./GitSignInPhase";
 export type { GitMergeDialogProps } from "./GitMergeDialogProps";
 export type { GitMergeRecordProps } from "./GitMergeRecordProps";
 export type { GitMergeFieldProps } from "./GitMergeFieldProps";

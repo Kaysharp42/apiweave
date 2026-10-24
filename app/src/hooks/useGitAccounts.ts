@@ -1,24 +1,27 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitHostCli } from "@shared/types/GitHostCli";
 import { git } from "../utils/apiweaveClient";
 
 /**
  * The accounts `gh` and `glab` are signed in to, and each tool's state, read
- * once when the caller mounts. `problems` says, in one line each, why a tool
- * that is installed could not answer — a broken install, a timeout, a token
- * gh reads from the environment — or why the list could not be read at all:
- * an empty picker must not be the only sign that something is wrong. A tool
- * that is simply missing is not a problem here.
+ * when the caller mounts and again on `reload` — after a sign-in, say.
+ * `problems` says, in one line each, why a tool that is installed could not
+ * answer — a broken install, a timeout, a token gh reads from the
+ * environment — or why the list could not be read at all: an empty picker
+ * must not be the only sign that something is wrong. A tool that is simply
+ * missing is not a problem here.
  */
 export function useGitAccounts(): {
   readonly accounts: readonly GitAccount[];
   readonly clis: readonly GitHostCli[];
   readonly problems: readonly string[];
+  readonly reload: () => void;
 } {
   const [accounts, setAccounts] = useState<readonly GitAccount[]>([]);
   const [clis, setClis] = useState<readonly GitHostCli[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
+  const [generation, setGeneration] = useState(0);
   useEffect(() => {
     let live = true;
     git
@@ -35,10 +38,11 @@ export function useGitAccounts(): {
     return () => {
       live = false;
     };
-  }, []);
+  }, [generation]);
+  const reload = useCallback(() => setGeneration((current) => current + 1), []);
   const problems = [
     ...clis.flatMap((cli) => (cli.missing || cli.problem === null ? [] : [`${cli.command}: ${cli.problem}`])),
     ...(failure === null ? [] : [`Your gh and glab accounts could not be listed: ${failure}`]),
   ];
-  return { accounts, clis, problems };
+  return { accounts, clis, problems, reload };
 }

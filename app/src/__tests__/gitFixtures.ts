@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import type { GitBridge } from "@shared/types/GitBridge";
+import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 
 export const untrackedStatus: WorkspaceGitStatus = {
@@ -39,6 +40,8 @@ export interface InstalledGitBridge {
   readonly bridge: GitBridge;
   /** Push a status the way main's status-change channel does. */
   readonly push: (status: WorkspaceGitStatus) => void;
+  /** Push a sign-in's one-time code the way main's prompt channel does. */
+  readonly prompt: (prompt: GitSignInPrompt) => void;
   /** How many `onStatusChanged` subscriptions are live. */
   readonly subscriptions: () => number;
 }
@@ -49,6 +52,7 @@ export function installGitBridge(
   overrides: Partial<GitBridge> = {},
 ): InstalledGitBridge {
   const listeners = new Set<(status: WorkspaceGitStatus) => void>();
+  const promptListeners = new Set<(prompt: GitSignInPrompt) => void>();
   const bridge: GitBridge = {
     status: vi.fn(async () => initial),
     track: vi.fn(async () => trackedStatus()),
@@ -77,6 +81,15 @@ export function installGitBridge(
       warnings: [],
     })),
     listAccounts: vi.fn(async () => ({ clis: [], accounts: [] })),
+    signIn: vi.fn(async (provider, host) => ({ provider, host, login: "octo" })),
+    cancelSignIn: vi.fn(async () => undefined),
+    openSignInPage: vi.fn(async () => undefined),
+    onSignInPrompt: (callback) => {
+      promptListeners.add(callback);
+      return () => {
+        promptListeners.delete(callback);
+      };
+    },
     onStatusChanged: (callback) => {
       listeners.add(callback);
       return () => {
@@ -89,6 +102,7 @@ export function installGitBridge(
   return {
     bridge,
     push: (status) => listeners.forEach((listener) => listener(status)),
+    prompt: (prompt) => promptListeners.forEach((listener) => listener(prompt)),
     subscriptions: () => listeners.size,
   };
 }

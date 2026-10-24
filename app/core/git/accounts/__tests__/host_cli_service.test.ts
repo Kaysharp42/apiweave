@@ -188,6 +188,85 @@ describe("token", () => {
   })
 })
 
+describe("signIn", () => {
+  /** A tool that prints `chunks` to stderr one at a time, then ends as `outcome` says. */
+  function signingIn(chunks: readonly string[], outcome: Partial<GitExecOutcome> = {}) {
+    const calls: { command: HostCliCommand; args: readonly string[]; options: HostCliRunOptions }[] = []
+    const run = async (command: HostCliCommand, args: readonly string[], options: HostCliRunOptions): Promise<GitExecOutcome> => {
+      calls.push({ command, args, options })
+      for (const chunk of chunks) options.onStderr?.(chunk)
+      return { status: "exited", exitCode: 0, errorCode: undefined, stdout: "", stderr: chunks.join(""), ...outcome }
+    }
+    return { service: new HostCliService({ run }), calls }
+  }
+
+  it("runs gh's browser sign-in with no protocol change, shows its code once, and resolves with who signed in", async () => {
+    const { service, calls } = signingIn([
+      "! First copy your one-time ",
+      "code: 3F2A-9C1B\nOpen this URL to continue in your web browser: https://github.com/lo",
+      "gin/device\n",
+      "✓ Authentication complete.\n✓ Logged in as octo-personal\n",
+    ])
+    const prompts: unknown[] = []
+
+    const account = await service.signIn("github", "github.com", { onPrompt: (prompt) => prompts.push(prompt) })
+
+    expect(account).toEqual({ provider: "github", host: "github.com", login: "octo-personal" })
+    expect(prompts).toEqual([{ code: "3F2A-9C1B", url: "https://github.com/login/device" }])
+    expect(calls[0]?.command).toBe("gh")
+    expect(calls[0]?.args).toEqual(["auth", "login", "--hostname=github.com", "--web", "--skip-ssh-key", "--clipboard=false"])
+    expect(calls[0]?.options.timeoutMs).toBeGreaterThanOrEqual(15 * 60_000)
+  })
+
+  it("runs glab's device flow, the one that prints a code", async () => {
+    const { service, calls } = signingIn([
+      "First copy your one-time code: WXYZ-ABCD\nThen open this URL on any device to authorize: https://gitlab.com/oauth/device\n",
+      "✓ Logged in as tanuki\n",
+    ])
+
+    await expect(service.signIn("gitlab", "gitlab.com", { onPrompt: () => undefined })).resolves.toEqual({ provider: "gitlab", host: "gitlab.com", login: "tanuki" })
+    expect(calls[0]?.args).toEqual(["auth", "login", "--hostname=gitlab.com", "--device", "--git-protocol=https"])
+  })
+
+  it("hands the caller's signal to the tool, and says a cancelled sign-in was cancelled", async () => {
+    const controller = new AbortController()
+    const { service, calls } = signingIn(["! First copy your one-time code: 3F2A-9C1B\n"], { status: "cancelled", exitCode: undefined })
+
+    await expect(service.signIn("github", "github.com", { onPrompt: () => undefined, signal: controller.signal })).rejects.toThrow("Sign-in was cancelled.")
+    expect(calls[0]?.options.signal).toBe(controller.signal)
+  })
+
+  it("fails with the tool's last words, not the code it printed first", async () => {
+    const { service } = signingIn(
+      ["! First copy your one-time code: 3F2A-9C1B\nOpen this URL to continue in your web browser: https://github.com/login/device\n", "failed to authenticate via web browser: access_denied\n"],
+      { exitCode: 1 },
+    )
+
+    await expect(service.signIn("github", "github.com", { onPrompt: () => undefined })).rejects.toThrow(
+      "gh could not sign in to github.com: failed to authenticate via web browser: access_denied",
+    )
+  })
+
+  it("does not take a login it cannot use as an account", async () => {
+    const { service } = signingIn(["! First copy your one-time code: 3F2A-9C1B\n", "✓ Logged in as --upload-pack=x\n"])
+
+    await expect(service.signIn("github", "github.com", { onPrompt: () => undefined })).rejects.toThrow("did not say as whom")
+  })
+
+  it("says glab needs installing when it is not there", async () => {
+    const { service } = signingIn([], { status: "spawn_failed", exitCode: undefined, errorCode: "ENOENT" })
+
+    await expect(service.signIn("gitlab", "gitlab.com", { onPrompt: () => undefined })).rejects.toThrow("glab is not installed")
+  })
+
+  it.each(["--web", "github.com/evil", "", "a b"])("refuses the host %j before any tool runs", async (host) => {
+    const { service, calls } = signingIn([])
+
+    await expect(service.signIn("github", host, { onPrompt: () => undefined })).rejects.toThrow("not a host name")
+    expect(calls).toEqual([])
+  })
+})
+
 describe("hostCliRunner", () => {
   it("reports a tool that is not on PATH as not found, without starting anything", async () => {
     const empty = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-no-cli-"))
