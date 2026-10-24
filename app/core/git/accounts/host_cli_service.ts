@@ -1,25 +1,40 @@
 import os from "node:os"
 import type { GitAccountList } from "@shared/types/GitAccountList"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
+import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository"
+import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
 import type { GitHostCli } from "@shared/types/GitHostCli"
 import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitRepositoryOwner } from "@shared/types/GitRepositoryOwner"
+import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
+import { GitCreateRepositoryRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
 import { resolveExecutable, spawnCommandFor } from "../../agents/executable"
-import { GitAccountUnavailableError } from "../git_errors"
+import { ConflictError, ValidationError } from "../../ipc/errors"
+import { GitAccountUnavailableError, redactCredentials } from "../git_errors"
 import { execGit, type GitExecOutcome } from "../git_process"
 import type { GitAccountToken } from "../git_types"
 import {
   firstLine,
   lastLine,
+  parseApiError,
   parseCliVersion,
   parseGhAccounts,
+  parseGhOrganizations,
+  parseGhRestRepository,
   parseGhToken,
+  parseGitLabGroup,
+  parseGitLabGroups,
+  parseGitLabProject,
   parseGlabAccounts,
   parseGlabCredential,
   parseSignedInLogin,
   parseSignInPrompt,
   type ParsedAccounts,
 } from "./host_cli_parse"
+
+/** The topic APIWeave tags the repositories it creates with, on GitHub and GitLab alike: what Open from git lists by. */
+export const APIWEAVE_REPOSITORY_TOPIC = "apiweave-workspace"
 
 export type HostCliCommand = "gh" | "glab"
 
@@ -31,6 +46,8 @@ export interface HostCliRunOptions {
   readonly onStderr?: (text: string) => void
   /** Aborting it kills the tool's process tree; the outcome is `cancelled`. */
   readonly signal?: AbortSignal | undefined
+  /** Set for this one process only, over what it inherits: an account's token, say. */
+  readonly env?: Readonly<Record<string, string>>
 }
 
 export interface HostCliSignInOptions {
@@ -62,6 +79,7 @@ const SIGN_IN_ARGS: Readonly<Record<GitProvider, (host: string) => readonly stri
 /** Both status commands ask the host about every account they hold. */
 const STATUS_TIMEOUT_MS = 30_000
 const TOKEN_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = 60_000
 
 /** What `glab auth status` says, with no JSON, when it has never signed in anywhere: no accounts, not a failure. */
 const GLAB_NO_HOSTS = /no GitLab instances have been authenticated/i
@@ -74,6 +92,8 @@ const GLAB_NO_HOSTS = /no GitLab instances have been authenticated/i
 const QUIET_ENVIRONMENT = {
   GH_PROMPT_DISABLED: "1",
   GH_NO_UPDATE_NOTIFIER: "1",
+  // Set, and false: gh then also ignores a legacy `DEBUG` that would log each request.
+  GH_DEBUG: "0",
   GLAB_NO_PROMPT: "true",
   GLAB_CHECK_UPDATE: "false",
   NO_COLOR: "1",
@@ -95,7 +115,7 @@ export function hostCliRunner(env: NodeJS.ProcessEnv = process.env): HostCliRunn
     const spawn = spawnCommandFor(executable, args, env)
     return execGit(spawn.file, spawn.args, {
       cwd: os.tmpdir(),
-      env: { ...env, ...QUIET_ENVIRONMENT },
+      env: { ...env, ...QUIET_ENVIRONMENT, ...options.env },
       timeoutMs: options.timeoutMs,
       input: options.input,
       verbatim: spawn.verbatim,
@@ -176,10 +196,8 @@ export class HostCliService {
    * as someone else.
    */
   async token(account: GitAccountRef): Promise<GitAccountToken> {
-    // Only the three fields that name the account: a listed `GitAccount` carries more.
-    const checked = GitAccountRefSchema.safeParse({ provider: account.provider, host: account.host, login: account.login })
-    if (!checked.success) throw new GitAccountUnavailableError("that is not an account APIWeave can sign in as")
-    return checked.data.provider === "github" ? this.githubToken(checked.data) : this.gitlabToken(checked.data)
+    const checked = checkedAccount(account)
+    return checked.provider === "github" ? this.githubToken(checked) : this.gitlabToken(checked)
   }
 
   /**
@@ -271,15 +289,7 @@ export class HostCliService {
    * it read before renewing it, on stderr, in prose.
    */
   private async gitlabToken(account: GitAccountRef): Promise<GitAccountToken> {
-    const status = await this.run("glab", ["auth", "status", `--hostname=${account.host}`, "--output", "json"], {
-      timeoutMs: STATUS_TIMEOUT_MS,
-    })
-    const listed = status.status === "exited" ? parseGlabAccounts(status.stdout) : undefined
-    const signedIn = listed?.accounts.find((candidate) => candidate.host === account.host)
-    if (signedIn === undefined) throw unavailable("glab", account, listed?.problems[0] ?? failureText("glab", status))
-    if (signedIn.login !== account.login) {
-      throw unavailable("glab", account, `glab is signed in to ${account.host} as ${signedIn.login}, and keeps one account per host`)
-    }
+    await this.assertGlabSignedInAs(account)
     const outcome = await this.run("glab", ["auth", "git-credential", "get"], {
       input: `protocol=https\nhost=${account.host}\n\n`,
       timeoutMs: TOKEN_TIMEOUT_MS,
@@ -290,4 +300,173 @@ export class HostCliService {
     }
     return { protocol: "https", host: account.host, username: credential.username, password: credential.password }
   }
+
+  /**
+   * glab keeps one account per host, so its status for the host says whether
+   * that account is still this one. The call also renews an expired OAuth
+   * token, which the call after it then uses.
+   */
+  private async assertGlabSignedInAs(account: GitAccountRef): Promise<void> {
+    const status = await this.run("glab", ["auth", "status", `--hostname=${account.host}`, "--output", "json"], {
+      timeoutMs: STATUS_TIMEOUT_MS,
+    })
+    const listed = status.status === "exited" ? parseGlabAccounts(status.stdout) : undefined
+    const signedIn = listed?.accounts.find((candidate) => candidate.host === account.host)
+    if (signedIn === undefined) throw unavailable("glab", account, listed?.problems[0] ?? failureText("glab", status))
+    if (signedIn.login !== account.login) {
+      throw unavailable("glab", account, `glab is signed in to ${account.host} as ${signedIn.login}, and keeps one account per host`)
+    }
+  }
+
+  /**
+   * Where `account` can create a repository: itself, and its GitHub
+   * organizations (`GET /user/orgs`) or the GitLab groups where it is at
+   * least a Developer (`GET /groups?min_access_level=30`), the first 100 of
+   * each. Organizations or groups that cannot be listed leave the account
+   * itself, with the reason as `problem`.
+   */
+  async listOwners(account: GitAccountRef): Promise<GitRepositoryOwnerList> {
+    const checked = checkedAccount(account)
+    const api = await this.apiAs(checked)
+    const self: GitRepositoryOwner = { path: checked.login, kind: "user" }
+    if (checked.provider === "github") {
+      const outcome = await api.call(["user/orgs?per_page=100"])
+      const organizations = succeeded(outcome) ? parseGhOrganizations(outcome.stdout) : undefined
+      if (organizations === undefined) return { owners: [self], problem: `The organizations of ${checked.login} could not be listed: ${api.failure(outcome)}` }
+      return { owners: [self, ...organizations.map((path) => ({ path, kind: "organization" as const }))], problem: null }
+    }
+    const outcome = await api.call(["groups?min_access_level=30&per_page=100&order_by=path"])
+    const groups = succeeded(outcome) ? parseGitLabGroups(outcome.stdout) : undefined
+    if (groups === undefined) return { owners: [self], problem: `The groups of ${checked.login} could not be listed: ${api.failure(outcome)}` }
+    return { owners: [self, ...groups.map((group) => ({ path: group.path, kind: "group" as const }))], problem: null }
+  }
+
+  /**
+   * Create an empty repository as `account` — no README, no licence, no
+   * first commit, so a workspace can be pushed to it — and tag it
+   * `apiweave-workspace`, the topic Open from git lists by.
+   *
+   * A repository that is already there is never adopted: it is asked for
+   * first, and a name that exists, or that the host refuses as taken, is a
+   * {@link ConflictError} naming it. Nothing this creates is ever deleted, by
+   * this or by a failure after it: a tag that could not be added is the
+   * result's `problem`, and the repository is still returned.
+   *
+   * GitHub: `POST /user/repos` for the account itself, `POST
+   * /orgs/{org}/repos` for an organization, then `PUT
+   * /repos/{owner}/{repo}/topics`, through `gh api` with the account's token
+   * in `GH_TOKEN` for that one process. GitLab: `POST /projects` with
+   * `initialize_with_readme: false` and the topic, under the group's
+   * `namespace_id` (none for the account itself), through `glab api`, which
+   * keeps one account per host and is first checked to be signed in as this one.
+   */
+  async createRepository(account: GitAccountRef, request: GitCreateRepositoryRequest): Promise<GitCreatedRepository> {
+    const checked = checkedAccount(account)
+    const parsed = GitCreateRepositoryRequestSchema.safeParse(request)
+    if (!parsed.success) throw new ValidationError(`That is not a repository APIWeave can create: ${parsed.error.issues[0]?.message ?? "invalid"}.`)
+    const { owner, name } = parsed.data
+    const where = `${checked.host}/${owner}/${name}`
+    if (checked.provider === "github" && owner.includes("/")) throw new ValidationError(`${owner} is not a GitHub user or organization.`)
+    const api = await this.apiAs(checked)
+
+    const existing = await api.call([checked.provider === "github" ? `repos/${owner}/${name}` : `projects/${encodeURIComponent(`${owner}/${name}`)}`])
+    if (succeeded(existing)) throw alreadyExists(where)
+    if (!/\(HTTP 404\)/.test(existing.stderr)) throw new Error(`APIWeave could not check whether ${where} exists: ${api.failure(existing)}`)
+
+    return checked.provider === "github" ? this.createOnGitHub(checked, api, parsed.data, where) : this.createOnGitLab(checked, api, parsed.data, where)
+  }
+
+  private async createOnGitHub(account: GitAccountRef, api: HostApi, request: GitCreateRepositoryRequest, where: string): Promise<GitCreatedRepository> {
+    const endpoint = sameLogin(request.owner, account.login) ? "user/repos" : `orgs/${request.owner}/repos`
+    const created = await api.call(["--method=POST", endpoint, "--input=-"], { name: request.name, private: request.private, auto_init: false })
+    const repository = succeeded(created) ? parseGhRestRepository(created.stdout) : undefined
+    if (repository === undefined) throw creationFailed(where, api.failure(created), succeeded(created))
+    const tagged = await api.call(["--method=PUT", `repos/${repository.fullName}/topics`, "--input=-"], { names: [APIWEAVE_REPOSITORY_TOPIC] })
+    return {
+      repository,
+      problem: succeeded(tagged) ? null : `${repository.fullName} was created, but not tagged ${APIWEAVE_REPOSITORY_TOPIC}: ${api.failure(tagged)}`,
+    }
+  }
+
+  private async createOnGitLab(account: GitAccountRef, api: HostApi, request: GitCreateRepositoryRequest, where: string): Promise<GitCreatedRepository> {
+    let namespaceId: number | undefined
+    if (!sameLogin(request.owner, account.login)) {
+      const group = await api.call([`groups/${encodeURIComponent(request.owner)}`])
+      const found = succeeded(group) ? parseGitLabGroup(group.stdout) : undefined
+      if (found === undefined) throw new Error(`APIWeave could not find the group ${request.owner} on ${account.host}: ${api.failure(group)}`)
+      namespaceId = found.id
+    }
+    const created = await api.call(["--method=POST", "projects", "--input=-"], {
+      name: request.name,
+      path: request.name,
+      ...(namespaceId === undefined ? {} : { namespace_id: namespaceId }),
+      visibility: request.private ? "private" : "public",
+      initialize_with_readme: false,
+      topics: [APIWEAVE_REPOSITORY_TOPIC],
+    })
+    const repository = succeeded(created) ? parseGitLabProject(created.stdout) : undefined
+    if (repository === undefined) throw creationFailed(where, api.failure(created), succeeded(created))
+    return { repository: { ...repository, empty: true }, problem: null }
+  }
+
+  /**
+   * A way to call the host's REST API as `account`, one request per call.
+   * gh gets the account's token in `GH_TOKEN` (github.com and `*.ghe.com`)
+   * and `GH_ENTERPRISE_TOKEN` (a GitHub Enterprise Server), for that one
+   * process: gh's active account is never switched. glab keeps one token per
+   * host and is checked once, here, to hold this account's; it then uses its
+   * own. A body goes to stdin as JSON (`--input -`): nothing in it is read as
+   * a flag, a file or a placeholder. A failure's text comes from what the
+   * host said, with the token, should it ever appear, removed.
+   */
+  private async apiAs(account: GitAccountRef): Promise<HostApi> {
+    const command = COMMANDS[account.provider]
+    let env: Readonly<Record<string, string>> | undefined
+    const secrets: string[] = []
+    if (account.provider === "github") {
+      const { password } = await this.githubToken(account)
+      env = { GH_TOKEN: password, GH_ENTERPRISE_TOKEN: password, GH_HOST: account.host }
+      secrets.push(password)
+    } else {
+      await this.assertGlabSignedInAs(account)
+    }
+    return {
+      call: (args, body) =>
+        this.run(command, ["api", `--hostname=${account.host}`, ...args], {
+          timeoutMs: API_TIMEOUT_MS,
+          ...(body === undefined ? {} : { input: JSON.stringify(body) }),
+          ...(env === undefined ? {} : { env }),
+        }),
+      failure: (outcome) => redactCredentials(parseApiError(outcome.stdout) ?? failureText(command, outcome), secrets),
+    }
+  }
+}
+
+/** One account's API, as {@link HostCliService.apiAs} sets it up. */
+interface HostApi {
+  readonly call: (args: readonly string[], body?: unknown) => Promise<GitExecOutcome>
+  readonly failure: (outcome: GitExecOutcome) => string
+}
+
+/** Only the three fields that name an account, checked: a listed `GitAccount` carries more, and the bridge refuses more. */
+function checkedAccount(account: GitAccountRef): GitAccountRef {
+  const checked = GitAccountRefSchema.safeParse({ provider: account.provider, host: account.host, login: account.login })
+  if (!checked.success) throw new GitAccountUnavailableError("that is not an account APIWeave can sign in as")
+  return checked.data
+}
+
+/** GitHub and GitLab compare user names without regard to case. */
+function sameLogin(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase()
+}
+
+function alreadyExists(where: string): ConflictError {
+  return new ConflictError(`${where} already exists. Choose another name; APIWeave never connects a workspace to a repository it did not create empty.`)
+}
+
+/** Why a create failed, the host's "taken" reported as the name that exists; an answer that cannot be read may still be a repository created. */
+function creationFailed(where: string, reason: string, answered: boolean): Error {
+  if (/already exists|has already been taken/i.test(reason)) return alreadyExists(where)
+  if (answered) return new Error(`${where} may have been created, but the host's answer could not be read. Check it on the host, then connect to it by its URL.`)
+  return new Error(`APIWeave could not create ${where}: ${reason}`)
 }

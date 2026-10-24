@@ -32,7 +32,7 @@ export function WorkspaceVersionHistoryPage() {
           {isLoading || currentWorkspace === null ? (
             <Spinner size="lg" />
           ) : (
-            <VersionHistoryPanel workspaceId={currentWorkspace.workspaceId} />
+            <VersionHistoryPanel workspaceId={currentWorkspace.workspaceId} workspaceSlug={currentWorkspace.slug} />
           )}
         </div>
       </div>

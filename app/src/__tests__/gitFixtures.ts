@@ -87,6 +87,20 @@ export function installGitBridge(
     signIn: vi.fn(async (provider, host) => ({ provider, host, login: "octo" })),
     cancelSignIn: vi.fn(async () => undefined),
     openSignInPage: vi.fn(async () => undefined),
+    listOwners: vi.fn(async (account) => ({ owners: [{ path: account.login, kind: "user" as const }], problem: null })),
+    createRepository: vi.fn(async (_account, request) => ({
+      repository: {
+        owner: request.owner,
+        name: request.name,
+        fullName: `${request.owner}/${request.name}`,
+        httpsUrl: `https://github.com/${request.owner}/${request.name}.git`,
+        sshUrl: `git@github.com:${request.owner}/${request.name}.git`,
+        private: request.private,
+        empty: true,
+        canPush: true,
+      },
+      problem: null,
+    })),
     onSignInPrompt: (callback) => {
       promptListeners.add(callback);
       return () => {

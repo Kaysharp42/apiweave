@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { GitBranch } from "lucide-react";
+import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
+import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
@@ -13,6 +15,7 @@ import { FormField } from "../molecules/FormField";
 import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
+import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
 import { GitSignInDialog } from "./GitSignInDialog";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
@@ -21,7 +24,8 @@ import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { git } from "../../utils/apiweaveClient";
 import { remoteHost } from "../../utils/gitErrorMessages";
-import type { GitAuthorFormProps } from "../../types";
+import { connectFailedMessage, remoteForRepository } from "../../utils/gitRepositories";
+import type { GitAuthorFormProps, GitRemoteSelection } from "../../types";
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -171,7 +175,10 @@ interface RemoteSectionProps {
   readonly branch: string;
   readonly account: GitAccountRef | null;
   readonly busy: boolean;
+  /** What the connect form starts with: a repository just created that could not be connected to. */
+  readonly prefill: GitRemoteSelection | null;
   readonly onConnect: (url: string, account: GitAccountRef | null) => void;
+  readonly onCreateRepository: () => void;
   readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
 }
@@ -181,12 +188,14 @@ function RemoteSection({
   branch,
   account,
   busy,
+  prefill,
   onConnect,
+  onCreateRepository,
   onChangeAccount,
   onDisconnect,
 }: RemoteSectionProps) {
-  const [url, setUrl] = useState("");
-  const [chosen, setChosen] = useState<GitAccountRef | null>(null);
+  const [url, setUrl] = useState(prefill?.url ?? "");
+  const [chosen, setChosen] = useState<GitAccountRef | null>(prefill?.account ?? null);
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -214,14 +223,19 @@ function RemoteSection({
             />
           </FormField>
           <RemoteAccount remoteUrl={url.trim()} value={chosen} onChange={setChosen} chooseSignedIn busy={busy} />
-          <Button
-            type="submit"
-            variant="primary"
-            loading={busy}
-            disabled={url.trim() === ""}
-          >
-            Connect to remote
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              variant="primary"
+              loading={busy}
+              disabled={url.trim() === ""}
+            >
+              Connect to remote
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={onCreateRepository}>
+              Create repository…
+            </Button>
+          </div>
         </form>
       ) : (
         <>
@@ -239,9 +253,11 @@ interface TrackedProps {
   readonly status: WorkspaceGitStatus;
   readonly busy: boolean;
   readonly apply: (status: WorkspaceGitStatus) => void;
+  readonly prefill: GitRemoteSelection | null;
   readonly onToggleMode: () => void;
   readonly onAuthor: (request: WorkspaceGitCommitRequest) => Promise<boolean>;
   readonly onConnect: (url: string, account: GitAccountRef | null) => void;
+  readonly onCreateRepository: () => void;
   readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
   readonly onUntrack: () => void;
@@ -251,9 +267,11 @@ function Tracked({
   status,
   busy,
   apply,
+  prefill,
   onToggleMode,
   onAuthor,
   onConnect,
+  onCreateRepository,
   onChangeAccount,
   onDisconnect,
   onUntrack,
@@ -275,11 +293,15 @@ function Tracked({
         <GitSyncStatusCard status={status} actions={actions} alwaysOfferDiscard />
       )}
       <RemoteSection
+        // A repository created but not connected to starts the form over, filled in with it.
+        key={prefill?.url ?? ""}
         remoteUrl={status.remoteUrl}
         branch={status.branch}
         account={status.account}
         busy={busy}
+        prefill={prefill}
         onConnect={onConnect}
+        onCreateRepository={onCreateRepository}
         onChangeAccount={onChangeAccount}
         onDisconnect={onDisconnect}
       />
@@ -300,16 +322,45 @@ function Tracked({
  */
 export function VersionHistoryPanel({
   workspaceId,
+  workspaceSlug,
 }: {
   readonly workspaceId: string;
+  /** What a repository created for the workspace is called unless the user says otherwise. */
+  readonly workspaceSlug: string;
 }) {
   const available = git.isAvailable();
   const { status, error: loadError, apply } = useWorkspaceGitStatus(workspaceId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [prefill, setPrefill] = useState<GitRemoteSelection | null>(null);
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
   );
+
+  /**
+   * Connect to a repository just created. A failure leaves it where it is —
+   * APIWeave never deletes a repository — and fills the connect form in with
+   * it, so Connect to remote is the retry.
+   */
+  const connectCreated = async (created: GitCreatedRepository, account: GitAccount): Promise<void> => {
+    setCreating(false);
+    const remote = remoteForRepository(account, created.repository);
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      apply(await git.connectRemote(workspaceId, remote.url, remote.account));
+      setPrefill(null);
+      setNotice(created.problem);
+    } catch (err) {
+      setPrefill(remote);
+      setError(connectFailedMessage(account, created.repository, errorText(err)));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   /** Run one call; its status replaces the shown one, its failure is shown. Resolves to that status, or null when it threw. */
   const run = async (
@@ -317,6 +368,7 @@ export function VersionHistoryPanel({
   ): Promise<WorkspaceGitStatus | null> => {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const next = await action();
       apply(next);
@@ -351,6 +403,8 @@ export function VersionHistoryPanel({
         status={status}
         busy={busy}
         apply={apply}
+        prefill={prefill}
+        onCreateRepository={() => setCreating(true)}
         onToggleMode={() =>
           void run(() =>
             git.setMode(workspaceId, status.mode === "auto" ? "manual" : "auto"),
@@ -384,7 +438,20 @@ export function VersionHistoryPanel({
             {shownError}
           </p>
         )}
+        {notice !== null && (
+          <p role="status" className="text-xs text-status-warning">
+            {notice}
+          </p>
+        )}
       </div>
+      {creating && status !== null && (
+        <CreateRepositoryDialog
+          onClose={() => setCreating(false)}
+          defaultName={workspaceSlug}
+          defaultAccount={status.account}
+          onCreated={(created, account) => void connectCreated(created, account)}
+        />
+      )}
       <ConfirmDialog
         open={confirming === "disconnect"}
         onClose={() => setConfirming(null)}

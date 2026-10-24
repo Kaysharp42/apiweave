@@ -43,7 +43,10 @@ import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitAccountList } from "@shared/types/GitAccountList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
+import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
+import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest";
 import type { GitProvider } from "@shared/types/GitProvider";
+import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList";
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt";
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
@@ -1315,6 +1318,15 @@ export const git = {
     callback: (prompt: GitSignInPrompt) => void,
   ): (() => void) =>
     getGitBridge()?.onSignInPrompt(callback) ?? (() => undefined),
+  listOwners: (account: GitAccountRef): Promise<GitRepositoryOwnerList> =>
+    getGitBridge()?.listOwners(account).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  createRepository: (
+    account: GitAccountRef,
+    request: GitCreateRepositoryRequest,
+  ): Promise<GitCreatedRepository> =>
+    getGitBridge()?.createRepository(account, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,
   ): (() => void) =>

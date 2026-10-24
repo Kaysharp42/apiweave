@@ -1,7 +1,10 @@
 // fallow-ignore-file code-duplication -- a bridge interface is a list of parallel one-line method signatures; the run is the interface's shape, not shared behaviour to extract.
 import type { GitAccountList } from "./GitAccountList"
 import type { GitAccountRef } from "./GitAccountRef"
+import type { GitCreatedRepository } from "./GitCreatedRepository"
+import type { GitCreateRepositoryRequest } from "./GitCreateRepositoryRequest"
 import type { GitProvider } from "./GitProvider"
+import type { GitRepositoryOwnerList } from "./GitRepositoryOwnerList"
 import type { GitSignInPrompt } from "./GitSignInPrompt"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { GitMergeConflict } from "./GitMergeConflict"
@@ -148,4 +151,17 @@ export interface GitBridge {
   /** Open the sign-in in progress's page in the browser again. Only main's own copy of it is opened. */
   readonly openSignInPage: () => Promise<void>
   readonly onSignInPrompt: (callback: (prompt: GitSignInPrompt) => void) => () => void
+  /**
+   * Where `account` can create a repository: itself, and its GitHub
+   * organizations or the GitLab groups where it is at least a Developer.
+   * Rejects when its tool cannot hand over the account.
+   */
+  readonly listOwners: (account: GitAccountRef) => Promise<GitRepositoryOwnerList>
+  /**
+   * Create an empty, `apiweave-workspace`-tagged repository as `account`.
+   * Rejects, naming it, for a repository that already exists — it is never
+   * adopted — and with the host's reason for any other refusal. Nothing it
+   * created is ever deleted; connecting to it is the caller's next call.
+   */
+  readonly createRepository: (account: GitAccountRef, request: GitCreateRepositoryRequest) => Promise<GitCreatedRepository>
 }
