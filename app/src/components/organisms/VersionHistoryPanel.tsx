@@ -123,7 +123,7 @@ interface RemoteAccountProps {
  * stays shown even when no tool lists it any more.
  */
 function RemoteAccount({ remoteUrl, value, onChange, chooseSignedIn, busy }: RemoteAccountProps) {
-  const { accounts, problems, reload } = useGitAccounts();
+  const { accounts, clis, problems, reload } = useGitAccounts();
   if (!HTTPS_REMOTE.test(remoteUrl)) return null;
   return (
     <>
@@ -142,6 +142,7 @@ function RemoteAccount({ remoteUrl, value, onChange, chooseSignedIn, busy }: Rem
         </p>
       ))}
       <GitSignInButtons
+        clis={clis}
         disabled={busy}
         hostFor={(provider) => signInHost(provider, remoteHost(remoteUrl))}
         onSignedIn={(signedIn) => {

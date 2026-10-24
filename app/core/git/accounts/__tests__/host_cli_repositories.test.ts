@@ -248,16 +248,67 @@ describe("createRepository", () => {
   })
 
   it("creates a GitLab project in the account's own namespace without a namespace id", async () => {
+    const own = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
+    const project = JSON.stringify({ ...own, path_with_namespace: "tanuki/api-tests", namespace: { ...(own["namespace"] as object), full_path: "tanuki" } })
     const { service, calls } = fakeCli({
       ...GLAB_STATUS_CALL,
       "glab api --hostname=gitlab.com projects/tanuki%2Fapi-tests": GLAB_NOT_FOUND,
-      "glab api --hostname=gitlab.com --method=POST projects --input=-": exited(GITLAB_PROJECT),
+      "glab api --hostname=gitlab.com --method=POST projects --input=-": exited(project),
     })
 
     await service.createRepository(GITLAB, { owner: "tanuki", name: "api-tests", private: false })
 
     expect(JSON.parse(calls.at(-1)?.input ?? "")).not.toHaveProperty("namespace_id")
     expect(JSON.parse(calls.at(-1)?.input ?? "")).toMatchObject({ visibility: "public" })
+  })
+
+  it.each([
+    {
+      what: "a timeout, which may have made it",
+      outcome: { status: "timeout", exitCode: undefined, errorCode: undefined, stdout: "", stderr: "" } satisfies GitExecOutcome,
+      message: /^github\.com\/octo-work\/api-tests may have been created \(gh did not answer in time\)/,
+    },
+    {
+      what: "a 5xx, which may have made it",
+      outcome: exited('{"message":"Server Error","status":"500"}', 1, "gh: Server Error (HTTP 500)\n"),
+      message: /^github\.com\/octo-work\/api-tests may have been created \(Server Error\)/,
+    },
+    {
+      what: "a refusal with no body, which says nothing",
+      outcome: exited("", 1, "gh: HTTP 502\n"),
+      message: /^github\.com\/octo-work\/api-tests may have been created/,
+    },
+  ])("does not report $what as a plain failure", async ({ outcome, message }) => {
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com repos/octo-work/api-tests": GH_NOT_FOUND,
+      "gh api --hostname=github.com --method=POST user/repos --input=-": outcome,
+    })
+
+    await expect(service.createRepository(GITHUB, REQUEST)).rejects.toThrow(message)
+  })
+
+  it("refuses to bind a repository the host created under another name", async () => {
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com repos/octo-work/api-tests": GH_NOT_FOUND,
+      // A renamed repository's canonic name is what GitHub answers with.
+      "gh api --hostname=github.com --method=POST user/repos --input=-": exited(GH_REPO.replaceAll("api-tests", "api-tests-2")),
+    })
+
+    await expect(service.createRepository(GITHUB, REQUEST)).rejects.toThrow(
+      "github.com/octo-work/api-tests was created as github.com/octo-work/api-tests-2, and not connected. Check it on the host, then connect to it by its URL.",
+    )
+  })
+
+  it("says when an owner list stopped at its first 100", async () => {
+    const hundred = JSON.stringify(Array.from({ length: 100 }, (_, index) => ({ login: `org-${index}` })))
+    const { service } = fakeCli({ ...GH_TOKEN_CALL, "gh api --hostname=github.com user/orgs?per_page=100": exited(hundred) })
+
+    expect(await service.listOwners(GITHUB)).toEqual({
+      owners: [{ path: "octo-work", kind: "user" }, ...Array.from({ length: 100 }, (_, index) => ({ path: `org-${index}`, kind: "organization" }))],
+      problem: "Only the first 100 organizations are listed. Use a URL for a repository under another.",
+    })
   })
 
   it("reports GitLab's 'has already been taken' as the name that exists", async () => {
@@ -294,6 +345,36 @@ describe("hostCliRunner's environment", () => {
 
       expect(outcome.stdout.trim(), JSON.stringify(outcome)).toBe("t0ken|0")
       expect(process.env.GH_TOKEN).not.toBe("t0ken")
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps a host's token and host out of glab's child, in any letter case, and its debug logs off", async () => {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-fake-glab-"))
+    // What glab would see of the variables it must not: a token, a host, its debug settings.
+    const report =
+      process.platform === "win32"
+        ? "@echo off\r\necho [%GITLAB_TOKEN%][%OAUTH_TOKEN%][%gitlab_host%][%GL_HOST%][%GLAB_DEBUG_HTTP%][%GLAB_DEBUG%]\r\n"
+        : '#!/bin/sh\necho "[$GITLAB_TOKEN][$OAUTH_TOKEN][$gitlab_host][$GL_HOST][$GLAB_DEBUG_HTTP][$GLAB_DEBUG]"\n'
+    try {
+      if (process.platform === "win32") fs.writeFileSync(path.join(bin, "glab.cmd"), report)
+      else fs.writeFileSync(path.join(bin, "glab"), report, { mode: 0o755 })
+      const windows = { PATHEXT: ".CMD;.EXE", SystemRoot: process.env.SystemRoot ?? "", COMSPEC: process.env.ComSpec ?? "cmd.exe" }
+      const hostile = {
+        PATH: bin,
+        ...(process.platform === "win32" ? windows : {}),
+        GITLAB_TOKEN: "glpat-leak",
+        OAUTH_TOKEN: "oauth-leak",
+        gitlab_host: "git.example",
+        GL_HOST: "git.example",
+        GLAB_DEBUG_HTTP: "true",
+        GLAB_DEBUG: "true",
+      }
+
+      const glab = await hostCliRunner(hostile)("glab", ["api", "user"], { timeoutMs: 10_000 })
+
+      expect(glab.stdout.trim(), JSON.stringify(glab)).toBe("[][][][][false][false]")
     } finally {
       fs.rmSync(bin, { recursive: true, force: true })
     }

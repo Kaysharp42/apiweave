@@ -428,6 +428,7 @@ export type { GitRepositoryCreation } from "./GitRepositoryCreation";
 export type { PanelMessage } from "./PanelMessage";
 export type { GitHostCliCardProps } from "./GitHostCliCardProps";
 export type { GitCliStateProps } from "./GitCliStateProps";
+export type { GitCliInstallLinkProps } from "./GitCliInstallLinkProps";
 export type { GitSignInDialogProps } from "./GitSignInDialogProps";
 export type { GitSignInPhase } from "./GitSignInPhase";
 export type { GitMergeDialogProps } from "./GitMergeDialogProps";

@@ -5,6 +5,7 @@ import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository"
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
 import type { GitHostCli } from "@shared/types/GitHostCli"
 import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitRepository } from "@shared/types/GitRepository"
 import type { GitRepositoryOwner } from "@shared/types/GitRepositoryOwner"
 import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
@@ -99,6 +100,37 @@ const QUIET_ENVIRONMENT = {
   NO_COLOR: "1",
 } as const
 
+/**
+ * What each tool's child is run with on top of {@link QUIET_ENVIRONMENT}:
+ * variables set, and variables removed. glab reads a token and a host from
+ * its environment ahead of what it stores, and GitLab's docs say neither is
+ * scoped to a host — a `GITLAB_TOKEN` for one instance would be sent to
+ * another, and would make glab act as someone other than the account it was
+ * checked to hold — so none reaches it; the host is always its
+ * `--hostname`. Its debug logs, which print transport detail to the stderr
+ * a failure is told from, are off.
+ */
+const COMMAND_ENVIRONMENT: Readonly<Record<HostCliCommand, { readonly set: Readonly<Record<string, string>>; readonly unset: readonly string[] }>> = {
+  gh: { set: {}, unset: [] },
+  glab: {
+    set: { GLAB_DEBUG_HTTP: "false", GLAB_DEBUG: "false" },
+    unset: ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN", "GITLAB_API_HOST", "GITLAB_HOST", "GITLAB_URI", "GITLAB_URL", "GL_HOST"],
+  },
+}
+
+/**
+ * The environment one call of `command` runs with: the caller's, quietened,
+ * with the tool's own settings and the call's own variables (an account's
+ * token) on top, and the variables the tool must not see removed — by name
+ * in any letter case, as Windows matches them.
+ */
+export function hostCliEnvironment(command: HostCliCommand, base: NodeJS.ProcessEnv, extra: Readonly<Record<string, string>> = {}): NodeJS.ProcessEnv {
+  const { set, unset } = COMMAND_ENVIRONMENT[command]
+  const removed = new Set(unset)
+  const kept = Object.entries(base).filter(([name]) => !removed.has(name.toUpperCase()))
+  return { ...Object.fromEntries(kept), ...QUIET_ENVIRONMENT, ...set, ...extra }
+}
+
 const NOT_FOUND: GitExecOutcome = { status: "spawn_failed", exitCode: undefined, errorCode: "ENOENT", stdout: "", stderr: "" }
 
 /**
@@ -115,7 +147,7 @@ export function hostCliRunner(env: NodeJS.ProcessEnv = process.env): HostCliRunn
     const spawn = spawnCommandFor(executable, args, env)
     return execGit(spawn.file, spawn.args, {
       cwd: os.tmpdir(),
-      env: { ...env, ...QUIET_ENVIRONMENT, ...options.env },
+      env: hostCliEnvironment(command, env, options.env),
       timeoutMs: options.timeoutMs,
       input: options.input,
       verbatim: spawn.verbatim,
@@ -333,12 +365,12 @@ export class HostCliService {
       const outcome = await api.call(["user/orgs?per_page=100"])
       const organizations = succeeded(outcome) ? parseGhOrganizations(outcome.stdout) : undefined
       if (organizations === undefined) return { owners: [self], problem: `The organizations of ${checked.login} could not be listed: ${api.failure(outcome)}` }
-      return { owners: [self, ...organizations.map((path) => ({ path, kind: "organization" as const }))], problem: null }
+      return { owners: [self, ...organizations.map((path) => ({ path, kind: "organization" as const }))], problem: ownersCapReached(organizations.length, "organizations") }
     }
     const outcome = await api.call(["groups?min_access_level=30&per_page=100&order_by=path"])
     const groups = succeeded(outcome) ? parseGitLabGroups(outcome.stdout) : undefined
     if (groups === undefined) return { owners: [self], problem: `The groups of ${checked.login} could not be listed: ${api.failure(outcome)}` }
-    return { owners: [self, ...groups.map((group) => ({ path: group.path, kind: "group" as const }))], problem: null }
+    return { owners: [self, ...groups.map((group) => ({ path: group.path, kind: "group" as const }))], problem: ownersCapReached(groups.length, "groups") }
   }
 
   /**
@@ -372,8 +404,7 @@ export class HostCliService {
   private async createOnGitHub(account: GitAccountRef, api: HostApi, request: GitCreateRepositoryRequest, where: string): Promise<GitCreatedRepository> {
     const endpoint = sameLogin(request.owner, account.login) ? "user/repos" : `orgs/${request.owner}/repos`
     const created = await api.call(["--method=POST", endpoint, "--input=-"], { name: request.name, private: request.private, auto_init: false })
-    const repository = succeeded(created) ? parseGhRestRepository(created.stdout) : undefined
-    if (repository === undefined) throw creationFailed(where, api.failure(created), succeeded(created))
+    const repository = createdRepository(account, request, where, created, api, parseGhRestRepository)
     const tagged = await api.call(["--method=PUT", `repos/${repository.fullName}/topics`, "--input=-"], { names: [APIWEAVE_REPOSITORY_TOPIC] })
     return {
       repository,
@@ -397,8 +428,7 @@ export class HostCliService {
       initialize_with_readme: false,
       topics: [APIWEAVE_REPOSITORY_TOPIC],
     })
-    const repository = succeeded(created) ? parseGitLabProject(created.stdout) : undefined
-    if (repository === undefined) throw creationFailed(where, api.failure(created), succeeded(created))
+    const repository = createdRepository(account, request, where, created, api, parseGitLabProject)
     return { repository: { ...repository, empty: true }, problem: null }
   }
 
@@ -475,12 +505,55 @@ async function assertAbsent(api: HostApi, provider: GitProvider, request: GitCre
 }
 
 function alreadyExists(where: string): ConflictError {
-  return new ConflictError(`${where} already exists. Choose another name; APIWeave never connects a workspace to a repository it did not create empty.`)
+  return new ConflictError(`${where} already exists. Choose another name, or connect to it by its URL if it is empty.`)
 }
 
-/** Why a create failed, the host's "taken" reported as the name that exists; an answer that cannot be read may still be a repository created. */
-function creationFailed(where: string, reason: string, answered: boolean): Error {
-  if (/already exists|has already been taken/i.test(reason)) return alreadyExists(where)
-  if (answered) return new Error(`${where} may have been created, but the host's answer could not be read. Check it on the host, then connect to it by its URL.`)
-  return new Error(`APIWeave could not create ${where}: ${reason}`)
+/** A list of owners that stopped at its one page: said, so the list is not taken for all of them. */
+function ownersCapReached(count: number, what: "organizations" | "groups"): string | null {
+  return count >= 100 ? `Only the first 100 ${what} are listed. Use a URL for a repository under another.` : null
+}
+
+/**
+ * The host refused the request and said why — a 4xx with a body, which
+ * creates nothing. A 5xx, a timeout, a cancel or an answer with no body
+ * says nothing about whether the repository was made. gh prints `(HTTP
+ * 422)`, glab `(HTTP 400)` or, for a body whose message is an object of
+ * refused fields, no status at all.
+ */
+function refusedWithReason(outcome: GitExecOutcome): boolean {
+  if (outcome.status !== "exited" || outcome.exitCode === 0) return false
+  if (/\bHTTP 5\d\d\b/.test(outcome.stderr) || parseApiError(outcome.stdout) === undefined) return false
+  return /\bHTTP 4\d\d\b/.test(outcome.stderr) || !/\bHTTP \d{3}\b/.test(outcome.stderr)
+}
+
+/**
+ * The repository a create's answer describes. A refusal is an error saying
+ * why — the host's "taken" as the name that exists. Anything else that is
+ * not a readable answer may still have made the repository, and says so,
+ * because APIWeave neither deletes it nor guesses. A repository made under
+ * another name than the one asked for is not one to bind a workspace to.
+ */
+function createdRepository(
+  account: GitAccountRef,
+  request: GitCreateRepositoryRequest,
+  where: string,
+  outcome: GitExecOutcome,
+  api: HostApi,
+  parse: (stdout: string) => GitRepository | undefined,
+): GitRepository {
+  const repository = succeeded(outcome) ? parse(outcome.stdout) : undefined
+  if (repository === undefined) {
+    const reason = succeeded(outcome) ? "the host's answer could not be read" : api.failure(outcome)
+    if (!refusedWithReason(outcome)) throw mayHaveBeenCreated(where, reason)
+    if (/already exists|has already been taken/i.test(reason)) throw alreadyExists(where)
+    throw new Error(`APIWeave could not create ${where}: ${reason}`)
+  }
+  if (!sameLogin(repository.fullName, `${request.owner}/${request.name}`)) {
+    throw new Error(`${where} was created as ${account.host}/${repository.fullName}, and not connected. Check it on the host, then connect to it by its URL.`)
+  }
+  return repository
+}
+
+function mayHaveBeenCreated(where: string, reason: string): Error {
+  return new Error(`${where} may have been created (${reason}). Check it on the host, then connect to it by its URL.`)
 }
