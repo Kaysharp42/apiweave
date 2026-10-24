@@ -63,4 +63,41 @@ describe("useGitRepositoryList", () => {
     act(() => finishA({ repositories: [], problems: [] }));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(bridge.listRepositories).toHaveBeenCalledTimes(2);
+  });
+  it("keeps the list it was refreshed to when an older answer lands late", async () => {
+    let finishOld: (list: { repositories: never[]; problems: never[] }) => void = () => undefined;
+    const listRepositories = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }))
+      .mockResolvedValueOnce({ repositories: [], problems: [] });
+    installGitBridge(untrackedStatus, { listRepositories });
+    const { result } = renderHook(() => useGitRepositoryList(WORK, CONNECT));
+
+    act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => finishOld({ repositories: [], problems: [] }));
+
+    // The refreshed ask is the one whose answer is kept; the older one is dropped.
+    expect(listRepositories).toHaveBeenCalledTimes(2);
+    expect(result.current.failed).toBe(false);
+    expect(result.current.loading).toBe(false);
+  });
+
+  it("hides the failure it is replacing while it asks again", async () => {
+    let finishRetry: (list: { repositories: never[]; problems: never[] }) => void = () => undefined;
+    const listRepositories = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("gh could not sign in"))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishRetry = resolve; }));
+    installGitBridge(untrackedStatus, { listRepositories });
+    const { result } = renderHook(() => useGitRepositoryList(WORK, CONNECT));
+
+    await waitFor(() => expect(result.current.problems).toEqual(["The repositories could not be listed: gh could not sign in"]));
+    act(() => result.current.refresh());
+
+    expect(result.current.problems).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    act(() => finishRetry({ repositories: [], problems: [] }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.problems).toEqual([]);
   });});
