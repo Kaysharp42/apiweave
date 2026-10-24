@@ -91,7 +91,8 @@ describe("OpenWorkspaceFromGitModal", () => {
     await submit(user, `  ${REPOSITORY}  `);
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    expect(openFromGit).toHaveBeenCalledWith(REPOSITORY);
+    // No account picker yet (Phase 4): the clone is the user's own credentials.
+    expect(openFromGit).toHaveBeenCalledWith(REPOSITORY, null);
     expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(mockSwitchTo).toHaveBeenCalledWith("acme-qa-2");
     expect(mockRefresh.mock.invocationCallOrder[0]).toBeLessThan(mockSwitchTo.mock.invocationCallOrder[0]!);

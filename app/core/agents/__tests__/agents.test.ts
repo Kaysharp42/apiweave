@@ -89,6 +89,22 @@ describe("resolveExecutable", () => {
     expect(resolveExecutable("shimmed", envWithBin())).toBe(path.join(binDir, "shimmed.cmd"))
   })
 
+  it("never looks in a relative PATH entry, which would be the working directory's", () => {
+    // Under the working directory, so the relative name really reaches it (a temp dir may be on another drive).
+    const local = fs.mkdtempSync(path.join(process.cwd(), ".apiweave-relative-path-"))
+    try {
+      const stub = path.join(local, isWindows ? "relative.cmd" : "relative")
+      fs.writeFileSync(stub, isWindows ? "@exit /b 0\r\n" : "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+      // Sanity: the same directory, named absolutely, does resolve.
+      expect(resolveExecutable("relative", { PATH: local, Path: local })).toBe(stub)
+
+      const relative = path.basename(local)
+      expect(resolveExecutable("relative", { PATH: relative, Path: relative })).toBeUndefined()
+    } finally {
+      fs.rmSync(local, { recursive: true, force: true })
+    }
+  })
+
   it("treats an explicit path as a path rather than a PATH lookup", () => {
     const stub = writeStubAgent("explicit", { exitCode: 0 })
     // Empty PATH: an explicit path must still resolve.

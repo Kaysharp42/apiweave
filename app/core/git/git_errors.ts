@@ -57,6 +57,16 @@ export class GitAuthFailedError extends GitProcessError {
   readonly code = "auth_failed"
 }
 
+/**
+ * `gh` or `glab` would not hand over a token for the account a call is bound
+ * to: missing, signed out, or signed in as someone else. Git never ran, so
+ * there is no output to carry — and the message never holds what the tool
+ * printed on stdout, which is where a token would be.
+ */
+export class GitAccountUnavailableError extends GitError {
+  readonly code = "account_unavailable"
+}
+
 export class GitNonFastForwardError extends GitProcessError {
   readonly code = "non_fast_forward"
 }
@@ -105,9 +115,19 @@ export function gitInstallUrl(platform: NodeJS.Platform): string {
 
 const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi
 
-/** `https://user:token@host/…` → `https://host/…`: error text is logged and shown, so a credential must not ride in it. */
-export function redactCredentials(text: string): string {
-  return text.replace(URL_USERINFO, "$1")
+const REDACTED = "***"
+
+/**
+ * `https://user:token@host/…` → `https://host/…`, and every one of `secrets` —
+ * the token a call carried, in each form it could be echoed — → `***`: error
+ * text is logged, stored and shown, so a credential must not ride in it.
+ */
+export function redactCredentials(text: string, secrets: readonly string[] = []): string {
+  let redacted = text
+  for (const secret of secrets) {
+    if (secret !== "") redacted = redacted.split(secret).join(REDACTED)
+  }
+  return redacted.replace(URL_USERINFO, "$1")
 }
 
 export function failureDetails(
@@ -115,11 +135,13 @@ export function failureDetails(
   exitCode: number | undefined,
   stdout: string,
   stderr: string,
+  secrets: readonly string[] = [],
 ): GitFailureDetails {
+  const redact = (text: string): string => redactCredentials(text, secrets)
   return {
-    args: args.map(redactCredentials),
+    args: args.map(redact),
     exitCode,
-    stdout: redactCredentials(stdout),
-    stderr: redactCredentials(stderr),
+    stdout: redact(stdout),
+    stderr: redact(stderr),
   }
 }

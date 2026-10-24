@@ -1,3 +1,4 @@
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitErrorCode } from "@shared/types/GitErrorCode";
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError";
 
@@ -32,6 +33,8 @@ const MESSAGES: Readonly<Record<GitErrorCode, (host: string) => string>> = {
     "Git doesn't know who you are on this machine — enter your name and email in the workspace's version history settings.",
   auth_failed: (host) =>
     `Sign-in to ${host} failed — your credential manager will ask again on retry.`,
+  account_unavailable: (host) =>
+    `APIWeave couldn't get this workspace's account's sign-in for ${host} from gh or glab — sign in to the account again, or choose another one in the workspace's version history settings.`,
   non_fast_forward: () =>
     "Someone pushed to the remote at the same moment — retry to bring their changes in first.",
   // A refused push is not this: it makes the workspace read-only, which explains itself. This is a fetch or a clone the host refused.
@@ -54,11 +57,19 @@ const MESSAGES: Readonly<Record<GitErrorCode, (host: string) => string>> = {
  * record the repository format refused, say — and its own text already says
  * what happened, so that is the message. `lastError.message` is git's raw
  * text: it belongs under the message as detail, never in place of it.
+ *
+ * A workspace bound to an account signs in with that account, never with the
+ * credential manager, so a refused sign-in names the account instead.
  */
 export function describeGitError(
   error: WorkspaceGitError,
   remoteUrl: string | null,
+  account: GitAccountRef | null = null,
 ): string {
   if (error.code === null) return error.message;
-  return MESSAGES[error.code](remoteHost(remoteUrl) ?? UNNAMED_REMOTE);
+  const host = remoteHost(remoteUrl) ?? UNNAMED_REMOTE;
+  if (error.code === "auth_failed" && account !== null) {
+    return `${host} turned down ${account.login}'s sign-in — sign in to that account again, or choose another account in the workspace's version history settings.`;
+  }
+  return MESSAGES[error.code](host);
 }

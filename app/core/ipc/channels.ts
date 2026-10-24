@@ -104,7 +104,15 @@ export const GIT_CHANNELS = {
   disconnectRemote: "git:disconnectRemote",
   discardLocalChanges: "git:discardLocalChanges",
   openFromGit: "git:openFromGit",
+  listAccounts: "git:listAccounts",
+  setAccount: "git:setAccount",
+  signIn: "git:signIn",
+  cancelSignIn: "git:cancelSignIn",
+  openSignInPage: "git:openSignInPage",
 } as const
+
+/** The one-time code a sign-in in progress printed, pushed to the renderer for its dialog. */
+export const GIT_SIGN_IN_PROMPT_CHANNEL = "apiweave:git-sign-in-prompt"
 
 /** Every status `GIT_CHANNELS` calls and auto commits leave behind, pushed to the renderer. */
 export const GIT_STATUS_CHANGED_CHANNEL = "apiweave:git-status-changed"
