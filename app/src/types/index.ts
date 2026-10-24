@@ -423,6 +423,9 @@ export type { CreateRepositoryDialogProps } from "./CreateRepositoryDialogProps"
 export type { CreateRepositorySectionProps } from "./CreateRepositorySectionProps";
 export type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 export type { GitRemotePickerProps } from "./GitRemotePickerProps";
+export type { GitAccountsFeed } from "./GitAccountsFeed";
+export type { RemoteSectionProps } from "./RemoteSectionProps";
+export type { RemoteAccountProps } from "./RemoteAccountProps";
 export type { GitRepositoryFieldProps } from "./GitRepositoryFieldProps";
 export type { GitRemoteUrlFieldProps } from "./GitRemoteUrlFieldProps";
 export type { GitRemoteAccountSelectProps } from "./GitRemoteAccountSelectProps";
@@ -433,6 +436,8 @@ export type { GitSignInButtonsProps } from "./GitSignInButtonsProps";
 export type { GitRepositoryCreation } from "./GitRepositoryCreation";
 export type { PanelMessage } from "./PanelMessage";
 export type { GitHostCliCardProps } from "./GitHostCliCardProps";
+export type { GitCliStateProps } from "./GitCliStateProps";
+export type { GitCliInstallLinkProps } from "./GitCliInstallLinkProps";
 export type { GitSignInDialogProps } from "./GitSignInDialogProps";
 export type { GitSignInPhase } from "./GitSignInPhase";
 export type { GitMergeDialogProps } from "./GitMergeDialogProps";

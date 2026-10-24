@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { Modal } from "../molecules/Modal";
 import { GitRemotePicker } from "./GitRemotePicker";
+import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { git } from "../../utils/apiweaveClient";
 import type {
@@ -18,6 +19,8 @@ export function OpenWorkspaceFromGitModal({
   onClose,
 }: OpenWorkspaceFromGitModalProps) {
   const { refresh, switchTo } = useWorkspace();
+  // Held here, so a sign-in made in the picker lists its account straight away.
+  const accounts = useGitAccounts();
   const [selection, setSelection] = useState<GitRemoteSelection | null>(null);
   const [existing, setExisting] = useState<ExistingWorkspace | null>(null);
   const [pending, setPending] = useState<PendingWorkspaceOpen | null>(null);
@@ -194,7 +197,7 @@ export function OpenWorkspaceFromGitModal({
             </p>
 
             {/* Back from a duplicate remounts the picker on what was chosen. */}
-            <GitRemotePicker mode="open" initial={selection} onChange={setSelection} disabled={isSubmitting} />
+            <GitRemotePicker mode="open" initial={selection} onChange={setSelection} accounts={accounts} disabled={isSubmitting} />
           </form>
         )}
       </div>

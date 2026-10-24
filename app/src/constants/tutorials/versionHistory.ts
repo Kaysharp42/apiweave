@@ -150,24 +150,20 @@ export const versionHistoryChapter: TutorialChapter = {
       ],
       steps: [
         {
-          title: "Create an empty repository",
+          title: "Pick a repository, or create one",
           instruction:
-            "Create the repository on your host with no README and no first commit. A repository that already holds history this workspace did not come from cannot be connected.",
-        },
-        {
-          title: "Connect it",
-          instruction:
-            "In Version history (git), paste the repository's URL under Remote URL and click Connect to remote.",
+            "In Version history (git), choose the Account to connect as, then the Repository from its list, and click Connect to remote.",
           detail:
-            "Accepted forms: https://host/owner/repo.git, ssh://git@host/owner/repo.git, git@host:owner/repo.git and file:///path/to/repo.git. Plain http:// and git://, a bare path, and a URL carrying a user name or password are refused.",
+            "The list holds the account's empty repositories it can push to. Create repository… above the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials.",
         },
         {
           title: "Know what the connect does",
           instruction:
             "An empty repository receives the workspace's history on main and becomes the sync target. One that already holds this workspace's history is joined as it is and syncs both ways.",
           detail:
-            "A refused connection leaves the workspace unconnected and its history untouched. Git uses your own configuration, so the host's credentials must already be available to it.",
+            "A URL took directly must be one of https://host/owner/repo.git, ssh://git@host/owner/repo.git, git@host:owner/repo.git or file:///path/to/repo.git; plain http:// and git://, a bare path, and a URL carrying a user name or password are refused. A refused connection leaves the workspace unconnected and its history untouched.",
         },
+
         {
           title: "Sync on demand",
           instruction:
@@ -272,11 +268,11 @@ export const versionHistoryChapter: TutorialChapter = {
             "Open the workspace switcher at the top of the sidebar and choose Open from git…. When no workflow is open, the empty state offers the same button.",
         },
         {
-          title: "Point it at the repository",
+          title: "Pick the repository",
           instruction:
-            "Paste the repository's URL under Repository URL and click Open workspace.",
+            "Choose the Account to open it as, then the Repository from its list, and click Open workspace.",
           detail:
-            "It takes the same URL forms as Connect to remote, and only the repository's default branch is opened.",
+            "The list holds the account's repositories tagged apiweave-workspace — the topic APIWeave gives the repositories it creates; Show all repositories lists the rest, and Use a URL instead takes any other repository's URL in the forms Connect to remote accepts. Only the repository's default branch is opened.",
         },
         {
           title: "Know what is checked first",
@@ -318,7 +314,7 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "What the open gesture is called at each step",
         language: "text",
-        code: "Sidebar workspace switcher   Open from git…\nModal                        Open workspace from git\nField                        Repository URL\nPrimary action               Open workspace\n\nCreated as   a new workspace, id from workspace.json\nTracked      auto mode, connected to the URL and its branch\nStarts with  no secrets",
+        code: "Sidebar workspace switcher   Open from git…\nModal                        Open workspace from git\nField                        Account, then Repository\nPrimary action               Open workspace\n\nCreated as   a new workspace, id from workspace.json\nTracked      auto mode, connected to the URL and its branch\nStarts with  no secrets",
       },
       expectedResult:
         "The repository opens as a new workspace with its projects, workflows and environments in place, syncing with the same remote as the machine that pushed it, and only its secrets left to add.",

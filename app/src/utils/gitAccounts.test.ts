@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GitAccount } from "@shared/types/GitAccount";
-import { gitAccountInitials, gitAccountRef, groupGitAccountsByHost, sameGitAccount } from "./gitAccounts";
+import { cliProblemLine, gitAccountInitials, gitAccountRef, groupGitAccountsByHost, sameGitAccount } from "./gitAccounts";
 
 const account = (overrides: Partial<GitAccount>): GitAccount => ({
   provider: "github",
@@ -54,5 +54,13 @@ describe("sameGitAccount", () => {
     expect(sameGitAccount(account({}), gitAccountRef(account({})))).toBe(true);
     expect(sameGitAccount(account({}), account({ host: "ghe.example" }))).toBe(false);
     expect(sameGitAccount(null, null)).toBe(false);
+  });
+});
+
+describe("cliProblemLine", () => {
+  it("names the tool once", () => {
+    expect(cliProblemLine("gh", "gh did not answer in time")).toBe("gh did not answer in time");
+    expect(cliProblemLine("glab", "gitlab.com: 401 Unauthorized")).toBe("glab: gitlab.com: 401 Unauthorized");
+    expect(cliProblemLine("gh", "ghost token")).toBe("gh: ghost token");
   });
 });

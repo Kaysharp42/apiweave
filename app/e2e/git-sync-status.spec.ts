@@ -339,7 +339,7 @@ test.describe("git sync status", () => {
 
     await page.getByRole("button", { name: "Settings > Git accounts" }).click();
     await expect(page.getByRole("heading", { name: "Git accounts" })).toBeVisible();
-    await expect(page.getByText("glab is not installed.")).toBeVisible();
+    await expect(page.getByText("The GitLab CLI (glab) is not installed.")).toBeVisible();
     await captureEvidence(page, "git-accounts-settings.png");
   });
 
@@ -348,9 +348,9 @@ test.describe("git sync status", () => {
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
     await navigateDesktop(page, "/personal/personal/settings/version-history");
 
-    // Create repository… is the first entry of the account's repository list.
+    // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
     await expect(page.getByRole("option", { name: "acme/empty-tests (private)" })).toBeAttached();
-    await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "Create repository…" });
+    await page.getByRole("button", { name: "Create repository…" }).click();
     const dialog = page.getByRole("dialog", { name: "Create repository" });
     await expect(dialog.getByRole("combobox", { name: "Account" })).toHaveValue("github|github.com|octo-work");
     await dialog.getByRole("combobox", { name: "Owner" }).selectOption("acme");

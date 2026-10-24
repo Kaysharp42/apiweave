@@ -14,7 +14,7 @@ import type { CreateRepositoryDialogProps, GitRepositoryDraft } from "../../type
  * already taken is refused by name; nothing existing is ever adopted. Mount
  * it per use: it starts from the workspace's slug and the account given.
  */
-export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, onCreated }: CreateRepositoryDialogProps) {
+export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, accounts, onCreated }: CreateRepositoryDialogProps) {
   const [draft, setDraft] = useState<GitRepositoryDraft>({ account: null, owner: "", name: defaultName, private: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +58,8 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, o
     >
       <form id="create-repository-form" onSubmit={(event) => void submit(event)} className="space-y-4 p-5">
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          APIWeave creates an empty repository, tagged apiweave-workspace, and connects this workspace to it. A name
-          that is already taken is refused, never reused.
+          APIWeave creates an empty repository and connects this workspace to it. APIWeave marks it with the topic
+          apiweave-workspace so it can find it later. A name that is already taken is refused, never reused.
         </p>
         {error !== null && (
           <div
@@ -69,7 +69,7 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, o
             {error}
           </div>
         )}
-        <CreateRepositorySection value={draft} onChange={setDraft} defaultAccount={defaultAccount} disabled={busy} />
+        <CreateRepositorySection value={draft} onChange={setDraft} defaultAccount={defaultAccount} accounts={accounts} disabled={busy} />
       </form>
     </Modal>
   );

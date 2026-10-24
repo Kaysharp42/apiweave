@@ -44,4 +44,23 @@ describe("useGitRepositoryList", () => {
     await waitFor(() => expect(result.current.problems).toEqual([]));
     expect(bridge.listRepositories).toHaveBeenCalledTimes(2);
   });
-});
+
+  it("waits on a listing still running when the account is switched away and back", async () => {
+    let finishA: (list: { repositories: never[]; problems: string[] }) => void = () => undefined;
+    const listRepositories = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishA = resolve; }))
+      .mockResolvedValue({ repositories: [], problems: [] });
+    const { bridge } = installGitBridge(untrackedStatus, { listRepositories });
+    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, CONNECT), { initialProps: { account: WORK as GitAccountRef | null } });
+
+    expect(result.current.loading).toBe(true);
+    rerender({ account: LAB });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    rerender({ account: { ...WORK } });
+    // A's question was never answered and never replaced: the answer still belongs to it.
+    expect(result.current.loading).toBe(true);
+    act(() => finishA({ repositories: [], problems: [] }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(bridge.listRepositories).toHaveBeenCalledTimes(2);
+  });});
