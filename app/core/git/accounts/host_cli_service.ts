@@ -428,18 +428,11 @@ export class HostCliService {
    */
   async createRepository(account: GitAccountRef, request: GitCreateRepositoryRequest): Promise<GitCreatedRepository> {
     const checked = checkedAccount(account)
-    const parsed = GitCreateRepositoryRequestSchema.safeParse(request)
-    if (!parsed.success) throw new ValidationError(`That is not a repository APIWeave can create: ${parsed.error.issues[0]?.message ?? "invalid"}.`)
-    const { owner, name } = parsed.data
-    const where = `${checked.host}/${owner}/${name}`
-    if (checked.provider === "github" && owner.includes("/")) throw new ValidationError(`${owner} is not a GitHub user or organization.`)
+    const valid = checkedCreateRequest(checked, request)
+    const where = `${checked.host}/${valid.owner}/${valid.name}`
     const api = await this.apiAs(checked)
-
-    const existing = await api.call([checked.provider === "github" ? `repos/${owner}/${name}` : `projects/${encodeURIComponent(`${owner}/${name}`)}`])
-    if (succeeded(existing)) throw alreadyExists(where)
-    if (!/\(HTTP 404\)/.test(existing.stderr)) throw new Error(`APIWeave could not check whether ${where} exists: ${api.failure(existing)}`)
-
-    return checked.provider === "github" ? this.createOnGitHub(checked, api, parsed.data, where) : this.createOnGitLab(checked, api, parsed.data, where)
+    await assertAbsent(api, checked.provider, valid, where)
+    return checked.provider === "github" ? this.createOnGitHub(checked, api, valid, where) : this.createOnGitLab(checked, api, valid, where)
   }
 
   private async createOnGitHub(account: GitAccountRef, api: HostApi, request: GitCreateRepositoryRequest, where: string): Promise<GitCreatedRepository> {
@@ -536,6 +529,27 @@ function checkedAccount(account: GitAccountRef): GitAccountRef {
 /** GitHub and GitLab compare user names without regard to case. */
 function sameLogin(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase()
+}
+
+/** A request to create a repository, checked before any tool runs: a name and owner both hosts accept, and on GitHub an owner with no subgroup. */
+function checkedCreateRequest(account: GitAccountRef, request: GitCreateRepositoryRequest): GitCreateRepositoryRequest {
+  const parsed = GitCreateRepositoryRequestSchema.safeParse(request)
+  if (!parsed.success) throw new ValidationError(`That is not a repository APIWeave can create: ${parsed.error.issues[0]?.message ?? "invalid"}.`)
+  if (account.provider === "github" && parsed.data.owner.includes("/")) throw new ValidationError(`${parsed.data.owner} is not a GitHub user or organization.`)
+  return parsed.data
+}
+
+/**
+ * Ask for the repository before creating it: one that is there is never
+ * adopted. Only the host's 404 lets the create go ahead; any other answer —
+ * a timeout, a refusal — stops it, because it says nothing about whether
+ * the name is free.
+ */
+async function assertAbsent(api: HostApi, provider: GitProvider, request: GitCreateRepositoryRequest, where: string): Promise<void> {
+  const path = `${request.owner}/${request.name}`
+  const existing = await api.call([provider === "github" ? `repos/${path}` : `projects/${encodeURIComponent(path)}`])
+  if (succeeded(existing)) throw alreadyExists(where)
+  if (!/\(HTTP 404\)/.test(existing.stderr)) throw new Error(`APIWeave could not check whether ${where} exists: ${api.failure(existing)}`)
 }
 
 function alreadyExists(where: string): ConflictError {

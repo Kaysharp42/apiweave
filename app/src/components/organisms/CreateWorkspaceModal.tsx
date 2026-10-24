@@ -6,6 +6,7 @@ import type { GitAccount } from "@shared/types/GitAccount";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
+import { ModalFormFooter } from "../molecules/ModalFormFooter";
 import { FormField } from "../molecules/FormField";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { isRepositoryDraftReady } from "./CreateRepositoryFields";
@@ -191,19 +192,13 @@ export function CreateWorkspaceModal({
       }
       footer={() =>
         unfinished === null ? (
-          <>
-            <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              form="create-workspace-form"
-              loading={isSubmitting}
-              disabled={!canSubmit}
-            >
-              Create workspace
-            </Button>
-          </>
+          <ModalFormFooter
+            formId="create-workspace-form"
+            submitLabel="Create workspace"
+            onCancel={onClose}
+            busy={isSubmitting}
+            canSubmit={canSubmit}
+          />
         ) : (
           <>
             <Button variant="ghost" onClick={onClose}>

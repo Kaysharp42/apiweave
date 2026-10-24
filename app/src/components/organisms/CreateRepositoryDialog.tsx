@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { GitBranchPlus } from "lucide-react";
-import { Button } from "../atoms/Button";
 import { Modal } from "../molecules/Modal";
+import { ModalFormFooter } from "../molecules/ModalFormFooter";
 import { isRepositoryDraftReady } from "./CreateRepositoryFields";
 import { CreateRepositorySection } from "./CreateRepositorySection";
 import { git } from "../../utils/apiweaveClient";
@@ -47,14 +47,13 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, o
       size="md"
       headerExtra={<GitBranchPlus className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />}
       footer={() => (
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button type="submit" form="create-repository-form" loading={busy} disabled={!isRepositoryDraftReady(draft)}>
-            Create and connect
-          </Button>
-        </>
+        <ModalFormFooter
+          formId="create-repository-form"
+          submitLabel="Create and connect"
+          onCancel={onClose}
+          busy={busy}
+          canSubmit={isRepositoryDraftReady(draft)}
+        />
       )}
     >
       <form id="create-repository-form" onSubmit={(event) => void submit(event)} className="space-y-4 p-5">
