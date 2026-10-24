@@ -19,6 +19,7 @@ import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import type { NetworkBridge } from "@shared/types/NetworkBridge"
 import type { GitBridge } from "@shared/types/GitBridge"
+import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import {
   AGENT_CHANNELS,
@@ -26,6 +27,7 @@ import {
   AGENT_SESSION_CHANGED_CHANNEL,
   AGENT_WRITE_CHANNEL,
   GIT_CHANNELS,
+  GIT_SIGN_IN_PROMPT_CHANNEL,
   GIT_STATUS_CHANGED_CHANNEL,
   INVOKE_CHANNEL,
   NETWORK_CHANNELS,
@@ -262,6 +264,12 @@ const gitBridge: GitBridge = {
   disconnectRemote: invokeBridge(GIT_CHANNELS.disconnectRemote),
   discardLocalChanges: invokeBridge(GIT_CHANNELS.discardLocalChanges),
   openFromGit: invokeBridge(GIT_CHANNELS.openFromGit),
+  listAccounts: invokeBridge(GIT_CHANNELS.listAccounts),
+  setAccount: invokeBridge(GIT_CHANNELS.setAccount),
+  signIn: invokeBridge(GIT_CHANNELS.signIn),
+  cancelSignIn: invokeBridge(GIT_CHANNELS.cancelSignIn),
+  openSignInPage: invokeBridge(GIT_CHANNELS.openSignInPage),
+  onSignInPrompt: (callback) => subscribe<GitSignInPrompt>(GIT_SIGN_IN_PROMPT_CHANNEL, callback),
   onStatusChanged: (callback) => subscribe<WorkspaceGitStatus>(GIT_STATUS_CHANGED_CHANNEL, callback),
 }
 

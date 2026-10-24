@@ -21,6 +21,7 @@ interface FakeStatus {
   readonly mode: "auto" | "manual";
   readonly remoteUrl: string | null;
   readonly branch: string;
+  readonly account: { readonly provider: "github" | "gitlab"; readonly host: string; readonly login: string } | null;
   readonly state: "idle" | "syncing" | "merging" | "diverged" | "error";
   readonly lastError: { readonly code: string | null; readonly message: string } | null;
   readonly readOnly: boolean;
@@ -60,6 +61,7 @@ const MERGING: FakeStatus = {
   mode: "auto",
   remoteUrl: "https://github.com/acme/api-tests.git",
   branch: "main",
+  account: null,
   state: "merging",
   lastError: { code: null, message: "Both this device and the remote changed. Resolve the conflicts to finish merging." },
   readOnly: false,

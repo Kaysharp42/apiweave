@@ -52,7 +52,7 @@ Learn the workflow, one feature at a time.
 
 ### Library and reader layout
 
-The library groups lessons into seven chapters in reading order: First steps, Requests and data, Control flow, Debug and observe, Organize and reuse, Agents, and App. Each lesson shows its status and estimated duration. When you open a lesson, the article presents the outcome, prerequisites, numbered steps, an example, the expected result, troubleshooting, and related lessons.
+The library groups lessons into eight chapters in reading order: First steps, Requests and data, Control flow, Debug and observe, Organize and reuse, Version history and sync, Agents, and App. Each lesson shows its status and estimated duration. When you open a lesson, the article presents the outcome, prerequisites, numbered steps, an example, the expected result, troubleshooting, and related lessons.
 
 The split between the outline and the article is based on the width of the tutorial container, not the viewport:
 

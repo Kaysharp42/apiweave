@@ -36,6 +36,11 @@ const EXPECTED_LESSON_IDS = [
   "import-export",
   "openapi",
   "curl-har",
+  "git-track",
+  "git-remote",
+  "git-open",
+  "git-merge",
+  "git-ci",
   "embedded-agents",
   "mcp",
   "settings",
@@ -189,6 +194,12 @@ describe("tutorial destinations", () => {
     expect(tutorialDestinationHref("secrets", "personal", "personal")).toBe(
       "/personal/personal/settings/secrets",
     );
+  });
+
+  it("maps version-history to the workspace's settings route", () => {
+    expect(
+      tutorialDestinationHref("version-history", "personal", "acme"),
+    ).toBe("/personal/acme/settings/version-history");
   });
 
   it("builds workspace, library and lesson hrefs", () => {

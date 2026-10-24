@@ -75,6 +75,7 @@ describe("GitSyncService", () => {
       mode: "auto",
       remoteUrl: null,
       branch: "main",
+      account: null,
       state: "idle",
       lastError: null,
       readOnly: false,
@@ -527,7 +528,7 @@ describe("GitSyncService", () => {
       }),
     })
     harness.repositories.workspaceGit.insert(harness.workspaceId, "auto")
-    harness.repositories.workspaceGit.setRemote(harness.workspaceId, "file:///nowhere.git", "main")
+    harness.repositories.workspaceGit.setRemote(harness.workspaceId, "file:///nowhere.git", "main", null)
     await harness.git.init(harness.dir, { initialBranch: "main" })
 
     const status = await harness.sync.status(harness.workspaceId)

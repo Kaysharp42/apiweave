@@ -32,7 +32,10 @@ export function resolveExecutable(command: string, env: NodeJS.ProcessEnv = proc
     return isExecutableFile(absolute) ? absolute : undefined
   }
 
-  const searchDirs = (env["PATH"] ?? env["Path"] ?? "").split(path.delimiter).filter((entry) => entry.length > 0)
+  // Absolute entries only: an empty or relative one (`.`, `bin`) is resolved
+  // against main's working directory, where a planted `gh.exe` would be run —
+  // and handed a token.
+  const searchDirs = (env["PATH"] ?? env["Path"] ?? "").split(path.delimiter).filter((entry) => path.isAbsolute(entry))
   const candidates = candidateNames(command, env)
 
   for (const dir of searchDirs) {

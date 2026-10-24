@@ -2,6 +2,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { GitAccount } from "@shared/types/GitAccount";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import {
   installGitBridge,
@@ -151,10 +152,111 @@ describe("VersionHistoryPanel", () => {
     await user.type(field, "  git@github.com:acme/tests.git  ");
     await user.click(connect);
 
-    expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "git@github.com:acme/tests.git");
+    expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "git@github.com:acme/tests.git", null);
     expect(await screen.findByText("git@github.com:acme/tests.git")).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /remote url/i })).toBeNull();
     expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
+    // Neither gh nor glab lists an account: there is nothing to pick.
+    expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
+  });
+
+  describe("the account a remote is reached as", () => {
+    const WORK: GitAccount = { provider: "github", host: "github.com", login: "octo-work", gitProtocol: "https", active: true, problem: null };
+    const PERSONAL: GitAccount = { ...WORK, login: "octo-personal", active: false };
+    const TANUKI: GitAccount = { provider: "gitlab", host: "gitlab.com", login: "tanuki", gitProtocol: "https", active: true, problem: null };
+    const ref = ({ provider, host, login }: GitAccount) => ({ provider, host, login });
+    const listAccounts = vi.fn(async () => ({ clis: [], accounts: [WORK, PERSONAL, TANUKI] }));
+
+    it("connects as the account picked, offering only accounts on the remote's host", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), { listAccounts });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      await user.type(await screen.findByRole("textbox", { name: /remote url/i }), "https://github.com/acme/tests.git");
+      const picker = await screen.findByRole("combobox", { name: /account/i });
+      expect([...picker.querySelectorAll("option")].map((option) => option.textContent)).toEqual([
+        "Your own git sign-in (credential manager or SSH key)",
+        "octo-work on github.com",
+        "octo-personal on github.com",
+      ]);
+      await user.selectOptions(picker, "github|github.com|octo-personal");
+      await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+
+      expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "https://github.com/acme/tests.git", ref(PERSONAL));
+    });
+
+    it("changes the account of a connected workspace, and back to the user's own sign-in", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(trackedStatus({ account: ref(WORK) }), { listAccounts });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      const picker = await screen.findByRole("combobox", { name: /account/i });
+      await waitFor(() => expect(picker).toHaveValue("github|github.com|octo-work"));
+      await user.selectOptions(picker, "github|github.com|octo-personal");
+      expect(bridge.setAccount).toHaveBeenCalledWith("ws-1", ref(PERSONAL));
+
+      await user.selectOptions(picker, "");
+      expect(bridge.setAccount).toHaveBeenLastCalledWith("ws-1", null);
+    });
+
+    it("signs in to the remote's host from the connect form, and connects as the account just added", async () => {
+      const user = userEvent.setup();
+      const added = vi.fn().mockResolvedValueOnce({ clis: [], accounts: [] }).mockResolvedValue({ clis: [], accounts: [PERSONAL] });
+      const { bridge } = installGitBridge(local(), { listAccounts: added, signIn: vi.fn(async () => ref(PERSONAL)) });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      await user.type(await screen.findByRole("textbox", { name: /remote url/i }), "https://github.com/acme/tests.git");
+      await user.click(screen.getByRole("button", { name: /sign in to github/i }));
+      expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("github.com");
+      await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+      await user.click(await screen.findByRole("button", { name: /^done$/i }));
+
+      const picker = await screen.findByRole("combobox", { name: /account/i });
+      await waitFor(() => expect(picker).toHaveValue("github|github.com|octo-personal"));
+      await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+      expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "https://github.com/acme/tests.git", ref(PERSONAL));
+    });
+
+    it("offers no account for an SSH remote, which signs in with the user's SSH key", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), { listAccounts });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      const field = await screen.findByRole("textbox", { name: /remote url/i });
+      await user.type(field, "https://github.com/acme/tests.git");
+      await user.selectOptions(await screen.findByRole("combobox", { name: /account/i }), "github|github.com|octo-work");
+      await user.clear(field);
+      await user.type(field, "git@github.com:acme/tests.git");
+
+      expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
+      await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+      expect(bridge.connectRemote).toHaveBeenCalledWith("ws-1", "git@github.com:acme/tests.git", null);
+    });
+
+    it("says why a tool could not list its accounts, rather than just showing none", async () => {
+      installGitBridge(trackedStatus(), {
+        listAccounts: vi.fn(async () => ({
+          clis: [
+            { provider: "github" as const, command: "gh" as const, missing: false, version: "2.97.0", problem: "gh did not answer in time" },
+            { provider: "gitlab" as const, command: "glab" as const, missing: true, version: null, problem: null },
+          ],
+          accounts: [],
+        })),
+      });
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      expect(await screen.findByText("gh: gh did not answer in time")).toBeInTheDocument();
+      expect(screen.queryByText(/glab/)).toBeNull();
+    });
+
+    it("keeps showing a bound account that is no longer signed in, rather than changing it", async () => {
+      installGitBridge(trackedStatus({ account: { provider: "github", host: "github.com", login: "gone" } }));
+      render(<VersionHistoryPanel workspaceId="ws-1" />);
+
+      const picker = await screen.findByRole("combobox", { name: /account/i });
+      expect(picker).toHaveValue("github|github.com|gone");
+      expect(screen.getByRole("option", { name: "gone on github.com — not signed in" })).toBeInTheDocument();
+    });
   });
 
   it("shows the remote, the branch and the sync state of a connected workspace", async () => {
