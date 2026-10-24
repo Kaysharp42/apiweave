@@ -7,16 +7,28 @@ import { GIT_PROVIDERS } from "../../utils/gitAccounts";
 import { bothClisMissing, cliMissing } from "../../utils/gitCli";
 import type { GitSignInButtonsProps } from "../../types";
 
-const defaultHost = (provider: GitProvider): string => GIT_PROVIDERS[provider].defaultHost;
+const defaultHost = (provider: GitProvider): string =>
+  GIT_PROVIDERS[provider].defaultHost;
 
 /**
  * Sign in to GitHub… and Sign in to GitLab…, each opening the sign-in
  * dialog for its tool. A tool that is not installed offers no sign-in, and
  * when neither is, where to install them is said here.
  */
-export function GitSignInButtons({ onSignedIn, clis, hostFor = defaultHost, disabled = false }: GitSignInButtonsProps) {
+export function GitSignInButtons({
+  onSignedIn,
+  clis,
+  hostFor = defaultHost,
+  disabled = false,
+}: GitSignInButtonsProps) {
   const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
   const noneInstalled = bothClisMissing(clis);
+  // The one tool that is not installed, when only one is: its button is disabled, and this says why.
+  const missing = noneInstalled
+    ? null
+    : ((["github", "gitlab"] as const).find((provider) =>
+        cliMissing(clis, GIT_PROVIDERS[provider].command),
+      ) ?? null);
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -25,7 +37,9 @@ export function GitSignInButtons({ onSignedIn, clis, hostFor = defaultHost, disa
             key={provider}
             variant="ghost"
             size="sm"
-            disabled={disabled || cliMissing(clis, GIT_PROVIDERS[provider].command)}
+            disabled={
+              disabled || cliMissing(clis, GIT_PROVIDERS[provider].command)
+            }
             onClick={() => setSigningIn(provider)}
           >
             Sign in to {GIT_PROVIDERS[provider].name}…
@@ -38,7 +52,12 @@ export function GitSignInButtons({ onSignedIn, clis, hostFor = defaultHost, disa
           <GitCliInstallLink provider="github" /> and <GitCliInstallLink provider="gitlab" />, then refresh.
         </p>
       )}
-      {signingIn !== null && (
+      {missing !== null && (
+        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+          Signing in to {GIT_PROVIDERS[missing].name} needs the {GIT_PROVIDERS[missing].cliName}: install it from{" "}
+          <GitCliInstallLink provider={missing} />, then refresh. Until then, connect a remote by its URL.
+        </p>
+      )}      {signingIn !== null && (
         <GitSignInDialog
           isOpen
           provider={signingIn}
