@@ -1,8 +1,10 @@
+import { act } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { OrgWorkspaceSwitcher } from "../OrgWorkspaceSwitcher";
+import { installGitBridge, trackedStatus } from "../../../__tests__/gitFixtures";
 import type { WorkspaceContextValue } from "../../../types";
 import type { Workspace } from "../../../types/Workspace";
 
@@ -63,6 +65,7 @@ function makeWorkspace(overrides: Partial<Workspace> = {}): Workspace {
 describe("OrgWorkspaceSwitcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     mockRefresh.mockResolvedValue(undefined);
     setContext({
       availableWorkspaces: [],
@@ -233,6 +236,72 @@ describe("OrgWorkspaceSwitcher", () => {
     expect(
       screen.queryByRole("button", { name: "Manage workspaces" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows each tracked row's sync state as an icon named by its tooltip, and leaves the rest alone", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ name: "Personal", isPersonal: true });
+    const otherWs = makeWorkspace({
+      workspaceId: "ws-2",
+      slug: "main",
+      name: "Main",
+      isPersonal: false,
+    });
+    setContext({
+      availableWorkspaces: [personalWs, otherWs],
+      currentWorkspace: personalWs,
+    });
+    installGitBridge(trackedStatus(), {
+      statusAll: vi.fn(async () => [
+        trackedStatus(),
+        trackedStatus({ workspaceId: "ws-2", remoteUrl: null, lastSyncedAt: null, uncommitted: true }),
+      ]),
+    });
+
+    renderSwitcher();
+    await user.click(screen.getByLabelText("Switch workspace"));
+
+    const personal = await screen.findByRole("option", { name: /Personal/ });
+    const synced = within(personal).getByRole("img", { name: "Synced" });
+    await user.hover(synced);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Synced");
+    const main = screen.getByRole("option", { name: /Main/ });
+    expect(
+      within(main).getByRole("img", { name: "Local history · uncommitted" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives an untracked row no icon, and follows a status change for a row it did have", async () => {
+    const user = userEvent.setup();
+    const personalWs = makeWorkspace({ name: "Personal", isPersonal: true });
+    const otherWs = makeWorkspace({
+      workspaceId: "ws-2",
+      slug: "main",
+      name: "Main",
+      isPersonal: false,
+    });
+    setContext({
+      availableWorkspaces: [personalWs, otherWs],
+      currentWorkspace: personalWs,
+    });
+    const { push } = installGitBridge(trackedStatus(), {
+      statusAll: vi.fn(async () => [trackedStatus()]),
+    });
+
+    renderSwitcher();
+    await user.click(screen.getByLabelText("Switch workspace"));
+
+    const personal = await screen.findByRole("option", { name: /Personal/ });
+    await waitFor(() => expect(within(personal).getByRole("img", { name: "Synced" })).toBeInTheDocument());
+    expect(within(screen.getByRole("option", { name: /Main/ })).queryByRole("img")).toBeNull();
+
+    act(() => push(trackedStatus({ state: "syncing" })));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("option", { name: /Personal/ })).getByRole("img", { name: "Syncing" }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("opens the open-from-git dialog from its menu entry", async () => {
