@@ -10,17 +10,32 @@ import { GitSignInDialog } from "./GitSignInDialog";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useGitAccountWorkspaces } from "../../hooks/useGitAccountWorkspaces";
 import { git } from "../../utils/apiweaveClient";
-import { GIT_PROVIDERS, gitAccountKey, groupGitAccountsByHost } from "../../utils/gitAccounts";
+import {
+  GIT_PROVIDERS,
+  gitAccountKey,
+  groupGitAccountsByHost,
+} from "../../utils/gitAccounts";
 import type { GitHostCliCardProps } from "../../types";
 
-function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliCardProps) {
+function GitHostCliCard({
+  provider,
+  cli,
+  groups,
+  usedBy,
+  onSignIn,
+}: GitHostCliCardProps) {
   const tool = GIT_PROVIDERS[provider];
   const accounts = groups.flatMap((group) => group.accounts);
   return (
     <Card
       title={tool.cliName}
       headerActions={
-        <Button size="sm" variant="secondary" disabled={cli?.missing !== false} onClick={onSignIn}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={cli?.missing !== false}
+          onClick={onSignIn}
+        >
           Sign in…
         </Button>
       }
@@ -32,8 +47,9 @@ function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliC
         )}
         {provider === "gitlab" && (
           <p className="text-xs text-text-muted dark:text-text-muted-dark">
-            glab keeps one account per host. Signing in to a host it already has replaces that account, so a second
-            GitLab account needs a different host.
+            glab keeps one account per host. Signing in to a host it already has
+            replaces that account, so a second GitLab account needs a different
+            host.
           </p>
         )}
         {cli !== undefined && !cli.missing && accounts.length === 0 && (
@@ -50,7 +66,9 @@ function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliC
                   account={account}
                   detail={
                     <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                      {names.length === 0 ? "No workspace uses this account." : `Used by ${names.join(", ")}.`}
+                      {names.length === 0
+                        ? "No workspace uses this account."
+                        : `Used by ${names.join(", ")}.`}
                     </p>
                   }
                 />
@@ -76,7 +94,11 @@ export function GitAccountsSettingsPanel() {
   const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
 
   if (!available) {
-    return <p className="text-xs text-status-warning">Git accounts are only available in the desktop app.</p>;
+    return (
+      <p className="text-xs text-status-warning">
+        Git accounts are only available in the desktop app.
+      </p>
+    );
   }
 
   const groups = groupGitAccountsByHost(accounts);
@@ -84,9 +106,10 @@ export function GitAccountsSettingsPanel() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          APIWeave signs in to GitHub and GitLab with their own command-line tools, which keep your tokens in the
-          system keychain. A workspace connected to a repository on github.com or a GitLab host can sync as any of
-          these accounts.
+          APIWeave signs in to GitHub and GitLab with their own command-line
+          tools, which keep your tokens in the system keychain. A workspace
+          connected to a repository on github.com or a GitLab host can sync as
+          any of these accounts.
         </p>
         <Button
           size="sm"

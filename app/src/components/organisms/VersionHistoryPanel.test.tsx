@@ -312,7 +312,8 @@ describe("VersionHistoryPanel", () => {
 
       // The tool's own words already name it: no "gh: gh …".
       expect(await screen.findByText("gh did not answer in time")).toBeInTheDocument();
-      expect(screen.queryByText(/glab/)).toBeNull();
+      // No problem line for glab (which is merely missing); its install line is not one.
+      expect(screen.queryByText(/^glab: /)).toBeNull();
     });
 
     it("keeps showing a bound account that is no longer signed in, rather than changing it", async () => {

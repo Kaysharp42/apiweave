@@ -5,20 +5,37 @@ import { Select } from "../atoms/Select";
 import { FormField } from "../molecules/FormField";
 import { useGitRepositoryOwners } from "../../hooks/useGitRepositoryOwners";
 import { gitAccountKey } from "../../utils/gitAccounts";
-import type { CreateRepositoryFieldsProps, GitRepositoryDraft } from "../../types";
+import type {
+  CreateRepositoryFieldsProps,
+  GitRepositoryDraft,
+} from "../../types";
 
-const OWNER_KINDS = { user: "your account", organization: "organization", group: "group" } as const;
+const OWNER_KINDS = {
+  user: "your account",
+  organization: "organization",
+  group: "group",
+} as const;
 
 /** Why `name` is not a repository name APIWeave can create, or null when it is (or is still empty). */
 export function repositoryNameError(name: string): string | null {
   if (name.trim() === "") return null;
   const checked = GitRepositoryNameSchema.safeParse(name.trim());
-  return checked.success ? null : `${checked.error.issues[0]?.message ?? "Not a repository name"}.`.replace(/^./, (first) => first.toUpperCase());
+  return checked.success
+    ? null
+    : `${checked.error.issues[0]?.message ?? "Not a repository name"}.`.replace(
+        /^./,
+        (first) => first.toUpperCase(),
+      );
 }
 
 /** Whether `draft` names everything a repository needs to be created. */
 export function isRepositoryDraftReady(draft: GitRepositoryDraft): boolean {
-  return draft.account !== null && draft.owner !== "" && draft.name.trim() !== "" && repositoryNameError(draft.name) === null;
+  return (
+    draft.account !== null &&
+    draft.owner !== "" &&
+    draft.name.trim() !== "" &&
+    repositoryNameError(draft.name) === null
+  );
 }
 
 /**
@@ -27,14 +44,23 @@ export function isRepositoryDraftReady(draft: GitRepositoryDraft): boolean {
  * private. Shared by Version history's Create repository and Create
  * workspace's sync section.
  */
-export function CreateRepositoryFields({ value, onChange, accounts, disabled = false }: CreateRepositoryFieldsProps) {
+export function CreateRepositoryFields({
+  value,
+  onChange,
+  accounts,
+  disabled = false,
+}: CreateRepositoryFieldsProps) {
   const { owners, problem, loading } = useGitRepositoryOwners(value.account);
   const nameError = repositoryNameError(value.name);
 
   // A new account's owners replace the last one's: start on the account itself.
   useEffect(() => {
     const first = owners[0];
-    if (first !== undefined && !owners.some((owner) => owner.path === value.owner)) onChange({ ...value, owner: first.path });
+    if (
+      first !== undefined &&
+      !owners.some((owner) => owner.path === value.owner)
+    )
+      onChange({ ...value, owner: first.path });
   }, [owners, value, onChange]);
 
   return (
@@ -45,7 +71,10 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
           value={value.account === null ? "" : gitAccountKey(value.account)}
           disabled={disabled}
           onChange={(event) => {
-            const account = accounts.find((candidate) => gitAccountKey(candidate) === event.target.value) ?? null;
+            const account =
+              accounts.find(
+                (candidate) => gitAccountKey(candidate) === event.target.value,
+              ) ?? null;
             onChange({ ...value, account, owner: "" });
           }}
         >
@@ -64,10 +93,16 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
         <Select
           aria-label="Owner"
           value={value.owner}
-          disabled={disabled || value.account === null || loading || owners.length === 0}
-          onChange={(event) => onChange({ ...value, owner: event.target.value })}
+          disabled={
+            disabled || value.account === null || loading || owners.length === 0
+          }
+          onChange={(event) =>
+            onChange({ ...value, owner: event.target.value })
+          }
         >
-          {loading && <option value="">Listing organizations and groups…</option>}
+          {loading && (
+            <option value="">Listing organizations and groups…</option>
+          )}
           {owners.map((owner) => (
             <option key={owner.path} value={owner.path}>
               {owner.path} ({OWNER_KINDS[owner.kind]})
@@ -75,9 +110,15 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
           ))}
         </Select>
         {/* A list that is short rather than wrong: a warning under the field, not an error on it. */}
-        {problem !== null && <p className="mt-1 text-xs text-status-warning">{problem}</p>}
+        {problem !== null && (
+          <p className="mt-1 text-xs text-status-warning">{problem}</p>
+        )}
       </FormField>
-      <FormField label="Repository name" required {...(nameError === null ? {} : { error: nameError })}>
+      <FormField
+        label="Repository name"
+        required
+        {...(nameError === null ? {} : { error: nameError })}
+      >
         <Input
           aria-label="Repository name"
           value={value.name}
@@ -88,12 +129,17 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
           aria-invalid={nameError !== null}
         />
       </FormField>
-      <FormField label="Visibility" hint="Private: only people you invite can see it. You can change this on the host later.">
+      <FormField
+        label="Visibility"
+        hint="Private: only people you invite can see it. You can change this on the host later."
+      >
         <Select
           aria-label="Visibility"
           value={value.private ? "private" : "public"}
           disabled={disabled}
-          onChange={(event) => onChange({ ...value, private: event.target.value === "private" })}
+          onChange={(event) =>
+            onChange({ ...value, private: event.target.value === "private" })
+          }
         >
           <option value="private">Private</option>
           <option value="public">Public</option>
