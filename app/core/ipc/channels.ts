@@ -110,6 +110,8 @@ export const GIT_CHANNELS = {
   signIn: "git:signIn",
   cancelSignIn: "git:cancelSignIn",
   openSignInPage: "git:openSignInPage",
+  listOwners: "git:listOwners",
+  createRepository: "git:createRepository",
 } as const
 
 /** The one-time code a sign-in in progress printed, pushed to the renderer for its dialog. */

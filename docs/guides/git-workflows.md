@@ -69,8 +69,19 @@ The repository is an ordinary git repository at `<userData>/git/<workspace id>/`
 
 A tracked workspace can be connected to one remote repository on a git host, so its history is kept somewhere other than your machine and other machines can sync with it.
 
-1. Create an empty repository on your host (no README, no first commit).
+1. Create an empty repository on your host (no README, no first commit) — or let APIWeave create it: see [Create the repository from APIWeave](#create-the-repository-from-apiweave).
 2. In **Version history (git)**, paste its URL under **Remote URL** and click **Connect to remote**.
+
+### Create the repository from APIWeave
+
+With a GitHub or GitLab account signed in (see [Git accounts](#git-accounts)), **Create repository…** next to **Connect to remote** does both steps:
+
+1. Choose the **Account** to create it as, and the **Owner**: the account itself, or one of its GitHub organizations or the GitLab groups where it is at least a Developer.
+2. The **Repository name** starts as the workspace's slug. It may hold letters and digits, with single `.`, `_` or `-` between them; it cannot end in `.git` or `.atom`.
+3. **Visibility** is **Private** unless you choose **Public**.
+4. **Create and connect** creates an empty repository — no README, licence or first commit — tags it with the topic `apiweave-workspace`, and connects the workspace to it. An HTTPS account is bound to the connection, so every sync uses its token; an SSH account connects by the SSH URL, with your SSH key.
+
+A name that already exists is refused, naming the repository; APIWeave never connects to a repository it did not just create empty. If the repository was created but connecting to it fails, the message says so, the repository is kept — APIWeave never deletes one — and the connect form is filled in with it, so **Connect to remote** tries again. If the topic could not be added, the panel says so; the repository works without it.
 
 The URL takes one of four forms:
 

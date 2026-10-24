@@ -5,9 +5,11 @@ import type { IpcMain, IpcMainInvokeEvent, WebContents } from "electron"
 import { z } from "zod"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
+import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
 import type { GitProvider } from "@shared/types/GitProvider"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
+import { GitCreateRepositoryRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -89,6 +91,20 @@ function accountOf(value: unknown): GitAccountRef | null {
   return AccountSchema.parse(value ?? null)
 }
 
+/** The account a host's API is called as, checked: one of `listAccounts`', naming nothing more. */
+function requiredAccountOf(value: unknown): GitAccountRef {
+  const checked = GitAccountRefSchema.safeParse(value)
+  if (!checked.success) throw new Error("That is not an account APIWeave can sign in as.")
+  return checked.data
+}
+
+/** A repository to create, checked; a plain sentence for the dialog when it is not one, never a zod error's JSON. */
+function createRepositoryRequestOf(value: unknown): GitCreateRepositoryRequest {
+  const checked = GitCreateRepositoryRequestSchema.safeParse(value)
+  if (!checked.success) throw new Error(`That is not a repository APIWeave can create: ${checked.error.issues[0]?.message ?? "invalid"}.`)
+  return checked.data
+}
+
 
 const MergePickSchema = z
   .object({
@@ -122,7 +138,8 @@ async function trackOrAskForAuthor(gitSync: GitSyncService, workspaceId: string)
  * bridge's handler list, and an agent that could reach git could connect a
  * remote and push a workspace to a repository it controls. The same goes for
  * the user's git accounts: an agent that could pick one could push wherever
- * that account can write.
+ * that account can write, and one that could create repositories could
+ * publish a workspace.
  */
 export function registerGitHandlers(
   ipcMain: IpcMain,
@@ -195,6 +212,13 @@ export function registerGitHandlers(
   )
   ipcMain.handle(GIT_CHANNELS.cancelSignIn, guard(() => signIns.cancel()))
   ipcMain.handle(GIT_CHANNELS.openSignInPage, guard(() => signIns.openPage()))
+  ipcMain.handle(GIT_CHANNELS.listOwners, guard((account: unknown) => hostCli.listOwners(requiredAccountOf(account))))
+  ipcMain.handle(
+    GIT_CHANNELS.createRepository,
+    guard((account: unknown, request: unknown) =>
+      hostCli.createRepository(requiredAccountOf(account), createRepositoryRequestOf(request)),
+    ),
+  )
   return signIns
 }
 
