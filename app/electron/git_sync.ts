@@ -4,6 +4,8 @@ import path from "node:path"
 import type { IpcMain, IpcMainInvokeEvent } from "electron"
 import { z } from "zod"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
+import type { GitAccountRef } from "@shared/types/GitAccountRef"
+import { GitAccountRefSchema } from "@shared/zod-schemas/GitAccountRefSchema"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -31,10 +33,14 @@ const IMPORTED_DOMAINS = ["workspaces", "projects", "workflows", "environments"]
  * the old values would save them back over it. So it is announced the same
  * way: `publishRefresh` gets the coarse event the renderer already refetches
  * its lists for.
+ *
+ * A workspace bound to an account gets that account's token from `hostCli`,
+ * one git call at a time.
  */
 export function createGitSync(
   userDataPath: string,
   repositories: GitSyncRepositories,
+  hostCli: HostCliService,
   onStatusChanged: (status: WorkspaceGitStatus) => void,
   publishRefresh: (event: AgentWriteEvent) => void,
 ): GitSyncService {
@@ -48,6 +54,7 @@ export function createGitSync(
     onImported: (workspaceId) => {
       for (const domain of IMPORTED_DOMAINS) publishRefresh({ domain, action: "gitImport", workspaceId })
     },
+    credentials: (account) => hostCli.token(account),
   })
 }
 
@@ -69,6 +76,13 @@ function commitRequestOf(value: unknown): WorkspaceGitCommitRequest {
 }
 
 const RemoteUrlSchema = z.string().min(1, "a remote URL is required").max(2048, "a remote URL is at most 2048 characters")
+
+/** The account a remote is reached as, or null (or nothing) for the user's own credentials. */
+const AccountSchema = GitAccountRefSchema.nullable()
+
+function accountOf(value: unknown): GitAccountRef | null {
+  return AccountSchema.parse(value ?? null)
+}
 
 const MergePickSchema = z
   .object({
@@ -147,8 +161,17 @@ export function registerGitHandlers(
   )
   ipcMain.handle(
     GIT_CHANNELS.connectRemote,
-    guard((workspaceId: unknown, url: unknown) => gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url))),
+    guard((workspaceId: unknown, url: unknown, account: unknown) =>
+      gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url), accountOf(account)),
+    ),
   )
-  ipcMain.handle(GIT_CHANNELS.openFromGit, guard((url: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url))))
+  ipcMain.handle(
+    GIT_CHANNELS.setAccount,
+    guard((workspaceId: unknown, account: unknown) => gitSync.setAccount(workspaceIdOf(workspaceId), accountOf(account))),
+  )
+  ipcMain.handle(
+    GIT_CHANNELS.openFromGit,
+    guard((url: unknown, account: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url), accountOf(account))),
+  )
   ipcMain.handle(GIT_CHANNELS.listAccounts, guard(() => hostCli.listAccounts()))
 }

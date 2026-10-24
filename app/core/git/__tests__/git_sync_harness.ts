@@ -9,7 +9,7 @@ import {
   WorkspaceGitRepository,
   WorkspaceRepository,
 } from "../../repositories"
-import { GitSyncService, type GitSyncGit, type GitSyncRepositories } from "../git_sync_service"
+import { GitSyncService, type GitSyncGit, type GitSyncRepositories, type GitSyncServiceOptions } from "../git_sync_service"
 import type { GitService } from "../git_service"
 import { anonymousService, makeSandbox, type GitSandbox } from "./git_test_utils"
 
@@ -44,6 +44,8 @@ export interface HarnessOptions {
   readonly onStatusChanged?: (status: WorkspaceGitStatus) => void
   /** How long `dispose` waits for a running cycle or open; a test that holds one passes a small value. */
   readonly disposeWaitMs?: number
+  /** A bound account's token, as `HostCliService.token` would give it. */
+  readonly credentials?: GitSyncServiceOptions["credentials"]
 }
 
 /** A database whose repositories report their writes to a sync service over real git in a temporary root. */
@@ -68,6 +70,7 @@ export function openHarness(options: HarnessOptions = {}): Harness {
     repositories,
     onStatusChanged: options.onStatusChanged,
     disposeWaitMs: options.disposeWaitMs,
+    credentials: options.credentials,
   })
   const harness = { db, sandbox, repositories, sync, git, cloneRoot, workspaceId, dir: path.join(cloneRoot, workspaceId) }
   harnesses.push(harness)
@@ -92,6 +95,8 @@ export function passthrough(git: GitService): GitSyncGit {
     remoteAdd: git.remoteAdd.bind(git),
     remoteSetUrl: git.remoteSetUrl.bind(git),
     remoteRemove: git.remoteRemove.bind(git),
+    remoteUrls: git.remoteUrls.bind(git),
+    resolvedUrl: git.resolvedUrl.bind(git),
     revParse: git.revParse.bind(git),
     mergeBase: git.mergeBase.bind(git),
     mergeFastForward: git.mergeFastForward.bind(git),

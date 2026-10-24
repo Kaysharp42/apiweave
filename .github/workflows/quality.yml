@@ -72,3 +72,26 @@ jobs:
       - name: Build
         run: npm run build:renderer
         working-directory: app
+
+  # A workspace bound to a git account pushes with a credential handed to one
+  # git process through a `!` credential helper, and Git for Windows runs those
+  # through its own bundled sh. The tests that prove the helper wins over the
+  # user's own, and never leaks the token, run on Windows too.
+  git-credentials-windows:
+    runs-on: windows-latest
+    env:
+      # Only vitest runs here; the Electron binary is never started.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: app
+      - name: Prove the per-call git credential on Git for Windows
+        run: npx vitest run core/git/__tests__/git_credentials.test.ts core/git/__tests__/git_sync_account.test.ts
+        working-directory: app

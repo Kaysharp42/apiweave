@@ -110,6 +110,42 @@ export async function listen(handler: http.RequestListener): Promise<{ url: stri
   return { url: `http://127.0.0.1:${port}/repo.git`, port }
 }
 
+/** One smart-HTTP pkt-line. */
+function pkt(text: string): string {
+  return (text.length + 4).toString(16).padStart(4, "0") + text
+}
+
+export interface CredentialServer {
+  readonly url: string
+  /** `host:port`, as git names the host in the credential protocol. */
+  readonly host: string
+  /** The `user:password` of every request that carried one. */
+  readonly seen: string[]
+}
+
+/**
+ * Speaks just enough smart HTTP to ask for Basic auth and record what it gets:
+ * an authenticated request is answered with a remote error (`ERR`) whose text
+ * is `answer`, so git fails either way and what it sent is in `seen`.
+ */
+export async function credentialServer(answer: (credential: string) => string = () => "go away"): Promise<CredentialServer> {
+  const seen: string[] = []
+  const server = await listen((request, response) => {
+    const authorization = request.headers.authorization
+    if (authorization === undefined) {
+      response.writeHead(401, { "WWW-Authenticate": 'Basic realm="test"' })
+      response.end()
+      return
+    }
+    const credential = Buffer.from(authorization.replace(/^Basic /, ""), "base64").toString("utf8")
+    seen.push(credential)
+    const service = new URL(request.url ?? "/", "http://localhost").searchParams.get("service") ?? "git-upload-pack"
+    response.writeHead(200, { "Content-Type": `application/x-${service}-advertisement` })
+    response.end(`${pkt(`# service=${service}\n`)}0000${pkt(`ERR ${answer(credential)}\n`)}`)
+  })
+  return { url: server.url, host: `127.0.0.1:${server.port}`, seen }
+}
+
 export async function closedPortUrl(): Promise<string> {
   const { port } = await listen(() => undefined)
   const server = servers.pop()

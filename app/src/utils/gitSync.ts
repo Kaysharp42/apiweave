@@ -79,7 +79,7 @@ function divergedView(status: WorkspaceGitStatus): GitSyncView {
   // A cycle that could not even reach the remote keeps the divergence, with its own reason.
   const lastAttempt =
     lastError !== null && lastError.code !== null
-      ? ` Last attempt: ${describeGitError(lastError, status.remoteUrl)}`
+      ? ` Last attempt: ${describeGitError(lastError, status.remoteUrl, status.account)}`
       : "";
   return view("diverged", "Diverged", "warning", `${DIVERGED_EXPLANATION}${lastAttempt}`);
 }
@@ -91,7 +91,7 @@ function errorView(status: WorkspaceGitStatus): GitSyncView {
     return view("error", label, "error", "The last sync didn't finish — retry.");
   }
   const needsAuthor = lastError.code === "identity_missing";
-  return view("error", label, "error", describeGitError(lastError, status.remoteUrl), {
+  return view("error", label, "error", describeGitError(lastError, status.remoteUrl, status.account), {
     needsAuthor,
     // A missing author is fully explained, and git's text for it is not help.
     detail: lastError.code !== null && !needsAuthor ? lastError.message : null,
@@ -108,7 +108,7 @@ function readOnlyView(status: WorkspaceGitStatus): GitSyncView {
   const { lastError } = status;
   const failedSince =
     status.state === "error" && lastError !== null && lastError.code !== "permission_denied"
-      ? ` The last sync also failed: ${describeGitError(lastError, status.remoteUrl)}`
+      ? ` The last sync also failed: ${describeGitError(lastError, status.remoteUrl, status.account)}`
       : "";
   const needsAuthor = status.state === "error" && lastError?.code === "identity_missing";
   return view("read-only", "Read-only", "warning", `${READ_ONLY_EXPLANATION}${failedSince}`, {

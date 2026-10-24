@@ -1,4 +1,6 @@
 import type { KVStore, SqliteRow } from "../db"
+import type { GitAccountRef } from "@shared/types/GitAccountRef"
+import { isGitProvider } from "@shared/types/GitProvider"
 import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitMergeSide } from "@shared/types/GitMergeSide"
 import { isWorkspaceGitMode, type WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
@@ -24,10 +26,20 @@ export interface WorkspaceGitBinding {
    * a running integration: the clone is ahead of the database.
    */
   readonly integratingFrom: string | null
+  /** The `gh`/`glab` account the remote is reached as; null: the user's own credential helpers and SSH keys. */
+  readonly account: GitAccountRef | null
 }
 
 const COLUMNS =
-  "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from"
+  "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from, " +
+  "account_provider, account_host, account_login"
+
+/** The account columns, set to the three values that follow, or to NULL by {@link accountValues} of null. */
+const SET_ACCOUNT = "account_provider = ?, account_host = ?, account_login = ?"
+
+function accountValues(account: GitAccountRef | null): [string | null, string | null, string | null] {
+  return account === null ? [null, null, null] : [account.provider, account.host, account.login]
+}
 
 /**
  * A merge waiting for the user, as the row persists it: the three commits and
@@ -62,6 +74,9 @@ interface WorkspaceGitRow extends SqliteRow {
   readonly last_synced_commit: string | null
   readonly last_synced_at: string | null
   readonly integrating_from: string | null
+  readonly account_provider: string | null
+  readonly account_host: string | null
+  readonly account_login: string | null
 }
 
 interface MergeRow extends SqliteRow {
@@ -136,30 +151,47 @@ export class WorkspaceGitRepository {
   }
 
   /**
-   * Bind the workspace to a remote. A sync commit, a sync time and a read-only
-   * flag belong to the remote they came from, so none survives a change of
-   * remote. `state` and `last_error` are about the local repository's last
-   * cycle, which a remote does not undo: they are left as they are.
+   * Bind the workspace to a remote, reached as `account`. A sync commit, a
+   * sync time and a read-only flag belong to the remote they came from, so
+   * none survives a change of remote. `state` and `last_error` are about the
+   * local repository's last cycle, which a remote does not undo: they are
+   * left as they are.
    */
-  public setRemote(workspaceId: string, remoteUrl: string, branch: string): boolean {
+  public setRemote(workspaceId: string, remoteUrl: string, branch: string, account: GitAccountRef | null): boolean {
     return this.store.set(
-      `UPDATE workspace_git SET remote_url = ?, branch = ?, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`,
-      [remoteUrl, branch, workspaceId],
+      `UPDATE workspace_git SET remote_url = ?, branch = ?, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`,
+      [remoteUrl, branch, ...accountValues(account), workspaceId],
     ).changes > 0
   }
 
   /**
-   * Back to local only. The branch stays: it is the local repository's own. A
-   * merge waiting on the remote's commit has nothing left to finish, so it
-   * goes in the same transaction, picks and all. A workspace that was
-   * `merging` or `diverged` is idle again: both are about a remote it no
-   * longer has.
+   * Reach the same remote as another account, or as the user's own
+   * credentials. A refused push was this user's, so whether the next one is
+   * refused is open again: the read-only flag goes. Where the two last agreed
+   * is about the remote, not who reads it, and stays.
+   */
+  public setAccount(workspaceId: string, account: GitAccountRef | null): boolean {
+    return this.store.set(`UPDATE workspace_git SET ${SET_ACCOUNT}, read_only = 0 WHERE workspace_id = ?`, [
+      ...accountValues(account),
+      workspaceId,
+    ]).changes > 0
+  }
+
+  /**
+   * Back to local only. The branch stays: it is the local repository's own;
+   * the account goes with the remote it reached. A merge waiting on the
+   * remote's commit has nothing left to finish, so it goes in the same
+   * transaction, picks and all. A workspace that was `merging` or `diverged`
+   * is idle again: both are about a remote it no longer has.
    */
   public clearRemote(workspaceId: string): boolean {
     return this.store.transaction((store) => {
       store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
       store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state IN ('merging', 'diverged')", [workspaceId])
-      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [workspaceId]).changes > 0
+      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [
+        ...accountValues(null),
+        workspaceId,
+      ]).changes > 0
     })
   }
 
@@ -259,7 +291,18 @@ function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
     lastSyncedCommit: row.last_synced_commit,
     lastSyncedAt: row.last_synced_at,
     integratingFrom: row.integrating_from,
+    account: rowToAccount(row),
   }
+}
+
+/** All three columns or none: a row with only some of them names no account it could sign in as. */
+function rowToAccount(row: WorkspaceGitRow): GitAccountRef | null {
+  const { account_provider: provider, account_host: host, account_login: login } = row
+  if (provider === null && host === null && login === null) return null
+  if (!isGitProvider(provider) || host === null || login === null) {
+    throw new Error(`workspace_git ${row.workspace_id} holds an incomplete or unknown account: ${String(provider)}/${String(host)}/${String(login)}`)
+  }
+  return { provider, host, login }
 }
 
 /** The merge row without its picks, which are read separately. */

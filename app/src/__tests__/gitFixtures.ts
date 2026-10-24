@@ -8,6 +8,7 @@ export const untrackedStatus: WorkspaceGitStatus = {
   mode: "auto",
   remoteUrl: null,
   branch: "main",
+  account: null,
   state: "idle",
   lastError: null,
   readOnly: false,
@@ -62,9 +63,10 @@ export function installGitBridge(
     ),
     resolveMerge: vi.fn(async () => trackedStatus()),
     abandonMerge: vi.fn(async () => trackedStatus({ state: "diverged" })),
-    connectRemote: vi.fn(async (_workspaceId, url) =>
-      trackedStatus({ remoteUrl: url }),
+    connectRemote: vi.fn(async (_workspaceId, url, account) =>
+      trackedStatus({ remoteUrl: url, account: account ?? null }),
     ),
+    setAccount: vi.fn(async (_workspaceId, account) => trackedStatus({ account })),
     disconnectRemote: vi.fn(async () => trackedStatus({ remoteUrl: null })),
     discardLocalChanges: vi.fn(async () => trackedStatus()),
     openFromGit: vi.fn(async () => ({

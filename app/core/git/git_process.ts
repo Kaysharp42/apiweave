@@ -1,5 +1,5 @@
 import { execFile, type ChildProcess, type ExecFileException } from "node:child_process"
-import type { GitCommand } from "./git_types"
+import type { GitCommand, GitCredential } from "./git_types"
 
 const LOCAL_TIMEOUT_MS = 30_000
 const NETWORK_TIMEOUT_MS = 300_000
@@ -47,6 +47,88 @@ export function gitConfigArgs(hooksDir: string): string[] {
     "-c",
     "user.useConfigOnly=true",
   ]
+}
+
+/**
+ * The credential helper a call with a credential runs, through the `sh` git
+ * starts `!` helpers with (Git for Windows' bundled one on Windows). It reads
+ * everything from variables set on that one git process
+ * ({@link credentialEnvironment}), so the token is never in argv — this text
+ * is, and holds none — nor in a file. It answers only `get`, and only when
+ * git asks for the protocol and host the credential is for: a redirect to
+ * another host, or to plain http, gets nothing, and git fails rather than
+ * sending the token there. `store` and `erase` do nothing, so the token is
+ * never handed to a keychain either.
+ */
+const CREDENTIAL_HELPER = [
+  "!f() {",
+  'test "$1" = get || return 0;',
+  "p=; h=;",
+  'while IFS= read -r line; do case "$line" in protocol=*) p=${line#protocol=};; host=*) h=${line#host=};; esac; done;',
+  'test "$p" = "$APIWEAVE_GIT_PROTOCOL" && test "$h" = "$APIWEAVE_GIT_HOST" || return 0;',
+  'printf "username=%s\\npassword=%s\\n" "$APIWEAVE_GIT_USERNAME" "$APIWEAVE_GIT_PASSWORD";',
+  "}; f",
+].join(" ")
+
+/**
+ * Ahead of a call's subcommand when it carries a credential. An empty
+ * `credential.helper` empties the list of helpers git has read so far — the
+ * system's, the user's, the repository's, and the URL-scoped ones such as
+ * `credential.https://github.com.helper` (`gh auth git-credential`), which git
+ * collects into the same list — and `-c` is read after every file. So
+ * {@link CREDENTIAL_HELPER} is the only helper left to answer.
+ */
+export function credentialConfigArgs(credential: GitCredential): string[] {
+  return [
+    "-c",
+    "credential.helper=",
+    "-c",
+    `credential.helper=${CREDENTIAL_HELPER}`,
+    // When the helper declines — a redirect to another host — git must fail,
+    // not ask: no prompt program (VS Code sets one), no interactive helper.
+    "-c",
+    "core.askPass=",
+    "-c",
+    "credential.interactive=false",
+    // A user's `http.extraHeader: Authorization …` would be sent instead of
+    // the bound account. An empty value empties the list, but only of entries
+    // no more URL-specific than its own key: the bare one clears the unscoped
+    // headers, and one keyed on the whole URL — as specific as any can be —
+    // clears every `http.<url>.extraHeader` that matches it.
+    "-c",
+    "http.extraHeader=",
+    "-c",
+    `http.${credential.url}.extraHeader=`,
+  ]
+}
+
+/** Tracing that would write what git sends — the Authorization header among it, with `GIT_TRACE_REDACT=0` — to wherever the user pointed it. */
+const TRACE_VARIABLE = /^GIT_TRACE|^GIT_CURL_VERBOSE$/
+
+/**
+ * The environment of the one git process that carries a credential (and its
+ * transport and helper children): `base` without tracing, without a prompt
+ * program to fall back to, and with what {@link CREDENTIAL_HELPER} reads.
+ * Calls without a credential keep `base` untouched, tracing included: what
+ * the user's own helpers send is theirs to trace.
+ */
+export function credentialEnvironment(base: NodeJS.ProcessEnv, credential: GitCredential): NodeJS.ProcessEnv {
+  const env = Object.fromEntries(Object.entries(base).filter(([name]) => !TRACE_VARIABLE.test(name)))
+  return {
+    ...env,
+    // Empty, not unset: git then neither runs it nor falls back to `core.askPass` or SSH_ASKPASS.
+    GIT_ASKPASS: "",
+    SSH_ASKPASS: "",
+    APIWEAVE_GIT_PROTOCOL: credential.protocol,
+    APIWEAVE_GIT_HOST: credential.host,
+    APIWEAVE_GIT_USERNAME: credential.username,
+    APIWEAVE_GIT_PASSWORD: credential.password,
+  }
+}
+
+/** Every form the credential could be echoed in — the token, and the Basic authorization it becomes — for an error to scrub. */
+export function credentialSecrets(credential: GitCredential): string[] {
+  return [credential.password, Buffer.from(`${credential.username}:${credential.password}`).toString("base64")]
 }
 
 /** What git inherits: the caller's environment, minus repository redirection, plus the settings that keep it quiet, literal and English. */
