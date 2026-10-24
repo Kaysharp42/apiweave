@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
 import { Modal } from "../molecules/Modal";
+import { ModalFormFooter } from "../molecules/ModalFormFooter";
 import { FormField } from "../molecules/FormField";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { CreateWorkspaceModalProps } from "../../types";
@@ -96,19 +96,13 @@ export function CreateWorkspaceModal({
         />
       }
       footer={() => (
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="create-workspace-form"
-            loading={isSubmitting}
-            disabled={!canSubmit}
-          >
-            Create workspace
-          </Button>
-        </>
+        <ModalFormFooter
+          formId="create-workspace-form"
+          submitLabel="Create workspace"
+          onCancel={onClose}
+          busy={isSubmitting}
+          canSubmit={canSubmit}
+        />
       )}
     >
       <form
