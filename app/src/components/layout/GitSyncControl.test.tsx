@@ -5,6 +5,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { GitSyncControl } from "./GitSyncControl";
+import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { installGitBridge, trackedStatus, untrackedStatus } from "../../__tests__/gitFixtures";
 
 const workspace = vi.hoisted(() => ({ current: { workspaceId: "ws-1", slug: "acme" } }));
@@ -27,10 +28,15 @@ afterEach(() => {
   workspace.current = { workspaceId: "ws-1", slug: "acme" };
 });
 
+/** The control fed the way the header feeds it: the current workspace's status. */
+function HeaderFeed() {
+  return <GitSyncControl feed={useWorkspaceGitStatus(workspace.current.workspaceId)} />;
+}
+
 /** A new element each time: rendering the same element again is a no-op, and the switch below needs a render. */
 const routed = () => (
   <MemoryRouter>
-    <GitSyncControl />
+    <HeaderFeed />
   </MemoryRouter>
 );
 

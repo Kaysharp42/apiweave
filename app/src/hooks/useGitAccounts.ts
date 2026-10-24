@@ -10,17 +10,20 @@ import { git } from "../utils/apiweaveClient";
  * answer — a broken install, a timeout, a token gh reads from the
  * environment — or why the list could not be read at all: an empty picker
  * must not be the only sign that something is wrong. A tool that is simply
- * missing is not a problem here.
+ * missing is not a problem here. `loaded` is false until the first answer,
+ * so "no accounts" is never said while the tools are still being asked.
  */
 export function useGitAccounts(): {
   readonly accounts: readonly GitAccount[];
   readonly clis: readonly GitHostCli[];
   readonly problems: readonly string[];
+  readonly loaded: boolean;
   readonly reload: () => void;
 } {
   const [accounts, setAccounts] = useState<readonly GitAccount[]>([]);
   const [clis, setClis] = useState<readonly GitHostCli[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     let live = true;
@@ -34,6 +37,9 @@ export function useGitAccounts(): {
       })
       .catch((error: unknown) => {
         if (live) setFailure(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (live) setLoaded(true);
       });
     return () => {
       live = false;
@@ -44,5 +50,5 @@ export function useGitAccounts(): {
     ...clis.flatMap((cli) => (cli.missing || cli.problem === null ? [] : [`${cli.command}: ${cli.problem}`])),
     ...(failure === null ? [] : [`Your gh and glab accounts could not be listed: ${failure}`]),
   ];
-  return { accounts, clis, problems, reload };
+  return { accounts, clis, problems, loaded, reload };
 }

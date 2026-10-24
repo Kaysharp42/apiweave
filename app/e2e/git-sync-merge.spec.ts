@@ -174,6 +174,8 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         disconnectRemote: async () => current,
         discardLocalChanges: async () => current,
         openFromGit: async () => ({ kind: "opened", workspaceId: "x", slug: "x", name: "x", warnings: [] }),
+        // The header's accounts menu asks for these when it is opened.
+        listAccounts: async () => ({ clis: [], accounts: [] }),
         onStatusChanged: (callback: (status: unknown) => void) => {
           listeners.add(callback);
           return () => listeners.delete(callback);
