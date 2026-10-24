@@ -85,11 +85,16 @@ export async function installDesktopIpc(
         localStorage.setItem(key.replace(/^apiweave:v1:/, ""), value);
       }
       window.__APIWEAVE_IPC__ = {
-        invoke: async (domain, action) => {
+        invoke: async (domain, action, payload) => {
           let data: unknown = null;
           let handled = false;
           if (domain === "workspaces" && action === "list") {
             data = [workspace];
+            handled = true;
+          }
+          if (domain === "workspaces" && action === "create") {
+            const { name, slug } = payload as { readonly name: string; readonly slug: string };
+            data = { ...workspace, workspaceId: `ws-${slug}`, name, slug, isPersonal: false };
             handled = true;
           }
           if (domain === "workflows" && action === "list") {

@@ -88,6 +88,8 @@ With a GitHub or GitLab account signed in, **Create repository…** at the top o
 3. **Visibility** is **Private** unless you choose **Public**.
 4. **Create and connect** creates an empty repository — no README, licence or first commit — tags it with the topic `apiweave-workspace`, and connects the workspace to it. An HTTPS account is bound to the connection, so every sync uses its token; an SSH account connects by the SSH URL, with your SSH key.
 
+**From Create workspace.** A new workspace can start out synced: in **Create workspace**, turn on **Sync with GitHub or GitLab** (it is off by default) and fill in the same fields; the repository name follows the workspace's slug until you change it. **Create workspace** then creates the workspace, tracks it, creates the repository and connects to it. If a step after the first fails, the workspace stays created — and tracked, once tracking has succeeded — the dialog says what happened, and **Open Version history** takes you to where to finish: create the repository there, or connect to the one that was created. When git does not know who you are on this computer, tracking has nothing to commit yet, so no repository is created: enter your name and email in Version history, then create it there.
+
 A name that already exists is refused, naming the repository; APIWeave never connects to a repository it did not just create empty. If the repository was created but connecting to it fails, the message says so, the repository is kept — APIWeave never deletes one — and the connect form is filled in with its URL, so **Connect to remote** tries again. If the topic could not be added, the panel says so; the repository works without it.
 
 The URL takes one of four forms:
