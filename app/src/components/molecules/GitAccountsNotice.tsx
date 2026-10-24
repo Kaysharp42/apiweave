@@ -12,7 +12,7 @@ export function GitAccountsNotice({ loaded, empty, emptyText, problems }: GitAcc
       {!loaded && (
         <div className="flex items-center gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
           <Spinner size="sm" />
-          Asking gh and glab…
+          Checking your GitHub and GitLab sign-ins…
         </div>
       )}
       {loaded && empty && emptyText !== null && <p className="text-sm text-text-secondary dark:text-text-secondary-dark">{emptyText}</p>}

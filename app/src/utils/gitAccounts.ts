@@ -5,11 +5,19 @@ import type { GitAccountHostGroup } from "../types";
 
 /** What each provider and its command-line tool are called, and where the tool is installed from. */
 export const GIT_PROVIDERS: Readonly<
-  Record<GitProvider, { readonly name: string; readonly command: string; readonly defaultHost: string; readonly installUrl: string }>
+  Record<
+    GitProvider,
+    { readonly name: string; readonly command: "gh" | "glab"; readonly cliName: string; readonly defaultHost: string; readonly installUrl: string }
+  >
 > = {
-  github: { name: "GitHub", command: "gh", defaultHost: "github.com", installUrl: "https://cli.github.com" },
-  gitlab: { name: "GitLab", command: "glab", defaultHost: "gitlab.com", installUrl: "https://gitlab.com/gitlab-org/cli" },
+  github: { name: "GitHub", command: "gh", cliName: "GitHub CLI (gh)", defaultHost: "github.com", installUrl: "https://cli.github.com" },
+  gitlab: { name: "GitLab", command: "glab", cliName: "GitLab CLI (glab)", defaultHost: "gitlab.com", installUrl: "https://gitlab.com/gitlab-org/cli" },
 };
+
+/** A tool's problem as one line naming the tool, unless the tool's own words already start with its name. */
+export function cliProblemLine(command: string, problem: string): string {
+  return new RegExp(`^${command}\\b`).test(problem) ? problem : `${command}: ${problem}`;
+}
 
 /** One string per account, for keys, option values and comparisons. */
 export const gitAccountKey = (account: GitAccountRef): string =>

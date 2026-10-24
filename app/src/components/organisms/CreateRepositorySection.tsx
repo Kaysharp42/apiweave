@@ -14,11 +14,11 @@ import type { CreateRepositorySectionProps } from "../../types";
  * workspace's sync section.
  */
 export function CreateRepositorySection({ value, onChange, defaultAccount, disabled = false }: CreateRepositorySectionProps) {
-  const { accounts, problems, loaded, reload } = useGitAccounts();
+  const { accounts, clis, problems, loaded, reload } = useGitAccounts();
   // An account just signed in to, chosen as soon as the tools list it.
   const [signedIn, setSignedIn] = useState<string | null>(null);
 
-  // Start on the account asked for, else the first; then on one just signed in to.
+  // Start on the account asked for, else the one its tool has active, else the first; then on one just signed in to.
   useEffect(() => {
     if (signedIn !== null) {
       const added = accounts.find((account) => gitAccountKey(account) === signedIn);
@@ -28,7 +28,8 @@ export function CreateRepositorySection({ value, onChange, defaultAccount, disab
       return;
     }
     if (value.account !== null || accounts.length === 0) return;
-    onChange({ ...value, account: accounts.find((account) => sameGitAccount(account, defaultAccount)) ?? accounts[0] ?? null, owner: "" });
+    const preferred = accounts.find((account) => sameGitAccount(account, defaultAccount)) ?? accounts.find((account) => account.active) ?? accounts[0];
+    onChange({ ...value, account: preferred ?? null, owner: "" });
   }, [accounts, value, onChange, defaultAccount, signedIn]);
 
   return (
@@ -42,6 +43,7 @@ export function CreateRepositorySection({ value, onChange, defaultAccount, disab
       {loaded && accounts.length > 0 && <CreateRepositoryFields value={value} onChange={onChange} accounts={accounts} disabled={disabled} />}
       {loaded && (
         <GitSignInButtons
+          clis={clis}
           disabled={disabled}
           onSignedIn={(account) => {
             setSignedIn(gitAccountKey(account));

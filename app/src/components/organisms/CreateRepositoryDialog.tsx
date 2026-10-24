@@ -58,8 +58,8 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, o
     >
       <form id="create-repository-form" onSubmit={(event) => void submit(event)} className="space-y-4 p-5">
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          APIWeave creates an empty repository, tagged apiweave-workspace, and connects this workspace to it. A name
-          that is already taken is refused, never reused.
+          APIWeave creates an empty repository and connects this workspace to it. APIWeave marks it with the topic
+          apiweave-workspace so it can find it later. A name that is already taken is refused, never reused.
         </p>
         {error !== null && (
           <div

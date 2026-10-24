@@ -9,12 +9,8 @@ import { Spinner } from "../atoms/Spinner";
 import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
 import { git } from "../../utils/apiweaveClient";
+import { GIT_PROVIDERS } from "../../utils/gitAccounts";
 import type { GitSignInDialogProps, GitSignInPhase } from "../../types";
-
-const TOOLS: Readonly<Record<GitProvider, { readonly name: string; readonly command: string }>> = {
-  github: { name: "GitHub", command: "gh" },
-  gitlab: { name: "GitLab", command: "glab" },
-};
 
 /** What signing in changes outside APIWeave, said before it happens — what the tool does from a terminal too. */
 function sideEffects(provider: GitProvider, host: string): string {
@@ -89,7 +85,7 @@ export function GitSignInDialog({
   const cancelling = useRef(false);
   const running = phase.kind === "starting" || phase.kind === "browser";
   const hostValid = GitHostSchema.safeParse(host.trim()).success;
-  const tool = TOOLS[provider];
+  const tool = GIT_PROVIDERS[provider];
 
   // Unmounting with a sign-in still waiting stops its tool.
   const stillRunning = useRef(false);

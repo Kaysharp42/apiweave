@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import type { GitHostCli } from "@shared/types/GitHostCli";
 import type { GitProvider } from "@shared/types/GitProvider";
 import { Button } from "../atoms/Button";
 import { Spinner } from "../atoms/Spinner";
 import { Card } from "../molecules/Card";
 import { GitAccountRow } from "../molecules/GitAccountRow";
+import { GitCliState } from "../molecules/GitCliState";
 import { GitSignInDialog } from "./GitSignInDialog";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useGitAccountWorkspaces } from "../../hooks/useGitAccountWorkspaces";
@@ -13,40 +13,12 @@ import { git } from "../../utils/apiweaveClient";
 import { GIT_PROVIDERS, gitAccountKey, groupGitAccountsByHost } from "../../utils/gitAccounts";
 import type { GitHostCliCardProps } from "../../types";
 
-/** Whether the tool is there, and where to get it when it is not. */
-function CliState({ cli }: { readonly cli: GitHostCli | undefined }) {
-  if (cli === undefined) return null;
-  const tool = GIT_PROVIDERS[cli.provider];
-  if (cli.missing) {
-    return (
-      <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-        <strong className="font-semibold text-status-warning">{tool.command} is not installed.</strong> APIWeave signs in to{" "}
-        {tool.name} with it. Install it from{" "}
-        <a
-          href={tool.installUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary underline underline-offset-2 dark:text-primary-light"
-        >
-          {tool.installUrl.replace(/^https:\/\//, "")}
-        </a>
-        , then refresh. Until then, connect a remote by its URL, signed in with your own git credentials.
-      </p>
-    );
-  }
-  return (
-    <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-      {cli.command} {cli.version ?? "(version unknown)"} is installed.
-    </p>
-  );
-}
-
 function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliCardProps) {
   const tool = GIT_PROVIDERS[provider];
   const accounts = groups.flatMap((group) => group.accounts);
   return (
     <Card
-      title={`${tool.name} (${tool.command})`}
+      title={tool.cliName}
       headerActions={
         <Button size="sm" variant="secondary" disabled={cli?.missing !== false} onClick={onSignIn}>
           Sign in…
@@ -54,7 +26,7 @@ function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliC
       }
     >
       <div className="space-y-3">
-        <CliState cli={cli} />
+        <GitCliState cli={cli} />
         {cli !== undefined && !cli.missing && cli.problem !== null && (
           <p className="text-xs text-status-warning">{cli.problem}</p>
         )}
@@ -99,7 +71,7 @@ function GitHostCliCard({ provider, cli, groups, usedBy, onSignIn }: GitHostCliC
  */
 export function GitAccountsSettingsPanel() {
   const available = git.isAvailable();
-  const { accounts, clis, problems, loaded, reload } = useGitAccounts();
+  const { accounts, clis, failure, loaded, loading, reload } = useGitAccounts();
   const usedBy = useGitAccountWorkspaces();
   const [signingIn, setSigningIn] = useState<GitProvider | null>(null);
 
@@ -120,17 +92,18 @@ export function GitAccountsSettingsPanel() {
           size="sm"
           variant="ghost"
           icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
-          disabled={!loaded}
+          loading={loading}
+          disabled={loading}
           onClick={reload}
         >
           Refresh
         </Button>
       </div>
-      <div aria-live="polite" className="space-y-4">
+      <div aria-live="polite" aria-busy={loading} className="space-y-4">
         {!loaded ? (
           <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-text-secondary-dark">
             <Spinner size="sm" />
-            Asking gh and glab…
+            Checking your GitHub and GitLab sign-ins…
           </div>
         ) : (
           (["github", "gitlab"] as const).map((provider) => (
@@ -144,14 +117,13 @@ export function GitAccountsSettingsPanel() {
             />
           ))
         )}
-        {problems
-          .filter((problem) => !clis.some((cli) => problem === `${cli.command}: ${cli.problem}`))
-          .map((problem) => (
-            <p key={problem} role="alert" className="text-xs text-status-error">
-              {problem}
-            </p>
-          ))}
       </div>
+      {/* An alert of its own, outside the live region above, so it is announced once. */}
+      {failure !== null && (
+        <p role="alert" className="text-xs text-status-error">
+          Your gh and glab accounts could not be listed: {failure}
+        </p>
+      )}
       {signingIn !== null && (
         <GitSignInDialog
           isOpen

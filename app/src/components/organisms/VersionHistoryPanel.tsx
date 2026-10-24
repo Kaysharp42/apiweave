@@ -123,7 +123,7 @@ interface RemoteAccountProps {
  * just signed in to is offered, not chosen: the change is the user's.
  */
 function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps) {
-  const { accounts, problems, reload } = useGitAccounts();
+  const { accounts, clis, problems, reload } = useGitAccounts();
   if (!HTTPS_REMOTE.test(remoteUrl)) return null;
   return (
     <>
@@ -142,6 +142,7 @@ function RemoteAccount({ remoteUrl, value, onChange, busy }: RemoteAccountProps)
         </p>
       ))}
       <GitSignInButtons
+        clis={clis}
         disabled={busy}
         hostFor={(provider) => signInHost(provider, remoteHost(remoteUrl))}
         onSignedIn={reload}

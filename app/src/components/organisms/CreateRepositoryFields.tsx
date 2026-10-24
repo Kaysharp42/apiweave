@@ -60,7 +60,7 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
           ))}
         </Select>
       </FormField>
-      <FormField label="Owner" required {...(problem === null ? {} : { error: problem })}>
+      <FormField label="Owner" required>
         <Select
           aria-label="Owner"
           value={value.owner}
@@ -74,6 +74,8 @@ export function CreateRepositoryFields({ value, onChange, accounts, disabled = f
             </option>
           ))}
         </Select>
+        {/* A list that is short rather than wrong: a warning under the field, not an error on it. */}
+        {problem !== null && <p className="mt-1 text-xs text-status-warning">{problem}</p>}
       </FormField>
       <FormField label="Repository name" required {...(nameError === null ? {} : { error: nameError })}>
         <Input
