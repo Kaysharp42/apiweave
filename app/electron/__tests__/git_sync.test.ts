@@ -304,14 +304,33 @@ describe("the repository bridges", () => {
 })
 
 describe("the mergeState bridge", () => {
-  it("reads the merge for the workspace it is asked about", async () => {
+  it("reads the merge for the workspace it is asked about, with and without decisions", async () => {
     const state = { conflicts: [], picks: [PICK], notes: [] }
     const mergeState = vi.fn(async () => state)
     const handler = handlerOf({ mergeState } as unknown as GitSyncService, GIT_CHANNELS.mergeState)
+    const read = async (...picks: readonly unknown[]): Promise<unknown> =>
+      handler({} as IpcMainInvokeEvent, "ws-1", ...picks)
 
-    await expect(handler({} as IpcMainInvokeEvent, "ws-1")).resolves.toEqual(state)
+    await expect(read()).resolves.toEqual(state)
+    expect(mergeState).toHaveBeenLastCalledWith("ws-1", undefined)
 
-    expect(mergeState).toHaveBeenCalledWith("ws-1")
+    // The decisions the view is asking about reach the service, or the notes
+    // would always be the stored ones.
+    await expect(read([PICK])).resolves.toEqual(state)
+    expect(mergeState).toHaveBeenLastCalledWith("ws-1", [PICK])
+  })
+
+  it("refuses decisions that are not ones, before the sync service sees them", async () => {
+    const mergeState = vi.fn(async () => ({ conflicts: [], picks: [], notes: [] }))
+    const handler = handlerOf({ mergeState } as unknown as GitSyncService, GIT_CHANNELS.mergeState)
+    const read = async (picks: unknown): Promise<unknown> =>
+      handler({} as IpcMainInvokeEvent, "ws-1", picks)
+
+    await expect(read([{ recordId: "w1", path: "name" }])).rejects.toThrow(
+      "That is not a merge decision APIWeave can read",
+    )
+
+    expect(mergeState).not.toHaveBeenCalled()
   })
 
   it.each([

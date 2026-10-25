@@ -1534,6 +1534,44 @@ describe("the sync cycle", () => {
       expect(await a.sync.mergeState(workspaceId)).toEqual({ conflicts: [], picks: [], notes: [] })
     })
 
+    it("computes the notes with the decisions it is asked about, and checks them first", async () => {
+      const pair = await sharedPair()
+      const { a, b, workspaceId, opened, sharedId } = pair
+      const node = (nodeId: string, duration = 1) => ({ nodeId, type: "delay", position: { x: 0, y: 0 }, config: { duration } })
+      a.repositories.workflows.update(sharedId, {
+        nodes: [node("n1"), node("n2")],
+        edges: [{ edgeId: "e1", source: "n1", target: "n2" }],
+      })
+      await a.sync.syncNow(workspaceId, { message: "Add a graph on A" })
+      await b.sync.syncNow(opened)
+      // The remote changes the node the edge comes from and relabels the edge;
+      // this device removes both, so the node is a real conflict.
+      a.repositories.workflows.update(sharedId, {
+        nodes: [node("n1", 5), node("n2")],
+        edges: [{ edgeId: "e1", source: "n1", target: "n2", label: "go" }],
+      })
+      await a.sync.syncNow(workspaceId, { message: "Change n1 on A" })
+      b.repositories.workflows.update(sharedId, { nodes: [node("n2")], edges: [] })
+      expect(await b.sync.syncNow(opened, { message: "Remove n1 on B" })).toMatchObject({ state: "merging" })
+
+      const stored = await b.sync.mergeState(opened)
+      expect(stored.conflicts.map((conflict) => conflict.path).sort()).toEqual(["edges.e1", "nodes.n1"])
+      expect(stored.notes).toEqual([])
+
+      // Keeping this device's deletion makes the edge dangle, which the merge notes.
+      const dryRun = await b.sync.mergeState(opened, [{ recordId: sharedId, path: "nodes.n1", side: "ours" }])
+      expect(dryRun.notes).toEqual([
+        { type: "droppedEdge", recordId: sharedId, name: "Shared", edgeId: "e1", end: "source", nodeId: "n1" },
+      ])
+
+      // A dry run is checked as a save is: a value no file may hold is refused.
+      await expect(
+        b.sync.mergeState(opened, [{ recordId: sharedId, path: "nodes.n1", value: { ciphertext: "c2VjcmV0" } }]),
+      ).rejects.toThrow(/holds secret storage/)
+      // And nothing was stored by either read.
+      expect((await b.sync.mergeState(opened)).picks).toEqual([])
+    })
+
     it("saves decisions with the same checks a resolve makes, and refuses a secret one", async () => {
       const pair = await sharedPair()
       const { b, opened, sharedId } = pair

@@ -107,7 +107,13 @@ const CONFLICTS: readonly FakeConflict[] = [
   },
 ];
 
-const NOTES = [
+/**
+ * Only a decision produces a note in this fake: the merge the view opens with
+ * settles by itself nothing, and keeping this device's copy of a node leaves an
+ * edge dangling. So the "merged automatically" line proves the decisions the
+ * view asks about reached the bridge.
+ */
+const NOTES_AFTER_A_PICK = [
   { type: "positions" as const, recordId: "w1", name: "Checkout", nodeIds: ["n1"] },
 ];
 
@@ -148,14 +154,21 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         setMode: async () => current,
         syncNow: async () => current,
         pendingChanges: async () => [],
-        mergeState: async (_workspaceId: string, chosen?: readonly FakePick[]) => ({
-          conflicts: listed,
-          picks: [...(chosen ?? picks)],
-          notes: [...notes],
-        }),
+        mergeState: async (_workspaceId: string, chosen?: readonly FakePick[]) => {
+          const decisions = chosen ?? picks;
+          return {
+            conflicts: listed,
+            picks: [...picks],
+            notes: decisions.length === 0 ? [] : [...notes],
+          };
+        },
         saveMergePicks: async (_workspaceId: string, chosen: readonly FakePick[]) => {
           picks = [...chosen];
-          return { conflicts: listed, picks: [...picks], notes: [...notes] };
+          return {
+            conflicts: listed,
+            picks: [...picks],
+            notes: picks.length === 0 ? [] : [...notes],
+          };
         },
         mergeRecordCommits: async (_workspaceId: string, recordIds: readonly string[]) =>
           recordIds.map((recordId) => ({ recordId, ...(commits[recordId] ?? { ours: null, theirs: null }) })),
@@ -199,7 +212,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         },
       } as unknown as typeof window.__APIWEAVE_GIT__;
     },
-    { first: initial, conflicts: CONFLICTS, notes: NOTES, commits: COMMITS },
+    { first: initial, conflicts: CONFLICTS, notes: NOTES_AFTER_A_PICK, commits: COMMITS },
   );
 }
 
@@ -231,9 +244,16 @@ test.describe("the merge view", () => {
     await expect(view.getByText(/Your copy · Ada \(this device\) · b2b2b2b · 2026-10-20/)).toBeVisible();
     await expect(view.getByText(/Remote copy · Grace \(remote\) · a1a1a1a · 2026-10-20/)).toBeVisible();
 
-    // A copy for one field.
+    // Nothing has been decided, so nothing merged "by itself" yet.
+    await expect(view.getByRole("button", { name: /merged automatically/ })).toHaveCount(0);
+
+    // A copy for one field; with a decision made, the notes reflect it.
     await view.getByRole("button", { name: "Take your copy of Name in Checkout" }).click();
     await expect(view.getByRole("status")).toHaveText("1 of 3 conflicts resolved");
+    const notes = view.getByRole("button", { name: "1 change merged automatically" });
+    await expect(notes).toBeVisible();
+    await notes.click();
+    await expect(view.getByText(/kept the remote copy's position for 1 node/)).toBeVisible();
 
     // A value of the user's own for another.
     const description = view.getByLabel("Result for Description in Checkout");
@@ -263,9 +283,8 @@ test.describe("the merge view", () => {
     await reopened.getByLabel("Result for Description in Checkout").fill("Pay by card, agreed");
     await expect(reopened.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
 
-    // What merged by itself, folded until asked.
-    await reopened.getByRole("button", { name: "1 change merged automatically" }).click();
-    await expect(reopened.getByText(/kept the remote copy's position for 1 node/)).toBeVisible();
+    // What merged by itself is read with the decisions that were stored.
+    await expect(reopened.getByRole("button", { name: "1 change merged automatically" })).toBeVisible();
 
     // The whole file: copies only.
     await reopened.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ }).click();

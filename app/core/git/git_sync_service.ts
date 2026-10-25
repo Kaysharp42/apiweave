@@ -745,7 +745,11 @@ export class GitSyncService {
     return this.exclusive(workspaceId, async () => {
       this.trackedBinding(workspaceId)
       const merge = this.repositories.workspaceGit.getMerge(workspaceId)
-      return merge === undefined ? NO_MERGE_STATE : this.mergeStateOf(merge, directory, picks ?? merge.picks)
+      if (merge === undefined) return NO_MERGE_STATE
+      // A dry run is checked exactly as a save is: asking what the notes would
+      // be must not be a way around the value limits.
+      const effective = picks === undefined ? merge.picks : await this.checkedMergePicks(merge, directory, picks)
+      return this.mergeStateOf(merge, directory, effective)
     })
   }
 
