@@ -8,7 +8,7 @@ APIWeave is a local-first desktop app. There is no server to run, no account to 
 
 Work is organized locally into **workspaces**: a personal workspace is created for you, and you can create more. No account is required, and everything stays on your computer.
 
-Git sync is coming — see the [roadmap](../ROADMAP.md).
+Git sync is built in: a workspace can be tracked in git and kept in step with a remote you own, on GitHub, GitLab or any host — see [Keep Tests in a Git Repository](guides/git-workflows.md).
 
 There is no SSO and no webhook. You run a workflow by clicking **Run** in the app, by having a local AI agent drive the app through the loopback MCP bridge, or from a CI pipeline with the headless [`apiweave run`](guides/ci.md) command. (Locally scheduled runs are on the roadmap.)
 

@@ -8,7 +8,7 @@ APIWeave is a local-first, open-source desktop app for visual API testing. You a
 
 APIWeave ships as a single-process Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
 
-Git sync is coming — see the [roadmap](ROADMAP.md).
+Git sync is built in: a workspace can be tracked in git and kept in step with a remote you own, on GitHub, GitLab or any host. See [Keep Tests in a Git Repository](docs/guides/git-workflows.md).
 
 ## Quick Start
 
@@ -57,6 +57,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
 - [Projects](docs/features/projects.md): ordered groups of workflows and `.awecollection` v2 export and import (references only).
+- [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.

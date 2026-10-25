@@ -236,6 +236,8 @@ export function tutorialDestinationHref(
       return `${base}/settings/mcp-server`;
     case "version-history":
       return `${base}/settings/version-history`;
+    case "git-accounts":
+      return `${base}/settings/git-accounts`;
     case "updates":
       return `${base}/settings/updates`;
   }

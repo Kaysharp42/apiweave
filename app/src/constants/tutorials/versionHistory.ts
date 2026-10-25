@@ -2,8 +2,8 @@ import type { TutorialChapter } from "../../types";
 
 /**
  * Chapter 6 — Version history and sync. Keeping a workspace in git: tracking
- * it, connecting a remote, opening it on another machine, settling a merge,
- * and running a checkout in CI.
+ * it, signing in to a host, connecting a remote, opening it on another machine,
+ * settling a merge, and running a checkout in CI.
  */
 export const versionHistoryChapter: TutorialChapter = {
   id: "version-history",
@@ -119,10 +119,150 @@ export const versionHistoryChapter: TutorialChapter = {
       relatedLessonIds: [
         "workspaces",
         "secrets",
+        "git-accounts",
         "git-remote",
         "import-export",
       ],
       destination: { label: "Open Version history", path: "version-history" },
+    },
+    {
+      id: "git-accounts",
+      chapterId: "version-history",
+      title: "Connect a GitHub or GitLab account",
+      summary:
+        "Sign in from APIWeave, choose which account a workspace syncs as, create its repository, and start a workspace already synced.",
+      outcome:
+        "The repository a workspace syncs with is reached as the GitHub or GitLab account you chose, and APIWeave can create that repository for you.",
+      keywords: [
+        "github",
+        "gitlab",
+        "account",
+        "git accounts",
+        "gh",
+        "glab",
+        "sign in",
+        "one-time code",
+        "create repository",
+        "private",
+        "apiweave-workspace",
+        "use a url instead",
+        "sync with github or gitlab",
+        "one account per host",
+        "ssh",
+      ],
+      durationMinutes: 8,
+      prerequisites: [
+        "Git installed on this machine.",
+        "Optional: the GitHub CLI (gh) or the GitLab CLI (glab). Without one, a remote is still connected by its URL with your own git credentials.",
+        "A tracked workspace, for the Version history steps.",
+      ],
+      steps: [
+        {
+          title: "Open the accounts menu",
+          instruction:
+            "Open the round account button at the right end of the header, after the theme toggle. It shows the initials of the account the current workspace syncs as, or a plain person icon when it has none, with the workspace's sync icon as a corner badge.",
+          detail:
+            "The panel lists every account gh and glab hold, grouped by host, marks the one this workspace uses, and offers Add GitHub account, Add GitLab account and Settings > Git accounts. For a workspace that is not tracked, or has no remote, it also offers Set up sync for this workspace…, which opens its Version history. The accounts are read from the tools each time the menu opens.",
+        },
+        {
+          title: "See what Settings > Git accounts says",
+          instruction:
+            "Open Settings from the left navigation rail and choose Git accounts under App. It has a card for each tool: whether it is installed and its version, or where to get it; the accounts it holds; and the workspaces that sync as each one.",
+          detail:
+            "Sign in… on a card opens the same sign-in dialog, and Refresh asks gh and glab again after a sign-in made in a terminal. A sign-in that has expired, or a tool that did not answer, is said on its card.",
+        },
+        {
+          title: "Install the command-line tool",
+          instruction:
+            "Install the GitHub CLI (gh) from cli.github.com or the GitLab CLI (glab) from gitlab.com/gitlab-org/cli, then click Refresh. The tool keeps the token; APIWeave stores none.",
+          detail:
+            "Until a tool is installed its sign-in is disabled; the menu says the tool is missing and points to Settings > Git accounts, which says where to get it. A remote can still be connected by its URL, signed in with your own git credentials. GitLab sign-in needs GitLab 17.9 or later for its device flow, and a glab whose auth status --output json APIWeave can read.",
+        },
+        {
+          title: "Sign in",
+          instruction:
+            "Choose Add GitHub account or Add GitLab account in the menu, or Sign in… in settings. Keep the Host at github.com or gitlab.com, or name another instance, then click Sign in in the browser.",
+          detail:
+            "The dialog shows the one-time code and opens the page to enter it on. Paste the code there and finish in the browser; the dialog waits and then says Signed in to <host> as <login>. Open browser again reopens the page, and Cancel stops the tool. A GitHub Enterprise Server without a device flow has no code: the browser page alone finishes it.",
+        },
+        {
+          title: "Know what changes outside APIWeave",
+          instruction:
+            "Signing in does what the same command does in a terminal. On GitHub the account becomes gh's active account on that host, so gh commands, and repositories that use gh's credential helper there, act as it. On GitLab it replaces the account glab had for that host, sets that host to HTTPS and may make it glab's default host.",
+          detail:
+            "Your git configuration is not changed by either tool. gh keeps several accounts per host, so a second GitHub account is a separate sign-in; glab keeps one per host, so a second GitLab account needs another host.",
+        },
+        {
+          title: "Give a workspace its account",
+          instruction:
+            "For a connected https:// workspace, open Version history (git) and choose the Account under Remote. Only accounts on the remote's host are offered, plus Your own git sign-in (credential manager or SSH key).",
+          detail:
+            "APIWeave asks gh or glab for that account's token on every fetch, push and clone, and stores none. A bound account that is no longer signed in stays listed, so the choice never changes silently. An SSH remote signs in with your SSH key: it shows no Account picker, and an account signs in over https:// to its own host only.",
+        },
+        {
+          title: "Create the repository",
+          instruction:
+            "In Version history (git), with no remote yet, choose Create repository… under the Repository list. Choose the Account and Owner, keep the Repository name (the workspace's slug) or change it, leave Visibility at Private, and click Create and connect.",
+          detail:
+            "It creates an empty repository — no README, licence or first commit — owned by the account or one of its GitHub organizations or GitLab groups, and tags it with the topic apiweave-workspace so APIWeave can find it later. The workspace is connected and, over https://, bound to the account. A name that is already taken is refused by name, never reused, and APIWeave never deletes a repository. If the tag could not be added, the panel says so and the repository still works.",
+        },
+        {
+          title: "Pick a repository, or use a URL",
+          instruction:
+            "With an account signed in, every remote form asks for the Account first, then lists its Repository: for Connect to remote, the empty repositories it can push to; for Open from git…, those tagged apiweave-workspace, with Show all repositories for the rest. Use a URL instead takes anything the list does not hold.",
+          detail:
+            "The refresh button beside Repository reads the list again, and a line under it says when an owner could not be listed or a list stopped at 100. An https:// URL on the host of an account that signs in over HTTPS is reached as that account; any other URL, and the last Account option, Your own git sign-in (credential manager or SSH key) — another host, sign in with your own git credentials. With no account signed in, the form is the URL field alone.",
+        },
+        {
+          title: "Start a workspace already synced",
+          instruction:
+            "In Create workspace, turn on Sync with GitHub or GitLab. Fill in the same Account, Owner, Repository name and Visibility fields; the name follows the workspace's slug until you change it, then click Create workspace.",
+          detail:
+            "The section is off by default. Create workspace creates the workspace, tracks it, creates the repository and connects to it. If git does not know who you are, it asks for Your name and Your email address and carries on when you click Save and commit. If a later step fails, the workspace stays created — and tracked, once tracking has succeeded — the dialog says what happened, and Open Version history is where to finish.",
+        },
+      ],
+      example: {
+        caption: "Where each account step lives",
+        language: "text",
+        code: "Header, round account button   this workspace's account, sync badge\nSettings > App > Git accounts  tools, versions, accounts, Refresh, Sign in…\nSign-in dialog                 one-time code, Open browser again, Cancel\nVersion history > Remote       Account, then Repository, Create repository…\nCreate workspace               Sync with GitHub or GitLab (off by default)\nA created repository           empty, Private unless changed, apiweave-workspace",
+      },
+      expectedResult:
+        "A GitHub or GitLab account is signed in from APIWeave, the workspace reaches its repository as that account, and APIWeave holds no token of its own.",
+      troubleshooting: [
+        {
+          title: "Add GitHub account is disabled",
+          instruction:
+            "The GitHub CLI (gh) is not installed. Install it from cli.github.com, click Refresh, then sign in. Until then, connect a remote by its URL.",
+        },
+        {
+          title: "Signing in failed",
+          instruction:
+            "The dialog shows the tool's last words. A code that expired makes the tool give up waiting; start the sign-in again. Cancel stops the tool, and so does closing the dialog.",
+        },
+        {
+          title: "A GitLab sign-in replaced another account",
+          instruction:
+            "glab keeps one account per host. Signing in to a host it already has replaces that host's account; use a second host for a second GitLab account.",
+        },
+        {
+          title:
+            "A sync says APIWeave couldn't get this workspace's account's sign-in",
+          instruction:
+            "Sign in to that account again, or choose another Account in Version history. A url.insteadOf or pushInsteadOf rule, or an extra remote.origin url or pushurl in your git configuration, can also cause it: the remote must resolve to exactly one https URL on the account's host. Remove the rule, or choose Your own git sign-in.",
+        },
+        {
+          title: "The repository was created but connecting failed",
+          instruction:
+            "The repository is kept. The message says so, the connect form is filled in with its URL, and Connect to remote is the retry. APIWeave never deletes a repository.",
+        },
+        {
+          title: "Create workspace finished but the workspace is not synced",
+          instruction:
+            "The workspace exists, and is tracked if tracking succeeded; the dialog says which step stopped. Open Version history to create the repository or connect to the one that was made.",
+        },
+      ],
+      relatedLessonIds: ["git-track", "git-remote", "git-open"],
+      destination: { label: "Open Git accounts", path: "git-accounts" },
     },
     {
       id: "git-remote",
@@ -159,7 +299,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "In Version history (git), choose the Account to connect as, then the Repository from its list, and click Connect to remote.",
           detail:
-            "The list holds the account's empty repositories it can push to. Create repository… above the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials.",
+            "The list holds the account's empty repositories it can push to. Create repository… under the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials. With no account signed in, the form is the URL field alone.",
         },
         {
           title: "Know what the connect does",
@@ -240,7 +380,7 @@ export const versionHistoryChapter: TutorialChapter = {
             "Both sides changed the same field differently. Review merge is covered in the merge lesson.",
         },
       ],
-      relatedLessonIds: ["git-track", "git-merge", "git-open"],
+      relatedLessonIds: ["git-track", "git-accounts", "git-merge", "git-open"],
       destination: { label: "Open Version history", path: "version-history" },
     },
     {
@@ -278,7 +418,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Choose the Account to open it as, then the Repository from its list, and click Open workspace.",
           detail:
-            "The list holds the account's repositories tagged apiweave-workspace — the topic APIWeave gives the repositories it creates; Show all repositories lists the rest, and Use a URL instead takes any other repository's URL in the forms Connect to remote accepts. Only the repository's default branch is opened.",
+            "The list holds the account's repositories tagged apiweave-workspace — the topic APIWeave gives the repositories it creates; Show all repositories lists the rest, and Use a URL instead takes any other repository's URL in the forms Connect to remote accepts. The last Account option, Your own git sign-in (credential manager or SSH key) — another host, is for other hosts; with no account signed in at all, the form is the URL field alone. Only the repository's default branch is opened.",
         },
         {
           title: "Know what is checked first",
@@ -351,7 +491,7 @@ export const versionHistoryChapter: TutorialChapter = {
             "The repository holds references, never values. Add each one in Settings → Secrets for the workspace before running.",
         },
       ],
-      relatedLessonIds: ["git-track", "git-remote", "secrets", "git-ci"],
+      relatedLessonIds: ["git-track", "git-remote", "git-accounts", "secrets", "git-ci"],
     },
     {
       id: "git-merge",

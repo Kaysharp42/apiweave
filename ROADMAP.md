@@ -1,9 +1,9 @@
 # Roadmap
 
 This roadmap is subject to change. The current product is the local-first
-Electron desktop app, with git sync of a workspace (tracking, a remote and a
-sync status in the header) and its merge still to come (see [Later](#later)).
-Priorities shift based on user feedback.
+Electron desktop app, with git sync of a workspace — tracking, a remote, sync
+status in the header, and a per-field merge. Priorities shift based on user
+feedback.
 
 ## Shipped
 
@@ -14,6 +14,12 @@ local secret store with `environment > workspace` scope chain, in-process runner
 the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL import, and auto-update
 through the GitHub release channel. See the [Changelog](CHANGELOG.md) for the
 full current surface.
+
+Git sync (v0.20.0): a workspace is tracked by a local git repository and every
+change becomes a commit, `apiweave run` reads the repository, and a workspace
+connected to a remote you own is kept in step from the header's sync status.
+Two sides that both changed merge by record, node and field, with a per-field
+picker for real clashes.
 
 Reuse primitives (v0.6.0): a **Call Workflow** node that runs another workflow
 inline as one step, **environment inheritance** from a base environment for
@@ -52,13 +58,6 @@ per-run cookie jar, and proxy, private CA and client-certificate support.
   webhook, no public port.
 - **Project templates.** Export a project as a reusable local template, with
   references only and no secret material.
-- **Git sync, the merge.** A workspace is tracked by a local git repository,
-  every change becomes a commit, `apiweave run` reads the repo, and a workspace
-  can be connected to a remote and kept in step with it from the header's sync
-  status — nothing hosted, nothing to sign in to. What remains is combining two
-  sides that both changed: an automatic merge, with a per-field picker for real
-  clashes. Until then a diverged workspace keeps both sides and offers
-  **Discard local changes**.
 
 ## Out of scope
 

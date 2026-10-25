@@ -11,4 +11,5 @@ export type TutorialDestinationPath =
   | "canvas-settings"
   | "mcp-server"
   | "version-history"
+  | "git-accounts"
   | "updates";
