@@ -49,7 +49,7 @@ APIWeave can create the repository for it. See
   **Open from git…** lists the ones tagged `apiweave-workspace`, with **Show all
   repositories** for the rest. **Use a URL instead** still takes anything the
   list does not hold, and **Your own git sign-in (credential manager or SSH
-  key) — another host** is for other hosts and for having no account.
+  key) — another host** is for other hosts and for choosing no account.
 - **Start a workspace already synced.** **Create workspace** has an optional
   **Sync with GitHub or GitLab** section, off by default, with the same account,
   owner, name and visibility fields. It creates the workspace, tracks it,
@@ -74,7 +74,7 @@ APIWeave can create the repository for it. See
   switcher: success when synced, muted for local history, info while syncing or
   with work waiting, warning when you must act, error when a sync failed.
 
-### Requirements
+### Requirements and limitations
 
 - **Signing in to GitLab needs GitLab 17.9 or later**, whose device flow
   `glab auth login --device` uses, and a `glab` version whose

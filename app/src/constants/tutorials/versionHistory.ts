@@ -154,6 +154,7 @@ export const versionHistoryChapter: TutorialChapter = {
       prerequisites: [
         "Git installed on this machine.",
         "Optional: the GitHub CLI (gh) or the GitLab CLI (glab). Without one, a remote is still connected by its URL with your own git credentials.",
+        "A tracked workspace, for the Version history steps.",
       ],
       steps: [
         {
@@ -175,7 +176,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Install the GitHub CLI (gh) from cli.github.com or the GitLab CLI (glab) from gitlab.com/gitlab-org/cli, then click Refresh. The tool keeps the token; APIWeave stores none.",
           detail:
-            "Until a tool is installed its sign-in is disabled, and the menu says where to get it. A remote can still be connected by its URL, signed in with your own git credentials. GitLab sign-in needs GitLab 17.9 or later for its device flow, and a glab whose auth status --output json APIWeave can read.",
+            "Until a tool is installed its sign-in is disabled; the menu says the tool is missing and points to Settings > Git accounts, which says where to get it. A remote can still be connected by its URL, signed in with your own git credentials. GitLab sign-in needs GitLab 17.9 or later for its device flow, and a glab whose auth status --output json APIWeave can read.",
         },
         {
           title: "Sign in",
@@ -417,7 +418,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Choose the Account to open it as, then the Repository from its list, and click Open workspace.",
           detail:
-            "The list holds the account's repositories tagged apiweave-workspace — the topic APIWeave gives the repositories it creates; Show all repositories lists the rest, and Use a URL instead takes any other repository's URL in the forms Connect to remote accepts. The last Account option, Your own git sign-in (credential manager or SSH key) — another host, is for other hosts and for when no account is signed in. Only the repository's default branch is opened.",
+            "The list holds the account's repositories tagged apiweave-workspace — the topic APIWeave gives the repositories it creates; Show all repositories lists the rest, and Use a URL instead takes any other repository's URL in the forms Connect to remote accepts. The last Account option, Your own git sign-in (credential manager or SSH key) — another host, is for other hosts; with no account signed in at all, the form is the URL field alone. Only the repository's default branch is opened.",
         },
         {
           title: "Know what is checked first",

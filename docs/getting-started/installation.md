@@ -88,7 +88,7 @@ When APIWeave opens for the first time:
   - **Linux**: `~/.config/APIWeave`
 - A single SQLite database (`apiweave.db`) is created in that directory and migrations are applied. On every launch the database gets a quick integrity check. Before an update changes the database schema, a copy of the database is saved to `backups/` in the same directory; the five newest copies are kept. When deletes such as run-history pruning leave a quarter of the file empty, it is compacted at launch.
 - The keyfile for the encrypted secret store is generated and written to the data directory as `keyfile.json`. Its key is sealed by the operating system keychain (Keychain on macOS, DPAPI on Windows, GNOME Keyring or KWallet on Linux), so the file opens only for the same user on the same machine. On Linux without a running keyring it is stored unsealed, and the log says so; it is sealed in place the first time a keyring is available. If you delete it, the secret store is gone for good. If it is missing but the database holds secrets, APIWeave does not silently make a new one: it asks whether to quit (so you can restore `keyfile.json` from the same backup as the database) or to delete the secrets it can no longer open and continue.
-- The app lands directly on the workflows list. No login is required to use the app. Git sync is coming — see the [roadmap](../../ROADMAP.md).
+- The app lands directly on the workflows list. No login is required to use the app. A workspace can be tracked in git and synced with a remote you own — see [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
 ## Optional: Enable the Local MCP Bridge
 
