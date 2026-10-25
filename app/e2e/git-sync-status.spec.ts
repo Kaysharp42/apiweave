@@ -170,6 +170,23 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
       disconnectRemote: async () => current,
       discardLocalChanges: async () => current,
       openFromGit: async () => ({ kind: "opened", workspaceId: "x", slug: "x", name: "x", warnings: [] }),
+      listRepositories: async (account: { readonly login: string }, request: { readonly tagged: boolean; readonly emptyOnly: boolean }) => {
+        window.__gitCalls__.push(["listRepositories", account.login, request]);
+        const repository = (owner: string, name: string, empty: boolean) => ({
+          owner,
+          name,
+          fullName: `${owner}/${name}`,
+          httpsUrl: `https://github.com/${owner}/${name}.git`,
+          sshUrl: `git@github.com:${owner}/${name}.git`,
+          private: true,
+          empty,
+          canPush: true,
+        });
+        return {
+          repositories: request.emptyOnly ? [repository("acme", "empty-tests", true)] : [repository("acme", "api-tests", false)],
+          problems: [],
+        };
+      },
       listOwners: async (account: { readonly login: string }) => ({
         owners: [
           { path: account.login, kind: "user" },
@@ -327,9 +344,11 @@ test.describe("git sync status", () => {
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
     await navigateDesktop(page, "/personal/personal/settings/version-history");
 
+    // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
+    await expect(page.getByRole("option", { name: "acme/empty-tests (private)" })).toBeAttached();
     await page.getByRole("button", { name: "Create repository…" }).click();
     const dialog = page.getByRole("dialog", { name: "Create repository" });
-    await dialog.getByRole("combobox", { name: "Account" }).selectOption({ label: "octo-work on github.com" });
+    await expect(dialog.getByRole("combobox", { name: "Account" })).toHaveValue("github|github.com|octo-work");
     await dialog.getByRole("combobox", { name: "Owner" }).selectOption("acme");
     await expect(dialog.getByRole("textbox", { name: "Repository name" })).toHaveValue("personal");
     await dialog.getByRole("textbox", { name: "Repository name" }).fill("api-tests");
@@ -339,9 +358,42 @@ test.describe("git sync status", () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByText("https://github.com/acme/api-tests.git")).toBeVisible();
     expect(await page.evaluate(() => window.__gitCalls__)).toEqual([
+      ["listRepositories", "octo-work", { tagged: false, emptyOnly: true }],
       ["createRepository", { provider: "github", host: "github.com", login: "octo-work" }, { owner: "acme", name: "api-tests", private: true }],
       ["connectRemote", "https://github.com/acme/api-tests.git", { provider: "github", host: "github.com", login: "octo-work" }],
     ]);
+  });
+
+  test("connects to one of the account's empty repositories, picked from its list", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
+    await navigateDesktop(page, "/personal/personal/settings/version-history");
+
+    await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/empty-tests (private)" });
+    await captureEvidence(page, "git-repository-picker-connect.png");
+    await page.getByRole("button", { name: "Connect to remote" }).click();
+
+    await expect(page.getByText("https://github.com/acme/empty-tests.git")).toBeVisible();
+    expect((await page.evaluate(() => window.__gitCalls__)).at(-1)).toEqual([
+      "connectRemote",
+      "https://github.com/acme/empty-tests.git",
+      { provider: "github", host: "github.com", login: "octo-work" },
+    ]);
+  });
+
+  test("opens a workspace from one of the account's apiweave-workspace repositories", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, SETTLED);
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    // The empty workspace page's own Open from git… button.
+    await page.getByRole("button", { name: /Open from git/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Open workspace from git" });
+    await dialog.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/api-tests (private)" });
+    await captureEvidence(page, "git-repository-picker-open.png");
+
+    expect(await page.evaluate(() => window.__gitCalls__)).toEqual([["listRepositories", "octo-work", { tagged: true, emptyOnly: false }]]);
+    await expect(dialog.getByRole("button", { name: "Open workspace" })).toBeEnabled();
   });
 
   test("leaves an untracked workspace's switcher row without a sync icon", async ({ page }) => {

@@ -6,10 +6,7 @@ import { isRepositoryDraftReady } from "./CreateRepositoryFields";
 import { CreateRepositorySection } from "./CreateRepositorySection";
 import { git } from "../../utils/apiweaveClient";
 import { gitAccountRef } from "../../utils/gitAccounts";
-import type {
-  CreateRepositoryDialogProps,
-  GitRepositoryDraft,
-} from "../../types";
+import type { CreateRepositoryDialogProps, GitRepositoryDraft } from "../../types";
 
 /**
  * Create a repository on GitHub or GitLab for this workspace: empty, private
@@ -17,18 +14,8 @@ import type {
  * already taken is refused by name; nothing existing is ever adopted. Mount
  * it per use: it starts from the workspace's slug and the account given.
  */
-export function CreateRepositoryDialog({
-  onClose,
-  defaultName,
-  defaultAccount,
-  onCreated,
-}: CreateRepositoryDialogProps) {
-  const [draft, setDraft] = useState<GitRepositoryDraft>({
-    account: null,
-    owner: "",
-    name: defaultName,
-    private: true,
-  });
+export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, accounts, onCreated }: CreateRepositoryDialogProps) {
+  const [draft, setDraft] = useState<GitRepositoryDraft>({ account: null, owner: "", name: defaultName, private: true });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,12 +45,7 @@ export function CreateRepositoryDialog({
       onClose={busy ? () => undefined : onClose}
       title="Create repository"
       size="md"
-      headerExtra={
-        <GitBranchPlus
-          className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark"
-          aria-hidden="true"
-        />
-      }
+      headerExtra={<GitBranchPlus className="h-4 w-4 text-text-secondary dark:text-text-secondary-dark" aria-hidden="true" />}
       footer={() => (
         <ModalFormFooter
           formId="create-repository-form"
@@ -74,15 +56,10 @@ export function CreateRepositoryDialog({
         />
       )}
     >
-      <form
-        id="create-repository-form"
-        onSubmit={(event) => void submit(event)}
-        className="space-y-4 p-5"
-      >
+      <form id="create-repository-form" onSubmit={(event) => void submit(event)} className="space-y-4 p-5">
         <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-          APIWeave creates an empty repository and connects this workspace to
-          it. APIWeave marks it with the topic apiweave-workspace so it can find
-          it later. A name that is already taken is refused, never reused.
+          APIWeave creates an empty repository and connects this workspace to it. APIWeave marks it with the topic
+          apiweave-workspace so it can find it later. A name that is already taken is refused, never reused.
         </p>
         {error !== null && (
           <div
@@ -92,12 +69,7 @@ export function CreateRepositoryDialog({
             {error}
           </div>
         )}
-        <CreateRepositorySection
-          value={draft}
-          onChange={setDraft}
-          defaultAccount={defaultAccount}
-          disabled={busy}
-        />
+        <CreateRepositorySection value={draft} onChange={setDraft} defaultAccount={defaultAccount} accounts={accounts} disabled={busy} />
       </form>
     </Modal>
   );

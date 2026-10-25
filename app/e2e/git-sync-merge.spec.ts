@@ -177,6 +177,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         // The header's accounts menu asks for these when it is opened.
         listAccounts: async () => ({ clis: [], accounts: [] }),
         listOwners: async () => ({ owners: [], problem: null }),
+        listRepositories: async () => ({ repositories: [], problems: [] }),
         createRepository: async () => {
           throw new Error("not used by this spec");
         },

@@ -271,6 +271,7 @@ const gitBridge: GitBridge = {
   openSignInPage: invokeBridge(GIT_CHANNELS.openSignInPage),
   listOwners: invokeBridge(GIT_CHANNELS.listOwners),
   createRepository: invokeBridge(GIT_CHANNELS.createRepository),
+  listRepositories: invokeBridge(GIT_CHANNELS.listRepositories),
   onSignInPrompt: (callback) => subscribe<GitSignInPrompt>(GIT_SIGN_IN_PROMPT_CHANNEL, callback),
   onStatusChanged: (callback) => subscribe<WorkspaceGitStatus>(GIT_STATUS_CHANGED_CHANNEL, callback),
 }

@@ -69,19 +69,26 @@ The repository is an ordinary git repository at `<userData>/git/<workspace id>/`
 
 A tracked workspace can be connected to one remote repository on a git host, so its history is kept somewhere other than your machine and other machines can sync with it.
 
-1. Create an empty repository on your host (no README, no first commit) — or let APIWeave create it: see [Create the repository from APIWeave](#create-the-repository-from-apiweave).
-2. In **Version history (git)**, paste its URL under **Remote URL** and click **Connect to remote**.
+1. In **Version history (git)**, choose the **Account** to connect as. The first signed-in account is chosen to begin with; see [Git accounts](#git-accounts).
+2. Choose the **Repository** from the account's list, which holds its **empty** repositories it can push to, from the account itself and each of its GitHub organizations or GitLab groups — or **Create repository…**, the list's first entry; see [Create the repository from APIWeave](#create-the-repository-from-apiweave).
+3. Click **Connect to remote**.
+
+The list is read from the host when you choose the account and kept while the page is open; the refresh button next to it reads it again. A repository with commits is not in the list, because connecting would refuse it (see below). The list holds at most 100 repositories per GitHub owner, and 100 on GitLab; when an owner could not be listed (an organization that requires single sign-on, say) or a list stops at 100, a line under it says so.
+
+**Use a URL instead** takes a URL for a repository the list does not hold. An `https://` URL on the account's host is reached as that account; any other URL with your own git sign-in. **Another host — your own git sign-in**, the last entry under **Account**, is for any other host (Bitbucket, Gitea, a server of your own) and is what the form shows when no account is signed in: create an empty repository there (no README, no first commit) and paste its URL.
+
+An account that `gh` or `glab` set up for SSH connects by the repository's SSH URL, with your SSH key, and is not bound to the workspace: an account signs in over HTTPS only.
 
 ### Create the repository from APIWeave
 
-With a GitHub or GitLab account signed in (see [Git accounts](#git-accounts)), **Create repository…** next to **Connect to remote** does both steps:
+With a GitHub or GitLab account signed in, **Create repository…** at the top of the **Repository** list does both steps:
 
 1. Choose the **Account** to create it as, and the **Owner**: the account itself, or one of its GitHub organizations or the GitLab groups where it is at least a Developer.
 2. The **Repository name** starts as the workspace's slug. It may hold letters and digits, with single `.`, `_` or `-` between them; it cannot end in `.git` or `.atom`.
 3. **Visibility** is **Private** unless you choose **Public**.
 4. **Create and connect** creates an empty repository — no README, licence or first commit — tags it with the topic `apiweave-workspace`, and connects the workspace to it. An HTTPS account is bound to the connection, so every sync uses its token; an SSH account connects by the SSH URL, with your SSH key.
 
-A name that already exists is refused, naming the repository; APIWeave never connects to a repository it did not just create empty. If the repository was created but connecting to it fails, the message says so, the repository is kept — APIWeave never deletes one — and the connect form is filled in with it, so **Connect to remote** tries again. If the topic could not be added, the panel says so; the repository works without it.
+A name that already exists is refused, naming the repository; APIWeave never connects to a repository it did not just create empty. If the repository was created but connecting to it fails, the message says so, the repository is kept — APIWeave never deletes one — and the connect form is filled in with its URL, so **Connect to remote** tries again. If the topic could not be added, the panel says so; the repository works without it.
 
 The URL takes one of four forms:
 
@@ -195,7 +202,9 @@ The host in the message is the one in the remote's URL (`github.com` for `https:
 A repository that holds a workspace (one a teammate pushed with [Connect a remote](#connect-a-remote), for example) can be opened here as a new workspace.
 
 1. Open the workspace switcher at the top of the sidebar and choose **Open from git…**. When no workflow is open, the empty state has the same **Open from git…** button.
-2. Paste the repository's URL, in any of the [accepted forms](#connect-a-remote), and click **Open workspace**.
+2. Choose the **Account** and the **Repository** from its list, and click **Open workspace**. The clone, and every later sync, reach the repository as that account (an SSH account by the SSH URL, with your SSH key).
+
+The list holds the account's repositories tagged with the topic `apiweave-workspace`, which every repository APIWeave creates gets. APIWeave cannot tell a workspace repository by its content without cloning it, so the topic is what marks one; add it on the host to a repository made elsewhere to list it here. **Show all repositories** lists the account's other repositories too. As for connecting, **Use a URL instead** takes any URL in the [accepted forms](#connect-a-remote), and **Another host — your own git sign-in** is for other hosts and for when no account is signed in.
 
 What happens:
 

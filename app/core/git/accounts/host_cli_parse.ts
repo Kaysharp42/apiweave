@@ -256,6 +256,35 @@ const GitLabProjectSchema = z.object({
   empty_repo: z.boolean().default(false),
 })
 
+/**
+ * One repository of `gh repo list --json name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility`,
+ * as gh 2.97 prints it: `url` is the web page (no `.git`), `viewerPermission`
+ * GitHub's `RepositoryPermission` (`ADMIN`, `MAINTAIN`, `WRITE`, `TRIAGE`,
+ * `READ`), `visibility` `PUBLIC`, `PRIVATE` or `INTERNAL`.
+ */
+const GhListedRepositorySchema = z.object({
+  name: z.string(),
+  nameWithOwner: z.string(),
+  url: z.string(),
+  sshUrl: z.string(),
+  isEmpty: z.boolean(),
+  viewerPermission: z.string().nullable(),
+  visibility: z.string(),
+})
+
+/** The permissions that may push to a GitHub repository. */
+const GH_PUSH_PERMISSIONS: ReadonlySet<string> = new Set(["ADMIN", "MAINTAIN", "WRITE"])
+
+/** GitLab's Developer role, the least that may push (docs.gitlab.com/user/permissions). */
+const GITLAB_DEVELOPER = 30
+
+const GitLabAccessSchema = z.object({ access_level: z.number() }).nullable().optional()
+
+/** A project of `GET /projects?membership=true`, with the user's own access through the project or its group. */
+const GitLabListedProjectSchema = GitLabProjectSchema.extend({
+  permissions: z.object({ project_access: GitLabAccessSchema, group_access: GitLabAccessSchema }).optional(),
+})
+
 /** One of `GET /groups` (docs.gitlab.com/api/groups): its id, which `POST /projects` takes as `namespace_id`, and its path. */
 const GitLabGroupSchema = z.object({ id: z.number(), full_path: z.string() })
 
@@ -308,6 +337,28 @@ function gitLabRepository(project: z.infer<typeof GitLabProjectSchema>, canPush:
 export function parseGitLabProject(stdout: string): GitRepository | undefined {
   const project = parseAs(GitLabProjectSchema, stdout)
   return project && gitLabRepository(project, true)
+}
+
+/** The repositories `gh repo list --json …` printed, or undefined for anything else. */
+export function parseGhRepositoryList(stdout: string): readonly GitRepository[] | undefined {
+  return parseAs(z.array(GhListedRepositorySchema), stdout)?.map((repository) => ({
+    owner: repository.nameWithOwner.slice(0, repository.nameWithOwner.lastIndexOf("/")),
+    name: repository.name,
+    fullName: repository.nameWithOwner,
+    httpsUrl: `${repository.url}.git`,
+    sshUrl: repository.sshUrl,
+    private: repository.visibility !== "PUBLIC",
+    empty: repository.isEmpty,
+    canPush: repository.viewerPermission !== null && GH_PUSH_PERMISSIONS.has(repository.viewerPermission),
+  }))
+}
+
+/** The projects `GET /projects?membership=true` listed, each pushable for a Developer or more, or undefined for anything else. */
+export function parseGitLabProjectList(stdout: string): readonly GitRepository[] | undefined {
+  return parseAs(z.array(GitLabListedProjectSchema), stdout)?.map((project) => {
+    const access = Math.max(project.permissions?.project_access?.access_level ?? 0, project.permissions?.group_access?.access_level ?? 0)
+    return gitLabRepository(project, access >= GITLAB_DEVELOPER)
+  })
 }
 
 /** The groups `GET /groups` listed, or undefined for anything else. */

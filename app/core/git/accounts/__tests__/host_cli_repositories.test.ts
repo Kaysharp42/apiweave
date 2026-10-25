@@ -380,3 +380,179 @@ describe("hostCliRunner's environment", () => {
     }
   })
 })
+
+describe("listRepositories", () => {
+  const GH_LIST = fixture("gh-repo-list.json")
+  const ghList = (owner: string, tagged: boolean): string =>
+    [
+      "gh repo list",
+      ...(tagged ? ["--topic=apiweave-workspace"] : []),
+      "--no-archived --json=name,nameWithOwner,url,sshUrl,isEmpty,viewerPermission,visibility --limit=100 --",
+      owner,
+    ].join(" ")
+
+  it("lists the account's and each organization's repositories, with the topic when asked, as the account", async () => {
+    const { service, calls } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited(GH_ORGS),
+      [ghList("octo-work", true)]: exited(GH_LIST),
+      [ghList("acme", true)]: exited("[]"),
+      [ghList("octo-org", true)]: exited("[]"),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: true, emptyOnly: false })
+
+    expect(list.problems).toEqual([])
+    expect(list.repositories.map((repository) => repository.fullName)).toEqual(["octo-work/api-tests", "octo-work/shop-api", "octo-work/read-only"])
+    expect(list.repositories[0]).toEqual({
+      owner: "octo-work",
+      name: "api-tests",
+      fullName: "octo-work/api-tests",
+      httpsUrl: "https://github.com/octo-work/api-tests.git",
+      sshUrl: "git@github.com:octo-work/api-tests.git",
+      private: false,
+      empty: false,
+      canPush: true,
+    })
+    // One token for the whole listing, in each call's environment.
+    expect(calls.filter((call) => call.args[0] === "auth")).toHaveLength(1)
+    expect(calls.filter((call) => call.args[0] === "repo").every((call) => call.env?.GH_TOKEN === TOKEN)).toBe(true)
+  })
+
+  it("keeps only empty repositories the account can push to for a connect", async () => {
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited("[]"),
+      [ghList("octo-work", false)]: exited(GH_LIST),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: false, emptyOnly: true })
+
+    expect(list.repositories.map((repository) => repository.fullName)).toEqual(["octo-work/shop-api"])
+  })
+
+  it("says which owner could not be listed and which list stopped at its cap, and keeps the rest", async () => {
+    const hundred = JSON.stringify(
+      Array.from({ length: 100 }, (_, index) => ({
+        isEmpty: false,
+        name: `r${index}`,
+        nameWithOwner: `acme/r${index}`,
+        sshUrl: `git@github.com:acme/r${index}.git`,
+        url: `https://github.com/acme/r${index}`,
+        viewerPermission: "WRITE",
+        visibility: "PRIVATE",
+      })),
+    )
+    const { service } = fakeCli({
+      ...GH_TOKEN_CALL,
+      "gh api --hostname=github.com user/orgs?per_page=100": exited(GH_ORGS),
+      [ghList("octo-work", false)]: exited(GH_LIST),
+      [ghList("acme", false)]: exited(hundred),
+      [ghList("octo-org", false)]: exited("", 1, "GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.\n"),
+    })
+
+    const list = await service.listRepositories(GITHUB, { tagged: false, emptyOnly: false })
+
+    expect(list.repositories).toHaveLength(103)
+    expect(list.problems).toEqual([
+      "acme: only the first 100 repositories are listed. Use a URL for one that is not.",
+      "octo-org: GraphQL: Resource protected by organization SAML enforcement. You must grant your OAuth token access to this organization.",
+    ])
+  })
+
+  it("lists the empty GitLab projects the account can push to in one request, which is where its access is asked for", async () => {
+    const project = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
+    // The query asks for Developer or more, so everything it answers with can be pushed to.
+    const projects = JSON.stringify([project, { ...project, path: "full", path_with_namespace: "acme/qa/full", empty_repo: false }])
+    const { service, calls } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=30&per_page=100&order_by=last_activity_at": exited(projects),
+    })
+
+    const list = await service.listRepositories(GITLAB, { tagged: false, emptyOnly: true })
+
+    expect(list).toEqual({
+      repositories: [
+        {
+          owner: "acme/qa",
+          name: "api-tests",
+          fullName: "acme/qa/api-tests",
+          httpsUrl: "https://gitlab.com/acme/qa/api-tests.git",
+          sshUrl: "git@gitlab.com:acme/qa/api-tests.git",
+          private: true,
+          empty: true,
+          canPush: true,
+        },
+      ],
+      problems: [],
+    })
+    expect(calls).toHaveLength(2)
+  })
+
+  it("asks GitLab for the topic, Reporter or more, to open from git", async () => {
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=20&topic=apiweave-workspace&per_page=100&order_by=last_activity_at": exited("[]"),
+    })
+
+    await expect(service.listRepositories(GITLAB, { tagged: true, emptyOnly: false })).resolves.toEqual({ repositories: [], problems: [] })
+  })
+
+  it("reports a GitLab list that failed as a problem, not as no projects", async () => {
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=20&per_page=100&order_by=last_activity_at": exited(
+        '{"message":"403 Forbidden"}',
+        1,
+        "glab: 403 Forbidden (HTTP 403)\n",
+      ),
+    })
+
+    await expect(service.listRepositories(GITLAB, { tagged: false, emptyOnly: false })).resolves.toEqual({ repositories: [], problems: ["gitlab.com: 403 Forbidden"] })
+  })
+
+  it("trusts GitLab's own access filter for a connect, rather than its permissions object", async () => {
+    const project = JSON.parse(GITLAB_PROJECT) as Record<string, unknown>
+    // An empty project whose access is inherited from a parent group, which `permissions` does not show.
+    const inherited = JSON.stringify({ ...project, permissions: { project_access: null, group_access: null } })
+    const { service } = fakeCli({
+      ...GLAB_STATUS_CALL,
+      "glab api --hostname=gitlab.com projects?membership=true&archived=false&min_access_level=30&per_page=100&order_by=last_activity_at": exited(`[${inherited}]`),
+    })
+
+    const list = await service.listRepositories(GITLAB, { tagged: false, emptyOnly: true })
+
+    expect(list.repositories.map((repository) => [repository.fullName, repository.canPush])).toEqual([["acme/qa/api-tests", true]])
+  })
+
+  it("refuses a request that is not two flags, in a plain sentence, before any tool runs", async () => {
+    const { service, calls } = fakeCli({})
+
+    await expect(service.listRepositories(GITHUB, { tagged: "yes", emptyOnly: false } as never)).rejects.toThrow(
+      "That is not a repository list APIWeave can read: `tagged` and `emptyOnly` are two true-or-false values.",
+    )
+    expect(calls).toEqual([])
+  })
+
+  it("asks at most four owners for their repositories at once", async () => {
+    const orgs = JSON.stringify(Array.from({ length: 9 }, (_, index) => ({ login: `org-${index}` })))
+    const owners = ["octo-work", ...Array.from({ length: 9 }, (_, index) => `org-${index}`)]
+    let running = 0
+    let peak = 0
+    const run = async (command: HostCliCommand, args: readonly string[]): Promise<GitExecOutcome> => {
+      if (args[0] === "api") return exited(orgs)
+      if (args[0] === "auth") return exited(`${TOKEN}\n`)
+      running += 1
+      peak = Math.max(peak, running)
+      // Long enough for the pool's other slots to fill before this one is let go.
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      running -= 1
+      return exited("[]")
+    }
+
+    await new HostCliService({ run }).listRepositories(GITHUB, { tagged: false, emptyOnly: false })
+
+    expect(peak).toBe(4)
+    expect(owners).toHaveLength(10)
+  })
+})

@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 import type { GitAccount } from "@shared/types/GitAccount";
-import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
@@ -16,6 +15,7 @@ import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
+import { GitRemotePicker } from "./GitRemotePicker";
 import { GitSignInButtons } from "./GitSignInButtons";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
@@ -24,6 +24,7 @@ import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { git } from "../../utils/apiweaveClient";
 import { GIT_PROVIDERS } from "../../utils/gitAccounts";
+import { HTTPS_REMOTE, errorText } from "../../utils/gitRemote";
 import { remoteHost } from "../../utils/gitErrorMessages";
 import {
   connectFailedMessage,
@@ -34,10 +35,9 @@ import type {
   GitRemoteSelection,
   GitRepositoryCreation,
   PanelMessage,
+  RemoteAccountProps,
+  RemoteSectionProps,
 } from "../../types";
-
-const errorText = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 interface UntrackedProps {
   readonly busy: boolean;
@@ -116,31 +116,21 @@ function signInHost(provider: GitProvider, remote: string | null): string {
     : remote;
 }
 
-const HTTPS_REMOTE = /^https:\/\//i;
-
-interface RemoteAccountProps {
-  readonly remoteUrl: string;
-  readonly value: GitAccountRef | null;
-  readonly onChange: (account: GitAccountRef | null) => void;
-  /** Choose an account just signed in to: the connect form's, not a connected workspace's, which stays the user's to change. */
-  readonly chooseSignedIn: boolean;
-  readonly busy: boolean;
-}
-
 /**
- * Which account an `https://` remote is reached as, signing in to another,
- * and why gh or glab could not say, when they could not. An SSH remote signs
- * in with the user's SSH key, so it is offered no account. A bound account
- * stays shown even when no tool lists it any more.
+ * Which account a connected `https://` remote is reached as, signing in to
+ * another, and why gh or glab could not say, when they could not. An SSH
+ * remote signs in with the user's SSH key, so it is offered no account. A
+ * bound account stays shown even when no tool lists it any more, and one
+ * just signed in to is offered, not chosen: the change is the user's.
  */
 function RemoteAccount({
   remoteUrl,
   value,
   onChange,
-  chooseSignedIn,
   busy,
+  accounts: feed,
 }: RemoteAccountProps) {
-  const { accounts, clis, problems, reload } = useGitAccounts();
+  const { accounts, clis, problems, reload } = feed;
   if (!HTTPS_REMOTE.test(remoteUrl)) return null;
   return (
     <>
@@ -162,42 +152,22 @@ function RemoteAccount({
         clis={clis}
         disabled={busy}
         hostFor={(provider) => signInHost(provider, remoteHost(remoteUrl))}
-        onSignedIn={(signedIn) => {
-          reload();
-          if (chooseSignedIn) onChange(signedIn);
-        }}
+        onSignedIn={reload}
       />
     </>
   );
 }
 
-interface RemoteSectionProps {
-  readonly remoteUrl: string | null;
-  readonly branch: string;
-  readonly account: GitAccountRef | null;
-  readonly busy: boolean;
-  /** What the connect form starts with: a repository just created that could not be connected to. */
-  readonly prefill: GitRemoteSelection | null;
-  readonly onConnect: (url: string, account: GitAccountRef | null) => void;
-  readonly onCreateRepository: () => void;
-  readonly onChangeAccount: (account: GitAccountRef | null) => void;
-  readonly onDisconnect: () => void;
-}
-
-function RemoteSection({
-  remoteUrl,
-  branch,
-  account,
-  busy,
-  prefill,
-  onConnect,
-  onCreateRepository,
-  onChangeAccount,
-  onDisconnect,
-}: RemoteSectionProps) {
-  const [url, setUrl] = useState(prefill?.url ?? "");
-  const [chosen, setChosen] = useState<GitAccountRef | null>(
-    prefill?.account ?? null,
+/**
+ * The remote and its branch; for a workspace with none, the connect form —
+ * Account, then Repository (its empty repositories, Create repository…
+ * first), or Use a URL instead — and for a connected one, its account and
+ * Disconnect.
+ */
+function RemoteSection(props: RemoteSectionProps) {
+  const { remoteUrl, branch, account, busy, prefill } = props;
+  const [selection, setSelection] = useState<GitRemoteSelection | null>(
+    prefill,
   );
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
@@ -212,57 +182,37 @@ function RemoteSection({
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
-            onConnect(
-              url.trim(),
-              HTTPS_REMOTE.test(url.trim()) ? chosen : null,
-            );
+            if (selection !== null)
+              props.onConnect(selection.url, selection.account);
           }}
         >
-          <FormField label="Remote URL">
-            <Input
-              aria-label="Remote URL"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://host/owner/repo.git or git@host:owner/repo.git"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </FormField>
-          <RemoteAccount
-            remoteUrl={url.trim()}
-            value={chosen}
-            onChange={setChosen}
-            chooseSignedIn
-            busy={busy}
+          <GitRemotePicker
+            mode="connect"
+            initial={prefill}
+            accounts={props.accounts}
+            onChange={setSelection}
+            onCreateRepository={props.onCreateRepository}
+            disabled={busy}
           />
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              variant="primary"
-              loading={busy}
-              disabled={url.trim() === ""}
-            >
-              Connect to remote
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={busy}
-              onClick={onCreateRepository}
-            >
-              Create repository…
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={busy}
+            disabled={selection === null}
+          >
+            Connect to remote
+          </Button>
         </form>
       ) : (
         <>
           <RemoteAccount
             remoteUrl={remoteUrl}
             value={account}
-            onChange={onChangeAccount}
-            chooseSignedIn={false}
+            onChange={props.onChangeAccount}
             busy={busy}
+            accounts={props.accounts}
           />
-          <Button variant="ghost" disabled={busy} onClick={onDisconnect}>
+          <Button variant="ghost" disabled={busy} onClick={props.onDisconnect}>
             Disconnect
           </Button>
         </>
@@ -346,6 +296,8 @@ export function VersionHistoryPanel({
     error: loadError,
     apply,
   } = useWorkspaceGitStatus(workspaceId);
+  // One list of accounts for the page: a sign-in in the dialog is one the picker can use straight away.
+  const accounts = useGitAccounts();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<PanelMessage | null>(null);
   const [creation, setCreation] = useState<GitRepositoryCreation>({
@@ -451,11 +403,14 @@ export function VersionHistoryPanel({
             onConnect={(url, account) =>
               void run(() => git.connectRemote(workspaceId, url, account))
             }
-            onCreateRepository={() => setCreation({ step: "dialog" })}
+            onCreateRepository={(account) =>
+              setCreation({ step: "dialog", account })
+            }
             onChangeAccount={(account) =>
               void run(() => git.setAccount(workspaceId, account))
             }
             onDisconnect={() => setConfirming("disconnect")}
+            accounts={accounts}
           />
         }
         onUntrack={() => setConfirming("untrack")}
@@ -481,11 +436,12 @@ export function VersionHistoryPanel({
           </p>
         )}
       </div>
-      {creation.step === "dialog" && status !== null && (
+      {creation.step === "dialog" && (
         <CreateRepositoryDialog
           onClose={() => setCreation({ step: "idle" })}
           defaultName={workspaceSlug}
-          defaultAccount={status.account}
+          defaultAccount={creation.account}
+          accounts={accounts}
           onCreated={(created, account) =>
             void connectCreated(created, account)
           }

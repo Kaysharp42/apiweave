@@ -228,7 +228,7 @@ describe("VersionHistoryPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("connects a remote with the trimmed URL and shows the status it returns", async () => {
+  it("connects a remote by its trimmed URL when no account is signed in, and shows the status it returns", async () => {
     const user = userEvent.setup();
     const { bridge } = installGitBridge(local());
     render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
@@ -236,7 +236,10 @@ describe("VersionHistoryPanel", () => {
     expect(await screen.findByText("Not connected")).toBeInTheDocument();
     const connect = screen.getByRole("button", { name: /connect to remote/i });
     expect(connect).toBeDisabled();
-    const field = screen.getByRole("textbox", { name: /remote url/i });
+    // With no account, the picker is the URL field, for any host.
+    const field = await screen.findByRole("textbox", {
+      name: "Repository URL",
+    });
     expect(field).toHaveAttribute(
       "placeholder",
       "https://host/owner/repo.git or git@host:owner/repo.git",
@@ -252,11 +255,12 @@ describe("VersionHistoryPanel", () => {
     expect(
       await screen.findByText("git@github.com:acme/tests.git"),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: /remote url/i })).toBeNull();
+    expect(
+      screen.queryByRole("textbox", { name: "Repository URL" }),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: /^disconnect$/i }),
     ).toBeInTheDocument();
-    // Neither gh nor glab lists an account: there is nothing to pick.
     expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
   });
 
@@ -274,6 +278,12 @@ describe("VersionHistoryPanel", () => {
       login: "octo-personal",
       active: false,
     };
+    const SSH: GitAccount = {
+      ...WORK,
+      login: "octo-ssh",
+      gitProtocol: "ssh",
+      active: false,
+    };
     const TANUKI: GitAccount = {
       provider: "gitlab",
       host: "gitlab.com",
@@ -289,38 +299,261 @@ describe("VersionHistoryPanel", () => {
     });
     const listAccounts = vi.fn(async () => ({
       clis: [],
-      accounts: [WORK, PERSONAL, TANUKI],
+      accounts: [WORK, PERSONAL, SSH, TANUKI],
     }));
+    const repository = (owner: string, name: string) => ({
+      owner,
+      name,
+      fullName: `${owner}/${name}`,
+      httpsUrl: `https://github.com/${owner}/${name}.git`,
+      sshUrl: `git@github.com:${owner}/${name}.git`,
+      private: true,
+      empty: true,
+      canPush: true,
+    });
+    const listRepositories = vi.fn(
+      async (account: { readonly login: string }) => ({
+        repositories: [
+          repository(account.login, "shop-api"),
+          repository("acme", "billing"),
+        ],
+        problems: [],
+      }),
+    );
 
-    it("connects as the account picked, offering only accounts on the remote's host", async () => {
+    it("starts on the first account, lists its empty repositories with Create repository… above them, and connects to one as it", async () => {
       const user = userEvent.setup();
-      const { bridge } = installGitBridge(local(), { listAccounts });
+      const { bridge } = installGitBridge(local(), {
+        listAccounts,
+        listRepositories,
+      });
       render(
         <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
       );
 
-      await user.type(
-        await screen.findByRole("textbox", { name: /remote url/i }),
-        "https://github.com/acme/tests.git",
+      const picker = await screen.findByRole("combobox", {
+        name: "Repository",
+      });
+      await waitFor(() =>
+        expect(
+          within(picker).getByRole("option", {
+            name: "acme/billing (private)",
+          }),
+        ).toBeInTheDocument(),
       );
-      const picker = await screen.findByRole("combobox", { name: /account/i });
       expect(
         [...picker.querySelectorAll("option")].map(
           (option) => option.textContent,
         ),
       ).toEqual([
-        "Your own git sign-in (credential manager or SSH key)",
-        "octo-work on github.com",
-        "octo-personal on github.com",
+        "Choose a repository",
+        "octo-work/shop-api (private)",
+        "acme/billing (private)",
       ]);
-      await user.selectOptions(picker, "github|github.com|octo-personal");
+      // A button above the list, not an option in it: a native select fires an option on ArrowDown.
+      expect(
+        screen.getByRole("button", { name: "Create repository…" }),
+      ).toBeInTheDocument();
+      expect(bridge.listRepositories).toHaveBeenCalledWith(ref(WORK), {
+        tagged: false,
+        emptyOnly: true,
+      });
+      await user.selectOptions(picker, "acme/billing");
       await user.click(
         screen.getByRole("button", { name: /connect to remote/i }),
       );
 
       expect(bridge.connectRemote).toHaveBeenCalledWith(
         "ws-1",
-        "https://github.com/acme/tests.git",
+        "https://github.com/acme/billing.git",
+        ref(WORK),
+      );
+    });
+
+    it("lists another account's repositories when it is chosen, keeps each list while open, and refreshes on demand", async () => {
+      const user = userEvent.setup();
+      const listed = vi.fn(listRepositories);
+      installGitBridge(local(), { listAccounts, listRepositories: listed });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+      const account = await screen.findByRole("combobox", { name: "Account" });
+      await screen.findByRole("option", {
+        name: "octo-work/shop-api (private)",
+      });
+
+      await user.selectOptions(account, "github|github.com|octo-personal");
+      expect(
+        await screen.findByRole("option", {
+          name: "octo-personal/shop-api (private)",
+        }),
+      ).toBeInTheDocument();
+      await user.selectOptions(account, "github|github.com|octo-work");
+      expect(
+        await screen.findByRole("option", {
+          name: "octo-work/shop-api (private)",
+        }),
+      ).toBeInTheDocument();
+      expect(listed).toHaveBeenCalledTimes(2);
+
+      await user.click(
+        screen.getByRole("button", { name: "Refresh repositories" }),
+      );
+      await waitFor(() => expect(listed).toHaveBeenCalledTimes(3));
+    });
+
+    it("connects an SSH account's repository by its SSH URL, bound to no account", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), {
+        listAccounts,
+        listRepositories,
+      });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+
+      await user.selectOptions(
+        await screen.findByRole("combobox", { name: "Account" }),
+        "github|github.com|octo-ssh",
+      );
+      await user.selectOptions(
+        await screen.findByRole("combobox", { name: "Repository" }),
+        await screen.findByRole("option", {
+          name: "octo-ssh/shop-api (private)",
+        }),
+      );
+      expect(screen.getByText(/octo-ssh uses SSH/)).toBeInTheDocument();
+      await user.click(
+        screen.getByRole("button", { name: /connect to remote/i }),
+      );
+
+      expect(bridge.connectRemote).toHaveBeenCalledWith(
+        "ws-1",
+        "git@github.com:octo-ssh/shop-api.git",
+        null,
+      );
+    });
+
+    it("takes a URL instead for a repository not listed, reached as the account when it is an https one", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), {
+        listAccounts,
+        listRepositories,
+      });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: "Use a URL instead" }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Repository URL" }),
+        "https://github.com/acme/not-listed.git",
+      );
+      await user.click(
+        screen.getByRole("button", { name: /connect to remote/i }),
+      );
+      expect(bridge.connectRemote).toHaveBeenLastCalledWith(
+        "ws-1",
+        "https://github.com/acme/not-listed.git",
+        ref(WORK),
+      );
+    });
+
+    it("connects a URL on another host with the user's own sign-in", async () => {
+      const user = userEvent.setup();
+      const { bridge } = installGitBridge(local(), {
+        listAccounts,
+        listRepositories,
+      });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+
+      await user.selectOptions(
+        await screen.findByRole("combobox", { name: "Account" }),
+        "",
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Repository URL" }),
+        "https://git.example/team/tests.git",
+      );
+      await user.click(
+        screen.getByRole("button", { name: /connect to remote/i }),
+      );
+
+      expect(bridge.connectRemote).toHaveBeenCalledWith(
+        "ws-1",
+        "https://git.example/team/tests.git",
+        null,
+      );
+    });
+
+    it("says which owner could not be listed, rather than showing a short list as the whole one", async () => {
+      installGitBridge(local(), {
+        listAccounts,
+        listRepositories: vi.fn(async () => ({
+          repositories: [],
+          problems: [
+            "acme: Resource protected by organization SAML enforcement.",
+          ],
+        })),
+      });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+
+      expect(
+        await screen.findByText(
+          "acme: Resource protected by organization SAML enforcement.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("option", {
+          name: "No empty repository you can push to",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("signs in from the connect form, and lists the account just added", async () => {
+      const user = userEvent.setup();
+      const added = vi
+        .fn()
+        .mockResolvedValueOnce({ clis: [], accounts: [] })
+        .mockResolvedValue({ clis: [], accounts: [PERSONAL] });
+      const { bridge } = installGitBridge(local(), {
+        listAccounts: added,
+        listRepositories,
+        signIn: vi.fn(async () => ref(PERSONAL)),
+      });
+      render(
+        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
+      );
+
+      await user.click(
+        await screen.findByRole("button", { name: /sign in to github/i }),
+      );
+      expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue(
+        "github.com",
+      );
+      await user.click(
+        screen.getByRole("button", { name: /sign in in the browser/i }),
+      );
+      await user.click(await screen.findByRole("button", { name: /^done$/i }));
+
+      await user.selectOptions(
+        await screen.findByRole("combobox", { name: "Repository" }),
+        await screen.findByRole("option", {
+          name: "octo-personal/shop-api (private)",
+        }),
+      );
+      await user.click(
+        screen.getByRole("button", { name: /connect to remote/i }),
+      );
+      expect(bridge.connectRemote).toHaveBeenCalledWith(
+        "ws-1",
+        "https://github.com/octo-personal/shop-api.git",
         ref(PERSONAL),
       );
     });
@@ -344,76 +577,6 @@ describe("VersionHistoryPanel", () => {
 
       await user.selectOptions(picker, "");
       expect(bridge.setAccount).toHaveBeenLastCalledWith("ws-1", null);
-    });
-
-    it("signs in to the remote's host from the connect form, and connects as the account just added", async () => {
-      const user = userEvent.setup();
-      const added = vi
-        .fn()
-        .mockResolvedValueOnce({ clis: [], accounts: [] })
-        .mockResolvedValue({ clis: [], accounts: [PERSONAL] });
-      const { bridge } = installGitBridge(local(), {
-        listAccounts: added,
-        signIn: vi.fn(async () => ref(PERSONAL)),
-      });
-      render(
-        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
-      );
-
-      await user.type(
-        await screen.findByRole("textbox", { name: /remote url/i }),
-        "https://github.com/acme/tests.git",
-      );
-      await user.click(
-        screen.getByRole("button", { name: /sign in to github/i }),
-      );
-      expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue(
-        "github.com",
-      );
-      await user.click(
-        screen.getByRole("button", { name: /sign in in the browser/i }),
-      );
-      await user.click(await screen.findByRole("button", { name: /^done$/i }));
-
-      const picker = await screen.findByRole("combobox", { name: /account/i });
-      await waitFor(() =>
-        expect(picker).toHaveValue("github|github.com|octo-personal"),
-      );
-      await user.click(
-        screen.getByRole("button", { name: /connect to remote/i }),
-      );
-      expect(bridge.connectRemote).toHaveBeenCalledWith(
-        "ws-1",
-        "https://github.com/acme/tests.git",
-        ref(PERSONAL),
-      );
-    });
-
-    it("offers no account for an SSH remote, which signs in with the user's SSH key", async () => {
-      const user = userEvent.setup();
-      const { bridge } = installGitBridge(local(), { listAccounts });
-      render(
-        <VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />,
-      );
-
-      const field = await screen.findByRole("textbox", { name: /remote url/i });
-      await user.type(field, "https://github.com/acme/tests.git");
-      await user.selectOptions(
-        await screen.findByRole("combobox", { name: /account/i }),
-        "github|github.com|octo-work",
-      );
-      await user.clear(field);
-      await user.type(field, "git@github.com:acme/tests.git");
-
-      expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
-      await user.click(
-        screen.getByRole("button", { name: /connect to remote/i }),
-      );
-      expect(bridge.connectRemote).toHaveBeenCalledWith(
-        "ws-1",
-        "git@github.com:acme/tests.git",
-        null,
-      );
     });
 
     it("says why a tool could not list its accounts, rather than just showing none", async () => {
@@ -499,7 +662,7 @@ describe("VersionHistoryPanel", () => {
     render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
 
     await user.type(
-      await screen.findByRole("textbox", { name: /remote url/i }),
+      await screen.findByRole("textbox", { name: "Repository URL" }),
       "https://example.com/other.git",
     );
     await user.click(
@@ -509,7 +672,7 @@ describe("VersionHistoryPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That repository already has history this workspace did not come from.",
     );
-    expect(screen.getByRole("textbox", { name: /remote url/i })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "Repository URL" })).toHaveValue(
       "https://example.com/other.git",
     );
     expect(screen.getByText("Not connected")).toBeInTheDocument();
@@ -626,16 +789,20 @@ describe("Create repository", () => {
     });
     render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
 
+    // Create repository… sits above the account's repository list, for that account.
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Account" }),
+      `${account.provider}|${account.host}|${account.login}`,
+    );
     await user.click(
       await screen.findByRole("button", { name: "Create repository…" }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: "Create repository",
     });
-    await user.selectOptions(
+    expect(
       within(dialog).getByRole("combobox", { name: "Account" }),
-      `${account.provider}|${account.host}|${account.login}`,
-    );
+    ).toHaveValue(`${account.provider}|${account.host}|${account.login}`);
     await waitFor(() =>
       expect(
         within(dialog).getByRole("combobox", { name: "Owner" }),
@@ -742,12 +909,15 @@ describe("Create repository", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "github.com/octo-work/shop-api was created, but connecting this workspace to it failed. The repository was kept",
     );
-    expect(screen.getByRole("textbox", { name: "Remote URL" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "Repository URL" })).toHaveValue(
       "https://github.com/octo-work/shop-api.git",
     );
     expect(screen.getByRole("combobox", { name: "Account" })).toHaveValue(
       "github|github.com|octo-work",
     );
+    expect(
+      screen.getByRole("button", { name: /connect to remote/i }),
+    ).toBeEnabled();
   });
 
   it("says when the repository could not be tagged, once it is connected", async () => {
@@ -775,5 +945,28 @@ describe("Create repository", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "not tagged apiweave-workspace",
     );
+  });
+
+  it("says the list could not be read when it could not, rather than that there is nothing to choose", async () => {
+    installGitBridge(local(), {
+      listAccounts: vi.fn(async () => ({ clis: [], accounts: [HTTPS] })),
+      listRepositories: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error("gh could not sign in to github.com as octo-work"),
+        ),
+    });
+    render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
+
+    expect(
+      await screen.findByText(
+        "The repositories could not be listed: gh could not sign in to github.com as octo-work",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The repository list could not be read — Refresh tries again",
+      ),
+    ).toBeInTheDocument();
   });
 });

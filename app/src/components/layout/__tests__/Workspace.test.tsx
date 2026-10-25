@@ -73,7 +73,13 @@ vi.mock("../../../stores/PendingEditsStore", () => ({
 }));
 vi.mock("../../../utils/apiweaveClient", () => ({
   apiweave: { workflows: { create: vi.fn() } },
-  git: { openFromGit: vi.fn() },
+  git: {
+    openFromGit: vi.fn(),
+    // No account signed in: the dialog's picker is the URL field.
+    listAccounts: vi.fn(async () => ({ clis: [], accounts: [] })),
+    listRepositories: vi.fn(async () => ({ repositories: [], problems: [] })),
+    onSignInPrompt: vi.fn(() => () => undefined),
+  },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -93,6 +99,6 @@ describe("Workspace empty state", () => {
     expect(
       screen.getByRole("dialog", { name: "Open workspace from git" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Repository URL")).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "Repository URL" })).toBeInTheDocument();
   });
 });
