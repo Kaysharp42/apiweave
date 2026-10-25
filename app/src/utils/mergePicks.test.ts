@@ -17,6 +17,7 @@ import {
   withSidePick,
   withValuePick,
   withWholeRecordPick,
+  withoutResolvingPick,
 } from "./mergePicks";
 
 function conflict(overrides: Partial<GitMergeConflict> = {}): GitMergeConflict {
@@ -119,14 +120,39 @@ describe("withWholeRecordPick", () => {
 });
 
 describe("acceptAllPicks", () => {
-  it("settles every listed record and file with one copy", () => {
-    const picks = acceptAllPicks(groups, "ours");
+  it("settles every listed record and file with one copy, keeping decisions elsewhere", () => {
+    const before = mapOf(
+      sidePick("w1", "name", "ours"),
+      valuePick("w1", "nodes.n1.label", "Typed"),
+      sidePick("README.md", "", "ours"),
+    );
+
+    const picks = acceptAllPicks(groups, before, "theirs");
 
     expect([...picks.values()]).toEqual([
-      sidePick("w1", "", "ours"),
-      sidePick("README.md", "", "ours"),
+      sidePick("w1", "", "theirs"),
+      sidePick("README.md", "", "theirs"),
     ]);
     expect(resolvedCount(groups.flatMap((group) => group.conflicts), picks)).toBe(3);
+  });
+
+  it("keeps a record it was not asked about as it was", () => {
+    const before = mapOf(sidePick("other", "name", "ours"));
+    expect([...acceptAllPicks(groups, before, "ours").values()]).toContainEqual(
+      sidePick("other", "name", "ours"),
+    );
+  });
+});
+
+describe("withoutResolvingPick", () => {
+  it("drops the field's own decision, or the whole-record copy pick that settles it", () => {
+    const field = mapOf(sidePick("w1", "name", "ours"));
+    expect(withoutResolvingPick(field, conflict({ path: "name" })).size).toBe(0);
+
+    const whole = mapOf(sidePick("w1", "", "theirs"), sidePick("w2", "", "ours"));
+    expect([...withoutResolvingPick(whole, conflict({ path: "name" })).values()]).toEqual([
+      sidePick("w2", "", "ours"),
+    ]);
   });
 });
 

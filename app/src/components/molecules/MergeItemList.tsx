@@ -68,7 +68,7 @@ export function MergeItemList({
                       type="button"
                       disabled={disabled}
                       aria-current={key === selectedKey ? "true" : undefined}
-                      aria-label={`${group.name}, ${section.label}, ${resolved} of ${group.conflicts.length} conflicts settled`}
+                      aria-label={`${group.name}, ${section.label}, ${resolved} of ${group.conflicts.length} conflicts resolved`}
                       onClick={() => onSelect(group)}
                       onKeyDown={(event) => {
                         if (event.key === "ArrowDown") {

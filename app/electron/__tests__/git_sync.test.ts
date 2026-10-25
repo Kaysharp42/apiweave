@@ -303,14 +303,15 @@ describe("the repository bridges", () => {
   })
 })
 
-describe("the mergePicks bridge", () => {
-  it("reads the stored decisions for the workspace it is asked about", async () => {
-    const mergePicks = vi.fn(async () => [PICK])
-    const handler = handlerOf({ mergePicks } as unknown as GitSyncService, GIT_CHANNELS.mergePicks)
+describe("the mergeState bridge", () => {
+  it("reads the merge for the workspace it is asked about", async () => {
+    const state = { conflicts: [], picks: [PICK], notes: [] }
+    const mergeState = vi.fn(async () => state)
+    const handler = handlerOf({ mergeState } as unknown as GitSyncService, GIT_CHANNELS.mergeState)
 
-    await expect(handler({} as IpcMainInvokeEvent, "ws-1")).resolves.toEqual([PICK])
+    await expect(handler({} as IpcMainInvokeEvent, "ws-1")).resolves.toEqual(state)
 
-    expect(mergePicks).toHaveBeenCalledWith("ws-1")
+    expect(mergeState).toHaveBeenCalledWith("ws-1")
   })
 
   it.each([
@@ -318,25 +319,37 @@ describe("the mergePicks bridge", () => {
     { what: "an empty workspace id", workspaceId: "" },
     { what: "a workspace id that is not a string", workspaceId: 7 },
   ])("refuses $what before the sync service sees it", async ({ workspaceId }) => {
-    const mergePicks = vi.fn(async () => [PICK])
-    const handler = handlerOf({ mergePicks } as unknown as GitSyncService, GIT_CHANNELS.mergePicks)
+    const mergeState = vi.fn(async () => ({ conflicts: [], picks: [PICK], notes: [] }))
+    const handler = handlerOf({ mergeState } as unknown as GitSyncService, GIT_CHANNELS.mergeState)
     const read = async (id: unknown): Promise<unknown> => handler({} as IpcMainInvokeEvent, id)
 
     await expect(read(workspaceId)).rejects.toThrow()
 
-    expect(mergePicks).not.toHaveBeenCalled()
+    expect(mergeState).not.toHaveBeenCalled()
   })
 })
 
-describe("the mergeNotes bridge", () => {
-  it("reads what the merge settled by itself for the workspace it is asked about", async () => {
-    const notes = [{ type: "positions", recordId: "w1", name: "Checkout", nodeIds: ["n1"] }]
-    const mergeNotes = vi.fn(async () => notes)
-    const handler = handlerOf({ mergeNotes } as unknown as GitSyncService, GIT_CHANNELS.mergeNotes)
+describe("the saveMergePicks bridge", () => {
+  it("passes the decisions through, checked, for the workspace it is asked about", async () => {
+    const state = { conflicts: [], picks: [PICK], notes: [] }
+    const saveMergePicks = vi.fn(async () => state)
+    const handler = handlerOf({ saveMergePicks } as unknown as GitSyncService, GIT_CHANNELS.saveMergePicks)
 
-    await expect(handler({} as IpcMainInvokeEvent, "ws-1")).resolves.toEqual(notes)
+    await expect(handler({} as IpcMainInvokeEvent, "ws-1", [PICK])).resolves.toEqual(state)
 
-    expect(mergeNotes).toHaveBeenCalledWith("ws-1")
+    expect(saveMergePicks).toHaveBeenCalledWith("ws-1", [PICK])
+  })
+
+  it("refuses a decision that is not one, before the sync service sees it", async () => {
+    const saveMergePicks = vi.fn(async () => ({ conflicts: [], picks: [], notes: [] }))
+    const handler = handlerOf({ saveMergePicks } as unknown as GitSyncService, GIT_CHANNELS.saveMergePicks)
+    const save = async (picks: unknown): Promise<unknown> => handler({} as IpcMainInvokeEvent, "ws-1", picks)
+
+    await expect(save([{ recordId: "w1", path: "name" }])).rejects.toThrow(
+      "That is not a merge decision APIWeave can read",
+    )
+
+    expect(saveMergePicks).not.toHaveBeenCalled()
   })
 })
 

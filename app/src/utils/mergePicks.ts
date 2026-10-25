@@ -83,17 +83,41 @@ export function withWholeRecordPick(
   return next;
 }
 
-/** Every listed record and file settled by one copy, for Accept all. */
+/**
+ * Every listed record and file settled by one copy, for Accept all: the
+ * decisions already made are kept, and each record's own picks — values the
+ * user typed included — give way to the record-level copy pick that supersedes
+ * them.
+ */
 export function acceptAllPicks(
   groups: readonly MergeConflictGroup[],
+  picks: ReadonlyMap<string, GitMergePick>,
   side: GitMergeSide,
 ): ReadonlyMap<string, GitMergePick> {
-  return new Map(
-    groups.map((group) => [
-      pickKey(group.recordId, ""),
-      { recordId: group.recordId, path: "", side },
-    ]),
-  );
+  const next = new Map(picks);
+  for (const group of groups) {
+    for (const key of [...next.keys()]) {
+      if (placeOf(key).recordId === group.recordId) next.delete(key);
+    }
+    next.set(pickKey(group.recordId, ""), { recordId: group.recordId, path: "", side });
+  }
+  return next;
+}
+
+/**
+ * The decisions without the one that settles `conflict`: its own pick, and a
+ * copy pick above it, so clearing a field whose record was accepted whole
+ * leaves that field — and its record — undecided rather than empty but settled.
+ */
+export function withoutResolvingPick(
+  picks: ReadonlyMap<string, GitMergePick>,
+  conflict: GitMergeConflict,
+): ReadonlyMap<string, GitMergePick> {
+  const next = new Map(picks);
+  next.delete(pickKey(conflict.recordId, conflict.path));
+  const resolution = resolutionOf(picks, conflict);
+  if (resolution !== undefined) next.delete(pickKey(resolution.recordId, resolution.path));
+  return next;
 }
 
 /** How many of `conflicts` have a decision. */

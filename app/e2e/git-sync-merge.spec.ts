@@ -148,9 +148,15 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         setMode: async () => current,
         syncNow: async () => current,
         pendingChanges: async () => [],
-        mergeConflicts: async () => listed,
-        mergePicks: async () => [...picks],
-        mergeNotes: async () => [...notes],
+        mergeState: async (_workspaceId: string, chosen?: readonly FakePick[]) => ({
+          conflicts: listed,
+          picks: [...(chosen ?? picks)],
+          notes: [...notes],
+        }),
+        saveMergePicks: async (_workspaceId: string, chosen: readonly FakePick[]) => {
+          picks = [...chosen];
+          return { conflicts: listed, picks: [...picks], notes: [...notes] };
+        },
         mergeRecordCommits: async (_workspaceId: string, recordIds: readonly string[]) =>
           recordIds.map((recordId) => ({ recordId, ...(commits[recordId] ?? { ours: null, theirs: null }) })),
         resolveMerge: async (_workspaceId: string, chosen: readonly FakePick[]) => {
@@ -216,8 +222,8 @@ test.describe("the merge view", () => {
     await expect(view.getByText("Resolve merge")).toBeVisible();
     // The inventory: two records, three conflicts, nothing settled yet.
     await expect(view.getByRole("navigation", { name: "Conflicted items" })).toBeVisible();
-    await expect(view.getByRole("button", { name: /Checkout, Workflows, 0 of 2 conflicts settled/ })).toBeVisible();
-    await expect(view.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts settled/ })).toBeVisible();
+    await expect(view.getByRole("button", { name: /Checkout, Workflows, 0 of 2 conflicts resolved/ })).toBeVisible();
+    await expect(view.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ })).toBeVisible();
     await expect(view.getByRole("status")).toHaveText("0 of 3 conflicts resolved");
     // Both copies, with who last wrote each.
     await expect(view.getByText("Checkout (this device)")).toBeVisible();
@@ -235,19 +241,41 @@ test.describe("the merge view", () => {
     await expect(view.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
     await captureEvidence(page, "merge-view.png");
 
+    // Closing stores the decisions; opening again starts where it left off.
+    await view.getByRole("button", { name: "Close" }).click();
+    await expect(view).toHaveCount(0);
+    expect(await page.evaluate(() => window.__gitPicks__())).toEqual([
+      { recordId: "w1", path: "description", value: "Pay by card, agreed" },
+      { recordId: "w1", path: "name", side: "ours" },
+    ]);
+    await openMergeView(page);
+    const reopened = page.getByRole("dialog", { name: "Resolve merge" });
+    await expect(reopened.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
+    // The view opens on the first item with something left: the file. Checkout is settled.
+    await reopened.getByRole("button", { name: /Checkout, Workflows, 2 of 2 conflicts resolved/ }).click();
+    await expect(reopened.getByLabel("Result for Name in Checkout")).toHaveValue("Checkout (this device)");
+    await expect(reopened.getByLabel("Result for Description in Checkout")).toHaveValue("Pay by card, agreed");
+
+    // Clearing a value drops its decision: the conflict is back to unresolved.
+    await reopened.getByLabel("Result for Description in Checkout").fill("");
+    await expect(reopened.getByRole("status")).toHaveText("1 of 3 conflicts resolved");
+    await expect(reopened.getByRole("button", { name: "Finish merge" })).toBeDisabled();
+    await reopened.getByLabel("Result for Description in Checkout").fill("Pay by card, agreed");
+    await expect(reopened.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
+
     // What merged by itself, folded until asked.
-    await view.getByRole("button", { name: "1 change merged automatically" }).click();
-    await expect(view.getByText(/kept the remote copy's position for 1 node/)).toBeVisible();
+    await reopened.getByRole("button", { name: "1 change merged automatically" }).click();
+    await expect(reopened.getByText(/kept the remote copy's position for 1 node/)).toBeVisible();
 
     // The whole file: copies only.
-    await view.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts settled/ }).click();
-    await expect(view.getByLabel("Result for Whole file in README.md")).toHaveCount(0);
-    await view.getByRole("button", { name: "Take the remote copy of Whole file in README.md" }).click();
-    await expect(view.getByRole("status")).toHaveText("3 of 3 conflicts resolved");
+    await reopened.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ }).click();
+    await expect(reopened.getByLabel("Result for Whole file in README.md")).toHaveCount(0);
+    await reopened.getByRole("button", { name: "Take the remote copy of Whole file in README.md" }).click();
+    await expect(reopened.getByRole("status")).toHaveText("3 of 3 conflicts resolved");
 
-    await view.getByRole("button", { name: "Finish merge" }).click();
+    await reopened.getByRole("button", { name: "Finish merge" }).click();
 
-    await expect(view).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Resolve merge" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Version history: Synced" })).toBeVisible();
     expect(await page.evaluate(() => window.__gitPicks__())).toEqual([
       { recordId: "README.md", path: "", side: "theirs" },

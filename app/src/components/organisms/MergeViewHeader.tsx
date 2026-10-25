@@ -56,7 +56,7 @@ export function MergeViewHeader({
           disabled={disabled || !canAcceptAll}
           onClick={() => onAcceptAll("theirs")}
         >
-          Accept all theirs
+          Accept all remote
         </Button>
       </div>
       <MergeNotes notes={notes} />

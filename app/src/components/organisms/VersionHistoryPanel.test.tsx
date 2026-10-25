@@ -273,7 +273,7 @@ describe("VersionHistoryPanel", () => {
     });
     const { bridge } = installGitBridge(local(), {
       connectRemote: vi.fn(async () => merging),
-      mergeConflicts: vi.fn(async () => []),
+      mergeState: vi.fn(async () => ({ conflicts: [], picks: [], notes: [] })),
     });
     render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
 

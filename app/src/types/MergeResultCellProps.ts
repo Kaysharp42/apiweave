@@ -13,4 +13,7 @@ export interface MergeResultCellProps {
   readonly sidesOnly: boolean;
   readonly disabled: boolean;
   readonly onValue: (value: JsonValue) => void;
+  /** Empty or unparseable text: this field decides nothing again. */
+  readonly onClear: () => void;
+  readonly onInvalidChange: (invalid: boolean) => void;
 }

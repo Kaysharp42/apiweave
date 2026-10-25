@@ -48,3 +48,29 @@ export function resolvedValue(
   if ("value" in resolution) return resolution.value;
   return resolution.side === "ours" ? conflict.ours : conflict.theirs;
 }
+
+/**
+ * How a field's result is edited. A text field is edited as its text and stays
+ * text; anything else is edited as JSON, so its type is explicit. A field is
+ * text when the value that would be written is text, or when it holds nothing
+ * yet and every copy that holds it holds text.
+ */
+export function fieldEditorKind(
+  conflict: GitMergeConflict,
+  current: JsonValue | undefined,
+): { readonly text: boolean; readonly long: boolean } {
+  const text = fieldIsText(conflict, current);
+  const shown = current ?? conflict.theirs ?? conflict.ours;
+  return { text, long: isLongValue(shown) };
+}
+
+function fieldIsText(
+  conflict: GitMergeConflict,
+  current: JsonValue | undefined,
+): boolean {
+  if (current !== undefined) return typeof current === "string";
+  const held = [conflict.ours, conflict.theirs].filter(
+    (value) => value !== undefined,
+  );
+  return held.length > 0 && held.every((value) => typeof value === "string");
+}

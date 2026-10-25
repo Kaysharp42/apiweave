@@ -4,9 +4,11 @@ import type { GitMergeNote } from "@shared/types/GitMergeNote";
 import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { GitMergeSide } from "@shared/types/GitMergeSide";
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
+import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { Modal } from "../molecules/Modal";
+import { GitAuthorForm } from "./GitAuthorForm";
 import { MergeViewBody } from "./MergeViewBody";
 import { MergeViewFooter } from "./MergeViewFooter";
 import { MergeViewHeader } from "./MergeViewHeader";
@@ -24,8 +26,13 @@ import {
   withSidePick,
   withValuePick,
   withWholeRecordPick,
+  withoutResolvingPick,
 } from "../../utils/mergePicks";
-import type { GitMergeViewProps, MergeConflictGroup } from "../../types";
+import { splitMergeCommitIds } from "../../utils/mergeCommits";
+import type {
+  GitMergeViewProps,
+  MergeConflictGroup,
+} from "../../types";
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -34,48 +41,65 @@ const errorText = (error: unknown): string =>
 function mergeErrorText(error: WorkspaceGitError): string {
   if (error.code !== "identity_missing") return error.message;
   const reason = /[.!?]$/.test(error.message) ? error.message : `${error.message}.`;
-  return `${reason} Set your name and email in Version history settings.`;
+  return `${reason} Set your name and email below, then finish again.`;
 }
 
-/** Who last wrote each listed record, both copies; null when the details cannot be read. */
+/**
+ * Who last wrote each listed record, both copies. A record past the number one
+ * read covers is in `unread`, so its item says the details are unavailable
+ * rather than showing no authors; a read that fails does the same for all.
+ */
 async function fetchCommits(
   workspaceId: string,
   listed: readonly GitMergeConflict[],
-): Promise<ReadonlyMap<string, MergeRecordCommits> | null> {
-  const recordIds = [...new Set(listed.map((conflict) => conflict.recordId))];
-  if (recordIds.length === 0) return new Map();
+): Promise<{
+  readonly commits: ReadonlyMap<string, MergeRecordCommits>;
+  readonly unread: ReadonlySet<string>;
+  readonly failed: boolean;
+}> {
+  const { read, unread } = splitMergeCommitIds(
+    listed.map((conflict) => conflict.recordId),
+  );
+  if (read.length === 0) return { commits: new Map(), unread, failed: false };
   try {
-    const found = await git.mergeRecordCommits(workspaceId, recordIds.slice(0, 500));
-    return new Map(found.map((entry) => [entry.recordId, entry]));
+    const found = await git.mergeRecordCommits(workspaceId, read);
+    return {
+      commits: new Map(found.map((entry) => [entry.recordId, entry])),
+      unread,
+      failed: false,
+    };
   } catch {
-    return null;
+    return { commits: new Map(), unread, failed: true };
   }
 }
 
-/** One read of everything the view shows: the conflicts, the decisions so far, what merged by itself, and the authors. */
+/** Everything one read of the merge brings: its full conflict list, the decisions, what merged by itself. */
 interface MergeRead {
   readonly conflicts: readonly GitMergeConflict[];
   readonly picks: ReadonlyMap<string, GitMergePick>;
   readonly notes: readonly GitMergeNote[];
   readonly commits: ReadonlyMap<string, MergeRecordCommits>;
+  readonly commitsUnread: ReadonlySet<string>;
   readonly commitDetailsFailed: boolean;
 }
 
-async function readMerge(workspaceId: string): Promise<MergeRead> {
-  const conflicts = await git.mergeConflicts(workspaceId);
-  const picks = picksFromList(await git.mergePicks(workspaceId));
-  const notes = await git.mergeNotes(workspaceId);
-  const commits = await fetchCommits(workspaceId, conflicts);
+/** Read the merge with `picks` deciding what the notes describe (the stored set when none are given). */
+async function readMerge(
+  workspaceId: string,
+  picks?: readonly GitMergePick[],
+): Promise<MergeRead> {
+  const state = await git.mergeState(workspaceId, picks);
+  const commits = await fetchCommits(workspaceId, state.conflicts);
   return {
-    conflicts,
-    picks,
-    notes,
-    commits: commits ?? new Map(),
-    commitDetailsFailed: commits === null,
+    conflicts: state.conflicts,
+    picks: picksFromList(state.picks),
+    notes: state.notes,
+    commits: commits.commits,
+    commitsUnread: commits.unread,
+    commitDetailsFailed: commits.failed,
   };
 }
 
-/** The item key (`recordId` + `""`), and the conflict key of a group's first conflict. */
 const itemKeyOf = (group: MergeConflictGroup): string => pickKey(group.recordId, "");
 const firstConflictKey = (group: MergeConflictGroup): string =>
   pickKey(group.recordId, group.conflicts[0]?.path ?? "");
@@ -92,6 +116,17 @@ function firstGroupOf(
   );
 }
 
+/** How many conflicts of `group` are settled by a value the user typed. */
+function typedValuesIn(
+  group: MergeConflictGroup,
+  picks: ReadonlyMap<string, GitMergePick>,
+): number {
+  return group.conflicts.filter((conflict) => {
+    const resolution = resolutionOf(picks, conflict);
+    return resolution !== undefined && "value" in resolution;
+  }).length;
+}
+
 /**
  * The merge view: what this device and the remote disagree on, one conflicted
  * record or file at a time, with both copies and the result side by side.
@@ -100,25 +135,34 @@ function firstGroupOf(
  * abandon, and it has to close back onto the workspace it started from. The
  * left list is the conflict inventory; the main pane is the selected item's
  * fields, each settled with an arrow from either copy or with a value of the
- * user's own. Every decision is sent as the complete set, so a resolve that
- * leaves conflicts waiting loses nothing, and a picker reopened starts where it
- * left off.
+ * user's own. The conflict list is every conflict the merge has — computed
+ * with no decisions — so a decision can be seen, changed, and counted; the
+ * decisions are saved when the view closes, so nothing typed is lost.
  */
-// fallow-ignore-next-line complexity -- the score is hook density: twelve pieces of state (the conflicts, the picks, what merged by itself, the authors, the selection and focus, busy, the error and the two confirmations), two reads, and the orchestration of finish and abandon. Every rule the decisions follow lives in utils/mergePicks and utils/mergeValues, and the list, pane, header and footer are their own components.
+// fallow-ignore-next-line complexity -- the score is hook density: the conflicts, the picks, the notes, the authors, the selection and focus, busy, the error, the author form and three confirmations, plus the reads and the orchestration of save, finish and abandon. Every rule the decisions follow lives in utils/mergePicks and utils/mergeValues, and the list, pane, header and footer are their own components.
 export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
   const { workspaceId } = status;
   const [conflicts, setConflicts] = useState<readonly GitMergeConflict[] | null>(null);
   const [notes, setNotes] = useState<readonly GitMergeNote[]>([]);
   const [picks, setPicks] = useState<ReadonlyMap<string, GitMergePick>>(new Map());
   const [commits, setCommits] = useState<ReadonlyMap<string, MergeRecordCommits>>(new Map());
+  const [commitsUnread, setCommitsUnread] = useState<ReadonlySet<string>>(new Set());
   const [commitDetailsFailed, setCommitDetailsFailed] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [invalidKeys, setInvalidKeys] = useState<ReadonlySet<string>>(new Set());
+  const [authorNeeded, setAuthorNeeded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmAbandon, setConfirmAbandon] = useState(false);
   const [confirmAll, setConfirmAll] = useState<GitMergeSide | null>(null);
+  const [confirmItem, setConfirmItem] = useState<{
+    readonly group: MergeConflictGroup;
+    readonly side: GitMergeSide;
+    readonly values: number;
+  } | null>(null);
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const groups = useMemo(() => groupConflicts(conflicts ?? []), [conflicts]);
   const selected = groups.find((group) => itemKeyOf(group) === selectedKey) ?? groups[0];
@@ -131,6 +175,7 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
     setPicks(read.picks);
     setNotes(read.notes);
     setCommits(read.commits);
+    setCommitsUnread(read.commitsUnread);
     setCommitDetailsFailed(read.commitDetailsFailed);
   };
 
@@ -151,6 +196,27 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
       live = false;
     };
   }, [workspaceId]);
+
+  // The notes are what the merge repairs with the decisions made so far — a
+  // pick can leave an edge or a frame dangling — so they follow the picks,
+  // after the typing settles rather than on every keystroke.
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      void git
+        .mergeState(workspaceId, picksRequest(picks))
+        .then((state) => {
+          if (live) setNotes(state.notes);
+        })
+        .catch((failure: unknown) => {
+          if (live) setError(errorText(failure));
+        });
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [workspaceId, picks]);
 
   useEffect(() => {
     if (focusKey === null) return;
@@ -181,26 +247,74 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
     setFocusKey(key);
   };
 
-  const finish = async (): Promise<void> => {
+  /** Store the decisions so closing loses nothing; throws to the caller when it cannot. */
+  const save = (): Promise<unknown> => git.saveMergePicks(workspaceId, picksRequest(picks));
+
+  const closeView = async (): Promise<void> => {
+    setConfirmClose(false);
     setBusy(true);
     setError(null);
     try {
+      await save();
+      onClose();
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const requestClose = (): void => {
+    if (invalidKeys.size > 0) {
+      setConfirmClose(true);
+      return;
+    }
+    void closeView();
+  };
+
+  const finish = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    setAuthorNeeded(false);
+    try {
+      await save();
       const next = await git.resolveMerge(workspaceId, picksRequest(picks));
       onStatus(next);
       if (next.state !== "merging") {
         onClose();
         return;
       }
-      if (next.lastError !== null) setError(mergeErrorText(next.lastError));
-      const read = await readMerge(workspaceId);
-      apply(read);
-      const nextGroups = groupConflicts(read.conflicts);
-      if (!nextGroups.some((group) => itemKeyOf(group) === selectedKey)) {
-        const first = firstGroupOf(nextGroups, read.picks);
-        setSelectedKey(first === undefined ? null : itemKeyOf(first));
+      if (next.lastError !== null) {
+        setError(mergeErrorText(next.lastError));
+        setAuthorNeeded(next.lastError.code === "identity_missing");
       }
+      // The picks are stored; only what the merge now says needs rereading.
+      const state = await git.mergeState(workspaceId);
+      setConflicts(state.conflicts);
+      setNotes(state.notes);
     } catch (failure) {
       setError(errorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishWithAuthor = async (request: WorkspaceGitCommitRequest): Promise<boolean> => {
+    setBusy(true);
+    setError(null);
+    try {
+      const named = await git.syncNow(workspaceId, request);
+      onStatus(named);
+      if (named.lastError !== null) {
+        setError(named.lastError.message);
+        return false;
+      }
+      setAuthorNeeded(false);
+      await finish();
+      return true;
+    } catch (failure) {
+      setError(errorText(failure));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -220,11 +334,37 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
     }
   };
 
+  const acceptItem = (group: MergeConflictGroup, side: GitMergeSide): void => {
+    const values = typedValuesIn(group, picks);
+    if (values > 0) {
+      setConfirmItem({ group, side, values });
+      return;
+    }
+    setPicks(withWholeRecordPick(picks, group.recordId, side));
+  };
+
+  const clearInvalid = (key: string, invalid: boolean): void => {
+    setInvalidKeys((current) => {
+      if (current.has(key) === invalid) return current;
+      const next = new Set(current);
+      if (invalid) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  };
+
+  const clearPath = (path: string): void => {
+    if (selected === undefined) return;
+    const conflict = selected.conflicts.find((entry) => entry.path === path);
+    if (conflict === undefined) return;
+    setPicks(withoutResolvingPick(picks, conflict));
+  };
+
   return (
     <>
       <Modal
         isOpen
-        onClose={onClose}
+        onClose={requestClose}
         title="Resolve merge"
         size="fullscreen"
         scrollable={false}
@@ -264,31 +404,41 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
             canAcceptAll={groups.length > 0}
             onAcceptAll={setConfirmAll}
           />
+          {authorNeeded && (
+            <div className="border-b border-border px-5 py-3 dark:border-border-dark">
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                Git does not know who is making this merge&apos;s commit yet.
+                Set your name and email, and Finish merge carries on.
+              </p>
+              <GitAuthorForm busy={busy} onCommit={finishWithAuthor} />
+            </div>
+          )}
           <MergeViewBody
             conflicts={conflicts}
             groups={groups}
             selected={selected}
             picks={picks}
             commits={commits}
+            commitsUnread={commitsUnread}
             commitDetailsFailed={commitDetailsFailed}
             busy={busy}
             error={error}
             onSelect={select}
-            onAcceptItem={(side) =>
-              selected !== undefined &&
-              setPicks(withWholeRecordPick(picks, selected.recordId, side))
-            }
-            onSide={(path, side) =>
-              selected !== undefined &&
-              setPicks(withSidePick(picks, selected.recordId, path, side))
-            }
-            onValue={(path, value) =>
-              selected !== undefined &&
-              setPicks(withValuePick(picks, selected.recordId, path, value))
-            }
-            onFocus={(conflict) =>
-              setActiveKey(pickKey(conflict.recordId, conflict.path))
-            }
+            onAcceptItem={(side) => selected !== undefined && acceptItem(selected, side)}
+            field={{
+              onSide: (path, side) =>
+                selected !== undefined &&
+                setPicks(withSidePick(picks, selected.recordId, path, side)),
+              onValue: (path, value) =>
+                selected !== undefined &&
+                setPicks(withValuePick(picks, selected.recordId, path, value)),
+              onClear: clearPath,
+              onInvalidChange: (path, invalid) =>
+                selected !== undefined &&
+                clearInvalid(pickKey(selected.recordId, path), invalid),
+              onFocus: (conflict) =>
+                setActiveKey(pickKey(conflict.recordId, conflict.path)),
+            }}
           />
         </div>
       </Modal>
@@ -306,13 +456,36 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
         onClose={() => setConfirmAll(null)}
         onConfirm={() => {
           if (confirmAll !== null) {
-            setPicks(acceptAllPicks(groups, confirmAll));
+            setPicks(acceptAllPicks(groups, picks, confirmAll));
             setConfirmAll(null);
           }
         }}
-        title={`Accept all ${confirmAll === "ours" ? "your" : "the remote"} copies?`}
+        title={`Accept all ${confirmAll === "ours" ? "your" : "remote"} copies?`}
         message="Every conflict in every record and file is settled by that copy. You can still change any field afterwards."
         confirmLabel="Accept all"
+        intent="warning"
+      />
+      <ConfirmDialog
+        open={confirmItem !== null}
+        onClose={() => setConfirmItem(null)}
+        onConfirm={() => {
+          if (confirmItem !== null) {
+            setPicks(withWholeRecordPick(picks, confirmItem.group.recordId, confirmItem.side));
+            setConfirmItem(null);
+          }
+        }}
+        title="Replace the values you typed?"
+        message={`${confirmItem?.values ?? 0} ${confirmItem?.values === 1 ? "conflict is" : "conflicts are"} settled by a value you typed in ${confirmItem?.group.name ?? "this item"}. Accepting one copy replaces ${confirmItem?.values === 1 ? "it" : "them"}.`}
+        confirmLabel="Replace them"
+        intent="warning"
+      />
+      <ConfirmDialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        onConfirm={() => void closeView()}
+        title="Close with a value that is not valid?"
+        message="A value you typed is not valid JSON, so it settles nothing and will not be saved. Everything else you decided is saved."
+        confirmLabel="Close"
         intent="warning"
       />
     </>

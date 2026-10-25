@@ -15,4 +15,8 @@ export interface MergeFieldRowProps {
   readonly onFocus: () => void;
   readonly onSide: (side: GitMergeSide) => void;
   readonly onValue: (value: JsonValue) => void;
+  /** Empty or unparseable text: this field decides nothing again. */
+  readonly onClear: () => void;
+  /** Whether the result's text parses, so closing can ask before losing it. */
+  readonly onInvalidChange: (invalid: boolean) => void;
 }

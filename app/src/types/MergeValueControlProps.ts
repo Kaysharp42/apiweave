@@ -1,6 +1,6 @@
 import type { JsonValue } from "@shared/types/JsonValue";
 
-/** The control a result's value is typed or edited in: an inline JSON input, or Monaco for a long value. */
+/** The control a result's value is typed or edited in: an inline input, or Monaco for a long value. */
 export interface MergeValueControlProps {
   /** What the control is called, without the direction. */
   readonly label: string;

@@ -138,7 +138,7 @@ describe("GitSyncService.connectRemote", () => {
     expect(status).toMatchObject({ tracked: true, remoteUrl: remote.url, state: "merging", lastError: null, unrelatedHistory: true })
     expect(binding(harness)).toMatchObject({ remoteUrl: remote.url, branch: "main" })
     expect(harness.repositories.workspaceGit.getMerge(harness.workspaceId)).toMatchObject({ baseCommit: null, theirCommit: remoteTip })
-    expect(await harness.sync.mergeConflicts(harness.workspaceId)).toEqual([
+    expect((await await harness.sync.mergeState(harness.workspaceId)).conflicts).toEqual([
       { kind: "workspace", recordId: harness.workspaceId, name: "Acme QA", path: "name", ours: "Acme QA", theirs: "Acme QA (elsewhere)" },
     ])
     expect(headOf(harness, remote.dir, "main")).toBe(remoteTip)

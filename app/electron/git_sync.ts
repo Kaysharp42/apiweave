@@ -179,9 +179,13 @@ export function registerGitHandlers(
   handleWorkspace(GIT_CHANNELS.track, (workspaceId) => trackOrAskForAuthor(gitSync, workspaceId))
   handleWorkspace(GIT_CHANNELS.untrack, (workspaceId) => gitSync.untrack(workspaceId))
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
-  handleWorkspace(GIT_CHANNELS.mergeConflicts, (workspaceId) => gitSync.mergeConflicts(workspaceId))
-  handleWorkspace(GIT_CHANNELS.mergePicks, (workspaceId) => gitSync.mergePicks(workspaceId))
-  handleWorkspace(GIT_CHANNELS.mergeNotes, (workspaceId) => gitSync.mergeNotes(workspaceId))
+  handleWorkspace(GIT_CHANNELS.mergeState, (workspaceId) => gitSync.mergeState(workspaceId))
+  ipcMain.handle(
+    GIT_CHANNELS.saveMergePicks,
+    guard((workspaceId: unknown, picks: unknown) =>
+      gitSync.saveMergePicks(workspaceIdOf(workspaceId), mergePicksOf(picks)),
+    ),
+  )
   ipcMain.handle(
     GIT_CHANNELS.mergeRecordCommits,
     guard((workspaceId: unknown, recordIds: unknown) =>

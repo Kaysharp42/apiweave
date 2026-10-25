@@ -64,9 +64,8 @@ export function installGitBridge(
     setMode: vi.fn(async (_workspaceId, mode) => trackedStatus({ mode })),
     syncNow: vi.fn(async () => trackedStatus()),
     pendingChanges: vi.fn(async () => []),
-    mergeConflicts: vi.fn(async () => []),
-    mergePicks: vi.fn(async () => []),
-    mergeNotes: vi.fn(async () => []),
+    mergeState: vi.fn(async () => ({ conflicts: [], picks: [], notes: [] })),
+    saveMergePicks: vi.fn(async () => ({ conflicts: [], picks: [], notes: [] })),
     mergeRecordCommits: vi.fn(async (_workspaceId: string, recordIds: readonly string[]) =>
       recordIds.map((recordId: string) => ({ recordId, ours: null, theirs: null })),
     ),

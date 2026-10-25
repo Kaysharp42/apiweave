@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isLongValue,
+  fieldEditorKind,
   parseValueText,
   resolvedValue,
   valueText,
@@ -64,5 +65,29 @@ describe("resolvedValue", () => {
     expect(resolvedValue(conflict(), ours)).toBe("Mine");
     expect(resolvedValue(conflict(), theirs)).toBe("Remote");
     expect(resolvedValue(conflict(), own)).toBe("Own");
+  });
+});
+
+describe("fieldEditorKind", () => {
+  it("edits a field as text when it writes text, or holds nothing and both sides that hold it hold text", () => {
+    expect(fieldEditorKind(conflict(), "Mine")).toEqual({ text: true, long: false });
+    expect(fieldEditorKind(conflict(), 42)).toEqual({ text: false, long: false });
+    // Deleted in one copy, text in the other: still a text field.
+    const deletedInOurs: GitMergeConflict = {
+      kind: "workflow",
+      recordId: "w1",
+      name: "Checkout",
+      path: "name",
+      theirs: "Remote",
+    };
+    expect(fieldEditorKind(deletedInOurs, undefined)).toEqual({ text: true, long: false });
+    // A long body is edited in Monaco, as its own text.
+    expect(
+      fieldEditorKind(conflict({ ours: "x".repeat(200), theirs: "y".repeat(200) }), undefined),
+    ).toEqual({ text: true, long: true });
+    // An object is JSON, and long enough for Monaco.
+    expect(
+      fieldEditorKind(conflict({ ours: { a: 1 }, theirs: { a: 2 } }), undefined),
+    ).toEqual({ text: false, long: true });
   });
 });

@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { JsonValue } from "@shared/types/JsonValue";
 import { MonacoDiffEditor } from "../node-modal/lazyMonaco";
 import { useDarkMode } from "../../hooks/useDarkMode";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { MergeCompareProps } from "../../types";
 
 /** What one side's value reads as in the diff: text as itself, everything else as indented JSON. */
@@ -10,9 +11,10 @@ function compareText(value: JsonValue | undefined): string {
   return typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
-/** Both copies of one value side by side, read-only: the way to see what differs in a long body or script before deciding. */
+/** Both copies of one value side by side when the pane is wide enough, else inline, read-only: the way to see what differs in a long body or script before deciding. */
 export function MergeCompare({ label, ours, theirs }: MergeCompareProps) {
   const isDarkMode = useDarkMode();
+  const sideBySide = useMediaQuery("(min-width: 1024px)");
   const text = typeof ours === "string" && typeof theirs === "string";
   return (
     <div className="overflow-hidden rounded-sm border border-border dark:border-border-dark">
@@ -32,7 +34,7 @@ export function MergeCompare({ label, ours, theirs }: MergeCompareProps) {
           options={{
             readOnly: true,
             minimap: { enabled: false },
-            renderSideBySide: true,
+            renderSideBySide: sideBySide,
             scrollBeyondLastLine: false,
             fontFamily: "JetBrains Mono",
             fixedOverflowWidgets: true,

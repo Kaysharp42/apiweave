@@ -23,11 +23,13 @@ export function MergeItemPane({
   group,
   picks,
   commits,
-  commitDetailsFailed,
+  commitDetailsUnavailable,
   disabled,
   onAcceptItem,
   onSide,
   onValue,
+  onClear,
+  onInvalidChange,
   onFocus,
 }: MergeItemPaneProps) {
   return (
@@ -51,7 +53,7 @@ export function MergeItemPane({
               </span>
             )}
           </div>
-          <CommitLines commits={commits} detailsFailed={commitDetailsFailed} />
+          <CommitLines commits={commits} detailsFailed={commitDetailsUnavailable} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(["ours", "theirs"] as const).map((side) => (
@@ -60,10 +62,10 @@ export function MergeItemPane({
               variant="outline"
               size="xs"
               disabled={disabled}
-              aria-label={`Accept all ${side === "ours" ? "your" : "the remote"} copies in ${group.name}`}
+              aria-label={`Accept all ${side === "ours" ? "your" : "remote"} copies in ${group.name}`}
               onClick={() => onAcceptItem(side)}
             >
-              Accept {side === "ours" ? "yours" : "theirs"}
+              Accept {side === "ours" ? "yours" : "remote"}
             </Button>
           ))}
         </div>
@@ -79,6 +81,10 @@ export function MergeItemPane({
             onFocus={() => onFocus(conflict)}
             onSide={(side) => onSide(conflict.path, side)}
             onValue={(value) => onValue(conflict.path, value)}
+            onClear={() => onClear(conflict.path)}
+            onInvalidChange={(invalid) =>
+              onInvalidChange(conflict.path, invalid)
+            }
           />
         ))}
       </ul>
@@ -103,14 +109,14 @@ function CommitLines({
   }
   if (commits === undefined) return null;
   return (
-    <div className="grid gap-1 md:grid-cols-2">
+    <div className="space-y-1">
       <CommitLine heading="Your copy" commit={commits.ours} />
       <CommitLine heading="Remote copy" commit={commits.theirs} />
     </div>
   );
 }
 
-/** "Your copy · Ada Lovelace · 3f9a2c1 · 2026-10-20", and the commit's subject under it. */
+/** "Your copy · Ada Lovelace · 3f9a2c1 · 2026-10-20", and the commit's subject on the line below it. */
 function CommitLine({
   heading,
   commit,
@@ -120,7 +126,7 @@ function CommitLine({
 }) {
   const subject = mergeCommitSubject(commit);
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 space-y-0.5">
       <p className="truncate text-xxs text-text-muted dark:text-text-muted-dark">
         {heading} · {describeMergeCommit(commit)}
       </p>

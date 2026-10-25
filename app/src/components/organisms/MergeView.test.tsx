@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { humanizePath } from "@shared/conflict-diff";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergeNote } from "@shared/types/GitMergeNote";
 import type { GitMergePick } from "@shared/types/GitMergePick";
+import type { GitMergeState } from "@shared/types/GitMergeState";
 import { MergeView } from "./MergeView";
 import { installGitBridge, trackedStatus } from "../../__tests__/gitFixtures";
 
@@ -85,49 +86,82 @@ const NOTES: readonly GitMergeNote[] = [
   { type: "order", recordId: "p1", name: "Shop" },
 ];
 
-interface Rendered {
-  readonly bridge: ReturnType<typeof installGitBridge>["bridge"];
-  readonly onClose: ReturnType<typeof vi.fn>;
-  readonly onStatus: ReturnType<typeof vi.fn>;
+/** The merge the fake service holds: a stable conflict list, the decisions, and notes that follow them. */
+interface FakeMerge {
+  conflicts: readonly GitMergeConflict[];
+  picks: GitMergePick[];
+  notes: (picks: readonly GitMergePick[]) => readonly GitMergeNote[];
 }
 
-function renderView(
-  conflicts: readonly GitMergeConflict[] = ALL,
-  overrides: {
-    readonly picks?: readonly GitMergePick[];
-    readonly notes?: readonly GitMergeNote[];
-    readonly unrelatedHistory?: boolean;
-    readonly resolveMerge?: ReturnType<typeof vi.fn>;
-    readonly abandonMerge?: ReturnType<typeof vi.fn>;
-  } = {},
-): Rendered {
+const stateOf = (merge: FakeMerge, picks: readonly GitMergePick[]): GitMergeState => ({
+  conflicts: merge.conflicts,
+  picks: [...merge.picks],
+  notes: merge.notes(picks),
+});
+
+interface RenderOptions {
+  readonly picks?: readonly GitMergePick[];
+  readonly notes?: (picks: readonly GitMergePick[]) => readonly GitMergeNote[];
+  readonly unrelatedHistory?: boolean;
+  readonly resolveMerge?: ReturnType<typeof vi.fn>;
+  readonly syncNow?: ReturnType<typeof vi.fn>;
+  readonly merge?: FakeMerge;
+}
+
+interface Rendered {
+  readonly bridge: ReturnType<typeof installGitBridge>["bridge"];
+  readonly merge: FakeMerge;
+  readonly onClose: ReturnType<typeof vi.fn>;
+  readonly onStatus: ReturnType<typeof vi.fn>;
+  readonly view: () => ReturnType<typeof render>;
+  readonly unmount: () => void;
+}
+
+function installMerge(conflicts: readonly GitMergeConflict[], options: RenderOptions = {}): Rendered {
+  const merge: FakeMerge = options.merge ?? {
+    conflicts,
+    picks: [...(options.picks ?? [])],
+    notes: options.notes ?? (() => []),
+  };
   const onClose = vi.fn();
   const onStatus = vi.fn();
   const { bridge } = installGitBridge(
-    trackedStatus({
-      state: "merging",
-      unrelatedHistory: overrides.unrelatedHistory ?? false,
-    }),
+    trackedStatus({ state: "merging", unrelatedHistory: options.unrelatedHistory ?? false }),
     {
-      mergeConflicts: vi.fn(async () => conflicts),
-      mergePicks: vi.fn(async () => overrides.picks ?? []),
-      mergeNotes: vi.fn(async () => overrides.notes ?? []),
+      mergeState: vi.fn(async (_workspaceId: string, picks?: readonly GitMergePick[]) =>
+        stateOf(merge, picks ?? merge.picks),
+      ),
+      saveMergePicks: vi.fn(async (_workspaceId: string, picks: readonly GitMergePick[]) => {
+        merge.picks = [...picks];
+        return stateOf(merge, picks);
+      }),
       mergeRecordCommits: vi.fn(async (_workspaceId: string, recordIds: readonly string[]) =>
         recordIds.map((recordId) => ({ recordId, ours: null, theirs: null })),
       ),
-      resolveMerge: overrides.resolveMerge ?? vi.fn(async () => trackedStatus({ state: "idle" })),
-      abandonMerge:
-        overrides.abandonMerge ?? vi.fn(async () => trackedStatus({ state: "diverged" })),
+      resolveMerge:
+        options.resolveMerge ??
+        vi.fn(async () => {
+          merge.picks = [];
+          merge.conflicts = [];
+          return trackedStatus({ state: "idle" });
+        }),
+      abandonMerge: vi.fn(async () => trackedStatus({ state: "diverged" })),
+      syncNow: options.syncNow ?? vi.fn(async () => trackedStatus()),
     },
   );
-  render(
-    <MergeView
-      status={trackedStatus({ state: "merging", ...(overrides.unrelatedHistory ? { unrelatedHistory: true } : {}) })}
-      onClose={onClose}
-      onStatus={onStatus}
-    />,
-  );
-  return { bridge, onClose, onStatus };
+  const view = () =>
+    render(
+      <MergeView
+        status={trackedStatus({
+          state: "merging",
+          ...(options.unrelatedHistory ? { unrelatedHistory: true } : {}),
+        })}
+        onClose={onClose}
+        onStatus={onStatus}
+      />,
+    );
+  const first = view();
+  return { bridge, merge, onClose, onStatus, view, unmount: first.unmount };
 }
 
 const progress = () => screen.getByRole("status").textContent;
@@ -137,68 +171,99 @@ afterEach(() => {
 });
 
 describe("MergeView", () => {
-  it("lists the conflicted records and files by kind, with counts and progress", async () => {
-    renderView();
+  it("lists the conflicted records and files by kind, with counts, and the copies' authors", async () => {
+    installMerge(ALL);
 
     const list = await screen.findByRole("navigation", { name: "Conflicted items" });
     expect(within(list).getByRole("heading", { name: "Workflows" })).toBeInTheDocument();
     expect(within(list).getByRole("heading", { name: "Environments" })).toBeInTheDocument();
     expect(within(list).getByRole("heading", { name: "Files" })).toBeInTheDocument();
     expect(
-      within(list).getByRole("button", { name: /Checkout, Workflows, 0 of 2 conflicts settled/ }),
+      within(list).getByRole("button", { name: /Checkout, Workflows, 0 of 2 conflicts resolved/ }),
     ).toBeInTheDocument();
     expect(progress()).toBe("0 of 5 conflicts resolved");
-    // The first item is open, with one row per conflict and both sides' values.
     expect(await screen.findByText("Checkout (this device)")).toBeInTheDocument();
     expect(screen.getByText("Checkout (remote)")).toBeInTheDocument();
-    expect(screen.getByText("Pay by card (remote)")).toBeInTheDocument();
+    expect(screen.getByText(/Your copy · Not present/)).toBeInTheDocument();
   });
 
-  it("takes a side into the result with an arrow and counts it as resolved", async () => {
+  it("takes a side into the result, marks the row resolved and counts it", async () => {
     const user = userEvent.setup();
-    renderView();
+    installMerge([NAME]);
 
-    await user.click(
-      await screen.findByRole("button", { name: "Take your copy of Name in Checkout" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Take your copy of Name in Checkout" }));
 
-    expect(progress()).toBe("1 of 5 conflicts resolved");
-    expect(screen.getByLabelText("Result for Name in Checkout")).toHaveValue(
-      "Checkout (this device)",
+    expect(progress()).toBe("1 of 1 conflicts resolved");
+    expect(screen.getByLabelText("Result for Name in Checkout")).toHaveValue("Checkout (this device)");
+    expect(screen.getByRole("button", { name: "Take your copy of Name in Checkout" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
     expect(
-      screen.getByRole("button", { name: "Take your copy of Name in Checkout" }),
-    ).toHaveAttribute("aria-pressed", "true");
+      within(screen.getByRole("listitem", { name: "Name in Checkout" })).getByText("Resolved"),
+    ).toBeInTheDocument();
   });
 
   it("edits a value of the user's own and sends it with the resolve", async () => {
     const user = userEvent.setup();
-    const resolveMerge = vi.fn(async () => trackedStatus({ state: "idle" }));
-    renderView([NAME], { resolveMerge });
+    const { bridge } = installMerge([NAME], {
+      resolveMerge: vi.fn(async () => trackedStatus({ state: "idle" })),
+    });
 
-    await screen.findByLabelText("Result for Name in Checkout");
-    await user.clear(screen.getByLabelText("Result for Name in Checkout"));
-    await user.type(screen.getByLabelText("Result for Name in Checkout"), "Written by hand");
+    const result = await screen.findByLabelText("Result for Name in Checkout");
+    await user.clear(result);
+    await user.type(result, "Written by hand");
 
     expect(progress()).toBe("1 of 1 conflicts resolved");
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
 
-    expect(resolveMerge).toHaveBeenCalledWith("ws-1", [
+    expect(bridge.saveMergePicks).toHaveBeenCalledWith("ws-1", [
       { recordId: "w1", path: "name", value: "Written by hand" },
-    ], undefined);
+    ]);
+    expect(bridge.resolveMerge).toHaveBeenCalledWith(
+      "ws-1",
+      [{ recordId: "w1", path: "name", value: "Written by hand" }],
+      undefined,
+    );
   });
 
-  it("refuses JSON that does not parse, and settles nothing on it", async () => {
+  it("drops the pick when the result is cleared, and refuses to finish unresolved", async () => {
     const user = userEvent.setup();
-    renderView([ENVIRONMENT]);
+    const { bridge } = installMerge([NAME], {
+      picks: [{ recordId: "w1", path: "name", value: "Typed before" }],
+    });
 
-    const result = await screen.findByLabelText(`Result for ${humanizePath("isDefault")} in Staging`);
+    const result = await screen.findByLabelText("Result for Name in Checkout");
+    expect(progress()).toBe("1 of 1 conflicts resolved");
+    await user.clear(result);
+
+    expect(progress()).toBe("0 of 1 conflicts resolved");
+    expect(
+      within(screen.getByRole("listitem", { name: "Name in Checkout" })).getAllByText("Unresolved"),
+    ).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Finish merge" })).toBeDisabled();
+
+    // Closing saves what is left: the cleared field is no longer a decision.
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(bridge.saveMergePicks).toHaveBeenCalledWith("ws-1", []),
+    );
+  });
+
+  it("refuses JSON that does not parse, drops the pick and describes the error", async () => {
+    const user = userEvent.setup();
+    installMerge([ENVIRONMENT]);
+
+    const result = await screen.findByLabelText("Result for Is default in Staging");
     await user.clear(result);
     await user.type(result, "not json");
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(
       "Not JSON. Text needs quotes, and numbers, true, false and null do not.",
     );
+    expect(result).toHaveAttribute("aria-invalid", "true");
+    expect(result).toHaveAttribute("aria-describedby", alert.id);
     expect(progress()).toBe("0 of 1 conflicts resolved");
 
     await user.clear(result);
@@ -208,7 +273,7 @@ describe("MergeView", () => {
 
   it("edits a long value in the editor, and compares both copies in a diff", async () => {
     const user = userEvent.setup();
-    renderView([BODY]);
+    installMerge([BODY]);
 
     const editor = await screen.findByLabelText(
       `Result for ${humanizePath("nodes.n1.config.body")} in Login`,
@@ -225,93 +290,155 @@ describe("MergeView", () => {
     ).toBeInTheDocument();
   });
 
-  it("accepts a whole item, and every item at once after confirming", async () => {
+  it("keeps an earlier pick when every item is accepted, and confirms first", async () => {
     const user = userEvent.setup();
-    const { bridge } = renderView();
+    const { bridge } = installMerge(ALL, {
+      picks: [{ recordId: "env1", path: "isDefault", side: "theirs" }],
+    });
+
+    await screen.findByRole("navigation", { name: "Conflicted items" });
+    expect(progress()).toBe("1 of 5 conflicts resolved");
+    await user.click(await screen.findByRole("button", { name: "Accept all remote" }));
+    const confirmation = await screen.findByRole("dialog", { name: "Accept all remote copies?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Accept all" }));
+
+    expect(progress()).toBe("5 of 5 conflicts resolved");
+    await user.click(screen.getByRole("button", { name: "Finish merge" }));
+    expect(bridge.resolveMerge).toHaveBeenCalledWith(
+      "ws-1",
+      [
+        { recordId: "README.md", path: "", side: "theirs" },
+        { recordId: "env1", path: "", side: "theirs" },
+        { recordId: "w1", path: "", side: "theirs" },
+        { recordId: "w2", path: "", side: "theirs" },
+      ],
+      undefined,
+    );
+  });
+
+  it("confirms that accepting an item replaces values the user typed", async () => {
+    const user = userEvent.setup();
+    installMerge([NAME, DESCRIPTION], {
+      picks: [{ recordId: "w1", path: "name", value: "Typed" }],
+    });
 
     await user.click(
-      await screen.findByRole("button", { name: "Accept all your copies in Checkout" }),
+      await screen.findByRole("button", { name: "Accept all remote copies in Checkout" }),
     );
-    expect(progress()).toBe("2 of 5 conflicts resolved");
 
-    await user.click(screen.getByRole("button", { name: "Accept all yours" }));
-    const confirmation = await screen.findByRole("dialog", { name: "Accept all your copies?" });
-    await user.click(within(confirmation).getByRole("button", { name: "Accept all" }));
-    expect(progress()).toBe("5 of 5 conflicts resolved");
+    const confirmation = await screen.findByRole("dialog", { name: "Replace the values you typed?" });
+    expect(confirmation).toHaveTextContent("1 conflict is settled by a value you typed in Checkout");
+    await user.click(within(confirmation).getByRole("button", { name: "Replace them" }));
 
-    await user.click(screen.getByRole("button", { name: "Finish merge" }));
-    expect(bridge.resolveMerge).toHaveBeenCalledWith("ws-1", [
-      { recordId: "README.md", path: "", side: "ours" },
-      { recordId: "env1", path: "", side: "ours" },
-      { recordId: "w1", path: "", side: "ours" },
-      { recordId: "w2", path: "", side: "ours" },
-    ], undefined);
+    expect(progress()).toBe("2 of 2 conflicts resolved");
   });
 
   it("restores both kinds of stored decision when it opens", async () => {
-    renderView([NAME, DESCRIPTION], {
+    installMerge([NAME, DESCRIPTION], {
       picks: [
         { recordId: "w1", path: "name", side: "theirs" },
         { recordId: "w1", path: "description", value: "Agreed wording" },
       ],
     });
 
-    expect(await screen.findByLabelText("Result for Name in Checkout")).toHaveValue(
-      "Checkout (remote)",
-    );
-    expect(screen.getByLabelText("Result for Description in Checkout")).toHaveValue(
-      "Agreed wording",
-    );
+    expect(await screen.findByLabelText("Result for Name in Checkout")).toHaveValue("Checkout (remote)");
+    expect(screen.getByLabelText("Result for Description in Checkout")).toHaveValue("Agreed wording");
     expect(progress()).toBe("2 of 2 conflicts resolved");
     expect(screen.getByRole("button", { name: "Finish merge" })).toBeEnabled();
   });
 
-  it("shows what merged by itself, collapsed until asked", async () => {
+  it("keeps decisions when it is closed and opened again", async () => {
     const user = userEvent.setup();
-    renderView(ALL, { notes: NOTES });
+    const rendered = installMerge([NAME, DESCRIPTION]);
 
-    const summary = await screen.findByRole("button", {
-      name: "3 changes merged automatically",
-    });
+    const result = await screen.findByLabelText("Result for Description in Checkout");
+    await user.clear(result);
+    await user.type(result, "Written before closing");
+    await user.click(screen.getByRole("button", { name: "Take your copy of Name in Checkout" }));
+    expect(progress()).toBe("2 of 2 conflicts resolved");
+
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(rendered.onClose).toHaveBeenCalled());
+    expect(rendered.bridge.saveMergePicks).toHaveBeenCalledWith("ws-1", [
+      { recordId: "w1", path: "description", value: "Written before closing" },
+      { recordId: "w1", path: "name", side: "ours" },
+    ]);
+
+    rendered.unmount();
+    rendered.view();
+
+    expect(await screen.findByLabelText("Result for Description in Checkout")).toHaveValue(
+      "Written before closing",
+    );
+    expect(screen.getByLabelText("Result for Name in Checkout")).toHaveValue("Checkout (this device)");
+    expect(progress()).toBe("2 of 2 conflicts resolved");
+  });
+
+  it("asks before closing with a value that does not parse", async () => {
+    const user = userEvent.setup();
+    const rendered = installMerge([ENVIRONMENT]);
+
+    const result = await screen.findByLabelText("Result for Is default in Staging");
+    await user.clear(result);
+    await user.type(result, "not json");
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    const confirmation = await screen.findByRole("dialog", { name: "Close with a value that is not valid?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(rendered.onClose).toHaveBeenCalled());
+    expect(rendered.bridge.saveMergePicks).toHaveBeenCalledWith("ws-1", []);
+  });
+
+  it("shows what merged by itself, and follows the notes as picks change", async () => {
+    const user = userEvent.setup();
+    const notes = (picks: readonly GitMergePick[]) =>
+      picks.length === 0 ? NOTES : [{ type: "order" as const, recordId: "p1", name: "Shop" }];
+    installMerge([NAME, DESCRIPTION], { notes });
+
+    const summary = await screen.findByRole("button", { name: "3 changes merged automatically" });
     expect(summary).toHaveAttribute("aria-expanded", "false");
     await user.click(summary);
-
     expect(await screen.findByText(/kept the remote copy's position for 2 nodes/)).toBeInTheDocument();
-    expect(screen.getByText(/kept the remote copy's workflow order/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Take your copy of Name in Checkout" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "1 change merged automatically" })).toBeInTheDocument(),
+    );
   });
 
   it("moves to the next conflict with the keyboard, opening its item", async () => {
-    renderView([NAME, ENVIRONMENT]);
+    installMerge([NAME, ENVIRONMENT]);
 
     const result = await screen.findByLabelText("Result for Name in Checkout");
     fireEvent.keyDown(result, { key: "ArrowDown", altKey: true });
 
     expect(
-      screen.getByRole("button", { name: /Staging, Environments, 0 of 1 conflicts settled/ }),
+      screen.getByRole("button", { name: /Staging, Environments, 0 of 1 conflicts resolved/ }),
     ).toHaveAttribute("aria-current", "true");
-    expect(await screen.findByLabelText(`Result for ${humanizePath("isDefault")} in Staging`)).toBeInTheDocument();
+    expect(await screen.findByLabelText("Result for Is default in Staging")).toBeInTheDocument();
   });
 
   it("offers only copies for a whole-file conflict", async () => {
     const user = userEvent.setup();
-    const { bridge } = renderView([FILE]);
+    const { bridge } = installMerge([FILE]);
 
-    await user.click(
-      await screen.findByRole("button", { name: /README.md, Files, 0 of 1 conflicts settled/ }),
-    );
+    await user.click(await screen.findByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ }));
 
     expect(screen.getByRole("button", { name: "Take your copy of Whole file in README.md" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Result for Whole file in README.md")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Take the remote copy of Whole file in README.md" }));
     await user.click(screen.getByRole("button", { name: "Finish merge" }));
-    expect(bridge.resolveMerge).toHaveBeenCalledWith("ws-1", [
-      { recordId: "README.md", path: "", side: "theirs" },
-    ], undefined);
+    expect(bridge.resolveMerge).toHaveBeenCalledWith(
+      "ws-1",
+      [{ recordId: "README.md", path: "", side: "theirs" }],
+      undefined,
+    );
   });
 
   it("says the copies share no history when the status does", async () => {
-    renderView([NAME], { unrelatedHistory: true });
+    installMerge([NAME], { unrelatedHistory: true });
     expect(
       await screen.findByText(/This device and the remote have no history in common/),
     ).toBeInTheDocument();
@@ -322,9 +449,9 @@ describe("MergeView", () => {
     const resolveMerge = vi.fn(async () => {
       throw new Error("The merge changed while it was being resolved. Open the merge again.");
     });
-    const { onClose } = renderView([NAME], {
-      resolveMerge,
+    const { onClose } = installMerge([NAME], {
       picks: [{ recordId: "w1", path: "name", side: "theirs" }],
+      resolveMerge,
     });
 
     await user.click(await screen.findByRole("button", { name: "Finish merge" }));
@@ -335,9 +462,37 @@ describe("MergeView", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("asks for the author inside the view and finishes once git knows one", async () => {
+    const user = userEvent.setup();
+    const resolveMerge = vi
+      .fn()
+      .mockResolvedValueOnce(trackedStatus({ state: "merging", lastError: { code: "identity_missing", message: "Author identity unknown" } }))
+      .mockResolvedValueOnce(trackedStatus({ state: "idle" }));
+    const syncNow = vi.fn(async () => trackedStatus({ state: "merging" }));
+    const { bridge, onClose } = installMerge([NAME], {
+      picks: [{ recordId: "w1", path: "name", side: "theirs" }],
+      resolveMerge,
+      syncNow,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Finish merge" }));
+    expect(await screen.findByLabelText("Your name")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Your name"), "Ada Lovelace");
+    await user.type(screen.getByLabelText("Your email address"), "ada@example.invalid");
+    await user.click(screen.getByRole("button", { name: "Save and commit" }));
+
+    expect(syncNow).toHaveBeenCalledWith("ws-1", {
+      identity: { name: "Ada Lovelace", email: "ada@example.invalid" },
+    });
+    await waitFor(() => expect(resolveMerge).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(bridge.saveMergePicks).toHaveBeenCalled();
+  });
+
   it("abandons only after confirmation", async () => {
     const user = userEvent.setup();
-    const { bridge, onClose } = renderView();
+    const { bridge, onClose } = installMerge([NAME]);
 
     await user.click(await screen.findByRole("button", { name: "Abandon merge" }));
     const confirmation = await screen.findByRole("dialog", { name: "Abandon this merge?" });
