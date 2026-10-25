@@ -37,6 +37,7 @@ const EXPECTED_LESSON_IDS = [
   "openapi",
   "curl-har",
   "git-track",
+  "git-accounts",
   "git-remote",
   "git-open",
   "git-merge",
@@ -200,6 +201,12 @@ describe("tutorial destinations", () => {
     expect(
       tutorialDestinationHref("version-history", "personal", "acme"),
     ).toBe("/personal/acme/settings/version-history");
+  });
+
+  it("maps git-accounts to the app's Git accounts settings route", () => {
+    expect(
+      tutorialDestinationHref("git-accounts", "personal", "acme"),
+    ).toBe("/personal/acme/settings/git-accounts");
   });
 
   it("builds workspace, library and lesson hrefs", () => {

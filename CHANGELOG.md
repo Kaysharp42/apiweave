@@ -9,6 +9,79 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+A workspace's git history can now sync as your GitHub or GitLab account, and
+APIWeave can create the repository for it. See
+[Keep Tests in a Git Repository](docs/guides/git-workflows.md).
+
+### Added
+
+- **GitHub and GitLab accounts.** The round account button at the right of the
+  header lists every `gh` and `glab` account by host, shows which one the
+  current workspace syncs as, and signs in to another. **Settings > App > Git
+  accounts** shows the same accounts with each tool's version, an install link
+  when it is missing, and the workspaces that use each account. A workspace
+  connected over `https://` can sync as one account instead of whatever your
+  credential helper answers with. `gh` keeps several accounts per host, so two
+  GitHub accounts can each push to their own repositories; `glab` stores one
+  account per host, so a second GitLab account needs a second host.
+- **Sign in from APIWeave.** **Add GitHub account** or **Add GitLab account**
+  runs the tool's own browser sign-in: the dialog shows the one-time code (with
+  a copy button), opens the page to enter it on, offers **Open browser again**
+  and stops the tool on **Cancel**. APIWeave stores no token; `gh` and `glab`
+  keep it in the system keychain and are asked for one on every fetch, push and
+  clone. Signing in does what the same command does in a terminal — on GitHub
+  the account becomes `gh`'s active account there, on GitLab it replaces that
+  host's account and sets it to HTTPS — and neither tool changes your git
+  configuration.
+- **Create the workspace's repository from the app.** **Create repository…**
+  in **Version history (git)** makes an empty repository — no README, licence
+  or first commit — private unless you choose public, owned by the account or
+  one of its GitHub organizations or GitLab groups, tagged with the topic
+  `apiweave-workspace`, and connects the workspace to it. A name that is
+  already taken is refused by name, never reused, and APIWeave never deletes a
+  repository; if the topic could not be added, the panel says so.
+- **Pick a repository instead of pasting a URL.** When an account is signed in,
+  every remote form asks for the **Account** first, then lists its
+  **Repository**. **Connect to remote** lists that account's empty repositories
+  it can push to, from the account and each of its organizations or groups;
+  **Open from git…** lists the ones tagged `apiweave-workspace`, with **Show all
+  repositories** for the rest. **Use a URL instead** still takes anything the
+  list does not hold, and **Your own git sign-in (credential manager or SSH
+  key) — another host** is for other hosts and for having no account.
+- **Start a workspace already synced.** **Create workspace** has an optional
+  **Sync with GitHub or GitLab** section, off by default, with the same account,
+  owner, name and visibility fields. It creates the workspace, tracks it,
+  creates the repository and connects to it. If git does not know who you are,
+  the dialog asks for a name and email and carries on. If a later step fails,
+  the workspace stays created — and tracked, once tracking has succeeded — and
+  **Open Version history** takes you to finish it there.
+- **Sync state in the workspace switcher.** Each tracked workspace's row shows
+  the same state-coloured sync icon as the header, with its state as a tooltip;
+  untracked rows are unchanged.
+- **A tutorial chapter for version history and sync.** The lessons cover
+  tracking a workspace, connecting a GitHub or GitLab account and its
+  repository, syncing, opening a workspace on another machine, resolving a
+  merge, and running a repository in CI.
+
+### Changed
+
+- **A local-only workspace says Local history, not Committed.** **Commit now**
+  is offered only while there is something to commit, so a settled local
+  history offers no action.
+- **Sync icons are coloured by state** in the header and the workspace
+  switcher: success when synced, muted for local history, info while syncing or
+  with work waiting, warning when you must act, error when a sync failed.
+
+### Requirements
+
+- **Signing in to GitLab needs GitLab 17.9 or later**, whose device flow
+  `glab auth login --device` uses, and a `glab` version whose
+  `auth status --output json` APIWeave can read the accounts from.
+- `gh` and `glab` are optional. Without them, connect a remote by its URL with
+  your own git credentials, as before. Git itself is still required.
+
 ## [0.20.0] — 2026-10-22
 
 APIWeave Cloud is gone. A workspace now syncs through a git repository you own,

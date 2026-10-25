@@ -24,6 +24,7 @@ export type TutorialLessonId =
   | "openapi"
   | "curl-har"
   | "git-track"
+  | "git-accounts"
   | "git-remote"
   | "git-open"
   | "git-merge"
