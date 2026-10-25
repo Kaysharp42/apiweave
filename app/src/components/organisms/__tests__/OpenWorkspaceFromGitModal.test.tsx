@@ -379,4 +379,23 @@ describe("OpenWorkspaceFromGitModal", () => {
     expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(mockSwitchTo).not.toHaveBeenCalled();
   });
+  it("asks for accounts only while it is open, and again each time it opens", async () => {
+    const listAccounts = vi.fn(async () => ({ clis: [], accounts: [] }));
+    vi.stubGlobal("__APIWEAVE_GIT__", {
+      ...NO_ACCOUNTS,
+      listAccounts,
+      openFromGit: vi.fn(),
+    });
+    const element = (isOpen: boolean) => (
+      <OpenWorkspaceFromGitModal isOpen={isOpen} onClose={vi.fn()} />
+    );
+    const view = render(element(false));
+
+    expect(listAccounts).not.toHaveBeenCalled();
+    view.rerender(element(true));
+    await waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(1));
+    view.rerender(element(false));
+    view.rerender(element(true));
+    await waitFor(() => expect(listAccounts).toHaveBeenCalledTimes(2));
+  });
 });

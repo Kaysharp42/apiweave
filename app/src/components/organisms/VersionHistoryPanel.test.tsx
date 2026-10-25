@@ -969,4 +969,51 @@ describe("Create repository", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  describe("a repository handed on from Create workspace", () => {
+    const DRAFT = {
+      account: {
+        provider: "github" as const,
+        host: "github.com",
+        login: "octo-work",
+        gitProtocol: "https" as const,
+        active: true,
+        problem: null,
+      },
+      owner: "acme",
+      name: "shop-api",
+      private: true,
+    };
+
+    it("opens Create repository on it, ready to create", async () => {
+      installGitBridge(local(), {
+        listAccounts: vi.fn(async () => ({
+          clis: [],
+          accounts: [DRAFT.account],
+        })),
+      });
+      render(
+        <VersionHistoryPanel
+          workspaceId="ws-1"
+          workspaceSlug="shop-api"
+          handedOn={DRAFT}
+        />,
+      );
+
+      const dialog = await screen.findByRole("dialog", {
+        name: "Create repository",
+      });
+      expect(
+        within(dialog).getByRole("textbox", { name: "Repository name" }),
+      ).toHaveValue("shop-api");
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole("combobox", { name: "Owner" }),
+        ).toHaveValue("acme"),
+      );
+      expect(
+        within(dialog).getByRole("button", { name: "Create and connect" }),
+      ).toBeEnabled();
+    });
+  });
 });

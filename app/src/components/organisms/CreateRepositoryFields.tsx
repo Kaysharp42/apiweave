@@ -53,13 +53,15 @@ export function CreateRepositoryFields({
   const { owners, problem, loading } = useGitRepositoryOwners(value.account);
   const nameError = repositoryNameError(value.name);
 
-  // A new account's owners replace the last one's: start on the account itself.
+  // A new account's owners replace the last one's: start on the account itself. An owner already
+  // chosen stays — it may be one the list does not hold, as a handed-on draft's can be — and stays listed.
+  const chosen =
+    value.owner === ""
+      ? undefined
+      : owners.find((owner) => owner.path === value.owner);
   useEffect(() => {
     const first = owners[0];
-    if (
-      first !== undefined &&
-      !owners.some((owner) => owner.path === value.owner)
-    )
+    if (value.owner === "" && first !== undefined)
       onChange({ ...value, owner: first.path });
   }, [owners, value, onChange]);
 
@@ -102,6 +104,9 @@ export function CreateRepositoryFields({
         >
           {loading && (
             <option value="">Listing organizations and groups…</option>
+          )}
+          {chosen === undefined && value.owner !== "" && (
+            <option value={value.owner}>{value.owner}</option>
           )}
           {owners.map((owner) => (
             <option key={owner.path} value={owner.path}>

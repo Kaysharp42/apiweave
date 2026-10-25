@@ -153,7 +153,10 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
     window.__APIWEAVE_GIT__ = {
       status: async () => current,
       statusAll: async () => [current],
-      track: async () => current,
+      track: async (workspaceId: string) => {
+        window.__gitCalls__.push(["track", workspaceId]);
+        return { ...current, workspaceId };
+      },
       untrack: async () => current,
       setMode: async () => current,
       syncNow: async () => current,
@@ -162,8 +165,9 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         { kind: "workflow", change: "changed", name: "Login", path: "workflows/login--w2.json" },
         { kind: "environment", change: "deleted", name: "Staging", path: "environments/staging--e1.json" },
       ],
-      connectRemote: async (_workspaceId: string, url: string, account: FakeStatus["account"]) => {
+      connectRemote: async (workspaceId: string, url: string, account: FakeStatus["account"]) => {
         window.__gitCalls__.push(["connectRemote", url, account]);
+        if (workspaceId !== current.workspaceId) return { ...current, workspaceId, remoteUrl: url, account };
         current = { ...current, remoteUrl: url, account, lastSyncedAt: "2026-10-24T09:00:00.000Z" };
         return current;
       },
@@ -394,6 +398,30 @@ test.describe("git sync status", () => {
 
     expect(await page.evaluate(() => window.__gitCalls__)).toEqual([["listRepositories", "octo-work", { tagged: true, emptyOnly: false }]]);
     await expect(dialog.getByRole("button", { name: "Open workspace" })).toBeEnabled();
+  });
+
+  test("creates a workspace that syncs with a new repository, from Create workspace", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, SETTLED);
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await page.getByRole("button", { name: "Switch workspace" }).click();
+    await page.getByRole("button", { name: "New workspace" }).click();
+    const dialog = page.getByRole("dialog", { name: "Create workspace" });
+    await dialog.getByPlaceholder("QA Workspace").fill("Shop API");
+    await expect(dialog.getByRole("checkbox", { name: "Sync with GitHub or GitLab" })).not.toBeChecked();
+    await dialog.getByRole("checkbox", { name: "Sync with GitHub or GitLab" }).check();
+    await expect(dialog.getByRole("combobox", { name: "Owner" })).toHaveValue("octo-work");
+    await expect(dialog.getByRole("textbox", { name: "Repository name" })).toHaveValue("shop-api");
+    await captureEvidence(page, "git-create-workspace-sync.png");
+    await dialog.getByRole("button", { name: "Create workspace" }).click();
+
+    await expect(dialog).toBeHidden();
+    expect(await page.evaluate(() => window.__gitCalls__)).toEqual([
+      ["track", "ws-shop-api"],
+      ["createRepository", { provider: "github", host: "github.com", login: "octo-work" }, { owner: "octo-work", name: "shop-api", private: true }],
+      ["connectRemote", "https://github.com/octo-work/shop-api.git", { provider: "github", host: "github.com", login: "octo-work" }],
+    ]);
   });
 
   test("leaves an untracked workspace's switcher row without a sync icon", async ({ page }) => {

@@ -93,15 +93,6 @@ export function OrgWorkspaceSwitcher() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex w-full items-center gap-2 rounded border border-border px-2 py-1.5 dark:border-border-dark">
-        <div className="h-6 w-6 flex-shrink-0 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
-        <div className="h-3 w-24 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
-      </div>
-    );
-  }
-
   const personalWorkspace = availableWorkspaces.find((ws) => ws.isPersonal);
   const otherWorkspaces = availableWorkspaces.filter((ws) => !ws.isPersonal);
 
@@ -114,122 +105,135 @@ export function OrgWorkspaceSwitcher() {
     ? workspaceSource(currentWorkspace)
     : "Personal workspace";
 
+  // The dialogs stay mounted across a refresh: a workspace created a moment ago is created and
+  // switched to before the list reloads, and a dialog that the skeleton replaced would lose what
+  // it was saying about it — the author it asks for, or the sync it could not finish.
   return (
     <>
-      <Popover>
-        {({ open, close }) => (
-          <>
-            <PopoverButton
-              className={[
-                "group flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left",
-                "transition-colors duration-150 motion-reduce:transition-none cursor-pointer",
-                "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-                open
-                  ? "border-primary/40 bg-primary/5 dark:border-primary-light/40 dark:bg-primary-light/5"
-                  : "border-border bg-surface hover:border-border hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark dark:hover:bg-surface-dark-overlay",
-              ].join(" ")}
-              aria-label="Switch workspace"
-              aria-haspopup="listbox"
-            >
-              <span
+      {isLoading ? (
+        <div className="flex w-full items-center gap-2 rounded border border-border px-2 py-1.5 dark:border-border-dark">
+          <div className="h-6 w-6 flex-shrink-0 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
+          <div className="h-3 w-24 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
+        </div>
+      ) : (
+        <Popover>
+          {({ open, close }) => (
+            <>
+              <PopoverButton
                 className={[
-                  "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded",
-                  "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light",
+                  "group flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left",
+                  "transition-colors duration-150 motion-reduce:transition-none cursor-pointer",
+                  "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+                  open
+                    ? "border-primary/40 bg-primary/5 dark:border-primary-light/40 dark:bg-primary-light/5"
+                    : "border-border bg-surface hover:border-border hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark dark:hover:bg-surface-dark-overlay",
                 ].join(" ")}
+                aria-label="Switch workspace"
+                aria-haspopup="listbox"
               >
-                {sourceIcon(displaySource, "h-3.5 w-3.5")}
-              </span>
-
-              <WorkspaceSwitcherLabel
-                label={displayLabel}
-                source={displaySource}
-              />
-
-              <ChevronDown
-                className={[
-                  "h-3.5 w-3.5 flex-shrink-0 text-text-muted transition-transform duration-150 motion-reduce:transition-none dark:text-text-muted-dark",
-                  open ? "rotate-180" : "",
-                ].join(" ")}
-                aria-hidden="true"
-              />
-            </PopoverButton>
-
-            <PopoverPanel
-              anchor={{ to: "bottom start", gap: 4, padding: 8 }}
-              className="z-50 w-64 min-w-[var(--button-width)] overflow-hidden rounded border border-border bg-surface-raised shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
-            >
-              <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
-                <span className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
-                  Switch workspace
+                <span
+                  className={[
+                    "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded",
+                    "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light",
+                  ].join(" ")}
+                >
+                  {sourceIcon(displaySource, "h-3.5 w-3.5")}
                 </span>
-              </div>
 
-              <div
-                className="max-h-72 overflow-y-auto py-1"
-                role="listbox"
-                aria-label="Workspaces"
+                <WorkspaceSwitcherLabel
+                  label={displayLabel}
+                  source={displaySource}
+                />
+
+                <ChevronDown
+                  className={[
+                    "h-3.5 w-3.5 flex-shrink-0 text-text-muted transition-transform duration-150 motion-reduce:transition-none dark:text-text-muted-dark",
+                    open ? "rotate-180" : "",
+                  ].join(" ")}
+                  aria-hidden="true"
+                />
+              </PopoverButton>
+
+              <PopoverPanel
+                anchor={{ to: "bottom start", gap: 4, padding: 8 }}
+                className="z-50 w-64 min-w-[var(--button-width)] overflow-hidden rounded border border-border bg-surface-raised shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
               >
-                {flatList.map((workspace, index) => {
-                  const source = workspaceSource(workspace);
-                  return (
-                    <WorkspaceItem
-                      key={workspace.workspaceId}
-                      workspace={workspace}
-                      index={index}
-                      isActive={
-                        currentWorkspace?.workspaceId === workspace.workspaceId
-                      }
-                      icon={sourceIcon(source, "h-4 w-4")}
-                      source={source}
-                      syncStatus={gitStatuses.get(workspace.workspaceId) ?? null}
-                      onSelect={(selected) => handleSelect(selected, close)}
-                      onKeyDown={handleItemKeyDown}
-                      itemRef={(el) => {
-                        menuItemRefs.current[index] = el;
-                      }}
-                    />
-                  );
-                })}
+                <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
+                  <span className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                    Switch workspace
+                  </span>
+                </div>
 
-                {flatList.length === 0 && (
-                  <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
-                    No workspaces available
-                  </div>
-                )}
-              </div>
+                <div
+                  className="max-h-72 overflow-y-auto py-1"
+                  role="listbox"
+                  aria-label="Workspaces"
+                >
+                  {flatList.map((workspace, index) => {
+                    const source = workspaceSource(workspace);
+                    return (
+                      <WorkspaceItem
+                        key={workspace.workspaceId}
+                        workspace={workspace}
+                        index={index}
+                        isActive={
+                          currentWorkspace?.workspaceId ===
+                          workspace.workspaceId
+                        }
+                        icon={sourceIcon(source, "h-4 w-4")}
+                        source={source}
+                        syncStatus={
+                          gitStatuses.get(workspace.workspaceId) ?? null
+                        }
+                        onSelect={(selected) => handleSelect(selected, close)}
+                        onKeyDown={handleItemKeyDown}
+                        itemRef={(el) => {
+                          menuItemRefs.current[index] = el;
+                        }}
+                      />
+                    );
+                  })}
 
-              <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  fullWidth
-                  className="justify-start text-xs"
-                  icon={<Plus className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => {
-                    close();
-                    setCreateWsOpen(true);
-                  }}
-                >
-                  New workspace
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  fullWidth
-                  className="justify-start text-xs"
-                  icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
-                  onClick={() => {
-                    close();
-                    setOpenFromGitOpen(true);
-                  }}
-                >
-                  Open from git…
-                </Button>
-              </div>
-            </PopoverPanel>
-          </>
-        )}
-      </Popover>
+                  {flatList.length === 0 && (
+                    <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
+                      No workspaces available
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1 border-t border-border/80 p-2 dark:border-border-dark/80">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    className="justify-start text-xs"
+                    icon={<Plus className="h-4 w-4" aria-hidden="true" />}
+                    onClick={() => {
+                      close();
+                      setCreateWsOpen(true);
+                    }}
+                  >
+                    New workspace
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    fullWidth
+                    className="justify-start text-xs"
+                    icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
+                    onClick={() => {
+                      close();
+                      setOpenFromGitOpen(true);
+                    }}
+                  >
+                    Open from git…
+                  </Button>
+                </div>
+              </PopoverPanel>
+            </>
+          )}
+        </Popover>
+      )}
 
       <CreateWorkspaceModal
         isOpen={createWsOpen}
