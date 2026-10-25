@@ -24,7 +24,7 @@ export function MergeChoice({
       aria-label={`Take ${side === "ours" ? "your" : "the remote"} copy of ${label}`}
       onClick={onChoose}
     >
-      {side === "ours" ? "Use yours" : "Use theirs"}
+      {side === "ours" ? "Use yours" : "Use remote"}
     </Button>
   );
 }
