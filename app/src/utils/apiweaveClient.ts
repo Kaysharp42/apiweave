@@ -52,6 +52,7 @@ import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerLis
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt";
 import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
+import type { GitMergeNote } from "@shared/types/GitMergeNote";
 import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
@@ -1262,6 +1263,11 @@ export const git = {
     workspaceId: string,
   ): Promise<readonly GitMergePick[]> =>
     getGitBridge()?.mergePicks(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  mergeNotes: (
+    workspaceId: string,
+  ): Promise<readonly GitMergeNote[]> =>
+    getGitBridge()?.mergeNotes(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   mergeRecordCommits: (
     workspaceId: string,

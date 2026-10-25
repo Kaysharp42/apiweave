@@ -15,3 +15,8 @@ export const loadMonaco = async () => {
 
 /** The Monaco editor, loaded on first render. Wrap it in `<Suspense>`. */
 export const MonacoEditor = lazy(loadMonaco);
+
+/** The Monaco diff editor, from the same lazily loaded instance. Wrap it in `<Suspense>`. */
+export const MonacoDiffEditor = lazy(async () => ({
+  default: (await loadMonaco()).DiffEditor,
+}));

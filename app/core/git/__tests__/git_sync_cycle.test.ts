@@ -1497,6 +1497,22 @@ describe("the sync cycle", () => {
       })
     })
 
+    it("reads what the merge settled by itself for the view", async () => {
+      const pair = await sharedPair()
+      const { a, b, workspaceId, opened, sharedId } = pair
+      const node = (x: number) => [{ nodeId: "n1", type: "delay", position: { x, y: 0 }, config: { duration: 1 } }]
+      a.repositories.workflows.update(sharedId, { name: "On A", nodes: node(0) })
+      await a.sync.syncNow(workspaceId, { message: "Move on A" })
+      b.repositories.workflows.update(sharedId, { name: "On B", nodes: node(100) })
+      expect(await b.sync.syncNow(opened, { message: "Move on B" })).toMatchObject({ state: "merging" })
+
+      expect(await b.sync.mergeNotes(opened)).toEqual([
+        { type: "positions", recordId: sharedId, name: "On B", nodeIds: ["n1"] },
+      ])
+      // A workspace with no merge waiting has nothing to report, and reads nothing.
+      expect(await a.sync.mergeNotes(workspaceId)).toEqual([])
+    })
+
     it("survives a restart with no base: the row and its picks are kept, the conflicts recomputed, and Resolve finishes it", async () => {
       const pair = await sharedPair()
       const { b, sandbox, remote, opened, sharedId } = pair

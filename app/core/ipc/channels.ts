@@ -98,6 +98,7 @@ export const GIT_CHANNELS = {
   pendingChanges: "git:pendingChanges",
   mergeConflicts: "git:mergeConflicts",
   mergePicks: "git:mergePicks",
+  mergeNotes: "git:mergeNotes",
   mergeRecordCommits: "git:mergeRecordCommits",
   resolveMerge: "git:resolveMerge",
   abandonMerge: "git:abandonMerge",

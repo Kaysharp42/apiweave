@@ -15,7 +15,7 @@ import { GitAuthorForm } from "./GitAuthorForm";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
-import { GitMergeDialog } from "./GitMergeDialog";
+import { MergeView } from "./MergeView";
 import { GitRemotePicker } from "./GitRemotePicker";
 import { GitSignInButtons } from "./GitSignInButtons";
 import { GitSyncDialogs } from "./GitSyncDialogs";
@@ -423,7 +423,7 @@ export function VersionHistoryPanel({
         />
       )}
       {merge !== null && (
-        <GitMergeDialog
+        <MergeView
           status={merge}
           onClose={() => setMerge(null)}
           onStatus={apply}

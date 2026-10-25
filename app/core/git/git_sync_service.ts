@@ -732,15 +732,9 @@ export class GitSyncService {
    * often as it likes, and the same commits and picks always give the same
    * list.
    */
-  // fallow-ignore-next-line code-duplication -- this block is method chrome (`directory`, `exclusive`, the binding lookup) that happens to align with another method's; the two share no behaviour.
   public async mergeConflicts(workspaceId: string): Promise<readonly GitMergeConflict[]> {
     const directory = this.cloneDir(workspaceId)
-    return this.exclusive(workspaceId, async () => {
-      this.trackedBinding(workspaceId)
-      const merge = this.repositories.workspaceGit.getMerge(workspaceId)
-      if (merge === undefined) return []
-      return (await this.computeMerge(merge, directory)).result.conflicts
-    })
+    return this.exclusive(workspaceId, async () => (await this.computeWaitingMerge(workspaceId, directory))?.result.conflicts ?? [])
   }
 
   /**
@@ -755,6 +749,29 @@ export class GitSyncService {
   public async mergePicks(workspaceId: string): Promise<readonly GitMergePick[]> {
     this.trackedBinding(workspaceId)
     return this.repositories.workspaceGit.getMerge(workspaceId)?.picks ?? []
+  }
+
+  /**
+   * What the waiting merge settled by itself — a node position both copies
+   * moved, an order kept, an edge or frame the other copy's deletion left
+   * dangling — for the merge view to show before the user finishes. Empty when
+   * no merge is waiting. Reads the trees; it never moves the clone, so a caller
+   * may ask as often as it likes.
+   */
+  public async mergeNotes(workspaceId: string): Promise<readonly GitMergeNote[]> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => (await this.computeWaitingMerge(workspaceId, directory))?.result.notes ?? [])
+  }
+
+  /**
+   * The waiting merge recomputed from its row's trees and picks, or undefined
+   * when no merge is waiting. The read-only half the merge view asks for: it
+   * never moves the clone, so one call cannot disturb another.
+   */
+  private async computeWaitingMerge(workspaceId: string, directory: string): Promise<MergeComputation | undefined> {
+    this.trackedBinding(workspaceId)
+    const merge = this.repositories.workspaceGit.getMerge(workspaceId)
+    return merge === undefined ? undefined : this.computeMerge(merge, directory)
   }
 
   /**

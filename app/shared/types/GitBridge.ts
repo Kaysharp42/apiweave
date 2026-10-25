@@ -10,6 +10,7 @@ import type { GitRepositoryOwnerList } from "./GitRepositoryOwnerList"
 import type { GitSignInPrompt } from "./GitSignInPrompt"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
 import type { GitMergeConflict } from "./GitMergeConflict"
+import type { GitMergeNote } from "./GitMergeNote"
 import type { GitMergePick } from "./GitMergePick"
 import type { MergeRecordCommits } from "./MergeRecordCommits"
 import type { WorkspaceGitCommitRequest } from "./WorkspaceGitCommitRequest"
@@ -64,6 +65,13 @@ export interface GitBridge {
    * is not merging. Rejects for an untracked workspace.
    */
   readonly mergePicks: (workspaceId: string) => Promise<readonly GitMergePick[]>
+  /**
+   * What the waiting merge settled by itself, for the merge view to show before
+   * a finish: positions both copies moved, an order kept, an edge or frame the
+   * other copy's deletion left dangling. Empty when no merge is waiting.
+   * Read-only; it recomputes the merge but moves nothing.
+   */
+  readonly mergeNotes: (workspaceId: string) => Promise<readonly GitMergeNote[]>
   /**
    * The commit each side last made to each conflicted record or file, from
    * `git log -1 <rev> -- <path>` — who wrote each copy, for the picker. A record

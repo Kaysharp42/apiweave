@@ -328,6 +328,18 @@ describe("the mergePicks bridge", () => {
   })
 })
 
+describe("the mergeNotes bridge", () => {
+  it("reads what the merge settled by itself for the workspace it is asked about", async () => {
+    const notes = [{ type: "positions", recordId: "w1", name: "Checkout", nodeIds: ["n1"] }]
+    const mergeNotes = vi.fn(async () => notes)
+    const handler = handlerOf({ mergeNotes } as unknown as GitSyncService, GIT_CHANNELS.mergeNotes)
+
+    await expect(handler({} as IpcMainInvokeEvent, "ws-1")).resolves.toEqual(notes)
+
+    expect(mergeNotes).toHaveBeenCalledWith("ws-1")
+  })
+})
+
 describe("the statusAll bridge", () => {
   it("reads every tracked workspace's status without taking an argument", async () => {
     const statusAll = vi.fn(async () => [])

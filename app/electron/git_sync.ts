@@ -181,6 +181,7 @@ export function registerGitHandlers(
   handleWorkspace(GIT_CHANNELS.pendingChanges, (workspaceId) => gitSync.pendingChanges(workspaceId))
   handleWorkspace(GIT_CHANNELS.mergeConflicts, (workspaceId) => gitSync.mergeConflicts(workspaceId))
   handleWorkspace(GIT_CHANNELS.mergePicks, (workspaceId) => gitSync.mergePicks(workspaceId))
+  handleWorkspace(GIT_CHANNELS.mergeNotes, (workspaceId) => gitSync.mergeNotes(workspaceId))
   ipcMain.handle(
     GIT_CHANNELS.mergeRecordCommits,
     guard((workspaceId: unknown, recordIds: unknown) =>

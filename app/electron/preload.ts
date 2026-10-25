@@ -257,6 +257,7 @@ const gitBridge: GitBridge = {
   pendingChanges: invokeBridge(GIT_CHANNELS.pendingChanges),
   mergeConflicts: invokeBridge(GIT_CHANNELS.mergeConflicts),
   mergePicks: invokeBridge(GIT_CHANNELS.mergePicks),
+  mergeNotes: invokeBridge(GIT_CHANNELS.mergeNotes),
   mergeRecordCommits: invokeBridge(GIT_CHANNELS.mergeRecordCommits),
   resolveMerge: invokeBridge(GIT_CHANNELS.resolveMerge),
   abandonMerge: invokeBridge(GIT_CHANNELS.abandonMerge),

@@ -66,6 +66,7 @@ export function installGitBridge(
     pendingChanges: vi.fn(async () => []),
     mergeConflicts: vi.fn(async () => []),
     mergePicks: vi.fn(async () => []),
+    mergeNotes: vi.fn(async () => []),
     mergeRecordCommits: vi.fn(async (_workspaceId: string, recordIds: readonly string[]) =>
       recordIds.map((recordId: string) => ({ recordId, ours: null, theirs: null })),
     ),

@@ -15,10 +15,3 @@ export function mergeCommitSubject(
 ): string | null {
   return commit === null ? null : commit.subject;
 }
-
-/** How many places still need a decision, in the picker's words. */
-export function describeConflictCount(count: number): string {
-  return count === 1
-    ? "1 conflict left to decide."
-    : `${count} conflicts left to decide.`;
-}
