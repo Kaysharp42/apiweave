@@ -64,9 +64,53 @@ APIWeave can create the repository for it. See
   tracking a workspace, connecting a GitHub or GitLab account and its
   repository, syncing, opening a workspace on another machine, resolving a
   merge, and running a repository in CI.
+- **A merge view for settling both copies.** **Review merge** opens a
+  full-window **Resolve merge** view: the conflicts grouped under Workspace,
+  Projects, Workflows, Environments and Files on the left, each with its count
+  and whether it is **Resolved**; the selected item's fields on the right as
+  **Yours**, **Result** and **Remote**, with **»** and **«** arrows taking a
+  copy into the result (or **Use yours** and **Use theirs** when the columns
+  stack), an editable **Result**, and **Compare** for a read-only diff of a
+  long value. **Accept yours** and **Accept remote** settle one item,
+  **Accept all yours** and **Accept all remote** settle everything,
+  **Previous conflict** and **Next conflict** (**Alt+↑** / **Alt+↓**) move
+  between what is left, and **N changes merged automatically** lists the
+  repairs the merge made on its own — positions, order, and an edge or frame a
+  deletion left dangling — updated as choices are made, before **Finish
+  merge**. Closing the view saves the choices.
+- **A value of your own for a conflicted field.** Type into **Result** to
+  settle a conflict with neither copy: text is edited as its text and stays
+  text, any other value as JSON. The value is checked against the record when
+  the merge finishes, a value holding secret storage or over the size limit is
+  refused with a plain sentence, and a value that leaves the record invalid
+  keeps the merge waiting with one copy as the way out.
+- **Reconnect a workspace whose history was restarted.** **Stop tracking**
+  deletes this device's history and tracking again starts a new one, so
+  connecting the old repository used to be refused as unrelated history. When
+  the repository holds the same workspace (the same `workspaceId`), the connect
+  now starts a **two-way merge**: identical files pass, a record or file only
+  one copy has is kept, and a place both copies hold with different values is a
+  conflict in the merge view. A sync that finds the same situation — a recreated history folder,
+  or the remote's branch replaced by another copy of this workspace — stops for
+  a decision the same way. A repository holding a different workspace is still
+  refused, naming it; ids that differ only in letter case say to rename the
+  workspace; a repository a newer APIWeave wrote says to update the app.
 
 ### Changed
 
+- **A waiting merge is settled in the merge view, not the old card picker.**
+  The **Keep your copy** / **Keep remote copy** cards are gone; a field's
+  choice is now an arrow into the result, or **Use yours** / **Use theirs**
+  when the columns stack, and a whole record or file is **Accept yours** /
+  **Accept remote**. Closing the view saves the choices instead of losing the
+  ones not sent, and **Finish merge** still sends them all.
+- **A same-workspace repository with no shared history is merged, not
+  refused.** Connecting it after **Stop tracking**, or syncing after this
+  device's history folder was recreated, starts the two-way merge described
+  above rather than sending you to **Open from git**, which could only answer
+  that the workspace is already here. Nothing is pushed until every conflict is
+  settled, and **Abandon merge** keeps this device's commits and offers the
+  merge again on **Sync now**.
 - **A local-only workspace says Local history, not Committed.** **Commit now**
   is offered only while there is something to commit, so a settled local
   history offers no action.
