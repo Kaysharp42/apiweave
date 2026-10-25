@@ -23,6 +23,7 @@ afterEach(() => {
 
 describe("a merge waiting for the user", () => {
   const PICK = { recordId: "wf", path: "name", side: "ours" as const }
+  const VALUE = { recordId: "wf", path: "description", value: { note: ["kept", true, null] } }
 
   it("holds a two-way merge with no base commit, and reads its picks back", () => {
     workspaceGit.startMerge(workspaceId, null, "ours".repeat(10), "theirs".repeat(10), [PICK])
@@ -34,6 +35,26 @@ describe("a merge waiting for the user", () => {
       theirCommit: "theirs".repeat(10),
       picks: [PICK],
     })
+  })
+
+  it("round-trips a value of the user's own beside a copy pick", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [PICK, VALUE])
+
+    // In record and path order, whatever order they were made in.
+    expect(workspaceGit.getMerge(workspaceId)?.picks).toEqual([VALUE, PICK])
+  })
+
+  it("refuses a pick row that carries both a copy and a value, or neither", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+    db.kvStore.set("INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, 'base', 'wf', 'a', 'ours', '\"x\"')", [
+      workspaceId,
+    ])
+    expect(() => workspaceGit.getMerge(workspaceId)).toThrow(/holds both a side and a value/)
+
+    db.kvStore.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, 'base', 'wf', 'a', NULL, NULL)", [
+      workspaceId,
+    ])
+    expect(() => workspaceGit.getMerge(workspaceId)).toThrow(/holds neither a side nor a value/)
   })
 
   it("replaces the picks only for the merge's own base, two-way's null included", () => {

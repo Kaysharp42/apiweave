@@ -169,6 +169,18 @@ describe("files added, deleted and changed", () => {
     expect(merge(ours, theirs, [{ recordId: "README.md", path: "", side: "ours" }]).files.get("README.md")).toBe("# Mine\n")
   })
 
+  it("settles a file conflict with text of the user's own", () => {
+    const ours = new Map(ourFiles)
+    ours.set("README.md", "# Mine\n")
+    const theirs = new Map(ourFiles)
+    theirs.set("README.md", "# Remote\n")
+
+    const result = merge(ours, theirs, [{ recordId: "README.md", path: "", value: "# Together\n" }])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.files.get("README.md")).toBe("# Together\n")
+  })
+
   it("merges a file only one copy added, and keeps a file only the ancestor had", () => {
     const ours = new Map(ourFiles)
     ours.set("docs/NOTES.md", "notes\n")

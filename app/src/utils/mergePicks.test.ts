@@ -101,6 +101,15 @@ describe("picksFromList", () => {
       { recordId: "w1", path: "name", side: "ours" },
     ]);
   });
+
+  it("leaves out a value of the user's own: this picker only makes copy picks", () => {
+    const stored = [
+      { recordId: "w1", path: "name", side: "ours" as const },
+      { recordId: "w1", path: "description", value: "Written by hand" },
+    ];
+
+    expect([...picksFromList(stored)]).toEqual([[pickKey("w1", "name"), "ours"]]);
+  });
 });
 
 describe("sideOfConflict", () => {

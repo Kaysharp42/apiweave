@@ -1,7 +1,6 @@
 import { deepEqualJson, isPlainRecord, own } from "../conflict-diff/diff"
 import type { GitMergeConflict } from "../types/GitMergeConflict"
 import type { GitMergePick } from "../types/GitMergePick"
-import type { GitMergeSide } from "../types/GitMergeSide"
 import type { JsonValue } from "../types/JsonValue"
 import { itemsByKey, joinPath } from "../workspace-repo/paths"
 
@@ -26,7 +25,7 @@ export interface Settled {
 
 /** One record's merge as it goes: the picks it may settle conflicts with, and what it could not settle, or settled by itself. */
 export interface MergeScope {
-  readonly picks: ReadonlyMap<string, GitMergeSide>
+  readonly picks: ReadonlyMap<string, GitMergePick>
   clashes: Clash[]
   readonly settled: Settled[]
 }
@@ -59,7 +58,7 @@ export const ANY: Shape = { type: "fields", child: () => ANY }
 /** A fresh merge of the record `recordId`, with the picks that name it by path; a later pick for the same place replaces an earlier one. */
 export function scopeFor(recordId: string, picks: readonly GitMergePick[]): MergeScope {
   return {
-    picks: new Map(picks.filter((pick) => pick.recordId === recordId).map((pick) => [pick.path, pick.side])),
+    picks: new Map(picks.filter((pick) => pick.recordId === recordId).map((pick) => [pick.path, pick])),
     clashes: [],
     settled: [],
   }
@@ -99,22 +98,31 @@ export function merge3(shape: Shape, at: readonly string[], base: Held, ours: He
 
 /**
  * A conflict at one place: the pick there or at the nearest place above it
- * settles it; with none, it is recorded and the remote copy's side stands for
- * now.
+ * settles it — a value of the user's own must name the place itself — with
+ * none, it is recorded and the remote copy's side stands for now.
  */
 export function clash(scope: MergeScope, found: Clash): Held {
-  const side = pickFor(scope.picks, found.at)
-  if (side !== undefined) return side === "ours" ? found.ours : found.theirs
+  const pick = pickFor(scope.picks, found.at)
+  if (pick !== undefined) {
+    if ("value" in pick) return pick.value
+    return pick.side === "ours" ? found.ours : found.theirs
+  }
   scope.clashes.push(found)
   return found.theirs
 }
 
-/** The pick at `at`, or at the nearest place above it that has one. */
-export function pickFor(picks: ReadonlyMap<string, GitMergeSide>, at: readonly string[]): GitMergeSide | undefined {
+/**
+ * The pick at `at`, or at the nearest place above it that has one. A copy
+ * settles the place and everything below it; a value of the user's own names
+ * exactly the place it replaces, so it never stands in for one beneath it.
+ */
+export function pickFor(picks: ReadonlyMap<string, GitMergePick>, at: readonly string[]): GitMergePick | undefined {
   if (picks.size === 0) return undefined
   for (let length = at.length; length >= 0; length -= 1) {
-    const side = picks.get(joinPath(at.slice(0, length)))
-    if (side !== undefined) return side
+    const pick = picks.get(joinPath(at.slice(0, length)))
+    if (pick === undefined) continue
+    if ("value" in pick && length !== at.length) continue
+    return pick
   }
   return undefined
 }

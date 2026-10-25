@@ -1,6 +1,7 @@
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { GitMergeSide } from "@shared/types/GitMergeSide";
+import type { GitMergeSidePick } from "@shared/types/GitMergeSidePick";
 import type { MergeConflictGroup } from "../types";
 
 /** The key a decision is stored under: its record (or file) and the place in it. */
@@ -51,12 +52,21 @@ export function withPathPick(
   return next;
 }
 
-/** The decisions stored with the merge as the map the picker works in: the inverse of {@link picksRequest}. */
+/**
+ * The decisions stored with the merge as the map the picker works in: the
+ * inverse of {@link picksRequest}. A value of the user's own has no control in
+ * this picker yet, so it is left out — the next request replaces the stored
+ * set, and this dialog only makes copy picks.
+ */
 export function picksFromList(
   picks: readonly GitMergePick[],
 ): ReadonlyMap<string, GitMergeSide> {
   return new Map(
-    picks.map((pick) => [pickKey(pick.recordId, pick.path), pick.side]),
+    picks.flatMap((pick) =>
+      "side" in pick
+        ? ([[pickKey(pick.recordId, pick.path), pick.side]] as const)
+        : [],
+    ),
   );
 }
 
@@ -112,7 +122,7 @@ export function allConflictsPicked(
  */
 export function picksRequest(
   picks: ReadonlyMap<string, GitMergeSide>,
-): readonly GitMergePick[] {
+): readonly GitMergeSidePick[] {
   return [...picks]
     .map(([key, side]) => ({ ...placeOf(key), side }))
     .sort(

@@ -414,8 +414,7 @@ describe("database migrations", () => {
     })
   })
 
-  it("keeps a merge waiting through the upgrade that makes its base commit nullable", () => {
-    const tempRoot = makeTempRoot()
+  it("keeps a merge waiting through the upgrade that makes its base commit nullable", () => {    const tempRoot = makeTempRoot()
     const databasePath = path.join(tempRoot, "merge-upgrade.db")
     const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 27) })
     old.kvStore.transaction((store) => {
@@ -452,6 +451,39 @@ describe("database migrations", () => {
         "theirs",
       ])
       expect(upgraded.kvStore.get("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", ["ws-1"])).toEqual({ base_commit: null })
+      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+    } finally {
+      upgraded.close()
+    }
+  })
+
+  it("keeps a merge's picks through the upgrade that lets a pick hold a value, and reads both back", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "merge-value-upgrade.db")
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 28) })
+    old.kvStore.transaction((store) => {
+      store.set("INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)", ["ws-1", "Local", "local"])
+      store.set("INSERT INTO workspace_git (workspace_id) VALUES (?)", ["ws-1"])
+      store.set("INSERT INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES ('ws-1', NULL, 'ours', 'theirs')")
+      store.set("INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, NULL, 'wf', 'name', 'ours')", ["ws-1"])
+    })
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      expect(upgraded.kvStore.query("SELECT record_id, path, side, value FROM workspace_merge_pick")).toEqual([
+        { record_id: "wf", path: "name", side: "ours", value: null },
+      ])
+      // A pick of the user's own carries a value and no side.
+      upgraded.kvStore.set("INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, NULL, 'wf', 'description', NULL, ?)", [
+        "ws-1",
+        '{"note":"kept"}',
+      ])
+      expect(upgraded.kvStore.query("SELECT path, side, value FROM workspace_merge_pick ORDER BY path")).toEqual([
+        { path: "description", side: null, value: '{"note":"kept"}' },
+        { path: "name", side: "ours", value: null },
+      ])
       expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
     } finally {
       upgraded.close()

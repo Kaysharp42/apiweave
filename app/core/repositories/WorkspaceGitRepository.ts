@@ -3,6 +3,7 @@ import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import { isGitProvider } from "@shared/types/GitProvider"
 import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitMergeSide } from "@shared/types/GitMergeSide"
+import type { JsonValue } from "@shared/types/JsonValue"
 import { isWorkspaceGitMode, type WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitState } from "@shared/types/WorkspaceGitState"
@@ -94,7 +95,8 @@ interface MergePickRow extends SqliteRow {
   readonly base_commit: string | null
   readonly record_id: string
   readonly path: string
-  readonly side: string
+  readonly side: string | null
+  readonly value: string | null
 }
 
 /** Which workspaces have a git history, and how each one syncs. No row: not tracked. */
@@ -214,7 +216,7 @@ export class WorkspaceGitRepository {
     if (row === undefined) return undefined
     const picks = queryMapped(
       this.store,
-      "SELECT base_commit, record_id, path, side FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit IS ? ORDER BY record_id, path",
+      "SELECT base_commit, record_id, path, side, value FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit IS ? ORDER BY record_id, path",
       [workspaceId, row.baseCommit],
       rowToPick,
     )
@@ -270,12 +272,13 @@ export class WorkspaceGitRepository {
 
   private insertPicks(store: KVStore, workspaceId: string, baseCommit: string | null, picks: readonly GitMergePick[]): void {
     for (const pick of picks) {
-      store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)", [
+      store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, ?, ?, ?, ?, ?)", [
         workspaceId,
         baseCommit,
         pick.recordId,
         pick.path,
-        pick.side,
+        "value" in pick ? null : pick.side,
+        "value" in pick ? toJson(pick.value) : null,
       ])
     }
   }
@@ -320,8 +323,13 @@ function rowToMerge(row: MergeRow): Omit<WorkspaceMerge, "picks"> {
   }
 }
 
+/** A pick row as the pick it holds: a copy, or a value of the user's own, and never both. */
 function rowToPick(row: MergePickRow): GitMergePick {
-  if (!isMergeSide(row.side)) throw new Error(`workspace_merge_pick holds an unknown side: ${row.side}`)
+  if (row.value !== null) {
+    if (row.side !== null) throw new Error(`workspace_merge_pick holds both a side and a value at ${row.record_id} ${row.path}`)
+    return { recordId: row.record_id, path: row.path, value: parseJson<JsonValue>(row.value) }
+  }
+  if (row.side === null || !isMergeSide(row.side)) throw new Error(`workspace_merge_pick holds neither a side nor a value at ${row.record_id} ${row.path}`)
   return { recordId: row.record_id, path: row.path, side: row.side }
 }
 
