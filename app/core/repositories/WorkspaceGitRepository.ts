@@ -42,13 +42,17 @@ function accountValues(account: GitAccountRef | null): [string | null, string | 
 }
 
 /**
- * A merge waiting for the user, as the row persists it: the three commits and
- * the picks made so far. Its conflicts are never stored — the same trees and
- * picks recompute them, which is what makes a restart free.
+ * A merge waiting for the user, as the row persists it: the commits and the
+ * picks made so far. Its conflicts are never stored — the same trees and picks
+ * recompute them, which is what makes a restart free.
+ *
+ * `baseCommit` is null when the two copies share no ancestor, which makes the
+ * merge two ways: nothing is a change from anything, so every field both
+ * copies hold differently is a conflict.
  */
 export interface WorkspaceMerge {
   readonly workspaceId: string
-  readonly baseCommit: string
+  readonly baseCommit: string | null
   readonly ourCommit: string
   readonly theirCommit: string
   readonly picks: readonly GitMergePick[]
@@ -81,13 +85,13 @@ interface WorkspaceGitRow extends SqliteRow {
 
 interface MergeRow extends SqliteRow {
   readonly workspace_id: string
-  readonly base_commit: string
+  readonly base_commit: string | null
   readonly our_commit: string
   readonly their_commit: string
 }
 
 interface MergePickRow extends SqliteRow {
-  readonly base_commit: string
+  readonly base_commit: string | null
   readonly record_id: string
   readonly path: string
   readonly side: string
@@ -202,24 +206,25 @@ export class WorkspaceGitRepository {
   /**
    * The merge waiting for this workspace, or undefined. Picks are returned only
    * for the merge's own base commit: one made against a base the merge no
-   * longer has is about different conflicts and settles nothing.
+   * longer has is about different conflicts and settles nothing. `IS ?` reads
+   * a two-way merge's NULL base, which `= ?` never matches.
    */
   public getMerge(workspaceId: string): WorkspaceMerge | undefined {
     const row = getMapped(this.store, "SELECT workspace_id, base_commit, our_commit, their_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId], rowToMerge)
     if (row === undefined) return undefined
     const picks = queryMapped(
       this.store,
-      "SELECT base_commit, record_id, path, side FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit = ? ORDER BY record_id, path",
+      "SELECT base_commit, record_id, path, side FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit IS ? ORDER BY record_id, path",
       [workspaceId, row.baseCommit],
       rowToPick,
     )
     return { ...row, picks }
   }
 
-  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. */
+  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. A null base is a two-way merge. */
   public startMerge(
     workspaceId: string,
-    baseCommit: string,
+    baseCommit: string | null,
     ourCommit: string,
     theirCommit: string,
     picks: readonly GitMergePick[],
@@ -240,9 +245,9 @@ export class WorkspaceGitRepository {
    * Replace the merge's picks. False, and nothing written, when the merge has
    * moved on to another base commit: these picks settle conflicts it no longer has.
    */
-  public setMergePicks(workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): boolean {
+  public setMergePicks(workspaceId: string, baseCommit: string | null, picks: readonly GitMergePick[]): boolean {
     return this.store.transaction((store) => {
-      const row = store.get<{ base_commit: string } & SqliteRow>("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
+      const row = store.get<{ base_commit: string | null } & SqliteRow>("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
       if (row === undefined || row.base_commit !== baseCommit) return false
       store.delete("DELETE FROM workspace_merge_pick WHERE workspace_id = ?", [workspaceId])
       this.insertPicks(store, workspaceId, baseCommit, picks)
@@ -263,7 +268,7 @@ export class WorkspaceGitRepository {
     })
   }
 
-  private insertPicks(store: KVStore, workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): void {
+  private insertPicks(store: KVStore, workspaceId: string, baseCommit: string | null, picks: readonly GitMergePick[]): void {
     for (const pick of picks) {
       store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)", [
         workspaceId,

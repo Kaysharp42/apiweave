@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 import type { GitAccount } from "@shared/types/GitAccount";
+import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
@@ -14,6 +15,7 @@ import { GitAuthorForm } from "./GitAuthorForm";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
+import { GitMergeDialog } from "./GitMergeDialog";
 import { GitRemotePicker } from "./GitRemotePicker";
 import { GitSignInButtons } from "./GitSignInButtons";
 import { GitSyncDialogs } from "./GitSyncDialogs";
@@ -263,6 +265,9 @@ export function VersionHistoryPanel({
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
   );
+  // A merge a connect started, shown over the panel: the repository holds this
+  // same workspace with no commit in common, so the copies merge two ways.
+  const [merge, setMerge] = useState<WorkspaceGitStatus | null>(null);
   const prefill = creation.step === "unconnected" ? creation.remote : null;
 
   /**
@@ -289,6 +294,19 @@ export function VersionHistoryPanel({
   };
 
   /**
+   * Connect, and show the merge picker when it comes back `merging`: the
+   * repository holds this same workspace but shares no commit with this
+   * device, so the two copies merge two ways.
+   */
+  const connectTo = async (
+    url: string,
+    account: GitAccountRef | null,
+  ): Promise<void> => {
+    const next = await run(() => git.connectRemote(workspaceId, url, account));
+    if (next?.state === "merging") setMerge(next);
+  };
+
+  /**
    * Connect to a repository just created. A failure leaves it where it is —
    * APIWeave never deletes a repository — and fills the connect form in with
    * it, so Connect to remote is the retry.
@@ -306,6 +324,7 @@ export function VersionHistoryPanel({
     );
     if (connected === null) return;
     setCreation({ step: "idle" });
+    if (connected.state === "merging") setMerge(connected);
     if (created.problem !== null)
       setMessage({ tone: "notice", text: created.problem });
   };
@@ -357,9 +376,7 @@ export function VersionHistoryPanel({
             account={status.account}
             busy={busy}
             prefill={prefill}
-            onConnect={(url, account) =>
-              void run(() => git.connectRemote(workspaceId, url, account))
-            }
+            onConnect={(url, account) => void connectTo(url, account)}
             onCreateRepository={(account) =>
               setCreation({ step: "dialog", account })
             }
@@ -403,6 +420,13 @@ export function VersionHistoryPanel({
           onCreated={(created, account) =>
             void connectCreated(created, account)
           }
+        />
+      )}
+      {merge !== null && (
+        <GitMergeDialog
+          status={merge}
+          onClose={() => setMerge(null)}
+          onStatus={apply}
         />
       )}
       <ConfirmDialog

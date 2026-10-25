@@ -25,6 +25,18 @@ const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
 /**
+ * What the picker says before the conflicts: the two copies changed these
+ * fields, or — with no shared history — every difference between them is one.
+ */
+function mergeIntro(unrelatedHistory: boolean): string {
+  const settled =
+    "Nothing is pushed or imported until every conflict is settled";
+  return unrelatedHistory
+    ? `This device and the remote have no history in common, so every difference is listed below. Pick the copy to keep for each field. ${settled}, and everything only one side has is already part of the merge.`
+    : `Both this device and the remote changed these fields. Pick the copy to keep for each one. ${settled}, and every other change from both sides is already part of the merge.`;
+}
+
+/**
  * Why a resolve left the merge waiting, in the user's terms. A missing author
  * is the one failure a retry cannot clear on its own, so it also says where
  * to set one.
@@ -217,10 +229,7 @@ export function GitMergeDialog({
       >
         <div className="space-y-3 p-4">
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-            Both this device and the remote changed these fields. Pick the copy
-            to keep for each one. Nothing is pushed or imported until every
-            conflict is settled, and every other change from both sides is
-            already part of the merge.
+            {mergeIntro(status.unrelatedHistory)}
           </p>
           {error !== null && (
             <p

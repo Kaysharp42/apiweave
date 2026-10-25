@@ -264,6 +264,38 @@ describe("VersionHistoryPanel", () => {
     expect(screen.queryByRole("combobox", { name: /account/i })).toBeNull();
   });
 
+  it("opens the merge picker when a connect comes back with a merge waiting", async () => {
+    const user = userEvent.setup();
+    const merging = trackedStatus({
+      state: "merging",
+      remoteUrl: "git@github.com:acme/tests.git",
+      unrelatedHistory: true,
+    });
+    const { bridge } = installGitBridge(local(), {
+      connectRemote: vi.fn(async () => merging),
+      mergeConflicts: vi.fn(async () => []),
+    });
+    render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
+
+    const field = await screen.findByRole("textbox", {
+      name: "Repository URL",
+    });
+    await user.type(field, "git@github.com:acme/tests.git");
+    await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+
+    expect(bridge.connectRemote).toHaveBeenCalledWith(
+      "ws-1",
+      "git@github.com:acme/tests.git",
+      null,
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Resolve merge" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/This device and the remote have no history in common/),
+    ).toBeInTheDocument();
+  });
+
   describe("the account a remote is reached as", () => {
     const WORK: GitAccount = {
       provider: "github",

@@ -39,6 +39,11 @@ export interface GitMergeRecordResult {
  * leave broken (see {@link repairWorkflow}). Where every field merged but the
  * result is not a valid record, that is a conflict at `""` too.
  *
+ * `twoWay` is for copies that share no ancestor: nothing is a change from
+ * anything, so the whole-record rule above never applies — a record only one
+ * copy holds is kept, and a record both hold merges field by field, every
+ * field they differ on a conflict. `base` is then undefined throughout.
+ *
  * `picks` settle conflicts; see {@link GitMergePick}.
  */
 export function mergeRecord(
@@ -47,6 +52,7 @@ export function mergeRecord(
   ours: RecordDocument | undefined,
   theirs: RecordDocument | undefined,
   picks: readonly GitMergePick[] = [],
+  twoWay = false,
 ): GitMergeRecordResult {
   const first = ours ?? theirs ?? base
   if (first === undefined) return { merged: undefined, conflicts: [], notes: [] }
@@ -60,8 +66,8 @@ export function mergeRecord(
   const copies = { base, ours, theirs }
   const named = { kind, recordId, name: recordNameOf(first) }
   const scope = scopeFor(recordId, picks)
-  // Two copies that each added a record under one id are two records, not one to mix field by field.
-  const merged = base === undefined && ours !== undefined && theirs !== undefined
+  // Two copies that each added a record under one id are two records, not one to mix field by field. With no ancestor there is no such thing as one copy adding it: both hold it, and it merges field by field.
+  const merged = !twoWay && base === undefined && ours !== undefined && theirs !== undefined
     ? clash(scope, { at: [], base, ours, theirs })
     : merge3(recordShape(kind), [], base, ours, theirs, scope)
   if (merged === undefined) return resultOf(named, undefined, scope, [])

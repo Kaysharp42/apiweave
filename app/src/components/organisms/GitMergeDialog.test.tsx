@@ -76,6 +76,38 @@ function renderDialog(
 }
 
 describe("GitMergeDialog", () => {
+  it("says the two copies share no history when the merge has no ancestor", async () => {
+    const noBase: GitMergeConflict = {
+      kind: "workflow",
+      recordId: "w1",
+      name: "Checkout",
+      path: "name",
+      ours: "On B",
+      theirs: "On A",
+    };
+    installGitBridge(
+      trackedStatus({ state: "merging", unrelatedHistory: true }),
+      { mergeConflicts: vi.fn(async () => [noBase]) },
+    );
+    render(
+      <GitMergeDialog
+        status={trackedStatus({ state: "merging", unrelatedHistory: true })}
+        onClose={vi.fn()}
+        onStatus={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/This device and the remote have no history in common/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Both this device and the remote changed these fields/),
+    ).toBeNull();
+    // A conflict with no ancestor to show is still a card with both copies.
+    expect(await screen.findByText("On B")).toBeInTheDocument();
+    expect(screen.getByText("On A")).toBeInTheDocument();
+  });
+
   it("shows each side's value in the user's words, with both sides' authors and commits", async () => {
     const { bridge } = renderDialog();
 

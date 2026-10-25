@@ -534,6 +534,78 @@ describe("picks", () => {
   })
 })
 
+describe("two copies with no common ancestor", () => {
+  const mergeTwo = (ours: Json | undefined, theirs: Json | undefined, picks: GitMergePick[] = []) =>
+    mergeRecord("workflow", undefined, ours, theirs, picks, true)
+
+  it("keeps a record only one copy holds", () => {
+    const only = flow({ name: "Only mine", tags: ["mine"] })
+
+    expect(mergeTwo(only, undefined)).toEqual({ merged: only, conflicts: [], notes: [] })
+    expect(mergeTwo(undefined, only)).toEqual({ merged: only, conflicts: [], notes: [] })
+  })
+
+  it("merges two identical records silently", () => {
+    const same = flow({ name: "Same", tags: ["smoke"] })
+
+    expect(mergeTwo(same, same)).toEqual({ merged: same, conflicts: [], notes: [] })
+  })
+
+  it("is a conflict on every field they differ on, with no ancestor to point at", () => {
+    const result = mergeTwo(flow({ name: "Mine" }), flow({ name: "Theirs" }))
+
+    expect(result.merged?.["name"]).toBe("Theirs")
+    expect(result.conflicts).toEqual([{ kind: "workflow", recordId: "wf1", name: "Mine", path: "name", ours: "Mine", theirs: "Theirs" }])
+  })
+
+  it("keeps the keys only one copy holds and conflicts on a key both hold differently", () => {
+    const result = mergeTwo(
+      flow({ variables: { user: "mine", tier: "free" } }),
+      flow({ variables: { region: "eu", tier: "paid" } }),
+    )
+
+    expect(result.merged?.["variables"]).toEqual({ region: "eu", tier: "paid", user: "mine" })
+    expect(result.conflicts.map(({ path, base: before, ours, theirs }) => ({ path, before, ours, theirs }))).toEqual([
+      { path: "variables.tier", before: undefined, ours: "free", theirs: "paid" },
+    ])
+  })
+
+  it("merges a keyed array item by item: each copy's items stay, a shared one by its fields", () => {
+    const result = mergeTwo(
+      flow({ nodes: [node("n1", 0, 0, { label: "mine", config: { duration: 3 } }), node("n2", 200, 0)] }),
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 3 } }), node("n3", 400, 0)] }),
+    )
+
+    expect(nodesOf(result.merged).map((item) => item["nodeId"])).toEqual(["n1", "n2", "n3"])
+    expect(nodeOf(result.merged, "n1")).toMatchObject({ label: "mine", config: { duration: 3 } })
+    expect(result.conflicts).toEqual([])
+  })
+
+  it("is a conflict on the field of an item both hold differently", () => {
+    const result = mergeTwo(
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 3 } })] }),
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 5 } })] }),
+    )
+
+    expect(result.conflicts.map(({ path, ours, theirs }) => ({ path, ours, theirs }))).toEqual([
+      { path: "nodes.n1.config.duration", ours: 3, theirs: 5 },
+    ])
+  })
+
+  it("keeps every tag either copy has, since a tag is a set", () => {
+    expect(mergeTwo(flow({ tags: ["smoke"] }), flow({ tags: ["api"] })).merged?.["tags"]).toEqual(["api", "smoke"])
+  })
+
+  it("settles all of a record's conflicts with a whole-record pick", () => {
+    const result = mergeTwo(flow({ name: "Mine", description: "mine" }), flow({ name: "Theirs", description: "theirs" }), [
+      pick("", "ours"),
+    ])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.merged).toMatchObject({ name: "Mine", description: "mine" })
+  })
+})
+
 describe("the other kinds of record", () => {
   it("a workspace merges its name and description", () => {
     const base = { workspaceId: "ws_01", name: "Acme", description: null }

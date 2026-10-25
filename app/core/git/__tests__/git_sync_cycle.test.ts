@@ -1284,9 +1284,9 @@ describe("the sync cycle", () => {
       expect(b.repositories.workflows.getById(after.workflowId)).toBeDefined()
     })
 
-    it("drops a merge whose history folder was deleted: the recreated history is unrelated, and the next sync says so", async () => {
+    it("recreates a deleted history and merges it two ways with the remote's copy of the same workspace", async () => {
       const pair = await sharedPair()
-      const { b, sandbox, remote, opened } = pair
+      const { b, sandbox, remote, opened, sharedId } = pair
       const { aHead } = await renameConflict(pair)
       await b.restart()
       fs.rmSync(dirOf(b, opened), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -1297,15 +1297,25 @@ describe("the sync cycle", () => {
       expect(b.repositories.workspaceGit.getMerge(opened)).toBeUndefined()
       expect(await subjectsOf(b, opened)).toEqual(["Recreate this workspace's repository from APIWeave"])
 
+      // The recreated history shares no commit with the remote's, but it is the
+      // same workspace, so the two merge with no ancestor rather than stopping.
       const synced = await b.sync.syncNow(opened)
-      expect(synced).toMatchObject({ state: "error", lastError: { code: null } })
-      expect(synced.lastError?.message).toMatch(/holds history this workspace did not come from/)
+      expect(synced).toMatchObject({ state: "merging", lastError: null, unrelatedHistory: true })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: aHead })
+      expect(await b.sync.mergeConflicts(opened)).toEqual([
+        { kind: "workflow", recordId: sharedId, name: "On B", path: "name", ours: "On B", theirs: "On A" },
+      ])
+      // Nothing was pushed or imported while it waits.
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+      expect(b.repositories.workflows.getById(sharedId)?.name).toBe("On B")
 
-      // What the message offers works: discarding loads the remote's version.
-      expect(await b.sync.discardLocalChanges(opened)).toMatchObject({ state: "idle", lastError: null })
-      expect(headOf(b, opened)).toBe(aHead)
-      expect(b.repositories.workflows.getById(pair.sharedId)?.name).toBe("On A")
+      const resolved = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])
+      expect(resolved).toMatchObject({ state: "idle", lastError: null, unrelatedHistory: false })
+      expect(b.repositories.workflows.getById(sharedId)?.name).toBe("On A")
+      const head = await headCommitOf(b, opened)
+      expect(head.parents).toHaveLength(2)
+      expect(head.parents).toContain(aHead)
+      expect(remoteHead(sandbox, remote.dir)).toBe(head.sha)
     })
 
     it("takes the author Sync now names while merging, and clears the missing-author error a resolve left", async () => {
