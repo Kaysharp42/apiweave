@@ -287,6 +287,13 @@ export function MergeView({ status, onClose, onStatus }: GitMergeViewProps) {
       if (next.lastError !== null) {
         setError(mergeErrorText(next.lastError));
         setAuthorNeeded(next.lastError.code === "identity_missing");
+      } else if (canFinish) {
+        // Every conflict has a decision, yet the merge did not finish: the only
+        // conflicts left are ones the decisions themselves made, which the
+        // stable list cannot show — a value that no record may hold.
+        setError(
+          "A value you typed does not make a valid record, so the merge is still waiting. Keep one copy for the field it changed.",
+        );
       }
       // The picks are stored; only what the merge now says needs rereading.
       const state = await git.mergeState(workspaceId);

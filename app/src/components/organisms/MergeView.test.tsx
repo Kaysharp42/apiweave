@@ -462,6 +462,22 @@ describe("MergeView", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("says a finish that settles every conflict but does not finish is a value no record may hold", async () => {
+    const user = userEvent.setup();
+    const resolveMerge = vi.fn(async () => trackedStatus({ state: "merging", lastError: null }));
+    const { onClose } = installMerge([NAME], {
+      picks: [{ recordId: "w1", path: "name", value: "" }],
+      resolveMerge,
+    });
+
+    await user.click(await screen.findByRole("button", { name: "Finish merge" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A value you typed does not make a valid record, so the merge is still waiting.",
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("asks for the author inside the view and finishes once git knows one", async () => {
     const user = userEvent.setup();
     const resolveMerge = vi
