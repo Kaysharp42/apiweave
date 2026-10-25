@@ -21,6 +21,12 @@ const DIVERGED_EXPLANATION =
 const MERGING_EXPLANATION =
   "Both this device and the remote changed, and some fields were changed differently in each. Those need your decision before the merge can finish; until then nothing is pushed and your changes stay on this device. Discard local changes loads the remote's version instead.";
 
+const UNRELATED_MERGING_EXPLANATION =
+  "This device and the remote have no history in common, and some fields are different in each. Those need your decision before the merge can finish; until then nothing is pushed and your changes stay on this device. Discard local changes loads the remote's version instead.";
+
+const UNRELATED_DIVERGED_EXPLANATION =
+  "This device and the remote have no history in common, and the merge was abandoned. Your changes stay on this device. Sync now combines the two again, or Discard local changes loads the remote's version instead.";
+
 const LOCAL_HISTORY_EXPLANATION =
   "Every change is committed to this workspace's history on this device. It isn't connected to a remote.";
 
@@ -92,15 +98,20 @@ function syncingView(status: WorkspaceGitStatus): GitSyncView {
  * no pass will finish it. A merge that is simply waiting carries no error; any
  * `lastError` is why the last resolve stopped — git's text, or the app's own
  * (an import the merged tree failed, a merge that kept seeing new edits) — and
- * is the detail, except a missing author, which asks for one instead.
+ * is the detail, except a missing author, which asks for one instead. Two
+ * copies with no history in common say that rather than that both changed.
  */
 function mergingView(status: WorkspaceGitStatus): GitSyncView {
   const { lastError } = status;
   const needsAuthor = lastError?.code === "identity_missing";
-  return view("attention", "Merge needed", "warning", CloudAlert, MERGING_EXPLANATION, {
-    needsAuthor,
-    detail: lastError !== null && !needsAuthor ? lastError.message : null,
-  });
+  return view(
+    "attention",
+    "Merge needed",
+    "warning",
+    CloudAlert,
+    status.unrelatedHistory ? UNRELATED_MERGING_EXPLANATION : MERGING_EXPLANATION,
+    { needsAuthor, detail: lastError !== null && !needsAuthor ? lastError.message : null },
+  );
 }
 
 function divergedView(status: WorkspaceGitStatus): GitSyncView {
@@ -110,7 +121,8 @@ function divergedView(status: WorkspaceGitStatus): GitSyncView {
     lastError !== null && lastError.code !== null
       ? ` Last attempt: ${describeGitError(lastError, status.remoteUrl, status.account)}`
       : "";
-  return view("attention", "Diverged", "warning", CloudAlert, `${DIVERGED_EXPLANATION}${lastAttempt}`);
+  const abandoned = status.unrelatedHistory ? UNRELATED_DIVERGED_EXPLANATION : DIVERGED_EXPLANATION;
+  return view("attention", "Diverged", "warning", CloudAlert, `${abandoned}${lastAttempt}`);
 }
 
 function errorView(status: WorkspaceGitStatus): GitSyncView {

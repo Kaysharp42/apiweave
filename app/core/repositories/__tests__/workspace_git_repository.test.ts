@@ -69,6 +69,18 @@ describe("a merge waiting for the user", () => {
     expect(workspaceGit.getMerge(workspaceId)).toMatchObject({ baseCommit: null, picks: [PICK] })
   })
 
+  it("remembers a two-way merge's basis past the row, so an abandoned one can still explain itself", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(true)
+
+    workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
+    workspaceGit.clearRemote(workspaceId)
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+  })
+
   it("goes with the remote the merge waited on", () => {
     workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
     workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [PICK])

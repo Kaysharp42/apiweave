@@ -288,6 +288,42 @@ function pushFromElsewhere(
   return rawGit(scratch, sandbox.env, "rev-parse", "HEAD").trim()
 }
 
+/**
+ * A brand-new root history holding `files`, force-pushed over the remote's
+ * branch: what stopping and restarting tracking on another device leaves — the
+ * same workspace with no commit in common.
+ */
+function pushNewRootFromElsewhere(
+  sandbox: GitSandbox,
+  remote: { dir: string; url: string },
+  files: ReadonlyMap<string, string>,
+  message: string,
+): string {
+  const scratch = path.join(sandbox.root, `new-root-${++elsewhereCount}`)
+  rawGit(sandbox.root, sandbox.env, "init", "--initial-branch=main", scratch)
+  for (const [name, content] of files) {
+    const full = path.join(scratch, ...name.split("/"))
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, content)
+  }
+  rawGit(scratch, sandbox.env, "add", "-A")
+  rawGit(scratch, sandbox.env, "-c", "user.name=Someone Else", "-c", "user.email=someone@example.invalid", "commit", "-m", message)
+  rawGit(scratch, sandbox.env, "push", "--force", remote.url, "main")
+  return rawGit(scratch, sandbox.env, "rev-parse", "HEAD").trim()
+}
+
+/** `files` with the workspace record's fields replaced, as another device would have written it. */
+function withWorkspace(
+  files: ReadonlyMap<string, string>,
+  fields: { readonly workspaceId?: string; readonly name?: string },
+): Map<string, string> {
+  const tree = new Map(files)
+  const text = tree.get("workspace.json")
+  if (text === undefined) throw new Error("the tree holds no workspace.json")
+  tree.set("workspace.json", JSON.stringify({ ...(JSON.parse(text) as Record<string, unknown>), ...fields }))
+  return tree
+}
+
 /** Plain git fed `input` on stdin, for the plumbing that reads it: `hash-object --stdin`, `mktree`. */
 function rawGitInput(cwd: string, env: NodeJS.ProcessEnv, input: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env, input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim()
@@ -1422,6 +1458,41 @@ describe("the sync cycle", () => {
       })
     })
 
+    it("survives a restart with no base: the row and its picks are kept, the conflicts recomputed, and Resolve finishes it", async () => {
+      const pair = await sharedPair()
+      const { b, sandbox, remote, opened, sharedId } = pair
+      // A fresh root of this same workspace, differing in two fields.
+      const files = treeOf(b, opened)
+      const file = workflowFileOf(b, opened, sharedId)
+      const workflow = JSON.parse(files.get(file)!) as { name: string; description: string }
+      files.set(file, JSON.stringify({ ...workflow, name: "Remote name", description: "Remote description" }))
+      const theirs = pushNewRootFromElsewhere(sandbox, remote, files, "Restart tracking elsewhere")
+
+      expect(await b.sync.syncNow(opened)).toMatchObject({ state: "merging", unrelatedHistory: true })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: theirs })
+      // One decision is made; the other conflict keeps the merge waiting.
+      expect(await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])).toMatchObject({ state: "merging" })
+      const picks = [{ recordId: sharedId, path: "name", side: "theirs" as const }]
+      expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual(picks)
+      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description"])
+
+      await b.restart()
+      await b.sync.reconcile()
+
+      // The merge the app quit under is repaired from its row, not dropped.
+      expect(binding(b, opened)).toMatchObject({ state: "merging", lastError: null })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: theirs, picks })
+      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description"])
+
+      const resolved = await b.sync.resolveMerge(opened, [...picks, { recordId: sharedId, path: "description", side: "theirs" }])
+
+      expect(resolved).toMatchObject({ state: "idle", lastError: null })
+      const head = await headCommitOf(b, opened)
+      expect(head.parents).toHaveLength(2)
+      expect(remoteHead(sandbox, remote.dir)).toBe(head.sha)
+      expect(b.repositories.workflows.getById(sharedId)).toMatchObject({ name: "Remote name", description: "Remote description" })
+    })
+
     it("takes the author Sync now names while merging, and clears the missing-author error a resolve left", async () => {
       const pair = await sharedPair()
       const { b, opened } = pair
@@ -2399,6 +2470,22 @@ describe("the sync cycle", () => {
     await b.sync.start()
     expect(binding(b, opened)).toMatchObject({ state: "error", lastError: { message: status.lastError?.message } })
     expect(remoteHead(sandbox, remote.dir)).toBe(replaced)
+  })
+
+  it("refuses a remote whose branch now holds another workspace's tree, and pushes nothing", async () => {
+    const pair = await sharedPair()
+    const { b, sandbox, remote, opened } = pair
+    // A readable, valid tree — of a different workspace.
+    const theirs = pushNewRootFromElsewhere(sandbox, remote, withWorkspace(treeOf(b, opened), { workspaceId: "ws_other", name: "Other" }), "Another workspace")
+    b.repositories.workflows.create({ workspaceId: opened, name: "B's work" })
+
+    const status = await b.sync.syncNow(opened, { message: "Add B's work" })
+
+    expect(status).toMatchObject({ state: "error", lastError: { code: null } })
+    expect(status.lastError?.message).toMatch(/^The remote's branch holds history this workspace did not come from.*Discard local changes/)
+    expect(await subjectsOf(b, opened)).toContain("Add B's work")
+    expect(remoteHead(sandbox, remote.dir)).toBe(theirs)
+    expect(b.repositories.workspaceGit.getMerge(opened)).toBeUndefined()
   })
 
   describe("a clone left ahead of its database", () => {

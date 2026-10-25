@@ -2,7 +2,13 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
-import { WORKSPACE_FILE } from "@shared/workspace-repo/format"
+import {
+  FORMAT_FILE,
+  WORKSPACE_FILE,
+  WORKSPACE_FORMAT,
+  WORKSPACE_FORMAT_VERSION,
+  fileText,
+} from "@shared/workspace-repo/format"
 import { GitInvalidArgumentError } from "../git_errors"
 import { readWorkspaceTreeAt, writeWorkspaceTree } from "../workspace_tree"
 import { openHarness, passthrough, subjects, type Harness } from "./git_sync_harness"
@@ -171,6 +177,30 @@ describe("GitSyncService.connectRemote", () => {
     expect(remotesOf(harness)).toEqual([])
   })
 
+  it("says a repository a newer APIWeave wrote is that, rather than sending the user to Open", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => files.set(FORMAT_FILE, fileText({ format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION + 1 })))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(/written by a newer APIWeave/)
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
+  it("refuses a workspace id that differs only in letter case, saying to rename it rather than open it", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { workspaceId: harness.workspaceId.toLowerCase(), name: "Kyra" }))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(
+      /differs from this workspace's id only in letter case.*Rename the workspace in the repository's workspace.json/,
+    )
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
   it("keeps the remote bound when a two-way merge is abandoned, and Sync now offers it again", async () => {
     const harness = await trackedHarness()
     const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { name: "Acme QA (elsewhere)" }))
@@ -179,7 +209,7 @@ describe("GitSyncService.connectRemote", () => {
 
     const abandoned = await harness.sync.abandonMerge(harness.workspaceId)
 
-    expect(abandoned).toMatchObject({ state: "diverged", remoteUrl: remote.url })
+    expect(abandoned).toMatchObject({ state: "diverged", remoteUrl: remote.url, unrelatedHistory: true })
     expect(abandoned.lastError?.message).toMatch(/share no history, and the merge was abandoned/)
     expect(harness.repositories.workspaceGit.getMerge(harness.workspaceId)).toBeUndefined()
     expect(headOf(harness, harness.dir)).toBe(head)

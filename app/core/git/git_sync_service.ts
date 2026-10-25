@@ -10,6 +10,7 @@ import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitMergeValuePick } from "@shared/types/GitMergeValuePick"
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits"
 import type { MergeSideCommit } from "@shared/types/MergeSideCommit"
+import type { JsonValue } from "@shared/types/JsonValue"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkspaceGitCommit } from "@shared/types/WorkspaceGitCommit"
@@ -20,7 +21,7 @@ import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange"
 import { describeMergeNote } from "@shared/git-merge/notes"
 import { GitMergeInputError, mergeTree, type GitMergeTreeResult } from "@shared/git-merge/tree"
-import { RecordIdSchema, WORKSPACE_FILE, WorkspaceFileSchema } from "@shared/workspace-repo/format"
+import { FORMAT_FILE, FormatFileSchema, RecordIdSchema, WORKSPACE_FILE, WorkspaceFileSchema, issueText } from "@shared/workspace-repo/format"
 import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
@@ -34,6 +35,7 @@ import type {
   WorkspaceRepository,
 } from "../repositories"
 import {
+  MAX_FILE_BYTES,
   parseWorkspace,
   serializeWorkspace,
   workspaceSnapshot,
@@ -84,9 +86,15 @@ const ALREADY_CONNECTED_MESSAGE = "This workspace is already connected to a remo
 const UNRELATED_HISTORY_MESSAGE =
   "That repository already has history this workspace did not come from. Open a workspace from git instead."
 
-/** The connect refusal for a repository holding another workspace, whose name its `workspace.json` gave. */
-function differentWorkspaceMessage(name: string): string {
-  return `That repository holds a different workspace (${name}). Open it from git to work on that one, or connect a repository that belongs to this workspace.`
+/** The connect refusal for a repository holding another workspace, told from what its `workspace.json` says. */
+function differentWorkspaceMessage(remote: { readonly workspaceId: string; readonly name: string }, workspaceId: string): string {
+  if (remote.workspaceId.toLowerCase() === workspaceId.toLowerCase()) {
+    return (
+      `That repository holds workspace ${remote.workspaceId}, which differs from this workspace's id only in letter case, ` +
+      "so the two would share one repository folder on this computer. Rename the workspace in the repository's workspace.json, then connect again."
+    )
+  }
+  return `That repository holds a different workspace (${remote.name}). Open it from git to work on that one, or connect a repository that belongs to this workspace.`
 }
 
 const NO_COMMIT_MESSAGE = "Commit the workspace once before connecting a remote."
@@ -345,7 +353,7 @@ export class GitSyncService {
       uncommitted: this.uncommittedWrites(workspaceId),
       lastSyncedAt: binding.remoteUrl === null ? null : binding.lastSyncedAt,
       lastCommit,
-      unrelatedHistory: merge?.baseCommit === null,
+      unrelatedHistory: merge !== undefined ? merge.baseCommit === null : binding.state === "diverged" && binding.unrelatedMerge,
     }
   }
 
@@ -1489,7 +1497,7 @@ export class GitSyncService {
     if ((await this.git.mergeBase(directory, "HEAD", remoteBranch)) !== undefined) return null
     const remote = await this.workspaceAt(directory, remoteBranch)
     if (remote === undefined) throw new ConflictError(UNRELATED_HISTORY_MESSAGE)
-    if (remote.workspaceId !== workspaceId) throw new ConflictError(differentWorkspaceMessage(remote.name))
+    if (remote.workspaceId !== workspaceId) throw new ConflictError(differentWorkspaceMessage(remote, workspaceId))
     return remoteSha
   }
 
@@ -1518,18 +1526,41 @@ export class GitSyncService {
    * The workspace a commit says it holds: its id and name, or undefined when
    * its `workspace.json` is missing or is not one {@link WorkspaceFileSchema}
    * reads. It only tells one workspace's history from another's.
+   *
+   * The format file is read first: a repository a newer APIWeave wrote, or one
+   * that is not a workspace repository at all, says so here — in the format's
+   * own words — rather than being sent to Open, which would refuse it later
+   * and less clearly.
    */
   private async workspaceAt(directory: string, rev: string): Promise<{ readonly workspaceId: string; readonly name: string } | undefined> {
-    const text = await this.git.show(directory, rev, WORKSPACE_FILE)
+    await this.assertWorkspaceFormat(directory, rev)
+    const text = await this.fileAt(directory, rev, WORKSPACE_FILE)
     if (text === undefined) return undefined
-    let value: unknown
-    try {
-      value = JSON.parse(text)
-    } catch {
-      return undefined
-    }
+    const value = parseJsonValue(text)
+    if (value === undefined) return undefined
     const checked = WorkspaceFileSchema.safeParse(value)
     return checked.success ? { workspaceId: checked.data.workspaceId, name: checked.data.name } : undefined
+  }
+
+  /** Refuse a commit whose `.apiweave/format.json` is not this format's, in the format's own words; an absent one is left to the workspace file. */
+  private async assertWorkspaceFormat(directory: string, rev: string): Promise<void> {
+    const text = await this.fileAt(directory, rev, FORMAT_FILE)
+    if (text === undefined) return
+    const value = parseJsonValue(text)
+    const parsed = value === undefined ? undefined : FormatFileSchema.safeParse(value)
+    if (parsed !== undefined && parsed.success) return
+    throw new ValidationError(`${FORMAT_FILE} at ${rev} cannot be read: ${parsed === undefined ? "it is not valid JSON" : issueText(parsed.error)}`)
+  }
+
+  /** One file of a commit as text, or undefined when the commit has none; over the format's one-file cap it is refused unread. */
+  private async fileAt(directory: string, rev: string, path: string): Promise<string | undefined> {
+    const text = await this.git.show(directory, rev, path)
+    if (text === undefined) return undefined
+    const bytes = Buffer.byteLength(text, "utf8")
+    if (bytes > MAX_FILE_BYTES) {
+      throw new ValidationError(`${path} at ${rev} is ${bytes} bytes, over the ${MAX_FILE_BYTES}-byte limit for one workspace file, so this repository cannot be read as this workspace.`)
+    }
+    return text
   }
 
   private async pushFirstTime(directory: string, branch: string, account: GitAccountRef | null): Promise<void> {
@@ -2409,6 +2440,15 @@ function assertMergeValueFits(pick: GitMergeValuePick, kind: GitMergeConflict["k
 function describeChanges(entries: readonly GitStatusEntry[]): string {
   const [only] = entries
   return entries.length === 1 && only !== undefined ? `Update ${only.path}` : `Update ${entries.length} files`
+}
+
+/** Text as the JSON it holds, or undefined when it is not JSON. */
+function parseJsonValue(text: string): JsonValue | undefined {
+  try {
+    return JSON.parse(text) as JsonValue
+  } catch {
+    return undefined
+  }
 }
 
 /**
