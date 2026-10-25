@@ -1,3 +1,4 @@
+import { Select } from "../atoms/Select";
 import type { GitAccountPickerProps } from "../../types";
 import { gitAccountKey as keyOf, gitAccountRef, sameGitAccount } from "../../utils/gitAccounts";
 import { FormField } from "./FormField";
@@ -32,7 +33,7 @@ export function GitAccountPicker({
       label="Account"
       hint="APIWeave asks gh or glab for this account's token on every sync and stores none."
     >
-      <select
+      <Select
         aria-label="Account"
         value={value === null ? OWN_CREDENTIALS : keyOf(value)}
         disabled={disabled}
@@ -42,7 +43,6 @@ export function GitAccountPicker({
           );
           onChange(picked === undefined ? null : gitAccountRef(picked));
         }}
-        className="w-full rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
       >
         <option value={OWN_CREDENTIALS}>Your own git sign-in (credential manager or SSH key)</option>
         {offered.map((account) => (
@@ -56,7 +56,7 @@ export function GitAccountPicker({
             {value.login} on {value.host} — not signed in
           </option>
         )}
-      </select>
+      </Select>
     </FormField>
   );
 }

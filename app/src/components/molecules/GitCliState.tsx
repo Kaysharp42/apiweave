@@ -1,3 +1,4 @@
+import { GitCliInstallLink } from "./GitCliInstallLink";
 import { GIT_PROVIDERS } from "../../utils/gitAccounts";
 import type { GitCliStateProps } from "../../types";
 
@@ -12,16 +13,8 @@ export function GitCliState({ cli }: GitCliStateProps) {
           The {tool.cliName} is not installed.
         </strong>{" "}
         APIWeave signs in to {tool.name} with it. Install it from{" "}
-        <a
-          href={tool.installUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary underline underline-offset-2 dark:text-primary-light"
-        >
-          {tool.installUrl.replace(/^https:\/\//, "")}
-        </a>
-        , then refresh. Until then, connect a remote by its URL, signed in with
-        your own git credentials.
+        <GitCliInstallLink provider={cli.provider} />, then refresh. Until then,
+        connect a remote by its URL, signed in with your own git credentials.
       </p>
     );
   }

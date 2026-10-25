@@ -249,6 +249,47 @@ describe("the listAccounts bridge", () => {
   })
 })
 
+describe("the repository bridges", () => {
+  const ACCOUNT = { provider: "github", host: "github.com", login: "octo" }
+  const REQUEST = { owner: "octo", name: "api-tests", private: true }
+
+  function repositoryHandlers() {
+    const listOwners = vi.fn(async () => ({ owners: [], problem: null }))
+    const createRepository = vi.fn(async () => ({}))
+    const handlers = handlersOf({} as GitSyncService, { listOwners, createRepository } as unknown as HostCliService)
+    const call = async (channel: string, ...args: unknown[]): Promise<unknown> => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
+    return { listOwners, createRepository, call }
+  }
+
+  it("passes a checked account and request through to the host CLI service", async () => {
+    const { listOwners, createRepository, call } = repositoryHandlers()
+
+    await call(GIT_CHANNELS.listOwners, ACCOUNT)
+    await call(GIT_CHANNELS.createRepository, ACCOUNT, REQUEST)
+
+    expect(listOwners).toHaveBeenCalledWith(ACCOUNT)
+    expect(createRepository).toHaveBeenCalledWith(ACCOUNT, REQUEST)
+  })
+
+  it.each([
+    { what: "no account", account: null, request: REQUEST },
+    { what: "an account carrying a token", account: { ...ACCOUNT, token: "gho_x" }, request: REQUEST },
+    { what: "a name that reads as an option", account: ACCOUNT, request: { ...REQUEST, name: "--help" } },
+    { what: "a name with a path in it", account: ACCOUNT, request: { ...REQUEST, name: "../../user" } },
+    { what: "an owner that is not a name", account: ACCOUNT, request: { ...REQUEST, owner: "a b" } },
+    { what: "a visibility that is not a flag", account: ACCOUNT, request: { ...REQUEST, private: "yes" } },
+    { what: "a field the request does not have", account: ACCOUNT, request: { ...REQUEST, autoInit: true } },
+  ])("refuses $what, in a plain sentence, before any tool runs", async ({ account, request }) => {
+    const { listOwners, createRepository, call } = repositoryHandlers()
+
+    await expect(call(GIT_CHANNELS.createRepository, account, request)).rejects.toThrow(/^That is not an? (account|repository) APIWeave can/)
+    await expect(call(GIT_CHANNELS.listOwners, account === ACCOUNT ? "octo" : account)).rejects.toThrow("That is not an account APIWeave can sign in as.")
+
+    expect(createRepository).not.toHaveBeenCalled()
+    expect(listOwners).not.toHaveBeenCalled()
+  })
+})
+
 describe("the mergePicks bridge", () => {
   it("reads the stored decisions for the workspace it is asked about", async () => {
     const mergePicks = vi.fn(async () => [PICK])

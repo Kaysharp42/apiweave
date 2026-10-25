@@ -36,6 +36,8 @@ interface FakeStatus {
 declare global {
   interface Window {
     __pushGitStatus__: (status: FakeStatus) => void;
+    /** Every bridge call that changes something, in order, as `[method, ...args]`. */
+    __gitCalls__: unknown[][];
   }
 }
 
@@ -143,6 +145,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
   await page.addInitScript((first) => {
     let current = first;
     const listeners = new Set<(status: unknown) => void>();
+    window.__gitCalls__ = [];
     window.__pushGitStatus__ = (status) => {
       current = status;
       listeners.forEach((listener) => listener(status));
@@ -159,10 +162,38 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         { kind: "workflow", change: "changed", name: "Login", path: "workflows/login--w2.json" },
         { kind: "environment", change: "deleted", name: "Staging", path: "environments/staging--e1.json" },
       ],
-      connectRemote: async () => current,
+      connectRemote: async (_workspaceId: string, url: string, account: FakeStatus["account"]) => {
+        window.__gitCalls__.push(["connectRemote", url, account]);
+        current = { ...current, remoteUrl: url, account, lastSyncedAt: "2026-10-24T09:00:00.000Z" };
+        return current;
+      },
       disconnectRemote: async () => current,
       discardLocalChanges: async () => current,
       openFromGit: async () => ({ kind: "opened", workspaceId: "x", slug: "x", name: "x", warnings: [] }),
+      listOwners: async (account: { readonly login: string }) => ({
+        owners: [
+          { path: account.login, kind: "user" },
+          { path: "acme", kind: "organization" },
+        ],
+        problem: null,
+      }),
+      createRepository: async (account: unknown, request: { readonly owner: string; readonly name: string; readonly private: boolean }) => {
+        window.__gitCalls__.push(["createRepository", account, request]);
+        const fullName = `${request.owner}/${request.name}`;
+        return {
+          repository: {
+            owner: request.owner,
+            name: request.name,
+            fullName,
+            httpsUrl: `https://github.com/${fullName}.git`,
+            sshUrl: `git@github.com:${fullName}.git`,
+            private: request.private,
+            empty: true,
+            canPush: true,
+          },
+          problem: null,
+        };
+      },
       listAccounts: async () => ({
         clis: [
           { provider: "github", command: "gh", missing: false, version: "2.97.0", problem: null },
@@ -289,6 +320,28 @@ test.describe("git sync status", () => {
     await expect(page.getByRole("heading", { name: "Git accounts" })).toBeVisible();
     await expect(page.getByText("The GitLab CLI (glab) is not installed.")).toBeVisible();
     await captureEvidence(page, "git-accounts-settings.png");
+  });
+
+  test("creates a repository from Version history and connects to it as the account", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
+    await navigateDesktop(page, "/personal/personal/settings/version-history");
+
+    await page.getByRole("button", { name: "Create repository…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Create repository" });
+    await dialog.getByRole("combobox", { name: "Account" }).selectOption({ label: "octo-work on github.com" });
+    await dialog.getByRole("combobox", { name: "Owner" }).selectOption("acme");
+    await expect(dialog.getByRole("textbox", { name: "Repository name" })).toHaveValue("personal");
+    await dialog.getByRole("textbox", { name: "Repository name" }).fill("api-tests");
+    await captureEvidence(page, "git-create-repository.png");
+    await dialog.getByRole("button", { name: "Create and connect" }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("https://github.com/acme/api-tests.git")).toBeVisible();
+    expect(await page.evaluate(() => window.__gitCalls__)).toEqual([
+      ["createRepository", { provider: "github", host: "github.com", login: "octo-work" }, { owner: "acme", name: "api-tests", private: true }],
+      ["connectRemote", "https://github.com/acme/api-tests.git", { provider: "github", host: "github.com", login: "octo-work" }],
+    ]);
   });
 
   test("leaves an untracked workspace's switcher row without a sync icon", async ({ page }) => {

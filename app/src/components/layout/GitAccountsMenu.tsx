@@ -6,8 +6,8 @@ import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
-import { Spinner } from "../atoms/Spinner";
 import { GitAccountRow } from "../molecules/GitAccountRow";
+import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { GitSignInDialog } from "../organisms/GitSignInDialog";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
@@ -50,18 +50,7 @@ function GitAccountsMenuPanel({
       >
         Git accounts
       </h2>
-      <div aria-live="polite" className="space-y-3">
-        {!loaded && (
-          <div className="flex items-center gap-2 text-xs text-text-secondary dark:text-text-secondary-dark">
-            <Spinner size="sm" />
-            Checking your GitHub and GitLab sign-ins…
-          </div>
-        )}
-        {loaded && groups.length === 0 && (
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-            No GitHub or GitLab account is signed in on this computer.
-          </p>
-        )}
+      <div className="space-y-3">
         {groups.map((group) => (
           <section
             key={`${group.provider}|${group.host}`}
@@ -87,11 +76,12 @@ function GitAccountsMenuPanel({
             </ul>
           </section>
         ))}
-        {problems.map((problem) => (
-          <p key={problem} className="text-xs text-status-warning">
-            {problem}
-          </p>
-        ))}
+        <GitAccountsNotice
+          loaded={loaded}
+          empty={groups.length === 0}
+          emptyText="No GitHub or GitLab account is signed in on this computer."
+          problems={problems}
+        />
       </div>
       <div className="space-y-1 border-t border-border pt-3 dark:border-border-dark">
         {onSetUpSync !== null && (

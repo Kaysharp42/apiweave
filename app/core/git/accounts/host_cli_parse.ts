@@ -2,6 +2,7 @@ import { z } from "zod"
 import type { GitAccount } from "@shared/types/GitAccount"
 import type { GitProtocol } from "@shared/types/GitProtocol"
 import type { GitProvider } from "@shared/types/GitProvider"
+import type { GitRepository } from "@shared/types/GitRepository"
 
 /**
  * One account of `gh auth status --json hosts`, as gh 2.97's `authEntry`
@@ -220,6 +221,140 @@ export function parseSignInPrompt(stderr: string, host: string): { readonly code
 /** `✓ Logged in as octocat`, which both tools print last: who the sign-in was for. */
 export function parseSignedInLogin(stderr: string): string | undefined {
   return /Logged in as (\S+)/.exec(stderr.replace(ANSI_ESCAPE, ""))?.[1]
+}
+
+/**
+ * A repository as GitHub's REST API returns it (`GET /repos/{owner}/{repo}`,
+ * `POST /user/repos`, `POST /orgs/{org}/repos`): the "full repository"
+ * object, of which only these fields are read. Recorded from `gh api` 2.97.
+ */
+const GhRestRepositorySchema = z.object({
+  name: z.string(),
+  full_name: z.string(),
+  owner: z.object({ login: z.string() }),
+  private: z.boolean(),
+  clone_url: z.string(),
+  ssh_url: z.string(),
+})
+
+/** One of `GET /user/orgs`: the organizations the account belongs to. */
+const GhOrganizationsSchema = z.array(z.object({ login: z.string() }))
+
+/**
+ * A project as GitLab's REST API returns it (`POST /projects`, `GET
+ * /projects/:id`; docs.gitlab.com/api/projects): only these fields are read.
+ * `permissions` is present on a project the user is a member of.
+ */
+const GitLabProjectSchema = z.object({
+  id: z.number(),
+  path: z.string(),
+  path_with_namespace: z.string(),
+  namespace: z.object({ full_path: z.string() }),
+  visibility: z.string(),
+  http_url_to_repo: z.string(),
+  ssh_url_to_repo: z.string(),
+  empty_repo: z.boolean().default(false),
+})
+
+/** One of `GET /groups` (docs.gitlab.com/api/groups): its id, which `POST /projects` takes as `namespace_id`, and its path. */
+const GitLabGroupSchema = z.object({ id: z.number(), full_path: z.string() })
+
+/** `value` as `schema` reads it, or undefined when it is not that. */
+function readAs<T>(schema: z.ZodType<T>, value: unknown): T | undefined {
+  const parsed = schema.safeParse(value)
+  return parsed.success ? parsed.data : undefined
+}
+
+/** What `stdout` holds as `schema` reads it, or undefined when it is not JSON of that shape. */
+function parseAs<T>(schema: z.ZodType<T>, stdout: string): T | undefined {
+  return readAs(schema, parseJson(stdout))
+}
+
+/** A repository GitHub's REST API returned — one just created, so empty and the account's — or undefined for anything else. */
+export function parseGhRestRepository(stdout: string): GitRepository | undefined {
+  const repository = parseAs(GhRestRepositorySchema, stdout)
+  return repository && {
+    owner: repository.owner.login,
+    name: repository.name,
+    fullName: repository.full_name,
+    httpsUrl: repository.clone_url,
+    sshUrl: repository.ssh_url,
+    private: repository.private,
+    empty: true,
+    canPush: true,
+  }
+}
+
+/** The organizations `GET /user/orgs` listed, or undefined for anything else. */
+export function parseGhOrganizations(stdout: string): readonly string[] | undefined {
+  return parseAs(GhOrganizationsSchema, stdout)?.map((organization) => organization.login)
+}
+
+/** A project of GitLab's REST API as a repository; whether the account may push is the caller's to say. */
+function gitLabRepository(project: z.infer<typeof GitLabProjectSchema>, canPush: boolean): GitRepository {
+  return {
+    owner: project.namespace.full_path,
+    name: project.path,
+    fullName: project.path_with_namespace,
+    httpsUrl: project.http_url_to_repo,
+    sshUrl: project.ssh_url_to_repo,
+    private: project.visibility !== "public",
+    empty: project.empty_repo,
+    canPush,
+  }
+}
+
+/** A project GitLab's REST API returned for a create, which the account may push to, or undefined for anything else. */
+export function parseGitLabProject(stdout: string): GitRepository | undefined {
+  const project = parseAs(GitLabProjectSchema, stdout)
+  return project && gitLabRepository(project, true)
+}
+
+/** The groups `GET /groups` listed, or undefined for anything else. */
+export function parseGitLabGroups(stdout: string): readonly { readonly id: number; readonly path: string }[] | undefined {
+  return parseAs(z.array(GitLabGroupSchema), stdout)?.map((group) => ({ id: group.id, path: group.full_path }))
+}
+
+/** One GitLab group, as `GET /groups/:id` returns it. */
+export function parseGitLabGroup(stdout: string): { readonly id: number; readonly path: string } | undefined {
+  const group = parseAs(GitLabGroupSchema, stdout)
+  return group && { id: group.id, path: group.full_path }
+}
+
+/**
+ * The body both tools print on stdout when a request fails: GitHub's
+ * `message` and `errors`, GitLab's `message` (a sentence, or for a refused
+ * field an object of its complaints) and an OAuth `error`.
+ */
+const ApiErrorBodySchema = z.object({
+  message: z.union([z.string(), z.record(z.string(), z.unknown())]).optional(),
+  errors: z.array(z.unknown()).optional(),
+  error: z.string().optional(),
+})
+
+/** One of GitHub's `errors`: a sentence, or an object whose `message` is one; anything else says nothing. */
+const ApiErrorEntrySchema = z.union([z.string(), z.object({ message: z.string() }).transform((entry) => entry.message)])
+
+/** GitLab's `{"name": ["has already been taken"]}` as `name has already been taken`. */
+function fieldComplaints(message: Readonly<Record<string, unknown>>): string[] {
+  return Object.entries(message).map(([field, complaints]) => `${field} ${Array.isArray(complaints) ? complaints.join(", ") : String(complaints)}`)
+}
+
+/**
+ * What a host's API said was wrong, from the body both tools print on stdout
+ * when a request fails: GitHub's `message` and each of its `errors`, or
+ * GitLab's `message`, which is a sentence or, for a refused field, an object
+ * of the field's complaints (`{"name": ["has already been taken"]}`).
+ * Undefined when the body says nothing readable.
+ */
+export function parseApiError(stdout: string): string | undefined {
+  const body = parseAs(ApiErrorBodySchema, stdout)
+  if (body === undefined) return undefined
+  const messages = typeof body.message === "string" ? [body.message] : fieldComplaints(body.message ?? {})
+  const errors = (body.errors ?? []).flatMap((entry) => readAs(ApiErrorEntrySchema, entry) ?? [])
+  const parts = [...messages, ...errors]
+  if (parts.length === 0 && body.error !== undefined) parts.push(body.error)
+  return parts.length === 0 ? undefined : parts.join("; ")
 }
 
 /** The last line of a tool's own explanation: a failed sign-in ends with why, after the code it printed first. */

@@ -328,16 +328,18 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
 
   /**
    * The user's gh and glab accounts: an agent that could list or pick one
-   * could push a workspace anywhere that account can write. Not a tool, and
-   * not even a handler on the router the MCP bridge serves.
+   * could push a workspace anywhere that account can write, and one that
+   * could list or create repositories could find one to publish a workspace
+   * to, or make one. Not a tool, and not even a handler on the router the MCP
+   * bridge serves.
    */
-  it("keeps git accounts off the router and off MCP", () => {
+  it("keeps git accounts and repositories off the router and off MCP", () => {
     const routed = router.keys().map((key) => key.toLowerCase())
     for (const channel of Object.values(GIT_CHANNELS)) {
       expect(routed, channel).not.toContain(channel.replace(":", ".").toLowerCase())
     }
-    expect(routed.filter((key) => /^git\.|account/.test(key))).toEqual([])
-    for (const spec of MCP_TOOLS) expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/account|token|sign.?in/)
+    expect(routed.filter((key) => /^git\.|account|repositor/.test(key))).toEqual([])
+    for (const spec of MCP_TOOLS) expect(`${spec.domain}.${spec.action}`.toLowerCase()).not.toMatch(/account|token|sign.?in|repositor|owner/)
   })
 
   it("exposes no webhook or import tools (dropped/deferred surface)", () => {

@@ -1,0 +1,21 @@
+{
+  "id": 1,
+  "name": "api-tests",
+  "full_name": "octo-work/api-tests",
+  "private": true,
+  "owner": { "login": "octo-work", "id": 2, "type": "User" },
+  "html_url": "https://github.com/octo-work/api-tests",
+  "description": null,
+  "fork": false,
+  "url": "https://api.github.com/repos/octo-work/api-tests",
+  "clone_url": "https://github.com/octo-work/api-tests.git",
+  "git_url": "git://github.com/octo-work/api-tests.git",
+  "ssh_url": "git@github.com:octo-work/api-tests.git",
+  "svn_url": "https://github.com/octo-work/api-tests",
+  "size": 0,
+  "default_branch": "main",
+  "visibility": "private",
+  "archived": false,
+  "topics": [],
+  "permissions": { "admin": true, "maintain": true, "pull": true, "push": true, "triage": true }
+}

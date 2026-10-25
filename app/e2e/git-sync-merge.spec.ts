@@ -176,6 +176,10 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         openFromGit: async () => ({ kind: "opened", workspaceId: "x", slug: "x", name: "x", warnings: [] }),
         // The header's accounts menu asks for these when it is opened.
         listAccounts: async () => ({ clis: [], accounts: [] }),
+        listOwners: async () => ({ owners: [], problem: null }),
+        createRepository: async () => {
+          throw new Error("not used by this spec");
+        },
         onStatusChanged: (callback: (status: unknown) => void) => {
           listeners.add(callback);
           return () => listeners.delete(callback);

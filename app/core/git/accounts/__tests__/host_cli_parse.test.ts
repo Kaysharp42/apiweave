@@ -3,6 +3,7 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   lastLine,
+  parseApiError,
   parseCliVersion,
   parseGhAccounts,
   parseGhToken,
@@ -272,5 +273,25 @@ describe("parseCliVersion", () => {
 
   it("reads nothing from output with no version", () => {
     expect(parseCliVersion("usage: gh")).toBeUndefined()
+  })
+})
+
+describe("parseApiError", () => {
+  it.each([
+    ["GitHub's message", '{"message":"Not Found","status":"404"}', "Not Found"],
+    [
+      "GitHub's message and each error",
+      '{"message":"Repository creation failed.","errors":[{"resource":"Repository","field":"name","message":"name already exists on this account"}]}',
+      "Repository creation failed.; name already exists on this account",
+    ],
+    ["GitLab's sentence", '{"message":"403 Forbidden"}', "403 Forbidden"],
+    ["GitLab's refused fields", '{"message":{"name":["has already been taken"],"path":["has already been taken"]}}', "name has already been taken; path has already been taken"],
+    ["GitLab's OAuth error", '{"error":"insufficient_scope","error_description":"The request requires higher privileges"}', "insufficient_scope"],
+  ])("reads %s", (_what, body, text) => {
+    expect(parseApiError(body)).toBe(text)
+  })
+
+  it.each(["", "not json", "[]", "{}", "null"])("says nothing for %j", (body) => {
+    expect(parseApiError(body)).toBeUndefined()
   })
 })
