@@ -7,12 +7,13 @@ import {
 } from "./fixtures/desktop";
 
 /**
- * The merge picker, opened from the header while a merge waits on conflicts.
+ * The merge view, opened from the header while a merge waits on conflicts.
  *
- * The fake git bridge holds a fixed conflict list and records the picks the
- * picker sends, so the flow is observable end to end: what the dialog shows,
- * what a Finish carries, and what the header says afterwards. As with the
- * status spec, git has its own privileged bridge, separate from the IPC one.
+ * The fake git bridge holds a fixed conflict list, a note of what merged by
+ * itself and the picks the view sends, so the flow is observable end to end:
+ * what the inventory says, how a field is settled by a copy or by a value of
+ * the user's own, and what a Finish carries. As with the status spec, git has
+ * its own privileged bridge, separate from the IPC one.
  */
 
 interface FakeStatus {
@@ -30,6 +31,7 @@ interface FakeStatus {
   readonly uncommitted: boolean;
   readonly lastSyncedAt: string | null;
   readonly lastCommit: { readonly sha: string; readonly subject: string; readonly authorDate: string } | null;
+  readonly unrelatedHistory: boolean;
 }
 
 interface FakeConflict {
@@ -42,11 +44,9 @@ interface FakeConflict {
   readonly theirs?: string;
 }
 
-interface FakePick {
-  readonly recordId: string;
-  readonly path: string;
-  readonly side: "ours" | "theirs";
-}
+type FakePick =
+  | { readonly recordId: string; readonly path: string; readonly side: "ours" | "theirs" }
+  | { readonly recordId: string; readonly path: string; readonly value: string };
 
 declare global {
   interface Window {
@@ -74,6 +74,7 @@ const MERGING: FakeStatus = {
     subject: "Rename checkout on this device",
     authorDate: "2026-10-20T10:29:41+02:00",
   },
+  unrelatedHistory: false,
 };
 
 const CONFLICTS: readonly FakeConflict[] = [
@@ -106,6 +107,16 @@ const CONFLICTS: readonly FakeConflict[] = [
   },
 ];
 
+/**
+ * Only a decision produces a note in this fake: the merge the view opens with
+ * settles by itself nothing, and keeping this device's copy of a node leaves an
+ * edge dangling. So the "merged automatically" line proves the decisions the
+ * view asks about reached the bridge.
+ */
+const NOTES_AFTER_A_PICK = [
+  { type: "positions" as const, recordId: "w1", name: "Checkout", nodeIds: ["n1"] },
+];
+
 const COMMIT = { authorDate: "2026-10-20T10:29:41+02:00" };
 
 const COMMITS: Readonly<Record<string, { ours: object; theirs: object }>> = {
@@ -121,7 +132,7 @@ const COMMITS: Readonly<Record<string, { ours: object; theirs: object }>> = {
 
 async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> {
   await page.addInitScript(
-    ({ first, conflicts, commits }) => {
+    ({ first, conflicts, notes, commits }) => {
       let current = first;
       let listed = [...conflicts];
       let picks: FakePick[] = [];
@@ -143,8 +154,22 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         setMode: async () => current,
         syncNow: async () => current,
         pendingChanges: async () => [],
-        mergeConflicts: async () => listed,
-        mergePicks: async () => [...picks],
+        mergeState: async (_workspaceId: string, chosen?: readonly FakePick[]) => {
+          const decisions = chosen ?? picks;
+          return {
+            conflicts: listed,
+            picks: [...picks],
+            notes: decisions.length === 0 ? [] : [...notes],
+          };
+        },
+        saveMergePicks: async (_workspaceId: string, chosen: readonly FakePick[]) => {
+          picks = [...chosen];
+          return {
+            conflicts: listed,
+            picks: [...picks],
+            notes: picks.length === 0 ? [] : [...notes],
+          };
+        },
         mergeRecordCommits: async (_workspaceId: string, recordIds: readonly string[]) =>
           recordIds.map((recordId) => ({ recordId, ...(commits[recordId] ?? { ours: null, theirs: null }) })),
         resolveMerge: async (_workspaceId: string, chosen: readonly FakePick[]) => {
@@ -187,75 +212,93 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
         },
       } as unknown as typeof window.__APIWEAVE_GIT__;
     },
-    { first: initial, conflicts: CONFLICTS, commits: COMMITS },
+    { first: initial, conflicts: CONFLICTS, notes: NOTES_AFTER_A_PICK, commits: COMMITS },
   );
 }
 
-async function openPicker(page: Page): Promise<void> {
+async function openMergeView(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Version history: Merge needed" }).click();
   await page.getByRole("button", { name: "Review merge" }).click();
 }
 
-test.describe("git merge conflicts", () => {
-  test("lists both copies of every conflict, with each side's author, and waits for every choice", async ({ page }) => {
+test.describe("the merge view", () => {
+  test("settles fields with copies and a value of the user's own, then finishes", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, MERGING);
     await navigateDesktop(page, "/personal/personal/workflows");
 
     const control = page.getByRole("button", { name: "Version history: Merge needed" });
     await expect(control).toBeVisible();
-    await control.click();
-    await expect(page.getByText(/some fields were changed differently/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sync now" })).toHaveCount(0);
+    await openMergeView(page);
 
-    await page.getByRole("button", { name: "Review merge" }).click();
+    const view = page.getByRole("dialog", { name: "Resolve merge" });
+    await expect(view.getByText("Resolve merge")).toBeVisible();
+    // The inventory: two records, three conflicts, nothing settled yet.
+    await expect(view.getByRole("navigation", { name: "Conflicted items" })).toBeVisible();
+    await expect(view.getByRole("button", { name: /Checkout, Workflows, 0 of 2 conflicts resolved/ })).toBeVisible();
+    await expect(view.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ })).toBeVisible();
+    await expect(view.getByRole("status")).toHaveText("0 of 3 conflicts resolved");
+    // Both copies, with who last wrote each.
+    await expect(view.getByText("Checkout (this device)")).toBeVisible();
+    await expect(view.getByText("Checkout (remote)")).toBeVisible();
+    await expect(view.getByText(/Your copy · Ada \(this device\) · b2b2b2b · 2026-10-20/)).toBeVisible();
+    await expect(view.getByText(/Remote copy · Grace \(remote\) · a1a1a1a · 2026-10-20/)).toBeVisible();
 
-    const dialog = page.getByRole("dialog", { name: "Resolve merge" });
-    // The dialog's root is a zero-sized wrapper around fixed-position content, so
-    // the title is what proves it is on screen.
-    await expect(dialog.getByText("Resolve merge")).toBeVisible();
-    await expect(dialog.getByText("Checkout", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("README.md", { exact: true })).toBeVisible();
-    await expect(dialog.getByText("Checkout (this device)")).toBeVisible();
-    await expect(dialog.getByText("Checkout (remote)")).toBeVisible();
-    await expect(dialog.getByText("Pay by card, this device")).toBeVisible();
-    await expect(dialog.getByText("Pay by card, remote")).toBeVisible();
-    // Who touched each copy, from the merge's two commits.
-    await expect(dialog.getByText(/Ada \(this device\) · b2b2b2b · 2026-10-20/)).toBeVisible();
-    await expect(dialog.getByText(/Grace \(remote\) · a1a1a1a · 2026-10-20/)).toBeVisible();
-    await expect(dialog.getByText("Rename on this device")).toBeVisible();
-    await expect(dialog.getByText("Rename on the remote")).toBeVisible();
-    // Never the merge's own words for the sides.
-    await expect(dialog.getByText(/\bours\b/i)).toHaveCount(0);
-    await expect(dialog.getByText(/\btheirs\b/i)).toHaveCount(0);
+    // Nothing has been decided, so nothing merged "by itself" yet.
+    await expect(view.getByRole("button", { name: /merged automatically/ })).toHaveCount(0);
 
-    // Nothing to finish until every place has a decision, including the file.
-    const finish = dialog.getByRole("button", { name: "Finish merge" });
-    await expect(finish).toBeDisabled();
-    await captureEvidence(page, "git-sync-merge.png");
+    // A copy for one field; with a decision made, the notes reflect it.
+    await view.getByRole("button", { name: "Take your copy of Name in Checkout" }).click();
+    await expect(view.getByRole("status")).toHaveText("1 of 3 conflicts resolved");
+    const notes = view.getByRole("button", { name: "1 change merged automatically" });
+    await expect(notes).toBeVisible();
+    await notes.click();
+    await expect(view.getByText(/kept the remote copy's position for 1 node/)).toBeVisible();
 
-    await dialog
-      .getByRole("button", { name: "Keep your copy of Name in Checkout" })
-      .click();
-    await dialog
-      .getByRole("button", { name: "Keep remote copy of Description in Checkout" })
-      .click();
-    await expect(finish).toBeDisabled();
-    await dialog
-      .getByRole("button", {
-        name: "Keep your copy for all conflicts in README.md",
-      })
-      .click();
-    await expect(finish).toBeEnabled();
-    await captureEvidence(page, "git-sync-merge-picked.png");
+    // A value of the user's own for another.
+    const description = view.getByLabel("Result for Description in Checkout");
+    await description.fill("Pay by card, agreed");
+    await expect(view.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
+    await captureEvidence(page, "merge-view.png");
 
-    await finish.click();
+    // Closing stores the decisions; opening again starts where it left off.
+    await view.getByRole("button", { name: "Close" }).click();
+    await expect(view).toHaveCount(0);
+    expect(await page.evaluate(() => window.__gitPicks__())).toEqual([
+      { recordId: "w1", path: "description", value: "Pay by card, agreed" },
+      { recordId: "w1", path: "name", side: "ours" },
+    ]);
+    await openMergeView(page);
+    const reopened = page.getByRole("dialog", { name: "Resolve merge" });
+    await expect(reopened.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
+    // The view opens on the first item with something left: the file. Checkout is settled.
+    await reopened.getByRole("button", { name: /Checkout, Workflows, 2 of 2 conflicts resolved/ }).click();
+    await expect(reopened.getByLabel("Result for Name in Checkout")).toHaveValue("Checkout (this device)");
+    await expect(reopened.getByLabel("Result for Description in Checkout")).toHaveValue("Pay by card, agreed");
 
-    await expect(dialog).toHaveCount(0);
+    // Clearing a value drops its decision: the conflict is back to unresolved.
+    await reopened.getByLabel("Result for Description in Checkout").fill("");
+    await expect(reopened.getByRole("status")).toHaveText("1 of 3 conflicts resolved");
+    await expect(reopened.getByRole("button", { name: "Finish merge" })).toBeDisabled();
+    await reopened.getByLabel("Result for Description in Checkout").fill("Pay by card, agreed");
+    await expect(reopened.getByRole("status")).toHaveText("2 of 3 conflicts resolved");
+
+    // What merged by itself is read with the decisions that were stored.
+    await expect(reopened.getByRole("button", { name: "1 change merged automatically" })).toBeVisible();
+
+    // The whole file: copies only.
+    await reopened.getByRole("button", { name: /README.md, Files, 0 of 1 conflicts resolved/ }).click();
+    await expect(reopened.getByLabel("Result for Whole file in README.md")).toHaveCount(0);
+    await reopened.getByRole("button", { name: "Take the remote copy of Whole file in README.md" }).click();
+    await expect(reopened.getByRole("status")).toHaveText("3 of 3 conflicts resolved");
+
+    await reopened.getByRole("button", { name: "Finish merge" }).click();
+
+    await expect(page.getByRole("dialog", { name: "Resolve merge" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Version history: Synced" })).toBeVisible();
     expect(await page.evaluate(() => window.__gitPicks__())).toEqual([
-      { recordId: "README.md", path: "", side: "ours" },
-      { recordId: "w1", path: "description", side: "theirs" },
+      { recordId: "README.md", path: "", side: "theirs" },
+      { recordId: "w1", path: "description", value: "Pay by card, agreed" },
       { recordId: "w1", path: "name", side: "ours" },
     ]);
   });
@@ -265,20 +308,33 @@ test.describe("git merge conflicts", () => {
     await installGitBridge(page, MERGING);
     await navigateDesktop(page, "/personal/personal/workflows");
 
-    await openPicker(page);
+    await openMergeView(page);
 
-    const dialog = page.getByRole("dialog", { name: "Resolve merge" });
-    await expect(dialog.getByText("Resolve merge")).toBeVisible();
-    await dialog.getByRole("button", { name: "Abandon merge" }).click();
+    const view = page.getByRole("dialog", { name: "Resolve merge" });
+    await expect(view.getByText("Resolve merge")).toBeVisible();
+    await view.getByRole("button", { name: "Abandon merge" }).click();
 
     const confirmation = page.getByRole("dialog", { name: "Abandon this merge?" });
     await expect(confirmation.getByText(/Every local commit and change stays on this device/)).toBeVisible();
-    await captureEvidence(page, "git-sync-merge-abandon.png");
+    await captureEvidence(page, "merge-view-abandon.png");
 
     await confirmation.getByRole("button", { name: "Abandon merge" }).click();
 
     await expect(page.getByRole("dialog", { name: "Resolve merge" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Version history: Diverged" })).toBeVisible();
     expect(await page.evaluate(() => window.__gitPicks__())).toEqual([]);
+  });
+
+  test("says the copies share no history when the merge has no ancestor", async ({ page }) => {
+    await installDesktopIpc(page);
+    await installGitBridge(page, { ...MERGING, unrelatedHistory: true });
+    await navigateDesktop(page, "/personal/personal/workflows");
+
+    await openMergeView(page);
+
+    const view = page.getByRole("dialog", { name: "Resolve merge" });
+    await expect(
+      view.getByText(/This device and the remote have no history in common, so every difference is listed/),
+    ).toBeVisible();
   });
 });

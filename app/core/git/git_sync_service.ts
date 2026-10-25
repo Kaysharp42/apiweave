@@ -7,6 +7,7 @@ import type { GitIdentity } from "@shared/types/GitIdentity"
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict"
 import type { GitMergeNote } from "@shared/types/GitMergeNote"
 import type { GitMergePick } from "@shared/types/GitMergePick"
+import type { GitMergeState } from "@shared/types/GitMergeState"
 import type { GitMergeValuePick } from "@shared/types/GitMergeValuePick"
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits"
 import type { MergeSideCommit } from "@shared/types/MergeSideCommit"
@@ -143,6 +144,9 @@ const MERGE_RETRY_MESSAGE = "This workspace changed again while the merge was be
 
 const NOT_MERGING_MESSAGE = "This workspace has no merge in progress."
 const COMMIT_WHILE_MERGING_MESSAGE = "This workspace is merging the remote's changes. Resolve or abandon the merge before committing."
+
+/** A workspace with no merge waiting: nothing to decide, nothing to report. */
+const NO_MERGE_STATE: GitMergeState = { conflicts: [], picks: [], notes: [] }
 
 /** How many times a resolve commits the edits that landed under it and redoes the merge before leaving it for another try. */
 const MAX_MERGE_ATTEMPTS = 3
@@ -726,35 +730,62 @@ export class GitSyncService {
   }
 
   /**
-   * Every place the two copies changed differently, recomputed from the
-   * merge's three commits and the picks stored so far. Empty when no merge is
-   * waiting. Reads the trees; it never moves the clone, so a caller may ask as
-   * often as it likes, and the same commits and picks always give the same
-   * list.
+   * The waiting merge as the view needs it: every conflict the merge has,
+   * computed with no picks, so the list is the same however many decisions have
+   * been made; the decisions stored so far; and what the merge settles by
+   * itself with `picks` (the stored set when none are given).
+   *
+   * One read rather than three, because the three must agree: a conflict list
+   * computed from the stored picks drops the conflicts those picks settle, and
+   * a view built from it can neither show an earlier decision nor change it.
+   * Empty when no merge is waiting. Reads the trees; it never moves the clone.
    */
-  // fallow-ignore-next-line code-duplication -- this block is method chrome (`directory`, `exclusive`, the binding lookup) that happens to align with another method's; the two share no behaviour.
-  public async mergeConflicts(workspaceId: string): Promise<readonly GitMergeConflict[]> {
+  public async mergeState(workspaceId: string, picks?: readonly GitMergePick[]): Promise<GitMergeState> {
     const directory = this.cloneDir(workspaceId)
     return this.exclusive(workspaceId, async () => {
       this.trackedBinding(workspaceId)
       const merge = this.repositories.workspaceGit.getMerge(workspaceId)
-      if (merge === undefined) return []
-      return (await this.computeMerge(merge, directory)).result.conflicts
+      if (merge === undefined) return NO_MERGE_STATE
+      // A dry run is checked exactly as a save is: asking what the notes would
+      // be must not be a way around the value limits.
+      const effective = picks === undefined ? merge.picks : await this.checkedMergePicks(merge, directory, picks)
+      return this.mergeStateOf(merge, directory, effective)
     })
   }
 
   /**
-   * The decisions already stored for the waiting merge, so a picker reopened
-   * after a partial resolve starts where it left off: {@link mergeConflicts}
-   * lists only what those decisions leave unsettled. Empty when no merge is
-   * waiting. Rejects for an untracked workspace.
-   *
-   * Read-only, and a read of the database alone: the picks are what
-   * {@link resolveMerge} last stored, and nothing about them needs the clone.
+   * Store decisions without finishing the merge: the merge view writes what the
+   * user has decided when it closes, so reopening it loses nothing. The picks
+   * are checked exactly as a resolve's are — a value that names no conflict is
+   * dropped, a secret or oversized one is refused — and the merge stays
+   * waiting. Resolves to the merge as it now stands.
    */
-  public async mergePicks(workspaceId: string): Promise<readonly GitMergePick[]> {
-    this.trackedBinding(workspaceId)
-    return this.repositories.workspaceGit.getMerge(workspaceId)?.picks ?? []
+  public async saveMergePicks(workspaceId: string, picks: readonly GitMergePick[]): Promise<GitMergeState> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const merge = this.mergingMerge(workspaceId)
+      const checked = await this.checkedMergePicks(merge, directory, picks)
+      if (!this.repositories.workspaceGit.setMergePicks(workspaceId, merge.baseCommit, checked)) {
+        throw new ConflictError("The merge changed while it was being saved. Open the merge again.")
+      }
+      this.repositories.workspaceGit.setState(workspaceId, "merging", null)
+      return this.mergeStateOf(merge, directory, checked)
+    })
+  }
+
+  /** The merge row of a workspace that is merging: what the save and the record-commit read both need first. */
+  private mergingMerge(workspaceId: string): WorkspaceMerge {
+    this.mergingBinding(workspaceId)
+    const merge = this.repositories.workspaceGit.getMerge(workspaceId)
+    if (merge === undefined) throw new ConflictError(NOT_MERGING_MESSAGE)
+    return merge
+  }
+
+  /** The merge's stable conflict list, and what it settles by itself with `picks`. Read-only. */
+  private async mergeStateOf(merge: WorkspaceMerge, directory: string, picks: readonly GitMergePick[]): Promise<GitMergeState> {
+    const conflicts = (await this.computeMerge({ ...merge, picks: [] }, directory)).result.conflicts
+    const notes = (await this.computeMerge({ ...merge, picks }, directory)).result.notes
+    return { conflicts, picks, notes }
   }
 
   /**
@@ -772,9 +803,7 @@ export class GitSyncService {
   public async mergeRecordCommits(workspaceId: string, recordIds: readonly string[]): Promise<readonly MergeRecordCommits[]> {
     const directory = this.cloneDir(workspaceId)
     return this.exclusive(workspaceId, async () => {
-      this.mergingBinding(workspaceId)
-      const merge = this.repositories.workspaceGit.getMerge(workspaceId)
-      if (merge === undefined) throw new ConflictError(NOT_MERGING_MESSAGE)
+      const merge = this.mergingMerge(workspaceId)
       const wanted = [...new Set(recordIds)].slice(0, MAX_MERGE_RECORD_COMMITS)
       const [ours, theirs] = await Promise.all([
         this.recordCommitsAt(directory, merge.ourCommit),

@@ -1,7 +1,8 @@
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergePick } from "@shared/types/GitMergePick";
 import type { GitMergeSide } from "@shared/types/GitMergeSide";
-import type { GitMergeSidePick } from "@shared/types/GitMergeSidePick";
+import type { JsonValue } from "@shared/types/JsonValue";
+import { joinPath, splitPath } from "@shared/workspace-repo/paths";
 import type { MergeConflictGroup } from "../types";
 
 /** The key a decision is stored under: its record (or file) and the place in it. */
@@ -17,71 +18,189 @@ function placeOf(key: string): { readonly recordId: string; readonly path: strin
 }
 
 /**
+ * The decision that settles a conflict now: its own pick, or the copy pick at
+ * the nearest place above it — a whole-record pick settles its fields. A value
+ * of the user's own names exactly the place it replaces, so it never stands in
+ * for a place beneath it. This mirrors the engine's rule; a picker that showed
+ * anything else would disagree with the merge it is finishing.
+ */
+export function resolutionOf(
+  picks: ReadonlyMap<string, GitMergePick>,
+  conflict: GitMergeConflict,
+): GitMergePick | undefined {
+  const segments = splitPath(conflict.path);
+  for (let length = segments.length; length >= 0; length -= 1) {
+    const pick = picks.get(
+      pickKey(conflict.recordId, joinPath(segments.slice(0, length))),
+    );
+    if (pick === undefined) continue;
+    if ("value" in pick && length !== segments.length) continue;
+    return pick;
+  }
+  return undefined;
+}
+
+/** The decisions with one place settled by a copy. */
+export function withSidePick(
+  picks: ReadonlyMap<string, GitMergePick>,
+  recordId: string,
+  path: string,
+  side: GitMergeSide,
+): ReadonlyMap<string, GitMergePick> {
+  const next = new Map(picks);
+  next.set(pickKey(recordId, path), { recordId, path, side });
+  return next;
+}
+
+/** The decisions with one place settled by a value of the user's own. */
+export function withValuePick(
+  picks: ReadonlyMap<string, GitMergePick>,
+  recordId: string,
+  path: string,
+  value: JsonValue,
+): ReadonlyMap<string, GitMergePick> {
+  const next = new Map(picks);
+  next.set(pickKey(recordId, path), { recordId, path, value });
+  return next;
+}
+
+/**
  * Choose a copy for a whole record: a pick at `path: ""` settles every field
  * below it. Its fields' own picks go, because the server prefers an exact path
  * over one above it — leaving both would let an old field pick beat the choice
  * the user just made.
  */
 export function withWholeRecordPick(
-  picks: ReadonlyMap<string, GitMergeSide>,
+  picks: ReadonlyMap<string, GitMergePick>,
   recordId: string,
   side: GitMergeSide,
-): ReadonlyMap<string, GitMergeSide> {
-  const next = new Map<string, GitMergeSide>();
-  for (const [key, value] of picks) {
-    if (placeOf(key).recordId !== recordId) next.set(key, value);
+): ReadonlyMap<string, GitMergePick> {
+  const next = new Map<string, GitMergePick>();
+  for (const [key, pick] of picks) {
+    if (placeOf(key).recordId !== recordId) next.set(key, pick);
   }
-  next.set(pickKey(recordId, ""), side);
+  next.set(pickKey(recordId, ""), { recordId, path: "", side });
   return next;
 }
 
 /**
- * Choose a copy for one field: a field pick is the more specific intent, so it
- * wins that field. The record's whole-record pick stays, because the server
- * settles each field from its own pick first and the nearest pick above it
- * second — so the record's choice remains the fallback for every other field.
+ * Every listed record and file settled by one copy, for Accept all: the
+ * decisions already made are kept, and each record's own picks — values the
+ * user typed included — give way to the record-level copy pick that supersedes
+ * them.
  */
-export function withPathPick(
-  picks: ReadonlyMap<string, GitMergeSide>,
-  recordId: string,
-  path: string,
+export function acceptAllPicks(
+  groups: readonly MergeConflictGroup[],
+  picks: ReadonlyMap<string, GitMergePick>,
   side: GitMergeSide,
-): ReadonlyMap<string, GitMergeSide> {
+): ReadonlyMap<string, GitMergePick> {
   const next = new Map(picks);
-  next.set(pickKey(recordId, path), side);
+  for (const group of groups) {
+    for (const key of [...next.keys()]) {
+      if (placeOf(key).recordId === group.recordId) next.delete(key);
+    }
+    next.set(pickKey(group.recordId, ""), { recordId: group.recordId, path: "", side });
+  }
   return next;
 }
 
 /**
- * The decisions stored with the merge as the map the picker works in: the
- * inverse of {@link picksRequest}. A value of the user's own has no control in
- * this picker yet, so it is left out — the next request replaces the stored
- * set, and this dialog only makes copy picks.
+ * The decisions without the one that settles `conflict`: its own pick, and a
+ * copy pick above it, so clearing a field whose record was accepted whole
+ * leaves that field — and its record — undecided rather than empty but settled.
  */
+export function withoutResolvingPick(
+  picks: ReadonlyMap<string, GitMergePick>,
+  conflict: GitMergeConflict,
+): ReadonlyMap<string, GitMergePick> {
+  const next = new Map(picks);
+  next.delete(pickKey(conflict.recordId, conflict.path));
+  const resolution = resolutionOf(picks, conflict);
+  if (resolution !== undefined) next.delete(pickKey(resolution.recordId, resolution.path));
+  return next;
+}
+
+/** How many of `conflicts` have a decision. */
+export function resolvedCount(
+  conflicts: readonly GitMergeConflict[],
+  picks: ReadonlyMap<string, GitMergePick>,
+): number {
+  return conflicts.filter(
+    (conflict) => resolutionOf(picks, conflict) !== undefined,
+  ).length;
+}
+
+/** How many of one record's or file's conflicts have a decision. */
+export function groupResolvedCount(
+  group: MergeConflictGroup,
+  picks: ReadonlyMap<string, GitMergePick>,
+): number {
+  return resolvedCount(group.conflicts, picks);
+}
+
+/** Every listed conflict has a decision. */
+export function allConflictsResolved(
+  conflicts: readonly GitMergeConflict[],
+  picks: ReadonlyMap<string, GitMergePick>,
+): boolean {
+  return conflicts.every(
+    (conflict) => resolutionOf(picks, conflict) !== undefined,
+  );
+}
+
+/**
+ * The next (or previous) conflict without a decision, wrapping around, from
+ * the one at `from`; undefined when none is left. `from` is a `pickKey`.
+ */
+export function nextUnresolved(
+  conflicts: readonly GitMergeConflict[],
+  picks: ReadonlyMap<string, GitMergePick>,
+  from: string | null,
+  direction: 1 | -1,
+): GitMergeConflict | undefined {
+  const keys = conflicts.map((conflict) =>
+    pickKey(conflict.recordId, conflict.path),
+  );
+  const start = from === null ? -1 : keys.indexOf(from);
+  for (let step = 1; step <= conflicts.length; step += 1) {
+    const offset =
+      (((start + direction * step) % conflicts.length) + conflicts.length) %
+      conflicts.length;
+    const conflict = conflicts[offset];
+    if (
+      conflict !== undefined &&
+      resolutionOf(picks, conflict) === undefined
+    ) {
+      return conflict;
+    }
+  }
+  return undefined;
+}
+
+/** The decisions stored with the merge as the map the view works in: the inverse of {@link picksRequest}. */
 export function picksFromList(
   picks: readonly GitMergePick[],
-): ReadonlyMap<string, GitMergeSide> {
+): ReadonlyMap<string, GitMergePick> {
   return new Map(
-    picks.flatMap((pick) =>
-      "side" in pick
-        ? ([[pickKey(pick.recordId, pick.path), pick.side]] as const)
-        : [],
-    ),
+    picks.map((pick) => [pickKey(pick.recordId, pick.path), pick]),
   );
 }
 
-/** The copy settled for a conflict: its own field pick, else its record's whole-record pick. */
-export function sideOfConflict(
-  picks: ReadonlyMap<string, GitMergeSide>,
-  conflict: GitMergeConflict,
-): GitMergeSide | undefined {
-  return (
-    picks.get(pickKey(conflict.recordId, conflict.path)) ??
-    picks.get(pickKey(conflict.recordId, ""))
+/**
+ * The complete request for `resolveMerge`: every decision made so far, not only
+ * the ones since the last call — the server replaces its stored set each time.
+ * Sorted so the same choices always send the same list.
+ */
+export function picksRequest(
+  picks: ReadonlyMap<string, GitMergePick>,
+): readonly GitMergePick[] {
+  return [...picks.values()].sort(
+    (left, right) =>
+      compare(left.recordId, right.recordId) || compare(left.path, right.path),
   );
 }
 
-/** The conflicts as one card per record (or file), in the order the merge sorted them. */
+/** The conflicts as one entry per record (or file), in the order the merge sorted them. */
 export function groupConflicts(
   conflicts: readonly GitMergeConflict[],
 ): readonly MergeConflictGroup[] {
@@ -103,32 +222,6 @@ export function groupConflicts(
     listed.push(conflict);
   }
   return groups;
-}
-
-/** Every listed conflict has a decision — its own or its record's whole-record one. */
-export function allConflictsPicked(
-  conflicts: readonly GitMergeConflict[],
-  picks: ReadonlyMap<string, GitMergeSide>,
-): boolean {
-  return conflicts.every(
-    (conflict) => sideOfConflict(picks, conflict) !== undefined,
-  );
-}
-
-/**
- * The complete request for `resolveMerge`: every decision made so far, not only
- * the ones since the last call — the server replaces its stored set each time.
- * Sorted so the same choices always send the same list.
- */
-export function picksRequest(
-  picks: ReadonlyMap<string, GitMergeSide>,
-): readonly GitMergeSidePick[] {
-  return [...picks]
-    .map(([key, side]) => ({ ...placeOf(key), side }))
-    .sort(
-      (left, right) =>
-        compare(left.recordId, right.recordId) || compare(left.path, right.path),
-    );
 }
 
 function compare(left: string, right: string): number {

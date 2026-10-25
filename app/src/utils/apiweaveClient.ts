@@ -51,8 +51,8 @@ import type { GitRepositoryListRequest } from "@shared/types/GitRepositoryListRe
 import type { GitRepositoryOwnerList } from "@shared/types/GitRepositoryOwnerList";
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt";
 import type { GitBridge } from "@shared/types/GitBridge";
-import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergePick } from "@shared/types/GitMergePick";
+import type { GitMergeState } from "@shared/types/GitMergeState";
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits";
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
@@ -1253,15 +1253,17 @@ export const git = {
   ): Promise<readonly WorkspacePendingChange[]> =>
     getGitBridge()?.pendingChanges(workspaceId).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
-  mergeConflicts: (
+  mergeState: (
     workspaceId: string,
-  ): Promise<readonly GitMergeConflict[]> =>
-    getGitBridge()?.mergeConflicts(workspaceId).catch(unwrapRemoteError) ??
+    picks?: readonly GitMergePick[],
+  ): Promise<GitMergeState> =>
+    getGitBridge()?.mergeState(workspaceId, picks).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
-  mergePicks: (
+  saveMergePicks: (
     workspaceId: string,
-  ): Promise<readonly GitMergePick[]> =>
-    getGitBridge()?.mergePicks(workspaceId).catch(unwrapRemoteError) ??
+    picks: readonly GitMergePick[],
+  ): Promise<GitMergeState> =>
+    getGitBridge()?.saveMergePicks(workspaceId, picks).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   mergeRecordCommits: (
     workspaceId: string,

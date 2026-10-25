@@ -1,7 +1,7 @@
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 
-/** The merge picker, opened for a workspace that stopped at `merging`. */
-export interface GitMergeDialogProps {
+/** The merge view, opened for a workspace that stopped at `merging`. */
+export interface GitMergeViewProps {
   readonly status: WorkspaceGitStatus;
   readonly onClose: () => void;
   /** The status a resolve or an abandon left, so the header changes without waiting for the announcement. */

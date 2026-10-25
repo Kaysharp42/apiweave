@@ -1,6 +1,6 @@
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { GitCommitDialog } from "./GitCommitDialog";
-import { GitMergeDialog } from "./GitMergeDialog";
+import { MergeView } from "./MergeView";
 import type { GitSyncDialogsProps } from "../../types";
 
 /**
@@ -20,7 +20,7 @@ export function GitSyncDialogs({ status, actions }: GitSyncDialogsProps) {
         />
       )}
       {actions.dialog === "merge" && status.state === "merging" && (
-        <GitMergeDialog
+        <MergeView
           status={status}
           onClose={actions.closeDialog}
           onStatus={actions.updateStatus}
