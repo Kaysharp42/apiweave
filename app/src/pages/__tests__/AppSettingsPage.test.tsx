@@ -7,6 +7,9 @@ import { AppSettingsPage } from "../AppSettingsPage";
 vi.mock("../../components/organisms/AgentsSettingsPanel", () => ({
   AgentsSettingsPanel: () => <div>agents panel</div>,
 }));
+vi.mock("../../components/organisms/GitAccountsSettingsPanel", () => ({
+  GitAccountsSettingsPanel: () => <div>git accounts panel</div>,
+}));
 vi.mock("../../components/organisms/McpSetupPanel", () => ({
   McpSetupPanel: () => <div>mcp panel</div>,
 }));
@@ -37,6 +40,7 @@ function renderAt(path: string) {
 describe("AppSettingsPage", () => {
   it.each([
     ["agents", "Agents", "agents panel"],
+    ["git-accounts", "Git accounts", "git accounts panel"],
     ["mcp-server", "MCP Server", "mcp panel"],
     ["network", "Network", "network panel"],
     ["updates", "Updates", "updates panel"],

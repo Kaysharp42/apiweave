@@ -5,10 +5,9 @@ import { GitSyncDialogs } from "../organisms/GitSyncDialogs";
 import { GitSyncStatusCard } from "../organisms/GitSyncStatusCard";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitSyncActions } from "../../hooks/useGitSyncActions";
-import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { describeGitSync } from "../../utils/gitSync";
 import { noDragStyle } from "./WindowControls";
-import type { TrackedGitSyncControlProps } from "../../types";
+import type { GitSyncControlProps, TrackedGitSyncControlProps } from "../../types";
 
 function TrackedGitSyncControl({
   status,
@@ -57,13 +56,12 @@ function TrackedGitSyncControl({
  * The header's sync status: one icon and word for where the current
  * workspace's history stands, and a popover that explains it and offers what
  * to do. Absent for a workspace that is not tracked — there is nothing to
- * report — and when there is no bridge to ask (the browser build).
+ * report — and when there is no bridge to ask (the browser build). `feed` is
+ * the current workspace's, which the header reads once for every control in it.
  */
-export function GitSyncControl() {
+export function GitSyncControl({ feed }: GitSyncControlProps) {
   const { currentOrg, currentWorkspace } = useWorkspace();
-  const { status, apply } = useWorkspaceGitStatus(
-    currentWorkspace?.workspaceId ?? null,
-  );
+  const { status, apply } = feed;
   if (status === null || !status.tracked || currentWorkspace === null) return null;
 
   return (

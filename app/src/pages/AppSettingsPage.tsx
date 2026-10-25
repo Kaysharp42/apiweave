@@ -5,11 +5,13 @@ import {
   Network,
   Plug,
   RefreshCw,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { Navigate, useParams } from "react-router-dom";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
 import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
+import { GitAccountsSettingsPanel } from "../components/organisms/GitAccountsSettingsPanel";
 import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
 import { NetworkSettingsPanel } from "../components/organisms/NetworkSettingsPanel";
 import { UpdateSettingsPanel } from "../components/organisms/UpdateSettingsPanel";
@@ -42,6 +44,13 @@ export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
     subtitle: "Drag, zoom and snap behaviour",
     width: "max-w-2xl",
     Panel: CanvasSettingsPanel,
+  },
+  "git-accounts": {
+    icon: UserRound,
+    title: "Git accounts",
+    subtitle: "GitHub and GitLab accounts your workspaces sync as",
+    width: "max-w-2xl",
+    Panel: GitAccountsSettingsPanel,
   },
   "mcp-server": {
     icon: Plug,

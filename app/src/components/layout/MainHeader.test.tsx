@@ -102,6 +102,8 @@ describe("MainHeader sync status", () => {
     renderHeader();
 
     await screen.findByRole("button", { name: "Version history: Synced" });
+    // The accounts menu's sync badge reads the same feed, not a second one.
+    expect(screen.getByRole("button", { name: "Git accounts — Synced" })).toBeInTheDocument();
     expect(bridge.status).toHaveBeenCalledTimes(1);
     expect(subscriptions()).toBe(1);
   });

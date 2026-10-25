@@ -97,6 +97,16 @@ Two things to know about the history that is pushed:
 - The push creates `main`, but a new empty bare repository's own `HEAD` may name `master`. Someone cloning it then gets no checkout and must ask for the branch: `git clone --branch main <url>`.
 - **Stop tracking** deletes the app's repository, and tracking again starts a new history. A remote that holds the old one has nothing in common with the new one, so the next connect refuses it as someone else's history. Connect a fresh empty repository instead.
 
+## Git accounts
+
+APIWeave signs in to GitHub and GitLab with their own command-line tools, [`gh`](https://cli.github.com) and [`glab`](https://gitlab.com/gitlab-org/cli), which keep the tokens in your system keychain; APIWeave stores none. A workspace connected over `https://` can sync as one of their accounts instead of whatever your credential helper answers with, which is how two accounts on one host each push to their own repositories.
+
+- **The accounts menu** is the round button at the right end of the header. It shows the initials of the account the current workspace syncs as (a plain person icon when it has none), with the workspace's sync icon as a small badge. Open it to see every account by host, which one this workspace uses, **Add GitHub account** and **Add GitLab account**, and a link to the settings page. For a workspace that is not tracked yet, or has no remote, it also offers **Set up sync for this workspace…**, which opens its Version history. The accounts are read from `gh` and `glab` each time the menu opens.
+- **Settings → App → Git accounts** says whether each tool is installed, with where to get it when it is not, and any problem a tool reported (an expired sign-in, a tool that did not answer). It lists each account with the workspaces that sync as it, and signs in to another. **Refresh** asks the tools again, after a sign-in made in a terminal for instance.
+- **GitLab keeps one account per host.** `glab` stores one token per host, so signing in to a GitLab host it already has replaces that account. Two GitLab accounts need two hosts (`gitlab.com` and a self-hosted instance, say). `gh` keeps several accounts per host.
+
+Signing in runs the tool's own browser sign-in: the dialog shows the one-time code and opens the page to enter it on. Without `gh` or `glab`, nothing changes: connect a remote by its URL, signed in with your own git credentials.
+
 ## Sync with the remote
 
 A connected workspace syncs by itself. In **auto** mode, about 30 seconds after your last edit the app commits the workspace and then runs a full cycle:
