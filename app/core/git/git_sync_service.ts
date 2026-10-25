@@ -23,6 +23,7 @@ import { describeMergeNote } from "@shared/git-merge/notes"
 import { GitMergeInputError, mergeTree, type GitMergeTreeResult } from "@shared/git-merge/tree"
 import { FORMAT_FILE, FormatFileSchema, RecordIdSchema, WORKSPACE_FILE, WorkspaceFileSchema, issueText } from "@shared/workspace-repo/format"
 import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
+import { canonicalizeRecord, recordIdOf } from "@shared/conflict-diff/canonicalize"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
@@ -153,6 +154,14 @@ const MAX_MERGE_ATTEMPTS = 3
  * a paste from filling the database.
  */
 const MAX_MERGE_VALUE_BYTES = 256 * 1024
+
+/**
+ * At most this many bytes of JSON across every value of the user's own in one
+ * resolve. One value is capped above, but a request can name ten thousand
+ * places; 4 MB is more than a merge's worth of hand-written fields and keeps
+ * the row, the database write and the IPC call bounded together.
+ */
+const MAX_MERGE_VALUES_BYTES = 4 * 1024 * 1024
 
 /** How many records one {@link GitSyncService.mergeRecordCommits} call reads commits for: a picker asks for what it lists. */
 const MAX_MERGE_RECORD_COMMITS = 500
@@ -889,13 +898,21 @@ export class GitSyncService {
    * conflict the merge is listing — one that names none is dropped, as a copy
    * pick that names none is ignored, because the conflicts have moved on — and
    * must be one a workspace file may hold: no secret storage, at most
-   * {@link MAX_MERGE_VALUE_BYTES} of JSON, and text where the conflict is a
-   * whole file. A value that is not the format's record is not this check's to
-   * refuse: the merge reports it at the record, with the format's reason.
+   * {@link MAX_MERGE_VALUE_BYTES} of JSON (and {@link MAX_MERGE_VALUES_BYTES}
+   * of them together), text where the conflict is a whole file, and a whole
+   * record that keeps its own id. A value that is not the format's record is
+   * not this check's to refuse: the merge reports it at the record, with the
+   * format's reason.
    */
   private async checkedMergePicks(merge: WorkspaceMerge, directory: string, picks: readonly GitMergePick[]): Promise<readonly GitMergePick[]> {
     const values = picks.filter((pick): pick is GitMergeValuePick => "value" in pick)
     if (values.length === 0) return picks
+    const total = values.reduce((bytes, pick) => bytes + Buffer.byteLength(JSON.stringify(pick.value), "utf8"), 0)
+    if (total > MAX_MERGE_VALUES_BYTES) {
+      throw new ValidationError(
+        `Those values add up to ${total} bytes, and one merge request may carry at most ${MAX_MERGE_VALUES_BYTES}. Settle fewer places at once, or keep one copy instead.`,
+      )
+    }
     const sides = picks.filter((pick) => !("value" in pick))
     // The conflicts the copies' own picks leave: a value is asked about against the merge it will settle.
     const conflicts = (await this.computeMerge({ ...merge, picks: sides }, directory)).result.conflicts
@@ -2417,7 +2434,7 @@ function removeDirectory(directory: string): Promise<void> {
 
 /** A pick's record and place as one key: what a listed conflict and a value pick are matched on. */
 function pickPlaceOf(recordId: string, path: string): string {
-  return `${recordId}\0${path}`
+  return JSON.stringify([recordId, path])
 }
 
 /** Refuse a value of the user's own that no workspace file may hold, in a sentence the dialog can show. */
@@ -2431,8 +2448,20 @@ function assertMergeValueFits(pick: GitMergeValuePick, kind: GitMergeConflict["k
   } catch {
     throw new ValidationError("That value holds secret storage (ciphertext or another vault field), which no workspace file may. Keep one copy instead.")
   }
-  if (kind === "file" && typeof pick.value !== "string") {
-    throw new ValidationError(`That value is not text, and the conflict in ${pick.recordId} is on a whole file: give the file's text, or keep one copy.`)
+  if (kind === "file") {
+    if (typeof pick.value !== "string") throw new ValidationError(`That value is not text, and the conflict in ${pick.recordId} is on a whole file: give the file's text, or keep one copy.`)
+    return
+  }
+  if (pick.path === "") assertWholeRecordIdFits(pick, kind)
+}
+
+/** A whole record is written where the record it replaces is: one that renames itself would land under another id's file. */
+function assertWholeRecordIdFits(pick: GitMergeValuePick, kind: Exclude<GitMergeConflict["kind"], "file">): void {
+  const written = canonicalizeRecord(kind, pick.value)
+  if (!("document" in written)) return
+  const id = recordIdOf(kind, written.document)
+  if (id !== pick.recordId) {
+    throw new ValidationError(`That value is ${kind} ${id}, not ${pick.recordId}: a whole-record value must keep the record's own id.`)
   }
 }
 

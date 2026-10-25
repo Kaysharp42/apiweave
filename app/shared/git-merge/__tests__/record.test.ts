@@ -652,6 +652,18 @@ describe("a value of the user's own", () => {
     expect(result.conflicts[0]).toMatchObject({ path: "", invalid: expect.stringContaining("name") })
   })
 
+  it("refuses a whole-record value that renames the record, rather than writing it under another id's file", () => {
+    const base = chain()
+    const renamed = { ...base, name: "Sign in" }
+    const other = { ...base, workflowId: "wf2", name: "Restored" }
+
+    const result = merge(base, undefined, renamed, [own("", other)])
+
+    expect(result.merged).toEqual(canonical(renamed))
+    expect(result.conflicts).toHaveLength(1)
+    expect(result.conflicts[0]).toMatchObject({ path: "", invalid: expect.stringContaining("it holds workflow wf2, not wf1") })
+  })
+
   it("settles a record whose merged fields are invalid with a whole-record value of the user's own", () => {
     const delay = flow({ nodes: [{ nodeId: "n1", type: "delay", position: { x: 0, y: 0 }, config: {} }] })
     const ours = flow({ nodes: [{ nodeId: "n1", type: "merge", position: { x: 0, y: 0 }, config: {} }] })

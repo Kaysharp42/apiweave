@@ -75,8 +75,20 @@ export function mergeRecord(
   const repaired = kind === "workflow" ? repairWorkflow(merged, copies, scope, notes, named) : merged
   const copy = [theirs, ours].find((candidate) => deepEqualJson(candidate, repaired))
   const written = copy === undefined ? canonicalizeRecord(kind, repaired) : { document: copy }
-  if ("document" in written) return resultOf(named, written.document, scope, [...notes, ...settledNotes(named, scope)])
+  if ("document" in written) return settleRecord(named, copies, scope, written.document, notes)
   return wholeCopy(named, copies, scope, written.invalid)
+}
+
+/**
+ * The merged record as its file holds it. A value of the user's own at `""`
+ * replaces the whole record, and a record is written where the record it
+ * replaces is — so one that renames itself is the conflict instead of a file
+ * named after another id.
+ */
+function settleRecord(named: Named, copies: Copies, scope: MergeScope, document: RecordDocument, notes: readonly GitMergeNote[]): GitMergeRecordResult {
+  const writtenId = recordIdOf(named.kind, document)
+  if (writtenId !== named.recordId) return wholeCopy(named, copies, scope, `it holds ${named.kind} ${writtenId}, not ${named.recordId}`)
+  return resultOf(named, document, scope, [...notes, ...settledNotes(named, scope)])
 }
 
 interface Named {
@@ -117,7 +129,13 @@ function wholeCopy(named: Named, copies: Copies, scope: MergeScope, invalid: str
 /** What one whole-record pick comes to: the record a copy or a value of the user's holds, or why it is not one. Undefined for a pick whose copy is gone. */
 function wholeRecordChoice(named: Named, copies: Copies, pick: GitMergePick): RecordRead | undefined {
   const chosen = "value" in pick ? pick.value : pick.side === "ours" ? copies.ours : copies.theirs
-  return chosen === undefined ? undefined : canonicalizeRecord(named.kind, chosen)
+  if (chosen === undefined) return undefined
+  const written = canonicalizeRecord(named.kind, chosen)
+  if (!("document" in written)) return written
+  const id = recordIdOf(named.kind, written.document)
+  // A whole record is written where the record it replaces is: one that
+  // renames itself would land under a file named after another id.
+  return id === named.recordId ? written : { invalid: `it holds ${named.kind} ${id}, not ${named.recordId}` }
 }
 
 /** The remote copy as the record its file holds: what stands while a conflict waits, or the invariant that it is one. */

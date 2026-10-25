@@ -414,7 +414,8 @@ describe("database migrations", () => {
     })
   })
 
-  it("keeps a merge waiting through the upgrade that makes its base commit nullable", () => {    const tempRoot = makeTempRoot()
+  it("keeps a merge waiting through the upgrade that makes its base commit nullable", () => {
+    const tempRoot = makeTempRoot()
     const databasePath = path.join(tempRoot, "merge-upgrade.db")
     const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 27) })
     old.kvStore.transaction((store) => {
