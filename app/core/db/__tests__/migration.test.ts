@@ -493,6 +493,13 @@ describe("database migrations", () => {
     }
   })
 
+  it("numbers its migrations 1..N with no gaps and no duplicates", () => {
+    // The runner applies `version > user_version` only, so a gap is a migration
+    // a later branch would add below the version already stamped and never run.
+    const versions = readMigrations().map((migration) => migration.version)
+    expect(versions).toEqual(Array.from({ length: versions.length }, (_, index) => index + 1))
+  })
+
   it("classifies every table as content or state", () => {
     const db = openTempDatabase()
     try {
