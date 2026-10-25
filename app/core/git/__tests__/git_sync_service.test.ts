@@ -84,6 +84,7 @@ describe("GitSyncService", () => {
       uncommitted: false,
       lastSyncedAt: null,
       lastCommit: { sha: log[0]!.sha, subject: log[0]!.subject, authorDate: log[0]!.authorDate },
+      unrelatedHistory: false,
     })
     const tree = readTree(harness.dir)
     expect([...tree.keys()].sort()).toEqual([

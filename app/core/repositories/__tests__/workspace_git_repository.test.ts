@@ -21,6 +21,55 @@ afterEach(() => {
   db.close()
 })
 
+describe("a merge waiting for the user", () => {
+  const PICK = { recordId: "wf", path: "name", side: "ours" as const }
+
+  it("holds a two-way merge with no base commit, and reads its picks back", () => {
+    workspaceGit.startMerge(workspaceId, null, "ours".repeat(10), "theirs".repeat(10), [PICK])
+
+    expect(workspaceGit.getMerge(workspaceId)).toEqual({
+      workspaceId,
+      baseCommit: null,
+      ourCommit: "ours".repeat(10),
+      theirCommit: "theirs".repeat(10),
+      picks: [PICK],
+    })
+  })
+
+  it("replaces the picks only for the merge's own base, two-way's null included", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+
+    expect(workspaceGit.setMergePicks(workspaceId, "base", [PICK])).toBe(true)
+    expect(workspaceGit.getMerge(workspaceId)?.picks).toEqual([PICK])
+    expect(workspaceGit.setMergePicks(workspaceId, "another", [])).toBe(false)
+
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [])
+    expect(workspaceGit.setMergePicks(workspaceId, null, [PICK])).toBe(true)
+    expect(workspaceGit.getMerge(workspaceId)).toMatchObject({ baseCommit: null, picks: [PICK] })
+  })
+
+  it("remembers a two-way merge's basis past the row, so an abandoned one can still explain itself", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(true)
+
+    workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
+    workspaceGit.clearRemote(workspaceId)
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+  })
+
+  it("goes with the remote the merge waited on", () => {
+    workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [PICK])
+
+    workspaceGit.clearRemote(workspaceId)
+
+    expect(workspaceGit.getMerge(workspaceId)).toBeUndefined()
+  })
+})
+
 describe("a workspace's git account", () => {
   it("is none until a remote is bound with one", () => {
     expect(workspaceGit.get(workspaceId)?.account).toBeNull()

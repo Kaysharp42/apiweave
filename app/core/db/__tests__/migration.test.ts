@@ -414,6 +414,59 @@ describe("database migrations", () => {
     })
   })
 
+  it("keeps a merge waiting through the upgrade that makes its base commit nullable", () => {
+    const tempRoot = makeTempRoot()
+    const databasePath = path.join(tempRoot, "merge-upgrade.db")
+    const old = initDatabase({ databasePath, migrationsPath: copyMigrations(tempRoot, 27) })
+    old.kvStore.transaction((store) => {
+      store.set("INSERT INTO workspaces (id, name, slug) VALUES (?, ?, ?)", ["ws-1", "Local", "local"])
+      store.set("INSERT INTO workspace_git (workspace_id) VALUES (?)", ["ws-1"])
+      store.set("INSERT INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES (?, ?, ?, ?)", [
+        "ws-1",
+        "base",
+        "ours",
+        "theirs",
+      ])
+      store.set("INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)", [
+        "ws-1",
+        "base",
+        "wf",
+        "name",
+        "ours",
+      ])
+    })
+    old.close()
+
+    const upgraded = initDatabase({ databasePath })
+    try {
+      expect(upgraded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION)
+      // The waiting merge and its picks survive: they are decisions, not the schema's to drop.
+      expect(upgraded.kvStore.query("SELECT workspace_id, base_commit, our_commit, their_commit FROM workspace_merge")).toEqual([
+        { workspace_id: "ws-1", base_commit: "base", our_commit: "ours", their_commit: "theirs" },
+      ])
+      expect(upgraded.kvStore.query("SELECT base_commit, record_id FROM workspace_merge_pick")).toEqual([{ base_commit: "base", record_id: "wf" }])
+      // A two-way merge is a row with no base at all.
+      upgraded.kvStore.set("INSERT OR REPLACE INTO workspace_merge (workspace_id, base_commit, our_commit, their_commit) VALUES (?, NULL, ?, ?)", [
+        "ws-1",
+        "ours",
+        "theirs",
+      ])
+      expect(upgraded.kvStore.get("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", ["ws-1"])).toEqual({ base_commit: null })
+      // The divergence a two-way merge leaves needs to remember its basis after the row is gone.
+      expect(upgraded.kvStore.get("SELECT unrelated_merge FROM workspace_git WHERE workspace_id = ?", ["ws-1"])).toEqual({ unrelated_merge: 0 })
+      expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
+    } finally {
+      upgraded.close()
+    }
+  })
+
+  it("numbers its migrations 1..N with no gaps and no duplicates", () => {
+    // The runner applies `version > user_version` only, so a gap is a migration
+    // a later branch would add below the version already stamped and never run.
+    const versions = readMigrations().map((migration) => migration.version)
+    expect(versions).toEqual(Array.from({ length: versions.length }, (_, index) => index + 1))
+  })
+
   it("classifies every table as content or state", () => {
     const db = openTempDatabase()
     try {

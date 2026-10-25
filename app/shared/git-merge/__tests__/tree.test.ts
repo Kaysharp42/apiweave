@@ -17,6 +17,7 @@ import {
   WORKSPACE_ID,
   edited,
   environment,
+  nodeIn,
   recordIn,
   sampleTree,
   treeOf,
@@ -307,6 +308,105 @@ describe("what the merge leaves pointing at nothing", () => {
 
     expect(recordIn(result.files, "workflows", "wf_free")?.["selectedEnvironmentId"]).toBe("env_user_only")
     expect(result.notes).toEqual([])
+  })
+})
+
+describe("two copies that share no ancestor", () => {
+  const mergeTwo = (ours: Map<string, string>, theirs: Map<string, string>, picks: GitMergePick[] = []) => mergeTree(null, ours, theirs, picks)
+
+  it("keeps every record either copy holds, and writes the format's own files", () => {
+    const ours = ourTree((draft) => {
+      draft.workspace.name = "Acme QA 2"
+      draft.workflows.push(workflow("wf_new", { name: "Invoice" }))
+    })
+    const theirs = ourTree((draft) => {
+      draft.environments.push(environment("env_stage", { name: "Stage" }))
+    })
+
+    const result = mergeTwo(ours, theirs)
+
+    expect(result.conflicts).toEqual([
+      { kind: "workspace", recordId: WORKSPACE_ID, name: "Acme QA 2", path: "name", ours: "Acme QA 2", theirs: "Acme QA" },
+    ])
+    expect(recordIn(result.files, "workflows", "wf_new")).toBeDefined()
+    expect(recordIn(result.files, "environments", "env_stage")).toBeDefined()
+    // Nothing either copy holds is deleted, and the workspace's name stands as the remote's until a pick settles it.
+    expect(recordIn(result.files, "workflows", "wf_login")?.["name"]).toBe("Login")
+    expect(JSON.parse(result.files.get("workspace.json")!) as { readonly name: string }).toMatchObject({ name: "Acme QA" })
+    expect(result.files.get(FORMAT_FILE)).toBe(fileText({ format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION }))
+    expect(result.files.get(ATTRIBUTES_FILE)).toBe(ATTRIBUTES_TEXT)
+  })
+
+  it("merges two copies alike silently, as the format would write them", () => {
+    expect(mergeTwo(ourFiles, ourFiles)).toEqual({ files: treeOf(base), conflicts: [], notes: [] })
+  })
+
+  it("keeps a file the format does not own that only one copy holds, or that one copy deleted", () => {
+    const ours = new Map(ourFiles)
+    ours.set("docs/NOTES.md", "notes\n")
+
+    expect(mergeTwo(ours, ourFiles).files.get("docs/NOTES.md")).toBe("notes\n")
+
+    const theirs = new Map(ourFiles)
+    theirs.delete("README.md")
+    expect(mergeTwo(ourFiles, theirs).files.get("README.md")).toBe("# Acme API tests\n")
+  })
+
+  it("is a file conflict when both copies changed a file the format does not own differently", () => {
+    const ours = new Map(ourFiles)
+    ours.set("README.md", "# Mine\n")
+    const theirs = new Map(ourFiles)
+    theirs.set("README.md", "# Remote\n")
+
+    const open = mergeTwo(ours, theirs)
+    expect(open.conflicts).toEqual([{ kind: "file", recordId: "README.md", name: "README.md", path: "", ours: "# Mine\n", theirs: "# Remote\n" }])
+    expect(open.files.get("README.md")).toBe("# Remote\n")
+
+    expect(mergeTwo(ours, theirs, [{ recordId: "README.md", path: "", side: "ours" }]).files.get("README.md")).toBe("# Mine\n")
+  })
+
+  it("settles two copies' node positions by the format's rule, and notes what it settled", () => {
+    const ours = ourTree((draft) => {
+      nodeIn(workflowIn(draft, "wf_login"), "n1").position = { x: 210, y: 0 }
+    })
+    const theirs = ourTree((draft) => {
+      nodeIn(workflowIn(draft, "wf_login"), "n1").position = { x: 220, y: 5 }
+    })
+
+    const result = mergeTwo(ours, theirs)
+
+    expect(result.conflicts).toEqual([])
+    expect(result.notes).toEqual([{ type: "positions", recordId: "wf_login", name: "Login", nodeIds: ["n1"] }])
+    expect(recordIn(result.files, "workflows", "wf_login")?.["name"]).toBe("Login")
+  })
+
+  it("settles a record's conflicts with picks, the whole record included", () => {
+    const ours = ourTree((draft) => {
+      workflowIn(draft, "wf_free").name = "Mine"
+      workflowIn(draft, "wf_free").description = "mine"
+    })
+    const theirs = ourTree((draft) => {
+      workflowIn(draft, "wf_free").name = "Theirs"
+      workflowIn(draft, "wf_free").description = "theirs"
+    })
+
+    expect(mergeTwo(ours, theirs).conflicts.map((conflict) => conflict.path)).toEqual(["description", "name"])
+
+    const settled = mergeTwo(ours, theirs, [{ recordId: "wf_free", path: "name", side: "ours" }])
+    expect(settled.conflicts.map((conflict) => conflict.path)).toEqual(["description"])
+    expect(recordIn(settled.files, "workflows", "wf_free")?.["name"]).toBe("Mine")
+
+    const whole = mergeTwo(ours, theirs, [{ recordId: "wf_free", path: "", side: "ours" }])
+    expect(whole.conflicts).toEqual([])
+    expect(recordIn(whole.files, "workflows", "wf_free")).toMatchObject({ name: "Mine", description: "mine" })
+  })
+
+  it("still refuses a remote copy of another workspace", () => {
+    const theirs = ourTree((draft) => {
+      draft.workspace.workspaceId = "ws_02"
+    })
+
+    expect(() => mergeTwo(ourFiles, theirs)).toThrow(/another workspace's history/)
   })
 })
 

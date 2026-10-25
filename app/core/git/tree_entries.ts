@@ -2,16 +2,16 @@ import { isTreePath } from "@shared/workspace-repo/format"
 import { ValidationError } from "../ipc/errors"
 import type { GitTreeContents, GitTreeListing } from "./git_types"
 
-/** The three trees of a merge. */
+/** The three trees of a merge; `base` is null when the copies share no ancestor. */
 export interface TreeEntryCopies {
-  readonly base: GitTreeContents
+  readonly base: GitTreeContents | null
   readonly ours: GitTreeContents
   readonly theirs: GitTreeContents
 }
 
-/** The commits the three trees were read from. */
+/** The commits the three trees were read from; `baseCommit` is null when there is no ancestor. */
 export interface TreeEntryCommits {
-  readonly baseCommit: string
+  readonly baseCommit: string | null
   readonly ourCommit: string
   readonly theirCommit: string
 }
@@ -27,8 +27,33 @@ export interface SettledTreeEntries {
 /** What one copy holds at a path: an entry that is not a plain file, a plain file's text, or nothing. */
 type Slot = GitTreeListing | string | undefined
 
-function slotAt(tree: GitTreeContents, relative: string): Slot {
-  return tree.otherEntries.get(relative) ?? tree.files.get(relative)
+function slotAt(tree: GitTreeContents | null, relative: string): Slot {
+  return tree === null ? undefined : tree.otherEntries.get(relative) ?? tree.files.get(relative)
+}
+
+/** One path held by something other than a plain file, with the commit a refusal names for it. */
+interface NamedEntry {
+  readonly entry: GitTreeListing
+  readonly rev: string
+}
+
+/**
+ * Every path any copy holds something other than a plain file at, with the
+ * commit a refusal names: the remote copy's first, as the side that changed
+ * it, then yours, then the ancestor's when there is one.
+ */
+function namedEntries(copies: TreeEntryCopies, commits: TreeEntryCommits): Map<string, NamedEntry> {
+  const named = new Map<string, NamedEntry>()
+  const trees: readonly (readonly [GitTreeContents | null, string | null])[] = [
+    [copies.theirs, commits.theirCommit],
+    [copies.ours, commits.ourCommit],
+    [copies.base, commits.baseCommit],
+  ]
+  for (const [tree, rev] of trees) {
+    if (tree === null || rev === null) continue
+    for (const entry of tree.otherEntries.values()) if (!named.has(entry.path)) named.set(entry.path, { entry, rev })
+  }
+  return named
 }
 
 function sameSlot(left: Slot, right: Slot): boolean {
@@ -56,17 +81,18 @@ function entryKind(entry: GitTreeListing): string {
  *   a file — is refused with {@link ValidationError}, naming the path. Taking
  *   that entry would mean writing its blob into the checkout.
  *
+ * With no ancestor (`base` null, a two-way merge) nothing holds what the
+ * ancestor did: an entry only your copy has stays, and one the remote copy has
+ * is refused unless it is the same entry, since the merge would have to write
+ * it into the checkout to keep it.
+ *
  * So nothing a merge writes is ever a link, or a link's target written as a
  * file. A path that is not one a repository may hold is refused whichever rule
  * would apply.
  */
 export function settleTreeEntries(copies: TreeEntryCopies, commits: TreeEntryCommits): SettledTreeEntries {
   const { base, ours, theirs } = copies
-  // Each path with the entry a refusal names: the remote copy's first, as the side that changed it.
-  const named = new Map<string, { readonly entry: GitTreeListing; readonly rev: string }>()
-  for (const [tree, rev] of [[theirs, commits.theirCommit], [ours, commits.ourCommit], [base, commits.baseCommit]] as const) {
-    for (const entry of tree.otherEntries.values()) if (!named.has(entry.path)) named.set(entry.path, { entry, rev })
-  }
+  const named = namedEntries(copies, commits)
   const removals: string[] = []
   for (const [relative, { entry, rev }] of named) {
     if (!isTreePath(relative)) throw new ValidationError(`${relative} at ${rev} is not a path a repository may hold: it leaves the tree or names git's own .git folder`)

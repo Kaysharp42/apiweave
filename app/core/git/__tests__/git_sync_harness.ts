@@ -102,6 +102,7 @@ export function passthrough(git: GitService): GitSyncGit {
     mergeFastForward: git.mergeFastForward.bind(git),
     mergeNoCommit: git.mergeNoCommit.bind(git),
     mergeAbort: git.mergeAbort.bind(git),
+    show: git.show.bind(git),
     readTreeFiles: git.readTreeFiles.bind(git),
     resetHard: git.resetHard.bind(git),
     countAheadBehind: git.countAheadBehind.bind(git),

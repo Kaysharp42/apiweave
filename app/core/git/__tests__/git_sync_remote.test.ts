@@ -2,7 +2,15 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
+import {
+  FORMAT_FILE,
+  WORKSPACE_FILE,
+  WORKSPACE_FORMAT,
+  WORKSPACE_FORMAT_VERSION,
+  fileText,
+} from "@shared/workspace-repo/format"
 import { GitInvalidArgumentError } from "../git_errors"
+import { readWorkspaceTreeAt, writeWorkspaceTree } from "../workspace_tree"
 import { openHarness, passthrough, subjects, type Harness } from "./git_sync_harness"
 import { makeBareRemote, rawGit, writeFile } from "./git_test_utils"
 
@@ -44,6 +52,33 @@ function relatedRemote(harness: Harness): { dir: string; url: string } {
   const dir = path.join(harness.sandbox.root, "related.git")
   rawGit(harness.sandbox.root, harness.sandbox.env, "clone", "--bare", harness.dir, dir)
   return { dir, url: pathToFileURL(dir).href }
+}
+
+/** The workspace a tree's `workspace.json` says it holds, written back with `fields` over it. */
+function writeWorkspace(files: Map<string, string>, fields: { readonly workspaceId?: string; readonly name?: string }): void {
+  const text = files.get(WORKSPACE_FILE)
+  if (text === undefined) throw new Error("the tree holds no workspace.json")
+  const current = JSON.parse(text) as { readonly workspaceId: string; readonly name: string }
+  files.set(WORKSPACE_FILE, JSON.stringify({ ...current, ...fields }))
+}
+
+/**
+ * A remote holding this same workspace as a history of its own: tracking was
+ * stopped and started again on another machine, and the new root was pushed
+ * over the old one. It shares no commit with this device's history.
+ */
+async function restartedRemote(harness: Harness, edit: (files: Map<string, string>) => void = () => undefined): Promise<{ dir: string; url: string }> {
+  const remote = makeBareRemote(harness.sandbox, "restarted.git")
+  const other = path.join(harness.sandbox.root, "restarted")
+  const files = new Map((await readWorkspaceTreeAt(harness.git, harness.dir, "HEAD")).files)
+  edit(files)
+  await harness.git.init(other, { initialBranch: "main" })
+  await writeWorkspaceTree(other, files)
+  await harness.git.add(other, ["."])
+  await harness.git.commit(other, "Track this workspace again")
+  await harness.git.remoteAdd(other, "origin", remote.url)
+  await harness.git.push(other, "origin", "main")
+  return remote
 }
 
 function headOf(harness: Harness, repository: string, rev = "HEAD"): string {
@@ -90,6 +125,98 @@ describe("GitSyncService.connectRemote", () => {
     expect(binding(harness)).toEqual(before)
     expect(remotesOf(harness)).toEqual([])
     expect(headOf(harness, remote.dir, "main")).not.toBe(headOf(harness, harness.dir))
+  })
+
+  it("starts a two-way merge when the repository holds this same workspace with no shared history", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { name: "Acme QA (elsewhere)" }))
+    const remoteTip = headOf(harness, remote.dir, "main")
+
+    const status = await harness.sync.connectRemote(harness.workspaceId, remote.url)
+
+    // The remote is bound and the merge waits: nothing was pushed or imported.
+    expect(status).toMatchObject({ tracked: true, remoteUrl: remote.url, state: "merging", lastError: null, unrelatedHistory: true })
+    expect(binding(harness)).toMatchObject({ remoteUrl: remote.url, branch: "main" })
+    expect(harness.repositories.workspaceGit.getMerge(harness.workspaceId)).toMatchObject({ baseCommit: null, theirCommit: remoteTip })
+    expect(await harness.sync.mergeConflicts(harness.workspaceId)).toEqual([
+      { kind: "workspace", recordId: harness.workspaceId, name: "Acme QA", path: "name", ours: "Acme QA", theirs: "Acme QA (elsewhere)" },
+    ])
+    expect(headOf(harness, remote.dir, "main")).toBe(remoteTip)
+
+    // A two-parent commit on top of both, pushed as a fast-forward of the remote.
+    const resolved = await harness.sync.resolveMerge(harness.workspaceId, [{ recordId: harness.workspaceId, path: "name", side: "theirs" }])
+    expect(resolved).toMatchObject({ state: "idle", lastError: null, unrelatedHistory: false })
+    const [head] = await harness.git.log(harness.dir, { maxCount: 1 })
+    expect(head?.parents).toHaveLength(2)
+    expect(head?.parents[1]).toBe(remoteTip)
+    expect(headOf(harness, remote.dir, "main")).toBe(headOf(harness, harness.dir))
+    expect(harness.repositories.workspaces.getById(harness.workspaceId)?.name).toBe("Acme QA (elsewhere)")
+  })
+
+  it("refuses a repository holding a different workspace, naming it and leaving no trace", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { workspaceId: "ws02", name: "Kyra" }))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(
+      "That repository holds a different workspace (Kyra). Open it from git to work on that one, or connect a repository that belongs to this workspace.",
+    )
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
+  it("refuses a repository whose workspace.json cannot be read, as it refuses one that has none", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => files.set(WORKSPACE_FILE, "{ not json"))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(UNRELATED)
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
+  it("says a repository a newer APIWeave wrote is that, rather than sending the user to Open", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => files.set(FORMAT_FILE, fileText({ format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION + 1 })))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(/written by a newer APIWeave/)
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
+  it("refuses a workspace id that differs only in letter case, saying to rename it rather than open it", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { workspaceId: harness.workspaceId.toLowerCase(), name: "Kyra" }))
+    const before = binding(harness)
+
+    await expect(harness.sync.connectRemote(harness.workspaceId, remote.url)).rejects.toThrow(
+      /differs from this workspace's id only in letter case.*Rename the workspace in the repository's workspace.json/,
+    )
+
+    expect(binding(harness)).toEqual(before)
+    expect(remotesOf(harness)).toEqual([])
+  })
+
+  it("keeps the remote bound when a two-way merge is abandoned, and Sync now offers it again", async () => {
+    const harness = await trackedHarness()
+    const remote = await restartedRemote(harness, (files) => writeWorkspace(files, { name: "Acme QA (elsewhere)" }))
+    await harness.sync.connectRemote(harness.workspaceId, remote.url)
+    const head = headOf(harness, harness.dir)
+
+    const abandoned = await harness.sync.abandonMerge(harness.workspaceId)
+
+    expect(abandoned).toMatchObject({ state: "diverged", remoteUrl: remote.url, unrelatedHistory: true })
+    expect(abandoned.lastError?.message).toMatch(/share no history, and the merge was abandoned/)
+    expect(harness.repositories.workspaceGit.getMerge(harness.workspaceId)).toBeUndefined()
+    expect(headOf(harness, harness.dir)).toBe(head)
+    expect(rawGit(harness.dir, harness.sandbox.env, "remote", "get-url", "origin").trim()).toBe(remote.url)
+
+    // The way back is Sync now, which merges the same two copies again.
+    expect(await harness.sync.syncNow(harness.workspaceId)).toMatchObject({ state: "merging", unrelatedHistory: true })
   })
 
   it("refuses a repository that has history only on another branch, as someone else's project", async () => {

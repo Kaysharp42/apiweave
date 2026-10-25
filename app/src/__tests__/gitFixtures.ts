@@ -18,6 +18,7 @@ export const untrackedStatus: WorkspaceGitStatus = {
   uncommitted: false,
   lastSyncedAt: null,
   lastCommit: null,
+  unrelatedHistory: false,
 };
 
 /** A tracked, connected, settled workspace; each test overrides what it is about. */

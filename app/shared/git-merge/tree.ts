@@ -69,6 +69,13 @@ interface TreeCopy {
  * ancestor's tree, `ourFiles` yours and `theirFiles` the remote's, each path
  * to text as git holds it.
  *
+ * `baseFiles` is null when the two copies have no common ancestor: one
+ * workspace whose tracking was stopped and started again, or a clone recreated
+ * from the database, pushed over a history of its own. Then the merge is two
+ * ways — nothing is a change from anything — so a record only one copy holds
+ * is kept, and a record both hold merges field by field, every field they
+ * differ on a conflict (see {@link mergeRecord}).
+ *
  * Records are matched by the id they hold, not by their file's name, so a
  * record renamed in one copy is the same record in the other, and each is
  * merged by {@link mergeRecord}: one only one copy added is added, one deleted
@@ -94,13 +101,13 @@ interface TreeCopy {
  * Pure: the caller reads the trees and writes the result.
  */
 export function mergeTree(
-  baseFiles: ReadonlyMap<string, string>,
+  baseFiles: ReadonlyMap<string, string> | null,
   ourFiles: ReadonlyMap<string, string>,
   theirFiles: ReadonlyMap<string, string>,
   picks: readonly GitMergePick[] = [],
 ): GitMergeTreeResult {
   const reads: Reads = new Map()
-  const base = readCopy(baseFiles, "base", reads)
+  const base = baseFiles === null ? null : readCopy(baseFiles, "base", reads)
   const ours = readCopy(ourFiles, "ours", reads)
   const theirs = readCopy(theirFiles, "theirs", reads)
   checkSameWorkspace(base, ours, theirs)
@@ -122,17 +129,18 @@ export function mergeTree(
 
 function mergeKind(
   kind: WorkspacePendingChangeKind,
-  base: TreeCopy,
+  base: TreeCopy | null,
   ours: TreeCopy,
   theirs: TreeCopy,
   picks: readonly GitMergePick[],
   conflicts: GitMergeConflict[],
   notes: GitMergeNote[],
 ): Map<string, RecordDocument> {
-  const [ancestor, mine, remote] = [base.records.get(kind)!, ours.records.get(kind)!, theirs.records.get(kind)!]
+  const [ancestor, mine, remote] = [base?.records.get(kind) ?? new Map<string, RecordDocument>(), ours.records.get(kind)!, theirs.records.get(kind)!]
+  const twoWay = base === null
   const merged = new Map<string, RecordDocument>()
   for (const id of [...new Set([...ancestor.keys(), ...mine.keys(), ...remote.keys()])].sort(compare)) {
-    const record = mergeRecord(kind, ancestor.get(id), mine.get(id), remote.get(id), picks)
+    const record = mergeRecord(kind, ancestor.get(id), mine.get(id), remote.get(id), picks, twoWay)
     conflicts.push(...record.conflicts)
     notes.push(...record.notes)
     if (record.merged !== undefined) merged.set(id, record.merged)
@@ -177,11 +185,11 @@ function detachLostReferences(merged: ReadonlyMap<WorkspacePendingChangeKind, Ma
 }
 
 /** The files the format does not own, merged whole: a conflict is on the file, named by its path. */
-function mergeOthers(base: TreeCopy, ours: TreeCopy, theirs: TreeCopy, picks: readonly GitMergePick[], conflicts: GitMergeConflict[]): [string, string][] {
+function mergeOthers(base: TreeCopy | null, ours: TreeCopy, theirs: TreeCopy, picks: readonly GitMergePick[], conflicts: GitMergeConflict[]): [string, string][] {
   const files: [string, string][] = []
-  for (const path of [...new Set([...base.others.keys(), ...ours.others.keys(), ...theirs.others.keys()])].sort(compare)) {
+  for (const path of [...new Set([...(base?.others.keys() ?? []), ...ours.others.keys(), ...theirs.others.keys()])].sort(compare)) {
     const scope = scopeFor(path, picks)
-    const text = merge3({ type: "value" }, [], base.others.get(path), ours.others.get(path), theirs.others.get(path), scope)
+    const text = merge3({ type: "value" }, [], base?.others.get(path), ours.others.get(path), theirs.others.get(path), scope)
     conflicts.push(...conflictsOf("file", path, path, scope))
     if (typeof text === "string") files.push([path, text])
   }
@@ -189,11 +197,12 @@ function mergeOthers(base: TreeCopy, ours: TreeCopy, theirs: TreeCopy, picks: re
 }
 
 /** Both copies are this workspace's history: they hold one workspace id. An ancestor holding another has none to offer. */
-function checkSameWorkspace(base: TreeCopy, ours: TreeCopy, theirs: TreeCopy): void {
+function checkSameWorkspace(base: TreeCopy | null, ours: TreeCopy, theirs: TreeCopy): void {
   const [mine] = ours.records.get("workspace")!.keys()
   const [remote] = theirs.records.get("workspace")!.keys()
   if (mine !== remote) throw new GitMergeInputError("theirs", WORKSPACE_FILE, `holds workspace ${remote}, but your copy holds ${mine}: it is another workspace's history`)
-  const ancestor = base.records.get("workspace")!
+  const ancestor = base?.records.get("workspace")
+  if (ancestor === undefined) return
   for (const id of ancestor.keys()) if (id !== mine) ancestor.delete(id)
 }
 
