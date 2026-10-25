@@ -6,11 +6,13 @@ import { z } from "zod"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest"
+import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitProvider } from "@shared/types/GitProvider"
 import type { GitRepositoryListRequest } from "@shared/types/GitRepositoryListRequest"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import { GitAccountRefSchema, GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema"
 import { GitCreateRepositoryRequestSchema, GitRepositoryListRequestSchema } from "@shared/zod-schemas/GitCreateRepositoryRequestSchema"
+import { JsonValueSchema } from "@shared/zod-schemas/JsonValueSchema"
 import { isWorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
@@ -114,17 +116,30 @@ function createRepositoryRequestOf(value: unknown): GitCreateRepositoryRequest {
 }
 
 
-const MergePickSchema = z
-  .object({
-    // A file conflict names its path, which may run to 4096 characters.
-    recordId: z.string().min(1).max(4096),
-    path: z.string().max(4096),
-    side: z.enum(["ours", "theirs"]),
-  })
-  .strict()
+const MergePickPlace = {
+  // A file conflict names its path, which may run to 4096 characters.
+  recordId: z.string().min(1).max(4096),
+  path: z.string().max(4096),
+}
 
-/** A resolution's picks, checked: each names one record or file (by id or path), one path in it, and which copy settles it. */
+const MergePickSchema = z.union([
+  z.object({ ...MergePickPlace, side: z.enum(["ours", "theirs"]) }).strict(),
+  z.object({ ...MergePickPlace, value: JsonValueSchema }).strict(),
+])
+
+/** A resolution's picks, checked: each names one record or file (by id or path), one path in it, and either the copy that settles it or a value of the user's own. */
 const MergePicksSchema = z.array(MergePickSchema).max(10_000)
+
+/** The renderer's picks, checked, or a plain sentence: never a zod error's JSON. */
+function mergePicksOf(value: unknown): readonly GitMergePick[] {
+  const checked = MergePicksSchema.safeParse(value)
+  if (!checked.success) {
+    throw new Error(
+      "That is not a merge decision APIWeave can read: each decision names a record, a path in it, and either the copy to keep or a value of your own.",
+    )
+  }
+  return checked.data
+}
 
 const MergeRecordIdsSchema = z
   .array(z.string().min(1, "a record id is required").max(4096))
@@ -176,7 +191,7 @@ export function registerGitHandlers(
   ipcMain.handle(
     GIT_CHANNELS.resolveMerge,
     guard((workspaceId: unknown, picks: unknown, request: unknown) =>
-      gitSync.resolveMerge(workspaceIdOf(workspaceId), MergePicksSchema.parse(picks), commitRequestOf(request)),
+      gitSync.resolveMerge(workspaceIdOf(workspaceId), mergePicksOf(picks), commitRequestOf(request)),
     ),
   )
   handleWorkspace(GIT_CHANNELS.disconnectRemote, (workspaceId) => gitSync.disconnectRemote(workspaceId))

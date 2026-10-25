@@ -7,6 +7,7 @@ import type { GitIdentity } from "@shared/types/GitIdentity"
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict"
 import type { GitMergeNote } from "@shared/types/GitMergeNote"
 import type { GitMergePick } from "@shared/types/GitMergePick"
+import type { GitMergeValuePick } from "@shared/types/GitMergeValuePick"
 import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits"
 import type { MergeSideCommit } from "@shared/types/MergeSideCommit"
 import type { JsonValue } from "@shared/types/JsonValue"
@@ -21,6 +22,8 @@ import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChang
 import { describeMergeNote } from "@shared/git-merge/notes"
 import { GitMergeInputError, mergeTree, type GitMergeTreeResult } from "@shared/git-merge/tree"
 import { FORMAT_FILE, FormatFileSchema, RecordIdSchema, WORKSPACE_FILE, WorkspaceFileSchema, issueText } from "@shared/workspace-repo/format"
+import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
+import { canonicalizeRecord, recordIdOf } from "@shared/conflict-diff/canonicalize"
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { getLogger } from "../logging/logger"
 import type {
@@ -143,6 +146,22 @@ const COMMIT_WHILE_MERGING_MESSAGE = "This workspace is merging the remote's cha
 
 /** How many times a resolve commits the edits that landed under it and redoes the merge before leaving it for another try. */
 const MAX_MERGE_ATTEMPTS = 3
+
+/**
+ * At most this many bytes of JSON in one value of the user's own. A conflict is
+ * a field, a node or a file, and a whole record is what a copy pick is for; the
+ * same 256 KB the app allows one response schema keeps the merge row small and
+ * a paste from filling the database.
+ */
+const MAX_MERGE_VALUE_BYTES = 256 * 1024
+
+/**
+ * At most this many bytes of JSON across every value of the user's own in one
+ * resolve. One value is capped above, but a request can name ten thousand
+ * places; 4 MB is more than a merge's worth of hand-written fields and keeps
+ * the row, the database write and the IPC call bounded together.
+ */
+const MAX_MERGE_VALUES_BYTES = 4 * 1024 * 1024
 
 /** How many records one {@link GitSyncService.mergeRecordCommits} call reads commits for: a picker asks for what it lists. */
 const MAX_MERGE_RECORD_COMMITS = 500
@@ -861,7 +880,8 @@ export class GitSyncService {
     request: WorkspaceGitCommitRequest,
   ): Promise<void> {
     await this.prepareClone(workspaceId, directory, binding.branch, request)
-    if (!this.repositories.workspaceGit.setMergePicks(workspaceId, merge.baseCommit, picks)) {
+    const settled = await this.checkedMergePicks(merge, directory, picks)
+    if (!this.repositories.workspaceGit.setMergePicks(workspaceId, merge.baseCommit, settled)) {
       throw new ConflictError("The merge changed while it was being resolved. Open the merge again.")
     }
     if (await this.settleMerge(workspaceId, directory, request)) return
@@ -871,6 +891,39 @@ export class GitSyncService {
     this.markSyncing(workspaceId)
     await this.announce(workspaceId)
     if (await this.pushToRemote(workspaceId, directory, binding.branch)) this.settleIdle(workspaceId)
+  }
+
+  /**
+   * The picks a resolve may store. A value of the user's own must name a
+   * conflict the merge is listing — one that names none is dropped, as a copy
+   * pick that names none is ignored, because the conflicts have moved on — and
+   * must be one a workspace file may hold: no secret storage, at most
+   * {@link MAX_MERGE_VALUE_BYTES} of JSON (and {@link MAX_MERGE_VALUES_BYTES}
+   * of them together), text where the conflict is a whole file, and a whole
+   * record that keeps its own id. A value that is not the format's record is
+   * not this check's to refuse: the merge reports it at the record, with the
+   * format's reason.
+   */
+  private async checkedMergePicks(merge: WorkspaceMerge, directory: string, picks: readonly GitMergePick[]): Promise<readonly GitMergePick[]> {
+    const values = picks.filter((pick): pick is GitMergeValuePick => "value" in pick)
+    if (values.length === 0) return picks
+    const total = values.reduce((bytes, pick) => bytes + Buffer.byteLength(JSON.stringify(pick.value), "utf8"), 0)
+    if (total > MAX_MERGE_VALUES_BYTES) {
+      throw new ValidationError(
+        `Those values add up to ${total} bytes, and one merge request may carry at most ${MAX_MERGE_VALUES_BYTES}. Settle fewer places at once, or keep one copy instead.`,
+      )
+    }
+    const sides = picks.filter((pick) => !("value" in pick))
+    // The conflicts the copies' own picks leave: a value is asked about against the merge it will settle.
+    const conflicts = (await this.computeMerge({ ...merge, picks: sides }, directory)).result.conflicts
+    const listed = new Map(conflicts.map((conflict) => [pickPlaceOf(conflict.recordId, conflict.path), conflict.kind]))
+    return picks.filter((pick) => {
+      if (!("value" in pick)) return true
+      const kind = listed.get(pickPlaceOf(pick.recordId, pick.path))
+      if (kind === undefined) return false
+      assertMergeValueFits(pick, kind)
+      return true
+    })
   }
 
   /**
@@ -2377,6 +2430,39 @@ async function isRepository(directory: string): Promise<boolean> {
 /** git marks its objects read-only, and Windows can briefly hold a file git just closed: `rm` handles the first and retries the second. */
 function removeDirectory(directory: string): Promise<void> {
   return rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+}
+
+/** A pick's record and place as one key: what a listed conflict and a value pick are matched on. */
+function pickPlaceOf(recordId: string, path: string): string {
+  return JSON.stringify([recordId, path])
+}
+
+/** Refuse a value of the user's own that no workspace file may hold, in a sentence the dialog can show. */
+function assertMergeValueFits(pick: GitMergeValuePick, kind: GitMergeConflict["kind"]): void {
+  const bytes = Buffer.byteLength(JSON.stringify(pick.value), "utf8")
+  if (bytes > MAX_MERGE_VALUE_BYTES) {
+    throw new ValidationError(`That value is ${bytes} bytes, and one merge decision may carry at most ${MAX_MERGE_VALUE_BYTES}. Keep one copy instead, or shorten it.`)
+  }
+  try {
+    assertNoSecretValues(pick.value)
+  } catch {
+    throw new ValidationError("That value holds secret storage (ciphertext or another vault field), which no workspace file may. Keep one copy instead.")
+  }
+  if (kind === "file") {
+    if (typeof pick.value !== "string") throw new ValidationError(`That value is not text, and the conflict in ${pick.recordId} is on a whole file: give the file's text, or keep one copy.`)
+    return
+  }
+  if (pick.path === "") assertWholeRecordIdFits(pick, kind)
+}
+
+/** A whole record is written where the record it replaces is: one that renames itself would land under another id's file. */
+function assertWholeRecordIdFits(pick: GitMergeValuePick, kind: Exclude<GitMergeConflict["kind"], "file">): void {
+  const written = canonicalizeRecord(kind, pick.value)
+  if (!("document" in written)) return
+  const id = recordIdOf(kind, written.document)
+  if (id !== pick.recordId) {
+    throw new ValidationError(`That value is ${kind} ${id}, not ${pick.recordId}: a whole-record value must keep the record's own id.`)
+  }
 }
 
 /** The subject an auto commit gets: the one file it changed, or how many. */

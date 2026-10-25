@@ -348,12 +348,32 @@ describe("the resolveMerge bridge", () => {
     expect(resolveMerge).toHaveBeenCalledWith("ws-1", [PICK, { recordId: "README.md", path: "", side: "ours" }], {})
   })
 
+  it("passes a value of the user's own through as a decision of its own", async () => {
+    const { resolve, resolveMerge } = bridge()
+    const own = { recordId: "wf-1", path: "description", value: { note: ["kept", true, null] } }
+
+    await resolve([PICK, own])
+
+    expect(resolveMerge).toHaveBeenCalledWith("ws-1", [PICK, own], {})
+  })
+
+  it("refuses a decision carrying both a copy and a value, in a sentence rather than zod's JSON", async () => {
+    const { resolve, resolveMerge } = bridge()
+
+    await expect(resolve([{ ...PICK, value: "both" }])).rejects.toThrow(
+      "That is not a merge decision APIWeave can read: each decision names a record, a path in it, and either the copy to keep or a value of your own.",
+    )
+
+    expect(resolveMerge).not.toHaveBeenCalled()
+  })
+
   it.each([
     { what: "a side that is neither copy", picks: [{ ...PICK, side: "mine" }] },
     { what: "a record id over 4096 characters", picks: [{ ...PICK, recordId: "x".repeat(4097) }] },
     { what: "an empty record id", picks: [{ ...PICK, recordId: "" }] },
     { what: "a path over 4096 characters", picks: [{ ...PICK, path: "p".repeat(4097) }] },
     { what: "a field the pick does not have", picks: [{ ...PICK, extra: true }] },
+    { what: "neither a copy nor a value", picks: [{ recordId: "wf-1", path: "name" }] },
     { what: "more than 10,000 picks", picks: Array.from({ length: 10_001 }, () => PICK) },
     { what: "something that is not a list", picks: { 0: PICK } },
   ])("refuses $what before the sync service sees it", async ({ picks }) => {

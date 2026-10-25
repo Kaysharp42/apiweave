@@ -1,4 +1,4 @@
-import { canonicalizeRecord, recordIdOf, recordNameOf, type RecordDocument } from "../conflict-diff/canonicalize"
+import { canonicalizeRecord, recordIdOf, recordNameOf, type RecordDocument, type RecordRead } from "../conflict-diff/canonicalize"
 import { deepEqualJson, isPlainRecord, own } from "../conflict-diff/diff"
 import type { GitMergeConflict } from "../types/GitMergeConflict"
 import type { GitMergeNote } from "../types/GitMergeNote"
@@ -75,8 +75,20 @@ export function mergeRecord(
   const repaired = kind === "workflow" ? repairWorkflow(merged, copies, scope, notes, named) : merged
   const copy = [theirs, ours].find((candidate) => deepEqualJson(candidate, repaired))
   const written = copy === undefined ? canonicalizeRecord(kind, repaired) : { document: copy }
-  if ("document" in written) return resultOf(named, written.document, scope, [...notes, ...settledNotes(named, scope)])
+  if ("document" in written) return settleRecord(named, copies, scope, written.document, notes)
   return wholeCopy(named, copies, scope, written.invalid)
+}
+
+/**
+ * The merged record as its file holds it. A value of the user's own at `""`
+ * replaces the whole record, and a record is written where the record it
+ * replaces is — so one that renames itself is the conflict instead of a file
+ * named after another id.
+ */
+function settleRecord(named: Named, copies: Copies, scope: MergeScope, document: RecordDocument, notes: readonly GitMergeNote[]): GitMergeRecordResult {
+  const writtenId = recordIdOf(named.kind, document)
+  if (writtenId !== named.recordId) return wholeCopy(named, copies, scope, `it holds ${named.kind} ${writtenId}, not ${named.recordId}`)
+  return resultOf(named, document, scope, [...notes, ...settledNotes(named, scope)])
 }
 
 interface Named {
@@ -97,20 +109,41 @@ function resultOf(named: Named, merged: RecordDocument | undefined, scope: Merge
 }
 
 /**
- * A record whose fields merged into something no file may hold: one copy of
- * it whole. With every field settled, a pick at `""` says which; without one
- * that is the conflict, the remote copy standing for now. While fields are
- * still in conflict, their picks may yet make it valid, so the remote copy
- * stands for now and nothing more is asked.
+ * A record whose fields merged into something no file may hold: one value for
+ * it whole. With every field settled, a pick at `""` says which — a copy, or a
+ * value of the user's own; without one that is the conflict, the remote copy
+ * standing for now. A value of the user's own that is not a record of the
+ * format is the conflict, with the format's reason. While fields are still in
+ * conflict, their picks may yet make it valid, so the remote copy stands for
+ * now and nothing more is asked.
  */
 function wholeCopy(named: Named, copies: Copies, scope: MergeScope, invalid: string): GitMergeRecordResult {
   const settled = scope.clashes.length === 0
-  const side = settled ? pickFor(scope.picks, []) : undefined
-  if (settled && side === undefined) scope.clashes.push({ at: [], base: copies.base, ours: copies.ours, theirs: copies.theirs, invalid })
-  const copy = side === "ours" ? copies.ours : copies.theirs
+  const pick = settled ? pickFor(scope.picks, []) : undefined
+  const choice = pick === undefined ? undefined : wholeRecordChoice(named, copies, pick)
+  if (choice !== undefined && "document" in choice) return resultOf(named, choice.document, scope, [])
+  if (settled) scope.clashes.push({ at: [], base: copies.base, ours: copies.ours, theirs: copies.theirs, invalid: choice === undefined ? invalid : choice.invalid })
+  return resultOf(named, remoteCopy(named, copies), scope, [])
+}
+
+/** What one whole-record pick comes to: the record a copy or a value of the user's holds, or why it is not one. Undefined for a pick whose copy is gone. */
+function wholeRecordChoice(named: Named, copies: Copies, pick: GitMergePick): RecordRead | undefined {
+  const chosen = "value" in pick ? pick.value : pick.side === "ours" ? copies.ours : copies.theirs
+  if (chosen === undefined) return undefined
+  const written = canonicalizeRecord(named.kind, chosen)
+  if (!("document" in written)) return written
+  const id = recordIdOf(named.kind, written.document)
+  // A whole record is written where the record it replaces is: one that
+  // renames itself would land under a file named after another id.
+  return id === named.recordId ? written : { invalid: `it holds ${named.kind} ${id}, not ${named.recordId}` }
+}
+
+/** The remote copy as the record its file holds: what stands while a conflict waits, or the invariant that it is one. */
+function remoteCopy(named: Named, copies: Copies): RecordDocument {
+  const copy = copies.theirs
   const written = copy === undefined ? undefined : canonicalizeRecord(named.kind, copy)
   if (written === undefined || !("document" in written)) throw new Error(`${named.kind} ${named.recordId}: a copy that is not a valid record`)
-  return resultOf(named, written.document, scope, [])
+  return written.document
 }
 
 /** The rules each top-level field of a `kind` record merges by: its keyed arrays item by item (a workflow's nodes as nodes), the rest as any JSON. */
