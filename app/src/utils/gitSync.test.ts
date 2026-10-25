@@ -112,6 +112,19 @@ describe("describeGitSync", () => {
     expect(describeGitSync(trackedStatus({ readOnly: true })).explanation).toMatch(/^You can't push to this repo — your changes stay on this device/);
   });
 
+  it("says the copies share no history while a two-way merge waits, and after one is abandoned", () => {
+    const waiting = describeGitSync(trackedStatus({ state: "merging", unrelatedHistory: true }));
+    expect(waiting).toMatchObject({ kind: "attention", label: "Merge needed" });
+    expect(waiting.explanation).toMatch(/^This device and the remote have no history in common/);
+    expect(waiting.explanation).not.toMatch(/Both this device and the remote changed/);
+
+    const abandoned = describeGitSync(trackedStatus({ state: "diverged", unrelatedHistory: true }));
+    expect(abandoned).toMatchObject({ kind: "attention", label: "Diverged" });
+    expect(abandoned.explanation).toMatch(/^This device and the remote have no history in common, and the merge was abandoned/);
+    expect(abandoned.explanation).toMatch(/Sync now combines the two again/);
+    expect(abandoned.explanation).not.toMatch(/Both this device and the remote changed/);
+  });
+
   it("says a merge is needed, with no detail while it simply waits", () => {
     expect(describeGitSync(trackedStatus({ state: "merging", lastError: null }))).toMatchObject({
       kind: "attention",

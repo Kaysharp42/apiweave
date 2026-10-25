@@ -292,7 +292,9 @@ describe("VersionHistoryPanel", () => {
       await screen.findByRole("dialog", { name: "Resolve merge" }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/This device and the remote have no history in common/),
+      await within(screen.getByRole("dialog", { name: "Resolve merge" })).findByText(
+        /This device and the remote have no history in common/,
+      ),
     ).toBeInTheDocument();
   });
 

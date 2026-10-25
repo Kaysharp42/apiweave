@@ -28,11 +28,17 @@ export interface WorkspaceGitBinding {
   readonly integratingFrom: string | null
   /** The `gh`/`glab` account the remote is reached as; null: the user's own credential helpers and SSH keys. */
   readonly account: GitAccountRef | null
+  /**
+   * The last merge with the remote had no common ancestor. The merge row that
+   * says so goes when the merge ends, so the divergence an abandoned two-way
+   * merge leaves needs it to explain itself.
+   */
+  readonly unrelatedMerge: boolean
 }
 
 const COLUMNS =
   "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from, " +
-  "account_provider, account_host, account_login"
+  "account_provider, account_host, account_login, unrelated_merge"
 
 /** The account columns, set to the three values that follow, or to NULL by {@link accountValues} of null. */
 const SET_ACCOUNT = "account_provider = ?, account_host = ?, account_login = ?"
@@ -81,6 +87,7 @@ interface WorkspaceGitRow extends SqliteRow {
   readonly account_provider: string | null
   readonly account_host: string | null
   readonly account_login: string | null
+  readonly unrelated_merge: number
 }
 
 interface MergeRow extends SqliteRow {
@@ -192,7 +199,7 @@ export class WorkspaceGitRepository {
     return this.store.transaction((store) => {
       store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
       store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state IN ('merging', 'diverged')", [workspaceId])
-      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [
+      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD}, unrelated_merge = 0 WHERE workspace_id = ?`, [
         ...accountValues(null),
         workspaceId,
       ]).changes > 0
@@ -221,7 +228,7 @@ export class WorkspaceGitRepository {
     return { ...row, picks }
   }
 
-  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. A null base is a two-way merge. */
+  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. A null base is a two-way merge, and the row keeps that so a later divergence can say so. */
   public startMerge(
     workspaceId: string,
     baseCommit: string | null,
@@ -237,6 +244,7 @@ export class WorkspaceGitRepository {
         ourCommit,
         theirCommit,
       ])
+      store.set("UPDATE workspace_git SET unrelated_merge = ? WHERE workspace_id = ?", [baseCommit === null ? 1 : 0, workspaceId])
       this.insertPicks(store, workspaceId, baseCommit, picks)
     })
   }
@@ -297,6 +305,7 @@ function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
     lastSyncedAt: row.last_synced_at,
     integratingFrom: row.integrating_from,
     account: rowToAccount(row),
+    unrelatedMerge: row.unrelated_merge === 1,
   }
 }
 

@@ -452,6 +452,8 @@ describe("database migrations", () => {
         "theirs",
       ])
       expect(upgraded.kvStore.get("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", ["ws-1"])).toEqual({ base_commit: null })
+      // The divergence a two-way merge leaves needs to remember its basis after the row is gone.
+      expect(upgraded.kvStore.get("SELECT unrelated_merge FROM workspace_git WHERE workspace_id = ?", ["ws-1"])).toEqual({ unrelated_merge: 0 })
       expect(upgraded.database.pragma("foreign_key_check")).toEqual([])
     } finally {
       upgraded.close()

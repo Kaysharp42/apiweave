@@ -68,9 +68,10 @@ const NO_REPOSITORY: GitRepositoryDraft = {
  *
  * A created repository is empty, so it cannot hold a history of its own; a
  * connect that starts a merge all the same is reported as `mergeWaiting`
- * rather than as a sync that finished.
+ * rather than as a sync that finished. A connect that came back `error` bound
+ * the remote but could not prepare the merge, so its reason is the failure.
  */
-async function syncNewWorkspace(
+export async function syncNewWorkspace(
   workspaceId: string,
   account: GitAccount,
   draft: GitRepositoryDraft,
@@ -120,6 +121,12 @@ async function syncNewWorkspace(
   } catch (error) {
     return stop(
       connectFailedMessage(account, created.repository, errorText(error)),
+    );
+  }
+  if (connected.state === "error") {
+    return stop(
+      connected.lastError?.message ??
+        `${account.host}/${created.repository.fullName} was created and connected, but the workspace could not be prepared for it. Open Version history to retry.`,
     );
   }
   return {
