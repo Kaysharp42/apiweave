@@ -69,7 +69,7 @@ APIWeave can create the repository for it. See
   Projects, Workflows, Environments and Files on the left, each with its count
   and whether it is **Resolved**; the selected item's fields on the right as
   **Yours**, **Result** and **Remote**, with **»** and **«** arrows taking a
-  copy into the result (or **Use yours** and **Use theirs** when the columns
+  copy into the result (or **Use yours** and **Use remote** when the columns
   stack), an editable **Result**, and **Compare** for a read-only diff of a
   long value. **Accept yours** and **Accept remote** settle one item,
   **Accept all yours** and **Accept all remote** settle everything,
@@ -100,7 +100,7 @@ APIWeave can create the repository for it. See
 
 - **A waiting merge is settled in the merge view, not the old card picker.**
   The **Keep your copy** / **Keep remote copy** cards are gone; a field's
-  choice is now an arrow into the result, or **Use yours** / **Use theirs**
+  choice is now an arrow into the result, or **Use yours** / **Use remote**
   when the columns stack, and a whole record or file is **Accept yours** /
   **Accept remote**. Closing the view saves the choices instead of losing the
   ones not sent, and **Finish merge** still sends them all.

@@ -517,7 +517,7 @@ export const versionHistoryChapter: TutorialChapter = {
         "diverged",
         "yours result remote",
         "use yours",
-        "use theirs",
+        "use remote",
         "accept all",
         "compare",
         "own value",
@@ -584,7 +584,7 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Take a copy with the arrows",
           instruction:
-            "Click the » beside Yours to take this device's copy, or the « beside Remote for the remote's. The value moves into Result and the field reads Resolved. When the columns are stacked, the same choice is Use yours or Use theirs under the copy.",
+            "Click the » beside Yours to take this device's copy, or the « beside Remote for the remote's. The value moves into Result and the field reads Resolved. When the columns are stacked, the same choice is Use yours or Use remote under the copy.",
           detail:
             "A whole-record or whole-file conflict, or a record its copies cannot make valid, is a choice of copies only.",
         },
@@ -632,7 +632,7 @@ export const versionHistoryChapter: TutorialChapter = {
       example: {
         caption: "Where each choice lives in the merge view",
         language: "text",
-        code: "Header                This device ↔ github.com   2 of 5 conflicts resolved\n                      Accept all yours | Accept all remote\n                      3 changes merged automatically\nLeft list             Workspace  Projects  Workflows  Environments  Files\n                      Checkout  3  ·  1 left\nItem pane             Workflow · Checkout\n                      Your copy · Ada · 3f9a2c1 · 2026-10-20\n                      Remote copy · Sam · 8b1d4e2 · 2026-10-21\n                      Accept yours | Accept remote\nA field               Yours | » Result (editable) « | Remote\n                      Use yours / Use theirs when the view is narrow\n                      Compare → read-only diff of a long value\nFooter                Abandon merge  Previous conflict  Next conflict  Finish merge",
+        code: "Header                This device ↔ github.com   2 of 5 conflicts resolved\n                      Accept all yours | Accept all remote\n                      3 changes merged automatically\nLeft list             Workspace  Projects  Workflows  Environments  Files\n                      Checkout  3  ·  1 left\nItem pane             Workflow · Checkout\n                      Your copy · Ada · 3f9a2c1 · 2026-10-20\n                      Remote copy · Sam · 8b1d4e2 · 2026-10-21\n                      Accept yours | Accept remote\nA field               Yours | » Result (editable) « | Remote\n                      Use yours / Use remote when the view is narrow\n                      Compare → read-only diff of a long value\nFooter                Abandon merge  Previous conflict  Next conflict  Finish merge",
       },
       expectedResult:
         "Every conflict is settled by a copy or by a value you typed, the notes say what the merge repaired, and the merge commit is imported and pushed — including a two-way merge with a repository whose history was restarted.",
