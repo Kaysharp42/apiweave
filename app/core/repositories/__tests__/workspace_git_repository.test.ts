@@ -21,6 +21,76 @@ afterEach(() => {
   db.close()
 })
 
+describe("a merge waiting for the user", () => {
+  const PICK = { recordId: "wf", path: "name", side: "ours" as const }
+  const VALUE = { recordId: "wf", path: "description", value: { note: ["kept", true, null] } }
+
+  it("holds a two-way merge with no base commit, and reads its picks back", () => {
+    workspaceGit.startMerge(workspaceId, null, "ours".repeat(10), "theirs".repeat(10), [PICK])
+
+    expect(workspaceGit.getMerge(workspaceId)).toEqual({
+      workspaceId,
+      baseCommit: null,
+      ourCommit: "ours".repeat(10),
+      theirCommit: "theirs".repeat(10),
+      picks: [PICK],
+    })
+  })
+
+  it("round-trips a value of the user's own beside a copy pick", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [PICK, VALUE])
+
+    // In record and path order, whatever order they were made in.
+    expect(workspaceGit.getMerge(workspaceId)?.picks).toEqual([VALUE, PICK])
+  })
+
+  it("refuses a pick row that carries both a copy and a value, or neither", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+    db.kvStore.set("INSERT INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, 'base', 'wf', 'a', 'ours', '\"x\"')", [
+      workspaceId,
+    ])
+    expect(() => workspaceGit.getMerge(workspaceId)).toThrow(/holds both a side and a value/)
+
+    db.kvStore.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, 'base', 'wf', 'a', NULL, NULL)", [
+      workspaceId,
+    ])
+    expect(() => workspaceGit.getMerge(workspaceId)).toThrow(/holds neither a side nor a value/)
+  })
+
+  it("replaces the picks only for the merge's own base, two-way's null included", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+
+    expect(workspaceGit.setMergePicks(workspaceId, "base", [PICK])).toBe(true)
+    expect(workspaceGit.getMerge(workspaceId)?.picks).toEqual([PICK])
+    expect(workspaceGit.setMergePicks(workspaceId, "another", [])).toBe(false)
+
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [])
+    expect(workspaceGit.setMergePicks(workspaceId, null, [PICK])).toBe(true)
+    expect(workspaceGit.getMerge(workspaceId)).toMatchObject({ baseCommit: null, picks: [PICK] })
+  })
+
+  it("remembers a two-way merge's basis past the row, so an abandoned one can still explain itself", () => {
+    workspaceGit.startMerge(workspaceId, "base", "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [])
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(true)
+
+    workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
+    workspaceGit.clearRemote(workspaceId)
+    expect(workspaceGit.get(workspaceId)?.unrelatedMerge).toBe(false)
+  })
+
+  it("goes with the remote the merge waited on", () => {
+    workspaceGit.setRemote(workspaceId, "https://github.com/acme/tests.git", "main", null)
+    workspaceGit.startMerge(workspaceId, null, "ours", "theirs", [PICK])
+
+    workspaceGit.clearRemote(workspaceId)
+
+    expect(workspaceGit.getMerge(workspaceId)).toBeUndefined()
+  })
+})
+
 describe("a workspace's git account", () => {
   it("is none until a remote is bound with one", () => {
     expect(workspaceGit.get(workspaceId)?.account).toBeNull()

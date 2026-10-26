@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import type { JsonValue } from "@shared/types/JsonValue"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
@@ -288,6 +289,42 @@ function pushFromElsewhere(
   return rawGit(scratch, sandbox.env, "rev-parse", "HEAD").trim()
 }
 
+/**
+ * A brand-new root history holding `files`, force-pushed over the remote's
+ * branch: what stopping and restarting tracking on another device leaves — the
+ * same workspace with no commit in common.
+ */
+function pushNewRootFromElsewhere(
+  sandbox: GitSandbox,
+  remote: { dir: string; url: string },
+  files: ReadonlyMap<string, string>,
+  message: string,
+): string {
+  const scratch = path.join(sandbox.root, `new-root-${++elsewhereCount}`)
+  rawGit(sandbox.root, sandbox.env, "init", "--initial-branch=main", scratch)
+  for (const [name, content] of files) {
+    const full = path.join(scratch, ...name.split("/"))
+    fs.mkdirSync(path.dirname(full), { recursive: true })
+    fs.writeFileSync(full, content)
+  }
+  rawGit(scratch, sandbox.env, "add", "-A")
+  rawGit(scratch, sandbox.env, "-c", "user.name=Someone Else", "-c", "user.email=someone@example.invalid", "commit", "-m", message)
+  rawGit(scratch, sandbox.env, "push", "--force", remote.url, "main")
+  return rawGit(scratch, sandbox.env, "rev-parse", "HEAD").trim()
+}
+
+/** `files` with the workspace record's fields replaced, as another device would have written it. */
+function withWorkspace(
+  files: ReadonlyMap<string, string>,
+  fields: { readonly workspaceId?: string; readonly name?: string },
+): Map<string, string> {
+  const tree = new Map(files)
+  const text = tree.get("workspace.json")
+  if (text === undefined) throw new Error("the tree holds no workspace.json")
+  tree.set("workspace.json", JSON.stringify({ ...(JSON.parse(text) as Record<string, unknown>), ...fields }))
+  return tree
+}
+
 /** Plain git fed `input` on stdin, for the plumbing that reads it: `hash-object --stdin`, `mktree`. */
 function rawGitInput(cwd: string, env: NodeJS.ProcessEnv, input: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, env, input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim()
@@ -537,12 +574,12 @@ describe("the sync cycle", () => {
       expect(merge).toMatchObject({ ourCommit: bHead, theirCommit: aHead })
       expect(merge?.picks).toEqual([])
 
-      const conflicts = await b.sync.mergeConflicts(opened)
+      const conflicts = (await b.sync.mergeState(opened)).conflicts
       expect(conflicts).toEqual([
         { kind: "workflow", recordId: sharedId, path: "name", name: "On B", base: "Shared", ours: "On B", theirs: "On A" },
       ])
       // Deterministic: the same trees and picks always give the same list.
-      expect(await b.sync.mergeConflicts(opened)).toEqual(conflicts)
+      expect((await b.sync.mergeState(opened)).conflicts).toEqual(conflicts)
 
       // The database and the checkout still hold our copy; there is no merge commit and nothing was pushed.
       expect(b.repositories.workflows.getById(sharedId)?.name).toBe("On B")
@@ -557,7 +594,7 @@ describe("the sync cycle", () => {
       expect((await b.sync.resolveMerge(opened, [])).state).toBe("merging")
       expect(headOf(b, opened)).toBe(bHead)
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
-      expect(await b.sync.mergeConflicts(opened)).toEqual(conflicts)
+      expect((await b.sync.mergeState(opened)).conflicts).toEqual(conflicts)
       expect(headOf(a, workspaceId)).toBe(aHead)
     })
 
@@ -594,9 +631,9 @@ describe("the sync cycle", () => {
       b.repositories.workspaceGit.setMergePicks(opened, merge.baseCommit, stored)
 
       // The set a reopened picker seeds from, in the merge's own order.
-      expect(await b.sync.mergePicks(opened)).toEqual(stored)
+      expect((await b.sync.mergeState(opened)).picks).toEqual(stored)
       // The other device is on the same remote, but it is not the one merging.
-      expect(await a.sync.mergePicks(workspaceId)).toEqual([])
+      expect((await a.sync.mergeState(workspaceId)).picks).toEqual([])
     })
 
     it("has no commit for a side that does not hold the record", async () => {
@@ -662,13 +699,14 @@ describe("the sync cycle", () => {
       b.repositories.workflows.update(sharedId, { name: "On B", description: "From B" })
       expect(await b.sync.syncNow(opened, { message: "Change both on B" })).toMatchObject({ state: "merging" })
       const bHead = headOf(b, opened)
-      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description", "name"])
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
 
       const partial = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])
 
       expect(partial).toMatchObject({ state: "merging" })
-      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description"])
-      expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([{ recordId: sharedId, path: "name", side: "theirs" }])
+      // The list is every conflict the merge has, whatever the picks settle.
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
+      expect((await b.sync.mergeState(opened)).picks).toEqual([{ recordId: sharedId, path: "name", side: "theirs" }])
       // Nothing was committed or pushed: the pick waits with the merge.
       expect(headOf(b, opened)).toBe(bHead)
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
@@ -691,7 +729,7 @@ describe("the sync cycle", () => {
       const aHead = headOf(a, workspaceId)
       b.repositories.workflows.update(sharedId, { name: "Changed on B" })
       expect(await b.sync.syncNow(opened, { message: "Change on B" })).toMatchObject({ state: "merging" })
-      const conflicts = await b.sync.mergeConflicts(opened)
+      const conflicts = (await b.sync.mergeState(opened)).conflicts
       expect(conflicts).toHaveLength(1)
       expect(conflicts[0]).toMatchObject({ kind: "workflow", recordId: sharedId, path: "", ours: { name: "Changed on B" } })
       expect(conflicts[0]).not.toHaveProperty("theirs")
@@ -726,7 +764,7 @@ describe("the sync cycle", () => {
       b.repositories.workflows.delete(sharedId)
       expect(await b.sync.syncNow(opened, { message: "Delete on B" })).toMatchObject({ state: "merging" })
       const bHead = headOf(b, opened)
-      const conflicts = await b.sync.mergeConflicts(opened)
+      const conflicts = (await b.sync.mergeState(opened)).conflicts
       expect(conflicts).toHaveLength(1)
       expect(conflicts[0]).toMatchObject({ kind: "workflow", recordId: sharedId, path: "", theirs: { name: "Changed on A" } })
       expect(conflicts[0]).not.toHaveProperty("ours")
@@ -797,7 +835,7 @@ describe("the sync cycle", () => {
       await b.sync.reconcile()
       expect(binding(b, opened)).toMatchObject({ state: "merging", lastError: null })
       expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual(picks)
-      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description"])
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
       // Nothing was imported in the meantime: our copy is still the database's.
       expect(b.repositories.workflows.getById(sharedId)).toMatchObject({ name: "On B", description: "From B" })
 
@@ -831,7 +869,7 @@ describe("the sync cycle", () => {
       expect(binding(b, opened)).toMatchObject({ state: "merging", integratingFrom: null })
       expect(headOf(b, opened)).toBe(bHead)
       expect(await subjectsOf(b, opened)).not.toContain("Merge the remote's changes")
-      expect(await b.sync.mergeConflicts(opened)).toHaveLength(1)
+      expect((await b.sync.mergeState(opened)).conflicts).toHaveLength(1)
       // Repairing never writes to the remote, and no cycle pushes the database over it.
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
 
@@ -878,7 +916,7 @@ describe("the sync cycle", () => {
       // Sync now asks for the merge again, with the edit committed as ours and no picks left over.
       expect(await b.sync.syncNow(opened)).toMatchObject({ state: "merging" })
       expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([])
-      expect((await b.sync.mergeConflicts(opened)).map((conflict) => conflict.path)).toEqual(["description", "name"])
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
       expect(b.repositories.workflows.getById(uncommitted.workflowId)?.name).toBe("Edit before abandoning")
       expect(await subjectsOf(b, opened)).toContainEqual(expect.stringContaining("Update workflows/"))
     })
@@ -962,7 +1000,7 @@ describe("the sync cycle", () => {
       expect(await subjectsOf(b, opened)).toEqual(subjects)
       expect(remoteHead(sandbox, remote.dir)).toBe(remoteAt)
       expect(binding(b, opened).state).toBe("merging")
-      expect(await b.sync.mergeConflicts(opened)).toHaveLength(1)
+      expect((await b.sync.mergeState(opened)).conflicts).toHaveLength(1)
       expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([])
       expect(b.repositories.workflows.getById(edit.workflowId)?.name).toBe("While merging")
     })
@@ -1114,7 +1152,7 @@ describe("the sync cycle", () => {
         theirCommit: aAgain,
         picks: [],
       })
-      expect(await b.sync.mergeConflicts(opened)).toEqual([
+      expect((await b.sync.mergeState(opened)).conflicts).toEqual([
         { kind: "workflow", recordId: sharedId, path: "name", name: "On B", base: "On A", ours: "On B", theirs: "On A again" },
       ])
       expect(remoteHead(sandbox, remote.dir)).toBe(aAgain)
@@ -1284,9 +1322,9 @@ describe("the sync cycle", () => {
       expect(b.repositories.workflows.getById(after.workflowId)).toBeDefined()
     })
 
-    it("drops a merge whose history folder was deleted: the recreated history is unrelated, and the next sync says so", async () => {
+    it("recreates a deleted history and merges it two ways with the remote's copy of the same workspace", async () => {
       const pair = await sharedPair()
-      const { b, sandbox, remote, opened } = pair
+      const { b, sandbox, remote, opened, sharedId } = pair
       const { aHead } = await renameConflict(pair)
       await b.restart()
       fs.rmSync(dirOf(b, opened), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
@@ -1297,15 +1335,297 @@ describe("the sync cycle", () => {
       expect(b.repositories.workspaceGit.getMerge(opened)).toBeUndefined()
       expect(await subjectsOf(b, opened)).toEqual(["Recreate this workspace's repository from APIWeave"])
 
+      // The recreated history shares no commit with the remote's, but it is the
+      // same workspace, so the two merge with no ancestor rather than stopping.
       const synced = await b.sync.syncNow(opened)
-      expect(synced).toMatchObject({ state: "error", lastError: { code: null } })
-      expect(synced.lastError?.message).toMatch(/holds history this workspace did not come from/)
+      expect(synced).toMatchObject({ state: "merging", lastError: null, unrelatedHistory: true })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: aHead })
+      expect((await b.sync.mergeState(opened)).conflicts).toEqual([
+        { kind: "workflow", recordId: sharedId, name: "On B", path: "name", ours: "On B", theirs: "On A" },
+      ])
+      // Nothing was pushed or imported while it waits.
       expect(remoteHead(sandbox, remote.dir)).toBe(aHead)
+      expect(b.repositories.workflows.getById(sharedId)?.name).toBe("On B")
 
-      // What the message offers works: discarding loads the remote's version.
-      expect(await b.sync.discardLocalChanges(opened)).toMatchObject({ state: "idle", lastError: null })
-      expect(headOf(b, opened)).toBe(aHead)
-      expect(b.repositories.workflows.getById(pair.sharedId)?.name).toBe("On A")
+      const resolved = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])
+      expect(resolved).toMatchObject({ state: "idle", lastError: null, unrelatedHistory: false })
+      expect(b.repositories.workflows.getById(sharedId)?.name).toBe("On A")
+      const head = await headCommitOf(b, opened)
+      expect(head.parents).toHaveLength(2)
+      expect(head.parents).toContain(aHead)
+      expect(remoteHead(sandbox, remote.dir)).toBe(head.sha)
+    })
+
+    describe("a value of the user's own", () => {
+      it("resolves with a copy pick for one conflict and a value of the user's own for another", async () => {
+        const pair = await sharedPair()
+        const { a, b, sandbox, remote, workspaceId, opened, sharedId } = pair
+        a.repositories.workflows.update(sharedId, { name: "On A", description: "From A" })
+        await a.sync.syncNow(workspaceId, { message: "Change two on A" })
+        const aHead = headOf(a, workspaceId)
+        b.repositories.workflows.update(sharedId, { name: "On B", description: "From B" })
+        expect(await b.sync.syncNow(opened, { message: "Change two on B" })).toMatchObject({ state: "merging" })
+        const bHead = headOf(b, opened)
+        expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
+
+        const resolved = await b.sync.resolveMerge(opened, [
+          { recordId: sharedId, path: "description", value: "Written by hand" },
+          { recordId: sharedId, path: "name", side: "theirs" },
+        ])
+
+        expect(resolved).toMatchObject({ state: "idle", lastError: null })
+        expect(b.repositories.workspaceGit.getMerge(opened)).toBeUndefined()
+        expect(b.repositories.workflows.getById(sharedId)).toMatchObject({ name: "On A", description: "Written by hand" })
+        const head = await headCommitOf(b, opened)
+        expect(head.parents).toEqual([bHead, aHead])
+        expect(remoteHead(sandbox, remote.dir)).toBe(head.sha)
+        expect(cloneText(b, opened, workflowFileOf(b, opened, sharedId))).toMatch(/"description": "Written by hand"/)
+        expect(cloneText(b, opened, workflowFileOf(b, opened, sharedId))).toMatch(/"name": "On A"/)
+      })
+
+      it("drops a value that names no conflict while another keeps the merge waiting", async () => {
+        const pair = await sharedPair()
+        const { a, b, workspaceId, opened, sharedId } = pair
+        a.repositories.workflows.update(sharedId, { name: "On A", description: "From A" })
+        await a.sync.syncNow(workspaceId, { message: "Change two on A" })
+        b.repositories.workflows.update(sharedId, { name: "On B", description: "From B" })
+        expect(await b.sync.syncNow(opened, { message: "Change two on B" })).toMatchObject({ state: "merging" })
+
+        const stopped = await b.sync.resolveMerge(opened, [
+          { recordId: sharedId, path: "selectedEnvironmentId", value: "env_typed" },
+          { recordId: sharedId, path: "name", side: "theirs" },
+        ])
+
+        expect(stopped).toMatchObject({ state: "merging" })
+        // The stale value is gone from what the merge stored, and the conflict it never named is still waiting.
+        expect((await b.sync.mergeState(opened)).picks).toEqual([{ recordId: sharedId, path: "name", side: "theirs" }])
+        expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
+      })
+
+      it("refuses a whole-record value that renames the record, rather than writing it under another id's file", async () => {
+        const pair = await sharedPair()
+        const { a, b, workspaceId, opened, sharedId } = pair
+        a.repositories.workflows.delete(sharedId)
+        await a.sync.syncNow(workspaceId, { message: "Delete on A" })
+        b.repositories.workflows.update(sharedId, { name: "Kept on B" })
+        expect(await b.sync.syncNow(opened, { message: "Change on B" })).toMatchObject({ state: "merging" })
+        expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual([""])
+
+        const file = workflowFileOf(b, opened, sharedId)
+        const theirs = JSON.parse(cloneText(b, opened, file)) as Record<string, JsonValue>
+        const stopped = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "", value: { ...theirs, workflowId: "wf_other" } }])
+
+        expect(stopped).toMatchObject({ state: "merging" })
+        expect(stopped.lastError?.message).toMatch(/must keep the record's own id/)
+        expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([])
+      })
+
+      it("refuses values that add up to more than one request may carry, and keeps the merge waiting", async () => {
+        const pair = await sharedPair()
+        const { b, opened, sharedId } = pair
+        await renameConflict(pair)
+
+        const stopped = await b.sync.resolveMerge(
+          opened,
+          Array.from({ length: 20 }, () => ({ recordId: sharedId, path: "name", value: "x".repeat(230 * 1024) })),
+        )
+
+        expect(stopped).toMatchObject({ state: "merging" })
+        expect(stopped.lastError?.message).toMatch(/add up to \d+ bytes, and one merge request may carry at most 4194304/)
+        expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([])
+      })
+
+      it("refuses a value holding secret storage, and keeps the merge waiting", async () => {
+        const pair = await sharedPair()
+        const { b, opened, sharedId } = pair
+        await renameConflict(pair)
+
+        const stopped = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", value: { ciphertext: "c2VjcmV0" } }])
+
+        expect(stopped).toMatchObject({ state: "merging" })
+        expect(stopped.lastError?.message).toMatch(/holds secret storage/)
+        expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual([])
+      })
+
+      it("refuses a value larger than one decision may carry, and keeps the merge waiting", async () => {
+        const pair = await sharedPair()
+        const { b, opened, sharedId } = pair
+        await renameConflict(pair)
+
+        const stopped = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", value: "x".repeat(256 * 1024 + 1) }])
+
+        expect(stopped).toMatchObject({ state: "merging" })
+        expect(stopped.lastError?.message).toMatch(/may carry at most 262144/)
+      })
+
+      it("stores a value no file may hold, keeps the merge waiting, and lets a copy settle it", async () => {
+        const pair = await sharedPair()
+        const { b, opened, sharedId } = pair
+        await renameConflict(pair)
+
+        const stopped = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", value: "" }])
+
+        expect(stopped).toMatchObject({ state: "merging", lastError: null })
+        // The conflict list is computed with no picks, so it stays the merge's own.
+        const state = await b.sync.mergeState(opened)
+        expect(state.conflicts.map((conflict) => conflict.path)).toEqual(["name"])
+        expect(state.picks).toEqual([{ recordId: sharedId, path: "name", value: "" }])
+
+        // Keeping one copy is the way out, as the invalid path says.
+        const resolved = await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])
+        expect(resolved).toMatchObject({ state: "idle", lastError: null })
+      })
+
+      it("settles a whole-file conflict with text of the user's own, and refuses a value that is not text", async () => {
+        const pair = await sharedPair()
+        const { b, sandbox, remote, opened } = pair
+        // The remote gains a README; this device takes it, edits it and commits it.
+        pushFromElsewhere(sandbox, remote, { "README.md": "# Shared\n" }, "Add a readme")
+        expect(await b.sync.syncNow(opened)).toMatchObject({ state: "idle" })
+        fs.writeFileSync(path.join(dirOf(b, opened), "README.md"), "# Mine\n")
+        await b.sync.commitLocal(opened, { message: "Edit the readme here" })
+        // Another device changes it on the remote too.
+        pushFromElsewhere(sandbox, remote, { "README.md": "# Remote\n" }, "Edit the readme there")
+        expect(await b.sync.syncNow(opened)).toMatchObject({ state: "merging" })
+        expect((await b.sync.mergeState(opened)).conflicts).toEqual([
+          { kind: "file", recordId: "README.md", name: "README.md", path: "", base: "# Shared\n", ours: "# Mine\n", theirs: "# Remote\n" },
+        ])
+
+        const refused = await b.sync.resolveMerge(opened, [{ recordId: "README.md", path: "", value: { not: "text" } }])
+        expect(refused).toMatchObject({ state: "merging" })
+        expect(refused.lastError?.message).toMatch(/is not text/)
+
+        const resolved = await b.sync.resolveMerge(opened, [{ recordId: "README.md", path: "", value: "# Together\n" }])
+        expect(resolved).toMatchObject({ state: "idle", lastError: null })
+        expect(cloneText(b, opened, "README.md")).toBe("# Together\n")
+        expect(remoteHead(sandbox, remote.dir)).toBe(headOf(b, opened))
+      })
+    })
+
+    it("reads the merge in one call: every conflict, the decisions, and the notes with them", async () => {
+      const pair = await sharedPair()
+      const { a, b, workspaceId, opened, sharedId } = pair
+      const node = (x: number) => [{ nodeId: "n1", type: "delay", position: { x, y: 0 }, config: { duration: 1 } }]
+      a.repositories.workflows.update(sharedId, { name: "On A", nodes: node(0) })
+      await a.sync.syncNow(workspaceId, { message: "Move on A" })
+      b.repositories.workflows.update(sharedId, { name: "On B", nodes: node(100) })
+      expect(await b.sync.syncNow(opened, { message: "Move on B" })).toMatchObject({ state: "merging" })
+
+      const before = await b.sync.mergeState(opened)
+      expect(before.conflicts.map((conflict) => conflict.path)).toEqual(["name"])
+      expect(before.picks).toEqual([])
+      expect(before.notes).toEqual([
+        { type: "positions", recordId: sharedId, name: "On B", nodeIds: ["n1"] },
+      ])
+
+      const head = headOf(b, opened)
+      const saved = await b.sync.saveMergePicks(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])
+
+      // Storing a decision changes neither the conflict list nor where the merge stands.
+      expect(saved.conflicts.map((conflict) => conflict.path)).toEqual(["name"])
+      expect(saved.picks).toEqual([{ recordId: sharedId, path: "name", side: "theirs" }])
+      expect(binding(b, opened)).toMatchObject({ state: "merging", lastError: null })
+      expect(headOf(b, opened)).toBe(head)
+      // The notes asked about with those picks are the merge's with them.
+      expect((await b.sync.mergeState(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])).notes).toEqual(
+        before.notes,
+      )
+      // A workspace with no merge waiting has nothing to report, and reads nothing.
+      expect(await a.sync.mergeState(workspaceId)).toEqual({ conflicts: [], picks: [], notes: [] })
+    })
+
+    it("computes the notes with the decisions it is asked about, and checks them first", async () => {
+      const pair = await sharedPair()
+      const { a, b, workspaceId, opened, sharedId } = pair
+      const node = (nodeId: string, duration = 1) => ({ nodeId, type: "delay", position: { x: 0, y: 0 }, config: { duration } })
+      a.repositories.workflows.update(sharedId, {
+        nodes: [node("n1"), node("n2")],
+        edges: [{ edgeId: "e1", source: "n1", target: "n2" }],
+      })
+      await a.sync.syncNow(workspaceId, { message: "Add a graph on A" })
+      await b.sync.syncNow(opened)
+      // The remote changes the node the edge comes from and relabels the edge;
+      // this device removes both, so the node is a real conflict.
+      a.repositories.workflows.update(sharedId, {
+        nodes: [node("n1", 5), node("n2")],
+        edges: [{ edgeId: "e1", source: "n1", target: "n2", label: "go" }],
+      })
+      await a.sync.syncNow(workspaceId, { message: "Change n1 on A" })
+      b.repositories.workflows.update(sharedId, { nodes: [node("n2")], edges: [] })
+      expect(await b.sync.syncNow(opened, { message: "Remove n1 on B" })).toMatchObject({ state: "merging" })
+
+      const stored = await b.sync.mergeState(opened)
+      expect(stored.conflicts.map((conflict) => conflict.path).sort()).toEqual(["edges.e1", "nodes.n1"])
+      expect(stored.notes).toEqual([])
+
+      // Keeping this device's deletion makes the edge dangle, which the merge notes.
+      const dryRun = await b.sync.mergeState(opened, [{ recordId: sharedId, path: "nodes.n1", side: "ours" }])
+      expect(dryRun.notes).toEqual([
+        { type: "droppedEdge", recordId: sharedId, name: "Shared", edgeId: "e1", end: "source", nodeId: "n1" },
+      ])
+
+      // A dry run is checked as a save is: a value no file may hold is refused.
+      await expect(
+        b.sync.mergeState(opened, [{ recordId: sharedId, path: "nodes.n1", value: { ciphertext: "c2VjcmV0" } }]),
+      ).rejects.toThrow(/holds secret storage/)
+      // And nothing was stored by either read.
+      expect((await b.sync.mergeState(opened)).picks).toEqual([])
+    })
+
+    it("saves decisions with the same checks a resolve makes, and refuses a secret one", async () => {
+      const pair = await sharedPair()
+      const { b, opened, sharedId } = pair
+      await renameConflict(pair)
+
+      expect(
+        await b.sync.saveMergePicks(opened, [
+          { recordId: sharedId, path: "name", side: "theirs" },
+          { recordId: sharedId, path: "selectedEnvironmentId", value: "stale" },
+        ]),
+      ).toMatchObject({ picks: [{ recordId: sharedId, path: "name", side: "theirs" }] })
+
+      await expect(
+        b.sync.saveMergePicks(opened, [{ recordId: sharedId, path: "name", value: { ciphertext: "c2VjcmV0" } }]),
+      ).rejects.toThrow(/holds secret storage/)
+      // The refused save left the earlier decision as it was.
+      expect((await b.sync.mergeState(opened)).picks).toEqual([
+        { recordId: sharedId, path: "name", side: "theirs" },
+      ])
+    })
+
+    it("survives a restart with no base: the row and its picks are kept, the conflicts recomputed, and Resolve finishes it", async () => {
+      const pair = await sharedPair()
+      const { b, sandbox, remote, opened, sharedId } = pair
+      // A fresh root of this same workspace, differing in two fields.
+      const files = treeOf(b, opened)
+      const file = workflowFileOf(b, opened, sharedId)
+      const workflow = JSON.parse(files.get(file)!) as { name: string; description: string }
+      files.set(file, JSON.stringify({ ...workflow, name: "Remote name", description: "Remote description" }))
+      const theirs = pushNewRootFromElsewhere(sandbox, remote, files, "Restart tracking elsewhere")
+
+      expect(await b.sync.syncNow(opened)).toMatchObject({ state: "merging", unrelatedHistory: true })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: theirs })
+      // One decision is made; the other conflict keeps the merge waiting.
+      expect(await b.sync.resolveMerge(opened, [{ recordId: sharedId, path: "name", side: "theirs" }])).toMatchObject({ state: "merging" })
+      const picks = [{ recordId: sharedId, path: "name", side: "theirs" as const }]
+      expect(b.repositories.workspaceGit.getMerge(opened)?.picks).toEqual(picks)
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
+
+      await b.restart()
+      await b.sync.reconcile()
+
+      // The merge the app quit under is repaired from its row, not dropped.
+      expect(binding(b, opened)).toMatchObject({ state: "merging", lastError: null })
+      expect(b.repositories.workspaceGit.getMerge(opened)).toMatchObject({ baseCommit: null, theirCommit: theirs, picks })
+      expect(((await b.sync.mergeState(opened)).conflicts).map((conflict) => conflict.path)).toEqual(["description", "name"])
+
+      const resolved = await b.sync.resolveMerge(opened, [...picks, { recordId: sharedId, path: "description", side: "theirs" }])
+
+      expect(resolved).toMatchObject({ state: "idle", lastError: null })
+      const head = await headCommitOf(b, opened)
+      expect(head.parents).toHaveLength(2)
+      expect(remoteHead(sandbox, remote.dir)).toBe(head.sha)
+      expect(b.repositories.workflows.getById(sharedId)).toMatchObject({ name: "Remote name", description: "Remote description" })
     })
 
     it("takes the author Sync now names while merging, and clears the missing-author error a resolve left", async () => {
@@ -2212,7 +2532,7 @@ describe("the sync cycle", () => {
     failFetch = false
     await elapse(b, SYNC_INTERVAL_MS)
     expect(await b.sync.status(opened)).toMatchObject({ state: "diverged", incoming: 1, outgoing: 1 })
-    expect(await b.sync.mergeConflicts(opened)).toEqual([])
+    expect((await b.sync.mergeState(opened)).conflicts).toEqual([])
   })
 
   it("ends a retried push the remote raced again as a retryable error, and the next pass merges and pushes", async () => {
@@ -2285,6 +2605,22 @@ describe("the sync cycle", () => {
     await b.sync.start()
     expect(binding(b, opened)).toMatchObject({ state: "error", lastError: { message: status.lastError?.message } })
     expect(remoteHead(sandbox, remote.dir)).toBe(replaced)
+  })
+
+  it("refuses a remote whose branch now holds another workspace's tree, and pushes nothing", async () => {
+    const pair = await sharedPair()
+    const { b, sandbox, remote, opened } = pair
+    // A readable, valid tree — of a different workspace.
+    const theirs = pushNewRootFromElsewhere(sandbox, remote, withWorkspace(treeOf(b, opened), { workspaceId: "ws_other", name: "Other" }), "Another workspace")
+    b.repositories.workflows.create({ workspaceId: opened, name: "B's work" })
+
+    const status = await b.sync.syncNow(opened, { message: "Add B's work" })
+
+    expect(status).toMatchObject({ state: "error", lastError: { code: null } })
+    expect(status.lastError?.message).toMatch(/^The remote's branch holds history this workspace did not come from.*Discard local changes/)
+    expect(await subjectsOf(b, opened)).toContain("Add B's work")
+    expect(remoteHead(sandbox, remote.dir)).toBe(theirs)
+    expect(b.repositories.workspaceGit.getMerge(opened)).toBeUndefined()
   })
 
   describe("a clone left ahead of its database", () => {

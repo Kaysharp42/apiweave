@@ -16,9 +16,21 @@ export function mergeCommitSubject(
   return commit === null ? null : commit.subject;
 }
 
-/** How many places still need a decision, in the picker's words. */
-export function describeConflictCount(count: number): string {
-  return count === 1
-    ? "1 conflict left to decide."
-    : `${count} conflicts left to decide.`;
+/**
+ * How many record ids one read of merge commits asks about: the picker reads
+ * what it lists, and the rest say their details are unavailable rather than
+ * silently showing none.
+ */
+export const MAX_MERGE_COMMIT_RECORDS = 500;
+
+/** The record ids a read covers, and those it leaves unread: the first in the merge's order. */
+export function splitMergeCommitIds(recordIds: readonly string[]): {
+  readonly read: readonly string[];
+  readonly unread: ReadonlySet<string>;
+} {
+  const unique = [...new Set(recordIds)];
+  return {
+    read: unique.slice(0, MAX_MERGE_COMMIT_RECORDS),
+    unread: new Set(unique.slice(MAX_MERGE_COMMIT_RECORDS)),
+  };
 }

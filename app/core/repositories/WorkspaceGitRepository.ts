@@ -3,6 +3,7 @@ import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import { isGitProvider } from "@shared/types/GitProvider"
 import type { GitMergePick } from "@shared/types/GitMergePick"
 import type { GitMergeSide } from "@shared/types/GitMergeSide"
+import type { JsonValue } from "@shared/types/JsonValue"
 import { isWorkspaceGitMode, type WorkspaceGitMode } from "@shared/types/WorkspaceGitMode"
 import type { WorkspaceGitError } from "@shared/types/WorkspaceGitError"
 import type { WorkspaceGitState } from "@shared/types/WorkspaceGitState"
@@ -28,11 +29,17 @@ export interface WorkspaceGitBinding {
   readonly integratingFrom: string | null
   /** The `gh`/`glab` account the remote is reached as; null: the user's own credential helpers and SSH keys. */
   readonly account: GitAccountRef | null
+  /**
+   * The last merge with the remote had no common ancestor. The merge row that
+   * says so goes when the merge ends, so the divergence an abandoned two-way
+   * merge leaves needs it to explain itself.
+   */
+  readonly unrelatedMerge: boolean
 }
 
 const COLUMNS =
   "workspace_id, remote_url, branch, mode, read_only, state, last_error, last_synced_commit, last_synced_at, integrating_from, " +
-  "account_provider, account_host, account_login"
+  "account_provider, account_host, account_login, unrelated_merge"
 
 /** The account columns, set to the three values that follow, or to NULL by {@link accountValues} of null. */
 const SET_ACCOUNT = "account_provider = ?, account_host = ?, account_login = ?"
@@ -42,13 +49,17 @@ function accountValues(account: GitAccountRef | null): [string | null, string | 
 }
 
 /**
- * A merge waiting for the user, as the row persists it: the three commits and
- * the picks made so far. Its conflicts are never stored — the same trees and
- * picks recompute them, which is what makes a restart free.
+ * A merge waiting for the user, as the row persists it: the commits and the
+ * picks made so far. Its conflicts are never stored — the same trees and picks
+ * recompute them, which is what makes a restart free.
+ *
+ * `baseCommit` is null when the two copies share no ancestor, which makes the
+ * merge two ways: nothing is a change from anything, so every field both
+ * copies hold differently is a conflict.
  */
 export interface WorkspaceMerge {
   readonly workspaceId: string
-  readonly baseCommit: string
+  readonly baseCommit: string | null
   readonly ourCommit: string
   readonly theirCommit: string
   readonly picks: readonly GitMergePick[]
@@ -77,20 +88,22 @@ interface WorkspaceGitRow extends SqliteRow {
   readonly account_provider: string | null
   readonly account_host: string | null
   readonly account_login: string | null
+  readonly unrelated_merge: number
 }
 
 interface MergeRow extends SqliteRow {
   readonly workspace_id: string
-  readonly base_commit: string
+  readonly base_commit: string | null
   readonly our_commit: string
   readonly their_commit: string
 }
 
 interface MergePickRow extends SqliteRow {
-  readonly base_commit: string
+  readonly base_commit: string | null
   readonly record_id: string
   readonly path: string
-  readonly side: string
+  readonly side: string | null
+  readonly value: string | null
 }
 
 /** Which workspaces have a git history, and how each one syncs. No row: not tracked. */
@@ -188,7 +201,7 @@ export class WorkspaceGitRepository {
     return this.store.transaction((store) => {
       store.delete("DELETE FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
       store.set("UPDATE workspace_git SET state = 'idle', last_error = NULL WHERE workspace_id = ? AND state IN ('merging', 'diverged')", [workspaceId])
-      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD} WHERE workspace_id = ?`, [
+      return store.set(`UPDATE workspace_git SET remote_url = NULL, ${SET_ACCOUNT}, ${CLEAR_SYNC_RECORD}, unrelated_merge = 0 WHERE workspace_id = ?`, [
         ...accountValues(null),
         workspaceId,
       ]).changes > 0
@@ -202,24 +215,25 @@ export class WorkspaceGitRepository {
   /**
    * The merge waiting for this workspace, or undefined. Picks are returned only
    * for the merge's own base commit: one made against a base the merge no
-   * longer has is about different conflicts and settles nothing.
+   * longer has is about different conflicts and settles nothing. `IS ?` reads
+   * a two-way merge's NULL base, which `= ?` never matches.
    */
   public getMerge(workspaceId: string): WorkspaceMerge | undefined {
     const row = getMapped(this.store, "SELECT workspace_id, base_commit, our_commit, their_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId], rowToMerge)
     if (row === undefined) return undefined
     const picks = queryMapped(
       this.store,
-      "SELECT base_commit, record_id, path, side FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit = ? ORDER BY record_id, path",
+      "SELECT base_commit, record_id, path, side, value FROM workspace_merge_pick WHERE workspace_id = ? AND base_commit IS ? ORDER BY record_id, path",
       [workspaceId, row.baseCommit],
       rowToPick,
     )
     return { ...row, picks }
   }
 
-  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. */
+  /** Begin a merge, replacing any earlier one and its picks: the old conflicts are not these conflicts. A null base is a two-way merge, and the row keeps that so a later divergence can say so. */
   public startMerge(
     workspaceId: string,
-    baseCommit: string,
+    baseCommit: string | null,
     ourCommit: string,
     theirCommit: string,
     picks: readonly GitMergePick[],
@@ -232,6 +246,7 @@ export class WorkspaceGitRepository {
         ourCommit,
         theirCommit,
       ])
+      store.set("UPDATE workspace_git SET unrelated_merge = ? WHERE workspace_id = ?", [baseCommit === null ? 1 : 0, workspaceId])
       this.insertPicks(store, workspaceId, baseCommit, picks)
     })
   }
@@ -240,9 +255,9 @@ export class WorkspaceGitRepository {
    * Replace the merge's picks. False, and nothing written, when the merge has
    * moved on to another base commit: these picks settle conflicts it no longer has.
    */
-  public setMergePicks(workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): boolean {
+  public setMergePicks(workspaceId: string, baseCommit: string | null, picks: readonly GitMergePick[]): boolean {
     return this.store.transaction((store) => {
-      const row = store.get<{ base_commit: string } & SqliteRow>("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
+      const row = store.get<{ base_commit: string | null } & SqliteRow>("SELECT base_commit FROM workspace_merge WHERE workspace_id = ?", [workspaceId])
       if (row === undefined || row.base_commit !== baseCommit) return false
       store.delete("DELETE FROM workspace_merge_pick WHERE workspace_id = ?", [workspaceId])
       this.insertPicks(store, workspaceId, baseCommit, picks)
@@ -263,14 +278,15 @@ export class WorkspaceGitRepository {
     })
   }
 
-  private insertPicks(store: KVStore, workspaceId: string, baseCommit: string, picks: readonly GitMergePick[]): void {
+  private insertPicks(store: KVStore, workspaceId: string, baseCommit: string | null, picks: readonly GitMergePick[]): void {
     for (const pick of picks) {
-      store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side) VALUES (?, ?, ?, ?, ?)", [
+      store.set("INSERT OR REPLACE INTO workspace_merge_pick (workspace_id, base_commit, record_id, path, side, value) VALUES (?, ?, ?, ?, ?, ?)", [
         workspaceId,
         baseCommit,
         pick.recordId,
         pick.path,
-        pick.side,
+        "value" in pick ? null : pick.side,
+        "value" in pick ? toJson(pick.value) : null,
       ])
     }
   }
@@ -292,6 +308,7 @@ function rowToBinding(row: WorkspaceGitRow): WorkspaceGitBinding {
     lastSyncedAt: row.last_synced_at,
     integratingFrom: row.integrating_from,
     account: rowToAccount(row),
+    unrelatedMerge: row.unrelated_merge === 1,
   }
 }
 
@@ -315,8 +332,13 @@ function rowToMerge(row: MergeRow): Omit<WorkspaceMerge, "picks"> {
   }
 }
 
+/** A pick row as the pick it holds: a copy, or a value of the user's own, and never both. */
 function rowToPick(row: MergePickRow): GitMergePick {
-  if (!isMergeSide(row.side)) throw new Error(`workspace_merge_pick holds an unknown side: ${row.side}`)
+  if (row.value !== null) {
+    if (row.side !== null) throw new Error(`workspace_merge_pick holds both a side and a value at ${row.record_id} ${row.path}`)
+    return { recordId: row.record_id, path: row.path, value: parseJson<JsonValue>(row.value) }
+  }
+  if (row.side === null || !isMergeSide(row.side)) throw new Error(`workspace_merge_pick holds neither a side nor a value at ${row.record_id} ${row.path}`)
   return { recordId: row.record_id, path: row.path, side: row.side }
 }
 

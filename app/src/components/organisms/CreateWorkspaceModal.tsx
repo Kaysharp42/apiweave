@@ -65,8 +65,13 @@ const NO_REPOSITORY: GitRepositoryDraft = {
  * A git that knows no author is the one stop that is not a failure: the
  * commit that is the first thing to push is retried with `identity`, so the
  * sync carries on where it left off rather than sending the user elsewhere.
+ *
+ * A created repository is empty, so it cannot hold a history of its own; a
+ * connect that starts a merge all the same is reported as `mergeWaiting`
+ * rather than as a sync that finished. A connect that came back `error` bound
+ * the remote but could not prepare the merge, so its reason is the failure.
  */
-async function syncNewWorkspace(
+export async function syncNewWorkspace(
   workspaceId: string,
   account: GitAccount,
   draft: GitRepositoryDraft,
@@ -76,6 +81,7 @@ async function syncNewWorkspace(
     failure,
     note: null,
     identityMissing: false,
+    mergeWaiting: false,
   });
   let status: WorkspaceGitStatus;
   try {
@@ -89,7 +95,7 @@ async function syncNewWorkspace(
     );
   }
   if (status.lastError?.code === "identity_missing")
-    return { failure: null, note: null, identityMissing: true };
+    return { failure: null, note: null, identityMissing: true, mergeWaiting: false };
   // Anything else git reported leaves the first commit unmade: a repository now would have nothing
   // to receive, and connecting to it would be refused.
   if (status.lastError !== null)
@@ -109,14 +115,26 @@ async function syncNewWorkspace(
     );
   }
   const remote = remoteForRepository(account, created.repository);
+  let connected: WorkspaceGitStatus;
   try {
-    await git.connectRemote(workspaceId, remote.url, remote.account);
+    connected = await git.connectRemote(workspaceId, remote.url, remote.account);
   } catch (error) {
     return stop(
       connectFailedMessage(account, created.repository, errorText(error)),
     );
   }
-  return { failure: null, note: created.problem, identityMissing: false };
+  if (connected.state === "error") {
+    return stop(
+      connected.lastError?.message ??
+        `${account.host}/${created.repository.fullName} was created and connected, but the workspace could not be prepared for it. Open Version history to retry.`,
+    );
+  }
+  return {
+    failure: null,
+    note: created.problem,
+    identityMissing: false,
+    mergeWaiting: connected.state === "merging",
+  };
 }
 
 export function CreateWorkspaceModal({
@@ -223,6 +241,16 @@ export function CreateWorkspaceModal({
         setSync(false);
         return;
       }
+      if (synced?.mergeWaiting === true) {
+        // Its repository turned out to hold a history of its own: the merge is Version history's to resolve.
+        setUnfinished({
+          slug: workspace.slug,
+          message:
+            "The workspace is created, tracked and connected, but it and its repository share no history. Resolve the merge from Version history.",
+          draft,
+        });
+        return;
+      }
       if (synced !== null && synced.failure !== null) {
         setUnfinished({ slug: workspace.slug, message: synced.failure, draft });
         return;
@@ -268,6 +296,15 @@ export function CreateWorkspaceModal({
         return false;
       }
       setAwaitingAuthor(null);
+      if (synced.mergeWaiting) {
+        setUnfinished({
+          slug: awaitingAuthor.slug,
+          message:
+            "The workspace is created, tracked and connected, but it and its repository share no history. Resolve the merge from Version history.",
+          draft,
+        });
+        return false;
+      }
       if (synced.failure !== null) {
         setUnfinished({
           slug: awaitingAuthor.slug,

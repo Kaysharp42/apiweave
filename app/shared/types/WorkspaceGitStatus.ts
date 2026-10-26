@@ -34,4 +34,10 @@ export interface WorkspaceGitStatus {
   readonly lastSyncedAt: string | null
   /** HEAD of the workspace's repository; null when untracked or before the first commit. */
   readonly lastCommit: WorkspaceGitCommit | null
+  /**
+   * The waiting merge is between two copies that share no commit: one
+   * workspace whose history was replaced, with no ancestor behind the
+   * conflicts. False when no merge waits, or when it has one.
+   */
+  readonly unrelatedHistory: boolean
 }

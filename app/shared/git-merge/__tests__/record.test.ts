@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { GitMergePick } from "../../types/GitMergePick"
 import type { GitMergeSide } from "../../types/GitMergeSide"
+import type { JsonValue } from "../../types/JsonValue"
 import { mergeRecord, readRecord } from "../record"
 import { edge, environment, frame, node, project, workflow, type Json, type WorkflowFile } from "./trees"
 
@@ -531,6 +532,148 @@ describe("picks", () => {
   it("for another record, or replaced by a later pick for the same place, change nothing", () => {
     expect(merge(base, ours, theirs, [pick("name", "ours", "wf2")]).merged?.["name"]).toBe("Log in")
     expect(merge(base, ours, theirs, [pick("name", "theirs"), pick("name", "ours")]).merged?.["name"]).toBe("Sign in")
+  })
+})
+
+describe("two copies with no common ancestor", () => {
+  const mergeTwo = (ours: Json | undefined, theirs: Json | undefined, picks: GitMergePick[] = []) =>
+    mergeRecord("workflow", undefined, ours, theirs, picks, true)
+
+  it("keeps a record only one copy holds", () => {
+    const only = flow({ name: "Only mine", tags: ["mine"] })
+
+    expect(mergeTwo(only, undefined)).toEqual({ merged: only, conflicts: [], notes: [] })
+    expect(mergeTwo(undefined, only)).toEqual({ merged: only, conflicts: [], notes: [] })
+  })
+
+  it("merges two identical records silently", () => {
+    const same = flow({ name: "Same", tags: ["smoke"] })
+
+    expect(mergeTwo(same, same)).toEqual({ merged: same, conflicts: [], notes: [] })
+  })
+
+  it("is a conflict on every field they differ on, with no ancestor to point at", () => {
+    const result = mergeTwo(flow({ name: "Mine" }), flow({ name: "Theirs" }))
+
+    expect(result.merged?.["name"]).toBe("Theirs")
+    expect(result.conflicts).toEqual([{ kind: "workflow", recordId: "wf1", name: "Mine", path: "name", ours: "Mine", theirs: "Theirs" }])
+  })
+
+  it("keeps the keys only one copy holds and conflicts on a key both hold differently", () => {
+    const result = mergeTwo(
+      flow({ variables: { user: "mine", tier: "free" } }),
+      flow({ variables: { region: "eu", tier: "paid" } }),
+    )
+
+    expect(result.merged?.["variables"]).toEqual({ region: "eu", tier: "paid", user: "mine" })
+    expect(result.conflicts.map(({ path, base: before, ours, theirs }) => ({ path, before, ours, theirs }))).toEqual([
+      { path: "variables.tier", before: undefined, ours: "free", theirs: "paid" },
+    ])
+  })
+
+  it("merges a keyed array item by item: each copy's items stay, a shared one by its fields", () => {
+    const result = mergeTwo(
+      flow({ nodes: [node("n1", 0, 0, { label: "mine", config: { duration: 3 } }), node("n2", 200, 0)] }),
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 3 } }), node("n3", 400, 0)] }),
+    )
+
+    expect(nodesOf(result.merged).map((item) => item["nodeId"])).toEqual(["n1", "n2", "n3"])
+    expect(nodeOf(result.merged, "n1")).toMatchObject({ label: "mine", config: { duration: 3 } })
+    expect(result.conflicts).toEqual([])
+  })
+
+  it("is a conflict on the field of an item both hold differently", () => {
+    const result = mergeTwo(
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 3 } })] }),
+      flow({ nodes: [node("n1", 0, 0, { config: { duration: 5 } })] }),
+    )
+
+    expect(result.conflicts.map(({ path, ours, theirs }) => ({ path, ours, theirs }))).toEqual([
+      { path: "nodes.n1.config.duration", ours: 3, theirs: 5 },
+    ])
+  })
+
+  it("keeps every tag either copy has, since a tag is a set", () => {
+    expect(mergeTwo(flow({ tags: ["smoke"] }), flow({ tags: ["api"] })).merged?.["tags"]).toEqual(["api", "smoke"])
+  })
+
+  it("settles all of a record's conflicts with a whole-record pick", () => {
+    const result = mergeTwo(flow({ name: "Mine", description: "mine" }), flow({ name: "Theirs", description: "theirs" }), [
+      pick("", "ours"),
+    ])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.merged).toMatchObject({ name: "Mine", description: "mine" })
+  })
+})
+
+describe("a value of the user's own", () => {
+  const own = (path: string, value: JsonValue): GitMergePick => ({ recordId: "wf1", path, value })
+
+  it("settles the field it names, replacing either copy's value", () => {
+    const result = merge(flow({ name: "Login" }), flow({ name: "Sign in" }), flow({ name: "Log in" }), [own("name", "Authenticate")])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.merged?.["name"]).toBe("Authenticate")
+  })
+
+  it("settles nothing below the place it names", () => {
+    const base = chain()
+    const ours = moved(base, "n1", { x: 200, y: 0 }, { config: { duration: 5 } })
+    const theirs = moved(base, "n1", { x: 200, y: 0 }, { config: { duration: 9 } })
+
+    const result = merge(base, ours, theirs, [own("nodes.n1", { nodeId: "n1" })])
+
+    expect(result.conflicts.map((conflict) => conflict.path)).toEqual(["nodes.n1.config.duration"])
+  })
+
+  it("changes nothing where the copies agree: a value names a conflict or nothing", () => {
+    const result = merge(flow({ name: "Login" }), flow({ name: "Login" }), flow({ name: "Login" }), [own("name", "Authenticate")])
+
+    expect(result.merged?.["name"]).toBe("Login")
+    expect(result.conflicts).toEqual([])
+  })
+
+  it("settles a whole record one copy deleted with a record of its own", () => {
+    const base = chain()
+    const restored = { ...base, name: "Restored" }
+
+    const result = merge(base, undefined, { ...base, name: "Sign in" }, [own("", restored)])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.merged).toEqual(restored)
+  })
+
+  it("leaves a record in conflict when the value no file may hold, with the format's reason", () => {
+    const result = merge(flow({ name: "Login" }), flow({ name: "Sign in" }), flow({ name: "Log in" }), [own("name", "")])
+
+    expect(result.merged).toEqual(canonical(flow({ name: "Log in" })))
+    expect(result.conflicts).toHaveLength(1)
+    expect(result.conflicts[0]).toMatchObject({ path: "", invalid: expect.stringContaining("name") })
+  })
+
+  it("refuses a whole-record value that renames the record, rather than writing it under another id's file", () => {
+    const base = chain()
+    const renamed = { ...base, name: "Sign in" }
+    const other = { ...base, workflowId: "wf2", name: "Restored" }
+
+    const result = merge(base, undefined, renamed, [own("", other)])
+
+    expect(result.merged).toEqual(canonical(renamed))
+    expect(result.conflicts).toHaveLength(1)
+    expect(result.conflicts[0]).toMatchObject({ path: "", invalid: expect.stringContaining("it holds workflow wf2, not wf1") })
+  })
+
+  it("settles a record whose merged fields are invalid with a whole-record value of the user's own", () => {
+    const delay = flow({ nodes: [{ nodeId: "n1", type: "delay", position: { x: 0, y: 0 }, config: {} }] })
+    const ours = flow({ nodes: [{ nodeId: "n1", type: "merge", position: { x: 0, y: 0 }, config: {} }] })
+    const theirs = flow({ nodes: [{ nodeId: "n1", type: "delay", position: { x: 0, y: 0 }, config: { duration: 5 } }] })
+    const mine = flow({ nodes: [{ nodeId: "n1", type: "delay", position: { x: 0, y: 0 }, config: { duration: 7 } }] })
+
+    const result = merge(delay, ours, theirs, [own("", mine)])
+
+    expect(result.conflicts).toEqual([])
+    expect(result.merged).toEqual(canonical(mine))
   })
 })
 

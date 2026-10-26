@@ -9,8 +9,8 @@ import type { GitRepositoryListRequest } from "./GitRepositoryListRequest"
 import type { GitRepositoryOwnerList } from "./GitRepositoryOwnerList"
 import type { GitSignInPrompt } from "./GitSignInPrompt"
 import type { OpenWorkspaceFromGitResult } from "./OpenWorkspaceFromGitResult"
-import type { GitMergeConflict } from "./GitMergeConflict"
 import type { GitMergePick } from "./GitMergePick"
+import type { GitMergeState } from "./GitMergeState"
 import type { MergeRecordCommits } from "./MergeRecordCommits"
 import type { WorkspaceGitCommitRequest } from "./WorkspaceGitCommitRequest"
 import type { WorkspaceGitMode } from "./WorkspaceGitMode"
@@ -52,18 +52,20 @@ export interface GitBridge {
    */
   readonly pendingChanges: (workspaceId: string) => Promise<readonly WorkspacePendingChange[]>
   /**
-   * What a merge is waiting on: every place your copy and the remote copy
-   * changed differently, recomputed from the merge's three commits and the
-   * picks persisted so far. Empty when the workspace is not merging. Rejects
-   * for an untracked workspace or one whose clone cannot be read.
+   * The waiting merge in one read: every conflict it has (computed with no
+   * picks, so the list does not shrink as decisions are made), the decisions
+   * stored so far, and what the merge settles by itself with `picks` (the
+   * stored set when none are given). Empty when the workspace is not merging.
+   * Rejects for an untracked workspace or one whose clone cannot be read.
    */
-  readonly mergeConflicts: (workspaceId: string) => Promise<readonly GitMergeConflict[]>
+  readonly mergeState: (workspaceId: string, picks?: readonly GitMergePick[]) => Promise<GitMergeState>
   /**
-   * The decisions already stored for the waiting merge, so a picker reopened
-   * after a partial resolve starts where it left off. Empty when the workspace
-   * is not merging. Rejects for an untracked workspace.
+   * Store decisions without finishing the merge, so closing the view loses
+   * nothing. Checked as a resolve's picks are: a value that names no conflict
+   * is dropped, a secret or oversized one is refused. Resolves to the merge as
+   * it now stands. Rejects for a workspace that is not merging.
    */
-  readonly mergePicks: (workspaceId: string) => Promise<readonly GitMergePick[]>
+  readonly saveMergePicks: (workspaceId: string, picks: readonly GitMergePick[]) => Promise<GitMergeState>
   /**
    * The commit each side last made to each conflicted record or file, from
    * `git log -1 <rev> -- <path>` — who wrote each copy, for the picker. A record

@@ -462,12 +462,21 @@ export class GitService {
    * strategy leaves the tree as it is. The caller writes the merged files over
    * the checkout and commits, which is what turns this into a real two-parent
    * merge commit. `git merge --abort` is the cancel.
+   *
+   * `allowUnrelated` adds `--allow-unrelated-histories`, for the merge of two
+   * copies that share no ancestor: git refuses one by name otherwise, and a
+   * two-parent commit is the way to combine them.
    */
-  async mergeNoCommit(repoDir: string, rev: string): Promise<void> {
+  async mergeNoCommit(repoDir: string, rev: string, options: { readonly allowUnrelated?: boolean } = {}): Promise<void> {
     assertRevision(rev)
+    const unrelated = options.allowUnrelated === true ? ["--allow-unrelated-histories"] : []
     // Identity, like `commit`: even without committing, git prepares the merge
     // commit and refuses a machine with no author configured.
-    await this.run("mergeNoCommit", [...this.identityArgs(), "merge", "--no-commit", "--no-ff", "-s", "ours", rev, "--"], repoDir)
+    await this.run(
+      "mergeNoCommit",
+      [...this.identityArgs(), "merge", "--no-commit", "--no-ff", "-s", "ours", ...unrelated, rev, "--"],
+      repoDir,
+    )
   }
 
   /**
