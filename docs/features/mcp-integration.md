@@ -28,7 +28,10 @@ desktop UI — see [Runs in the Desktop UI](#runs-in-the-desktop-ui) and
   workflow from the same agent — in memory until the app restarts, and
   persisted across restarts, respectively — and both ask again the moment the
   secrets, destinations or scripts change. Remembered answers are listed, with
-  a revoke action, under Settings > MCP Server. **Deny**, or no answer within
+  a revoke action, under Settings > MCP Server. That page also has a persistent
+  **Skip secret approval for agent runs** switch — off by default — which removes
+  the question for every client at once; the destination and script limits
+  still apply to each allowed run. **Deny**, or no answer within
   two minutes, fails the run before any request is sent, and the agent sees
   `deniedByUser: true`. The run executes the workflows as they were
   when you were asked: an edit made while the dialog is open does not change

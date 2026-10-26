@@ -461,6 +461,15 @@ if (!hasSingleInstanceLock) {
     const secretStore = new SecretRepository(database.kvStore)
     const appSettings = new AppSettingsRepository(database.kvStore)
     const agentRunApprovals = new AgentRunApprovalRepository(database.kvStore)
+    // Whether an agent-started run may use its resolved secrets without the
+    // native approval prompt. The MCP settings panel owns the switch; the
+    // scheduler still limits an allowed run to the hosts it reported.
+    const readAutoApproveAgentRuns = (): boolean =>
+      database === null ? false : appSettings.getBoolean("mcp.autoApproveAgentRuns")
+    const writeAutoApproveAgentRuns = (enabled: boolean): void => {
+      if (database === null) return
+      appSettings.setBoolean("mcp.autoApproveAgentRuns", enabled)
+    }
 
     // Auth seam: single-owner always-allow.
     const existence: ScopeExistence = {
@@ -539,6 +548,10 @@ if (!hasSingleInstanceLock) {
       emitProgress: (runId, event) => runEvents.publish(runId, event),
       agentRunApprovals,
       approveAgentRun: async (request, signal) => {
+        if (readAutoApproveAgentRuns()) {
+          mcpLog.info(`agent run ${request.runId}: secrets auto-approved by the MCP setting`)
+          return signal.aborted ? "deny" : "once"
+        }
         const win = mainWindow
         if (win === null || win.isDestroyed()) return "deny"
         if (!win.isFocused()) win.flashFrame(true)
@@ -631,6 +644,7 @@ if (!hasSingleInstanceLock) {
     const mcpStatus = (): McpStatus => ({
       running: mcpHost?.isRunning() ?? false,
       config: mcpHost?.getConfig() ?? null,
+      autoApproveAgentRuns: readAutoApproveAgentRuns(),
     })
     const readMcpEnabled = (): boolean => {
       if (database === null) return false
@@ -690,6 +704,16 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "mcp:revokeAgentApproval",
       requireTrustedSender((approvalId: string) => agentRunApprovals.delete(approvalId)),
+    )
+    // The "skip the question" switch beside that list. Persisted, and off the
+    // router for the same reason: no MCP client can turn it on for you.
+    ipcMain.handle(
+      "mcp:setAutoApproveAgentRuns",
+      requireTrustedSender((enabled: boolean) => {
+        writeAutoApproveAgentRuns(enabled)
+        mcpLog.info(`agent run secret auto-approval ${enabled ? "enabled" : "disabled"} by the user`)
+        return mcpStatus()
+      }),
     )
     ipcMain.handle(
       "mcp:listTools",
