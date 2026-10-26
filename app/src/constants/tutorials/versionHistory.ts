@@ -89,7 +89,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "Stop tracking asks first, then deletes the repository and every commit in it. The workspace itself is not changed.",
           detail:
-            "Tracking again starts a new history, so a remote holding the old one no longer has anything in common with it.",
+            "Tracking again starts a new history, so a remote holding the old one no longer has anything in common with it. Connecting that remote again merges the two ways in the merge view; a fresh empty repository starts without the old copy.",
         },
       ],
       example: {
@@ -113,7 +113,7 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Old history is gone after Stop tracking",
           instruction:
-            "Stop tracking deletes the repository and its commits by design. Track again for a new history, and connect a fresh empty remote rather than the one holding the old history.",
+            "Stop tracking deletes the repository and its commits by design. Track again for a new history. Connecting the repository that holds the old one merges the two ways; connect a fresh empty repository instead if you want to start without the old copy.",
         },
       ],
       relatedLessonIds: [
@@ -299,12 +299,12 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "In Version history (git), choose the Account to connect as, then the Repository from its list, and click Connect to remote.",
           detail:
-            "The list holds the account's empty repositories it can push to. Create repository… under the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials. With no account signed in, the form is the URL field alone.",
+            "The list holds the account's empty repositories it can push to, so a repository with commits is connected with Use a URL instead. Create repository… under the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials. With no account signed in, the form is the URL field alone.",
         },
         {
           title: "Know what the connect does",
           instruction:
-            "An empty repository receives the workspace's history on main and becomes the sync target. One that already holds this workspace's history is joined as it is and syncs both ways.",
+            "An empty repository receives the workspace's history on main and becomes the sync target. One that already holds this workspace's history is joined as it is and syncs both ways. One that holds this same workspace but no commit in common — after Stop tracking, say — starts a two-way merge in the merge view; a repository holding a different workspace is refused, naming it.",
           detail:
             "A URL took directly must be one of https://host/owner/repo.git, ssh://git@host/owner/repo.git, git@host:owner/repo.git or file:///path/to/repo.git; plain http:// and git://, a bare path, and a URL carrying a user name or password are refused. A refused connection leaves the workspace unconnected and its history untouched.",
         },
@@ -377,7 +377,12 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "The header says Merge needed",
           instruction:
-            "Both sides changed the same field differently. Review merge is covered in the merge lesson.",
+            "Both sides changed the same field differently, or the two copies share no history. Review merge opens the merge view: choose a copy or a value for each conflict. The merge lesson covers it.",
+        },
+        {
+          title: "Connecting says the repository holds a different workspace",
+          instruction:
+            "The repository belongs to another workspace. Open it from git to work on that one, or connect a repository that belongs to this workspace. If the message says the ids differ only in letter case, rename the workspace in the repository's workspace.json and connect again.",
         },
       ],
       relatedLessonIds: ["git-track", "git-accounts", "git-merge", "git-open"],
@@ -496,113 +501,184 @@ export const versionHistoryChapter: TutorialChapter = {
     {
       id: "git-merge",
       chapterId: "version-history",
-      title: "Resolve a merge between machines",
+      title: "Resolve a merge in the merge view",
       summary:
-        "What happens when both machines change the same field, how Review merge settles it field by field or per record, and what Abandon merge keeps.",
+        "What a merge waits on, how the merge view settles it with yours, a result of your own, or the remote's, and what closing, finishing or abandoning keeps.",
       outcome:
-        "You can settle a merge by keeping your copy or the remote's for each conflict, and you know what abandoning one keeps on this device.",
+        "You can settle every conflict in the merge view — by a copy or by a value you type — and you know what Finish merge, closing, and Abandon merge keep on this device.",
       keywords: [
         "merge",
         "review merge",
+        "merge view",
         "finish merge",
         "abandon merge",
         "conflict",
         "merge needed",
         "diverged",
-        "keep your copy",
-        "keep remote copy",
+        "yours result remote",
+        "use yours",
+        "use remote",
+        "accept all",
+        "compare",
+        "own value",
+        "previous conflict",
+        "next conflict",
+        "no shared history",
+        "reconnect",
         "two machines",
       ],
-      durationMinutes: 7,
+      durationMinutes: 10,
       prerequisites: [
-        "A connected workspace changed both on this machine and on another since the two last agreed.",
+        "A connected workspace changed both on this machine and on another since the two last agreed, or a workspace was reconnected to a repository holding the same workspace with no shared history.",
       ],
       steps: [
         {
           title: "Notice Merge needed",
           instruction:
-            "When both this device and the remote gained commits, the app merges them by record, node and field. Edits that touch different things are combined into one merge commit.",
+            "When both this device and the remote gained commits, the app merges them by record, node and field. Changes that touch different things are combined into one merge commit.",
           detail:
-            "Where the same field changed differently on each side, the workspace stops at Merge needed in the header.",
+            "Where the same field changed differently on each side, the workspace stops at Merge needed in the header. A reconnect with no common commit lists a difference between the two copies the same way.",
         },
         {
           title: "Know what waits",
           instruction:
-            "While the merge waits, nothing is pushed and nothing is imported, and commits pause: edits still save but are not committed. Resolving commits them first and redoes the merge on top.",
+            "While the merge waits, nothing is pushed and nothing is imported, and commits pause: edits still save but are not committed. Finishing commits them first and redoes the merge on top.",
+          detail:
+            "The merge survives a restart. Closing the view saves the decisions you have made, so reopening starts from them.",
         },
         {
-          title: "Open the picker",
+          title: "Open the merge view",
           instruction:
-            "Click Review merge in the header's popover or in the panel. The Resolve merge dialog opens over whatever you were doing.",
+            "Click Review merge in the header's popover or in Version history settings. The Resolve merge view opens full-window over whatever you were doing.",
           detail:
-            "Closing it changes nothing in the workspace, but choices you have not sent with Finish merge are lost. Decisions sent by a Finish that left conflicts are stored, and reopening starts from them.",
+            "Connecting a repository that holds this same workspace but no shared commit opens it as soon as Connect returns. Closing saves every valid choice; a value that is not valid JSON settles nothing and is not saved.",
         },
         {
-          title: "Read a card",
+          title: "Know when the history was restarted",
           instruction:
-            "Each card is one conflicted record or file, with both copies side by side under Your copy and Remote copy. A side that deleted it or never had it says Not present.",
+            "Stop tracking deletes this device's history, and tracking again starts a new one. Connecting the old repository then merges the two ways instead of refusing it: content the copies share passes silently, what only one copy has is kept, and a place both copies hold with different values is a conflict in this view.",
           detail:
-            "The card's header carries the author, short commit and subject of the commit each side last made to it. Commit details unavailable means those could not be read; the choices still work.",
+            "A repository holding a different workspace is still refused, naming it. Ids that differ only in letter case say to rename the workspace in the repository, and a repository a newer APIWeave wrote says to update the app.",
         },
         {
-          title: "Pick per field",
+          title: "Read the item list",
           instruction:
-            "Use Keep your copy or Keep remote copy under a conflicted field. A field choice overrides the record choice for that field only.",
+            "The left list groups every conflict under Workspace, Projects, Workflows, Environments and Files. Each entry shows the record's name, how many conflicts it holds and either Resolved or N left; the open one is highlighted.",
           detail:
-            "Every change that did not conflict is already part of the merge, from both sides.",
+            "Tab reaches each entry and the arrow keys move between them, so the whole merge can be walked from the keyboard.",
         },
         {
-          title: "Or settle a whole record",
+          title: "Read one item",
           instruction:
-            "Use Keep your copy for all conflicts or Keep remote copy for all conflicts in a card's header to settle every conflicted field in it at once.",
+            "The pane names the item's kind and name, then the author, short commit and date of the commit each copy last made to it. Commit details unavailable means those could not be read; the choices still work.",
           detail:
-            "A card reading Whole record or Whole file, or holding copies that cannot be combined into a valid record, offers only those buttons. Choosing one clears that card's earlier field choices, so the record choice is not beaten by an old field pick.",
+            "A record whose two copies cannot make a valid record together says what is wrong and offers only a whole-copy choice.",
         },
         {
-          title: "Finish the merge",
+          title: "Read a field row",
           instruction:
-            "Finish merge stays disabled until every listed conflict has a decision. It sends them together, then commits, imports and pushes the merge.",
+            "Each conflict is a row headed by the field's name, or Whole record or Whole file at the record's root. Yours, Result and Remote sit side by side: Result shows what the merge would write — the remote copy's value until you decide — and says Unresolved while it waits. A side that deleted or never had the value says Not present.",
           detail:
-            "A resolve that leaves conflicts, because the merge was redone on top of edits made while it waited, lists what is left and keeps the decisions already made.",
+            "On the widest layout the columns sit side by side; when the view is narrower they stack, and each copy gets its own labelled button.",
         },
         {
-          title: "Or abandon it",
+          title: "Take a copy with the arrows",
           instruction:
-            "Abandon merge asks first. Every local commit and change stays on this device, nothing is pushed, and the workspace becomes Diverged.",
+            "Click the » beside Yours to take this device's copy, or the « beside Remote for the remote's. The value moves into Result and the field reads Resolved. When the columns are stacked, the same choice is Use yours or Use remote under the copy.",
           detail:
-            "Sync now then merges again, and Discard local changes is still the way to match the remote.",
+            "A whole-record or whole-file conflict, or a record its copies cannot make valid, is a choice of copies only.",
+        },
+        {
+          title: "Or type a value of your own",
+          instruction:
+            "Edit Result. A text field is edited as its text and stays text; anything else is edited as JSON — text in quotes, numbers, true, false and null as they are. Empty or invalid text settles nothing, and the error is said under the control.",
+          detail:
+            "Finish checks the value against the record. A value holding secret storage is refused with a plain sentence; keep one copy instead.",
+        },
+        {
+          title: "Compare a long value",
+          instruction:
+            "For a long value — a body, a script, a structured value — Compare under the row opens a read-only diff of both copies; Hide comparison folds it again. The diff is side by side when the view is wide and inline when it is narrow.",
+        },
+        {
+          title: "Settle a whole item, or everything",
+          instruction:
+            "Accept yours or Accept remote above an item's fields settles all of them; if a value you typed would be replaced, it asks first. Accept all yours or Accept all remote in the header settles every conflict in every record and file after a confirmation, and any field can still be changed afterwards.",
+          detail:
+            "A whole-item or accept-all copy choice clears that item's field choices, so no older field pick can override it.",
+        },
+        {
+          title: "Move between what is left",
+          instruction:
+            "Previous conflict and Next conflict step through the conflicts that are still undecided, wrapping at the ends; Alt+↑ and Alt+↓ do the same from the view.",
+          detail:
+            "Both are disabled once every listed conflict has a decision.",
+        },
+        {
+          title: "Watch what merged automatically",
+          instruction:
+            "Above the conflicts, N changes merged automatically folds the repairs the merge made without asking: positions both copies moved, a project's workflow order, an edge or frame a deletion left dangling, and a workflow's reference to a project or environment the other copy deleted. The notes follow your decisions, so a pick can change them before you finish.",
+          detail:
+            "Finish writes the notes into the merge commit's message.",
+        },
+        {
+          title: "Finish or abandon",
+          instruction:
+            "Finish merge is enabled only when every listed conflict has a decision. It sends them all, commits the merge, imports it and pushes it. Abandon merge asks first: every local commit and change stays on this device, nothing is pushed, and the workspace becomes Diverged, where Sync now offers the merge again.",
+          detail:
+            "With no git author, Finish asks inline for Your name and Your email address; Save and commit carries on with the finish. A finish that leaves conflicts keeps the decisions and says what is left.",
         },
       ],
       example: {
-        caption: "Where each choice lives",
+        caption: "Where each choice lives in the merge view",
         language: "text",
-        code: "Header                  Merge needed\nPopover or panel        Review merge\nDialog                   Resolve merge, one card per record or file\nA conflicted field      Keep your copy  |  Keep remote copy\nA whole record          Keep your copy for all conflicts\n                        Keep remote copy for all conflicts\nSettle everything       Finish merge\nGive the merge up       Abandon merge -> Diverged",
+        code: "Header                This device ↔ github.com   2 of 5 conflicts resolved\n                      Accept all yours | Accept all remote\n                      3 changes merged automatically\nLeft list             Workspace  Projects  Workflows  Environments  Files\n                      Checkout  3  ·  1 left\nItem pane             Workflow · Checkout\n                      Your copy · Ada · 3f9a2c1 · 2026-10-20\n                      Remote copy · Sam · 8b1d4e2 · 2026-10-21\n                      Accept yours | Accept remote\nA field               Yours | » Result (editable) « | Remote\n                      Use yours / Use remote when the view is narrow\n                      Compare → read-only diff of a long value\nFooter                Abandon merge  Previous conflict  Next conflict  Finish merge",
       },
       expectedResult:
-        "The merge is settled field by field without losing either side's work, and the merge commit is imported and pushed, so both machines agree again.",
+        "Every conflict is settled by a copy or by a value you typed, the notes say what the merge repaired, and the merge commit is imported and pushed — including a two-way merge with a repository whose history was restarted.",
       troubleshooting: [
         {
           title: "Finish merge is disabled",
           instruction:
-            "At least one listed conflict has no decision. Pick your copy or the remote's for each one.",
+            "At least one listed conflict has no decision. Take a copy, type a value, or use Accept all yours or Accept all remote for everything.",
+        },
+        {
+          title: "Accepting a copy replaced values I typed",
+          instruction:
+            "A whole-item or accept-all copy choice takes the place of that item's earlier field choices. The confirmation Replace the values you typed? says how many it will replace; Cancel leaves them as they are.",
+        },
+        {
+          title: "Result says Not JSON",
+          instruction:
+            "Text needs quotes, and numbers, true, false and null do not. Empty text settles nothing: type a value or keep one copy.",
+        },
+        {
+          title: "The merged automatically count changed as I picked",
+          instruction:
+            "The notes are recomputed with the decisions made so far. A pick can leave an edge or frame dangling, and the merge drops it and says so before Finish.",
+        },
+        {
+          title: "I closed the view before finishing",
+          instruction:
+            "Every valid choice was saved, and reopening starts from them. Decisions sent by a finish that left conflicts are kept too; only text that is not valid JSON was not saved.",
+        },
+        {
+          title: "Every conflict is settled but Finish left some",
+          instruction:
+            "A value you typed does not make a valid record. Keep one copy for the field it changed, then finish again.",
         },
         {
           title: "The header says Diverged",
           instruction:
-            "A merge was abandoned. Sync now combines the two again, or Discard local changes matches the remote.",
+            "A merge was abandoned. Every local commit is kept; Sync now combines the two again, and Discard local changes loads the remote's version instead.",
         },
         {
-          title: "Conflicts came back after finishing",
+          title: "A reconnect to a restarted history opened the merge view",
           instruction:
-            "Edits arrived while the merge waited, so the merge was redone on top of them. The dialog lists what is left and keeps the decisions already made.",
-        },
-        {
-          title: "Merge needed survived a restart",
-          instruction:
-            "It is stored, not lost: reopen Review merge. Decisions sent with an earlier Finish merge are still there; others must be made again.",
+            "That is the two-way merge, not an error. Settle it and Finish merge pushes the merge, or Abandon merge keeps this device's commits and pushes nothing.",
         },
       ],
-      relatedLessonIds: ["git-remote", "git-track"],
+      relatedLessonIds: ["git-remote", "git-track", "git-open"],
       destination: { label: "Open Version history", path: "version-history" },
     },
     {
