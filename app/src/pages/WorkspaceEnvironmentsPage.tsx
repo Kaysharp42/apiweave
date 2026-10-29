@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Settings, Plus, Layers } from "lucide-react";
 import { Button } from "../components/atoms/Button";
@@ -54,10 +53,6 @@ interface EnvironmentTarget {
 }
 
 export default function WorkspaceEnvironmentsPage() {
-  const { orgSlug, workspaceSlug } = useParams<{
-    orgSlug: string;
-    workspaceSlug: string;
-  }>();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
 
   const environments = useEnvironmentStore((s) => s.environments);
@@ -297,8 +292,6 @@ export default function WorkspaceEnvironmentsPage() {
         <Settings className="w-5 h-5 text-text-secondary dark:text-text-secondary-dark" />
       }
       title="Environments"
-      orgSlug={orgSlug}
-      workspaceSlug={workspaceSlug}
       fallbackSubtitle="Each environment belongs to one workspace"
     />
   );

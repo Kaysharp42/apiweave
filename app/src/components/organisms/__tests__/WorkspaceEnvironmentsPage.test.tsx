@@ -16,11 +16,6 @@ describe("WorkspaceEnvironmentsPage", () => {
     expect(source).toContain("Environments");
   });
 
-  it("shows breadcrumb with org/workspace slugs", () => {
-    expect(source).toContain("orgSlug={orgSlug}");
-    expect(source).toContain("workspaceSlug={workspaceSlug}");
-  });
-
   it('renders "New Environment" button', () => {
     expect(source).toContain("New Environment");
   });
