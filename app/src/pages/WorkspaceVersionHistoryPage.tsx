@@ -1,5 +1,5 @@
 import { GitBranch } from "lucide-react";
-import { useLocation, useParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Spinner } from "../components/atoms/Spinner";
 import { VersionHistoryPanel } from "../components/organisms/VersionHistoryPanel";
 import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";
@@ -8,10 +8,6 @@ import { routeRepositoryDraft } from "../types";
 
 /** Workspace settings > Version history: the workspace's git history. */
 export function WorkspaceVersionHistoryPage() {
-  const { orgSlug, workspaceSlug } = useParams<{
-    orgSlug: string;
-    workspaceSlug: string;
-  }>();
   const { currentWorkspace, isLoading } = useWorkspace();
   // Create workspace hands on the repository its sync was going to make, when it stopped.
   const handedOn = routeRepositoryDraft(useLocation().state);
@@ -26,8 +22,6 @@ export function WorkspaceVersionHistoryPage() {
           />
         }
         title="Version history (git)"
-        orgSlug={orgSlug}
-        workspaceSlug={workspaceSlug}
         fallbackSubtitle="This workspace's history in git"
       />
       <div className="flex-1 overflow-y-auto p-6">

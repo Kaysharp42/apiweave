@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
+import { useWorkspace } from "../../contexts/WorkspaceContext";
 
 interface WorkspacePageHeaderProps {
   readonly icon: ReactNode;
   readonly title: string;
-  readonly orgSlug: string | undefined;
-  readonly workspaceSlug: string | undefined;
-  /** Shown when the URL carries no slugs. */
+  /** Shown when no workspace is selected. */
   readonly fallbackSubtitle: string;
 }
 
@@ -13,10 +12,9 @@ interface WorkspacePageHeaderProps {
 export function WorkspacePageHeader({
   icon,
   title,
-  orgSlug,
-  workspaceSlug,
   fallbackSubtitle,
 }: WorkspacePageHeaderProps) {
+  const { currentWorkspace } = useWorkspace();
   return (
     <div className="flex items-center gap-3 px-6 py-6 border-b border-border dark:border-border-dark bg-surface dark:bg-surface-dark">
       {icon}
@@ -25,9 +23,7 @@ export function WorkspacePageHeader({
           {title}
         </h1>
         <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-          {orgSlug && workspaceSlug
-            ? `${orgSlug} / ${workspaceSlug}`
-            : fallbackSubtitle}
+          {currentWorkspace?.name ?? fallbackSubtitle}
         </p>
       </div>
     </div>

@@ -12,7 +12,6 @@ import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader
 import { WorkspaceSecretGroups } from "../components/organisms/WorkspaceSecretGroups";
 import { DuplicateItemDialog } from "../components/organisms/DuplicateItemDialog";
 import { MoveToWorkspaceDialog } from "../components/organisms/MoveToWorkspaceDialog";
-import { useParams } from "react-router-dom";
 import { useWorkspace } from "../contexts/WorkspaceContext";
 import { Spinner } from "../components/atoms/Spinner";
 import { apiweave } from "../utils/apiweaveClient";
@@ -82,10 +81,6 @@ function useWorkspaceOptions(activeWorkspaceId: string): WorkspaceOption[] {
 
 // fallow-ignore-next-line complexity -- the page is the coordinator: it wires the workspace groups, the add-secret modal, the duplicate and move dialogs and the details panel to one refresh and one error strip, and every remaining branch is one of those dialog/action states. The lists themselves live in WorkspaceSecretGroups and ScopedSecretList, the row in SecretRow, the details card in SecretDetailsCard
 export function WorkspaceSecretsPage() {
-  const { orgSlug, workspaceSlug } = useParams<{
-    orgSlug: string;
-    workspaceSlug: string;
-  }>();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useWorkspace();
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedSecret, setSelectedSecret] = useState<SecretTarget | null>(
@@ -163,8 +158,6 @@ export function WorkspaceSecretsPage() {
         />
       }
       title="Secrets"
-      orgSlug={orgSlug}
-      workspaceSlug={workspaceSlug}
       fallbackSubtitle="Each secret belongs to one workspace"
     />
   );
