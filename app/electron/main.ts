@@ -1,6 +1,6 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron"
-import type { MenuItemConstructorOptions } from "electron"
+import type { MenuItemConstructorOptions, Tray } from "electron"
 import path from "node:path"
 import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
@@ -99,6 +99,8 @@ import {
   agentRunApprovalText,
 } from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
+import { createTray, getOpenAtLogin, launchedHidden, setOpenAtLogin } from "./background"
+import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
 
@@ -153,6 +155,11 @@ let gitSync: GitSyncService | null = null
 // A sign-in's gh or glab waits up to 15 minutes for its code; quitting stops it.
 let gitSignIns: GitSignIns | null = null
 let isQuitting = false
+// Closing the window hides it to the tray (app_settings background.closeToTray).
+let closeToTray = false
+// Set once an update install is under way: it closes the window itself, and hiding would stall it.
+let installingUpdate = false
+let tray: Tray | null = null
 
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("ozone-platform-hint", "auto")
@@ -198,12 +205,39 @@ function closeRequestTarget(win: BrowserWindow): CloseRequestTarget {
 // Closing the window quits the app (`window-all-closed`), so both routes share
 // one gate: the renderer flushes pending saves and settles unsaved work first.
 const mayQuit = createQuitGate(
-  () =>
-    mainWindow === null
-      ? Promise.resolve(true)
-      : askRendererToClose(closeRequestTarget(mainWindow)),
+  () => {
+    if (mainWindow === null) return Promise.resolve(true)
+    // Quitting from the tray asks a hidden window, whose unsaved-work prompt
+    // nobody could see. Saving usually answers at once; a page still busy
+    // after a moment is shown, so a prompt is never asked of an empty screen.
+    const win = mainWindow
+    const reveal = setTimeout(() => {
+      if (!win.isDestroyed() && !win.isVisible()) showMainWindow()
+    }, 300)
+    return askRendererToClose(closeRequestTarget(win)).finally(() => clearTimeout(reveal))
+  },
   () => app.quit(),
 )
+
+function showMainWindow(): void {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
+    void createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** The tray exists while something can put the window there. */
+function syncTray(startedHidden: boolean): void {
+  if (closeToTray || startedHidden) {
+    tray ??= createTray(path.join(__dirname, "icon.png"), { open: showMainWindow, quit: () => app.quit() })
+    return
+  }
+  tray?.destroy()
+  tray = null
+}
 
 function frontendDistDir(): string {
   // A packaged build serves only the renderer it shipped with: honouring the
@@ -260,8 +294,9 @@ function installApplicationMenu(): void {
 }
 
 /** Resolves whether the window loaded app://local/. */
-async function createWindow(): Promise<boolean> {
+async function createWindow(show = true): Promise<boolean> {
   const win = new BrowserWindow({
+    show,
     width: 1280,
     height: 800,
     // Deliberately below the ~1024px the canvas toolbar was sized against.
@@ -301,6 +336,11 @@ async function createWindow(): Promise<boolean> {
   })
   ipcMain.on("window:close", () => win.close())
   win.on("close", (event) => {
+    if (closeToTray && !isQuitting && !installingUpdate) {
+      event.preventDefault()
+      win.hide()
+      return
+    }
     if (!mayQuit()) event.preventDefault()
   })
 
@@ -412,17 +452,9 @@ if (!hasSingleInstanceLock) {
   app.quit()
 } else {
   app.on("second-instance", () => {
-    bootstrapLog.info("second-instance event; focusing existing window")
-
-    if (mainWindow === null) {
-      return
-    }
-
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-
-    mainWindow.focus()
+    bootstrapLog.info("second-instance event; showing existing window")
+    // Also the way back to a window hidden on a desktop that shows no tray.
+    if (mainWindow !== null) showMainWindow()
   })
 
   app.whenReady().then(() => {
@@ -829,7 +861,11 @@ if (!hasSingleInstanceLock) {
       // installer can kill the app under the prompt and Cancel stops nothing.
       // Ask first; on Cancel the update stays downloaded and can be retried.
       requireTrustedSender((): void => {
-        if (mayQuit(() => updates.restartAndInstall())) updates.restartAndInstall()
+        const install = (): void => {
+          installingUpdate = true
+          updates.restartAndInstall()
+        }
+        if (mayQuit(install)) install()
       }),
     )
     ipcMain.handle(
@@ -839,6 +875,27 @@ if (!hasSingleInstanceLock) {
     ipcMain.handle(
       "updates:openLogFile",
       requireTrustedSender((): void => revealLogFile()),
+    )
+
+    // Off the router like updates:*: registering a login item is not something
+    // a local agent on the MCP bridge gets to do.
+    const startedHidden = !isSmokeTest && launchedHidden()
+    closeToTray = appSettings.getBoolean("background.closeToTray")
+    syncTray(startedHidden)
+    const backgroundSettings = (): BackgroundSettings => ({ closeToTray, openAtLogin: getOpenAtLogin() })
+    ipcMain.handle("background:get", requireTrustedSender(backgroundSettings))
+    ipcMain.handle(
+      "background:set",
+      requireTrustedSender((next: BackgroundSettings): BackgroundSettings => {
+        if (typeof next?.closeToTray !== "boolean" || typeof next.openAtLogin !== "boolean") {
+          throw new Error("invalid background settings")
+        }
+        if (next.openAtLogin !== getOpenAtLogin()) setOpenAtLogin(next.openAtLogin)
+        closeToTray = next.closeToTray
+        appSettings.setBoolean("background.closeToTray", closeToTray)
+        syncTray(startedHidden)
+        return backgroundSettings()
+      }),
     )
 
     // OAuth 2.0 sign-in. Off the router like updates:* and agents:* below: it
@@ -1100,7 +1157,7 @@ if (!hasSingleInstanceLock) {
       })
     })
 
-    const windowLoaded = createWindow()
+    const windowLoaded = createWindow(!startedHidden)
     if (isSmokeTest) {
       void runSmokeTest(
         {
@@ -1125,11 +1182,8 @@ if (!hasSingleInstanceLock) {
       })
     }
 
-    app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        void createWindow()
-      }
-    })
+    // macOS dock click: also brings back a window hidden to the tray.
+    app.on("activate", showMainWindow)
   }).catch((error: unknown) => {
     // Without this a throw above leaves a windowless process holding the
     // single-instance lock, so every relaunch is silently rejected.

@@ -63,6 +63,7 @@ import type { MCPTool } from "@shared/types/MCPTool";
 import type { MCPPrompt } from "@shared/types/MCPPrompt";
 import type { MCPResource } from "@shared/types/MCPResource";
 import type { McpTestResult } from "@shared/types/McpTestResult";
+import type { BackgroundSettings } from "@shared/types/BackgroundSettings";
 import type {
   UpdatePolicy,
   UpdatesBridge,
@@ -133,6 +134,10 @@ type DesktopBridge = {
   ) => () => void;
   readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void;
   readonly screenReader?: boolean;
+  readonly getBackground?: () => Promise<BackgroundSettings>;
+  readonly setBackground?: (
+    settings: BackgroundSettings,
+  ) => Promise<BackgroundSettings>;
 };
 
 type McpBridge = {
@@ -927,6 +932,12 @@ export const desktop = {
    * nothing there renders the terminal this gates.
    */
   hasScreenReader: (): boolean => getDesktopBridge()?.screenReader === true,
+  /** Undefined outside Electron: there is no tray or login item to manage. */
+  getBackground: (): Promise<BackgroundSettings> | undefined =>
+    getDesktopBridge()?.getBackground?.(),
+  setBackground: (settings: BackgroundSettings): Promise<BackgroundSettings> =>
+    getDesktopBridge()?.setBackground?.(settings) ??
+    Promise.reject(new Error("Background settings need the desktop app")),
 } as const;
 
 function getMcpBridge(): McpBridge | undefined {

@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import {
+  AppWindow,
   Bot,
   MousePointer2,
   Network,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { Navigate, useParams } from "react-router-dom";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
+import { BackgroundSettingsPanel } from "../components/organisms/BackgroundSettingsPanel";
 import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
 import { GitAccountsSettingsPanel } from "../components/organisms/GitAccountsSettingsPanel";
 import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
@@ -37,6 +39,13 @@ export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
     subtitle: "Launch a coding agent in your project folder",
     width: "max-w-4xl",
     Panel: AgentsSettingsPanel,
+  },
+  background: {
+    icon: AppWindow,
+    title: "Background",
+    subtitle: "Tray and start at login",
+    width: "max-w-2xl",
+    Panel: BackgroundSettingsPanel,
   },
   canvas: {
     icon: MousePointer2,
