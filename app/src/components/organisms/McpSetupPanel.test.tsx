@@ -8,6 +8,7 @@ import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 const status: McpStatus = {
   running: true,
   config: { url: "http://127.0.0.1:47271/mcp", token: "token-1", port: 47271 },
+  autoApproveAgentRuns: false,
 };
 
 const approval: AgentRunApproval = {
@@ -23,6 +24,9 @@ const approval: AgentRunApproval = {
 };
 
 const revokeAgentApproval = vi.fn((_approvalId: string) => Promise.resolve(true));
+const setAutoApproveAgentRuns = vi.fn((_enabled: boolean) =>
+  Promise.resolve({ ...status, autoApproveAgentRuns: true }),
+);
 
 function installBridge(approvals: readonly AgentRunApproval[]): void {
   (window as unknown as Record<string, unknown>)["__APIWEAVE_MCP__"] = {
@@ -32,6 +36,7 @@ function installBridge(approvals: readonly AgentRunApproval[]): void {
     regenerateToken: () => Promise.resolve(status),
     listAgentApprovals: () => Promise.resolve(approvals),
     revokeAgentApproval,
+    setAutoApproveAgentRuns,
     listTools: () => Promise.resolve([]),
     listPrompts: () => Promise.resolve([]),
     listResources: () => Promise.resolve([]),
@@ -42,9 +47,27 @@ function installBridge(approvals: readonly AgentRunApproval[]): void {
 afterEach(() => {
   delete (window as unknown as Record<string, unknown>)["__APIWEAVE_MCP__"];
   revokeAgentApproval.mockClear();
+  setAutoApproveAgentRuns.mockClear();
 });
 
-describe("McpSetupPanel remembered approvals", () => {
+describe("McpSetupPanel agent approvals", () => {
+  it("skips the secret approval question for agent runs", async () => {
+    installBridge([]);
+    render(<McpSetupPanel />);
+
+    const toggle = (await screen.findByRole("checkbox", {
+      name: /skip secret approval for agent runs/i,
+    })) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    await userEvent.click(toggle);
+
+    expect(setAutoApproveAgentRuns).toHaveBeenCalledWith(true);
+    await waitFor(() => {
+      expect(toggle.checked).toBe(true);
+    });
+  });
+
   it("lists a remembered approval and revokes it", async () => {
     installBridge([approval]);
     render(<McpSetupPanel />);

@@ -156,6 +156,7 @@ type McpBridge = {
   readonly regenerateToken: () => Promise<McpStatus>
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>
+  readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>
   readonly listTools: () => Promise<readonly MCPTool[]>
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>
   readonly listResources: () => Promise<readonly MCPResource[]>
@@ -170,6 +171,8 @@ const mcpBridge: McpBridge = {
   listAgentApprovals: call<readonly AgentRunApproval[]>("mcp:listAgentApprovals"),
   revokeAgentApproval: (approvalId) =>
     ipcRenderer.invoke("mcp:revokeAgentApproval", approvalId) as Promise<boolean>,
+  setAutoApproveAgentRuns: (enabled) =>
+    ipcRenderer.invoke("mcp:setAutoApproveAgentRuns", enabled) as Promise<McpStatus>,
   listTools: call<readonly MCPTool[]>("mcp:listTools"),
   listPrompts: call<readonly MCPPrompt[]>("mcp:listPrompts"),
   listResources: call<readonly MCPResource[]>("mcp:listResources"),

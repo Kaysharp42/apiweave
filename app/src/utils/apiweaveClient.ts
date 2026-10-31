@@ -142,6 +142,7 @@ type McpBridge = {
   readonly regenerateToken: () => Promise<McpStatus>;
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>;
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>;
+  readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>;
   readonly listTools: () => Promise<readonly MCPTool[]>;
   readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
   readonly listResources: () => Promise<readonly MCPResource[]>;
@@ -933,26 +934,31 @@ function getMcpBridge(): McpBridge | undefined {
   return globalThis.window?.__APIWEAVE_MCP__ ?? globalApiweave.__APIWEAVE_MCP__;
 }
 
+const MCP_UNAVAILABLE: McpStatus = {
+  running: false,
+  config: null,
+  autoApproveAgentRuns: false,
+};
+
 /** Controls for the opt-in loopback MCP server (Setup-MCP dialog). Returns null
  * status when the bridge is absent (e.g. web preview outside Electron). */
 export const mcp = {
   isAvailable: (): boolean => getMcpBridge() !== undefined,
   getStatus: (): Promise<McpStatus> =>
-    getMcpBridge()?.getStatus() ??
-    Promise.resolve({ running: false, config: null }),
+    getMcpBridge()?.getStatus() ?? Promise.resolve(MCP_UNAVAILABLE),
   enable: (): Promise<McpStatus> =>
-    getMcpBridge()?.enable() ??
-    Promise.resolve({ running: false, config: null }),
+    getMcpBridge()?.enable() ?? Promise.resolve(MCP_UNAVAILABLE),
   disable: (): Promise<McpStatus> =>
-    getMcpBridge()?.disable() ??
-    Promise.resolve({ running: false, config: null }),
+    getMcpBridge()?.disable() ?? Promise.resolve(MCP_UNAVAILABLE),
   regenerateToken: (): Promise<McpStatus> =>
-    getMcpBridge()?.regenerateToken() ??
-    Promise.resolve({ running: false, config: null }),
+    getMcpBridge()?.regenerateToken() ?? Promise.resolve(MCP_UNAVAILABLE),
   listAgentApprovals: (): Promise<readonly AgentRunApproval[]> =>
     getMcpBridge()?.listAgentApprovals() ?? Promise.resolve([]),
   revokeAgentApproval: (approvalId: string): Promise<boolean> =>
     getMcpBridge()?.revokeAgentApproval(approvalId) ?? Promise.resolve(false),
+  setAutoApproveAgentRuns: (enabled: boolean): Promise<McpStatus> =>
+    getMcpBridge()?.setAutoApproveAgentRuns(enabled) ??
+    Promise.resolve(MCP_UNAVAILABLE),
   listTools: (): Promise<readonly MCPTool[]> =>
     getMcpBridge()?.listTools() ?? Promise.resolve([]),
   listPrompts: (): Promise<readonly MCPPrompt[]> =>

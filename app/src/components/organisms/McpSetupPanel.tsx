@@ -40,6 +40,7 @@ export function McpSetupPanel() {
   const [status, setStatus] = useState<McpStatus>({
     running: false,
     config: null,
+    autoApproveAgentRuns: false,
   });
   const [busy, setBusy] = useState(false);
   const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
@@ -70,6 +71,14 @@ export function McpSetupPanel() {
     setBusy(true);
     const next = status.running ? mcp.disable() : mcp.enable();
     void next.then(setStatus).finally(() => setBusy(false));
+  };
+
+  const onToggleAutoApprove = (): void => {
+    setBusy(true);
+    void mcp
+      .setAutoApproveAgentRuns(!status.autoApproveAgentRuns)
+      .then(setStatus)
+      .finally(() => setBusy(false));
   };
 
   const onRegenerate = (): void => {
@@ -170,6 +179,19 @@ export function McpSetupPanel() {
           </div>
         </div>
       )}
+
+      <ToggleSetting
+        title="Skip secret approval for agent runs"
+        description={
+          "A run an MCP client starts sends its resolved secrets without asking " +
+          "you first. The run is still limited to the destinations it reports " +
+          "when it starts. This applies to every client — leave it off unless " +
+          "you trust all of them."
+        }
+        checked={status.autoApproveAgentRuns}
+        onToggle={onToggleAutoApprove}
+        disabled={busy || !mcp.isAvailable()}
+      />
 
       {approvals.length > 0 && (
         <div>
