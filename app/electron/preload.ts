@@ -19,6 +19,7 @@ import type { UpdatesBridge, UpdateStatus } from "@shared/types/UpdateStatus"
 import type { OAuthBridge } from "@shared/types/OAuthBridge"
 import type { NetworkBridge } from "@shared/types/NetworkBridge"
 import type { GitBridge } from "@shared/types/GitBridge"
+import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { GitSignInPrompt } from "@shared/types/GitSignInPrompt"
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus"
 import {
@@ -117,6 +118,9 @@ type DesktopBridge = {
    * whether that may go ahead; until it does, main waits.
    */
   readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void
+  /** Tray and start-at-login. Privileged like updates:*, so off the router. */
+  readonly getBackground: () => Promise<BackgroundSettings>
+  readonly setBackground: (settings: BackgroundSettings) => Promise<BackgroundSettings>
 }
 
 const desktopBridge: DesktopBridge = {
@@ -144,6 +148,8 @@ const desktopBridge: DesktopBridge = {
     ipcRenderer.on(WINDOW_CLOSE_REQUEST_CHANNEL, listener)
     return () => ipcRenderer.removeListener(WINDOW_CLOSE_REQUEST_CHANNEL, listener)
   },
+  getBackground: call<BackgroundSettings>("background:get"),
+  setBackground: (settings) => ipcRenderer.invoke("background:set", settings) as Promise<BackgroundSettings>,
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_DESKTOP__", desktopBridge)
