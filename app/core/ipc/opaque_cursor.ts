@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
+import { ConflictError, ValidationError } from "./errors"
 
 // Process-local signing makes cursors tamper-proof and deliberately opaque to
 // callers. A restart invalidates an outstanding cursor; clients can safely make
@@ -43,6 +44,32 @@ export function openCursor(cursor: string, kind: string): OpenedCursor | undefin
   } catch {
     return undefined
   }
+}
+
+/**
+ * Open a cursor whose keyset position is a (sort key, id) pair and which must
+ * accompany the request fingerprinted by `scope`. A cursor that is unsigned,
+ * of another kind, missing either half or issued for another request is
+ * rejected, so callers only have to compare the snapshot
+ * ({@link assertCursorSnapshot}).
+ */
+export function openKeysetCursor(
+  cursor: string,
+  kind: string,
+  bound: { readonly scope: string; readonly scopeMessage: string },
+): { readonly position: readonly [string, string]; readonly snapshot: string } {
+  const opened = openCursor(cursor, kind)
+  const [key, id] = opened?.position ?? []
+  if (opened === undefined || key === undefined || id === undefined) {
+    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
+  }
+  if (opened.scope !== bound.scope) throw new ValidationError(bound.scopeMessage)
+  return { position: [key, id], snapshot: opened.snapshot }
+}
+
+/** Reject a cursor whose sealed snapshot is not the current one, so a changed set is re-read from the start. */
+export function assertCursorSnapshot(sealed: string, current: string, message: string): void {
+  if (sealed !== cursorScope(current)) throw new ConflictError(message)
 }
 
 function sign(body: string): string {

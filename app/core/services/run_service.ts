@@ -222,7 +222,8 @@ export class RunService {
    */
   async getNodeEvidence(workspaceId: string, runId: string, selection: EvidenceSelection): Promise<NodeEvidencePage> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return buildNodeEvidencePage(this.mustGet(workspaceId, runId), selection)
+    const run = this.mustGet(workspaceId, runId)
+    return buildNodeEvidencePage(run, selection)
   }
 
   async cancel(workspaceId: string, runId: string): Promise<Run> {

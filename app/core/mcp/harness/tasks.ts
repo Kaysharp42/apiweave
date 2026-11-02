@@ -70,87 +70,65 @@ async function runTask(
 async function runOrientTask(
   client: Client,
   recorder: McpBenchmarkRecorder,
-  _seed: Awaited<ReturnType<typeof seedTaskScenario>>,
+  _seed: TaskSeed,
   resourceBytes: { wire: number; text: number },
 ): Promise<void> {
   await callTool(client, recorder, "server_info", {})
   await readGuide(client, recorder, guideUri("start-here"), resourceBytes)
 }
 
-async function runFindAndPatchTask(
+type TaskSeed = Awaited<ReturnType<typeof seedTaskScenario>>
+
+/** A tool call scoped to the seeded workspace; every task but the orient one makes these. */
+function callSeeded(
   client: Client,
   recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const search = asRecord(await callTool(client, recorder, "workflows_search", {
-    workspaceId: seed.workspaceId,
-    query: "orders",
-  }))
+  seed: TaskSeed,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  return callTool(client, recorder, toolName, { workspaceId: seed.workspaceId, ...args })
+}
+
+async function runFindAndPatchTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const search = asRecord(await callSeeded(client, recorder, seed, "workflows_search", { query: "orders" }))
   const workflowId = asString(asRecord(first(asArray(search["items"]), "workflow search"))["workflowId"])
-  const outline = asRecord(await callTool(client, recorder, "workflows_get", {
-    workspaceId: seed.workspaceId,
-    workflowId,
-    view: "outline",
-  }))
+  const outline = asRecord(await callSeeded(client, recorder, seed, "workflows_get", { workflowId, view: "outline" }))
   const revision = asNumber(outline["rev"])
-  const nodeSearch = asRecord(await callTool(client, recorder, "workflows_searchNodes", {
-    workspaceId: seed.workspaceId,
-    workflowId,
-    query: "/orders",
-  }))
+  const nodeSearch = asRecord(await callSeeded(client, recorder, seed, "workflows_searchNodes", { workflowId, query: "/orders" }))
   const nodeIds = asArray(nodeSearch["items"])
     .slice(0, 2)
     .map((item) => asString(asRecord(item)["nodeId"]))
   if (nodeIds.length === 0) throw new Error("workflow node search returned no ids")
-  await callTool(client, recorder, "workflows_get", { workspaceId: seed.workspaceId, workflowId, nodeIds })
-  await callTool(client, recorder, "workflows_patch", {
-    workspaceId: seed.workspaceId,
+  await callSeeded(client, recorder, seed, "workflows_get", { workflowId, nodeIds })
+  await callSeeded(client, recorder, seed, "workflows_patch", {
     workflowId,
     expectedRevision: revision,
     upsertNodes: [{ nodeId: nodeIds[0], label: "Orders request (patched)" }],
   })
 }
 
-async function runDebugTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const debug = asRecord(await callTool(client, recorder, "workflows_debugContext", {
-    workspaceId: seed.workspaceId,
-    workflowId: seed.workflowId,
-  }))
+async function runDebugTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const debug = asRecord(await callSeeded(client, recorder, seed, "workflows_debugContext", { workflowId: seed.workflowId }))
   const summary = asRecord(debug["failureSummary"])
   const failedNodeId = asArray(summary["failedNodeIds"])
     .map((nodeId) => asString(nodeId))[0] ?? seed.failedNodeId
-  await callTool(client, recorder, "runs_getNodeResult", {
-    workspaceId: seed.workspaceId,
-    runId: seed.failedRunId,
-    nodeId: failedNodeId,
-  })
+  await callSeeded(client, recorder, seed, "runs_getNodeResult", { runId: seed.failedRunId, nodeId: failedNodeId })
 }
 
-async function runAddAssertionTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const suggestion = asRecord(await callTool(client, recorder, "assertion_suggest", {
-    workspaceId: seed.workspaceId,
+async function runAddAssertionTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const suggestion = asRecord(await callSeeded(client, recorder, seed, "assertion_suggest", {
     workflowId: seed.workflowId,
     runId: seed.failedRunId,
     sourceNodeId: ASSERTION_SOURCE_NODE,
   }))
-  const suggestions = asArray(suggestion["suggestions"])
-  const proposed = suggestions[0]
+  const proposed = asArray(suggestion["suggestions"])[0]
   const rules = proposed === undefined
     ? DEFAULT_ASSERTION_RULES
     : asArray(asRecord(proposed)["rules"])
-  const revision = asNumber(suggestion["rev"])
-  await callTool(client, recorder, "assertion_apply", {
-    workspaceId: seed.workspaceId,
+  await callSeeded(client, recorder, seed, "assertion_apply", {
     workflowId: seed.workflowId,
-    expectedRevision: revision,
+    expectedRevision: asNumber(suggestion["rev"]),
     assertionNodeId: ASSERTION_NODE,
     mode: "append",
     rules,
@@ -158,16 +136,8 @@ async function runAddAssertionTask(
   })
 }
 
-async function runHistoryTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  await callTool(client, recorder, "runs_history", {
-    workspaceId: seed.workspaceId,
-    workflowId: seed.workflowId,
-    limit: 20,
-  })
+async function runHistoryTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  await callSeeded(client, recorder, seed, "runs_history", { workflowId: seed.workflowId, limit: 20 })
 }
 
 /** The route the map-route tasks look for: two of the ten seeded workflows call it. */
@@ -177,17 +147,12 @@ const MAPPED_ROUTE = "/orders"
  * "Which nodes hit /orders?" the way it had to be asked before Phase 4: list
  * the workflows, then search each one. Kept as the comparison for map-route.
  */
-async function runMapRoutePerWorkflowTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const search = asRecord(await callTool(client, recorder, "workflows_search", { workspaceId: seed.workspaceId, limit: 100 }))
+async function runMapRoutePerWorkflowTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const search = asRecord(await callSeeded(client, recorder, seed, "workflows_search", { limit: 100 }))
   const found: string[] = []
   for (const row of asArray(search["items"])) {
     const workflowId = asString(asRecord(row)["workflowId"])
-    const page = asRecord(await callTool(client, recorder, "workflows_searchNodes", {
-      workspaceId: seed.workspaceId,
+    const page = asRecord(await callSeeded(client, recorder, seed, "workflows_searchNodes", {
       workflowId,
       query: MAPPED_ROUTE,
       limit: 100,
@@ -198,16 +163,8 @@ async function runMapRoutePerWorkflowTask(
 }
 
 /** The same question in one workspace-wide search. */
-async function runMapRouteTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const page = asRecord(await callTool(client, recorder, "workflows_searchNodes", {
-    workspaceId: seed.workspaceId,
-    query: MAPPED_ROUTE,
-    limit: 100,
-  }))
+async function runMapRouteTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const page = asRecord(await callSeeded(client, recorder, seed, "workflows_searchNodes", { query: MAPPED_ROUTE, limit: 100 }))
   expectRouteMatches(asArray(page["items"]).map((item) => {
     const match = asRecord(item)
     return `${asString(match["workflowId"])}:${asString(match["nodeId"])}`
@@ -215,12 +172,8 @@ async function runMapRouteTask(
 }
 
 /** Orient in the ten-workflow workspace with one map page. */
-async function runWorkspaceMapTask(
-  client: Client,
-  recorder: McpBenchmarkRecorder,
-  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
-): Promise<void> {
-  const map = asRecord(await callTool(client, recorder, "workspaces_map", { workspaceId: seed.workspaceId }))
+async function runWorkspaceMapTask(client: Client, recorder: McpBenchmarkRecorder, seed: TaskSeed): Promise<void> {
+  const map = asRecord(await callSeeded(client, recorder, seed, "workspaces_map", {}))
   if (asArray(map["items"]).length !== 10 || map["nextCursor"] !== null) {
     throw new Error("workspace map did not return the ten seeded workflows on one page")
   }

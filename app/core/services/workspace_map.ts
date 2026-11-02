@@ -2,15 +2,15 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { WorkspaceMapEntry } from "@shared/types/WorkspaceMapEntry"
 import type { WorkspaceMapPage } from "@shared/types/WorkspaceMapPage"
 import type { WorkflowSummaryCursor, WorkflowSummaryFilters } from "../repositories/WorkflowRepository"
-import { ConflictError, ValidationError } from "../ipc/errors"
-import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
-import { nodeEndpoint, nodeReferences } from "./node_facts"
-import { WORKSPACE_MAP_LIST_CAP } from "./read_budgets"
+import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
+import { type NodeReference, nodeEndpoint, nodeReferences } from "./node_facts"
 import type { RunService } from "./run_service"
 import type { WorkflowService } from "./workflow_service"
 
 const MAP_LISTS = ["endpoints", "produces", "consumes", "env", "secrets", "calls"] as const
 type MapList = (typeof MAP_LISTS)[number]
+/** The most names any one list of an entry carries; the rest are counted in `omitted`. */
+const WORKSPACE_MAP_LIST_CAP = 20
 const PLACEHOLDER_SPAN_RE = /\{\{[^{}]*\}\}/g
 
 /**
@@ -36,8 +36,8 @@ export class WorkspaceMapService {
     const scope = cursorScope({ workspaceId, collectionId: request.collectionId ?? null })
     const opened = request.cursor === undefined ? undefined : openMapCursor(request.cursor, scope)
     const page = await this.workflows.listGraphPage(workspaceId, filters, opened?.after, request.limit)
-    if (opened !== undefined && opened.snapshot !== cursorScope(page.snapshot)) {
-      throw new ConflictError("The workflows changed since this cursor was issued; call again without a cursor.")
+    if (opened !== undefined) {
+      assertCursorSnapshot(opened.snapshot, page.snapshot, "The workflows changed since this cursor was issued; call again without a cursor.")
     }
     const latest = await this.runs.latestByWorkflow(workspaceId, page.items.map((workflow) => workflow.workflowId))
     const last = page.items[page.items.length - 1]
@@ -51,41 +51,16 @@ export class WorkspaceMapService {
 }
 
 function openMapCursor(cursor: string, scope: string): { readonly after: WorkflowSummaryCursor; readonly snapshot: string } {
-  const opened = openCursor(cursor, "m")
-  const [updatedAt, workflowId] = opened?.position ?? []
-  if (opened === undefined || updatedAt === undefined || workflowId === undefined) {
-    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
-  }
-  if (opened.scope !== scope) {
-    throw new ValidationError("This cursor was issued for a different workspace or project; call again without a cursor.")
-  }
+  const opened = openKeysetCursor(cursor, "m", {
+    scope,
+    scopeMessage: "This cursor was issued for a different workspace or project; call again without a cursor.",
+  })
+  const [updatedAt, workflowId] = opened.position
   return { after: { updatedAt, workflowId }, snapshot: opened.snapshot }
 }
 
 function mapEntry(workflow: Workflow, lastRun: WorkspaceMapEntry["lastRun"]): WorkspaceMapEntry {
-  const lists: Record<MapList, Set<string>> = {
-    endpoints: new Set(),
-    produces: new Set(),
-    consumes: new Set(),
-    env: new Set(),
-    secrets: new Set(),
-    calls: new Set(),
-  }
-  for (const node of workflow.nodes) {
-    const endpoint = nodeEndpoint(node)
-    // Placeholders collapse to {{…}}, so one route called with different
-    // variables is one endpoint; the variable names are in `consumes`.
-    if (endpoint !== undefined) lists.endpoints.add(`${endpoint.method ?? "GET"} ${endpoint.urlPath.replace(PLACEHOLDER_SPAN_RE, "{{…}}")}`)
-    if (node.type === "workflow" && typeof node.config?.targetWorkflowId === "string") {
-      lists.calls.add(node.config.targetWorkflowId)
-    }
-    for (const reference of nodeReferences(node)) {
-      const [namespace, name] = splitReference(reference.ref)
-      if (namespace === "variables") lists[reference.role === "produces" ? "produces" : "consumes"].add(name)
-      else if (namespace === "env") lists.env.add(name)
-      else lists.secrets.add(name)
-    }
-  }
+  const lists = collectMapLists(workflow)
   const capped: Partial<Record<MapList, string[]>> = {}
   const omitted: Partial<Record<MapList, number>> = {}
   for (const key of MAP_LISTS) {
@@ -103,6 +78,34 @@ function mapEntry(workflow: Workflow, lastRun: WorkspaceMapEntry["lastRun"]): Wo
     ...(Object.keys(omitted).length > 0 ? { omitted } : {}),
     ...(lastRun !== undefined ? { lastRun } : {}),
   }
+}
+
+function collectMapLists(workflow: Workflow): Record<MapList, Set<string>> {
+  const lists: Record<MapList, Set<string>> = {
+    endpoints: new Set(),
+    produces: new Set(),
+    consumes: new Set(),
+    env: new Set(),
+    secrets: new Set(),
+    calls: new Set(),
+  }
+  for (const node of workflow.nodes) {
+    const endpoint = nodeEndpoint(node)
+    // Placeholders collapse to {{…}}, so one route called with different
+    // variables is one endpoint; the variable names are in `consumes`.
+    if (endpoint !== undefined) lists.endpoints.add(`${endpoint.method ?? "GET"} ${endpoint.urlPath.replace(PLACEHOLDER_SPAN_RE, "{{…}}")}`)
+    if (node.type === "workflow" && typeof node.config?.targetWorkflowId === "string") {
+      lists.calls.add(node.config.targetWorkflowId)
+    }
+    for (const reference of nodeReferences(node)) referenceList(lists, reference).add(splitReference(reference.ref)[1])
+  }
+  return lists
+}
+
+function referenceList(lists: Record<MapList, Set<string>>, reference: NodeReference): Set<string> {
+  const namespace = splitReference(reference.ref)[0]
+  if (namespace === "variables") return reference.role === "produces" ? lists.produces : lists.consumes
+  return namespace === "env" ? lists.env : lists.secrets
 }
 
 function splitReference(ref: string): [string, string] {

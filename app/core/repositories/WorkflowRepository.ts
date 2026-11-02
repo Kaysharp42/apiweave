@@ -10,8 +10,10 @@ import { generateId } from "../id"
 import { getLogger } from "../logging/logger"
 import {
   canonicalizeWorkflowGraph,
+  filteredSetSnapshot,
   getMapped,
   insertAndRead,
+  keysetRows,
   parseJson,
   queryMapped,
   toJson,
@@ -201,18 +203,14 @@ export class WorkflowRepository {
     after: WorkflowSummaryCursor | undefined,
     limit: number,
   ): WorkflowSummaryPage {
-    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
-    const snapshot = this.summariesSnapshot(workspaceId, filters)
-    if (after !== undefined) {
-      clauses.push("(updatedAt < ? OR (updatedAt = ? AND id < ?))")
-      params.push(after.updatedAt, after.updatedAt, after.workflowId)
-    }
-    params.push(limit + 1)
-    const rows = this.store.query<WorkflowDiscoveryRow>(
-      `SELECT id, workspace_id, name, graph_json, settings_json, rev, updatedAt FROM workflows WHERE ${clauses.join(" AND ")} ORDER BY updatedAt DESC, id DESC LIMIT ?`,
-      params,
+    const { rows, hasMore } = this.keysetPage<WorkflowDiscoveryRow>(
+      "id, workspace_id, name, graph_json, settings_json, rev, updatedAt",
+      workspaceId,
+      filters,
+      after,
+      limit,
     )
-    return { items: rows.slice(0, limit).map(rowToSummary), hasMore: rows.length > limit, snapshot }
+    return { items: rows.map(rowToSummary), hasMore, snapshot: this.summariesSnapshot(workspaceId, filters) }
   }
 
   /**
@@ -226,20 +224,25 @@ export class WorkflowRepository {
     after: WorkflowSummaryCursor | undefined,
     limit: number,
   ): { items: readonly Workflow[]; hasMore: boolean; snapshot: string } {
-    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
-    const snapshot = this.summariesSnapshot(workspaceId, filters)
-    if (after !== undefined) {
-      clauses.push("(updatedAt < ? OR (updatedAt = ? AND id < ?))")
-      params.push(after.updatedAt, after.updatedAt, after.workflowId)
-    }
-    params.push(limit + 1)
-    const rows = queryMapped(
-      this.store,
-      `SELECT ${COLUMNS} FROM workflows WHERE ${clauses.join(" AND ")} ORDER BY updatedAt DESC, id DESC LIMIT ?`,
-      params,
-      rowToWorkflow,
-    )
-    return { items: rows.slice(0, limit), hasMore: rows.length > limit, snapshot }
+    const { rows, hasMore } = this.keysetPage<WorkflowRow>(COLUMNS, workspaceId, filters, after, limit)
+    return { items: rows.map(rowToWorkflow), hasMore, snapshot: this.summariesSnapshot(workspaceId, filters) }
+  }
+
+  private keysetPage<Row extends SqliteRow>(
+    select: string,
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    after: WorkflowSummaryCursor | undefined,
+    limit: number,
+  ): { rows: readonly Row[]; hasMore: boolean } {
+    return keysetRows<Row>(this.store, {
+      select,
+      table: "workflows",
+      set: summaryFilterClauses(workspaceId, filters),
+      sortColumn: "updatedAt",
+      ...(after !== undefined ? { after: { sortKey: after.updatedAt, id: after.workflowId } } : {}),
+      limit,
+    })
   }
 
   /**
@@ -249,12 +252,7 @@ export class WorkflowRepository {
    * silently skipping or repeating rows.
    */
   public summariesSnapshot(workspaceId: string, filters: WorkflowSummaryFilters): string {
-    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
-    const stamp = this.store.get<{ count: number; revisionSum: number; newest: string | null } & SqliteRow>(
-      `SELECT count(*) AS count, COALESCE(sum(rev), 0) AS revisionSum, max(updatedAt) AS newest FROM workflows WHERE ${clauses.join(" AND ")}`,
-      params,
-    )
-    return `${stamp?.count ?? 0}:${stamp?.revisionSum ?? 0}:${stamp?.newest ?? ""}`
+    return filteredSetSnapshot(this.store, "workflows", summaryFilterClauses(workspaceId, filters), "rev")
   }
 
   public countByCollection(workspaceId: string, collectionId: string): number {

@@ -10,6 +10,15 @@ import {
   measureMcpCatalogue,
   startMcpBenchmarkHttpFixtureServer,
 } from "../harness"
+import type { McpBaselineReport } from "../harness"
+
+function expectTaskBytes(task: McpBaselineReport["scriptedTasks"][number]): void {
+  expect(task.responseWireJsonBytes).toBeGreaterThan(0)
+  expect(task.responseTextBytes).toBeGreaterThan(0)
+  expect(task.responseWireJsonBytes).toBeGreaterThan(task.responseTextBytes)
+  expect(task.toolNames).toHaveLength(task.toolCallCount)
+  expect(task.taskSuccess).toBe(true)
+}
 
 describe("MCP baseline harness", () => {
   it("measures the real catalogue as JSON wire bodies without inventing token counts", async () => {
@@ -73,9 +82,8 @@ describe("MCP baseline harness", () => {
     expect(report.taskSuccess).toBe(false)
   })
 
-  it("assembles the baseline with real tool payloads and scripted task calls", async () => {
-    const report = await createMcpBaselineReport()
-    const payloads = report.fixturePayloads
+  it("assembles the baseline with real tool payloads", async () => {
+    const payloads = (await createMcpBaselineReport()).fixturePayloads
 
     expect(payloads).toHaveLength(24)
     expect(new Set(payloads.map((payload) => payload.payload))).toEqual(new Set([
@@ -92,13 +100,17 @@ describe("MCP baseline harness", () => {
     for (const payload of ["workflowsSearch", "workflowsGetOutline", "workflowsDebugContext", "runsHistory", "workspacesMap"]) {
       const rows = payloads.filter((row) => row.payload === payload)
       expect(rows).toHaveLength(3)
-      for (const row of rows) expect(row.compactJsonBytes).toBeGreaterThan(0)
+      expect(rows.every((row) => row.compactJsonBytes > 0)).toBe(true)
     }
     const outline = payloads.filter((row) => row.payload === "workflowsGetOutline")
     expect(outline.find((row) => row.fixtureId === "workflowsGetOutline-500")?.compactJsonBytes)
       .toBeGreaterThan(outline.find((row) => row.fixtureId === "workflowsGetOutline-10")?.compactJsonBytes ?? 0)
+  }, 60_000)
 
-    expect(report.scriptedTasks.map((task) => task.taskId)).toEqual([
+  it("assembles the baseline with scripted task calls", async () => {
+    const tasks = (await createMcpBaselineReport()).scriptedTasks
+
+    expect(tasks.map((task) => task.taskId)).toEqual([
       "orient",
       "find-and-patch",
       "debug",
@@ -119,15 +131,11 @@ describe("MCP baseline harness", () => {
       "map-route": { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
       "workspace-map": { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
     }
-    for (const task of report.scriptedTasks) {
+    for (const task of tasks) {
       expect(task).toMatchObject(expected[task.taskId] ?? {})
-      expect(task.responseWireJsonBytes).toBeGreaterThan(0)
-      expect(task.responseTextBytes).toBeGreaterThan(0)
-      expect(task.responseWireJsonBytes).toBeGreaterThan(task.responseTextBytes)
-      expect(task.toolNames).toHaveLength(task.toolCallCount)
-      expect(task.taskSuccess).toBe(true)
+      expectTaskBytes(task)
     }
-    const byId = new Map(report.scriptedTasks.map((task) => [task.taskId, task]))
+    const byId = new Map(tasks.map((task) => [task.taskId, task]))
     expect(byId.get("map-route")?.responseTextBytes)
       .toBeLessThan(byId.get("map-route-per-workflow")?.responseTextBytes ?? 0)
   }, 60_000)

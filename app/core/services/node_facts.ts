@@ -15,9 +15,6 @@ import { isSecretKey } from "@shared/credentials/credentials"
  * reference pattern, so nothing here can surface a withheld secret.
  */
 
-/** A placeholder namespace a reference filter or the map can name. */
-export type ReferenceNamespace = "variables" | "env" | "secrets"
-
 /** One placeholder reference a node uses, with where and how. */
 export interface NodeReference extends NodeReferenceUse {
   /** `variables.token`, `env.BASE_URL`, `secrets.API_KEY`. */
@@ -79,39 +76,45 @@ function safeDecodeUri(path: string): string {
  * `auth`, `scripts`, `inputMapping`, …). Producers: extractor names,
  * `outputMapping` keys and `aw.variables.set`. Everything else consumes.
  */
-// fallow-ignore-next-line complexity
 export function nodeReferences(node: WorkflowNode): NodeReference[] {
   const config = node.config as Readonly<Record<string, unknown>> | undefined
   if (config === undefined) return []
   const found = new Map<string, NodeReference>()
-  const add = (ref: string, field: string, role: NodeReference["role"]): void => {
+  const add: AddReference = (ref, field, role) => {
     found.set(`${ref}\u0000${field}\u0000${role}`, { ref, field, role })
   }
-  for (const [field, value] of Object.entries(config)) {
-    if (field === "extractors" || field === "outputMapping") {
-      if (isRecord(value)) for (const name of Object.keys(value)) add(`variables.${name}`, field, "produces")
-      continue
-    }
-    if (field === "scripts") {
-      forEachString(value, (text) => {
-        for (const match of text.matchAll(SCRIPT_CALL_RE)) {
-          add(`${match[1]}.${match[3]}`, field, match[2] === "set" ? "produces" : "consumes")
-        }
-      })
-      continue
-    }
-    if (field === "assertions" && Array.isArray(value)) {
-      for (const item of value) {
-        if (isRecord(item) && item["source"] === "variables" && typeof item["path"] === "string" && item["path"] !== "") {
-          add(`variables.${item["path"]}`, field, "consumes")
-        }
-      }
-    }
-    forEachString(value, (text) => {
-      for (const match of text.matchAll(PLACEHOLDER_REF_RE)) add(`${match[1]}.${match[2]}`, field, "consumes")
-    })
-  }
+  for (const [field, value] of Object.entries(config)) collectFieldReferences(field, value, add)
   return [...found.values()]
+}
+
+type AddReference = (ref: string, field: string, role: NodeReference["role"]) => void
+
+function collectFieldReferences(field: string, value: unknown, add: AddReference): void {
+  if (field === "extractors" || field === "outputMapping") {
+    if (isRecord(value)) for (const name of Object.keys(value)) add(`variables.${name}`, field, "produces")
+    return
+  }
+  if (field === "scripts") {
+    forEachString(value, (text) => {
+      for (const match of text.matchAll(SCRIPT_CALL_RE)) {
+        add(`${match[1]}.${match[3]}`, field, match[2] === "set" ? "produces" : "consumes")
+      }
+    })
+    return
+  }
+  if (field === "assertions") collectAssertionVariables(value, add)
+  forEachString(value, (text) => {
+    for (const match of text.matchAll(PLACEHOLDER_REF_RE)) add(`${match[1]}.${match[2]}`, field, "consumes")
+  })
+}
+
+function collectAssertionVariables(value: unknown, add: AddReference): void {
+  if (!Array.isArray(value)) return
+  for (const item of value) {
+    if (isRecord(item) && item["source"] === "variables" && typeof item["path"] === "string" && item["path"] !== "") {
+      add(`variables.${item["path"]}`, "assertions", "consumes")
+    }
+  }
 }
 
 function forEachString(value: unknown, visit: (text: string) => void): void {

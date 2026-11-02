@@ -352,3 +352,54 @@ function normalizeAssertionOperator(value: string): AssertionOperator | null {
   const canonical = AssertionOperatorSchema.safeParse(value)
   return canonical.success ? canonical.data : (aliases[value] ?? null)
 }
+
+/** A filtered row set: the WHERE clauses (ANDed) and their parameters. */
+export interface FilteredSet {
+  readonly clauses: readonly string[]
+  readonly params: readonly (string | number)[]
+}
+
+/**
+ * Revision fingerprint of a filtered row set: row count, an optional revision
+ * sum, and the newest `updatedAt`. Cursors seal it, so a page requested
+ * against a changed set is rejected rather than skipping or repeating rows.
+ */
+export function filteredSetSnapshot(store: KVStore, table: string, set: FilteredSet, revisionColumn?: string): string {
+  const revisionSum = revisionColumn === undefined ? "" : `, COALESCE(sum(${revisionColumn}), 0) AS revisionSum`
+  const stamp = store.get<{ count: number; revisionSum?: number; newest: string | null } & SqliteRow>(
+    `SELECT count(*) AS count${revisionSum}, max(updatedAt) AS newest FROM ${table} WHERE ${set.clauses.join(" AND ")}`,
+    [...set.params],
+  )
+  const parts = [stamp?.count ?? 0, ...(revisionColumn === undefined ? [] : [stamp?.revisionSum ?? 0]), stamp?.newest ?? ""]
+  return parts.join(":")
+}
+
+/**
+ * One page of a filtered row set in deterministic keyset order — newest
+ * `sortColumn` first, ties by descending id. Reads one row past the limit to
+ * learn whether another page follows.
+ */
+export function keysetRows<Row extends SqliteRow>(
+  store: KVStore,
+  query: {
+    readonly select: string
+    readonly table: string
+    readonly set: FilteredSet
+    readonly sortColumn: "createdAt" | "updatedAt"
+    readonly after?: { readonly sortKey: string; readonly id: string }
+    readonly limit: number
+  },
+): { rows: readonly Row[]; hasMore: boolean } {
+  const { sortColumn, after } = query
+  const clauses = [...query.set.clauses]
+  const params = [...query.set.params]
+  if (after !== undefined) {
+    clauses.push(`(${sortColumn} < ? OR (${sortColumn} = ? AND id < ?))`)
+    params.push(after.sortKey, after.sortKey, after.id)
+  }
+  const rows = store.query<Row>(
+    `SELECT ${query.select} FROM ${query.table} WHERE ${clauses.join(" AND ")} ORDER BY ${sortColumn} DESC, id DESC LIMIT ?`,
+    [...params, query.limit + 1],
+  )
+  return { rows: rows.slice(0, query.limit), hasMore: rows.length > query.limit }
+}

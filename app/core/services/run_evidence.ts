@@ -7,8 +7,7 @@ import type { RunResult } from "@shared/types/RunResult"
 import type { RunHistoryCursor } from "../repositories/RunRepository"
 import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8 } from "./read_budgets"
 import { sanitizeAgentReadValue } from "./secret_utils"
-import { ConflictError, ValidationError } from "../ipc/errors"
-import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
+import { assertCursorSnapshot, cursorScope, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
 /* ------------------------------------------------------------------------- *
  * Run-history cursors: opaque, filter-bound, revision-safe.
@@ -41,17 +40,12 @@ export function openHistoryCursor(
   request: { readonly workspaceId: string; readonly workflowId: string | undefined; readonly status: Run["status"] | undefined },
   snapshot: string,
 ): SealedHistoryCursor {
-  const opened = openCursor(cursor, "h")
-  const [createdAt, runId] = opened?.position ?? []
-  if (opened === undefined || createdAt === undefined || runId === undefined) {
-    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
-  }
-  if (opened.scope !== historyScope(request)) {
-    throw new ValidationError("This cursor was issued for a different workspace or different filters; call again without a cursor.")
-  }
-  if (opened.snapshot !== cursorScope(snapshot)) {
-    throw new ConflictError("The run history changed since this cursor was issued; call again without a cursor.")
-  }
+  const opened = openKeysetCursor(cursor, "h", {
+    scope: historyScope(request),
+    scopeMessage: "This cursor was issued for a different workspace or different filters; call again without a cursor.",
+  })
+  assertCursorSnapshot(opened.snapshot, snapshot, "The run history changed since this cursor was issued; call again without a cursor.")
+  const [createdAt, runId] = opened.position
   return { after: { createdAt, runId } }
 }
 

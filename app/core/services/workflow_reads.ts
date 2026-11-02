@@ -9,7 +9,7 @@ import type { WorkflowSummaryFilters, WorkflowSummaryCursor } from "../repositor
 import { WORKFLOW_OUTLINE_DEFAULT_LIMIT } from "./read_budgets"
 import { nodeEndpoint, nodeReferences } from "./node_facts"
 import { ConflictError, ValidationError } from "../ipc/errors"
-import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
+import { assertCursorSnapshot, cursorScope, openCursor, openKeysetCursor, sealCursor } from "../ipc/opaque_cursor"
 
 /* ------------------------------------------------------------------------- *
  * Workflow-search cursors: opaque, filter-bound, revision-safe.
@@ -52,17 +52,12 @@ export function openSearchCursor(
   request: { readonly workspaceId: string; readonly filters: WorkflowSummaryFilters },
   snapshot: string,
 ): SealedSearchCursor {
-  const opened = openCursor(cursor, "s")
-  const [updatedAt, workflowId] = opened?.position ?? []
-  if (opened === undefined || updatedAt === undefined || workflowId === undefined) {
-    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
-  }
-  if (opened.scope !== searchScope(request.workspaceId, request.filters)) {
-    throw new ValidationError("This cursor was issued for a different workspace or different filters; call again without a cursor.")
-  }
-  if (opened.snapshot !== cursorScope(snapshot)) {
-    throw new ConflictError("The workflow list changed since this cursor was issued; call again without a cursor.")
-  }
+  const opened = openKeysetCursor(cursor, "s", {
+    scope: searchScope(request.workspaceId, request.filters),
+    scopeMessage: "This cursor was issued for a different workspace or different filters; call again without a cursor.",
+  })
+  assertCursorSnapshot(opened.snapshot, snapshot, "The workflow list changed since this cursor was issued; call again without a cursor.")
+  const [updatedAt, workflowId] = opened.position
   return { after: { updatedAt, workflowId } }
 }
 
@@ -236,21 +231,29 @@ function workflowMatches(workflow: Workflow, request: NodeSearchRequest, mode: "
   return workflow.nodes.flatMap((node) => {
     if (typeFilter !== undefined && !typeFilter.has(node.type)) return []
     const matched = matchNode(node, needle === "" ? undefined : needle, request.ref)
-    if (matched === undefined) return []
-    const endpoint = nodeEndpoint(node)
-    return [{
-      // A one-workflow page carries its workflowId once, at the top.
-      ...(mode === "workspace" ? { workflowId: workflow.workflowId, workflowName: workflow.name } : {}),
-      nodeId: node.nodeId,
-      type: node.type,
-      label: node.label ?? null,
-      ...(endpoint?.method !== undefined ? { method: endpoint.method } : {}),
-      ...(endpoint !== undefined ? { urlPath: endpoint.urlPath } : {}),
-      matchedOn: matched.matchedOn,
-      ...(matched.references !== undefined ? { references: matched.references } : {}),
-      ...(mode === "workflow" ? neighborhood(workflow, node.nodeId) : {}),
-    }]
+    return matched === undefined ? [] : [nodeMatch(workflow, node, matched, mode)]
   })
+}
+
+function nodeMatch(
+  workflow: Workflow,
+  node: WorkflowNode,
+  matched: NonNullable<ReturnType<typeof matchNode>>,
+  mode: "workflow" | "workspace",
+): WorkflowNodeMatch {
+  const endpoint = nodeEndpoint(node)
+  return {
+    // A one-workflow page carries its workflowId once, at the top.
+    ...(mode === "workspace" ? { workflowId: workflow.workflowId, workflowName: workflow.name } : {}),
+    nodeId: node.nodeId,
+    type: node.type,
+    label: node.label ?? null,
+    ...(endpoint?.method !== undefined ? { method: endpoint.method } : {}),
+    ...(endpoint !== undefined ? { urlPath: endpoint.urlPath } : {}),
+    matchedOn: matched.matchedOn,
+    ...(matched.references !== undefined ? { references: matched.references } : {}),
+    ...(mode === "workflow" ? neighborhood(workflow, node.nodeId) : {}),
+  }
 }
 
 function neighborhood(workflow: Workflow, nodeId: string): { neighborNodeIds: string[]; incidentEdgeIds: string[] } {
