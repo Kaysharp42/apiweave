@@ -1,10 +1,23 @@
 import { WorkflowSchema } from "@shared/zod-schemas/WorkflowSchema"
 import { RunSchema } from "@shared/zod-schemas/RunSchema"
+import type { Run } from "@shared/types/Run"
+import type { RunResult } from "@shared/types/RunResult"
+import type { Workflow } from "@shared/types/Workflow"
+import type { RunRepository } from "../../repositories"
 import { projectRunSnapshot, projectRunToolResult } from "../run-projection"
-import { prettyJsonUtf8Bytes, jsonUtf8Bytes } from "./measurements"
+import { jsonUtf8Bytes, prettyJsonUtf8Bytes, toolResultBody } from "./measurements"
+import { createMcpBenchmarkRuntime, openMcpBenchmarkClient } from "./services"
 import type { McpFixturePayloadMeasurement, McpFixtureScenario, McpTaskFixture } from "./types"
 
 const TIMESTAMP = "2026-09-09T00:00:00.000Z"
+const FIXTURE_WORKSPACE_ID = "ws-fixture"
+const FIXTURE_NODE_COUNTS = [10, 130, 500] as const
+const MEASURED_PAYLOADS = [
+  { payload: "workflowsSearch", toolName: "workflows_search" },
+  { payload: "workflowsGetOutline", toolName: "workflows_get" },
+  { payload: "workflowsDebugContext", toolName: "workflows_debugContext" },
+  { payload: "runsHistory", toolName: "runs_history" },
+] as const
 
 /** Phase-0 conditions. A trial creates isolated state for each selected scenario. */
 export const MCP_FIXTURE_SCENARIOS: readonly McpFixtureScenario[] = [
@@ -33,24 +46,104 @@ export const MCP_TASK_FIXTURES: readonly McpTaskFixture[] = [
   task("preserve-concurrent-edit", "Recover from a revision conflict while preserving the user's concurrent edit.", ["revision-races"], "The conflicting edit is re-read/rebased and the concurrent user change remains present."),
 ]
 
-/** Production-schema fixture payloads used for repeatable size measurements. */
-export function measureFixturePayloads(): readonly McpFixturePayloadMeasurement[] {
+/**
+ * Measures the production-schema fixtures and the real MCP payloads an agent
+ * receives for them. Tool payloads come from an in-memory client, never from a
+ * hand-built approximation of the response.
+ */
+export async function measureFixturePayloads(): Promise<readonly McpFixturePayloadMeasurement[]> {
+  const runtime = createMcpBenchmarkRuntime()
+  const connection = await openMcpBenchmarkClient(runtime.deps)
   const measurements: McpFixturePayloadMeasurement[] = []
-  for (const nodeCount of [10, 130, 500]) {
-    const workflow = createWorkflowFixture(nodeCount)
-    const run = createRunFixture(workflow)
-    measurements.push(measure(`workflow-${nodeCount}`, "workflow", workflow))
-    measurements.push(measure(`workflow-list-${nodeCount}-x10`, "workflowList", {
-      items: Array.from({ length: 10 }, (_, index) => ({ ...workflow, workflowId: `wf-${nodeCount}-${index}` })),
-      total: 10,
-    }))
-    measurements.push(measure(`run-tool-${nodeCount}`, "runToolProjection", projectRunToolResult(run)))
-    measurements.push(measure(`run-resource-${nodeCount}`, "runResourceProjection", projectRunSnapshot(run)))
+  runtime.repositories.workspaces.create({
+    workspaceId: FIXTURE_WORKSPACE_ID,
+    name: "Synthetic fixture workspace",
+    slug: "synthetic-fixture-workspace",
+  })
+  try {
+    for (const nodeCount of FIXTURE_NODE_COUNTS) {
+      const workflow = runtime.repositories.workflows.create(createWorkflowFixture(nodeCount))
+      const run = createRunFixture(workflow)
+      measurements.push(measure(`workflow-${nodeCount}`, "workflow", workflow))
+      measurements.push(measure(`run-tool-${nodeCount}`, "runToolProjection", projectRunToolResult(run)))
+      measurements.push(measure(`run-resource-${nodeCount}`, "runResourceProjection", projectRunSnapshot(run)))
+      seedFixtureRuns(runtime.repositories.runs, workflow)
+      for (const { payload, toolName } of MEASURED_PAYLOADS) {
+        const result = await connection.client.callTool({
+          name: toolName,
+          arguments: payloadArguments(payload, workflow.workspaceId, workflow.workflowId, workflow.name),
+        })
+        measurements.push(measure(`${payload}-${nodeCount}`, payload, toolResultBody(result)))
+      }
+    }
+    return measurements
+  } finally {
+    await connection.close()
+    runtime.db.close()
   }
-  return measurements
 }
 
-function createWorkflowFixture(nodeCount: number) {
+function payloadArguments(
+  payload: (typeof MEASURED_PAYLOADS)[number]["payload"],
+  workspaceId: string,
+  workflowId: string,
+  workflowName: string,
+): Record<string, unknown> {
+  switch (payload) {
+    case "workflowsSearch":
+      return { workspaceId, query: workflowName }
+    case "workflowsGetOutline":
+      return { workspaceId, workflowId, view: "outline" }
+    case "workflowsDebugContext":
+      return { workspaceId, workflowId }
+    case "runsHistory":
+      return { workspaceId, workflowId, limit: 20 }
+  }
+}
+
+function seedFixtureRuns(runs: RunRepository, workflow: Workflow): void {
+  const requestIds = workflow.nodes.filter((node) => node.type === "http-request").map((node) => node.nodeId)
+  const failedNodeId = requestIds[requestIds.length - 1]
+  if (failedNodeId === undefined) throw new Error("Fixture workflow has no request node to fail")
+  const failedResults: RunResult[] = requestIds.map((nodeId) => {
+    const failed = nodeId === failedNodeId
+    return {
+      nodeId,
+      status: failed ? "failed" : "passed",
+      duration: 20,
+      response: { statusCode: failed ? 500 : 200 },
+      ...(failed ? { error: "Synthetic fixture failure" } : {}),
+    }
+  })
+  const failedRun = runs.create({ workspaceId: workflow.workspaceId, workflowId: workflow.workflowId })
+  runs.update(failedRun.runId, {
+    status: "failed",
+    results: failedResults,
+    failedNodes: [failedNodeId],
+    startedAt: TIMESTAMP,
+    completedAt: TIMESTAMP,
+    duration: 1_000,
+  })
+  const passedResults: RunResult[] = requestIds.slice(0, 4).map((nodeId) => ({
+    nodeId,
+    status: "passed",
+    duration: 20,
+    response: { statusCode: 200 },
+  }))
+  for (let index = 1; index < 20; index += 1) {
+    const run = runs.create({ workspaceId: workflow.workspaceId, workflowId: workflow.workflowId })
+    runs.update(run.runId, {
+      status: "completed",
+      results: passedResults,
+      failedNodes: [],
+      startedAt: TIMESTAMP,
+      completedAt: TIMESTAMP,
+      duration: 1_000,
+    })
+  }
+}
+
+function createWorkflowFixture(nodeCount: number): Workflow {
   const requestCount = nodeCount - 4
   const requests = Array.from({ length: requestCount }, (_, index) => ({
     nodeId: `request-${index + 1}`,
@@ -72,7 +165,7 @@ function createWorkflowFixture(nodeCount: number) {
   ]
   const executableNodes = ["start", ...requests.map((node) => node.nodeId), "end"]
   return WorkflowSchema.parse({
-    workspaceId: "ws-fixture",
+    workspaceId: FIXTURE_WORKSPACE_ID,
     workflowId: `wf-${nodeCount}`,
     name: `Synthetic ${nodeCount}-node workflow`,
     description: "Deterministic MCP baseline fixture",
@@ -88,7 +181,7 @@ function createWorkflowFixture(nodeCount: number) {
   })
 }
 
-function createRunFixture(workflow: ReturnType<typeof createWorkflowFixture>) {
+function createRunFixture(workflow: Workflow): Run {
   const executableNodes = workflow.nodes.filter((node) => node.type !== "group" && node.type !== "note")
   return RunSchema.parse({
     workspaceId: workflow.workspaceId,

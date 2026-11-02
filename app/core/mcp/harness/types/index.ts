@@ -1,5 +1,6 @@
 export type { McpBaselineReport } from "./McpBaselineReport"
 export type { McpBenchmarkCall } from "./McpBenchmarkCall"
+export type { McpBenchmarkRuntime } from "./McpBenchmarkRuntime"
 export type { McpBenchmarkCounters } from "./McpBenchmarkCounters"
 export type { McpBenchmarkObservation } from "./McpBenchmarkObservation"
 export type { McpBenchmarkTaskReport } from "./McpBenchmarkTaskReport"
@@ -11,4 +12,5 @@ export type { McpFixturePayloadMeasurement } from "./McpFixturePayloadMeasuremen
 export type { McpFixtureScenario } from "./McpFixtureScenario"
 export type { McpHttpFixtureServer } from "./McpHttpFixtureServer"
 export type { McpModelVisibleTokens } from "./McpModelVisibleTokens"
+export type { McpScriptedTaskResult } from "./McpScriptedTaskResult"
 export type { McpTaskFixture } from "./McpTaskFixture"

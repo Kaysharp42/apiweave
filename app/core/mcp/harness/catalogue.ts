@@ -23,6 +23,11 @@ export async function measureMcpCatalogue(): Promise<McpCatalogueMeasurement> {
     const tools: McpCatalogueToolMeasurement[] = result.tools.map((tool) => ({
       name: tool.name,
       definitionJsonBytes: jsonUtf8Bytes(tool),
+      modelVisibleBytes: jsonUtf8Bytes({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }),
       inputSchemaJsonBytes: jsonUtf8Bytes(tool.inputSchema),
       outputSchemaJsonBytes: jsonUtf8Bytes(tool.outputSchema ?? {}),
       descriptionUtf8Bytes: Buffer.byteLength(tool.description ?? "", "utf8"),
@@ -31,11 +36,12 @@ export async function measureMcpCatalogue(): Promise<McpCatalogueMeasurement> {
       toolCount: tools.length,
       responseWireJsonBytes: responseWireJsonBytes(result),
       resultJsonBytes: jsonUtf8Bytes(result),
+      modelVisibleBytes: sum(tools, (tool) => tool.modelVisibleBytes),
       inputSchemaJsonBytes: sum(tools, (tool) => tool.inputSchemaJsonBytes),
       outputSchemaJsonBytes: sum(tools, (tool) => tool.outputSchemaJsonBytes),
       descriptionUtf8Bytes: sum(tools, (tool) => tool.descriptionUtf8Bytes),
       instructionsUtf8Bytes: Buffer.byteLength(MCP_INSTRUCTIONS, "utf8"),
-      tools: [...tools].sort((left, right) => right.definitionJsonBytes - left.definitionJsonBytes),
+      tools: [...tools].sort((left, right) => right.modelVisibleBytes - left.modelVisibleBytes),
     }
   } finally {
     await client.close()
