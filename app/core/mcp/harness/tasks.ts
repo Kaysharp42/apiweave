@@ -144,12 +144,7 @@ async function runAddAssertionTask(
   const rules = proposed === undefined
     ? DEFAULT_ASSERTION_RULES
     : asArray(asRecord(proposed)["rules"])
-  const read = asRecord(await callTool(client, recorder, "workflows_get", {
-    workspaceId: seed.workspaceId,
-    workflowId: seed.workflowId,
-    nodeIds: [ASSERTION_NODE],
-  }))
-  const revision = asNumber(read["rev"])
+  const revision = asNumber(suggestion["rev"])
   await callTool(client, recorder, "assertion_apply", {
     workspaceId: seed.workspaceId,
     workflowId: seed.workflowId,

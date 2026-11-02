@@ -200,7 +200,6 @@ export class RunService {
           workspaceId,
           ...(filters.workflowId !== undefined ? { workflowId: filters.workflowId } : {}),
           ...(filters.status !== undefined ? { status: filters.status } : {}),
-          limit,
           after: { createdAt: last.createdAt, runId: last.runId },
           snapshot: page.snapshot,
         })

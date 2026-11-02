@@ -11,7 +11,7 @@ import {
   WORKFLOW_OUTLINE_DEFAULT_LIMIT,
 } from "./read_budgets"
 import { ConflictError, ValidationError } from "../ipc/errors"
-import { openCursor, sealCursor } from "../ipc/opaque_cursor"
+import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
 
 /* ------------------------------------------------------------------------- *
  * Workflow-search cursors: opaque, filter-bound, revision-safe.
@@ -24,20 +24,22 @@ export interface SealedSearchCursor {
 export function sealSearchCursor(args: {
   readonly workspaceId: string
   readonly filters: WorkflowSummaryFilters
-  readonly limit: number
   readonly after: WorkflowSummaryCursor
   readonly snapshot: string
 }): string {
-  return sealCursor({
-    v: 1,
-    kind: "workflow-search",
-    workspaceId: args.workspaceId,
-    ...(args.filters.query !== undefined ? { query: args.filters.query } : {}),
-    ...(args.filters.collectionId !== undefined ? { collectionId: args.filters.collectionId } : {}),
-    ...(args.filters.tags !== undefined ? { tags: [...args.filters.tags].sort() } : {}),
-    limit: args.limit,
-    after: { updatedAt: args.after.updatedAt, workflowId: args.after.workflowId },
-    snapshot: args.snapshot,
+  return sealCursor("s", {
+    scope: searchScope(args.workspaceId, args.filters),
+    snapshot: cursorScope(args.snapshot),
+    position: [args.after.updatedAt, args.after.workflowId],
+  })
+}
+
+function searchScope(workspaceId: string, filters: WorkflowSummaryFilters): string {
+  return cursorScope({
+    workspaceId,
+    query: filters.query ?? null,
+    collectionId: filters.collectionId ?? null,
+    tags: filters.tags === undefined ? null : [...filters.tags].sort(),
   })
 }
 
@@ -52,47 +54,18 @@ export function openSearchCursor(
   request: { readonly workspaceId: string; readonly filters: WorkflowSummaryFilters },
   snapshot: string,
 ): SealedSearchCursor {
-  const payload = openCursor(cursor)
-  if (payload === undefined || payload["v"] !== 1 || payload["kind"] !== "workflow-search") {
+  const opened = openCursor(cursor, "s")
+  const [updatedAt, workflowId] = opened?.position ?? []
+  if (opened === undefined || updatedAt === undefined || workflowId === undefined) {
     throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
   }
-  if (payload["workspaceId"] !== request.workspaceId) {
-    throw new ValidationError("This cursor belongs to another workspace; call again without a cursor.")
+  if (opened.scope !== searchScope(request.workspaceId, request.filters)) {
+    throw new ValidationError("This cursor was issued for a different workspace or different filters; call again without a cursor.")
   }
-  const tags = Array.isArray(payload["tags"])
-    ? payload["tags"].filter((tag): tag is string => typeof tag === "string")
-    : undefined
-  const sealed: WorkflowSummaryFilters = {
-    ...(typeof payload["query"] === "string" ? { query: payload["query"] } : {}),
-    ...(typeof payload["collectionId"] === "string" ? { collectionId: payload["collectionId"] } : {}),
-    ...(tags !== undefined ? { tags } : {}),
-  }
-  if (filterFingerprint(sealed) !== filterFingerprint(request.filters)) {
-    throw new ValidationError("This cursor was issued for different filters; call again without a cursor.")
-  }
-  if (payload["snapshot"] !== snapshot) {
+  if (opened.snapshot !== cursorScope(snapshot)) {
     throw new ConflictError("The workflow list changed since this cursor was issued; call again without a cursor.")
   }
-  const after = payload["after"]
-  if (!isCursorPosition(after)) {
-    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
-  }
-  return { after }
-}
-
-function filterFingerprint(filters: WorkflowSummaryFilters): string {
-  return JSON.stringify({
-    query: filters.query ?? null,
-    collectionId: filters.collectionId ?? null,
-    tags: filters.tags === undefined ? null : [...filters.tags].sort(),
-  })
-}
-
-function isCursorPosition(value: unknown): value is WorkflowSummaryCursor {
-  return typeof value === "object"
-    && value !== null
-    && typeof (value as { updatedAt?: unknown }).updatedAt === "string"
-    && typeof (value as { workflowId?: unknown }).workflowId === "string"
+  return { after: { updatedAt, workflowId } }
 }
 
 /* ------------------------------------------------------------------------- *
@@ -100,24 +73,22 @@ function isCursorPosition(value: unknown): value is WorkflowSummaryCursor {
  * ------------------------------------------------------------------------- */
 
 export function sealOutlineCursor(args: { readonly workflowId: string; readonly rev: number; readonly afterNodeId: string }): string {
-  return sealCursor({ v: 1, kind: "workflow-outline", workflowId: args.workflowId, rev: args.rev, afterNodeId: args.afterNodeId })
+  return sealCursor("o", { scope: cursorScope(args.workflowId), snapshot: String(args.rev), position: [args.afterNodeId] })
 }
 
 export function openOutlineCursor(cursor: string, workflow: Workflow): string {
-  const payload = openCursor(cursor)
-  if (payload === undefined || payload["v"] !== 1 || payload["kind"] !== "workflow-outline") {
+  const opened = openCursor(cursor, "o")
+  const afterNodeId = opened?.position[0]
+  if (opened === undefined || afterNodeId === undefined) {
     throw new ValidationError("This cursor is not valid; read the outline again without a cursor.")
   }
-  if (payload["workflowId"] !== workflow.workflowId) {
+  if (opened.scope !== cursorScope(workflow.workflowId)) {
     throw new ValidationError("This cursor belongs to another workflow; read the outline again without a cursor.")
   }
-  if (payload["rev"] !== workflow.rev) {
+  if (opened.snapshot !== String(workflow.rev)) {
     throw new ConflictError("The workflow changed since this cursor was issued; read the outline again without a cursor.")
   }
-  if (typeof payload["afterNodeId"] !== "string") {
-    throw new ValidationError("This cursor is not valid; read the outline again without a cursor.")
-  }
-  return payload["afterNodeId"]
+  return afterNodeId
 }
 
 /* ------------------------------------------------------------------------- *

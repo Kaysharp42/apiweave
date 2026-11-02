@@ -404,8 +404,13 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const viaTool = JSON.parse(textOf(toolResult as { content: Array<{ type: string; text?: string }> }))
     const viaIpc = await dispatchOk("workflows", "search", { workspaceId: workspace.workspaceId })
 
-    expect(viaTool).toEqual(viaIpc)
-    expect((toolResult as { structuredContent?: unknown }).structuredContent).toEqual({ result: viaIpc })
+    // The tool is the IPC result minus the workspaceId the caller supplied.
+    const expected = {
+      ...viaIpc,
+      items: (viaIpc as { items: Array<Record<string, unknown>> }).items.map(({ workspaceId: _workspaceId, ...row }) => row),
+    }
+    expect(viaTool).toEqual(expected)
+    expect((toolResult as { structuredContent?: unknown }).structuredContent).toEqual({ result: expected })
     expect(viaTool.items.map((w: { workflowId: string }) => w.workflowId)).toContain(created.workflowId)
     // Summaries carry counts, never graphs.
     expect(viaTool.items[0]).not.toHaveProperty("nodes")
@@ -1535,7 +1540,7 @@ describe("MCP reads — redacted values, intact structure", () => {
       textOf(
         (await client.callTool({
           name: "workflows_get",
-          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, view: "full" },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
     ) as { nodes: Array<{ nodeId: string; config: Record<string, unknown> }> }
@@ -1578,7 +1583,7 @@ describe("MCP reads — redacted values, intact structure", () => {
       textOf(
         (await client.callTool({
           name: "workflows_get",
-          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+          arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, view: "full" },
         })) as { content: Array<{ type: string; text?: string }> },
       ),
     ) as { nodes: Array<{ config: Record<string, unknown> }> }
@@ -1619,7 +1624,7 @@ describe("MCP reads — redacted values, intact structure", () => {
         textOf(
           (await client.callTool({
             name: "workflows_get",
-            arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+            arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, view: "full" },
           })) as { content: Array<{ type: string; text?: string }> },
         ),
       ) as { nodes: Array<{ nodeId: string; config: Record<string, unknown> }> }
@@ -1641,7 +1646,7 @@ describe("MCP reads — redacted values, intact structure", () => {
           textOf(
             (await client.callTool({
               name: "workflows_get",
-              arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId },
+              arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, view: "full" },
             })) as { content: Array<{ type: string; text?: string }> },
           ),
         ) as { nodes: Array<unknown> }).nodes,
@@ -2004,7 +2009,7 @@ describe("MCP bridge — inherited secret masking holds across read/export tools
 
     const client = await connectClient()
     const calls = [
-      client.callTool({ name: "workflows_get", arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId } }),
+      client.callTool({ name: "workflows_get", arguments: { workspaceId: workspace.workspaceId, workflowId: workflow.workflowId, view: "full" } }),
       client.callTool({ name: "secrets_list", arguments: { workspaceId: workspace.workspaceId, scopeType: "workspace", scopeId: workspace.workspaceId } }),
       client.callTool({ name: "projects_export", arguments: { workspaceId: workspace.workspaceId, projectId: collection.collectionId } }),
     ]

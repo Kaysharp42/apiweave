@@ -14,6 +14,12 @@ import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 import { encodeMcpResult } from "./result-encoding"
+import {
+  McpRunHistoryPageSchema,
+  McpWorkflowSearchPageSchema,
+  projectRunHistoryPage,
+  projectWorkflowSearchPage,
+} from "./projections/list-rows"
 import { projectMcpError } from "./error-projection"
 import {
   compactWorkflowDiagnosis,
@@ -21,6 +27,9 @@ import {
   unavailableWorkflowDiagnosis,
   workflowIdentity,
 } from "./projections/workflow-write"
+
+/** Largest `workflows_get` full view an agent is handed: 64 KiB of encoded JSON. */
+const WORKFLOW_FULL_VIEW_MAX_BYTES = 64 * 1024
 
 /**
  * A stored node object, advertised without the ~22 KB `WorkflowNodeSchema`
@@ -54,6 +63,8 @@ const ADVERTISED_OUTPUT: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.Z
     ]),
   ],
   ["workflows_debugContext", WorkflowDebugContextSchema.extend({ nodes: z.array(AdvertisedNodeSchema) })],
+  ["workflows_search", McpWorkflowSearchPageSchema],
+  ["runs_history", McpRunHistoryPageSchema],
 ])
 
 /**
@@ -125,6 +136,13 @@ async function dispatchAsTool(
   if (spec.domain === "runs" && spec.action === "create" && payload["waitMs"] === undefined) {
     payload["waitMs"] = RUN_WAIT_DEFAULT_MS
   }
+  // MCP default: `workflows_get` returns the bounded outline. The handler (and
+  // therefore the renderer) defaults to the whole graph, which on a large
+  // workflow is past an agent client's output limit. `nodeIds` alone still
+  // implies the nodes view, so it is left for the handler to resolve.
+  if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === undefined && payload["nodeIds"] === undefined) {
+    payload["view"] = "outline"
+  }
 
   let result
   try {
@@ -173,9 +191,19 @@ async function dispatchAsTool(
         structuredContent: response,
       }
     }
-    const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
+    const data = projectResult(spec, result.data)
+    const text = encodeMcpResult(data)
+    if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === "full" && Buffer.byteLength(text) > WORKFLOW_FULL_VIEW_MAX_BYTES) {
+      const error = projectMcpError(
+        "validation",
+        `The full view of this workflow is ${Buffer.byteLength(text)} bytes, over the ${WORKFLOW_FULL_VIEW_MAX_BYTES}-byte limit. `
+          + 'Use view: "outline" for node ids, types and edges, then view: "nodes" with nodeIds for the configs you need.',
+        undefined,
+      )
+      return { content: [{ type: "text", text: encodeMcpResult({ error }) }], isError: true }
+    }
     return {
-      content: [{ type: "text", text: encodeMcpResult(data) }],
+      content: [{ type: "text", text }],
       structuredContent: { result: data },
     }
   }
@@ -183,6 +211,19 @@ async function dispatchAsTool(
   return {
     content: [{ type: "text", text: encodeMcpResult({ error }) }],
     isError: true,
+  }
+}
+
+function projectResult(spec: McpToolSpec, data: unknown): unknown {
+  switch (spec.resultProjection) {
+    case "run":
+      return projectRunToolResult(data)
+    case "workflowSearch":
+      return projectWorkflowSearchPage(data)
+    case "runHistory":
+      return projectRunHistoryPage(data)
+    default:
+      return data
   }
 }
 

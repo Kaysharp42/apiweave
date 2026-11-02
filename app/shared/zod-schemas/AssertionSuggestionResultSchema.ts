@@ -15,6 +15,7 @@ const AssertionSuggestionSchema = z
 export const AssertionSuggestionResultSchema = z
   .object({
     workflowId: z.string().min(1),
+    rev: z.number().int().describe("The workflow's current revision: pass it as expectedRevision to assertion_apply."),
     runId: z.string().min(1),
     sourceNodeId: z.string().min(1),
     suggestions: z.array(AssertionSuggestionSchema),

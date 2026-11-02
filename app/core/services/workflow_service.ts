@@ -26,6 +26,7 @@ import {
   sealSearchCursor,
   type NodeSearchRequest,
 } from "./workflow_reads"
+import { ZodError } from "zod"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -163,10 +164,10 @@ export function mergeWorkflowNodePatches(
   const nodes = existing.filter((node) => !(removeIds ?? []).includes(node.nodeId))
   const indexById = new Map(nodes.map((node, index) => [node.nodeId, index]))
 
-  for (const patch of upserts ?? []) {
+  for (const [upsertIndex, patch] of (upserts ?? []).entries()) {
     const index = indexById.get(patch.nodeId)
     if (index === undefined) {
-      const node = WorkflowNodeSchema.parse(canonicalizeNodeConfig(patch))
+      const node = parseUpsertedNode(canonicalizeNodeConfig(patch), upsertIndex, patch.nodeId)
       indexById.set(node.nodeId, nodes.length)
       nodes.push(node)
       continue
@@ -187,9 +188,25 @@ export function mergeWorkflowNodePatches(
     // (and the canvas) say "no parent" by omitting the key, so drop it rather
     // than persist a second spelling the node schema would reject anyway.
     if (patch.parentId === null) delete merged.parentId
-    nodes[index] = WorkflowNodeSchema.parse(canonicalizeNodeConfig(merged))
+    nodes[index] = parseUpsertedNode(canonicalizeNodeConfig(merged), upsertIndex, patch.nodeId)
   }
   return nodes
+}
+
+/**
+ * Parse one upserted node. A failure is the caller's request being wrong, so the
+ * issues are re-thrown with the path the caller sent it under (`upsertNodes`,
+ * the list index) and a message naming the nodeId — the bare node-relative path
+ * (`config.method`) tells an agent patching ten nodes nothing.
+ */
+function parseUpsertedNode(value: unknown, upsertIndex: number, nodeId: string): Workflow["nodes"][number] {
+  const parsed = WorkflowNodeSchema.safeParse(value)
+  if (parsed.success) return parsed.data
+  throw new ZodError(parsed.error.issues.map((issue) => ({
+    ...issue,
+    path: ["upsertNodes", upsertIndex, ...issue.path],
+    message: `nodeId "${nodeId}": ${issue.message}`,
+  })))
 }
 
 /** Recursively merge plain-object config values; arrays and scalar values replace. */
@@ -289,7 +306,6 @@ export class WorkflowService {
         ? sealSearchCursor({
           workspaceId,
           filters,
-          limit,
           after: { updatedAt: last.updatedAt, workflowId: last.workflowId },
           snapshot: page.snapshot,
         })

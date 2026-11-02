@@ -311,6 +311,8 @@ describe("database migrations", () => {
           ...before,
           workspaces: (before["workspaces"] ?? []).map(({ origin: _origin, syncMode: _syncMode, ...row }) => row),
           app_settings: (before["app_settings"] ?? []).filter((row) => !String(row["key"]).startsWith("cloud.")),
+          // Added after the fixture's version: an existing run's revision is unknown.
+          runs: (before["runs"] ?? []).map((row) => ({ ...row, workflow_rev: null })),
           // Created after the fixture's version, so they start empty.
           workspace_git: [],
           workspace_merge: [],

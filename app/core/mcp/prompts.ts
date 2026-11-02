@@ -61,11 +61,11 @@ function buildAuthorAssertions(args: AuthorAssertionsArgs): GetPromptResult {
 
 ${contextBlock}## Flow
 
-1. **Inspect.** Read the workflow with \`workflows_get\`. If a run is available, read it with \`runs_get\` and \`workflow_diagnose\`, and call \`assertion_suggest\` on the source HTTP node for deterministic candidates. These return metadata only — never raw bodies or secret values. Suggestions never modify the workflow; apply chosen rules explicitly.
+1. **Inspect.** Read the workflow with \`workflows_get\` and \`view: "outline"\`. If a run is available, read it with \`runs_get\` and \`workflow_diagnose\`, and call \`assertion_suggest\` on the source HTTP node for deterministic candidates. These return metadata only — never raw bodies or secret values. Suggestions never modify the workflow; apply chosen rules explicitly.
 2. **Translate.** Convert the user's intent into canonical assertion rules (schema below). Prefer the shapes returned by \`assertion_suggest\` when they match the intent.
 3. **Validate & preview when approval or evidence is needed.** Call \`assertion_validate\` with the rules (plus \`runId\` to check against stored evidence) and show the returned human-readable \`preview\` and any \`issues\` to the user. If it is not \`valid\`, fix the rules and validate again — do not proceed on errors. Skip this call when the user already specified the exact rules and no preview was asked for: \`assertion_apply\` validates shape itself, and accepts \`runId\` to check evidence in the same call.
 4. **Approve (approval flow only).** Ask the user to confirm the previewed rules. Do not apply anything without explicit approval when approval was requested.
-5. **Apply.** Call \`assertion_apply\` with \`assertionNodeId\`, \`mode\` ("append" or "replace"), the validated \`rules\`, and \`expectedRevision\` taken from the workflow's current \`rev\` (from \`workflows_get\`). If it returns a conflict, the user edited the workflow meanwhile — re-read, re-validate, and ask again.
+5. **Apply.** Call \`assertion_apply\` with \`assertionNodeId\`, \`mode\` ("append" or "replace"), the validated \`rules\`, and \`expectedRevision\` taken from the workflow's current \`rev\` (returned by \`assertion_suggest\`, or by \`workflows_get\` with \`view: "outline"\`). If it returns a conflict, the user edited the workflow meanwhile — re-read, re-validate, and ask again.
 
 ## Canonical rule schema
 

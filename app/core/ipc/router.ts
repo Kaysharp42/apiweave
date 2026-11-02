@@ -112,9 +112,12 @@ function toErrorEnvelope(error: unknown): ContractResult<never> {
     return { ok: false, error: { code: error.code, message: error.message, details: error.details } }
   }
   if (error instanceof ZodError) {
+    // A handler that parses the caller's input itself (a node in a patch) throws
+    // this; it is the request being wrong. A bad handler *return* is caught by
+    // `parseOutput`, outside this path.
     return {
       ok: false,
-      error: { code: "validation", message: "response validation failed", details: error.issues },
+      error: { code: "validation", message: "request validation failed", details: error.issues },
     }
   }
   throw error
@@ -337,7 +340,7 @@ export class IpcRouter {
         domain: request.domain,
         action: request.action,
         code: "validation",
-        message: "response validation failed",
+        message: "request validation failed",
         details: error.issues,
       })
       return

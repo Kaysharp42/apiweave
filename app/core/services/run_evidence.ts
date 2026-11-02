@@ -8,7 +8,7 @@ import type { RunHistoryCursor } from "../repositories/RunRepository"
 import { EVIDENCE_PREVIEW_DEFAULT_BYTES, INLINE_RESULT_BUDGET_BYTES, truncateUtf8 } from "./read_budgets"
 import { sanitizeAgentReadValue } from "./secret_utils"
 import { ConflictError, ValidationError } from "../ipc/errors"
-import { openCursor, sealCursor } from "../ipc/opaque_cursor"
+import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
 
 /* ------------------------------------------------------------------------- *
  * Run-history cursors: opaque, filter-bound, revision-safe.
@@ -18,22 +18,21 @@ export interface SealedHistoryCursor {
   readonly after: RunHistoryCursor
 }
 
+function historyScope(request: { readonly workspaceId: string; readonly workflowId?: string | undefined; readonly status?: Run["status"] | undefined }): string {
+  return cursorScope({ workspaceId: request.workspaceId, workflowId: request.workflowId ?? null, status: request.status ?? null })
+}
+
 export function sealHistoryCursor(args: {
   readonly workspaceId: string
   readonly workflowId?: string | undefined
   readonly status?: Run["status"] | undefined
-  readonly limit: number
   readonly after: RunHistoryCursor
   readonly snapshot: string
-}): string {  return sealCursor({
-    v: 1,
-    kind: "run-history",
-    workspaceId: args.workspaceId,
-    ...(args.workflowId !== undefined ? { workflowId: args.workflowId } : {}),
-    ...(args.status !== undefined ? { status: args.status } : {}),
-    limit: args.limit,
-    after: { createdAt: args.after.createdAt, runId: args.after.runId },
-    snapshot: args.snapshot,
+}): string {
+  return sealCursor("h", {
+    scope: historyScope(args),
+    snapshot: cursorScope(args.snapshot),
+    position: [args.after.createdAt, args.after.runId],
   })
 }
 
@@ -42,30 +41,18 @@ export function openHistoryCursor(
   request: { readonly workspaceId: string; readonly workflowId: string | undefined; readonly status: Run["status"] | undefined },
   snapshot: string,
 ): SealedHistoryCursor {
-  const payload = openCursor(cursor)
-  if (payload === undefined || payload["v"] !== 1 || payload["kind"] !== "run-history") {
+  const opened = openCursor(cursor, "h")
+  const [createdAt, runId] = opened?.position ?? []
+  if (opened === undefined || createdAt === undefined || runId === undefined) {
     throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
   }
-  if (payload["workspaceId"] !== request.workspaceId) {
-    throw new ValidationError("This cursor belongs to another workspace; call again without a cursor.")
+  if (opened.scope !== historyScope(request)) {
+    throw new ValidationError("This cursor was issued for a different workspace or different filters; call again without a cursor.")
   }
-  const workflowId = typeof payload["workflowId"] === "string" ? payload["workflowId"] : undefined
-  const status = typeof payload["status"] === "string" ? payload["status"] : undefined
-  if (workflowId !== request.workflowId || status !== request.status) {
-    throw new ValidationError("This cursor was issued for different filters; call again without a cursor.")
-  }
-  if (payload["snapshot"] !== snapshot) {
+  if (opened.snapshot !== cursorScope(snapshot)) {
     throw new ConflictError("The run history changed since this cursor was issued; call again without a cursor.")
   }
-  const after = payload["after"]
-  if (
-    typeof after !== "object" || after === null
-    || typeof (after as { createdAt?: unknown }).createdAt !== "string"
-    || typeof (after as { runId?: unknown }).runId !== "string"
-  ) {
-    throw new ValidationError("This cursor is not valid; call again without a cursor to start from the first page.")
-  }
-  return { after: { createdAt: (after as { createdAt: string }).createdAt, runId: (after as { runId: string }).runId } }
+  return { after: { createdAt, runId } }
 }
 
 /* ------------------------------------------------------------------------- *

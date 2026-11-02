@@ -24,6 +24,7 @@ export type RunCreate = Pick<Run, "workspaceId" | "workflowId"> &
       | "resumeFromRunId"
       | "resumeFromNodeIds"
       | "resumeMode"
+      | "workflowRev"
     >
   >
 
@@ -95,7 +96,7 @@ const TERMINAL_SQL = "status IN ('completed', 'failed', 'cancelled', 'interrupte
 // Node results live one row per node in `run_node_results`; a full-run read
 // stitches them back into one array in completion order.
 const COLUMNS =
-  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, rev, createdAt, updatedAt, " +
+  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, workflow_rev, rev, createdAt, updatedAt, " +
   "(SELECT '[' || coalesce(group_concat(result_json, ',' ORDER BY rowid), '') || ']' FROM run_node_results WHERE run_id = runs.id) AS results_json"
 
 interface RunRow extends SqliteRow {
@@ -108,6 +109,7 @@ interface RunRow extends SqliteRow {
   readonly response_metadata_json: string
   readonly startedAt: string | null
   readonly completedAt: string | null
+  readonly workflow_rev: number | null
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
@@ -150,7 +152,7 @@ export class RunRepository {
     const readBack = (): Run | undefined => this.getById(id)
     return insertAndRead(
       this.store,
-      "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json, workflow_rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         id,
         input.workspaceId,
@@ -160,6 +162,7 @@ export class RunRepository {
         toJson(input.nodeStatuses ?? {}),
         toJson(input.variables ?? {}),
         toJson(metadata),
+        input.workflowRev ?? null,
       ],
       readBack,
       `run ${id} missing after insert`,
@@ -528,6 +531,7 @@ function rowToRun(row: RunRow): Run {
     resumeMode: metadata.resumeMode,
     resolvedSecrets: [...metadata.resolvedSecrets],
     iteration: metadata.iteration,
+    workflowRev: row.workflow_rev,
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

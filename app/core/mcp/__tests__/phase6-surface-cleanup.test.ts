@@ -386,7 +386,7 @@ describe("Phase 6 — advertised output schemas publish the node union once", ()
         isError?: boolean
       }
 
-    const full = await call({})
+    const full = await call({ view: "full" })
     expect(full.isError).toBeFalsy()
     const fullNodes = full.structuredContent?.result["nodes"] as Array<Record<string, unknown>>
     // The opaque advertisement changes no bytes: configs and positions still ship.

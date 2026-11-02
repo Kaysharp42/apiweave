@@ -754,7 +754,8 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
           node.type === "sse" ? "sse_stream_failed" : "http_request_failed",
           "error",
           "execution",
-          [node.nodeId, ...blockedNodeIds],
+          // Only the failed node: the starved branch is named once, in evidence.
+          [node.nodeId],
           statusCode === undefined
             ? `A ${node.type === "sse" ? "Server-Sent Events stream" : "HTTP request"} failed before a response status was available.`
             : `${node.type === "sse" ? "A Server-Sent Events stream" : "An HTTP request"} returned an error status.`,
@@ -867,9 +868,16 @@ function addRunDiagnostics(workflow: WorkflowGraphInput, run: Run, diagnostics: 
     }
   }
 
+  // A producer that never ran because an upstream node failed is already
+  // explained by that failure; warning about its extractors as well is noise.
+  const failedNodeIds = new Set([
+    ...(run.failedNodes ?? []),
+    ...run.results.filter((result) => result.status === "failed").map((result) => result.nodeId),
+  ])
+  const blockedByFailure = traverse([...failedNodeIds], successors)
   for (const node of workflow.nodes) {
     if ((node.type !== "http-request" && node.type !== "sse") || Object.keys(node.config?.extractors ?? {}).length === 0) continue
-    if (!resultsByNode.has(node.nodeId)) {
+    if (!resultsByNode.has(node.nodeId) && !blockedByFailure.has(node.nodeId)) {
       diagnostics.push(diagnostic(
         "extractor_producer_not_executed",
         "warning",

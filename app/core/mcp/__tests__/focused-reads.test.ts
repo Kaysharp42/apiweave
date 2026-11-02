@@ -784,7 +784,14 @@ describe("Phase 2 — compact run history with continuations", () => {
     expect(parsed.items[0]).not.toHaveProperty("results")
     expect(parsed.items[0]).not.toHaveProperty("nodeStatuses")
     expect(parsed.items[0]).not.toHaveProperty("failedNodeDetails")
-    expect(parsed.items[0]).toMatchObject({ failedNodeCount: 1, nodeCount: 1 })
+    expect(parsed.items[0]).toEqual({
+      runId: run.runId,
+      status: "failed",
+      startedAt: null,
+      durationMs: null,
+      failedNodeCount: 1,
+      failedNodes: ["n0"],
+    })
     await client.close()
   })
 })

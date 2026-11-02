@@ -143,7 +143,7 @@ const patchInput = z
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 const getInput = idInput.extend({
   nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes view: return full configs for these nodes plus incident edges and boundary-node identities. Implies view nodes."),
-  view: z.enum(["full", "outline", "nodes"]).optional().describe("full (default) returns the whole stored graph. outline returns bounded node ids/types/labels plus edge structure without positions or configs. nodes returns full configs for nodeIds plus incident edges. Partial views are marked partial:true and are never complete graphs."),
+  view: z.enum(["full", "outline", "nodes"]).optional().describe("outline (default over MCP) returns bounded node ids/types/labels plus edge structure without positions or configs. nodes returns full configs for nodeIds plus incident edges. full returns the whole stored graph and is refused over MCP above 64 KiB. Partial views are marked partial:true and are never complete graphs."),
   nodeLimit: z.number().int().min(1).max(WORKFLOW_OUTLINE_MAX_LIMIT).optional().describe("Outline view: how many node summaries per page (default 100). Further pages arrive via nextNodeCursor."),
   nodeCursor: z.string().min(1).optional().describe("Outline view: continue a paged outline. Bound to the workflow revision; a stale cursor is rejected."),
 }).strict().superRefine((value, context) => {

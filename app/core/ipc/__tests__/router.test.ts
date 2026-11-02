@@ -212,12 +212,12 @@ describe("IpcRouter error reporting", () => {
       },
     })
     const result = await router.dispatch({ domain: "parse", action: "fails", payload: {} })
-    expect(result.ok).toBe(false)
+    expect(result).toMatchObject({ ok: false, error: { code: "validation", message: "request validation failed" } })
     expect(reportError.mock.calls[0]?.[0]).toMatchObject({
       domain: "parse",
       action: "fails",
       code: "validation",
-      message: "response validation failed",
+      message: "request validation failed",
     })
   })
 })

@@ -108,7 +108,7 @@ describe("MCP baseline harness", () => {
       orient: { callCount: 3, toolCallCount: 1, resourceReadCount: 2 },
       "find-and-patch": { callCount: 5, toolCallCount: 5, resourceReadCount: 0 },
       debug: { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },
-      "add-assertion": { callCount: 3, toolCallCount: 3, resourceReadCount: 0 },
+      "add-assertion": { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },
       history: { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
     }
     for (const task of report.scriptedTasks) {
