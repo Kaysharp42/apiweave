@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Toggle } from "../atoms/Toggle";

@@ -224,8 +224,8 @@ function TutorialCompanionFooter({
   stepIndex: number;
   stepCount: number;
   stepTitle: string;
-  previousButtonRef: React.RefObject<HTMLButtonElement>;
-  nextButtonRef: React.RefObject<HTMLButtonElement>;
+  previousButtonRef: React.RefObject<HTMLButtonElement | null>;
+  nextButtonRef: React.RefObject<HTMLButtonElement | null>;
   onPreviousStep: () => void;
   onNextStep: () => void;
   onOpenLesson: () => void;
@@ -307,8 +307,8 @@ function TutorialCompanionFooter({
  */
 function useTutorialCompanionStepFocus(
   lastActionRef: React.RefObject<"previous" | "next" | null>,
-  previousButtonRef: React.RefObject<HTMLButtonElement>,
-  nextButtonRef: React.RefObject<HTMLButtonElement>,
+  previousButtonRef: React.RefObject<HTMLButtonElement | null>,
+  nextButtonRef: React.RefObject<HTMLButtonElement | null>,
   stepIndex: number,
   isLastStep: boolean,
 ) {

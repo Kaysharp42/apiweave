@@ -5,7 +5,7 @@ export interface TutorialLessonViewProps {
   readonly lesson: TutorialLesson;
   readonly chapterTitle: string;
   readonly isComplete: boolean;
-  readonly headingRef: RefObject<HTMLHeadingElement>;
+  readonly headingRef: RefObject<HTMLHeadingElement | null>;
   /** Compact layouts show an "All lessons" action; wide layouts do not. */
   readonly showBackToLibrary: boolean;
   /**

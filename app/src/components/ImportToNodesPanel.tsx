@@ -84,7 +84,7 @@ type ImportMode = "linear" | "grouped";
 interface FileUploadDropzoneProps {
   accept: string;
   description: string;
-  fileInputRef: RefObject<HTMLInputElement>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;

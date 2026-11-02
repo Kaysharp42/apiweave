@@ -42,7 +42,7 @@ export function Tooltip({
     useDismiss(context, { referencePress: true }),
     useRole(context, { role: "tooltip" }),
   ]);
-  const childRef = (children as { ref?: Ref<Element> }).ref;
+  const childRef = (children.props as { ref?: Ref<Element> }).ref;
   const ref = useMergeRefs([refs.setReference, childRef]);
 
   if (!content || disabled) return children;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import { Info, Shuffle, Timer, type LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
