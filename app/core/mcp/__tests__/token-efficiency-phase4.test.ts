@@ -125,6 +125,9 @@ beforeEach(async () => {
       { edgeId: "e3", source: "me", target: "check" },
     ],
   })).workflowId
+  // `updatedAt` has millisecond precision and paging breaks ties by id, so the
+  // newer workflow must be created in a later millisecond to page first.
+  await nextMillisecond()
   ordersId = (await runtime.deps.workflows.create(workspaceId, {
     name: "orders",
     nodes: [
@@ -165,6 +168,14 @@ afterEach(async () => {
   await close()
   runtime.db.close()
 })
+
+/** Wait until the wall clock has advanced past the current millisecond. */
+async function nextMillisecond(): Promise<void> {
+  const started = Date.now()
+  do {
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  } while (Date.now() === started)
+}
 
 async function call(name: string, args: Record<string, unknown>): Promise<{ text: string; body: Record<string, unknown>; isError: boolean }> {
   const result = (await client.callTool({ name, arguments: args })) as ToolResult
