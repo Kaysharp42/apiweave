@@ -5,6 +5,7 @@ import {
   McpWorkflowWriteToolResultSchema,
   WorkflowDebugContextSchema,
   WorkflowDiagnosisSchema,
+  WorkflowNodeTypeSchema,
   WorkflowNodesViewSchema,
   WorkflowOutlineViewSchema,
   WorkflowSchema,
@@ -39,12 +40,44 @@ const WORKFLOW_FULL_VIEW_MAX_BYTES = 64 * 1024
  * is always satisfied by the stricter data — the router still validates every
  * response against the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`
  * on the shared IPC path, so nothing about validation strength or the bytes an
- * agent receives changes. What changes is that the node union is advertised
- * ONCE, on the write tools' *input* schemas (`workflows_create/update/patch`),
- * which is where it is actually enforced and where an agent has to read it
- * anyway to author a node.
+ * agent receives changes.
  */
 const AdvertisedNodeSchema = z.record(z.string(), z.unknown())
+
+/**
+ * The node items the write tools advertise on their *input* side: identity,
+ * type and placement typed, `config` an open record. Inlining the union here
+ * cost ~10k tokens per write tool on every catalogue load; an agent instead
+ * asks `workflows_nodeSchema` for the one type it is authoring and learns the
+ * rest from validation errors, which name the list, index and nodeId.
+ *
+ * Advertisement only — never the gate. The SDK parses arguments with the
+ * advertised schema before the handler runs, so every object here is loose:
+ * unknown keys must reach `router.dispatch`, whose real input schema
+ * (`WorkflowNodeSchema`, strict per member) rejects them with a precise path.
+ * A stripping schema here would silently weaken that validation.
+ */
+const advertisedNodeFields = {
+  nodeId: z.string().min(1),
+  label: z.string().nullable().optional(),
+  parentId: z.string().min(1).nullable().optional().describe("Group node this node sits inside; null takes it out (patch only)."),
+  position: z.looseObject({ x: z.number().optional(), y: z.number().optional() }).optional(),
+  config: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Per-type config. Call workflows_nodeSchema with the type for its fields."),
+}
+const AdvertisedNewNodeSchema = z.looseObject({ ...advertisedNodeFields, type: WorkflowNodeTypeSchema })
+const AdvertisedNodePatchSchema = z.looseObject({ ...advertisedNodeFields, type: WorkflowNodeTypeSchema.optional() })
+
+/** Which input field of which write tool carries node items, keyed by public tool name. */
+const ADVERTISED_NODE_INPUT: ReadonlyMap<string, { readonly field: string; readonly node: z.ZodObject }> = new Map([
+  ["workflows_create", { field: "nodes", node: AdvertisedNewNodeSchema }],
+  ["workflows_patch", { field: "upsertNodes", node: AdvertisedNodePatchSchema }],
+])
+
+/** `_meta` key Claude Code reads to load a tool up front instead of behind tool search. */
+const ALWAYS_LOAD_META = { "anthropic/alwaysLoad": true } as const
 
 /**
  * MCP-only output advertisements for the two reads whose schemas re-embedded
@@ -86,7 +119,9 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
     // Pass the complete object: rebuilding from `.shape` loses strictness and
     // lets the SDK strip unknown keys before the router can reject them.
     // NoInput is an optional empty object; MCP supplies an argument object.
-    const inputSchema = reg.input instanceof z.ZodObject ? reg.input : z.object({}).strict()
+    const inputSchema = reg.input instanceof z.ZodObject
+      ? advertisedInput(toolName(spec), reg.input)
+      : z.object({}).strict()
     const outputValueSchema = spec.resultProjection === "run"
       ? z.unknown()
       : ADVERTISED_OUTPUT.get(toolName(spec)) ?? reg.output
@@ -101,12 +136,26 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
         inputSchema,
         outputSchema,
         annotations: toolAnnotations(spec),
+        ...(spec.alwaysLoad === true ? { _meta: ALWAYS_LOAD_META } : {}),
       },
       (args: Record<string, unknown>, extra?: { readonly signal?: AbortSignal }) =>
         // The client's name from `initialize`; a sessionless one-shot never sent one.
         dispatchAsTool(router, spec, args, server.server.getClientVersion()?.name ?? "An unnamed MCP client", extra?.signal),
     )
   }
+}
+
+/**
+ * The input schema a tool advertises: the router's own, except that node items
+ * on the graph-write tools are swapped for the loose shape above. Extending
+ * the complete object keeps its strictness and every other field verbatim.
+ */
+function advertisedInput(name: string, input: z.ZodObject): z.ZodObject {
+  const loose = ADVERTISED_NODE_INPUT.get(name)
+  if (loose === undefined) return input
+  const description = input.shape[loose.field]?.description
+  const list = z.array(loose.node).optional()
+  return input.extend({ [loose.field]: description === undefined ? list : list.describe(description) })
 }
 
 // fallow-ignore-next-line complexity

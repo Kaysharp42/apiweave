@@ -196,6 +196,38 @@ Target: model-visible catalogue ≈ 40.4k → 12–13k tok. Verify with a script
 trial that creates an http-request node with bearer auth and retry, counting
 error/retry rounds.
 
+**Done (2026-11-02).** `npm run mcp:baseline`, Phase 2 → Phase 3:
+
+| Measure | Before | After |
+|---|---|---|
+| Tools | 59 | 58 (−`workflows_update`, −`guides_list`, +`workflows_nodeSchema`) |
+| Model-visible catalogue | 174,039 B | 53,979 B (−69%, ≈ 13.5k tok at 4 B/tok) |
+| …`workflows_patch` / `workflows_create` | 43,475 / 41,600 B | 5,201 / 4,185 B |
+| `tools/list` on the wire | 333,134 B | 210,885 B |
+| Orient task | 3 calls, 10,732 B wire | 2 calls, 6,599 B wire |
+
+Other scripted tasks are byte-identical. The trial
+(`core/mcp/__tests__/token-efficiency-phase3.test.ts`) takes 4 calls:
+`workflows_nodeSchema`, one rejected draft whose issues name
+`["nodes", 1, "config", "body"]` and `…retry…`, the corrected create, and a
+read-back.
+
+Notes:
+- The loose node items are `z.looseObject`: the SDK validates arguments
+  against the advertised schema before the handler runs, so a stripping schema
+  would hide unknown keys from the router. The top level stays strict.
+- `workflows.update` stays as an IPC handler (the renderer's save path);
+  `guides.list` had no renderer caller and was deleted with
+  `GuideSummarySchema`.
+- `start-here` absorbed `edit-debug` at 3,353 chars; `MCP_INSTRUCTIONS` is
+  1,154 B.
+- Item 7 is not done. The SDK converts zod to JSON Schema only inside its own
+  `tools/list` handler, not on every request, so caching would mean replacing
+  that handler. outputSchemas are wire-only, so they were kept.
+- A header map is not a validation error: `canonicalizeNodeConfig` accepts it
+  as a legacy shape. The trial uses an object body and a misnamed retry field
+  instead.
+
 ### Phase 4 — Search and discovery ("graphify for workflows")
 
 1. **Workspace-wide `workflows_searchNodes`.** Make `workflowId` optional

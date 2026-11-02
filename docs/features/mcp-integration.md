@@ -105,15 +105,16 @@ readable resources. A plain `resources/list` returns all of them, and
 
 | URI | Covers |
 | --- | --- |
-| `apiweave://guide/start-here` | The order of operations that finds mistakes statically instead of with live requests, and a minimal working graph |
+| `apiweave://guide/start-here` | The find, write, diagnose, run, debug loop that finds mistakes statically instead of with live requests, and a minimal working graph |
 | `apiweave://guide/workflow-authoring` | Every node type with its config shape, edge handles, and changing a graph without resending it |
 | `apiweave://guide/placeholders` | `{{env.x}}`, `{{variables.x}}`, `{{prev.x}}`, `{{secrets.x}}`, and extractor paths |
 | `apiweave://guide/assertions` | What `path` means for each source, operator rules, and the suggest/validate/apply flow |
 | `apiweave://guide/diagnostics` | Every `workflow_diagnose` code and how to fix it |
 | `apiweave://guide/redaction` | What reads withhold, and why `<SECRET>` must never be written back |
 
-These ship inside the desktop bundle rather than being read from `docs/`, which
-is not packaged. This page stays the human-facing reference; the guides are the
+Clients that cannot read resources fetch the same text with `guides_get` and a
+slug (`start-here`, `workflow-authoring`, …). These ship inside the desktop
+bundle rather than being read from `docs/`, which is not packaged. This page stays the human-facing reference; the guides are the
 agent-facing one.
 
 ## Tool Discovery
@@ -128,6 +129,11 @@ tool includes:
 
 `runs_create` is marked open-world because it executes the workflow's outbound
 HTTP requests on this machine. Other tools operate on local APIWeave data.
+
+`workflows_search`, `workflows_get`, `workflows_patch`, `workflows_debugContext`
+and `runs_create` carry `_meta: {"anthropic/alwaysLoad": true}`, so Claude Code
+loads them up front instead of behind its tool search. Every other tool stays
+deferred until the agent searches for it.
 
 ## Current Tool Inventory
 
@@ -147,43 +153,51 @@ HTTP requests on this machine. Other tools operate on local APIWeave data.
 
 ### Workflows
 
-- `workflows_list`
+- `workflows_search`
 - `workflows_get`
+- `workflows_searchNodes`
 - `workflow_diagnose`
+- `workflows_debugContext`
+- `workflows_nodeSchema`
 - `workflows_create`
-- `workflows_update`
 - `workflows_patch`
+- `workflows_layout`
 - `workflows_delete`
+- `workflows_listRevisions`
 - `workflows_attachToCollection`
 - `workflows_setEnvironment`
-- `workflows_listRevisions`
+- `workflows_moveToWorkspace`
 
-`workflows_update` replaces the `nodes`, `edges` and `variables` lists wholesale.
-`workflows_patch` changes a subset instead: `upsertNodes` and `upsertEdges`
+`workflows_patch` changes a workflow by id: `upsertNodes` and `upsertEdges`
 replace matching entries by id and append the rest, `removeNodeIds` and
-`removeEdgeIds` delete by id (edges attached to a removed node go with it), and
-`setVariables`/`unsetVariables` merge into the stored map. Both accept
-`expectedRevision`, which makes the write a compare-and-swap against the
-revision the caller last read, so a concurrent desktop edit produces a conflict
-rather than being overwritten. The desktop canvas saves the same way: an agent's
-edit that lands while the canvas has unsaved changes is never overwritten by the
-canvas's next save.
+`removeEdgeIds` delete by id (edges attached to a removed node go with it),
+`setVariables`/`unsetVariables` merge into the stored map, and `name`,
+`description` and `tags` replace their stored values. There is no whole-graph
+replace tool for agents. `expectedRevision` makes the write a compare-and-swap
+against the revision the caller last read, so a concurrent desktop edit produces
+a conflict rather than being overwritten. The desktop canvas saves the same way:
+an agent's edit that lands while the canvas has unsaved changes is never
+overwritten by the canvas's next save.
+
+The write tools advertise each node as `{ nodeId, type, label?, parentId?,
+position?, config? }` with `config` an open object, rather than repeating the
+full per-type schema in every tool. `workflows_nodeSchema({ type })` returns one
+node type's config as JSON Schema, generated from the same definitions the write
+path validates with. Validation itself is unchanged: a bad config is rejected
+with a path that names the node list and index, such as
+`["nodes", 1, "config", "body"]`.
 
 Every agent write keeps the workflow as it was just before it as a version
 (see [Version history](workflows-and-nodes.md#version-history)), so the user can
 undo it. `workflows_listRevisions` lists those versions, metadata only; reading
 a version's content and restoring one are not agent tools.
 
-`workflows_create`, `workflows_update` and `workflows_patch` each return
-`{ result, diagnosis }`, where `diagnosis` is the same report `workflow_diagnose`
-produces for the workflow just written. The analysis is static and sends no HTTP,
-so a graph mistake — a missing assertion edge handle, an assertion path that
-cannot address a value — is visible in the write's own response instead of
-requiring a live run to discover.
-
-Each of the three also accepts a `return` echo-shape parameter —
-`"diagnosis"` (the default), `"summary"`, or `"full"` — to control how much of
-the written workflow comes back in the response, for clients on a token budget.
+`workflows_create` and `workflows_patch` each return `{ result, diagnosis }`,
+where `result` is a compact revision and touched-id summary and `diagnosis` is
+the report `workflow_diagnose` produces for the workflow just written. The
+analysis is static and sends no HTTP, so a graph mistake — a missing assertion
+edge handle, an assertion path that cannot address a value — is visible in the
+write's own response instead of requiring a live run to discover.
 
 ### Projects
 
@@ -196,6 +210,7 @@ the written workflow comes back in the response, for clients on a token budget.
 - `projects_getRun`
 - `projects_listRuns`
 - `projects_cancelRun`
+- `projects_moveToWorkspace`
 - `projects_export`
 - `projects_dryRun`
 - `projects_import`
@@ -217,6 +232,8 @@ membership itself is read with `workflows_search` and written with
 - `environments_delete`
 - `environments_setVariable`
 - `environments_deleteVariable`
+- `environments_duplicate`
+- `environments_moveToWorkspace`
 
 `environments_create` and `environments_update` accept `baseEnvironmentId`, the
 environment this one inherits plain variables from; `null` clears it. See
@@ -238,13 +255,14 @@ environment this one inherits plain variables from; `null` clears it. See
 ### Runs
 
 - `runs_create`
+- `runs_wait`
 - `runs_get`
 - `runs_getNodeResult`
-- `runs_listByWorkflow`
-- `runs_listByWorkspace`
-- `runs_getLatest`
-- `runs_getLatestFailed`
+- `runs_history`
 - `runs_cancel`
+
+`runs_history` is the one run query: filter by workflow or status, newest
+first; the latest run is `limit: 1`, the latest failure adds `status: "failed"`.
 
 `runs_create` also reruns part of a workflow: `resume: { nodeId }` starts at
 that step, `resume: {}` reruns the steps the latest run failed, and `fromRunId`
@@ -258,6 +276,10 @@ node's stored request and response from a run, body included, after the same
 secret-redaction pass every MCP read gets. Use it to inspect a single node's
 payload without leaving the agent; secret-shaped values still come back
 withheld.
+
+### Guides
+
+- `guides_get`
 
 ### Secret Metadata
 
@@ -274,7 +296,7 @@ know before it writes anything.
 
 ### Sub-workflows (the `workflow` node)
 
-`workflows_create` and `workflows_update` accept a node of `type: "workflow"`
+`workflows_create` and `workflows_patch` accept a node of `type: "workflow"`
 that runs another workflow in the same workspace as one step:
 
 ```json
@@ -596,14 +618,13 @@ Cursor, VS Code, and OpenCode. Codex uses the CLI command above.
 ## Agent Workflow Example
 
 1. Call `server_info` to verify the bridge.
-2. Call `workspaces_list`, then `workflows_list` with the selected workspace.
+2. Call `workspaces_list`, then `workflows_search` with the selected workspace.
 3. Call `environments_list` if the workflow needs a selected environment.
-4. Call `runs_create` with `workspaceId`, `workflowId`, and optionally
-   `selectedEnvironmentId`.
-5. Re-read `runs_get` until the run is terminal.
-6. Call `workflow_diagnose` with the terminal `runId` for coded, value-free
-   findings and proposed remediations.
-7. Summarize node status metadata. Ask the user to inspect the desktop response
+4. Call `runs_create` with `workspaceId` and `workflowId`. It waits up to 10
+   seconds; if the run is still going, call `runs_wait` with its `runId`.
+5. On a failure, call `workflows_debugContext` for the failed nodes, their
+   diagnosis and error previews, then `runs_getNodeResult` for more evidence.
+6. Summarize node status metadata. Ask the user to inspect the desktop response
    panel when diagnosis requires raw payload content.
 
 ## Giving the agent a map of your code

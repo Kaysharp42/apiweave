@@ -72,7 +72,6 @@ async function runOrientTask(
 ): Promise<void> {
   await callTool(client, recorder, "server_info", {})
   await readGuide(client, recorder, guideUri("start-here"), resourceBytes)
-  await readGuide(client, recorder, guideUri("edit-debug"), resourceBytes)
 }
 
 async function runFindAndPatchTask(

@@ -105,7 +105,7 @@ describe("MCP baseline harness", () => {
       "history",
     ])
     const expected: Readonly<Record<string, { callCount: number; toolCallCount: number; resourceReadCount: number }>> = {
-      orient: { callCount: 3, toolCallCount: 1, resourceReadCount: 2 },
+      orient: { callCount: 2, toolCallCount: 1, resourceReadCount: 1 },
       "find-and-patch": { callCount: 5, toolCallCount: 5, resourceReadCount: 0 },
       debug: { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },
       "add-assertion": { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },

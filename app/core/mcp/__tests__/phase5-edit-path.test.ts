@@ -41,7 +41,7 @@ import { buildSessionBriefing } from "../../agents/session_briefing"
  *   preserve positions, topology edits lay out once on the saved revision,
  *   explicit layout:false always preserves.
  * - Concise task-specific onboarding: bounded initialize instructions,
- *   session-specific briefing, edit-debug quickstart, registry-backed guides.
+ *   session-specific briefing, start-here loop, registry-backed guides.
  */
 class FakeSecretStore implements SecretWriteStore {
   put(input: SecretUpsert): SecretMetadata {
@@ -516,7 +516,8 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     expect(instructions).toContain("expectedRevision")
     expect(instructions).toContain("diagnosis")
     expect(instructions).toContain("workflows_debugContext")
-    expect(instructions).toContain("edit-debug")
+    expect(instructions).toContain("apiweave://guide/start-here")
+    expect(instructions).not.toContain("workflows_update")
     expect(Buffer.byteLength(instructions, "utf8")).toBeLessThan(1600)
     await client.close()
   })
@@ -545,27 +546,27 @@ describe("Phase 5 — concise task-specific onboarding", () => {
     expect(projectBriefing).toContain("workflows_search")
   })
 
-  it("serves the edit-debug quickstart from the same guide source over resources and the registry", async () => {
+  it("serves the start-here loop from the same guide source over resources and the registry", async () => {
     const slugs = MCP_GUIDES.map((guide) => guide.slug)
-    expect(slugs).toContain("edit-debug")
+    // The repair loop was folded into start-here; one orientation read, not two.
+    expect(slugs).not.toContain("edit-debug")
+    const startHere = MCP_GUIDES.find((guide) => guide.slug === "start-here")?.text ?? ""
+    expect(startHere.length).toBeLessThanOrEqual(3600)
+    for (const step of ["workflows_debugContext", "expectedRevision", "assertion_suggest", "workflows_nodeSchema", "graphify"]) {
+      expect(startHere).toContain(step)
+    }
 
     const client = await connectClient()
     const { resources } = await client.listResources()
-    expect(resources.map((resource) => resource.uri)).toContain("apiweave://guide/edit-debug")
+    expect(resources.map((resource) => resource.uri)).toContain("apiweave://guide/start-here")
 
-    const listed = await client.callTool({ name: "guides_list", arguments: {} })
-    const listBody = JSON.parse(textOf(listed as { content: Array<{ type: string; text?: string }> })) as {
-      guides: Array<{ slug: string; uri: string }>
-    }
-    expect(listBody.guides.map((guide) => guide.slug)).toEqual(slugs)
-
-    const fetched = await client.callTool({ name: "guides_get", arguments: { slug: "edit-debug" } })
+    const fetched = await client.callTool({ name: "guides_get", arguments: { slug: "start-here" } })
     const body = JSON.parse(textOf(fetched as { content: Array<{ type: string; text?: string }> })) as {
       slug: string
       text: string
     }
-    expect(body.slug).toBe("edit-debug")
-    expect(body.text).toBe(MCP_GUIDES.find((guide) => guide.slug === "edit-debug")?.text)
+    expect(body.slug).toBe("start-here")
+    expect(body.text).toBe(startHere)
 
     const missing = await client.callTool({ name: "guides_get", arguments: { slug: "nope" } })
     expect((missing as { isError?: boolean }).isError).toBe(true)
@@ -574,7 +575,8 @@ describe("Phase 5 — concise task-specific onboarding", () => {
 
   it("publishes the guide tools and the assertion runId contract without touching exclusions", () => {
     const names = new Set(MCP_TOOLS.map(toolName))
-    expect(names.has("guides_list")).toBe(true)
+    // server_info lists the guides, so a separate list tool only cost catalogue space.
+    expect(names.has("guides_list")).toBe(false)
     expect(names.has("guides_get")).toBe(true)
     expect(names.has("assertion_apply")).toBe(true)
     for (const excluded of ["secrets.set", "secrets.delete", "agents.launchExternal", "runs.report"]) {

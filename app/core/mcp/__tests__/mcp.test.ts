@@ -244,6 +244,11 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "workflows.restoreRevision",
       // The palette's workspace-wide node search; agents use search + searchNodes.
       "workflows.searchWorkspaceNodes",
+      // Whole-graph replace: workflows_patch (including name/description/tags)
+      // plus workflows_create cover it. The handler stays as the renderer's save.
+      "workflows.update",
+      // server_info already lists the guides; guides_get reads one.
+      "guides.list",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }
@@ -881,10 +886,14 @@ describe("MCP guides — the conventions are discoverable without reverse-engine
     const createSchema = JSON.stringify(tools.find((tool) => tool.name === "workflows_create")?.inputSchema)
 
     // Field descriptions are the only prose that reaches a client rendering the
-    // schema, so the two costly conventions have to survive into it.
+    // schema, so the two costly conventions have to survive into it: the edge
+    // handles on the write tool itself, the path grammar in the node config
+    // schema the write tool points at.
     expect(createSchema).toContain("pass")
     expect(createSchema).toContain("fail")
-    expect(createSchema).toContain("response.body")
+    expect(createSchema).toContain("workflows_nodeSchema")
+    const assertion = await client.callTool({ name: "workflows_nodeSchema", arguments: { type: "assertion" } })
+    expect(textOf(assertion as { content: Array<{ type: string; text?: string }> })).toContain("response.body")
     await client.close()
   })
 })
@@ -1638,11 +1647,11 @@ describe("MCP reads — redacted values, intact structure", () => {
     // Read-modify-write: writing the graph back unchanged must neither be
     // rejected (no <SECRET> placeholder smuggled in) nor alter the stored graph.
     const updated = (await client.callTool({
-      name: "workflows_update",
+      name: "workflows_patch",
       arguments: {
         workspaceId: workspace.workspaceId,
         workflowId: workflow.workflowId,
-        nodes: (JSON.parse(
+        upsertNodes: (JSON.parse(
           textOf(
             (await client.callTool({
               name: "workflows_get",
@@ -2122,7 +2131,7 @@ describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, 
 
   // Cross-workspace target rejection is covered in services.test.ts, which can
   // seed two real workspaces; this harness resolves a single local workspace.
-  it("workflows_create accepts a Call Workflow node and workflows_update refuses a self-call", async () => {
+  it("workflows_create accepts a Call Workflow node and workflows_patch refuses a self-call", async () => {
     const workspace = await dispatchOk<{ workspaceId: string }>("workspaces", "create", { name: "Acme" })
     const target = await dispatchOk<{ workflowId: string }>("workflows", "create", {
       workspaceId: workspace.workspaceId,
@@ -2183,11 +2192,11 @@ describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, 
     })
 
     const rejected = (await client.callTool({
-      name: "workflows_update",
+      name: "workflows_patch",
       arguments: {
         workspaceId: workspace.workspaceId,
         workflowId: created.workflowId,
-        nodes: nodesFor(created.workflowId),
+        upsertNodes: nodesFor(created.workflowId),
       },
     })) as { isError?: boolean; content: Array<{ type: string; text?: string }> }
     expect(rejected.isError).toBe(true)

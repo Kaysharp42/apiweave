@@ -1104,15 +1104,23 @@ describe("Phase 2 — whitelist publishes the focused reads and nothing else", (
     }
   })
 
-  it("states explicit budgets and continuations in focused-read descriptions", () => {
+  it("states explicit budgets and continuations once: page sizes on the fields, the rest in descriptions", async () => {
+    const client = await connectClient()
+    const { tools } = await client.listTools()
+    await client.close()
+    const field = (tool: string, name: string): string =>
+      ((tools.find((item) => item.name === tool)?.inputSchema as { properties: Record<string, { description?: string }> })
+        .properties[name]?.description) ?? ""
+    for (const tool of ["workflows_search", "workflows_searchNodes", "runs_history"]) {
+      expect(field(tool, "limit"), tool).toMatch(/default 20, max 100/)
+    }
+    expect(field("workflows_search", "cursor")).toMatch(/stale cursor is rejected/)
+    expect(field("runs_history", "cursor")).toMatch(/stale cursor is rejected/)
+    expect(field("workflows_searchNodes", "limit")).toContain("totalMatched")
+
     const byName = new Map(MCP_TOOLS.map((spec) => [toolName(spec), spec.description]))
-    expect(byName.get("workflows_search")).toMatch(/20.*100|default 20/i)
-    expect(byName.get("workflows_search")).toContain("nextCursor")
     expect(byName.get("workflows_get")).toContain("50")
-    expect(byName.get("workflows_searchNodes")).toMatch(/20.*100|default 20/i)
-    expect(byName.get("workflows_searchNodes")).toContain("omittedMatchCount")
-    expect(byName.get("runs_history")).toMatch(/20.*100|default 20/i)
-    expect(byName.get("runs_history")).toContain("nextCursor")
+    expect(byName.get("workflows_get")).toContain("nextNodeCursor")
     expect(byName.get("runs_getNodeResult")).toContain("50")
     expect(byName.get("runs_getNodeResult")).toMatch(/32 KiB|budgetOmitted/i)
   })

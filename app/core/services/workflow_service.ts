@@ -42,6 +42,8 @@ export interface WorkflowGraphPatch {
   readonly expectedRevision?: number
   readonly name?: string
   readonly description?: string | null
+  /** Replaces the stored tag list. */
+  readonly tags?: readonly string[]
   readonly upsertNodes?: readonly WorkflowNodePatch[]
   readonly removeNodeIds?: readonly string[]
   readonly upsertEdges?: readonly Workflow["edges"][number][]
@@ -147,6 +149,7 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
     variables,
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {}),
   }
 }
 

@@ -14,6 +14,7 @@ import {
   WorkspaceNodeSearchPageSchema,
   WorkflowRevisionSchema,
   WorkflowRevisionSummarySchema,
+  WorkflowNodeTypeSchema,
 } from "@shared/zod-schemas"
 import type { WorkflowSummaryFilters } from "../../repositories/WorkflowRepository"
 import {
@@ -49,7 +50,7 @@ const canonicalNodes = z.preprocess(
 const partialNodePatch = z
   .object({
     nodeId: z.string().min(1),
-    type: z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow", "group", "note"]).optional(),
+    type: WorkflowNodeTypeSchema.optional(),
     label: z.string().nullable().optional(),
     position: PositionSchema.partial().optional(),
     parentId: z.string().min(1).nullable().optional().describe("Group frame this node sits inside; null takes it out of its frame. Changing it is a topology change for auto-layout."),
@@ -114,6 +115,7 @@ const patchInput = z
     ),
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
+    tags: z.array(z.string()).optional().describe("Replaces the stored tag list."),
     upsertNodes: patchNodes
       .optional()
       .describe("Nodes to add or patch, matched by nodeId. Existing nodes merge recursively: omitted config fields and position stay as stored. A new node must include its type and complete schema-valid config."),
@@ -178,7 +180,7 @@ const searchNodesInput = z.object({
   workspaceId: ws,
   workflowId: z.string().min(1),
   query: z.string().min(1).max(200).optional().describe("Literal substring (never a regex) matched against nodeId, label, type, request method, URL path and extractor names. Bodies, headers, auth and values are never inspected."),
-  nodeTypes: z.array(z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow", "group", "note"])).max(10).optional().describe("Only consider these node types."),
+  nodeTypes: z.array(WorkflowNodeTypeSchema).max(10).optional().describe("Only consider these node types."),
   limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional().describe("Matches per result (default 20, max 100). totalMatched always describes every match."),
 }).strict().superRefine((value, context) => {
   if ((value.query === undefined || value.query.trim().length === 0) && value.nodeTypes === undefined) {
@@ -203,6 +205,28 @@ const layoutFlag = z
   .boolean()
   .optional()
   .describe("Lay out the graph when this write changes topology (default true). Set false to keep the positions you sent as-is.")
+
+const nodeSchemaOutput = z.object({
+  type: WorkflowNodeTypeSchema,
+  description: z.string(),
+  config: z.record(z.string(), JsonValueSchema),
+}).strict()
+
+/**
+ * One node type's config as JSON Schema, converted from the very zod member
+ * `WorkflowNodeSchema` validates writes with — the same conversion (draft-7,
+ * input side) the MCP SDK applies to tool schemas — so it cannot drift from
+ * what a write accepts. Built once: the zod definitions are static.
+ */
+const NODE_CONFIG_SCHEMAS: ReadonlyMap<string, z.infer<typeof nodeSchemaOutput>> = new Map(
+  WorkflowNodeSchema.options.map((member) => {
+    // The dialect marker is noise to an agent reading one config shape.
+    const config: Record<string, unknown> = { ...z.toJSONSchema(member.shape.config.unwrap(), { target: "draft-7", io: "input" }) }
+    delete config["$schema"]
+    const type = member.shape.type.value
+    return [type, { type, description: member.description ?? "", config: config as Record<string, z.infer<typeof JsonValueSchema>> }]
+  }),
+)
 
 export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { workflows, workflowAnalysis, runs, environments } = deps
@@ -236,6 +260,18 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
         return workflows.getNodesView(i.workspaceId, i.workflowId, nodeIds)
       }
       return workflows.get(i.workspaceId, i.workflowId)
+    },
+  })
+
+  router.register("workflows", "nodeSchema", {
+    input: z.object({ type: WorkflowNodeTypeSchema.describe("The node type whose config shape to return.") }).strict(),
+    output: nodeSchemaOutput,
+    handle: ({ type }) => {
+      const schema = NODE_CONFIG_SCHEMAS.get(type)
+      // Unreachable while WorkflowNodeTypeSchema and the node union agree; a
+      // test pins that they do.
+      if (schema === undefined) throw new Error(`no config schema for node type ${type}`)
+      return schema
     },
   })
 

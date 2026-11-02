@@ -17,7 +17,7 @@ import { UrlEncodedEntrySchema } from "./UrlEncodedEntrySchema"
  * variable, manual or extracted), `{{prev.response.body.x}}` (previous node's
  * result), `{{secrets.NAME}}` (local scope chain), and `{{uuid()}}`-style
  * dynamic functions. The `.describe()` calls carry that to MCP clients, which
- * see this shape as the JSON schema for `workflows_create`/`workflows_update`.
+ * read this shape from `workflows_nodeSchema` with `type: "http-request"`.
  */
 /** "200", "2XX" or "default", as OpenAPI keys its responses. */
 export const RESPONSE_SCHEMA_KEY = /^(?:[1-5](?:\d\d|XX)|default)$/
