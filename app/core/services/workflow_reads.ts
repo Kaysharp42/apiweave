@@ -1,15 +1,13 @@
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
-import type { WorkspaceNodeMatch } from "@shared/types/WorkspaceNodeMatch"
-import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage"
+import type { NodeReferenceUse } from "@shared/types/NodeReferenceUse"
+import type { WorkflowNodeMatch } from "@shared/types/WorkflowNodeMatch"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowSummaryFilters, WorkflowSummaryCursor } from "../repositories/WorkflowRepository"
-import {
-  NODE_SEARCH_DEFAULT_LIMIT,
-  WORKFLOW_OUTLINE_DEFAULT_LIMIT,
-} from "./read_budgets"
+import { WORKFLOW_OUTLINE_DEFAULT_LIMIT } from "./read_budgets"
+import { nodeEndpoint, nodeReferences } from "./node_facts"
 import { ConflictError, ValidationError } from "../ipc/errors"
 import { cursorScope, openCursor, sealCursor } from "../ipc/opaque_cursor"
 
@@ -177,136 +175,188 @@ export function buildNodesView(workflow: Workflow, nodeIds: readonly string[]): 
 }
 
 export interface NodeSearchRequest {
-  readonly query: string
+  /** Literal substring, matched case-insensitively against safe fields only. */
+  readonly query?: string
+  /** A placeholder reference by name: `variables.NAME`, `env.NAME` or `secrets.NAME`. */
+  readonly ref?: string
   readonly nodeTypes?: readonly string[]
-  readonly limit?: number
+  readonly limit: number
+  readonly cursor?: string
+}
+
+/** The workflows a workspace-wide node search covers, and their revision fingerprint. */
+export interface WorkspaceNodeSearchScope {
+  readonly workspaceId: string
+  readonly collectionId?: string
+  /** `WorkflowRepository.summariesSnapshot` for the same filter: a cursor is bound to it. */
+  readonly snapshot: string
 }
 
 /**
- * Locate nodes by safe fields only: nodeId, label, type, request method, the
- * URL path (query string and fragment stripped), extractor variable names and
- * call-workflow targets. Bodies, headers, cookies, auth blocks, query values
- * and variables are never inspected, so the search cannot match a withheld
- * secret value. The query is a literal substring — never a regex.
+ * Locate nodes in one workflow by safe fields and placeholder references, with
+ * the neighbour and edge context a patch needs. See {@link matchNode}.
  */
 export function searchWorkflowNodes(workflow: Workflow, request: NodeSearchRequest): NodeSearchPage {
-  const query = request.query.toLowerCase()
-  const typeFilter = request.nodeTypes === undefined ? undefined : new Set(request.nodeTypes)
-  const limit = request.limit ?? NODE_SEARCH_DEFAULT_LIMIT
-  const matched = workflow.nodes.flatMap((node) => {
-    if (typeFilter !== undefined && !typeFilter.has(node.type)) return []
-    const matchedOn = matchNodeFields(node, query)
-    if (matchedOn.length === 0) return []
-    const neighborNodeIds = new Set<string>()
-    const incidentEdgeIds = new Set<string>()
-    for (const edge of workflow.edges) {
-      if (edge.source === node.nodeId) {
-        incidentEdgeIds.add(edge.edgeId)
-        neighborNodeIds.add(edge.target)
-      } else if (edge.target === node.nodeId) {
-        incidentEdgeIds.add(edge.edgeId)
-        neighborNodeIds.add(edge.source)
-      }
-    }
-    return [{
-      nodeId: node.nodeId,
-      type: node.type,
-      label: node.label ?? null,
-      matchedOn,
-      neighborNodeIds: [...neighborNodeIds].sort(),
-      incidentEdgeIds: [...incidentEdgeIds].sort(),
-    }]
-  })
+  const matches = workflowMatches(workflow, request, "workflow")
+  const scope = { workspaceId: workflow.workspaceId, workflowId: workflow.workflowId, collectionId: null }
   return {
-    workflowId: workflow.workflowId,
     workspaceId: workflow.workspaceId,
+    workflowId: workflow.workflowId,
     rev: workflow.rev,
-    query: request.query,
-    items: matched.slice(0, limit),
-    totalMatched: matched.length,
-    omittedMatchCount: Math.max(0, matched.length - limit),
+    ...pageMatches(matches, request, scope, `r${workflow.rev}`),
   }
 }
 
 /**
- * The same safe-field match as `searchWorkflowNodes`, across every workflow of
- * a workspace, for the command palette. Workflows come newest-updated first so
- * the cap keeps the ones being worked on.
+ * The same match across every workflow of a workspace (or of one project),
+ * project-attached ones included. Workflows come newest-updated first, so the
+ * first page holds the ones being worked on.
  */
 // ponytail: parses every graph per query (in memory, no index). Fine to a few
 // thousand workflows; past that, prefilter with LIKE on graph_json or an FTS
 // table in WorkflowRepository.
-export function searchWorkspaceNodes(workflows: readonly Workflow[], query: string, limit: number): WorkspaceNodeSearchPage {
-  const needle = query.toLowerCase()
-  const ordered = [...workflows].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const matched: WorkspaceNodeMatch[] = []
-  let totalMatched = 0
-  for (const workflow of ordered) {
-    for (const node of workflow.nodes) {
-      const matchedOn = matchNodeFields(node, needle)
-      if (matchedOn.length === 0) continue
-      totalMatched += 1
-      if (matched.length >= limit) continue
-      const method = node.type === "http-request" ? node.config?.method : undefined
-      const url = node.type === "http-request" || node.type === "sse" ? node.config?.url : undefined
-      matched.push({
-        workflowId: workflow.workflowId,
-        workflowName: workflow.name,
-        nodeId: node.nodeId,
-        type: node.type,
-        label: node.label ?? null,
-        method: typeof method === "string" ? method : null,
-        urlPath: typeof url === "string" ? urlPathTemplate(url) : null,
-        matchedOn,
-      })
-    }
-  }
-  return { query, items: matched, totalMatched, omittedMatchCount: totalMatched - matched.length }
+export function searchWorkspaceNodes(
+  workflows: readonly Workflow[],
+  scope: WorkspaceNodeSearchScope,
+  request: NodeSearchRequest,
+): NodeSearchPage {
+  const matches = [...workflows].sort(newestFirst).flatMap((workflow) => workflowMatches(workflow, request, "workspace"))
+  const cursorScope = { workspaceId: scope.workspaceId, workflowId: null, collectionId: scope.collectionId ?? null }
+  return { workspaceId: scope.workspaceId, ...pageMatches(matches, request, cursorScope, scope.snapshot) }
 }
 
+/** Newest-updated first, ties by id — the order workflow search pages in. */
+export function newestFirst(a: Workflow, b: Workflow): number {
+  return b.updatedAt.localeCompare(a.updatedAt) || b.workflowId.localeCompare(a.workflowId)
+}
+
+function workflowMatches(workflow: Workflow, request: NodeSearchRequest, mode: "workflow" | "workspace"): WorkflowNodeMatch[] {
+  const needle = request.query?.trim().toLowerCase()
+  const typeFilter = request.nodeTypes === undefined ? undefined : new Set(request.nodeTypes)
+  return workflow.nodes.flatMap((node) => {
+    if (typeFilter !== undefined && !typeFilter.has(node.type)) return []
+    const matched = matchNode(node, needle === "" ? undefined : needle, request.ref)
+    if (matched === undefined) return []
+    const endpoint = nodeEndpoint(node)
+    return [{
+      // A one-workflow page carries its workflowId once, at the top.
+      ...(mode === "workspace" ? { workflowId: workflow.workflowId, workflowName: workflow.name } : {}),
+      nodeId: node.nodeId,
+      type: node.type,
+      label: node.label ?? null,
+      ...(endpoint?.method !== undefined ? { method: endpoint.method } : {}),
+      ...(endpoint !== undefined ? { urlPath: endpoint.urlPath } : {}),
+      matchedOn: matched.matchedOn,
+      ...(matched.references !== undefined ? { references: matched.references } : {}),
+      ...(mode === "workflow" ? neighborhood(workflow, node.nodeId) : {}),
+    }]
+  })
+}
+
+function neighborhood(workflow: Workflow, nodeId: string): { neighborNodeIds: string[]; incidentEdgeIds: string[] } {
+  const neighborNodeIds = new Set<string>()
+  const incidentEdgeIds = new Set<string>()
+  for (const edge of workflow.edges) {
+    if (edge.source === nodeId) {
+      incidentEdgeIds.add(edge.edgeId)
+      neighborNodeIds.add(edge.target)
+    } else if (edge.target === nodeId) {
+      incidentEdgeIds.add(edge.edgeId)
+      neighborNodeIds.add(edge.source)
+    }
+  }
+  return { neighborNodeIds: [...neighborNodeIds].sort(), incidentEdgeIds: [...incidentEdgeIds].sort() }
+}
+
+interface MatchCursorScope {
+  readonly workspaceId: string
+  readonly workflowId: string | null
+  readonly collectionId: string | null
+}
+
+function pageMatches(
+  matches: readonly WorkflowNodeMatch[],
+  request: NodeSearchRequest,
+  scope: MatchCursorScope,
+  snapshot: string,
+): Pick<NodeSearchPage, "items" | "totalMatched" | "omittedMatchCount" | "nextCursor"> {
+  const boundTo = cursorScope({
+    ...scope,
+    query: request.query?.trim().toLowerCase() ?? null,
+    ref: request.ref ?? null,
+    nodeTypes: request.nodeTypes === undefined ? null : [...request.nodeTypes].sort(),
+  })
+  const offset = request.cursor === undefined ? 0 : openMatchCursor(request.cursor, boundTo, snapshot, matches.length)
+  const items = matches.slice(offset, offset + request.limit)
+  const end = offset + items.length
+  return {
+    items,
+    totalMatched: matches.length,
+    omittedMatchCount: matches.length - items.length,
+    nextCursor: end < matches.length
+      ? sealCursor("n", { scope: boundTo, snapshot: cursorScope(snapshot), position: [String(end)] })
+      : null,
+  }
+}
+
+function openMatchCursor(cursor: string, boundTo: string, snapshot: string, total: number): number {
+  const opened = openCursor(cursor, "n")
+  const offset = Number(opened?.position[0])
+  if (opened === undefined || !Number.isInteger(offset) || offset < 0) {
+    throw new ValidationError("This cursor is not valid; search again without a cursor.")
+  }
+  if (opened.scope !== boundTo) {
+    throw new ValidationError("This cursor was issued for a different search; search again without a cursor.")
+  }
+  if (opened.snapshot !== cursorScope(snapshot) || offset > total) {
+    throw new ConflictError("The searched workflows changed since this cursor was issued; search again without a cursor.")
+  }
+  return offset
+}
+
+/**
+ * Whether a node matches, and on what. Every given filter must hold: the query
+ * against safe fields ({@link matchNodeFields}), the reference against
+ * {@link nodeReferences}. With neither (a type-only search) the type is the
+ * match.
+ */
+function matchNode(
+  node: WorkflowNode,
+  needle: string | undefined,
+  ref: string | undefined,
+): { matchedOn: string[]; references?: NodeReferenceUse[] } | undefined {
+  const matchedOn = needle === undefined ? [] : matchNodeFields(node, needle)
+  if (needle !== undefined && matchedOn.length === 0) return undefined
+  if (ref === undefined) return { matchedOn: matchedOn.length === 0 ? ["type"] : matchedOn }
+  const references = nodeReferences(node)
+    .filter((reference) => reference.ref === ref)
+    .map(({ field, role }) => ({ field, role }))
+  if (references.length === 0) return undefined
+  return { matchedOn: [...matchedOn, "ref"], references }
+}
+
+/**
+ * The query match over safe fields only: nodeId, label, type, request method,
+ * the URL path (query string, userinfo and host stripped), extractor variable
+ * names and call-workflow targets. Bodies, headers, cookies, auth blocks,
+ * query values and variables are never inspected, so a query cannot match a
+ * withheld secret value. The query is a literal substring — never a regex.
+ */
 // fallow-ignore-next-line complexity
 function matchNodeFields(node: WorkflowNode, query: string): string[] {
   const matchedOn: string[] = []
   if (node.nodeId.toLowerCase().includes(query)) matchedOn.push("nodeId")
   if ((node.label ?? "").toLowerCase().includes(query)) matchedOn.push("label")
   if (node.type.toLowerCase().includes(query)) matchedOn.push("type")
-  if (node.type === "http-request") {
-    const config = node.config
-    if (typeof config?.method === "string" && config.method.toLowerCase() === query) matchedOn.push("method")
-    if (typeof config?.url === "string" && urlPathTemplate(config.url).toLowerCase().includes(query)) {
-      matchedOn.push("urlPath")
-    }
-    if (config?.extractors !== undefined) {
-      const names = Object.keys(config.extractors)
-      if (names.some((name) => name.toLowerCase().includes(query))) matchedOn.push("extractor")
-    }
-  } else if (node.type === "sse") {
-    const config = node.config
-    if (typeof config?.url === "string" && urlPathTemplate(config.url).toLowerCase().includes(query)) {
-      matchedOn.push("urlPath")
-    }
-    if (config?.extractors !== undefined) {
-      const names = Object.keys(config.extractors)
-      if (names.some((name) => name.toLowerCase().includes(query))) matchedOn.push("extractor")
-    }
+  const endpoint = nodeEndpoint(node)
+  if (node.type === "http-request" && endpoint?.method?.toLowerCase() === query) matchedOn.push("method")
+  if (endpoint?.urlPath.toLowerCase().includes(query) === true) matchedOn.push("urlPath")
+  if ((node.type === "http-request" || node.type === "sse") && node.config?.extractors !== undefined) {
+    const names = Object.keys(node.config.extractors)
+    if (names.some((name) => name.toLowerCase().includes(query))) matchedOn.push("extractor")
   }
   if (node.type === "workflow" && typeof node.config?.targetWorkflowId === "string") {
     if (node.config.targetWorkflowId.toLowerCase().includes(query)) matchedOn.push("target")
   }
   return matchedOn
-}
-
-/**
- * The matchable URL surface: placeholders kept as written (they are
- * references, not values), query string, fragment and authority dropped (they
- * carry literal values the transport would withhold, userinfo included).
- * Never throws on template URLs the URL parser cannot parse.
- */
-function urlPathTemplate(url: string): string {
-  const withoutQuery = url.split(/[?#]/, 1)[0] ?? ""
-  try {
-    return decodeURI(new URL(withoutQuery).pathname)
-  } catch {
-    return withoutQuery.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "")
-  }
 }

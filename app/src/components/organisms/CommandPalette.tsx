@@ -97,13 +97,15 @@ export function CommandPalette({
     const timer = setTimeout(() => {
       Promise.all([
         apiweave.workflows.search(workspaceId, term, WORKFLOW_RESULT_LIMIT),
-        apiweave.workflows.searchWorkspaceNodes(workspaceId, term, NODE_RESULT_LIMIT),
+        apiweave.workflows.searchNodes(workspaceId, term, NODE_RESULT_LIMIT),
       ])
         .then(([workflows, nodes]) => {
           if (stale) return;
           setFound([
             ...workflows.items.map((workflow) => ({ kind: "workflow" as const, workflow })),
-            ...nodes.items.map((node) => ({ kind: "node" as const, node })),
+            ...nodes.items.flatMap(({ workflowId, ...node }) =>
+              workflowId === undefined ? [] : [{ kind: "node" as const, node: { ...node, workflowId } }],
+            ),
           ]);
         })
         .catch(() => {
@@ -211,9 +213,9 @@ export function CommandPalette({
                             query={term}
                           />
                         </span>
-                        {item.node.urlPath !== null && (
+                        {item.node.urlPath !== undefined && (
                           <span className="block truncate font-mono text-xs text-text-muted dark:text-text-muted-dark">
-                            {item.node.method !== null && (
+                            {item.node.method !== undefined && (
                               <>
                                 <HighlightedText text={item.node.method} query={term} />{" "}
                               </>

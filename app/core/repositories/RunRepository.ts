@@ -216,6 +216,26 @@ export class RunRepository {
   }
 
   /**
+   * The newest run of each named workflow, in ONE query — identity and status
+   * only, no per-node results or metadata blob. A workflow never run is absent
+   * from the map. Scoped by workspace like every other read here.
+   */
+  public latestRunsByWorkflow(
+    workspaceId: string,
+    workflowIds: readonly string[],
+  ): ReadonlyMap<string, { readonly runId: string; readonly status: Run["status"] }> {
+    if (workflowIds.length === 0) return new Map()
+    const rows = this.store.query<{ workflow_id: string; id: string; status: string } & SqliteRow>(
+      "SELECT workflow_id, id, status FROM (" +
+        "SELECT workflow_id, id, status, row_number() OVER (PARTITION BY workflow_id ORDER BY createdAt DESC, id DESC) AS position " +
+        `FROM runs WHERE workspace_id = ? AND workflow_id IN (${workflowIds.map(() => "?").join(", ")})` +
+        ") WHERE position = 1",
+      [workspaceId, ...workflowIds],
+    )
+    return new Map(rows.map((row) => [row.workflow_id, { runId: row.id, status: row.status as Run["status"] }]))
+  }
+
+  /**
    * Bounded, per-node-result-free history query with deterministic keyset
    * ordering. Skips `node_statuses_json` and `extracted_variables_json`
    * entirely, lifts the three metadata leaves a history row needs

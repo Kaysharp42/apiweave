@@ -175,6 +175,15 @@ export class RunService {
     return this.runs.getLatestFailedRun(workflowId, workspaceId)
   }
 
+  /** The newest run of each named workflow, from one query; never-run workflows are absent. */
+  async latestByWorkflow(
+    workspaceId: string,
+    workflowIds: readonly string[],
+  ): Promise<ReadonlyMap<string, { readonly runId: string; readonly status: Run["status"] }>> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    return this.runs.latestRunsByWorkflow(workspaceId, workflowIds)
+  }
+
   /**
    * Bounded compact history: identity, status, timing and failure counts per
    * row, never per-node results. Pages with an opaque filter-bound

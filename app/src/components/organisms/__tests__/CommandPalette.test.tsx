@@ -13,7 +13,7 @@ vi.mock("../../../utils/apiweaveClient", () => ({
     workflows: {
       get: vi.fn(),
       search: vi.fn(),
-      searchWorkspaceNodes: vi.fn(),
+      searchNodes: vi.fn(),
     },
   },
 }));
@@ -79,13 +79,14 @@ describe("CommandPalette", () => {
       items: [summary],
       nextCursor: null,
     });
-    vi.mocked(apiweave.workflows.searchWorkspaceNodes)
+    vi.mocked(apiweave.workflows.searchNodes)
       .mockReset()
       .mockResolvedValue({
-        query: "users",
+        workspaceId: "ws-1",
         items: [nodeMatch],
         totalMatched: 1,
         omittedMatchCount: 0,
+        nextCursor: null,
       });
     vi.mocked(apiweave.workflows.get).mockReset();
     useCanvasStore.setState({ pendingFocus: null });
@@ -135,7 +136,7 @@ describe("CommandPalette", () => {
     // Debounced: one search for the whole word, not one per keystroke.
     expect(apiweave.workflows.search).toHaveBeenCalledOnce();
     expect(apiweave.workflows.search).toHaveBeenCalledWith("ws-1", "users", 5);
-    expect(apiweave.workflows.searchWorkspaceNodes).toHaveBeenCalledWith(
+    expect(apiweave.workflows.searchNodes).toHaveBeenCalledWith(
       "ws-1",
       "users",
       10,

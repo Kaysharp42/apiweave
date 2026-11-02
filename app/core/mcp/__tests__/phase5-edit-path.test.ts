@@ -543,7 +543,7 @@ describe("Phase 5 — concise task-specific onboarding", () => {
       cwd: "/repo",
       mcpWired: true,
     })
-    expect(projectBriefing).toContain("workflows_search")
+    expect(projectBriefing).toContain("workspaces_map")
   })
 
   it("serves the start-here loop from the same guide source over resources and the registry", async () => {

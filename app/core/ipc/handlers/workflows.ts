@@ -11,7 +11,6 @@ import {
   WorkflowSearchPageSchema,
   WorkflowGetViewSchema,
   NodeSearchPageSchema,
-  WorkspaceNodeSearchPageSchema,
   WorkflowRevisionSchema,
   WorkflowRevisionSummarySchema,
   WorkflowNodeTypeSchema,
@@ -31,6 +30,7 @@ import {
 import { ValidationError } from "../errors"
 import { canonicalizeNodeConfig } from "../../repositories/helpers"
 import { DebugContextService } from "../../services/debug_context"
+import { REFERENCE_FILTER_RE } from "../../services/node_facts"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
@@ -178,21 +178,21 @@ const searchInput = z.object({
 
 const searchNodesInput = z.object({
   workspaceId: ws,
-  workflowId: z.string().min(1),
+  workflowId: z.string().min(1).optional().describe("One workflow, with neighbour/edge ids per match. Omit to search every workflow."),
+  collectionId: z.string().min(1).optional().describe("Without workflowId: only this project's workflows."),
   query: z.string().min(1).max(200).optional().describe("Literal substring (never a regex) matched against nodeId, label, type, request method, URL path and extractor names. Bodies, headers, auth and values are never inspected."),
+  ref: z.string().regex(REFERENCE_FILTER_RE, 'A reference by name: "variables.NAME", "env.NAME" or "secrets.NAME".').optional().describe('Nodes using this reference anywhere in config, scripts, mappings, extractors or assertions, e.g. "env.BASE_URL"; each match gives field and produces/consumes.'),
   nodeTypes: z.array(WorkflowNodeTypeSchema).max(10).optional().describe("Only consider these node types."),
-  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional().describe("Matches per result (default 20, max 100). totalMatched always describes every match."),
+  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional().describe("Matches per page (default 20, max 100). totalMatched always describes every match."),
+  cursor: z.string().min(1).optional().describe("Next page; send the same filters."),
 }).strict().superRefine((value, context) => {
-  if ((value.query === undefined || value.query.trim().length === 0) && value.nodeTypes === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "Give a query, nodeTypes, or both: an unfiltered search is just the outline." })
+  if ((value.query === undefined || value.query.trim().length === 0) && value.ref === undefined && value.nodeTypes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "Give a query, ref, nodeTypes, or a combination: an unfiltered search is just the outline." })
+  }
+  if (value.workflowId !== undefined && value.collectionId !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["collectionId"], message: "collectionId narrows a workspace-wide search; with workflowId, omit it." })
   }
 })
-
-const searchWorkspaceNodesInput = z.object({
-  workspaceId: ws,
-  query: z.string().trim().min(1).max(200),
-  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional(),
-}).strict()
 
 const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
 
@@ -317,17 +317,19 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   router.register("workflows", "searchNodes", {
     input: searchNodesInput,
     output: NodeSearchPageSchema,
-    handle: (i) => workflows.searchNodes(i.workspaceId, i.workflowId, {
-      query: i.query?.trim() ?? "",
-      ...(i.nodeTypes !== undefined ? { nodeTypes: i.nodeTypes } : {}),
-      limit: i.limit ?? NODE_SEARCH_DEFAULT_LIMIT,
-    }),
-  })
-
-  router.register("workflows", "searchWorkspaceNodes", {
-    input: searchWorkspaceNodesInput,
-    output: WorkspaceNodeSearchPageSchema,
-    handle: (i) => workflows.searchWorkspaceNodes(i.workspaceId, i.query, i.limit ?? NODE_SEARCH_DEFAULT_LIMIT),
+    handle: (i) => workflows.searchNodes(
+      i.workspaceId,
+      i.workflowId !== undefined
+        ? { workflowId: i.workflowId }
+        : i.collectionId !== undefined ? { collectionId: i.collectionId } : {},
+      {
+        ...(i.query !== undefined ? { query: i.query } : {}),
+        ...(i.ref !== undefined ? { ref: i.ref } : {}),
+        ...(i.nodeTypes !== undefined ? { nodeTypes: i.nodeTypes } : {}),
+        limit: i.limit ?? NODE_SEARCH_DEFAULT_LIMIT,
+        ...(i.cursor !== undefined ? { cursor: i.cursor } : {}),
+      },
+    ),
   })
 
   router.register("workflows", "update", {

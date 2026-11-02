@@ -2,7 +2,6 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { AssertionItem } from "@shared/types/AssertionItem"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
-import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowRevision } from "@shared/types/WorkflowRevision"
@@ -12,6 +11,7 @@ import type {
   EnvironmentRepository,
   WorkflowCreate,
   WorkflowRepository,
+  WorkflowSummaryCursor,
   WorkflowSummaryFilters,
   WorkflowSummaryRow,
   WorkflowUpdate,
@@ -333,16 +333,40 @@ export class WorkflowService {
     return buildNodesView(this.mustGet(workspaceId, workflowId), nodeIds)
   }
 
-  /** Locate nodes by safe fields only — never bodies, headers, auth or values. */
-  async searchNodes(workspaceId: string, workflowId: string, request: NodeSearchRequest): Promise<NodeSearchPage> {
+  /**
+   * Locate nodes by safe fields and placeholder references — never values.
+   * With `workflowId`, one workflow (with neighbour context); without it,
+   * every workflow of the workspace, or of one project with `collectionId`.
+   */
+  async searchNodes(
+    workspaceId: string,
+    target: { readonly workflowId: string } | { readonly collectionId?: string },
+    request: NodeSearchRequest,
+  ): Promise<NodeSearchPage> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return searchWorkflowNodes(this.mustGet(workspaceId, workflowId), request)
+    if ("workflowId" in target) return searchWorkflowNodes(this.mustGet(workspaceId, target.workflowId), request)
+    const filters: WorkflowSummaryFilters = target.collectionId === undefined ? {} : { collectionId: target.collectionId }
+    const workflows = this.workflows.listByWorkspace(workspaceId, true).items
+      .filter((workflow) => target.collectionId === undefined || workflow.collectionId === target.collectionId)
+    return searchWorkspaceNodes(workflows, {
+      workspaceId,
+      ...filters,
+      snapshot: this.workflows.summariesSnapshot(workspaceId, filters),
+    }, request)
   }
 
-  /** `searchNodes` across every workflow of the workspace, project-attached ones included. */
-  async searchWorkspaceNodes(workspaceId: string, query: string, limit: number): Promise<WorkspaceNodeSearchPage> {
+  /**
+   * Whole workflows of a workspace (or one project), newest-updated first,
+   * keyset-paged — for reads that summarise graphs page by page.
+   */
+  async listGraphPage(
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    after: WorkflowSummaryCursor | undefined,
+    limit: number,
+  ): Promise<{ readonly items: readonly Workflow[]; readonly hasMore: boolean; readonly snapshot: string }> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return searchWorkspaceNodes(this.workflows.listByWorkspace(workspaceId, true).items, query, limit)
+    return this.workflows.listGraphPage(workspaceId, filters, after, limit)
   }
 
 // fallow-ignore-next-line complexity

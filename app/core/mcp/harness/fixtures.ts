@@ -17,6 +17,8 @@ const MEASURED_PAYLOADS = [
   { payload: "workflowsGetOutline", toolName: "workflows_get" },
   { payload: "workflowsDebugContext", toolName: "workflows_debugContext" },
   { payload: "runsHistory", toolName: "runs_history" },
+  // The workspace grows by one fixture workflow per size: 1, 2, then 3 workflows.
+  { payload: "workspacesMap", toolName: "workspaces_map" },
 ] as const
 
 /** Phase-0 conditions. A trial creates isolated state for each selected scenario. */
@@ -98,6 +100,8 @@ function payloadArguments(
       return { workspaceId, workflowId }
     case "runsHistory":
       return { workspaceId, workflowId, limit: 20 }
+    case "workspacesMap":
+      return { workspaceId }
   }
 }
 

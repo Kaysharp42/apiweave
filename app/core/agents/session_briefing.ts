@@ -42,7 +42,8 @@ const CODE_MAP_SECTIONS = {
 To learn the API under test (routes, request and response shapes, auth), query
 the graph instead of grepping: \`graphify query "<route or handler>"\`,
 \`graphify path A B\`, \`graphify explain X\`. Read \`graphify-out/GRAPH_REPORT.md\`
-for broad context only.
+for broad context only. graphify for the code; \`workflows_searchNodes\` /
+\`workspaces_map\` for the workflows.
 `,
   tool: `
 ## A code map could be built for this folder
@@ -126,7 +127,7 @@ ${codeMapSection}
    ${label.toLowerCase()} itself — ${
     isWorkflow
       ? "`workflows_get` with the id above and `view: \"outline\"`, then `nodes` for the ids you will touch"
-      : "`workflows_search` with collectionId for what the project contains, then `workflows_get` with `view: \"outline\"` on a workflow, then `nodes` for the ids you will touch"
+      : "`workspaces_map` with collectionId for what the project's workflows call and use, then `workflows_get` with `view: \"outline\"` on a workflow, then `nodes` for the ids you will touch"
   }.
 2. The initialize instructions plus that guide carry the revision, patch, and
    diagnosis rules — follow them rather than re-deriving the flow here.

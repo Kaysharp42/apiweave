@@ -35,10 +35,6 @@ import { MCP_GUIDES } from "./guide"
  *    whole graph (no MCP read redacts it like `workflows_get` does), and a write
  *    that replaces the workflow with it. Version history is the user's: an agent
  *    lists revisions (`workflows_listRevisions`) and points the user at it.
- *  - `workflows.searchWorkspaceNodes` — the command palette's node search across
- *    every workflow at once. An agent finds the workflow first
- *    (`workflows_search`) and then its nodes (`workflows_searchNodes`), which
- *    also returns the neighbour context a patch needs.
  *  - `projects.addWorkflow`, `projects.removeWorkflow` (phase 6) — project-centric
  *    duplicates of `workflows.attachToCollection`, which attaches AND detaches
  *    (nullable `collectionId`) in one workflow-centric tool. The IPC handlers
@@ -115,6 +111,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   tool("workspaces", "create", "write", "Create a workspace."),
   tool("workspaces", "update", "write", "Update a workspace's name or settings.", { idempotent: true }),
   tool("workspaces", "delete", "write", "Delete a workspace and its contents.", { destructive: true, idempotent: true }),
+  tool("workspaces", "map", "read", "Workspace map: every workflow's endpoints (METHOD /path), variables produced and consumed, env and secret reference names, sub-workflow calls and last run status, paged. Names and path templates only, never values. Orient here in an unfamiliar workspace."),
 
   // Workflows — discovery is graph-free summaries (workflows_search), never full
   // graphs; structure reads are outline/node views (workflows_get). The raw
@@ -122,7 +119,7 @@ export const MCP_TOOLS: readonly McpToolSpec[] = [
   // agent tool: finding a workflow must not transfer every graph.
   tool("workflows", "search", "read", "Find workflows by name, project (collectionId) or tags. Returns graph-free summaries — workflowId, rev, project, node/edge counts — never configs or graphs. Searches project-attached workflows too unless collectionId narrows to one project. Start here before reading or editing a workflow.", { resultProjection: "workflowSearch", alwaysLoad: true }),
   tool("workflows", "get", "read", "Read a workflow's structure or node configs. view outline (the default): node ids/types/labels and edges, no configs, paged with nextNodeCursor — nodeCount/edgeCount describe the whole graph and omittedNodeCount/omittedEdgeCount what the page leaves out. view nodes with nodeIds: full configs of up to 50 nodes plus incident edges. view full: the whole graph, refused above 64 KiB. Partial views are marked partial:true. Credential values come back as `<SECRET>`; `{{secrets.NAME}}` references stay verbatim.", { alwaysLoad: true }),
-  tool("workflows", "searchNodes", "read", "Find nodes in one workflow by label, type, request method, URL path or extractor name — a literal substring, never a regex. Bodies, headers, auth and values are never inspected, so it cannot match a withheld secret. Returns node ids with neighbor and edge context, enough to patch without a full read."),
+  tool("workflows", "searchNodes", "read", "Find nodes by route, label, type or reference, in one workflow or — workflowId omitted — the whole workspace. query: literal substring of nodeId, label, type, method, URL path or extractor name. ref: nodes using {{variables.x}}, {{env.X}} or {{secrets.X}}, marked produces or consumes. Matches carry method and urlPath; values are never inspected or returned."),
   tool("workflows", "diagnose", "read", "Check a stored workflow statically — topology, assertion paths, edge handles, variable provenance — and, with a `runId`, correlate a past run's failures. Sends no HTTP and changes nothing: find graph mistakes here, not with a live run. Codes are explained in `apiweave://guide/diagnostics`.", { name: "workflow_diagnose" }),
   tool("workflows", "debugContext", "read", "Debug a failed run in one bounded read: workflow rev; the chosen run (runId, otherwise the latest failed — stated in runSelection); failed/blocked nodes with run-correlated diagnosis; configs of up to 5 failed nodes plus their nearest dependencies and incident edges; unresolved placeholders; environment key presence; secret names and resolution metadata (never values); truncated error evidence with runs_getNodeResult selectors. Held to 32 KiB: overflow moves to omittedNodeIds/nextReads, counts still cover every failure. runRev is the run record's revision, never the workflow rev; graphCorrelation says whether the run executed the current workflow rev (current, stale or unknown).", { alwaysLoad: true }),
   tool("assertions", "suggest", "read", "Suggest assertion rules from one stored HTTP result — the reliable way to get paths right, since they come from a response that actually happened. Returns candidates with stable ids, rules and overfit warnings, plus the workflow's current `rev` for assertion_apply's expectedRevision. Needs a completed run of that node; before one exists, write rules by hand and check them with assertion_validate. Never modifies the workflow.", { name: "assertion_suggest" }),

@@ -42,6 +42,9 @@ follows edges; nothing runs unless an edge leads to it.
    \`workflows_get\` outline, then \`view: "nodes"\` for the ids you will touch.
    A similar workflow shows this workspace's base URLs, auth headers and
    variable names; credential values are withheld, the structure is not.
+   \`workspaces_map\` orients in a whole workspace; \`workflows_searchNodes\`
+   without \`workflowId\` maps a route (\`query\`) or a \`ref\` such as
+   \`secrets.API_KEY\` to every node using it.
 2. **Learn the shapes.** \`apiweave://guide/workflow-authoring\` for nodes and
    edges, \`apiweave://guide/placeholders\` for \`{{…}}\` syntax, and
    \`workflows_nodeSchema\` for one node type's config fields.
@@ -64,7 +67,7 @@ follows edges; nothing runs unless an edge leads to it.
 
 If the user's repository has a \`graphify-out/\` folder, query it with
 \`graphify query "<route or handler>"\` instead of grepping when learning the API
-under test.
+under test (graphify for the code, the tools above for the workflows).
 
 ## Minimal working graph
 
@@ -647,9 +650,10 @@ saved-but-unchecked, never clean).
 \`runs_create\` sends real HTTP; everything else is free. Reads withhold secret
 values — reference them as {{secrets.NAME}}, never write an observed credential.
 
-Focused context, cheapest first: \`workflows_search\` (summaries, never graphs)
--> \`workflows_get\` outline then nodes -> \`workflows_debugContext\` for a
-failure (one bounded call) -> \`runs_getNodeResult\` for evidence slices.
+Focused context, cheapest first: \`workflows_search\` (summaries, never graphs;
+\`workspaces_map\` to orient in a whole workspace) -> \`workflows_get\` outline
+then nodes -> \`workflows_debugContext\` for a failure (one bounded call) ->
+\`runs_getNodeResult\` for evidence slices.
 Read ${GUIDE_URI_PREFIX}start-here before building or editing;
 \`server_info\` lists the other guides.`
 

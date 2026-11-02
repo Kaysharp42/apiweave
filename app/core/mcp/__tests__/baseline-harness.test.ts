@@ -77,7 +77,7 @@ describe("MCP baseline harness", () => {
     const report = await createMcpBaselineReport()
     const payloads = report.fixturePayloads
 
-    expect(payloads).toHaveLength(21)
+    expect(payloads).toHaveLength(24)
     expect(new Set(payloads.map((payload) => payload.payload))).toEqual(new Set([
       "workflow",
       "runToolProjection",
@@ -86,9 +86,10 @@ describe("MCP baseline harness", () => {
       "workflowsGetOutline",
       "workflowsDebugContext",
       "runsHistory",
+      "workspacesMap",
     ]))
     expect(payloads.some((payload) => payload.payload === "workflowList")).toBe(false)
-    for (const payload of ["workflowsSearch", "workflowsGetOutline", "workflowsDebugContext", "runsHistory"]) {
+    for (const payload of ["workflowsSearch", "workflowsGetOutline", "workflowsDebugContext", "runsHistory", "workspacesMap"]) {
       const rows = payloads.filter((row) => row.payload === payload)
       expect(rows).toHaveLength(3)
       for (const row of rows) expect(row.compactJsonBytes).toBeGreaterThan(0)
@@ -103,6 +104,9 @@ describe("MCP baseline harness", () => {
       "debug",
       "add-assertion",
       "history",
+      "map-route-per-workflow",
+      "map-route",
+      "workspace-map",
     ])
     const expected: Readonly<Record<string, { callCount: number; toolCallCount: number; resourceReadCount: number }>> = {
       orient: { callCount: 2, toolCallCount: 1, resourceReadCount: 1 },
@@ -110,6 +114,10 @@ describe("MCP baseline harness", () => {
       debug: { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },
       "add-assertion": { callCount: 2, toolCallCount: 2, resourceReadCount: 0 },
       history: { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
+      // Phase 4: N+1 calls (one search, then one per workflow) become one.
+      "map-route-per-workflow": { callCount: 11, toolCallCount: 11, resourceReadCount: 0 },
+      "map-route": { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
+      "workspace-map": { callCount: 1, toolCallCount: 1, resourceReadCount: 0 },
     }
     for (const task of report.scriptedTasks) {
       expect(task).toMatchObject(expected[task.taskId] ?? {})
@@ -119,6 +127,9 @@ describe("MCP baseline harness", () => {
       expect(task.toolNames).toHaveLength(task.toolCallCount)
       expect(task.taskSuccess).toBe(true)
     }
+    const byId = new Map(report.scriptedTasks.map((task) => [task.taskId, task]))
+    expect(byId.get("map-route")?.responseTextBytes)
+      .toBeLessThan(byId.get("map-route-per-workflow")?.responseTextBytes ?? 0)
   }, 60_000)
 
   it("keeps outcome-based tasks and fixture edge cases in the committed baseline", () => {

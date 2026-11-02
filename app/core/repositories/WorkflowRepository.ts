@@ -216,6 +216,33 @@ export class WorkflowRepository {
   }
 
   /**
+   * The same filtered keyset page as {@link listSummaries}, with whole
+   * workflows: for reads that summarise each graph (the workspace map) without
+   * loading every workflow of the workspace for one page.
+   */
+  public listGraphPage(
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    after: WorkflowSummaryCursor | undefined,
+    limit: number,
+  ): { items: readonly Workflow[]; hasMore: boolean; snapshot: string } {
+    const { clauses, params } = summaryFilterClauses(workspaceId, filters)
+    const snapshot = this.summariesSnapshot(workspaceId, filters)
+    if (after !== undefined) {
+      clauses.push("(updatedAt < ? OR (updatedAt = ? AND id < ?))")
+      params.push(after.updatedAt, after.updatedAt, after.workflowId)
+    }
+    params.push(limit + 1)
+    const rows = queryMapped(
+      this.store,
+      `SELECT ${COLUMNS} FROM workflows WHERE ${clauses.join(" AND ")} ORDER BY updatedAt DESC, id DESC LIMIT ?`,
+      params,
+      rowToWorkflow,
+    )
+    return { items: rows.slice(0, limit), hasMore: rows.length > limit, snapshot }
+  }
+
+  /**
    * Revision fingerprint of a filtered discovery set (row count, revision sum,
    * newest timestamp). Cursors seal this value; a page requested against a
    * changed set is rejected so the caller re-reads from the start instead of

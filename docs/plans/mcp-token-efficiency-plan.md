@@ -245,6 +245,51 @@ Notes:
 4. Update the briefing and `start-here`: graphify for the code,
    `workflows_searchNodes` / `workspaces_map` for the workflows.
 
+**Done (2026-11-02).** `npm run mcp:baseline`, Phase 3 → Phase 4:
+
+| Measure | Before | After |
+|---|---|---|
+| Tools | 58 | 59 (+`workspaces_map`) |
+| Model-visible catalogue | 53,979 B | 55,394 B (+2.6%) |
+| …`workflows_searchNodes` / `workspaces_map` | 1,223 B / — | 1,833 / 805 B |
+| `MCP_INSTRUCTIONS` | 1,154 B | 1,203 B |
+| "Which nodes hit `/orders`?" over the 10-workflow seed | 11 calls, 26,849 B wire / 12,056 B text (`map-route-per-workflow`) | 1 call, 13,795 / 6,386 B (`map-route`) |
+| `workspaces_map`, 10 seeded workflows | — | 1 call, 3,442 B text (≈ 0.9k tok) |
+| `workspaces_map`, 30 workflows × 8 requests (one-off measurement) | — | 11,683 B (≈ 2.9k tok), one page |
+| find-and-patch task | 7,591 B text | 8,019 B (+`method`/`urlPath` on each match) |
+
+Other scripted tasks and every fixture payload are byte-identical; the
+`workspacesMap` fixture payload is 296 / 828 / 1,360 B for workspaces of 1, 2
+and 3 fixture workflows (their URLs carry no placeholders, so the 20-endpoint cap
+and `omitted` show).
+
+Notes:
+- One implementation: `core/services/node_facts.ts` extracts a node's endpoint
+  and placeholder references; node search and the map are both built from it.
+  `matchNodeFields` (query over safe fields) is unchanged in scope and is
+  combined with the reference filter in `matchNode`.
+- `workflows.searchWorkspaceNodes` is deleted rather than kept off the
+  whitelist: the command palette was its only caller and now calls
+  `workflows.searchNodes` without `workflowId`, so there is one handler and one
+  page shape (`WorkspaceNodeMatchSchema`/`WorkspaceNodeSearchPageSchema` went
+  with it).
+- A one-workflow match does not repeat `workflowId` (the page states it once,
+  as Phase 1 did for search rows); workspace-wide matches carry `workflowId` and
+  `workflowName`.
+- `urlPath` now drops a leading `{{…}}` base reference (`{{env.BASE}}/users` →
+  `/users`) and passes through `sanitizeUrlWithReferences` first, so userinfo
+  and credential-looking path segments never reach it. The base reference is
+  still findable with `ref`.
+- Map endpoints collapse placeholders to `{{…}}` so a route called with
+  different variables is one entry; the names are in `consumes`.
+- The map pages with a keyset over `WorkflowRepository.listGraphPage` (the
+  `listSummaries` filter and order, whole workflows) and reads the page's
+  latest runs with one windowed query (`RunRepository.latestRunsByWorkflow`).
+- The project-scope briefing now points at `workspaces_map` with
+  `collectionId` instead of `workflows_search`. `MCP_INSTRUCTIONS` gained one
+  pointer (`workspaces_map` to orient in a whole workspace); `start-here` is
+  3,597 of its 3,600 chars.
+
 ## 6. Not doing
 
 - Pruning export/import, node presets, workspace CRUD or `*_moveToWorkspace`

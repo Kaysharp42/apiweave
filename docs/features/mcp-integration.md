@@ -148,8 +148,20 @@ deferred until the agent searches for it.
 - `workspaces_create`
 - `workspaces_update`
 - `workspaces_delete`
+- `workspaces_map`
 
 `workspaces_delete` deletes a workspace and the resources in it.
+
+`workspaces_map` orients an agent in a workspace with one paged read (30
+workflows per page by default, `collectionId` narrows to one project). Per
+workflow it returns `workflowId`, `name`, `rev`, `collectionId`, the endpoints
+its request and SSE nodes call as `METHOD /path/{{…}}` (host, query string and
+userinfo dropped, placeholders collapsed so a route appears once), the variable
+names it produces and consumes, the `env` and `secrets` names it references, the
+workflows its `workflow` nodes call, and its latest run's `runId` and `status`.
+Empty lists are left out; a list longer than 20 names is cut and the rest
+counted in `omitted`. Everything comes from names and path templates, never a
+config value, and the latest runs for a page come from a single query.
 
 ### Workflows
 
@@ -198,6 +210,29 @@ the report `workflow_diagnose` produces for the workflow just written. The
 analysis is static and sends no HTTP, so a graph mistake — a missing assertion
 edge handle, an assertion path that cannot address a value — is visible in the
 write's own response instead of requiring a live run to discover.
+
+`workflows_searchNodes` finds nodes in one workflow, or in every workflow of the
+workspace (or of one project, with `collectionId`) when `workflowId` is omitted.
+Filters combine, and every one given must hold:
+
+- `query` is a literal substring of the node id, label, type, request method,
+  URL path or extractor name. Bodies, headers, auth and query values are never
+  searched.
+- `ref` names a placeholder reference: `variables.NAME`, `env.NAME` or
+  `secrets.NAME`. It finds the nodes that use it in their URL, headers, query
+  parameters, cookies, body, GraphQL, auth, scripts (`aw.secrets.get`,
+  `aw.variables.get`/`set`, `aw.env.get`), workflow-call input and output
+  mappings, extractors and assertions. Each match lists where (`field`) and
+  whether the node `produces` the value (an extractor, an `outputMapping` key,
+  `aw.variables.set`) or `consumes` it.
+- `nodeTypes` limits the node types considered.
+
+Request and SSE matches carry `method` and `urlPath` (the path template, with
+host, query string and userinfo dropped). A workspace-wide match also carries
+`workflowId` and `workflowName`; a one-workflow match carries neighbour node and
+incident edge ids instead. Pages hold 20 matches by default; `totalMatched`
+counts every match and `nextCursor` continues the search until the searched
+workflows change. The command palette uses the same search.
 
 ### Projects
 
@@ -627,6 +662,35 @@ Cursor, VS Code, and OpenCode. Codex uses the CLI command above.
 6. Summarize node status metadata. Ask the user to inspect the desktop response
    panel when diagnosis requires raw payload content.
 
+Finding everything that touches a route or a credential takes one call each:
+
+```json
+{ "name": "workflows_searchNodes", "arguments": { "workspaceId": "ws-1", "query": "/orders" } }
+{ "name": "workflows_searchNodes", "arguments": { "workspaceId": "ws-1", "ref": "secrets.API_KEY" } }
+```
+
+```json
+{
+  "workspaceId": "ws-1",
+  "items": [
+    {
+      "workflowId": "wf-auth",
+      "workflowName": "auth",
+      "nodeId": "login",
+      "type": "http-request",
+      "label": "Log in",
+      "method": "POST",
+      "urlPath": "/v1/login",
+      "matchedOn": ["ref"],
+      "references": [{ "field": "auth", "role": "consumes" }]
+    }
+  ],
+  "totalMatched": 1,
+  "omittedMatchCount": 0,
+  "nextCursor": null
+}
+```
+
 ## Giving the agent a map of your code
 
 An agent learning the API under test (routes, request and response shapes, auth)
@@ -651,7 +715,7 @@ only (no repository file is read) and adjusts the session briefing:
 
 | Folder state | What the agent is told |
 | --- | --- |
-| `graphify-out/graph.json` exists | Query it with `graphify query`, `graphify path` and `graphify explain` instead of grepping; `GRAPH_REPORT.md` for broad context only. |
+| `graphify-out/graph.json` exists | Query it with `graphify query`, `graphify path` and `graphify explain` instead of grepping; `GRAPH_REPORT.md` for broad context only. graphify for the code; `workflows_searchNodes` / `workspaces_map` for the workflows. |
 | No graph, `graphify` on PATH | graphify is installed and `/graphify .` would build a map; suggest it to you rather than running it unasked. |
 | Neither | Nothing. |
 

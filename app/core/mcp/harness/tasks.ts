@@ -25,6 +25,9 @@ export async function measureScriptedTasks(): Promise<readonly McpScriptedTaskRe
     await runTask("debug", runDebugTask),
     await runTask("add-assertion", runAddAssertionTask),
     await runTask("history", runHistoryTask),
+    await runTask("map-route-per-workflow", runMapRoutePerWorkflowTask),
+    await runTask("map-route", runMapRouteTask),
+    await runTask("workspace-map", runWorkspaceMapTask),
   ]
 }
 
@@ -165,6 +168,67 @@ async function runHistoryTask(
     workflowId: seed.workflowId,
     limit: 20,
   })
+}
+
+/** The route the map-route tasks look for: two of the ten seeded workflows call it. */
+const MAPPED_ROUTE = "/orders"
+
+/**
+ * "Which nodes hit /orders?" the way it had to be asked before Phase 4: list
+ * the workflows, then search each one. Kept as the comparison for map-route.
+ */
+async function runMapRoutePerWorkflowTask(
+  client: Client,
+  recorder: McpBenchmarkRecorder,
+  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
+): Promise<void> {
+  const search = asRecord(await callTool(client, recorder, "workflows_search", { workspaceId: seed.workspaceId, limit: 100 }))
+  const found: string[] = []
+  for (const row of asArray(search["items"])) {
+    const workflowId = asString(asRecord(row)["workflowId"])
+    const page = asRecord(await callTool(client, recorder, "workflows_searchNodes", {
+      workspaceId: seed.workspaceId,
+      workflowId,
+      query: MAPPED_ROUTE,
+      limit: 100,
+    }))
+    for (const item of asArray(page["items"])) found.push(`${workflowId}:${asString(asRecord(item)["nodeId"])}`)
+  }
+  expectRouteMatches(found)
+}
+
+/** The same question in one workspace-wide search. */
+async function runMapRouteTask(
+  client: Client,
+  recorder: McpBenchmarkRecorder,
+  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
+): Promise<void> {
+  const page = asRecord(await callTool(client, recorder, "workflows_searchNodes", {
+    workspaceId: seed.workspaceId,
+    query: MAPPED_ROUTE,
+    limit: 100,
+  }))
+  expectRouteMatches(asArray(page["items"]).map((item) => {
+    const match = asRecord(item)
+    return `${asString(match["workflowId"])}:${asString(match["nodeId"])}`
+  }))
+}
+
+/** Orient in the ten-workflow workspace with one map page. */
+async function runWorkspaceMapTask(
+  client: Client,
+  recorder: McpBenchmarkRecorder,
+  seed: Awaited<ReturnType<typeof seedTaskScenario>>,
+): Promise<void> {
+  const map = asRecord(await callTool(client, recorder, "workspaces_map", { workspaceId: seed.workspaceId }))
+  if (asArray(map["items"]).length !== 10 || map["nextCursor"] !== null) {
+    throw new Error("workspace map did not return the ten seeded workflows on one page")
+  }
+}
+
+/** orders flow 0 has 20 requests and orders flow 5 has 8: 28 nodes on the route. */
+function expectRouteMatches(found: readonly string[]): void {
+  if (new Set(found).size !== 28) throw new Error(`expected 28 nodes on ${MAPPED_ROUTE}, found ${found.length}`)
 }
 
 async function seedTaskScenario(runtime: McpBenchmarkRuntime) {

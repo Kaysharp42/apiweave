@@ -242,8 +242,6 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       // Both are the user's, from the Version history dialog.
       "workflows.getRevision",
       "workflows.restoreRevision",
-      // The palette's workspace-wide node search; agents use search + searchNodes.
-      "workflows.searchWorkspaceNodes",
       // Whole-graph replace: workflows_patch (including name/description/tags)
       // plus workflows_create cover it. The handler stays as the renderer's save.
       "workflows.update",
@@ -363,6 +361,7 @@ describe("MCP bridge — second transport, parity by construction", () => {
     const names = tools.map((t) => t.name)
     expect(names).toContain("workflows_search")
     expect(names).toContain("workflows_searchNodes")
+    expect(names).toContain("workspaces_map")
     expect(names).toContain("runs_history")
     expect(names).toContain("workflow_diagnose")
     expect(names).toContain("assertion_suggest")
