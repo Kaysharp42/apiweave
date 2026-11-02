@@ -15,28 +15,30 @@ export function useJsonEditorDarkTheme(
     if (!isDarkMode) return undefined;
 
     return {
-      container: {
-        backgroundColor: "var(--color-surface-dark-raised)",
-        color: "var(--color-text-primary-dark)",
+      styles: {
+        container: {
+          backgroundColor: "var(--color-surface-dark-raised)",
+          color: "var(--color-text-primary-dark)",
+        },
+        collection: { backgroundColor: "transparent" },
+        collectionInner: { backgroundColor: "transparent" },
+        collectionElement: { backgroundColor: "transparent" },
+        property: { color: "var(--color-text-primary-dark)" },
+        bracket: { color: "var(--color-text-secondary-dark)" },
+        itemCount: { color: "var(--color-text-muted-dark)" },
+        iconCollection: { color: "var(--aw-primary)" },
+        string: { color: "var(--color-success)" },
+        number: { color: "var(--color-info)" },
+        boolean: { color: "var(--color-primary-dark)" },
+        null: { color: "var(--color-warning)" },
+        input: {
+          backgroundColor: "var(--color-surface-dark-overlay)",
+          color: "var(--color-text-primary-dark)",
+          border: "1px solid var(--color-border-dark)",
+        },
+        inputHighlight: "var(--color-surface-dark-overlay)",
+        error: { color: "var(--color-error)" },
       },
-      collection: { backgroundColor: "transparent" },
-      collectionInner: { backgroundColor: "transparent" },
-      collectionElement: { backgroundColor: "transparent" },
-      property: { color: "var(--color-text-primary-dark)" },
-      bracket: { color: "var(--color-text-secondary-dark)" },
-      itemCount: { color: "var(--color-text-muted-dark)" },
-      iconCollection: { color: "var(--aw-primary)" },
-      string: { color: "var(--color-success)" },
-      number: { color: "var(--color-info)" },
-      boolean: { color: "var(--color-primary-dark)" },
-      null: { color: "var(--color-warning)" },
-      input: {
-        backgroundColor: "var(--color-surface-dark-overlay)",
-        color: "var(--color-text-primary-dark)",
-        border: "1px solid var(--color-border-dark)",
-      },
-      inputHighlight: { backgroundColor: "var(--color-surface-dark-overlay)" },
-      error: { color: "var(--color-error)" },
     } as const;
   }, [isDarkMode]);
 }

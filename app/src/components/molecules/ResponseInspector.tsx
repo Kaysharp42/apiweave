@@ -5,9 +5,9 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
-  JsonEditor,
+  JsonViewer,
+  type CustomComponentProps,
   type CustomNodeDefinition,
-  type CustomNodeProps,
   type JsonEditorProps,
   type NodeData,
 } from "json-edit-react";
@@ -48,17 +48,12 @@ import { PanelTabs } from "./PanelTabs";
 import { SaveVariablePopover } from "./SaveVariablePopover";
 import {
   JSON_TREE_ACTION_RESET,
-  JSON_TREE_ICONS,
+  JSON_TREE_COPY_BUTTON,
   JsonTreeActionPill,
 } from "./JsonTreeActions";
 
 type ResponseInspectorTab =
-  | "tree"
-  | "raw"
-  | "headers"
-  | "cookies"
-  | "preview"
-  | "timing";
+  "tree" | "raw" | "headers" | "cookies" | "preview" | "timing";
 
 interface CookieRow {
   name: string;
@@ -89,6 +84,8 @@ const GaugeCardIcon = createCardIcon(Gauge);
 const HardDriveDownloadCardIcon = createCardIcon(HardDriveDownload);
 const ListFilterCardIcon = createCardIcon(ListFilter);
 const NetworkCardIcon = createCardIcon(Network);
+
+const PREVIEW_TREE_CUSTOM_BUTTONS = [JSON_TREE_COPY_BUTTON];
 
 const RESPONSE_TABS: TabItem[] = [
   { key: "tree", icon: Braces, label: "Tree" },
@@ -271,11 +268,11 @@ function ExtractedValueNode({
   nodeData,
   originalNode,
   children,
-  customNodeProps,
-}: CustomNodeProps<ExtractedChipNodeProps>) {
+  componentProps,
+}: CustomComponentProps<ExtractedChipNodeProps>) {
   const build = buildBodyExtractorPath(nodeData.path);
   const variableNames = build.supported
-    ? (customNodeProps?.namesByPath.get(build.path) ?? [])
+    ? (componentProps?.namesByPath.get(build.path) ?? [])
     : [];
 
   return (
@@ -286,7 +283,7 @@ function ExtractedValueNode({
           key={variableName}
           type="button"
           title={`Remove {{variables.${variableName}}}`}
-          onClick={() => customNodeProps?.onRemove?.(variableName)}
+          onClick={() => componentProps?.onRemove?.(variableName)}
           className="rounded-sm border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-[10px] leading-4 text-primary transition-colors duration-[var(--aw-transition-fast)] hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-[var(--aw-status-error)] dark:hover:text-[var(--aw-status-error)]"
         >
           {`{{${variableName}}}`}
@@ -567,13 +564,13 @@ export function ResponseInspector({
           const build = buildBodyExtractorPath(nodeData.path);
           return build.supported && extractorNamesByPath.has(build.path);
         },
-        element: ExtractedValueNode,
-        customNodeProps: chipProps,
+        component: ExtractedValueNode,
+        componentProps: chipProps,
         passOriginalNode: true,
         showOnView: true,
         showOnEdit: false,
         showEditTools: true,
-        showInTypesSelector: false,
+        showInTypeSelector: false,
       },
     ];
   }, [extractorNamesByPath, removeExtractor]);
@@ -581,9 +578,13 @@ export function ResponseInspector({
   const treeCustomButtons = useMemo<
     NonNullable<JsonEditorProps["customButtons"]>
   >(() => {
-    if (!onAddExtractor) return [];
+    const buttons: NonNullable<JsonEditorProps["customButtons"]> = [
+      JSON_TREE_COPY_BUTTON,
+    ];
+    if (!onAddExtractor) return buttons;
 
     return [
+      ...buttons,
       {
         Element: SaveVariableButton,
         onClick: (nodeData: NodeData, event: ReactMouseEvent) => {
@@ -809,12 +810,12 @@ export function ResponseInspector({
           className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
         >
           <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
-            <JsonEditor
+            <JsonViewer
               key={treeKey}
               data={treeData}
-              restrictEdit={true}
-              restrictAdd={true}
-              restrictDelete={true}
+              showCollectionCount={true}
+              showClipboardButton={false}
+              customButtons={PREVIEW_TREE_CUSTOM_BUTTONS}
               rootName="body"
               {...treeProps}
               {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
@@ -950,13 +951,11 @@ export function ResponseInspector({
             <div
               className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
             >
-              <JsonEditor
+              <JsonViewer
                 key={treeKey}
                 data={treeData}
-                icons={JSON_TREE_ICONS}
-                restrictEdit={true}
-                restrictAdd={true}
-                restrictDelete={true}
+                showCollectionCount={true}
+                showClipboardButton={false}
                 rootName="body"
                 {...treeProps}
                 customButtons={treeCustomButtons}

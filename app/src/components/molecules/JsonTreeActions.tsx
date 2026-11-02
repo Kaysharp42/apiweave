@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import type { JsonEditorProps } from "json-edit-react";
+import { toPathString, type CustomButtonDefinition } from "json-edit-react";
 import { Copy } from "lucide-react";
+import { toast } from "sonner";
 
 /**
  * The hover-row actions in a JSON tree are the only place in the app where a
@@ -36,15 +37,46 @@ export function JsonTreeActionPill({
   );
 }
 
-/** Replaces json-edit-react's unlabelled clipboard glyph in every tree. */
-export const JSON_TREE_ICONS: NonNullable<JsonEditorProps["icons"]> = {
-  copy: (
-    <JsonTreeActionPill
-      icon={<Copy className="h-3 w-3" aria-hidden="true" />}
-      label="Copy"
-      muted
-    />
-  ),
+function copyText(text: string): void {
+  if (!navigator.clipboard) {
+    toast.error("Could not copy to clipboard");
+    return;
+  }
+  navigator.clipboard.writeText(text).catch(() => {
+    toast.error("Could not copy to clipboard");
+  });
+}
+
+function CopyValueButton() {
+  return (
+    <span className="jer-icon flex items-center">
+      <JsonTreeActionPill
+        icon={<Copy className="h-3 w-3" aria-hidden="true" />}
+        label="Copy"
+        muted
+      />
+    </span>
+  );
+}
+
+/**
+ * json-edit-react's built-in clipboard control is an unlabelled glyph, and v2
+ * moved icon glyphs into the theme where they can only be SVGs. A richer,
+ * labelled control belongs in `customButtons` instead; pair this with
+ * `showClipboardButton={false}` so the tree renders one copy action, not two.
+ */
+export const JSON_TREE_COPY_BUTTON: CustomButtonDefinition = {
+  Element: CopyValueButton,
+  label: "Copy to clipboard",
+  onClick: (nodeData, event) => {
+    const copyPath = event.metaKey || event.ctrlKey;
+    const value = copyPath
+      ? toPathString(nodeData.path)
+      : typeof nodeData.value === "object" && nodeData.value !== null
+        ? JSON.stringify(nodeData.value, null, 2)
+        : String(nodeData.value);
+    copyText(value);
+  },
 };
 
 /**
@@ -52,4 +84,4 @@ export const JSON_TREE_ICONS: NonNullable<JsonEditorProps["icons"]> = {
  * carry text. Applied on the tree's scroll container.
  */
 export const JSON_TREE_ACTION_RESET =
-  "[&_.jer-copy-pulse:hover]:transform-none [&_.jer-icon:hover]:transform-none [&_.jer-copy-pulse:hover]:opacity-100 [&_.jer-icon:hover]:opacity-100 [&_.jer-edit-buttons]:gap-1.5 [&_.jer-edit-buttons]:ml-2";
+  "[&_.jer-icon:hover]:transform-none [&_.jer-icon:hover]:opacity-100 [&_.jer-edit-buttons]:gap-1.5 [&_.jer-edit-buttons]:ml-2";
