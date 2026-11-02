@@ -31,7 +31,7 @@ export function OpenNodeEditorButton({
         );
       }}
       className={[
-        "nodrag cursor-pointer text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+        "nodrag cursor-pointer text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
         className,
       ]
         .filter(Boolean)

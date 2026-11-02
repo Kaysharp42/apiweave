@@ -136,7 +136,7 @@ test("ResponseInspector tree tab renders nested JSON data as a collapsible objec
     markup,
     'role="tabpanel" class="flex flex-1 min-h-0 flex-col gap-4"',
   );
-  assertIncludes(markup, "rounded-sm border border-border");
+  assertIncludes(markup, "rounded-xs border border-border");
 });
 
 test("ResponseInspector preview tab renders HTML in a sandboxed iframe", () => {

@@ -17,7 +17,7 @@ export function MergeCompare({ label, ours, theirs }: MergeCompareProps) {
   const sideBySide = useMediaQuery("(min-width: 1024px)");
   const text = typeof ours === "string" && typeof theirs === "string";
   return (
-    <div className="overflow-hidden rounded-sm border border-border dark:border-border-dark">
+    <div className="overflow-hidden rounded-xs border border-border dark:border-border-dark">
       <Suspense
         fallback={
           <div className="flex h-48 items-center justify-center text-xs text-text-secondary dark:text-text-secondary-dark">

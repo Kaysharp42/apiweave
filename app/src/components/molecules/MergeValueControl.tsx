@@ -69,7 +69,7 @@ export function MergeValueControl({
     <div className="space-y-1">
       {long ? (
         <div
-          className="overflow-hidden rounded-sm border border-border dark:border-border-dark"
+          className="overflow-hidden rounded-xs border border-border dark:border-border-dark"
           aria-invalid={invalid}
           {...described}
         >
@@ -99,7 +99,7 @@ export function MergeValueControl({
         <p
           id={errorId}
           role="alert"
-          className="text-xxs text-status-error dark:text-[var(--aw-status-error)]"
+          className="text-xxs text-status-error dark:text-(--aw-status-error)"
         >
           {error}
         </p>

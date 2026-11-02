@@ -15,9 +15,9 @@ export function RunFollowPill({ onResume }: RunFollowPillProps) {
       type="button"
       onClick={onResume}
       title="Follow the running workflow again"
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-sm text-sm font-medium bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark shadow-node hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xs text-sm font-medium bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark shadow-node hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
     >
-      <LocateFixed className="w-4 h-4 flex-shrink-0 text-primary" />
+      <LocateFixed className="w-4 h-4 shrink-0 text-primary" />
       Resume follow
     </button>
   );

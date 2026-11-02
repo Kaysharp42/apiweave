@@ -40,7 +40,7 @@ export function NodeHandle({
       {...(id && { id })}
       {...(style && { style })}
       className={[
-        "aw-node-handle !h-2 !w-2 !min-w-0 !min-h-0 !rounded-full !border-0 !bg-transparent",
+        "aw-node-handle h-2! w-2! min-w-0! min-h-0! rounded-full! border-0! bg-transparent!",
         className,
       ]
         .filter(Boolean)

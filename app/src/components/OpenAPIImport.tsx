@@ -250,7 +250,7 @@ export function OpenAPIImport({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border border-dashed rounded p-8 text-center transition-colors ${
+          className={`border border-dashed rounded-sm p-8 text-center transition-colors ${
             isDragging
               ? "border-primary/50 bg-primary/5 dark:bg-primary/10"
               : "border-border dark:border-border-dark"
@@ -269,7 +269,7 @@ export function OpenAPIImport({
           />
           <label
             htmlFor="openapi-file-input"
-            className="inline-block px-4 py-2 bg-[var(--aw-primary)] text-white rounded hover:bg-[var(--aw-primary-hover)] cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+            className="inline-block px-4 py-2 bg-(--aw-primary) text-white rounded-sm hover:bg-(--aw-primary-hover) cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           >
             Choose File
           </label>
@@ -298,7 +298,7 @@ export function OpenAPIImport({
                     id="openapi-base-url"
                     value={baseUrl}
                     onChange={(e) => handleServerSelect(e.target.value)}
-                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
+                    className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark font-mono"
                   >
                     <option value="">-- Select Server --</option>
                     {preview.availableServers.map((server) => (
@@ -343,7 +343,7 @@ export function OpenAPIImport({
                         selectedTags.includes(tag.name) ? "primary" : "outline"
                       }
                       size="xs"
-                      className="rounded font-mono"
+                      className="rounded-sm font-mono"
                       title={tag.description}
                     >
                       {tag.name}
@@ -402,9 +402,9 @@ export function OpenAPIImport({
 
         {/* Error Display */}
         {error && (
-          <div className="flex items-start gap-2 p-3 bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded">
-            <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">
+          <div className="flex items-start gap-2 p-3 bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm">
+            <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark shrink-0 mt-0.5" />
+            <p className="text-sm text-(--aw-status-error) dark:text-(--aw-status-error)">
               {error}
             </p>
           </div>
@@ -412,7 +412,7 @@ export function OpenAPIImport({
 
         {/* Preview Display */}
         {preview && (
-          <div className="border border-border dark:border-border-dark rounded p-4 bg-surface dark:bg-surface-dark">
+          <div className="border border-border dark:border-border-dark rounded-sm p-4 bg-surface dark:bg-surface-dark">
             <div className="flex items-center gap-2 mb-3">
               <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark" />
               <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">
@@ -472,7 +472,7 @@ export function OpenAPIImport({
                         node.type ??
                         "endpoint"
                       }
-                      className="text-xs px-2 py-1 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark"
+                      className="text-xs px-2 py-1 bg-surface-raised dark:bg-surface-dark-raised rounded-sm border border-border dark:border-border-dark"
                     >
                       <span className="font-mono text-primary dark:text-primary-dark">
                         {node.config?.method}

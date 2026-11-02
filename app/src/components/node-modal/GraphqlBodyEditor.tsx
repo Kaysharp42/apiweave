@@ -29,9 +29,9 @@ function CodeField({
     <FormField label={label} hint={hint} {...(error ? { error } : {})}>
       <div
         className={[
-          "overflow-hidden rounded-sm border",
+          "overflow-hidden rounded-xs border",
           error
-            ? "border-status-error dark:border-[var(--aw-status-error)]"
+            ? "border-status-error dark:border-(--aw-status-error)"
             : "border-border dark:border-border-dark",
         ].join(" ")}
       >

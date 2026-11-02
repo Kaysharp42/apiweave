@@ -174,7 +174,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
   return (
     <div
       ref={wrapperRef}
-      className="relative flex-shrink-0"
+      className="relative shrink-0"
       onMouseEnter={() => setIsOpen(true)}
       onMouseLeave={() => setIsOpen(false)}
       onFocus={() => setIsOpen(true)}
@@ -183,7 +183,7 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
       <button
         ref={triggerRef}
         type="button"
-        className="nodrag text-xs px-1.5 py-0.5 rounded-node-chip font-mono border border-status-warning/30 bg-status-warning/10 text-status-warning flex items-center gap-0.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+        className="nodrag text-xs px-1.5 py-0.5 rounded-node-chip font-mono border border-status-warning/30 bg-status-warning/10 text-status-warning flex items-center gap-0.5 cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
         title={warning.text ?? "Swagger docs changed. Verify this request."}
         aria-haspopup="true"
         aria-expanded={isOpen}
@@ -203,12 +203,12 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
           id="schema-warning-popover"
           role="dialog"
           aria-label="Swagger warning details"
-          className="nodrag absolute top-full right-0 mt-1 z-[120] w-[260px] max-w-[calc(100vw-2rem)] rounded-node-ctl border border-[var(--aw-status-warning)] p-2 shadow-node bg-surface-raised dark:bg-surface-dark-raised"
+          className="nodrag absolute top-full right-0 mt-1 z-120 w-[260px] max-w-[calc(100vw-2rem)] rounded-node-ctl border border-(--aw-status-warning) p-2 shadow-node bg-surface-raised dark:bg-surface-dark-raised"
         >
-          <div className="text-xs font-semibold mb-1 text-[var(--aw-status-warning)]">
+          <div className="text-xs font-semibold mb-1 text-(--aw-status-warning)">
             Swagger Warning
           </div>
-          <p className="text-xs leading-snug break-words text-text-primary dark:text-text-primary-dark">
+          <p className="text-xs leading-snug wrap-break-word text-text-primary dark:text-text-primary-dark">
             {warning.text}
           </p>
 
@@ -231,13 +231,13 @@ const SchemaWarningBadge = ({ warning }: SchemaWarningBadgeProps) => {
                 href={warning.sourceUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="pl-4 block underline hover:opacity-80 break-all cursor-pointer text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                className="pl-4 block underline hover:opacity-80 break-all cursor-pointer text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                 title={warning.sourceUrl}
               >
                 {warning.sourceUrl}
               </a>
             ) : (
-              <div className="pl-4 text-[var(--aw-node-text-muted)]">
+              <div className="pl-4 text-(--aw-node-text-muted)">
                 Unavailable
               </div>
             )}
@@ -324,10 +324,10 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
 
       {result.body && (
         <div
-          className={`mt-1 rounded-node-ctl ${status === "error" ? "border border-status-error bg-[var(--aw-status-error)]/5" : ""}`}
+          className={`mt-1 rounded-node-ctl ${status === "error" ? "border border-status-error bg-(--aw-status-error)/5" : ""}`}
         >
           <div
-            className={`text-xs font-semibold mb-0.5 flex items-center justify-between ${status === "error" ? "text-[var(--aw-status-error)]" : "text-text-secondary dark:text-text-secondary-dark"}`}
+            className={`text-xs font-semibold mb-0.5 flex items-center justify-between ${status === "error" ? "text-(--aw-status-error)" : "text-text-secondary dark:text-text-secondary-dark"}`}
           >
             <span>Body{status === "error" ? " (Error)" : ""}</span>
             <div className="flex items-center gap-1">
@@ -335,7 +335,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
                 type="button"
                 onClick={handleToggleBodyFormat}
                 aria-label={isBodyBeautified ? "Minify JSON" : "Beautify JSON"}
-                className="p-1.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
+                className="p-1.5 rounded-sm transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                 title={isBodyBeautified ? "Minify JSON" : "Beautify JSON"}
               >
                 <Puzzle className="w-3 h-3" />
@@ -348,7 +348,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
                     ? "Collapse response body"
                     : "Expand response body"
                 }
-                className="p-1.5 rounded transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
+                className="p-1.5 rounded-sm transition-colors nodrag cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                 title={isBodyExpanded ? "Collapse" : "Expand"}
               >
                 {isBodyExpanded ? (
@@ -360,9 +360,9 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
             </div>
           </div>
           <textarea
-            className={`w-full px-1.5 py-1 border text-xs font-mono nodrag rounded-node-ctl overflow-y-auto resize-y min-h-[100px] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+            className={`w-full px-1.5 py-1 border text-xs font-mono nodrag rounded-node-ctl overflow-y-auto resize-y min-h-[100px] focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${
               status === "error"
-                ? "bg-[var(--aw-status-error)]/5 border-[var(--aw-status-error)] text-[var(--aw-status-error)]"
+                ? "bg-(--aw-status-error)/5 border-(--aw-status-error) text-(--aw-status-error)"
                 : "bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark text-text-primary dark:text-text-primary-dark"
             }`}
             style={{ height: isBodyExpanded ? "600px" : "150px" }}
@@ -375,7 +375,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {result.error && (
-        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-[var(--aw-status-error)]/5 text-status-error dark:text-status-error-dark">
+        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-(--aw-status-error)/5 text-status-error dark:text-status-error-dark">
           <span className="font-semibold">Error:</span> {result.error}
         </div>
       )}
@@ -415,7 +415,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         )}
         {data.branchCount && data.branchCount > 1 && (
           <span
-            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex flex-shrink-0 items-center gap-0.5"
+            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
             title={`${data.branchCount} parallel branches`}
           >
             <Snowflake className="w-3 h-3" /> {data.branchCount}x
@@ -423,7 +423,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         )}
         {attemptCount !== undefined && attemptCount > 1 && (
           <span
-            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex flex-shrink-0 items-center gap-0.5"
+            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
             title={`Sent ${attemptCount} times`}
           >
             <Repeat className="w-3 h-3" /> {attemptCount}
@@ -488,7 +488,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         { label: "size", value: formatSize(result?.responseSizeBytes) },
       ]}
       progress={status === "running" ? "indeterminate" : null}
-      className="max-w-[320px]"
+      className="max-w-node"
     >
       {({ isExpanded }) =>
         !isExpanded ? null : (
@@ -496,7 +496,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
           <div className="flex gap-1 items-start">
             <select
               aria-label="HTTP method"
-              className={`nodrag px-2 py-1 border rounded-node-ctl text-xs font-mono focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer ${methodBadgeClass}`}
+              className={`nodrag px-2 py-1 border rounded-node-ctl text-xs font-mono focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) cursor-pointer ${methodBadgeClass}`}
               value={method}
               onChange={(e) => updateNodeData("method", e.target.value)}
             >
@@ -511,20 +511,20 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
               aria-label="Request URL"
               placeholder="Enter URL..."
               rows={2}
-              className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] resize-y min-h-[58px]"
+              className="nodrag flex-1 px-2 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) resize-y min-h-[58px]"
               value={url}
               onValueChange={(next) => updateNodeData("url", next)}
             />
           </div>
 
-          <div className="flex gap-1.5 text-[11px] flex-wrap text-[var(--aw-node-text-muted)]">
+          <div className="flex gap-1.5 text-[11px] flex-wrap text-(--aw-node-text-muted)">
             {headerCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay">
                 {headerCount} header{headerCount > 1 ? "s" : ""}
               </span>
             )}
             {extractorCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-success)_12%,transparent)] text-[var(--aw-status-success)]">
+              <span className="px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-success)_12%,transparent)] text-(--aw-status-success)">
                 {extractorCount} extractor{extractorCount > 1 ? "s" : ""}
               </span>
             )}
@@ -615,18 +615,18 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             key={varName}
                             className="flex gap-1 items-center text-xs"
                           >
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark">
                               {varName}
                             </code>
-                            <span className="text-[var(--aw-node-text-muted)]">
+                            <span className="text-(--aw-node-text-muted)">
                               &larr;
                             </span>
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-[var(--aw-status-info)]/10 text-status-info dark:text-status-info-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-info)/10 text-status-info dark:text-status-info-dark">
                               {displayPath}
                             </code>
                             <button
                               type="button"
-                              className="nodrag flex-shrink-0 cursor-pointer text-[var(--aw-status-error)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                              className="nodrag shrink-0 cursor-pointer text-(--aw-status-error) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                               onClick={() => {
                                 const newExtractors = {
                                   ...data.config?.extractors,
@@ -643,7 +643,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                       },
                     )
                   ) : (
-                    <div className="text-xs italic text-[var(--aw-node-text-muted)]">
+                    <div className="text-xs italic text-(--aw-node-text-muted)">
                       No extractors configured
                     </div>
                   )}

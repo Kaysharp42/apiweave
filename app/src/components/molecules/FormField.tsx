@@ -48,9 +48,9 @@ export function FormField({
       {(error || hint) && (
         <label className="label py-1 px-0" id={hintId}>
           {error ? (
-            <span className="label-text-alt flex items-center gap-1 text-xs text-status-error dark:text-[var(--aw-status-error)]">
+            <span className="label-text-alt flex items-center gap-1 text-xs text-status-error dark:text-(--aw-status-error)">
               <AlertTriangle
-                className="w-3 h-3 flex-shrink-0"
+                className="w-3 h-3 shrink-0"
                 aria-hidden="true"
               />
               {error}

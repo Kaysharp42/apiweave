@@ -48,7 +48,7 @@ interface StatusPresentation {
   surface: string;
 }
 
-const AFFORDANCE_CLASS = "w-4 h-4 flex-shrink-0";
+const AFFORDANCE_CLASS = "w-4 h-4 shrink-0";
 
 const statusConfig: Record<NodeStatus, StatusPresentation> = {
   idle: {
@@ -58,7 +58,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "",
     affordance: (
       <Circle
-        className={`${AFFORDANCE_CLASS} text-[var(--aw-node-text-muted)]`}
+        className={`${AFFORDANCE_CLASS} text-(--aw-node-text-muted)`}
         aria-hidden="true"
       />
     ),
@@ -74,7 +74,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "opacity-100",
     affordance: (
       <Loader2
-        className={`${AFFORDANCE_CLASS} animate-spin motion-reduce:animate-none text-[var(--aw-status-running)]`}
+        className={`${AFFORDANCE_CLASS} animate-spin motion-reduce:animate-none text-(--aw-status-running)`}
         aria-hidden="true"
       />
     ),
@@ -92,7 +92,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "opacity-0",
     affordance: (
       <Check
-        className={`${AFFORDANCE_CLASS} text-[var(--aw-status-success)]`}
+        className={`${AFFORDANCE_CLASS} text-(--aw-status-success)`}
         aria-hidden="true"
       />
     ),
@@ -108,7 +108,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "opacity-100",
     affordance: (
       <X
-        className={`${AFFORDANCE_CLASS} text-[var(--aw-status-error)]`}
+        className={`${AFFORDANCE_CLASS} text-(--aw-status-error)`}
         aria-hidden="true"
       />
     ),
@@ -123,7 +123,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     glowRest: "opacity-100",
     affordance: (
       <RotateCw
-        className={`${AFFORDANCE_CLASS} text-[var(--aw-status-warning)]`}
+        className={`${AFFORDANCE_CLASS} text-(--aw-status-warning)`}
         aria-hidden="true"
       />
     ),
@@ -139,7 +139,7 @@ const statusConfig: Record<NodeStatus, StatusPresentation> = {
     // Never a check. A skipped node did not succeed.
     affordance: (
       <Minus
-        className={`${AFFORDANCE_CLASS} text-[var(--aw-node-text-muted)]`}
+        className={`${AFFORDANCE_CLASS} text-(--aw-node-text-muted)`}
         aria-hidden="true"
       />
     ),
@@ -213,7 +213,7 @@ export function BaseNode({
       )}
 
       {!running && status === "skipped" && (
-        <div className="px-3 py-2 font-mono text-xs leading-tight text-[var(--aw-node-text-muted)]">
+        <div className="px-3 py-2 font-mono text-xs leading-tight text-(--aw-node-text-muted)">
           skipped
         </div>
       )}
@@ -222,12 +222,12 @@ export function BaseNode({
           it summarises is on screen in full, so repeating it is noise. */}
       {!running && status !== "skipped" && !isExpanded && restLine && (
         <div className="flex items-baseline gap-1.5 px-3 py-2 font-mono text-xs leading-tight">
-          <span className="flex-shrink-0 text-text-secondary dark:text-text-secondary-dark">
+          <span className="shrink-0 text-text-secondary dark:text-text-secondary-dark">
             {restLine.operation}
           </span>
           {restLine.argument && (
             <span
-              className="truncate text-[var(--aw-node-text-muted)]"
+              className="truncate text-(--aw-node-text-muted)"
               title={restLine.argument}
             >
               {restLine.argument}
@@ -324,9 +324,9 @@ export function BaseNode({
               {icon && (
                 <span
                   className={[
-                    "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-node-tile",
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-node-tile",
                     tileHue
-                      ? "bg-[color-mix(in_srgb,var(--aw-node-tile-hue)_12%,transparent)] text-[var(--aw-node-tile-hue)]"
+                      ? "bg-[color-mix(in_srgb,var(--aw-node-tile-hue)_12%,transparent)] text-(--aw-node-tile-hue)"
                       : "bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark",
                   ].join(" ")}
                 >
@@ -343,7 +343,7 @@ export function BaseNode({
 
               {chip}
 
-              <span className="flex flex-shrink-0 items-center">
+              <span className="flex shrink-0 items-center">
                 {config.affordance}
               </span>
 
@@ -374,7 +374,7 @@ export function BaseNode({
                 <button
                   type="button"
                   onClick={() => setIsExpanded(!isExpanded)}
-                  className="p-1 rounded-node-ctl border-none bg-transparent text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] cursor-pointer transition-colors motion-reduce:transition-none"
+                  className="p-1 rounded-node-ctl border-none bg-transparent text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay nodrag focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) cursor-pointer transition-colors motion-reduce:transition-none"
                   style={{ WebkitTapHighlightColor: "transparent" }}
                   aria-expanded={isExpanded}
                   title={isExpanded ? "Collapse" : "Expand"}

@@ -166,7 +166,7 @@ export function SecretForm({
           className="text-sm text-status-error flex items-center gap-1.5"
           role="alert"
         >
-          <KeyRound className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+          <KeyRound className="w-4 h-4 shrink-0" aria-hidden="true" />
           {error}
         </div>
       )}

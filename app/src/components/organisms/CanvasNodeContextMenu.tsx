@@ -137,9 +137,9 @@ export function CanvasNodeContextMenu({
           onChange={(event) => setQuery(event.target.value)}
           aria-label="Search nodes"
           placeholder="Add node…"
-          className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
+          className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-hidden dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
         />
-        <kbd className="rounded border border-border px-1 font-mono text-[9px] leading-4 text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        <kbd className="rounded-sm border border-border px-1 font-mono text-[9px] leading-4 text-text-muted dark:border-border-dark dark:text-text-muted-dark">
           esc
         </kbd>
       </div>
@@ -154,7 +154,7 @@ export function CanvasNodeContextMenu({
             const Icon = section.icon;
             return (
               <section key={section.key}>
-                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-text-muted backdrop-blur-sm dark:bg-surface-dark-raised/95 dark:text-text-muted-dark">
+                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-widest text-text-muted backdrop-blur-xs dark:bg-surface-dark-raised/95 dark:text-text-muted-dark">
                   <Icon className="h-3 w-3" aria-hidden="true" />
                   {section.title}
                 </div>
@@ -186,7 +186,7 @@ export function CanvasNodeContextMenu({
                       />
                       {node.method ? (
                         <span
-                          className={`w-11 shrink-0 rounded-sm border px-1 py-px text-center font-mono text-[9px] font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary"}`}
+                          className={`w-11 shrink-0 rounded-xs border px-1 py-px text-center font-mono text-[9px] font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary"}`}
                         >
                           {node.method}
                         </span>

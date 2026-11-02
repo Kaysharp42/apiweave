@@ -12,7 +12,7 @@ import type { NodeRunLine } from "../../../types/NodeRunLine";
 function RunLine({ line }: { line: NodeRunLine }) {
   return (
     <div className="flex items-baseline gap-1.5 font-mono text-xs leading-tight">
-      <span className="flex-shrink-0 text-text-primary dark:text-text-primary-dark">
+      <span className="shrink-0 text-text-primary dark:text-text-primary-dark">
         {line.operation}
       </span>
       {line.argument && (
@@ -96,7 +96,7 @@ export function NodeRunStrip({
 
       {hasMetrics && (
         <div
-          className="flex items-center gap-1.5 text-[11px] leading-none text-[var(--aw-node-text-muted)] tabular-nums"
+          className="flex items-center gap-1.5 text-[11px] leading-none text-(--aw-node-text-muted) tabular-nums"
           role="group"
           aria-label="Node metrics"
         >

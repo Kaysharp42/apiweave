@@ -89,7 +89,7 @@ function GitAccountsMenuPanel({
             variant="ghost"
             size="sm"
             fullWidth
-            className="!justify-start"
+            className="justify-start!"
             icon={<GitBranch className="h-4 w-4" aria-hidden="true" />}
             onClick={onSetUpSync}
           >
@@ -105,7 +105,7 @@ function GitAccountsMenuPanel({
                 variant="ghost"
                 size="sm"
                 fullWidth
-                className="!justify-start"
+                className="justify-start!"
                 disabled={!loaded || missing}
                 onClick={() => onAdd(provider)}
               >
@@ -130,7 +130,7 @@ function GitAccountsMenuPanel({
           variant="ghost"
           size="sm"
           fullWidth
-          className="!justify-start"
+          className="justify-start!"
           icon={<Settings className="h-4 w-4" aria-hidden="true" />}
           onClick={onOpenSettings}
         >
@@ -198,7 +198,7 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
               as={Button}
               variant="ghost"
               size="sm"
-              className="h-9 w-9 !rounded-full border border-border bg-surface-raised !p-0 hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
+              className="h-9 w-9 rounded-full! border border-border bg-surface-raised p-0! hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
               aria-label={label}
               title={label}
             >
@@ -230,7 +230,7 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
               // A plain div, not a dialog: a group named by its own title, which is what it is.
               role="group"
               aria-labelledby={titleId}
-              className="z-50 w-80 rounded border border-border bg-surface-raised p-3 shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
+              className="z-50 w-80 rounded-sm border border-border bg-surface-raised p-3 shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
             >
               <GitAccountsMenuPanel
                 titleId={titleId}

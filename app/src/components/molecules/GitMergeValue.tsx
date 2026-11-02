@@ -16,13 +16,13 @@ export function GitMergeValue({ value }: GitMergeValueProps) {
   }
   if (typeof value === "string") {
     return (
-      <p className="whitespace-pre-wrap break-words text-sm text-text-primary dark:text-text-primary-dark">
+      <p className="whitespace-pre-wrap wrap-break-word text-sm text-text-primary dark:text-text-primary-dark">
         {value === "" ? '""' : value}
       </p>
     );
   }
   return (
-    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-sm bg-surface-overlay p-2 font-mono text-xxs text-text-primary dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-xxs text-text-primary dark:bg-surface-dark-overlay dark:text-text-primary-dark">
       {JSON.stringify(value, null, 2)}
     </pre>
   );

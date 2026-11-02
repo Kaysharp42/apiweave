@@ -107,7 +107,7 @@ function DefaultWorkspaceRedirect() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)] p-6">
+      <div className="min-h-screen flex items-center justify-center bg-(--aw-surface) p-6">
         <div className="max-w-md text-center">
           <h1 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">
             Failed to load workspace
@@ -125,8 +125,8 @@ function DefaultWorkspaceRedirect() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--aw-surface)]">
-      <div className="w-8 h-8 border-4 border-[var(--aw-primary)] border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
+    <div className="min-h-screen flex items-center justify-center bg-(--aw-surface)">
+      <div className="w-8 h-8 border-4 border-(--aw-primary) border-t-transparent rounded-full animate-spin motion-reduce:animate-none" />
     </div>
   );
 }

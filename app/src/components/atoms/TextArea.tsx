@@ -21,16 +21,16 @@ function buildTextAreaClassName(
   className: string,
 ): string {
   return [
-    "w-full rounded-sm border",
+    "w-full rounded-xs border",
     "bg-surface-raised dark:bg-surface-dark-raised",
     "text-text-primary dark:text-text-primary-dark",
     "border-border dark:border-border-dark",
     "placeholder:text-text-muted dark:placeholder:text-text-muted-dark",
     "focus:border-primary dark:focus:border-primary-light",
-    "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
-    "transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out",
+    "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
+    "transition-[border-color,outline,background-color] duration-(--aw-transition-fast) ease-in-out",
     SIZE_CLASSES[size] ?? "",
-    error && "border-status-error dark:border-[var(--aw-status-error)]",
+    error && "border-status-error dark:border-(--aw-status-error)",
     autoResize && "resize-none overflow-hidden",
     className,
   ]
@@ -93,7 +93,7 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
         />
         {error && (
           <label className="label px-0 py-1">
-            <span className="label-text-alt text-xs text-status-error dark:text-[var(--aw-status-error)]">
+            <span className="label-text-alt text-xs text-status-error dark:text-(--aw-status-error)">
               {error}
             </span>
           </label>

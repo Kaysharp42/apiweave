@@ -272,7 +272,7 @@ function TutorialPageContent({
   if (isWide) {
     return (
       <>
-        <aside className="flex w-72 flex-shrink-0 flex-col overflow-hidden border-r border-border p-4 dark:border-border-dark">
+        <aside className="flex w-72 shrink-0 flex-col overflow-hidden border-r border-border p-4 dark:border-border-dark">
           {library}
         </aside>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">

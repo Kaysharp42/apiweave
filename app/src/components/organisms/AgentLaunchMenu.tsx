@@ -82,7 +82,7 @@ export function AgentLaunchMenu({
       id={id}
       role="menu"
       aria-label="Agent options"
-      className="absolute top-9 right-0 z-50 min-w-[260px] max-w-[360px] overflow-hidden rounded-sm border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+      className="absolute top-9 right-0 z-50 min-w-[260px] max-w-[360px] overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
     >
       <div className="border-b border-border px-3 py-2 dark:border-border-dark">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
@@ -145,7 +145,7 @@ export function AgentLaunchMenu({
             .filter(Boolean)
             .join(" ")}
         >
-          <item.icon className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+          <item.icon className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
           {item.label}
         </button>
       ))}

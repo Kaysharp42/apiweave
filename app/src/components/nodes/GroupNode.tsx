@@ -62,7 +62,7 @@ function GroupNode({ id, data, selected }: NodeProps<CanvasNode>) {
       >
         <div className="aw-group__bar">
           <span className="aw-group-handle aw-group__pill" title={label}>
-            <Frame className="w-3 h-3 flex-shrink-0 opacity-70" />
+            <Frame className="w-3 h-3 shrink-0 opacity-70" />
             {isRenaming ? (
               <input
                 ref={inputRef}

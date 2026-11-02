@@ -56,10 +56,10 @@ const KIND_LABEL: Record<TemplateSuggestion["kind"], string> = {
 };
 
 const KIND_CLASS: Record<TemplateSuggestion["kind"], string> = {
-  variable: "text-[var(--aw-status-success)]",
-  env: "text-[var(--aw-primary)]",
-  secret: "text-[var(--aw-status-warning)]",
-  response: "text-[var(--aw-status-info)]",
+  variable: "text-(--aw-status-success)",
+  env: "text-(--aw-primary)",
+  secret: "text-(--aw-status-warning)",
+  response: "text-(--aw-status-info)",
   function: "text-text-muted dark:text-text-muted-dark",
 };
 
@@ -287,7 +287,7 @@ function SuggestionList({
       id={id}
       role="listbox"
       aria-label="Reference suggestions"
-      className="fixed z-[60] overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-[var(--aw-shadow-popover)] dark:border-border-dark dark:bg-surface-dark-raised"
+      className="fixed z-60 overflow-y-auto rounded-md border border-border bg-surface-raised py-1 shadow-(--aw-shadow-popover) dark:border-border-dark dark:bg-surface-dark-raised"
       style={{ ...verticalAnchor, left, width, maxHeight }}
     >
       {matches.map((suggestion, index) => (
@@ -309,11 +309,11 @@ function SuggestionList({
             }`}
           >
             <span
-              className={`w-10 flex-shrink-0 font-mono text-[10px] uppercase ${KIND_CLASS[suggestion.kind]}`}
+              className={`w-10 shrink-0 font-mono text-[10px] uppercase ${KIND_CLASS[suggestion.kind]}`}
             >
               {KIND_LABEL[suggestion.kind]}
             </span>
-            <span className="flex-shrink-0 font-mono text-text-primary dark:text-text-primary-dark">
+            <span className="shrink-0 font-mono text-text-primary dark:text-text-primary-dark">
               {suggestion.insert}
             </span>
             {suggestion.detail && (

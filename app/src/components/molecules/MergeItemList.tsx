@@ -80,8 +80,8 @@ export function MergeItemList({
                         }
                       }}
                       className={[
-                        "w-full rounded-sm border px-2 py-1.5 text-left transition-colors",
-                        "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+                        "w-full rounded-xs border px-2 py-1.5 text-left transition-colors",
+                        "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
                         key === selectedKey
                           ? "border-primary bg-surface-raised dark:border-primary-light dark:bg-surface-dark-raised"
                           : "border-transparent hover:border-border hover:bg-surface-raised dark:hover:border-border-dark dark:hover:bg-surface-dark-raised",
@@ -100,7 +100,7 @@ export function MergeItemList({
                         {settled ? (
                           <>
                             <Check
-                              className="h-3 w-3 text-status-success dark:text-[var(--aw-status-success)]"
+                              className="h-3 w-3 text-status-success dark:text-(--aw-status-success)"
                               aria-hidden="true"
                             />
                             <span className="text-xxs text-text-secondary dark:text-text-secondary-dark">
@@ -110,7 +110,7 @@ export function MergeItemList({
                         ) : (
                           <>
                             <CircleAlert
-                              className="h-3 w-3 text-status-warning dark:text-[var(--aw-status-warning)]"
+                              className="h-3 w-3 text-status-warning dark:text-(--aw-status-warning)"
                               aria-hidden="true"
                             />
                             <span className="text-xxs text-text-secondary dark:text-text-secondary-dark">

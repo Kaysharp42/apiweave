@@ -111,9 +111,9 @@ export function OrgWorkspaceSwitcher() {
   return (
     <>
       {isLoading ? (
-        <div className="flex w-full items-center gap-2 rounded border border-border px-2 py-1.5 dark:border-border-dark">
-          <div className="h-6 w-6 flex-shrink-0 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
-          <div className="h-3 w-24 animate-pulse rounded bg-border/40 dark:bg-border-dark/40" />
+        <div className="flex w-full items-center gap-2 rounded-sm border border-border px-2 py-1.5 dark:border-border-dark">
+          <div className="h-6 w-6 shrink-0 animate-pulse rounded-sm bg-border/40 dark:bg-border-dark/40" />
+          <div className="h-3 w-24 animate-pulse rounded-sm bg-border/40 dark:bg-border-dark/40" />
         </div>
       ) : (
         <Popover>
@@ -121,7 +121,7 @@ export function OrgWorkspaceSwitcher() {
             <>
               <PopoverButton
                 className={[
-                  "group flex w-full items-center gap-2 rounded border px-2 py-1.5 text-left",
+                  "group flex w-full items-center gap-2 rounded-sm border px-2 py-1.5 text-left",
                   "transition-colors duration-150 motion-reduce:transition-none cursor-pointer",
                   "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
                   open
@@ -133,7 +133,7 @@ export function OrgWorkspaceSwitcher() {
               >
                 <span
                   className={[
-                    "flex h-6 w-6 flex-shrink-0 items-center justify-center rounded",
+                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-sm",
                     "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light",
                   ].join(" ")}
                 >
@@ -147,7 +147,7 @@ export function OrgWorkspaceSwitcher() {
 
                 <ChevronDown
                   className={[
-                    "h-3.5 w-3.5 flex-shrink-0 text-text-muted transition-transform duration-150 motion-reduce:transition-none dark:text-text-muted-dark",
+                    "h-3.5 w-3.5 shrink-0 text-text-muted transition-transform duration-150 motion-reduce:transition-none dark:text-text-muted-dark",
                     open ? "rotate-180" : "",
                   ].join(" ")}
                   aria-hidden="true"
@@ -156,7 +156,7 @@ export function OrgWorkspaceSwitcher() {
 
               <PopoverPanel
                 anchor={{ to: "bottom start", gap: 4, padding: 8 }}
-                className="z-50 w-64 min-w-[var(--button-width)] overflow-hidden rounded border border-border bg-surface-raised shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
+                className="z-50 w-64 min-w-(--button-width) overflow-hidden rounded-sm border border-border bg-surface-raised shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
                   <span className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
@@ -270,14 +270,14 @@ function WorkspaceItem({
       aria-selected={isActive}
       onClick={() => onSelect(workspace)}
       onKeyDown={(e) => onKeyDown(e, index)}
-      className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-none ${
+      className={`flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors duration-200 motion-reduce:transition-none focus:outline-hidden ${
         isActive
           ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
           : "text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
       }`}
     >
       <span
-        className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border ${
           isActive
             ? "bg-primary/15 text-primary dark:bg-primary-light/15 dark:text-primary-light"
             : "bg-border/30 text-text-secondary dark:bg-border-dark/30 dark:text-text-secondary-dark"
@@ -298,14 +298,14 @@ function WorkspaceItem({
           <span
             role="img"
             aria-label={indicator.label}
-            className={`flex flex-shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
+            className={`flex shrink-0 items-center ${GIT_SYNC_INTENT_TEXT[indicator.intent]}`}
           >
             <GitSyncKindIcon indicator={indicator} className="h-3.5 w-3.5" />
           </span>
         </Tooltip>
       )}
       {isActive && (
-        <span className="flex h-2 w-2 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
+        <span className="flex h-2 w-2 shrink-0 rounded-full bg-primary dark:bg-primary-light" />
       )}
     </button>
   );
@@ -314,8 +314,8 @@ function WorkspaceItem({
 /** One icon vocabulary for the trigger and the list, so they read as the same thing. */
 function sourceIcon(source: string, className: string): React.ReactNode {
   if (source === "On this device")
-    return <HardDrive className={`${className} flex-shrink-0`} />;
-  return <UserRound className={`${className} flex-shrink-0`} />;
+    return <HardDrive className={`${className} shrink-0`} />;
+  return <UserRound className={`${className} shrink-0`} />;
 }
 
 /** Where a workspace lives, in the switcher's own vocabulary. */

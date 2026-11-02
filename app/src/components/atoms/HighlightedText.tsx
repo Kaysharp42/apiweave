@@ -12,7 +12,7 @@ export function HighlightedText({ text, query }: HighlightedTextProps) {
     parts.push(
       <mark
         key={at}
-        className="rounded-sm bg-primary/20 text-inherit dark:bg-primary-light/25"
+        className="rounded-xs bg-primary/20 text-inherit dark:bg-primary-light/25"
       >
         {text.slice(at, at + needle.length)}
       </mark>,

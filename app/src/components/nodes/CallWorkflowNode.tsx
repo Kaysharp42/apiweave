@@ -63,9 +63,9 @@ const SubWorkflowSummary = ({
     <div className="text-xs p-2 rounded-node-ctl border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark">
       <div className="font-medium mb-1 flex items-center gap-2">
         {subWorkflow.status === "passed" ? (
-          <CheckCircle className="w-4 h-4 text-[var(--aw-status-success)]" />
+          <CheckCircle className="w-4 h-4 text-(--aw-status-success)" />
         ) : (
-          <XCircle className="w-4 h-4 text-[var(--aw-status-error)]" />
+          <XCircle className="w-4 h-4 text-(--aw-status-error)" />
         )}
         <span>{result.message}</span>
       </div>
@@ -75,7 +75,7 @@ const SubWorkflowSummary = ({
           `, ${subWorkflow.failedNodeCount} failed`}
       </div>
       {subWorkflow.outputVariableNames.length > 0 && (
-        <div className="mt-1 text-[var(--aw-node-text-muted)]">
+        <div className="mt-1 text-(--aw-node-text-muted)">
           Mapped: {subWorkflow.outputVariableNames.join(", ")}
         </div>
       )}
@@ -89,7 +89,7 @@ const SubWorkflowSummary = ({
               subRunId,
             )
           }
-          className="nodrag cursor-pointer mt-2 flex items-center gap-1 text-[var(--aw-primary)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+          className="nodrag cursor-pointer mt-2 flex items-center gap-1 text-(--aw-primary) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
         >
           <ExternalLink className="w-3 h-3" aria-hidden="true" />
           Open this run in the target workflow
@@ -113,7 +113,7 @@ const MappingChip = ({ inputCount, outputCount }: MappingChipProps) => {
 
   return (
     <span
-      className="flex-shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-info)_12%,transparent)] text-[var(--aw-status-info)]"
+      className="shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-info)_12%,transparent)] text-(--aw-status-info)"
       title={`${plural(inputCount, "input")}, ${plural(outputCount, "output")}`}
     >
       <ArrowRightLeft className="w-2.5 h-2.5" aria-hidden="true" />
@@ -289,7 +289,7 @@ const CallWorkflowNode = ({ id, data, selected = false }: WorkflowCallNodeProps)
       {...(resultSummary && { resultSummary })}
       metrics={metricsFor(subWorkflow)}
       progress={status === "running" ? "indeterminate" : null}
-      className="min-w-[200px]"
+      className="min-w-node-compact"
     >
       {({ isExpanded }) =>
         isExpanded ? (

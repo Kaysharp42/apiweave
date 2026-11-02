@@ -242,7 +242,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
                           own `h-full` stacked below the tab bar and its footer
                           was clipped out of reach by the shell's overflow. */}
                       <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           <PanelTabs
                             tabs={panelTabs}
                             activeTab={state.activePanelTab}

@@ -59,7 +59,7 @@ export function Tooltip({
             ref={refs.setFloating}
             style={floatingStyles}
             className={[
-              "z-[9999] max-w-xs rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-2 py-1 font-sans text-xs text-text-primary dark:text-text-primary-dark shadow-popover",
+              "z-9999 max-w-xs rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised px-2 py-1 font-sans text-xs text-text-primary dark:text-text-primary-dark shadow-popover",
               className,
             ]
               .filter(Boolean)

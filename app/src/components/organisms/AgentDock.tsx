@@ -106,7 +106,7 @@ export function AgentDock() {
       />
       {stopError !== null && (
         <p
-          className="flex-shrink-0 border-b border-status-error/40 px-3 py-2 text-xs text-status-error"
+          className="shrink-0 border-b border-status-error/40 px-3 py-2 text-xs text-status-error"
           role="alert"
         >
           {stopError}
@@ -190,10 +190,10 @@ function DockHeader({
   readonly onClose: () => void;
 }) {
   return (
-    <header className="flex flex-shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 dark:border-border-dark">
+    <header className="flex shrink-0 flex-col gap-0.5 border-b border-border px-3 py-1.5 dark:border-border-dark">
       <div className="flex items-center gap-2">
         <Terminal
-          className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
+          className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark"
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-primary dark:text-text-primary-dark">
@@ -278,7 +278,7 @@ interface DockFooterProps {
 
 function DockFooter({ resuming, agentKey, onResume }: DockFooterProps) {
   return (
-    <footer className="flex-shrink-0 border-t border-border px-3 py-2 dark:border-border-dark">
+    <footer className="shrink-0 border-t border-border px-3 py-2 dark:border-border-dark">
       <Button
         variant="secondary"
         size="sm"

@@ -45,12 +45,12 @@ export default function ButtonSelect({
         aria-expanded={open}
       >
         <span className="truncate">{selected?.label ?? placeholder}</span>
-        <ChevronDown className="w-4 h-4 ml-2 flex-shrink-0" />
+        <ChevronDown className="w-4 h-4 ml-2 shrink-0" />
       </button>
 
       {open && (
         <ul
-          className="absolute inset-x-0 top-full z-50 mt-1 max-h-56 w-full overflow-auto rounded-sm border border-border bg-surface-raised py-1 shadow-overlay dark:border-border-dark dark:bg-surface-dark-raised"
+          className="absolute inset-x-0 top-full z-50 mt-1 max-h-56 w-full overflow-auto rounded-xs border border-border bg-surface-raised py-1 shadow-overlay dark:border-border-dark dark:bg-surface-dark-raised"
           role="listbox"
         >
           {options.map((opt) => (

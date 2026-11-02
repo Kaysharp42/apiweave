@@ -135,9 +135,9 @@ export function PostmanImportPanel({ onImported }: PostmanImportPanelProps) {
       {error && (
         <p
           role="alert"
-          className="flex items-start gap-2 text-sm text-status-error dark:text-[var(--aw-status-error)]"
+          className="flex items-start gap-2 text-sm text-status-error dark:text-(--aw-status-error)"
         >
-          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" /> {error}
+          <AlertCircle size={16} className="mt-0.5 shrink-0" /> {error}
         </p>
       )}
 

@@ -81,7 +81,7 @@ function MCPContent({
               Summary
             </h4>
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.toolCount}
                 </div>
@@ -89,7 +89,7 @@ function MCPContent({
                   Tools
                 </div>
               </div>
-              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.resourceCount}
                 </div>
@@ -97,7 +97,7 @@ function MCPContent({
                   Resources
                 </div>
               </div>
-              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-center">
                 <div className="text-2xl font-bold text-text-primary dark:text-text-primary-dark">
                   {config.promptCount}
                 </div>
@@ -125,12 +125,12 @@ function MCPContent({
                 Test HTTP Endpoint
               </Button>
               {testResult === "success" && (
-                <span className="flex items-center gap-1 text-xs text-[var(--aw-status-success)]">
+                <span className="flex items-center gap-1 text-xs text-(--aw-status-success)">
                   <CheckCircle className="w-3.5 h-3.5" /> Connected
                 </span>
               )}
               {testResult === "error" && (
-                <span className="flex items-center gap-1 text-xs text-[var(--aw-status-error)]">
+                <span className="flex items-center gap-1 text-xs text-(--aw-status-error)">
                   <XCircle className="w-3.5 h-3.5" /> Failed
                 </span>
               )}
@@ -162,7 +162,7 @@ function MCPContent({
               {config.tools.map((tool: MCPTool) => (
                 <div
                   key={tool.name}
-                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                  className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <code className="text-sm font-mono text-primary dark:text-primary-light">
@@ -197,7 +197,7 @@ function MCPContent({
               {config.resources.map((resource: MCPResource) => (
                 <div
                   key={resource.name}
-                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                  className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <code className="text-sm font-mono text-primary dark:text-primary-light">
@@ -235,7 +235,7 @@ function MCPContent({
               {config.prompts.map((prompt: MCPPrompt) => (
                 <div
                   key={prompt.name}
-                  className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
+                  className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <code className="text-sm font-mono text-primary dark:text-primary-light">
@@ -263,7 +263,7 @@ function MCPContent({
               Cursor, opencode). Bridges stdio to the loopback endpoint.
             </p>
             <div className="relative">
-              <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
+              <pre className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
                 {`npx mcp-remote ${config.baseUrl || "http://127.0.0.1:47271/mcp"} --header "Authorization: Bearer ${config.token || "YOUR_TOKEN"}"`}
               </pre>
             </div>
@@ -280,7 +280,7 @@ function MCPContent({
               per-install token is required on every request.
             </p>
             <div className="relative">
-              <pre className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
+              <pre className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3 text-xs font-mono overflow-x-auto">
                 {`{
   "mcpServers": {
     "apiweave": {
@@ -303,7 +303,7 @@ function MCPContent({
               Quick Setup Commands
             </h4>
             <div className="space-y-2">
-              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
                   codex mcp add apiweave -- npx mcp-remote {config.baseUrl || "http://127.0.0.1:47271/mcp"} --header "Authorization: Bearer {config.token || "YOUR_TOKEN"}"
                 </code>
@@ -311,7 +311,7 @@ function MCPContent({
                   OpenAI Codex CLI
                 </p>
               </div>
-              <div className="rounded border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay p-3">
                 <code className="text-xs font-mono text-text-primary dark:text-text-primary-dark">
                   /mcp add apiweave (in Copilot CLI)
                 </code>

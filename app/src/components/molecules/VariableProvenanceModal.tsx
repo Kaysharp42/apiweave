@@ -44,7 +44,7 @@ export function VariableProvenanceModal({
                   {producers.map((p) => (
                     <li
                       key={`${p.nodeId}:${p.path}`}
-                      className="flex flex-col gap-1 rounded border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-2"
+                      className="flex flex-col gap-1 rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-2"
                     >
                       <Badge variant="primary" size="sm" className="self-start" title={p.nodeId}>
                         {p.nodeLabel}
@@ -72,7 +72,7 @@ export function VariableProvenanceModal({
                   {consumers.map((c) => (
                     <li
                       key={c.nodeId}
-                      className="flex flex-wrap items-center gap-1.5 rounded border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-2"
+                      className="flex flex-wrap items-center gap-1.5 rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-2"
                     >
                       <Badge variant="secondary" size="sm" title={c.nodeId}>
                         {c.nodeLabel}

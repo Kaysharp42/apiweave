@@ -18,10 +18,10 @@ export const NODE_LABEL_CLASS =
   "block text-xs font-semibold mb-0.5 text-text-secondary dark:text-text-secondary-dark";
 
 /** The `(key=value)` aside inside a label. */
-export const NODE_HINT_CLASS = "font-normal text-[var(--aw-node-text-muted)]";
+export const NODE_HINT_CLASS = "font-normal text-(--aw-node-text-muted)";
 
 /** Validation message under a control. */
-export const NODE_ERROR_CLASS = "text-xs mt-1 text-[var(--aw-status-error)]";
+export const NODE_ERROR_CLASS = "text-xs mt-1 text-(--aw-status-error)";
 
 /**
  * Shared by every control; the per-control classes below extend it. Width is
@@ -29,15 +29,15 @@ export const NODE_ERROR_CLASS = "text-xs mt-1 text-[var(--aw-status-error)]";
  * class string do not resolve by source order.
  */
 const NODE_CONTROL_BASE =
-  "nodrag border rounded-node-ctl focus-visible:outline-2 focus-visible:outline-offset-[var(--aw-focus-ring-offset)]";
+  "nodrag border rounded-node-ctl focus-visible:outline-2 focus-visible:outline-offset-(--aw-focus-ring-offset)";
 
 /** Resting colours: neutral border, raised surface, accent focus ring. */
 const NODE_CONTROL_RESTING =
-  "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-[var(--aw-primary)]";
+  "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-(--aw-primary)";
 
 /** Invalid colours: the error hue carries border, text, tint and focus ring. */
 const NODE_CONTROL_INVALID =
-  "border-[var(--aw-status-error)] text-[var(--aw-status-error)] bg-[var(--aw-status-error)]/5 focus-visible:outline-[var(--aw-status-error)]";
+  "border-(--aw-status-error) text-(--aw-status-error) bg-(--aw-status-error)/5 focus-visible:outline-(--aw-status-error)";
 
 export const NODE_SELECT_CLASS = `${NODE_CONTROL_BASE} w-full px-1.5 py-0.5 text-xs ${NODE_CONTROL_RESTING} cursor-pointer`;
 

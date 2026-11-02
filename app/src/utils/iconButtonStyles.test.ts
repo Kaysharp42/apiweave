@@ -12,10 +12,7 @@ test("resolveIconButtonSizeClass falls back to small size", () => {
 });
 
 test("resolveIconButtonVariantClass falls back to ghost variant", () => {
-  assert.match(
-    resolveIconButtonVariantClass("primary"),
-    /bg-\[var\(--aw-primary\)\]/,
-  );
+  assert.match(resolveIconButtonVariantClass("primary"), /bg-\(--aw-primary\)/);
   assert.match(
     resolveIconButtonVariantClass("unknown" as never),
     /border-transparent/,

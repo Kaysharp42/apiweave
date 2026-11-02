@@ -110,7 +110,7 @@ export function FileUploadDropzone({
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center cursor-pointer hover:border-primary dark:hover:border-primary-light hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
+      className="border border-dashed border-border dark:border-border-dark rounded-xs p-6 text-center cursor-pointer hover:border-primary dark:hover:border-primary-light hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none"
       onClick={openFilePicker}
     >
       <input
@@ -156,7 +156,7 @@ export function PasteAreaField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-sm"
+        className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-xs"
       />
     </div>
   );
@@ -249,23 +249,23 @@ export function ImportToNodesPanel({
   const handleDragOver = (e: DragEvent): void => {
     e.preventDefault();
     e.currentTarget.classList.add(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
   };
 
   const handleDragLeave = (e: DragEvent): void => {
     e.currentTarget.classList.remove(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
   };
 
   const handleDrop = (e: DragEvent): void => {
     e.preventDefault();
     e.currentTarget.classList.remove(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
     const files = e.dataTransfer.files;
     if (files.length > 0) {
@@ -537,16 +537,16 @@ export function ImportToNodesPanel({
         {/* Messages */}
         {message && (
           <div
-            className={`mb-4 p-4 rounded-sm border flex gap-3 ${
+            className={`mb-4 p-4 rounded-xs border flex gap-3 ${
               message.type === "success"
-                ? "bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-status-success-dark border-status-success/30"
-                : "bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-status-error-dark border-status-error/30"
+                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark border-status-success/30"
+                : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-status-error dark:text-status-error-dark border-status-error/30"
             }`}
           >
             {message.type === "success" ? (
-              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <CheckCircle className="w-5 h-5 shrink-0" />
             ) : (
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <AlertCircle className="w-5 h-5 shrink-0" />
             )}
             <div>
               <div className="font-medium">{message.title}</div>
@@ -558,8 +558,8 @@ export function ImportToNodesPanel({
         {/* OpenAPI Tab */}
         {activeTab === "openapi" && (
           <div className="space-y-4">
-            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-              <Info size={18} className="flex-shrink-0 mt-0.5" />
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-xs flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="shrink-0 mt-0.5" />
               <span>
                 Upload or paste an OpenAPI specification. Requests will be added
                 to your Add Nodes panel.
@@ -601,8 +601,8 @@ export function ImportToNodesPanel({
         {/* HAR Tab */}
         {activeTab === "har" && (
           <div className="space-y-4">
-            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-              <Info size={18} className="flex-shrink-0 mt-0.5" />
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-xs flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="shrink-0 mt-0.5" />
               <span>
                 Upload or paste a HAR (HTTP Archive) file. Requests will be
                 added to your Add Nodes panel.
@@ -641,7 +641,7 @@ export function ImportToNodesPanel({
                   id="import-to-nodes-import-mode"
                   value={importMode}
                   onChange={(e) => setImportMode(e.target.value as ImportMode)}
-                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-xs bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary"
                 >
                   <option value="linear">Linear (sequential)</option>
                   <option value="grouped">Parallel</option>
@@ -661,8 +661,8 @@ export function ImportToNodesPanel({
         {/* Curl Tab */}
         {activeTab === "curl" && (
           <div className="space-y-4">
-            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
-              <Info size={18} className="flex-shrink-0 mt-0.5" />
+            <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-xs flex gap-2 text-sm text-primary dark:text-primary-light border border-primary/20 dark:border-primary/30">
+              <Info size={18} className="shrink-0 mt-0.5" />
               <span>
                 Paste one or more curl commands. They will be parsed and added
                 to your Add Nodes panel.
@@ -683,7 +683,7 @@ export function ImportToNodesPanel({
                 placeholder={
                   'Paste curl command(s) here. Example:\ncurl -X GET "https://api.example.com/users"\ncurl -X POST "https://api.example.com/users" -H "Content-Type: application/json" -d \'{"name": "John"}\'\n\nOr multiple commands separated by && or on separate lines'
                 }
-                className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-sm"
+                className="w-full h-40 px-4 py-3 font-mono text-sm bg-surface-raised dark:bg-surface-dark-raised rounded-xs"
               />
             </div>
 

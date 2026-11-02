@@ -30,16 +30,16 @@ function LessonRow({
         onClick={() => onSelect(lesson.id)}
         aria-current={isActive ? "page" : undefined}
         className={[
-          "flex w-full items-start gap-2 rounded-sm border px-2.5 py-2 text-left transition-colors duration-[var(--aw-transition-fast)]",
-          "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+          "flex w-full items-start gap-2 rounded-xs border px-2.5 py-2 text-left transition-colors duration-(--aw-transition-fast)",
+          "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
           isActive
             ? "border-primary bg-primary/5 dark:border-primary-light dark:bg-primary-light/10"
             : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
         ].join(" ")}
       >
-        <span className="mt-0.5 flex-shrink-0" aria-hidden="true">
+        <span className="mt-0.5 shrink-0" aria-hidden="true">
           {isComplete ? (
-            <Check className="h-4 w-4 text-status-success dark:text-[var(--aw-status-success)]" />
+            <Check className="h-4 w-4 text-status-success dark:text-(--aw-status-success)" />
           ) : inProgress ? (
             <CircleDot className="h-4 w-4 text-primary dark:text-primary-light" />
           ) : (
@@ -123,7 +123,7 @@ function LibraryHeader({
   onQueryChange: (value: string) => void;
 }) {
   return (
-    <div className="flex-shrink-0 space-y-3 pb-3">
+    <div className="shrink-0 space-y-3 pb-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h1
@@ -145,7 +145,7 @@ function LibraryHeader({
             variant="ghost"
             size="sm"
             onClick={onBackToWorkspace}
-            className="flex-shrink-0"
+            className="shrink-0"
           >
             Back to workspace
           </Button>
@@ -344,7 +344,7 @@ export function TutorialLibrary({
         />
 
         <p className="mt-4 inline-flex items-center gap-1.5 px-2.5 text-[11px] text-text-secondary dark:text-text-secondary-dark">
-          <BookOpen className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+          <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Lessons are bundled and readable offline.
         </p>
       </div>

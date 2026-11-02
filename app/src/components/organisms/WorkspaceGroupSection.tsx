@@ -31,11 +31,11 @@ export function WorkspaceGroupSection({
     <details
       key={workspaceId}
       open
-      className="group/ws rounded border border-border dark:border-border-dark"
+      className="group/ws rounded-sm border border-border dark:border-border-dark"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay">
         <ChevronRight
-          className="w-4 h-4 flex-shrink-0 text-text-muted transition-transform group-open/ws:rotate-90"
+          className="w-4 h-4 shrink-0 text-text-muted transition-transform group-open/ws:rotate-90"
           aria-hidden="true"
         />
         <span className="text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate">

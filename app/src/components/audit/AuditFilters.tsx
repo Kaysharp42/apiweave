@@ -42,7 +42,7 @@ export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
           </span>
         </label>
         <select
-          className="select select-bordered select-sm w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+          className="select select-bordered select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           value={filters.actor ?? ""}
           onChange={(e) =>
             onChange(withField(filters, "actor", e.target.value))
@@ -81,7 +81,7 @@ export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
           </span>
         </label>
         <select
-          className="select select-bordered select-sm w-full rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+          className="select select-bordered select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           value={filters.scope ?? ""}
           onChange={(e) =>
             onChange(withField(filters, "scope", e.target.value))

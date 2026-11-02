@@ -13,9 +13,9 @@
  *   - Every looping animation is gated behind `prefers-reduced-motion`,
  *     and every state stays legible from colour, glyph and copy alone.
  *
- * Keyframes are defined once here and referenced by name from
- * `tailwind.config.js` `theme.extend.animation`, so there is a single
- * source for each one.
+ * Keyframes are defined once here and referenced by name from the
+ * `--animate-*` tokens in `src/index.css`, so there is a single source
+ * for each one.
  */
 
 /* ──────────────────────────────────────────────

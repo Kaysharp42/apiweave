@@ -101,7 +101,7 @@ function expectedText(value: unknown): string {
 }
 
 const SELECT_BUTTON_CLASS =
-  "flex h-10 w-full items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark";
+  "flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-(--aw-transition-fast) ease-in-out focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark";
 
 function CheckCircleCardIcon({ className }: { className?: string }) {
   return <CheckCircle2 className={className} />;
@@ -163,7 +163,7 @@ export function AssertionRulesEditor({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
+      <div className="rounded-xs border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)">
         <p className="mb-1 flex items-center gap-2 font-medium">
           <Info className="h-4 w-4" aria-hidden="true" />
           Assertion rules
@@ -306,12 +306,12 @@ export function AssertionRulesEditor({
       </div>
 
       {rules.length === 0 && (
-        <div className="rounded-sm border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+        <div className="rounded-xs border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
           No assertion rules yet. Add one or pick a quick template.
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
         <Button
           variant="primary"
           intent="success"
@@ -328,7 +328,7 @@ export function AssertionRulesEditor({
           onChange={(template) =>
             onChange([...rules, ...(QUICK_ADD_RULES[template] ?? [])])
           }
-          buttonClass="flex h-9 min-w-48 items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+          buttonClass="flex h-9 min-w-48 items-center justify-between rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-(--aw-transition-fast) ease-in-out focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
         />
       </div>
     </div>

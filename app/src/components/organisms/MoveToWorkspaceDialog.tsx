@@ -158,10 +158,10 @@ export function MoveToWorkspaceDialog({
 /** The "what you lose" block. Split out to keep the dialog body readable. */
 function MoveWarnings({ warnings }: { readonly warnings: readonly string[] }) {
   return (
-    <div className="rounded-sm border border-status-warning/40 bg-status-warning/10 p-3">
+    <div className="rounded-xs border border-status-warning/40 bg-status-warning/10 p-3">
       <div className="flex items-center gap-2">
         <AlertTriangle
-          className="h-3.5 w-3.5 flex-shrink-0 text-status-warning dark:text-[var(--aw-status-warning)]"
+          className="h-3.5 w-3.5 shrink-0 text-status-warning dark:text-(--aw-status-warning)"
           aria-hidden="true"
         />
         <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">

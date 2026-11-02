@@ -247,7 +247,7 @@ export function ProjectRunPanel({
                 return (
                   <li
                     key={`${item.workflowId}-${index}`}
-                    className="flex items-center gap-3 rounded-sm border border-border px-3 py-2 dark:border-border-dark"
+                    className="flex items-center gap-3 rounded-xs border border-border px-3 py-2 dark:border-border-dark"
                   >
                     <span className="w-5 text-xs text-text-muted dark:text-text-muted-dark">
                       {index + 1}

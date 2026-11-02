@@ -17,7 +17,7 @@ export function MergeNotes({ notes }: MergeNotesProps) {
   return (
     <section
       aria-label="Merged automatically"
-      className="rounded-sm border border-border bg-surface-overlay/40 dark:border-border-dark dark:bg-surface-dark-overlay/40"
+      className="rounded-xs border border-border bg-surface-overlay/40 dark:border-border-dark dark:bg-surface-dark-overlay/40"
     >
       <Button
         variant="ghost"

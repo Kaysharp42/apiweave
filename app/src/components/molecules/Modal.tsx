@@ -61,7 +61,7 @@ export function Modal({
           >
             <Dialog.Panel
               className={[
-                "w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised",
+                "w-full rounded-xs bg-surface-raised dark:bg-surface-dark-raised",
                 "border border-border shadow-modal dark:border-border-dark",
                 "flex flex-col",
                 size === "fullscreen" ? "h-[90vh]" : "max-h-[90vh]",
@@ -72,17 +72,17 @@ export function Modal({
                 .join(" ")}
             >
               {title && (
-                <div className="flex flex-shrink-0 items-center justify-between border-b border-border px-5 py-3 dark:border-border-dark">
+                <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3 dark:border-border-dark">
                   <Dialog.Title className="truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
                     {title}
                   </Dialog.Title>
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {headerExtra}
                     {showClose && (
                       <button
                         type="button"
                         onClick={onClose}
-                        className="cursor-pointer rounded-sm border border-transparent p-1 text-text-secondary transition-colors hover:border-border hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-secondary-dark dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+                        className="cursor-pointer rounded-xs border border-transparent p-1 text-text-secondary transition-colors hover:border-border hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-text-secondary-dark dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
                         aria-label="Close"
                       >
                         <X className="w-5 h-5" />
@@ -101,7 +101,7 @@ export function Modal({
               </div>
 
               {footer && (
-                <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3 dark:border-border-dark">
+                <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-5 py-3 dark:border-border-dark">
                   {typeof footer === "function" ? footer() : footer}
                 </div>
               )}

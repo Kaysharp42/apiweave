@@ -64,7 +64,7 @@ export function CreateRepositoryDialog({ onClose, defaultName, defaultAccount, a
         {error !== null && (
           <div
             role="alert"
-            className="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
+            className="rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
           >
             {error}
           </div>

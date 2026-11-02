@@ -10,11 +10,11 @@ export function Skeleton({
   ...rest
 }: SkeletonProps) {
   const base =
-    "animate-pulse rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay motion-reduce:animate-none";
+    "animate-pulse rounded-xs bg-surface-overlay dark:bg-surface-dark-overlay motion-reduce:animate-none";
   const variantClass: Record<string, string> = {
     text: "h-4 w-full",
     circle: "h-10 w-10 rounded-full",
-    rect: "h-20 w-full rounded-sm",
+    rect: "h-20 w-full rounded-xs",
   };
 
   const style: React.CSSProperties = {};

@@ -67,9 +67,9 @@ export function PromptDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md rounded-sm border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
+            <Dialog.Panel className="w-full max-w-md rounded-xs border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
               <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
-                <div className="flex-shrink-0 rounded-full bg-primary/10 p-1 dark:bg-primary-light/10">
+                <div className="shrink-0 rounded-full bg-primary/10 p-1 dark:bg-primary-light/10">
                   <FileText className="h-5 w-5 text-primary dark:text-primary-light" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -92,7 +92,7 @@ export function PromptDialog({
                   onChange={(e) => setValue(e.target.value)}
                   placeholder={placeholder}
                   aria-label={title}
-                  className="h-8 w-full rounded-sm border border-border bg-surface-raised px-2.5 text-sm text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
+                  className="h-8 w-full rounded-xs border border-border bg-surface-raised px-2.5 text-sm text-text-primary placeholder:text-text-muted transition-[border-color,outline] duration-(--aw-transition-fast) focus:border-primary focus:outline-hidden focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-primary-light"
                 />
 
                 <div className="flex justify-end gap-2 mt-4">

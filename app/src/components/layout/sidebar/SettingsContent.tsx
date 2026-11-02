@@ -8,7 +8,7 @@ import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
 import { APP_SETTINGS_SECTIONS } from "../../../pages/AppSettingsPage";
 
 const settingItemClass = [
-  "flex w-full items-center gap-3 rounded border border-transparent px-3 py-2 text-left",
+  "flex w-full items-center gap-3 rounded-sm border border-transparent px-3 py-2 text-left",
   "hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
   "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
   "cursor-pointer transition-colors",
@@ -46,7 +46,7 @@ function SettingItem({
   return (
     <li>
       <button type="button" className={settingItemClass} onClick={onClick}>
-        <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+        <Icon className="w-4 h-4 text-text-muted dark:text-text-muted-dark shrink-0" />
         <div className="min-w-0 text-left">
           <div className="font-medium text-text-primary dark:text-text-primary-dark text-sm">
             {title}
@@ -56,7 +56,7 @@ function SettingItem({
           </div>
         </div>
         {marker && (
-          <span className="ml-auto h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light" />
+          <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary dark:bg-primary-light" />
         )}
       </button>
     </li>

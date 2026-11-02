@@ -9,11 +9,11 @@ export function CanvasTip({ tip, shortcut, onDismiss }: CanvasTipProps) {
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-auto flex items-center gap-2 rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-secondary shadow-node dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark"
+        className="pointer-events-auto flex items-center gap-2 rounded-xs border border-border bg-surface-raised px-2 py-1.5 text-xs text-text-secondary shadow-node dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark"
       >
         <span>{tip.text}</span>
         {shortcut && (
-          <kbd className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+          <kbd className="rounded-xs border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
             {shortcut}
           </kbd>
         )}

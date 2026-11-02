@@ -14,12 +14,12 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
     secondary:
       "bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark",
     success:
-      "bg-status-success/10 dark:bg-[var(--aw-status-success)]/10 text-status-success dark:text-[var(--aw-status-success)] border border-status-success/30 dark:border-[var(--aw-status-success)]/30",
+      "bg-status-success/10 dark:bg-(--aw-status-success)/10 text-status-success dark:text-(--aw-status-success) border border-status-success/30 dark:border-(--aw-status-success)/30",
     error:
-      "bg-status-error/10 dark:bg-[var(--aw-status-error)]/10 text-status-error dark:text-[var(--aw-status-error)] border border-status-error/30 dark:border-[var(--aw-status-error)]/30",
+      "bg-status-error/10 dark:bg-(--aw-status-error)/10 text-status-error dark:text-(--aw-status-error) border border-status-error/30 dark:border-(--aw-status-error)/30",
     warning:
-      "bg-status-warning/10 dark:bg-[var(--aw-status-warning)]/10 text-status-warning dark:text-[var(--aw-status-warning)] border border-status-warning/30 dark:border-[var(--aw-status-warning)]/30",
-    info: "bg-status-info/10 dark:bg-[var(--aw-status-info)]/10 text-status-info dark:text-[var(--aw-status-info)] border border-status-info/30 dark:border-[var(--aw-status-info)]/30",
+      "bg-status-warning/10 dark:bg-(--aw-status-warning)/10 text-status-warning dark:text-(--aw-status-warning) border border-status-warning/30 dark:border-(--aw-status-warning)/30",
+    info: "bg-status-info/10 dark:bg-(--aw-status-info)/10 text-status-info dark:text-(--aw-status-info) border border-status-info/30 dark:border-(--aw-status-info)/30",
     ghost: "text-text-secondary dark:text-text-secondary-dark",
     outline:
       "bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark",

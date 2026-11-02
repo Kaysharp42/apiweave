@@ -49,13 +49,13 @@ export function TutorialCodeBlock({
           onClick={copy}
         >
           {state === "copied" ? (
-            <Check className="h-3.5 w-3.5 text-status-success dark:text-[var(--aw-status-success)]" />
+            <Check className="h-3.5 w-3.5 text-status-success dark:text-(--aw-status-success)" />
           ) : (
             <Copy className="h-3.5 w-3.5" />
           )}
         </IconButton>
       </figcaption>
-      <pre className="max-w-full overflow-x-auto rounded-sm border border-border bg-surface-overlay p-3 text-xs leading-relaxed dark:border-border-dark dark:bg-surface-dark-overlay">
+      <pre className="max-w-full overflow-x-auto rounded-xs border border-border bg-surface-overlay p-3 text-xs leading-relaxed dark:border-border-dark dark:bg-surface-dark-overlay">
         <code className="font-mono text-text-primary dark:text-text-primary-dark">
           {example.code}
         </code>
@@ -66,7 +66,7 @@ export function TutorialCodeBlock({
         className={[
           "mt-1 block text-[11px]",
           state === "error"
-            ? "text-status-error dark:text-[var(--aw-status-error)]"
+            ? "text-status-error dark:text-(--aw-status-error)"
             : "sr-only",
         ].join(" ")}
       >

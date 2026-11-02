@@ -75,10 +75,10 @@ app/src/
 - Use **Tailwind utility classes** exclusively — no CSS-in-JS, no styled-components
 - Use **design tokens** — NEVER hardcoded hex values:
   - `bg-primary`, `text-text-secondary`, `border-border`, `bg-surface-raised`
-  - See `tailwind.config.js` and `src/styles/base.css` for all tokens
+  - See the `@theme` block in `src/index.css` and `src/styles/base.css` for all tokens
 - **Dark mode**: always use `dark:` prefix — never separate dark mode files or hardcoded dark colors
 - **Consistent spacing**: use Tailwind scale (1, 1.5, 2, 2.5, 3, 4, 5, 6)
-- **Focus states**: `focus:outline-none focus:ring-2 focus:ring-primary`
+- **Focus states**: `focus:outline-hidden focus:ring-2 focus:ring-primary`
 - **Transitions**: use `--aw-transition-fast` (150ms), `--aw-transition-normal` (300ms)
 
 ### 6. Component Props Pattern
@@ -141,7 +141,7 @@ After EVERY phase:
 
 ## Design System
 
-### Color Tokens (from `tailwind.config.js`)
+### Color Tokens (from the `@theme` block in `src/index.css`)
 | Token | Light | Dark | Usage |
 |-------|-------|------|-------|
 | `primary` | `#164e63` | `#22d3ee` | Primary actions, active states |

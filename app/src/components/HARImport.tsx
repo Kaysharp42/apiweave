@@ -40,13 +40,13 @@ type ImportMode = "linear" | "grouped";
 function getMethodBadgeClasses(method: string): string {
   switch (method) {
     case "GET":
-      return "bg-[var(--aw-status-info)]/10 dark:bg-[var(--aw-status-info)]/20 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]";
+      return "bg-(--aw-status-info)/10 dark:bg-(--aw-status-info)/20 text-(--aw-status-info) dark:text-(--aw-status-info)";
     case "POST":
-      return "bg-[var(--aw-status-success)]/10 dark:bg-[var(--aw-status-success)]/20 text-[var(--aw-status-success)] dark:text-[var(--aw-status-success)]";
+      return "bg-(--aw-status-success)/10 dark:bg-(--aw-status-success)/20 text-(--aw-status-success) dark:text-(--aw-status-success)";
     case "PUT":
-      return "bg-[var(--aw-status-warning)]/10 dark:bg-[var(--aw-status-warning)]/20 text-[var(--aw-status-warning)] dark:text-[var(--aw-status-warning)]";
+      return "bg-(--aw-status-warning)/10 dark:bg-(--aw-status-warning)/20 text-(--aw-status-warning) dark:text-(--aw-status-warning)";
     case "DELETE":
-      return "bg-[var(--aw-status-error)]/10 dark:bg-[var(--aw-status-error)]/20 text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]";
+      return "bg-(--aw-status-error)/10 dark:bg-(--aw-status-error)/20 text-(--aw-status-error) dark:text-(--aw-status-error)";
     default:
       return "bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark";
   }
@@ -192,7 +192,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
             <div
               onDragOver={handleDragOver}
               onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded p-8 text-center hover:border-primary dark:hover:border-primary transition-colors cursor-pointer"
+              className="border border-dashed border-border dark:border-border-dark rounded-sm p-8 text-center hover:border-primary dark:hover:border-primary transition-colors cursor-pointer"
             >
               <Upload className="w-12 h-12 text-text-muted dark:text-text-muted-dark mx-auto mb-4" />
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-2">
@@ -207,7 +207,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
               />
               <label
                 htmlFor="har-file-input"
-                className="inline-block bg-primary hover:bg-primary-hover text-white text-sm font-medium py-2 px-4 rounded cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                className="inline-block bg-primary hover:bg-primary-hover text-white text-sm font-medium py-2 px-4 rounded-sm cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
               >
                 Select File
               </label>
@@ -268,7 +268,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                   type="checkbox"
                   checked={sanitize}
                   onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-primary border-border rounded focus:ring-primary"
+                  className="w-4 h-4 text-primary border-border rounded-sm focus:ring-primary"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers (Authorization, API keys, etc.)
@@ -279,7 +279,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
           {/* Preview Result */}
           {dryRunResult && (
-            <div className="border border-border dark:border-border-dark rounded overflow-hidden">
+            <div className="border border-border dark:border-border-dark rounded-sm overflow-hidden">
               <div className="bg-surface dark:bg-surface-dark px-4 py-3 border-b border-border dark:border-border-dark">
                 <h3 className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
                   Preview
@@ -289,7 +289,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                 {/* Stats */}
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
-                    <p className="text-2xl font-bold text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)]">
+                    <p className="text-2xl font-bold text-(--aw-status-info) dark:text-(--aw-status-info)">
                       {dryRunResult.stats?.totalEntries || 0}
                     </p>
                     <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -305,7 +305,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                     </p>
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-[var(--aw-branch-edge)] dark:text-[var(--aw-branch-edge)]">
+                    <p className="text-2xl font-bold text-(--aw-branch-edge) dark:text-(--aw-branch-edge)">
                       {dryRunResult.stats?.edges || 0}
                     </p>
                     <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -324,10 +324,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                       {dryRunResult.preview.map((entry) => (
                         <div
                           key={`${entry.method}-${entry.url}-${entry.time ?? ""}`}
-                          className="flex items-center gap-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded border border-border dark:border-border-dark"
+                          className="flex items-center gap-3 text-xs bg-surface dark:bg-surface-dark p-2 rounded-sm border border-border dark:border-border-dark"
                         >
                           <span
-                            className={`font-medium px-2 py-0.5 rounded ${getMethodBadgeClasses(entry.method)}`}
+                            className={`font-medium px-2 py-0.5 rounded-sm ${getMethodBadgeClasses(entry.method)}`}
                           >
                             {entry.method}
                           </span>
@@ -361,10 +361,10 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
 
           {/* Error */}
           {error && (
-            <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4">
+            <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4">
               <div className="flex items-start">
                 <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
-                <p className="text-sm text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)]">
+                <p className="text-sm text-(--aw-status-error) dark:text-(--aw-status-error)">
                   {error}
                 </p>
               </div>

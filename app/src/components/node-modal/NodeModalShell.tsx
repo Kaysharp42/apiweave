@@ -28,7 +28,7 @@ import type {
 
 export function NodeModalRequestBar({ children }: NodeModalRequestBarProps) {
   return (
-    <div className="sticky top-0 z-20 flex min-h-14 flex-shrink-0 items-center border-b border-border bg-surface-raised/95 px-4 py-2 backdrop-blur dark:border-border-dark dark:bg-surface-dark-raised/95">
+    <div className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center border-b border-border bg-surface-raised/95 px-4 py-2 backdrop-blur-sm dark:border-border-dark dark:bg-surface-dark-raised/95">
       {children}
     </div>
   );
@@ -55,7 +55,7 @@ export function NodeModalResponsePane({
 }: NodeModalResponsePaneProps) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface-raised dark:bg-surface-dark-raised">
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-border bg-surface-overlay px-4 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface-overlay px-4 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
         <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase tracking-wide text-text-primary dark:text-text-primary-dark">
           <Eye
             className="h-4 w-4 text-text-muted dark:text-text-muted-dark"
@@ -112,11 +112,11 @@ export function NodeModalShell({
       scrollable={false}
       showClose={false}
       {...(initialFocus && { initialFocus })}
-      className="!max-w-[1800px] !rounded-sm !shadow-[var(--aw-shadow-modal)]"
+      className="max-w-[1800px]! rounded-xs! shadow-(--aw-shadow-modal)!"
     >
       <div className="flex h-full min-h-0 flex-col bg-surface-raised dark:bg-surface-dark-raised">
-        <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-4 py-3 dark:border-border-dark">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-sm border border-border bg-surface-overlay text-primary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-primary-light">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 dark:border-border-dark">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xs border border-border bg-surface-overlay text-primary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-primary-light">
             <Icon className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
@@ -203,7 +203,7 @@ export function NodeModalShell({
                   type="button"
                   onClick={() => setResponseCollapsed(false)}
                   aria-label="Show response"
-                  className="absolute right-0 top-0 z-30 flex h-full w-9 flex-col items-center justify-center gap-3 border-l border-border bg-surface-overlay text-text-secondary transition-colors duration-[var(--aw-transition-fast)] ease-in-out hover:bg-primary/10 hover:text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark dark:hover:bg-primary-light/10 dark:hover:text-primary-light"
+                  className="absolute right-0 top-0 z-30 flex h-full w-9 flex-col items-center justify-center gap-3 border-l border-border bg-surface-overlay text-text-secondary transition-colors duration-(--aw-transition-fast) ease-in-out hover:bg-primary/10 hover:text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark dark:hover:bg-primary-light/10 dark:hover:text-primary-light"
                 >
                   <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
                   <span
@@ -218,7 +218,7 @@ export function NodeModalShell({
           </div>
         </div>
 
-        <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-3 dark:border-border-dark">
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-3 dark:border-border-dark">
           <Button onClick={onCancel} variant="outline">
             Cancel
           </Button>

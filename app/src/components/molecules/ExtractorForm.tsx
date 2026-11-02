@@ -36,7 +36,7 @@ export function ExtractorForm({ onAdd, existingNames = [] }: ExtractorFormProps)
   };
 
   return (
-    <div className="space-y-2 rounded-sm border border-dashed border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+    <div className="space-y-2 rounded-xs border border-dashed border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
       <Input
         value={variableName}
         onChange={(event) => setVariableName(event.target.value)}
@@ -48,7 +48,7 @@ export function ExtractorForm({ onAdd, existingNames = [] }: ExtractorFormProps)
           ? { helperText: `Replaces the existing "${trimmedName}".` }
           : {})}
       />
-      <div className="flex items-center rounded-sm border border-border bg-surface-raised focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex items-center rounded-xs border border-border bg-surface-raised focus-within:outline-2 focus-within:outline-(--aw-primary) focus-within:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised">
         <span className="select-none pl-3 font-mono text-xs text-text-muted dark:text-text-muted-dark">
           {RESPONSE_PATH_PREFIX}
         </span>
@@ -57,7 +57,7 @@ export function ExtractorForm({ onAdd, existingNames = [] }: ExtractorFormProps)
           onChange={(event) => setResponsePath(event.target.value)}
           placeholder="data.name"
           aria-label="Extractor path after response.body"
-          className="h-10 min-w-0 flex-1 rounded-sm bg-transparent px-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:outline-none dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
+          className="h-10 min-w-0 flex-1 rounded-xs bg-transparent px-1 font-mono text-sm text-text-primary placeholder:text-text-muted focus:outline-hidden dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
         />
       </div>
       <Button

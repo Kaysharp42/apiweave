@@ -14,7 +14,7 @@ const GRID_MIN = 8;
 const GRID_MAX = 96;
 
 const selectButtonClass =
-  "flex w-full min-w-0 items-center justify-between gap-1.5 rounded-sm border border-border bg-surface-raised px-2.5 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none h-9 whitespace-nowrap";
+  "flex w-full min-w-0 items-center justify-between gap-1.5 rounded-xs border border-border bg-surface-raised px-2.5 py-1.5 text-sm font-medium text-text-primary transition-colors hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none h-9 whitespace-nowrap";
 
 /**
  * Canvas interaction preferences. The camera lock is deliberately not here —
@@ -44,7 +44,7 @@ export function CanvasSettingsPanel() {
           onChange={(value: string) =>
             setCanvasPrefs({ dragMode: value as CanvasDragMode })
           }
-          containerClass="w-48 flex-shrink-0"
+          containerClass="w-48 shrink-0"
           buttonClass={selectButtonClass}
         />
       </div>
@@ -83,7 +83,7 @@ export function CanvasSettingsPanel() {
               In canvas pixels. 24 matches the dots you can see.
             </p>
           </div>
-          <div className="w-24 flex-shrink-0">
+          <div className="w-24 shrink-0">
             <Input
               type="number"
               size="sm"

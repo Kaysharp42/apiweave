@@ -46,7 +46,7 @@ export default function AddNodesPanel({
         <button
           type="button"
           onClick={() => onShowVariablesPanel(true)}
-          className="flex h-9 w-9 items-center justify-center rounded-sm border border-border bg-surface-raised text-primary shadow-node transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-primary-light dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
+          className="flex h-9 w-9 items-center justify-center rounded-xs border border-border bg-surface-raised text-primary shadow-node transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-primary-light dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
           title="Show Side Panel (Variables, Functions, Settings)"
           aria-label="Show panel"
         >
@@ -59,7 +59,7 @@ export default function AddNodesPanel({
           <>
             <Popover.Button
               disabled={isModalOpen}
-              className="flex h-9 w-9 items-center justify-center rounded-sm border border-primary bg-primary text-surface-raised shadow-node transition-colors hover:brightness-105 focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-light dark:text-surface-dark-raised"
+              className="flex h-9 w-9 items-center justify-center rounded-xs border border-primary bg-primary text-surface-raised shadow-node transition-colors hover:brightness-105 focus:outline-hidden focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-light dark:text-surface-dark-raised"
               aria-label={open ? "Close node palette" : "Add nodes"}
             >
               {open ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -76,7 +76,7 @@ export default function AddNodesPanel({
             >
               <Popover.Panel
                 anchor={{ to: "top end", gap: 8, padding: 12 }}
-                className="z-50 flex h-[min(60vh,640px)] w-72 flex-col overflow-hidden rounded-sm border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+                className="z-50 flex h-[min(60vh,640px)] w-72 flex-col overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 <NodePalette
                   key={paletteKey}

@@ -30,7 +30,7 @@ export function WorkspaceEmptyState({
   return (
     <div className="flex h-full select-none flex-col items-center justify-center gap-8 px-6 py-12 motion-reduce:animate-none">
       {/* Icon */}
-      <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex h-16 w-16 items-center justify-center rounded-xs border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
         <LayoutGrid
           className="h-8 w-8 text-text-muted dark:text-text-muted-dark"
           strokeWidth={1.5}
@@ -121,7 +121,7 @@ export function WorkspaceEmptyState({
             {shortcutKeys(action).map((key, index) => (
               <Fragment key={key}>
                 {index > 0 && <span>+</span>}
-                <kbd className="inline-flex items-center justify-center rounded-sm border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+                <kbd className="inline-flex items-center justify-center rounded-xs border border-border bg-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
                   {key}
                 </kbd>
               </Fragment>

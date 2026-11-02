@@ -246,7 +246,7 @@ export function SidebarHeader({
 
               <MenuItems
                 anchor={{ to: "bottom start", gap: 4, padding: 8 }}
-                className="z-50 min-w-[var(--button-width)] rounded border border-border bg-surface-raised p-1 shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
+                className="z-50 min-w-(--button-width) rounded-sm border border-border bg-surface-raised p-1 shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 {importItems.map(({ label, icon: Icon, action }) => (
                   <MenuItem key={label}>
@@ -254,9 +254,9 @@ export function SidebarHeader({
                       type="button"
                       onClick={action}
                       className={[
-                        "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-xs",
+                        "flex w-full items-center gap-2 rounded-sm px-2.5 py-1.5 text-left text-xs",
                         "text-text-primary dark:text-text-primary-dark",
-                        "data-[focus]:bg-surface-overlay dark:data-[focus]:bg-surface-dark-overlay",
+                        "data-focus:bg-surface-overlay dark:data-focus:bg-surface-dark-overlay",
                         "cursor-pointer transition-colors motion-reduce:transition-none",
                       ].join(" ")}
                     >

@@ -19,13 +19,13 @@ import type { RunTimelineProps, TimelineRow } from "../../types";
 function rowColor(status: string): string {
   switch (status) {
     case "passed":
-      return "bg-status-success/70 dark:bg-[var(--aw-status-success)]/70";
+      return "bg-status-success/70 dark:bg-(--aw-status-success)/70";
     case "failed":
-      return "bg-status-error/70 dark:bg-[var(--aw-status-error)]/70";
+      return "bg-status-error/70 dark:bg-(--aw-status-error)/70";
     case "skipped":
       return "bg-text-muted/40 dark:bg-text-muted-dark/40";
     default:
-      return "bg-status-info/60 dark:bg-[var(--aw-status-info)]/60";
+      return "bg-status-info/60 dark:bg-(--aw-status-info)/60";
   }
 }
 
@@ -107,7 +107,7 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
           <>
             {/* Secrets summary (5.3) */}
             {resolvedSecrets.length > 0 && (
-              <div className="rounded border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-3 space-y-2">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-3 space-y-2">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-text-secondary dark:text-text-secondary-dark">
                   <Lock className="w-3.5 h-3.5" />
                   Resolved secrets (values masked)
@@ -146,23 +146,23 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
                     type="button"
                     key={row.nodeId}
                     onClick={() => setSelectedNodeId(selectedRow ? null : row.nodeId)}
-                    className={`w-full text-left rounded px-1 py-1 transition-colors ${
+                    className={`w-full text-left rounded-sm px-1 py-1 transition-colors ${
                       selectedRow
                         ? "bg-primary/10 dark:bg-primary-light/10"
                         : "hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="w-32 flex-shrink-0 truncate font-mono text-xs text-text-primary dark:text-text-primary-dark" title={row.nodeId}>
+                      <span className="w-32 shrink-0 truncate font-mono text-xs text-text-primary dark:text-text-primary-dark" title={row.nodeId}>
                         {row.nodeId}
                       </span>
-                      <div className="relative flex-1 h-4 min-w-0 rounded bg-surface-overlay dark:bg-surface-dark-overlay">
+                      <div className="relative flex-1 h-4 min-w-0 rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay">
                         <div
-                          className={`absolute top-0 bottom-0 rounded ${rowColor(row.status)}`}
+                          className={`absolute top-0 bottom-0 rounded-sm ${rowColor(row.status)}`}
                           style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                         />
                       </div>
-                      <span className="w-16 flex-shrink-0 text-right font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
+                      <span className="w-16 shrink-0 text-right font-mono text-[10px] text-text-secondary dark:text-text-secondary-dark">
                         {formatTimelineDuration(row.duration)}
                       </span>
                       <StatusBadge status={timelineBadgeStatus(row.status)} size="xs" />
@@ -174,7 +174,7 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
 
             {/* Selected node detail */}
             {selected && (
-              <div className="rounded border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-3 space-y-2">
+              <div className="rounded-sm border border-border dark:border-border-dark bg-surface dark:bg-surface-dark p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-sm font-semibold text-text-primary dark:text-text-primary-dark truncate" title={selected.nodeId}>
                     {selected.nodeId}
@@ -202,7 +202,7 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
                   )}
                 </div>
                 {selected.error && (
-                  <pre className="text-xs font-mono text-status-error dark:text-status-error bg-status-error/10 dark:bg-[var(--aw-status-error)]/10 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+                  <pre className="text-xs font-mono text-status-error dark:text-status-error bg-status-error/10 dark:bg-(--aw-status-error)/10 rounded-sm p-2 overflow-x-auto whitespace-pre-wrap break-all">
                     {selected.error}
                   </pre>
                 )}

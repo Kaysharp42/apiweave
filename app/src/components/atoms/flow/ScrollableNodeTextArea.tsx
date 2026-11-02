@@ -40,12 +40,12 @@ export const ScrollableNodeTextArea = forwardRef<
   return (
     <div
       data-scrollable-node-textarea
-      className="nodrag h-24 min-h-14 max-h-96 w-full resize-y overflow-clip focus-within:overflow-auto rounded-node-ctl border border-border bg-surface-raised focus-within:outline-2 focus-within:outline-[var(--aw-primary)] focus-within:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised"
+      className="nodrag h-24 min-h-14 max-h-96 w-full resize-y overflow-clip focus-within:overflow-auto rounded-node-ctl border border-border bg-surface-raised focus-within:outline-2 focus-within:outline-(--aw-primary) focus-within:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised"
     >
       <textarea
         ref={textAreaRef}
         value={value}
-        className={`block min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-1.5 py-1 font-mono text-xs font-normal leading-4 text-text-primary outline-none dark:text-text-primary-dark ${className}`}
+        className={`block min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-1.5 py-1 font-mono text-xs font-normal leading-4 text-text-primary outline-hidden dark:text-text-primary-dark ${className}`}
         {...rest}
       />
     </div>

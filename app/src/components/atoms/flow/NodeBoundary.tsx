@@ -40,14 +40,14 @@ function NodeFailure({
     >
       <div className="flex items-center gap-2">
         <AlertTriangle
-          className="h-4 w-4 flex-shrink-0 text-status-error"
+          className="h-4 w-4 shrink-0 text-status-error"
           aria-hidden="true"
         />
         <span className="text-xs font-medium text-text-primary dark:text-text-primary-dark">
           {nodeType} failed to render
         </span>
       </div>
-      <p className="break-words font-mono text-[11px] leading-snug text-text-secondary dark:text-text-secondary-dark">
+      <p className="wrap-break-word font-mono text-[11px] leading-snug text-text-secondary dark:text-text-secondary-dark">
         {error.message}
       </p>
       <button

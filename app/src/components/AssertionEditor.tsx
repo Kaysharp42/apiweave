@@ -64,7 +64,7 @@ export default function AssertionEditor({
           }
           onKeyDown={handleKey}
           aria-label="Assertion source"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
         >
           <option value="prev">prev</option>
           <option value="variables">variables</option>
@@ -81,10 +81,10 @@ export default function AssertionEditor({
             onKeyDown={handleKey}
             placeholder="path or name"
             aria-label="Assertion path or name"
-            className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.path ? "border-status-error dark:border-[var(--aw-status-error)]" : "border-border dark:border-border-dark"}`}
+            className={`w-full px-2 py-1 text-sm border rounded-sm font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${errors.path ? "border-status-error dark:border-(--aw-status-error)" : "border-border dark:border-border-dark"}`}
           />
           {errors.path && (
-            <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">
+            <div className="text-[11px] text-status-error dark:text-(--aw-status-error) mt-1">
               {errors.path}
             </div>
           )}
@@ -102,7 +102,7 @@ export default function AssertionEditor({
           }
           onKeyDown={handleKey}
           aria-label="Assertion operator"
-          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+          className="w-full px-2 py-1 text-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
         >
           <option value="equals">Equals (==)</option>
           <option value="notEquals">Not Equals (!=)</option>
@@ -132,10 +132,10 @@ export default function AssertionEditor({
               onKeyDown={handleKey}
               placeholder="expected value"
               aria-label="Assertion expected value"
-              className={`w-full px-2 py-1 text-sm border rounded font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${errors.expectedValue ? "border-status-error dark:border-[var(--aw-status-error)]" : "border-border dark:border-border-dark"}`}
+              className={`w-full px-2 py-1 text-sm border rounded-sm font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${errors.expectedValue ? "border-status-error dark:border-(--aw-status-error)" : "border-border dark:border-border-dark"}`}
             />
             {errors.expectedValue && (
-              <div className="text-[11px] text-status-error dark:text-[var(--aw-status-error)] mt-1">
+              <div className="text-[11px] text-status-error dark:text-(--aw-status-error) mt-1">
                 {errors.expectedValue}
               </div>
             )}

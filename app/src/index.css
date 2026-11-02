@@ -1,15 +1,243 @@
-/* Design system base styles (tokens, fonts, scrollbars) — must be first @import */
-@import "./styles/base.css";
+@import "tailwindcss";
+
+/* Design system base styles (tokens, fonts, scrollbars) */
+@import "./styles/base.css" layer(base);
 
 /* Node layer keyframes (canvas only — see DESIGN.md §7) */
-@import "./styles/node-motion.css";
+@import "./styles/node-motion.css" layer(base);
 
 /* Agent terminal tokens (terminal surface only — see the file's own header) */
-@import "./styles/agent-terminal.css";
+@import "./styles/agent-terminal.css" layer(base);
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+  The app toggles dark mode with the `.dark` class on <html>, so Tailwind's
+  `dark:` variant must follow the class rather than the media query.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  daisyUI component layer. `themes: false` keeps the built-in themes out; the
+  two `daisyui/theme` blocks below are the only themes this app ships.
+*/
+@plugin "daisyui" {
+  themes: false;
+  logs: false;
+}
+
+/*
+  A hand-maintained mirror of the palette in `src/styles/base.css`, and
+  knowingly so: daisyUI's theme block takes colours, so it cannot read
+  `--aw-tint-rgb` or the surface channels. Change a value here only alongside
+  `src/styles/base.css`.
+*/
+@plugin "daisyui/theme" {
+  name: "apiweave";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-primary: #0d5c6e;
+  --color-primary-content: #ffffff;
+  --color-secondary: #0f766e;
+  --color-secondary-content: #ffffff;
+  --color-accent: #0d5c6e;
+  --color-accent-content: #ffffff;
+  --color-neutral: #18181b;
+  --color-neutral-content: #fafafa;
+  --color-base-100: #fbf8f3;
+  --color-base-200: #f3efe7;
+  --color-base-300: #eae7e2;
+  --color-base-content: #3a3026;
+  --color-info: #1d4ed8;
+  --color-info-content: #ffffff;
+  --color-success: #15803d;
+  --color-success-content: #ffffff;
+  --color-warning: #b45309;
+  --color-warning-content: #ffffff;
+  --color-error: #b91c1c;
+  --color-error-content: #ffffff;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "apiweave-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-primary: #2dd4bf;
+  --color-primary-content: #042f2e;
+  --color-secondary: #0d5c6e;
+  --color-secondary-content: #fafafa;
+  --color-accent: #2dd4bf;
+  --color-accent-content: #042f2e;
+  --color-neutral: #27272a;
+  --color-neutral-content: #fafafa;
+  --color-base-100: #09090b;
+  --color-base-200: #18181b;
+  --color-base-300: #27272a;
+  --color-base-content: #fafafa;
+  --color-info: #3b82f6;
+  --color-info-content: #ffffff;
+  --color-success: #4ade80;
+  --color-success-content: #052e16;
+  --color-warning: #fbbf24;
+  --color-warning-content: #1c1917;
+  --color-error: #f87171;
+  --color-error-content: #450a0a;
+  --radius-selector: 0.5rem;
+  --radius-field: 0.25rem;
+  --radius-box: 0.5rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/*
+  Tailwind 4 theme. `inline` makes each utility carry its own value rather than
+  referring to the emitted `--color-*` variable — daisyUI themes also define
+  `--color-primary` on `:root`, and inlining is what keeps `text-primary` on the
+  static ink-teal palette instead of inheriting daisyUI's dark accent.
+*/
+@theme inline {
+  /* Named widths/heights — Tailwind 4 reads each of these namespaces directly. */
+  --width-nav-collapsed: 44px;
+  --width-nav-expanded: 146px;
+  --width-sidebar-default: 380px;
+  --width-node-compact: 200px;
+
+  --min-width-nav-collapsed: 44px;
+  --min-width-node-compact: 200px;
+
+  --max-width-node: 320px;
+  --max-width-sidebar: 600px;
+
+  --height-header: 48px;
+  --height-footer: 32px;
+
+  /*
+    Semantic colours. The quiet neutral roles are alphas of one tint —
+    `--aw-tint-rgb` in `src/styles/base.css`, the single value a theme flips.
+    Declaring them as plain colours (not a `<alpha-value>` placeholder) is what
+    keeps opacity modifiers working: Tailwind 4 compiles `border-border/50` to
+    `color-mix(in oklab, rgb(var(--aw-tint-rgb) / var(--aw-a-border)) 50%,
+    transparent)`. A `rgb(...)` string that Tailwind cannot parse would make it
+    drop the modified utility altogether, silently.
+  */
+  --color-primary: #0d5c6e;
+  --color-primary-light: #0f766e;
+  --color-primary-dark: #0b3d49;
+  --color-primary-hover: #0b4a59;
+
+  --color-surface: rgb(var(--aw-surface-rgb));
+  --color-surface-raised: rgb(var(--aw-surface-raised-rgb));
+  --color-surface-overlay: rgb(var(--aw-surface-overlay-rgb));
+  --color-surface-sunken: rgb(var(--aw-surface-sunken-rgb));
+  --color-surface-dark: rgb(var(--aw-surface-rgb));
+  --color-surface-dark-raised: rgb(var(--aw-surface-raised-rgb));
+  --color-surface-dark-overlay: rgb(var(--aw-surface-overlay-rgb));
+
+  --color-border: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
+  --color-border-dark: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
+  --color-border-default: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
+  --color-border-default-dark: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
+  --color-border-focus: var(--aw-border-focus);
+  --color-border-focus-dark: var(--aw-border-focus);
+
+  --color-text-primary: var(--aw-text-primary);
+  --color-text-primary-dark: var(--aw-text-primary);
+
+  --color-text-secondary: rgb(var(--aw-tint-rgb) / var(--aw-a-secondary));
+  --color-text-secondary-dark: rgb(var(--aw-tint-rgb) / var(--aw-a-secondary));
+
+  --color-text-muted: rgb(var(--aw-tint-rgb) / var(--aw-a-muted));
+  --color-text-muted-dark: rgb(var(--aw-tint-rgb) / var(--aw-a-muted));
+
+  --color-status-success: #15803d;
+  --color-status-error: #b91c1c;
+  --color-status-warning: #b45309;
+  --color-status-running: #a16207;
+  --color-status-info: #1d4ed8;
+
+  --color-method-get: #15803d;
+  --color-method-post: #1d4ed8;
+  --color-method-put: #b45309;
+  --color-method-patch: #6d28d9;
+  --color-method-delete: #b91c1c;
+  --color-method-head: #0f766e;
+  --color-method-options: #6d28d9;
+
+  --font-sans:
+    Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
+  --font-display: Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+
+  --text-xxs: 0.625rem;
+  --text-xxs--line-height: 0.875rem;
+
+  --radius-node: var(--aw-radius-node);
+  --radius-node-tile: var(--aw-radius-node-tile);
+  --radius-node-ctl: var(--aw-radius-node-ctl);
+  --radius-node-chip: var(--aw-radius-node-chip);
+  --radius-node-rail: var(--aw-radius-node-rail);
+
+  --shadow-node: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-node-hover: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-node-selected: 0 0 0 2px var(--aw-primary);
+  --shadow-raised: none;
+  --shadow-overlay: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.1);
+  --shadow-node-raised: var(--aw-shadow-node-raised);
+  --shadow-glow-running: var(--aw-glow-running);
+  --shadow-glow-error: var(--aw-glow-error);
+  --shadow-glow-warning: var(--aw-glow-warning);
+  --shadow-glow-success: var(--aw-glow-success);
+  --shadow-glow-select: var(--aw-glow-select);
+
+  --ease-aw-out: var(--aw-ease-out);
+  --ease-aw-in: var(--aw-ease-in);
+  --ease-aw-standard: var(--aw-ease-standard);
+
+  --transition-duration-instant: var(--aw-dur-instant);
+  --transition-duration-aw-fast: var(--aw-dur-fast);
+  --transition-duration-aw-normal: var(--aw-dur-normal);
+  --transition-duration-settle: var(--aw-dur-settle);
+
+  /* Keyframes live once in `src/styles/node-motion.css`; these name them. */
+  --animate-node-breathe: aw-node-breathe 2.4s ease-in-out infinite;
+  --animate-node-settle: aw-node-settle var(--aw-dur-settle) var(--aw-ease-out)
+    forwards;
+  --animate-rail-sweep: aw-rail-sweep 1.4s linear infinite;
+  --animate-edge-fill: aw-edge-fill var(--aw-dur-edge-fill)
+    var(--aw-ease-travel) forwards;
+  --animate-strip-enter: aw-strip-enter var(--aw-dur-normal) var(--aw-ease-out);
+}
+
+/*
+  Tailwind 4 changes the default border colour from gray-200 to currentcolor.
+  This keeps the v3 default for elements that rely on a bare `border` utility;
+  everything with an explicit `border-*` token is unaffected.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 /* ──────────────────────────────────────────────
    Desktop shell — reserve the custom title bar's height (h-header = 3rem) from

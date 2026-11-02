@@ -28,7 +28,7 @@ export function MainFooter() {
           tooltip={isNavBarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           size="xs"
           onClick={toggleNavBarCollapse}
-          className="hidden rounded lg:inline-flex focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
+          className="hidden rounded-sm lg:inline-flex focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light"
         >
           {isNavBarCollapsed ? (
             <PanelLeftOpen className="w-3.5 h-3.5" />
@@ -41,7 +41,7 @@ export function MainFooter() {
             href="https://github.com/Kaysharp42/apiweave"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
+            className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
             aria-label="View on GitHub"
           >
             <svg

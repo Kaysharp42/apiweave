@@ -80,7 +80,7 @@ export function KeyValueEditor({
               size="xs"
               variant="ghost"
               onClick={() => removePair(index)}
-              className="text-text-muted hover:text-status-error dark:text-text-muted-dark dark:hover:text-[var(--aw-status-error)]"
+              className="text-text-muted hover:text-status-error dark:text-text-muted-dark dark:hover:text-(--aw-status-error)"
               aria-label={`Remove row ${index + 1}`}
             >
               <Trash2 className="w-4 h-4" />

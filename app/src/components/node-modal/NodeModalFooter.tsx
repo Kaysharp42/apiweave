@@ -7,7 +7,7 @@ interface NodeModalFooterProps {
 
 export function NodeModalFooter({ onCancel, onSave }: NodeModalFooterProps) {
   return (
-    <div className="mt-5 flex flex-shrink-0 justify-end gap-3 border-t border-border pt-4 dark:border-border-dark">
+    <div className="mt-5 flex shrink-0 justify-end gap-3 border-t border-border pt-4 dark:border-border-dark">
       <Button onClick={onCancel} variant="outline" className="cursor-pointer">
         Cancel
       </Button>

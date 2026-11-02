@@ -53,7 +53,7 @@ export function NodeModalHeader({
           onChange={(e: ChangeEvent<HTMLInputElement>) =>
             onLabelChange(e.target.value)
           }
-          className="-ml-2 w-full rounded-sm border border-transparent bg-transparent px-2 py-1 text-lg font-semibold text-text-primary shadow-none outline-none transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay"
+          className="-ml-2 w-full rounded-xs border border-transparent bg-transparent px-2 py-1 text-lg font-semibold text-text-primary shadow-none outline-hidden transition-colors hover:bg-surface-overlay focus:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay dark:focus:bg-surface-dark-overlay"
           placeholder="Enter node name"
         />
       </div>
@@ -61,7 +61,7 @@ export function NodeModalHeader({
         onClick={onClose}
         variant="ghost"
         size="sm"
-        className="!min-w-0 !p-1.5 text-text-muted transition-colors hover:text-text-primary dark:text-text-muted-dark dark:hover:text-text-primary-dark cursor-pointer"
+        className="min-w-0! p-1.5! text-text-muted transition-colors hover:text-text-primary dark:text-text-muted-dark dark:hover:text-text-primary-dark cursor-pointer"
         title="Close"
       >
         <X className="w-5 h-5" />

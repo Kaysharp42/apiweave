@@ -28,17 +28,17 @@ export function IconButton({
     outline:
       "border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:bg-text-primary dark:hover:bg-text-primary-dark hover:text-surface-raised dark:hover:text-surface-dark hover:border-text-primary dark:hover:border-text-primary-dark",
     success:
-      "border border-status-success/40 dark:border-[var(--aw-status-success)]/40 text-status-success dark:text-[var(--aw-status-success)] hover:bg-status-success/10 dark:hover:bg-[var(--aw-status-success)]/10",
+      "border border-status-success/40 dark:border-(--aw-status-success)/40 text-status-success dark:text-(--aw-status-success) hover:bg-status-success/10 dark:hover:bg-(--aw-status-success)/10",
     error:
-      "border border-status-error/40 dark:border-[var(--aw-status-error)]/40 text-status-error dark:text-[var(--aw-status-error)] hover:bg-status-error/10 dark:hover:bg-[var(--aw-status-error)]/10",
+      "border border-status-error/40 dark:border-(--aw-status-error)/40 text-status-error dark:text-(--aw-status-error) hover:bg-status-error/10 dark:hover:bg-(--aw-status-error)/10",
     warning:
-      "border border-status-warning/40 dark:border-[var(--aw-status-warning)]/40 text-status-warning dark:text-[var(--aw-status-warning)] hover:bg-status-warning/10 dark:hover:bg-[var(--aw-status-warning)]/10",
-    info: "border border-status-info/40 dark:border-[var(--aw-status-info)]/40 text-status-info dark:text-[var(--aw-status-info)] hover:bg-status-info/10 dark:hover:bg-[var(--aw-status-info)]/10",
+      "border border-status-warning/40 dark:border-(--aw-status-warning)/40 text-status-warning dark:text-(--aw-status-warning) hover:bg-status-warning/10 dark:hover:bg-(--aw-status-warning)/10",
+    info: "border border-status-info/40 dark:border-(--aw-status-info)/40 text-status-info dark:text-(--aw-status-info) hover:bg-status-info/10 dark:hover:bg-(--aw-status-info)/10",
   };
 
   const buttonClassName = [
-    "inline-flex items-center justify-center rounded-sm transition-[background-color,color,border-color,filter] duration-[var(--aw-transition-fast)] ease-in-out",
-    "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+    "inline-flex items-center justify-center rounded-xs transition-[background-color,color,border-color,filter] duration-(--aw-transition-fast) ease-in-out",
+    "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
     sizeClass[size] ?? sizeClass.sm,
     variantClass[variant] ?? variantClass.ghost,
     disabled

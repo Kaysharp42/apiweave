@@ -82,7 +82,7 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
       ref={containerRef}
       role="menu"
       aria-label={label}
-      className="fixed z-50 min-w-[200px] max-w-[320px] overflow-hidden rounded-sm border border-border bg-surface-raised py-1 shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+      className="fixed z-50 min-w-node-compact max-w-node overflow-hidden rounded-xs border border-border bg-surface-raised py-1 shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
       style={{ left: position.left, top: position.top }}
     >
       {items.map((item, index) => (
@@ -100,7 +100,7 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
           onKeyDown={(event) => handleItemKeyDown(event, index)}
           className={[
             "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-150 motion-reduce:transition-none",
-            "cursor-pointer focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:focus-visible:outline-primary-light",
+            "cursor-pointer focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 dark:focus-visible:outline-primary-light",
             item.separated === true
               ? "mt-1 border-t border-border pt-2 dark:border-border-dark"
               : "",
@@ -113,7 +113,7 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
         >
           <item.icon
             className={[
-              "h-3.5 w-3.5 flex-shrink-0",
+              "h-3.5 w-3.5 shrink-0",
               item.destructive === true
                 ? ""
                 : "text-text-muted dark:text-text-muted-dark",

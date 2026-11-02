@@ -98,7 +98,7 @@ export default function SecretValueEditor({
       )}
     >
       <div className="p-5 space-y-4">
-        <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded border border-primary/20">
+        <div className="p-3 bg-primary/5 dark:bg-primary/10 rounded-sm border border-primary/20">
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
             The value is encrypted in your browser before being sent. It is
             never stored in plaintext.
