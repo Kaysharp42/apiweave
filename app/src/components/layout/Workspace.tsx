@@ -1,7 +1,7 @@
 import { useReducer, useCallback } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import WorkflowCanvas from "../WorkflowCanvas";
 import VariablesPanel from "../VariablesPanel";
 import WorkflowSettingsPanel from "../WorkflowSettingsPanel";

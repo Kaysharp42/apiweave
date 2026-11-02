@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   useScopeContext: vi.fn<() => ScopeContext>(),
 }));
 
-vi.mock("react-router-dom", () => ({
+vi.mock("react-router", () => ({
   useNavigate: () => mocks.navigate,
 }));
 

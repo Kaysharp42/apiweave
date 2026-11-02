@@ -6,7 +6,7 @@ import {
   createContext,
   useMemo,
 } from "react";
-import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router";
 import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
 import { WorkspaceVersionHistoryPage } from "./pages/WorkspaceVersionHistoryPage";
 import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";

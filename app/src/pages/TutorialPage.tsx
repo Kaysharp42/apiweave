@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { RotateCcw } from "lucide-react";
 import { Button } from "../components/atoms/Button";
 import { ConfirmDialog } from "../components/molecules/ConfirmDialog";

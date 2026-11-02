@@ -7,7 +7,7 @@ import {
   Routes,
   Outlet,
   useNavigate,
-} from "react-router-dom";
+} from "react-router";
 import MainLayout from "../MainLayout";
 import { CanvasSurfaceContext } from "../../../contexts/CanvasSurfaceContext";
 import useNavigationStore from "../../../stores/NavigationStore";

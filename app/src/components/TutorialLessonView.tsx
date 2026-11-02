@@ -10,7 +10,7 @@ import {
   Undo2,
   Wifi,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Badge } from "./atoms/Badge";
 import { Button } from "./atoms/Button";
 import { TutorialCodeBlock } from "./molecules/TutorialCodeBlock";

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import type { GitAccount } from "@shared/types/GitAccount";

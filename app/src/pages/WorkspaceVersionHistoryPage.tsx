@@ -1,5 +1,5 @@
 import { GitBranch } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { Spinner } from "../components/atoms/Spinner";
 import { VersionHistoryPanel } from "../components/organisms/VersionHistoryPanel";
 import { WorkspacePageHeader } from "../components/organisms/WorkspacePageHeader";

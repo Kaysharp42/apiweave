@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { FolderKanban, GitBranch, Key, Globe, type LucideIcon } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";

@@ -139,7 +139,7 @@ import useEnvironmentStore, {
 import { createCanvasCommandRegistry } from "../commands/registry";
 import { tutorialLibraryHref } from "../constants/tutorials/curriculum";
 import { resolveTutorialScope } from "../utils/tutorialScope";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
 import type { StepContextMenuState } from "../types/StepContextMenuState";

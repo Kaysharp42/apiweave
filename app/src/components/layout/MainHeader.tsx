@@ -1,5 +1,5 @@
 import { useContext, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { AppContext } from "../../App";
 import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
 import { Tooltip } from "../atoms/Tooltip";

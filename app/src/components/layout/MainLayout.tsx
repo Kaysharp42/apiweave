@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { AppNavBar } from "./AppNavBar";
 import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";

@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
 import { GitBranch, Settings, UserRound } from "lucide-react";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";

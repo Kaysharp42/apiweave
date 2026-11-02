@@ -12,7 +12,7 @@ const signalWorkflowsRefreshMock = vi.hoisted(() => vi.fn());
 const signalCollectionsRefreshMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../utils/apiweaveClient", () => ({ onAgentWrite: onAgentWriteMock }));
-vi.mock("react-router-dom", () => ({ useNavigate: () => navigateMock }));
+vi.mock("react-router", () => ({ useNavigate: () => navigateMock }));
 vi.mock("../contexts/WorkspaceContext", () => ({
   useWorkspace: () => ({
     refresh: refreshWorkspacesMock,
