@@ -21,7 +21,7 @@ jobs:
 
       - name: Run fallow audit
         id: fallow-audit
-        uses: fallow-rs/fallow@1f5a08d9addde37d81aefcf10407600307da393b # v3.35.0
+        uses: fallow-rs/fallow@3d63c430df08c1fbc1c97085db63b3d622ef82a0 # v3.38.0
         with:
           root: app
           command: audit
