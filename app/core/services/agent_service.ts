@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
+import path from "node:path"
 import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import type { AgentAvailability } from "@shared/types/AgentAvailability"
 import type { AgentScope } from "@shared/types/AgentScope"
@@ -706,6 +707,7 @@ export class AgentService {
       scopeId: request.scope.id,
       scopeName: this.scopeNameFor(request.workspaceId, request.scope),
       cwd,
+      codeMap: detectCodeMap(cwd),
       // All three halves have to hold: an agent that takes no MCP carrier —
       // argv flags, config variables, or a launcher config — never gets the
       // server, and neither does any agent while the bridge is off. Telling an
@@ -1302,6 +1304,15 @@ function unknownAvailability(agentKey: string): AgentAvailability {
     detail: "Availability has not been checked yet — use Refresh",
     checkedAt: Date.now(),
   }
+}
+
+/**
+ * What the folder offers for learning the API under test, by path alone: the
+ * briefing carries a pointer, never a byte of the repository's own content.
+ */
+function detectCodeMap(cwd: string): "graph" | "tool" | "none" {
+  if (fs.existsSync(path.join(cwd, "graphify-out", "graph.json"))) return "graph"
+  return resolveExecutable("graphify") === undefined ? "none" : "tool"
 }
 
 function isDirectory(candidate: string): boolean {

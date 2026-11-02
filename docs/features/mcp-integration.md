@@ -606,6 +606,39 @@ Cursor, VS Code, and OpenCode. Codex uses the CLI command above.
 7. Summarize node status metadata. Ask the user to inspect the desktop response
    panel when diagnosis requires raw payload content.
 
+## Giving the agent a map of your code
+
+An agent learning the API under test (routes, request and response shapes, auth)
+usually greps your repository, which spends a lot of tokens. A code map lets it
+query instead. [graphify](https://github.com/Graphify-Labs/graphify) builds a
+knowledge graph of a folder into `graphify-out/` and answers
+`graphify query "<route or handler>"`, `graphify path A B` and
+`graphify explain X`. APIWeave does not install or run it for you.
+
+Paste this into your agent (Settings → Agents shows the same prompt):
+
+```text
+Install graphify for this repository: run `uv tool install graphifyy` (or `pipx install graphifyy`), then `graphify install --project`, then build the graph with `/graphify .`. Ask me whether to commit or gitignore `graphify-out/`.
+```
+
+The official PyPI package is `graphifyy` (double y); other `graphify*` packages
+are not affiliated. [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)
+is an alternative that exposes a code graph over MCP.
+
+When an agent is launched from APIWeave, it checks the project's folder by path
+only (no repository file is read) and adjusts the session briefing:
+
+| Folder state | What the agent is told |
+| --- | --- |
+| `graphify-out/graph.json` exists | Query it with `graphify query`, `graphify path` and `graphify explain` instead of grepping; `GRAPH_REPORT.md` for broad context only. |
+| No graph, `graphify` on PATH | graphify is installed and `/graphify .` would build a map; suggest it to you rather than running it unasked. |
+| Neither | Nothing. |
+
+Only agents that can carry a per-session briefing receive this: Claude Code,
+OpenCode, Aider and Pi. Every other agent that connects to the bridge gets one
+sentence in the `start-here` guide telling it to query `graphify-out/` with
+`graphify query` if the repository has one.
+
 ## Troubleshooting
 
 - **Connection refused:** APIWeave must be running and the MCP bridge must be

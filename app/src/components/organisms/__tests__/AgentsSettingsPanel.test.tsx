@@ -124,6 +124,57 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+describe("AgentsSettingsPanel — code map card", () => {
+  beforeEach(() => localStorage.removeItem("apiweave.codeMapCard.dismissed"));
+
+  it("offers the graphify prompt and the PyPI warning", async () => {
+    render(<AgentsSettingsPanel />);
+
+    expect(
+      await screen.findByText("Give your agent a map of your code"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/uv tool install graphifyy/)).toBeInTheDocument();
+    expect(screen.getByText(/double y/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /codebase-memory-mcp/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens external links through window.open", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    render(<AgentsSettingsPanel />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: /graphify on GitHub/ }),
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      "https://github.com/Graphify-Labs/graphify",
+      "_blank",
+    );
+    open.mockRestore();
+  });
+
+  it("hides when dismissed and stays hidden after a remount", async () => {
+    const { unmount } = render(<AgentsSettingsPanel />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Dismiss code map tip" }),
+    );
+
+    expect(
+      screen.queryByText("Give your agent a map of your code"),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem("apiweave.codeMapCard.dismissed")).toBe("1");
+
+    unmount();
+    render(<AgentsSettingsPanel />);
+    await screen.findByText("Mine");
+    expect(
+      screen.queryByText("Give your agent a map of your code"),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("AgentsSettingsPanel", () => {
   /**
    * The first open probes every built-in CLI on PATH, which is slow enough to

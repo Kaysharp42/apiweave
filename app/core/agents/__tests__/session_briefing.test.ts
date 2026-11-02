@@ -102,6 +102,55 @@ describe("session briefing text", () => {
     expect(bare).toContain("without APIWeave's MCP server")
   })
 
+  /** B5: the absence is stated once, not repeated further down. */
+  it("states the missing MCP server only once", () => {
+    const bare = buildSessionBriefing(context({ mcpWired: false }))
+
+    expect(bare.split("without APIWeave's MCP server")).toHaveLength(2)
+  })
+
+  /** B2: the first read is the outline, not the whole graph. */
+  it("tells the agent to read the outline first, then the nodes it touches", () => {
+    const workflow = buildSessionBriefing(context())
+    const project = buildSessionBriefing(context({ scopeKind: "project", scopeId: "col-7" }))
+
+    for (const text of [workflow, project]) {
+      expect(text).toContain('`workflows_get`')
+      expect(text).toContain('`view: "outline"`')
+      expect(text).toContain("`nodes`")
+    }
+  })
+
+  describe("code map", () => {
+    it("points at graphify queries when a graph exists", () => {
+      const text = buildSessionBriefing(context({ codeMap: "graph" }))
+
+      expect(text).toContain("## A code map exists for this folder")
+      expect(text).toContain('graphify query "<route or handler>"')
+      expect(text).toContain("graphify path A B")
+      expect(text).toContain("graphify explain X")
+      expect(text).toContain("GRAPH_REPORT.md")
+    })
+
+    it("suggests building a map when only the tool is installed", () => {
+      const text = buildSessionBriefing(context({ codeMap: "tool" }))
+
+      expect(text).toContain("`graphify` is installed")
+      expect(text).toContain("/graphify .")
+      expect(text).not.toContain("graphify update")
+      expect(text).toContain("rather than running it unasked")
+      expect(text).not.toContain("graphify query")
+    })
+
+    it("says nothing when there is neither", () => {
+      const absent = buildSessionBriefing(context())
+      const none = buildSessionBriefing(context({ codeMap: "none" }))
+
+      expect(none).toBe(absent)
+      expect(none).not.toContain("graphify")
+    })
+  })
+
   /** The pointer that makes the rest of the documentation findable at all. */
   it("points at the start-here guide", () => {
     expect(buildSessionBriefing(context())).toContain("apiweave://guide/start-here")

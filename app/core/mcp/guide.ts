@@ -65,6 +65,10 @@ node and follows edges. Nothing runs unless an edge leads to it.
    better starting point for assertions than writing them by hand — and the
    canonical way to get a path right on the first try.
 
+If the user's repository has a \`graphify-out/\` folder, query it with
+\`graphify query "<route or handler>"\` instead of grepping when learning the API
+under test.
+
 ## Minimal working graph
 
 \`\`\`json
