@@ -37,12 +37,12 @@ export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 p-4 bg-surface-raised dark:bg-surface-dark-raised">
       <div>
         <label className="label py-1 px-0">
-          <span className="label-text text-xs font-medium text-text-primary dark:text-text-primary-dark">
+          <span className="text-xs font-medium text-text-primary dark:text-text-primary-dark">
             Actor
           </span>
         </label>
         <select
-          className="select select-bordered select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+          className="select select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           value={filters.actor ?? ""}
           onChange={(e) =>
             onChange(withField(filters, "actor", e.target.value))
@@ -76,12 +76,12 @@ export function AuditFilters({ filters, onChange }: AuditFiltersProps) {
 
       <div>
         <label className="label py-1 px-0">
-          <span className="label-text text-xs font-medium text-text-primary dark:text-text-primary-dark">
+          <span className="text-xs font-medium text-text-primary dark:text-text-primary-dark">
             Scope
           </span>
         </label>
         <select
-          className="select select-bordered select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+          className="select select-sm w-full rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border-border dark:border-border-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           value={filters.scope ?? ""}
           onChange={(e) =>
             onChange(withField(filters, "scope", e.target.value))

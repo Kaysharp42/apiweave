@@ -260,7 +260,7 @@ export function AgentLaunchButton({
   const errorPopover =
     error === null ? null : (
       <div
-        className="absolute top-9 right-0 z-50 flex max-w-node items-start gap-1 rounded-xs border border-status-error/40 bg-surface-raised px-3 py-2 dark:bg-surface-dark-raised"
+        className="absolute top-9 right-0 z-50 flex max-w-80 items-start gap-1 rounded-xs border border-status-error/40 bg-surface-raised px-3 py-2 dark:bg-surface-dark-raised"
         role="alert"
       >
         <p className="min-w-0 flex-1 text-xs text-status-error">{error}</p>

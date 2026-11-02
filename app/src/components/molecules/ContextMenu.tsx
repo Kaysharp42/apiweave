@@ -82,7 +82,7 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
       ref={containerRef}
       role="menu"
       aria-label={label}
-      className="fixed z-50 min-w-node-compact max-w-node overflow-hidden rounded-xs border border-border bg-surface-raised py-1 shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+      className="fixed z-50 min-w-50 max-w-80 overflow-hidden rounded-xs border border-border bg-surface-raised py-1 shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
       style={{ left: position.left, top: position.top }}
     >
       {items.map((item, index) => (

@@ -36,10 +36,10 @@ export function Toggle({
   };
 
   return (
-    <div className="form-control">
+    <div className="flex flex-col">
       <label htmlFor={id} className="label cursor-pointer gap-2">
         {label && (
-          <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">
+          <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {label}
           </span>
         )}

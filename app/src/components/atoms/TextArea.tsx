@@ -69,10 +69,10 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
     }, [value, autoResize]);
 
     return (
-      <div className="form-control w-full">
+      <div className="flex flex-col w-full">
         {label && (
           <label htmlFor={id} className="label px-0 py-1">
-            <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">
+            <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
               {label}
             </span>
           </label>
@@ -93,14 +93,14 @@ export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
         />
         {error && (
           <label className="label px-0 py-1">
-            <span className="label-text-alt text-xs text-status-error dark:text-(--aw-status-error)">
+            <span className="text-xs text-status-error dark:text-(--aw-status-error)">
               {error}
             </span>
           </label>
         )}
         {!error && helperText && (
           <label className="label px-0 py-1">
-            <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">
+            <span className="text-xs text-text-muted dark:text-text-muted-dark">
               {helperText}
             </span>
           </label>

@@ -27,10 +27,10 @@ export function FormField({
   const hintId = `${id}-hint`;
 
   return (
-    <div className={`form-control w-full ${className}`}>
+    <div className={`flex flex-col w-full ${className}`}>
       {label && (
         <label htmlFor={id} className="label py-1 px-0">
-          <span className="label-text text-sm font-medium text-text-primary dark:text-text-primary-dark">
+          <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
             {label}
             {required && (
               <span className="text-status-error ml-0.5" aria-hidden="true">
@@ -48,15 +48,12 @@ export function FormField({
       {(error || hint) && (
         <label className="label py-1 px-0" id={hintId}>
           {error ? (
-            <span className="label-text-alt flex items-center gap-1 text-xs text-status-error dark:text-(--aw-status-error)">
-              <AlertTriangle
-                className="w-3 h-3 shrink-0"
-                aria-hidden="true"
-              />
+            <span className="flex items-center gap-1 text-xs text-status-error dark:text-(--aw-status-error)">
+              <AlertTriangle className="w-3 h-3 shrink-0" aria-hidden="true" />
               {error}
             </span>
           ) : (
-            <span className="label-text-alt text-xs text-text-muted dark:text-text-muted-dark">
+            <span className="text-xs text-text-muted dark:text-text-muted-dark">
               {hint}
             </span>
           )}

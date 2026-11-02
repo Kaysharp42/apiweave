@@ -1,4 +1,10 @@
-@import "tailwindcss";
+/*
+  Scan only what the renderer renders. Without `source(none)` Tailwind 4 walks
+  the whole base directory (`core/`, `electron/`, `shared/`, docs), where
+  Tailwind 3 read `./index.html` and the source files under `./src` only. Paths
+  are relative to this file (`app/src/index.css`).
+*/
+@import "tailwindcss" source(none);
 
 /* Design system base styles (tokens, fonts, scrollbars) */
 @import "./styles/base.css" layer(base);
@@ -10,6 +16,13 @@
 @import "./styles/agent-terminal.css" layer(base);
 
 /*
+  `@source` must follow every `@import`: an `@import` after any other statement
+  is invalid CSS, and the build drops it rather than failing.
+*/
+@source "../index.html";
+@source "./";
+
+/*
   The app toggles dark mode with the `.dark` class on <html>, so Tailwind's
   `dark:` variant must follow the class rather than the media query.
 */
@@ -18,10 +31,24 @@
 /*
   daisyUI component layer. `themes: false` keeps the built-in themes out; the
   two `daisyui/theme` blocks below are the only themes this app ships.
+
+  `include` is an exact allowlist over daisyUI's base files, components and
+  utilities (it emits nothing else, so a component added to the markup must be
+  added here). Everything named is a class the renderer applies: the navbar in
+  MainHeader, `label` in the form atoms, `select` in AuditFilters and
+  moveDialogClasses, `checkbox` in EnvironmentForm/WorkflowJsonEditor,
+  `toggle` in the Toggle atom, `loading` in the Spinner atom, `collapse` in
+  NodePaletteSection and `divider` in MCPManager. The six base files are kept
+  whole so the reset, root colours, scrollbar gutter/lock and noise token stay
+  identical to the unrestricted build — they are a handful of `:root` rules,
+  not component CSS. `join`, `glass`, `radius` and `typography` are unused.
 */
 @plugin "daisyui" {
   themes: false;
   logs: false;
+  include:
+    rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock,
+    navbar, label, select, checkbox, toggle, loading, collapse, divider;
 }
 
 /*
@@ -69,7 +96,7 @@
 @plugin "daisyui/theme" {
   name: "apiweave-dark";
   default: false;
-  prefersdark: true;
+  prefersdark: false;
   color-scheme: dark;
 
   --color-primary: #2dd4bf;
@@ -225,9 +252,10 @@
 }
 
 /*
-  Tailwind 4 changes the default border colour from gray-200 to currentcolor.
-  This keeps the v3 default for elements that rely on a bare `border` utility;
-  everything with an explicit `border-*` token is unaffected.
+  A bare `border` takes the theme's hairline token. Tailwind 4's default is
+  currentcolor, which turns a borderless-looking divider into a line in the
+  text colour; `--color-border` (above) is the alpha-of-tint hairline and it
+  follows the theme. Everything with an explicit `border-*` is unaffected.
 */
 @layer base {
   *,
@@ -235,7 +263,7 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentcolor);
+    border-color: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
   }
 }
 

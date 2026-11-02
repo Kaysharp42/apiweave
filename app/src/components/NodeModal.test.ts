@@ -248,7 +248,7 @@ test("NodeModal uses Modal molecule with focus trapping", () => {
 
 test("NodeModal uses CSS variable tokens for colors", () => {
   assert.match(httpRequestOutputSource, /statusVariant\(statusCode\)/);
-  assert.match(badgeSource, /--aw-status-info/);
+  assert.match(badgeSource, /\(--aw-status-info\)/);
 });
 
 test("NodeModal uses focus-visible outlines on interactive elements", () => {

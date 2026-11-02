@@ -166,7 +166,8 @@
   --aw-glow-success:
     0 0 0 1px color-mix(in srgb, var(--aw-status-success) 75%, transparent),
     0 0 16px -8px color-mix(in srgb, var(--aw-status-success) 55%, transparent);
-  --aw-glow-select: 0 0 0 2px color-mix(in srgb, var(--aw-primary) 60%, transparent);
+  --aw-glow-select: 0 0 0 2px
+    color-mix(in srgb, var(--aw-primary) 60%, transparent);
 
   /* Node motion — the canvas uses this four-step set rather than the
      three ease-in-out chrome transitions above. */
@@ -285,6 +286,23 @@ body {
     color var(--aw-transition-normal);
 }
 
+/* Tailwind 4's preflight stopped giving buttons a pointer cursor, so every raw
+   <button> in the app (menu items, pills, toolbar actions) shows the arrow.
+   Restored globally rather than per component; disabled controls keep the
+   arrow, which is the one place it is telling the truth. */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  cursor: pointer;
+}
+
+/* Tailwind 4 made placeholders currentColor at 50%, which ties the hint to the
+   field's text colour. `--aw-text-muted` is the placeholder colour (see its
+   definition above); utilities such as `placeholder:text-*` still win, because
+   this file is imported into `layer(base)` and utilities come later. */
+::placeholder {
+  color: var(--aw-text-muted);
+}
+
 /* Headings use display font (Inter — single family, weight-driven hierarchy) */
 h1,
 h2,
@@ -336,45 +354,4 @@ pre,
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: var(--aw-focus-ring-offset);
   border-radius: var(--aw-radius-md);
-}
-
-/* ──────────────────────────────────────────────
-   DaisyUI Form Controls — Dark Mode Overrides
-   ────────────────────────────────────────────── */
-.dark .input,
-.dark .textarea,
-.dark .select {
-  background-color: var(--aw-surface-raised);
-  border-color: #4b5563;
-  color: var(--aw-text-primary);
-}
-
-.dark .input::placeholder,
-.dark .textarea::placeholder {
-  color: var(--aw-text-muted);
-}
-
-.dark .input:focus,
-.dark .textarea:focus,
-.dark .select:focus {
-  border-color: var(--aw-primary);
-  outline-color: var(--aw-primary);
-}
-
-/* Ensure input borders are always visible in dark mode */
-.dark .input-bordered,
-.dark .textarea-bordered,
-.dark .select-bordered {
-  border-color: #4b5563 !important;
-}
-
-.dark .input-bordered:focus,
-.dark .textarea-bordered:focus,
-.dark .select-bordered:focus {
-  border-color: var(--aw-primary) !important;
-}
-
-/* DaisyUI buttons — dark mode text fix */
-.dark .btn {
-  color: inherit;
 }
