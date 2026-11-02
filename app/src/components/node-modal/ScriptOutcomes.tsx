@@ -7,7 +7,7 @@ const PHASE_LABEL = { preRequest: "Pre-request script", postResponse: "Post-resp
 /** What a request's scripts did on the last run: their error, `aw.test` results and console output. */
 export function ScriptOutcomes({ scripts }: ScriptOutcomesProps) {
   return (
-    <div className="mb-3 max-h-48 space-y-3 overflow-y-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+    <div className="mb-3 max-h-48 space-y-3 overflow-y-auto rounded-xs border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
       {scripts.map((script) => {
         const failed = script.tests.filter((test) => !test.passed).length;
         return (
@@ -33,9 +33,9 @@ export function ScriptOutcomes({ scripts }: ScriptOutcomesProps) {
                 {script.tests.map((test, index) => (
                   <li key={`${test.name}-${index}`} className="flex items-start gap-1.5 text-xs">
                     {test.passed ? (
-                      <Check className="mt-0.5 h-3 w-3 flex-shrink-0 text-status-success dark:text-status-success-dark" aria-label="passed" />
+                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-status-success dark:text-status-success-dark" aria-label="passed" />
                     ) : (
-                      <X className="mt-0.5 h-3 w-3 flex-shrink-0 text-status-error dark:text-status-error-dark" aria-label="failed" />
+                      <X className="mt-0.5 h-3 w-3 shrink-0 text-status-error dark:text-status-error-dark" aria-label="failed" />
                     )}
                     <span className="text-text-primary dark:text-text-primary-dark">{test.name}</span>
                     {test.error !== undefined && (
@@ -46,7 +46,7 @@ export function ScriptOutcomes({ scripts }: ScriptOutcomesProps) {
               </ul>
             )}
             {script.logs.length > 0 && (
-              <pre className="whitespace-pre-wrap break-all rounded-sm bg-surface-overlay p-2 font-mono text-[11px] text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+              <pre className="whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-[11px] text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
                 {script.logs.join("\n")}
               </pre>
             )}

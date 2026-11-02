@@ -256,7 +256,7 @@ const AssertionForm = ({ onAdd }: AssertionFormProps) => {
         type="button"
         onClick={handleAdd}
         aria-label="Add assertion"
-        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-xs font-semibold rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none bg-primary dark:bg-primary-light"
+        className="w-full px-2 py-1 text-surface-raised dark:text-surface-dark-raised text-xs font-semibold rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none bg-primary dark:bg-primary-light"
       >
         Add Assertion
       </button>
@@ -282,10 +282,10 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
 
     return (
       <span
-        className={`flex-shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip ${
+        className={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip ${
           failed
-            ? "bg-[color-mix(in_srgb,var(--aw-status-error)_12%,transparent)] text-[var(--aw-status-error)]"
-            : "bg-[color-mix(in_srgb,var(--aw-status-success)_12%,transparent)] text-[var(--aw-status-success)]"
+            ? "bg-[color-mix(in_srgb,var(--aw-status-error)_12%,transparent)] text-(--aw-status-error)"
+            : "bg-[color-mix(in_srgb,var(--aw-status-success)_12%,transparent)] text-(--aw-status-success)"
         }`}
       >
         {failed
@@ -390,7 +390,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
         { label: "duration", value: null },
       ]}
       progress={status === "running" ? "indeterminate" : null}
-      className={`min-w-[250px] ${data?.invalid ? "ring-2 ring-[var(--aw-status-error)]" : ""}`}
+      className={`min-w-[250px] ${data?.invalid ? "ring-2 ring-(--aw-status-error)" : ""}`}
     >
       {({ isExpanded }) => (
         <div className={isExpanded ? "p-3 space-y-1.5" : ""}>
@@ -430,7 +430,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                             {data.assertionStats?.passed?.some(
                               (p) => p.index === index,
                             ) && (
-                              <div className="mb-1 text-xs font-semibold text-[var(--aw-status-success)]">
+                              <div className="mb-1 text-xs font-semibold text-(--aw-status-success)">
                                 &check; Passed
                               </div>
                             )}
@@ -438,10 +438,10 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                               (f) => f.index === index,
                             ) && (
                               <div className="mb-1 text-xs">
-                                <div className="font-semibold text-[var(--aw-status-error)]">
+                                <div className="font-semibold text-(--aw-status-error)">
                                   &times; Failed
                                 </div>
-                                <div className="mt-0.5 text-[var(--aw-status-error)]">
+                                <div className="mt-0.5 text-(--aw-status-error)">
                                   {
                                     data.assertionStats.failed.find(
                                       (f) => f.index === index,
@@ -451,7 +451,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                               </div>
                             )}
                             <div className="text-xs">
-                              <div className="font-semibold text-[var(--aw-status-success)]">
+                              <div className="font-semibold text-(--aw-status-success)">
                                 {assertion.source === "prev"
                                   ? "{{prev."
                                   : assertion.source === "variables"
@@ -482,7 +482,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                                 setEditingIndex(index);
                                 setEditDraft({ ...assertion });
                               }}
-                              className="px-1.5 py-0.5 text-status-warning dark:text-status-warning-dark bg-[var(--aw-status-warning)]/10 border border-status-warning/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
+                              className="px-1.5 py-0.5 text-status-warning dark:text-status-warning-dark bg-(--aw-status-warning)/10 border border-status-warning/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                               title="Edit assertion"
                             >
                               <Pencil className="w-3 h-3" />
@@ -490,7 +490,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                             <button
                               type="button"
                               onClick={() => handleDeleteAssertion(index)}
-                              className="px-1.5 py-0.5 text-status-error dark:text-status-error-dark bg-[var(--aw-status-error)]/10 border border-status-error/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none"
+                              className="px-1.5 py-0.5 text-status-error dark:text-status-error-dark bg-(--aw-status-error)/10 border border-status-error/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                               title="Delete assertion"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -502,14 +502,14 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                   ))}
                 </div>
               ) : (
-                <div className="text-xs italic py-2 text-[var(--aw-node-text-muted)]">
+                <div className="text-xs italic py-2 text-(--aw-node-text-muted)">
                   No assertions yet. Add one above.
                 </div>
               )}
 
-              <div className="text-xs space-y-1 p-2 rounded-node-ctl border bg-[var(--aw-status-info)]/5 border-status-info/30">
+              <div className="text-xs space-y-1 p-2 rounded-node-ctl border bg-(--aw-status-info)/5 border-status-info/30">
                 <p className="flex items-center gap-1">
-                  <Info className="w-3 h-3 flex-shrink-0 text-[var(--aw-status-info)]" />
+                  <Info className="w-3 h-3 shrink-0 text-(--aw-status-info)" />
                   <span>
                     <strong>Pass/Fail:</strong> Connect the green handle for
                     all-pass, red for any-fail.
@@ -517,22 +517,22 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                 </p>
                 <p>
                   Use{" "}
-                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-[var(--aw-status-info)]">
+                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-(--aw-status-info)">
                     prev.*
                   </code>{" "}
                   to reference previous node results, or{" "}
-                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-[var(--aw-status-info)]">
+                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-(--aw-status-info)">
                     variables.*
                   </code>{" "}
                   for workflow variables.
                 </p>
                 <p className="text-xs">
                   <strong>Path examples:</strong>{" "}
-                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-[var(--aw-status-info)]">
+                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-(--aw-status-info)">
                     body.data[0].id
                   </code>
                   ,
-                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-[var(--aw-status-info)]">
+                  <code className="px-1.5 py-0.5 rounded-node-chip text-xs font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-(--aw-status-info)">
                     response.user.email
                   </code>
                 </p>

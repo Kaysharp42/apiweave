@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router";
 import { FolderKanban, ArrowLeft, FileText, Plus } from "lucide-react";
 import { Button } from "../components/atoms/Button";
 import { Card } from "../components/molecules/Card";
@@ -229,7 +229,7 @@ export function WorkspaceProjectPage() {
       <div className="px-6 py-8 border-b border-border dark:border-border-dark">
         <div className="flex items-center gap-3">
           <div
-            className="w-10 h-10 rounded flex items-center justify-center border border-border dark:border-border-dark"
+            className="w-10 h-10 rounded-sm flex items-center justify-center border border-border dark:border-border-dark"
             style={{
               backgroundColor: project.color
                 ? `${project.color}20`
@@ -309,7 +309,7 @@ export function WorkspaceProjectPage() {
                         Assign Existing Workflow
                       </Button>
                       {showAssignDropdown && (
-                        <div className="absolute top-full left-0 right-0 mt-1 rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised max-h-60 overflow-y-auto z-10">
+                        <div className="absolute top-full left-0 right-0 mt-1 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised max-h-60 overflow-y-auto z-10">
                           {unassignedWorkflows.map((wf) => (
                             <button
                               key={wf.workflowId}
@@ -319,7 +319,7 @@ export function WorkspaceProjectPage() {
                                 void handleAssignWorkflow(wf.workflowId)
                               }
                             >
-                              <FileText className="w-4 h-4 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+                              <FileText className="w-4 h-4 shrink-0 text-text-muted dark:text-text-muted-dark" />
                               <span className="truncate text-text-primary dark:text-text-primary-dark">
                                 {wf.name}
                               </span>
@@ -345,9 +345,9 @@ export function WorkspaceProjectPage() {
                 }
                 className="cursor-pointer"
               >
-                <Card className="p-4 hover:border-primary dark:hover:border-primary-light transition-colors duration-200 motion-reduce:transition-none rounded">
+                <Card className="p-4 hover:border-primary dark:hover:border-primary-light transition-colors duration-200 motion-reduce:transition-none rounded-sm">
                   <div className="flex items-center gap-3">
-                    <FileText className="w-5 h-5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+                    <FileText className="w-5 h-5 text-text-muted dark:text-text-muted-dark shrink-0" />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
                         {workflow.name}

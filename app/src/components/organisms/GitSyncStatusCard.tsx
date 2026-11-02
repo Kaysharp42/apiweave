@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
@@ -83,19 +83,19 @@ export function GitSyncStatusCard({
         {view.explanation}
       </p>
       {view.detail !== null && (
-        <p className="max-h-20 overflow-y-auto break-words font-mono text-xxs text-text-muted dark:text-text-muted-dark">
+        <p className="max-h-20 overflow-y-auto wrap-break-word font-mono text-xxs text-text-muted dark:text-text-muted-dark">
           {view.detail}
         </p>
       )}
       <ul className="space-y-0.5 text-xs text-text-muted dark:text-text-muted-dark">
         {lastSyncLines(status).map((line) => (
-          <li key={line} className="break-words">
+          <li key={line} className="wrap-break-word">
             {line}
           </li>
         ))}
       </ul>
       {actions.error !== null && (
-        <p role="alert" className="text-xs text-status-error dark:text-[var(--aw-status-error)]">
+        <p role="alert" className="text-xs text-status-error dark:text-(--aw-status-error)">
           {actions.error}
         </p>
       )}

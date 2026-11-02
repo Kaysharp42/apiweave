@@ -35,7 +35,7 @@ function TrackedGitSyncControl({
             </PopoverButton>
             <PopoverPanel
               anchor={{ to: "bottom end", gap: 6, padding: 8 }}
-              className="z-50 w-80 rounded border border-border bg-surface-raised p-3 shadow-overlay focus:outline-none dark:border-border-dark dark:bg-surface-dark-raised"
+              className="z-50 w-80 rounded-sm border border-border bg-surface-raised p-3 shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
             >
               <GitSyncStatusCard
                 status={status}

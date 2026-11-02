@@ -153,7 +153,7 @@ The palette is intentionally restrained. One ink-teal accent on a neutral base â
 flipping the theme is one value and not a parallel palette that can drift.
 Anything that needs a *hex* per theme (strong ink, the accent, status, methods)
 says so explicitly. `src/styles/base.css` is the only file where a neutral
-value is written down; `tailwind.config.js` resolves through it.
+value is written down; the `@theme` block in `src/index.css` resolves through it.
 
 - **Ink tint** (`58 48 38` light / `250 250 250` dark): a warm near-black, and
   zinc-50. The one value a theme flip changes.

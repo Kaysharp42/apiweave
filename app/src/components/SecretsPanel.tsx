@@ -72,7 +72,7 @@ export default function SecretsPanel({
         )}
       >
         <div className="p-5 space-y-4">
-          <div className="p-4 bg-surface-overlay dark:bg-surface-dark-overlay rounded border border-border dark:border-border-dark">
+          <div className="p-4 bg-surface-overlay dark:bg-surface-dark-overlay rounded-sm border border-border dark:border-border-dark">
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
               Secrets are encrypted in your browser before being sent to the
               server. Values are never displayed after saving — only their
@@ -96,9 +96,9 @@ export default function SecretsPanel({
               {secretKeys.map((key) => (
                 <div
                   key={key}
-                  className="flex items-center gap-3 p-3 bg-surface-raised dark:bg-surface-dark-raised rounded border border-border dark:border-border-dark"
+                  className="flex items-center gap-3 p-3 bg-surface-raised dark:bg-surface-dark-raised rounded-sm border border-border dark:border-border-dark"
                 >
-                  <Lock className="w-4 h-4 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+                  <Lock className="w-4 h-4 text-text-muted dark:text-text-muted-dark shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-sm text-text-primary dark:text-text-primary-dark break-all">
                       {key}
@@ -128,11 +128,11 @@ export default function SecretsPanel({
             </div>
           )}
 
-          <div className="p-4 bg-[var(--aw-status-info)]/5 rounded border border-[var(--aw-status-info)]/20">
+          <div className="p-4 bg-(--aw-status-info)/5 rounded-sm border border-(--aw-status-info)/20">
             <p className="text-sm font-semibold text-text-primary dark:text-text-primary-dark mb-2">
               Usage in HTTP Requests:
             </p>
-            <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded break-all">
+            <p className="text-xs font-mono text-text-secondary dark:text-text-secondary-dark bg-surface-raised dark:bg-surface-dark-raised p-2 rounded-sm break-all">
               {"{{"}
               {hasKeys ? secretKeys[0] : "secretName"}
               {"}}"}

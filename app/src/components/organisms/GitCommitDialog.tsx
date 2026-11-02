@@ -27,10 +27,10 @@ function ChangeRow({ change }: { readonly change: WorkspacePendingChange }) {
   return (
     <li className="flex items-center gap-2 text-sm text-text-primary dark:text-text-primary-dark">
       <Icon
-        className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary dark:text-text-secondary-dark"
+        className="h-3.5 w-3.5 shrink-0 text-text-secondary dark:text-text-secondary-dark"
         aria-hidden="true"
       />
-      <span className="min-w-0 break-words">
+      <span className="min-w-0 wrap-break-word">
         {CHANGE_WORDS[change.change]} {change.kind} &ldquo;{change.name}&rdquo;
       </span>
     </li>
@@ -41,7 +41,7 @@ function PendingChanges({ list }: { readonly list: PendingChangesList }) {
   if (list.state === "loading") return <Spinner size="sm" />;
   if (list.state === "failed") {
     return (
-      <p role="alert" className="text-xs text-status-error dark:text-[var(--aw-status-error)]">
+      <p role="alert" className="text-xs text-status-error dark:text-(--aw-status-error)">
         Couldn&apos;t list the changes: {list.message}
       </p>
     );

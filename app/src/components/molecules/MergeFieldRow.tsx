@@ -62,7 +62,7 @@ export function MergeFieldRow({
       tabIndex={-1}
       onFocus={onFocus}
       aria-label={label}
-      className="rounded-sm border border-border px-3 py-3 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark"
+      className="rounded-xs border border-border px-3 py-3 focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark"
     >
       <MergeFieldHeader
         heading={heading}

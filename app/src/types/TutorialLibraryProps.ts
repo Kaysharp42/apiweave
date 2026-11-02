@@ -15,7 +15,7 @@ export interface TutorialLibraryProps {
   readonly query: string;
   readonly onQueryChange: (query: string) => void;
   /** Focus target for the library heading when it becomes the whole view. */
-  readonly headingRef?: RefObject<HTMLHeadingElement>;
+  readonly headingRef?: RefObject<HTMLHeadingElement | null>;
   /** Returns to the workspace canvas, for the library view. */
   readonly onBackToWorkspace: () => void;
   /**

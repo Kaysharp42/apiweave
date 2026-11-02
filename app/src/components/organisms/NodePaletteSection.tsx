@@ -34,7 +34,7 @@ export function NodePaletteSection({
         aria-label={`Toggle ${section.title}`}
       />
       <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
-        <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark flex-shrink-0" />
+        <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark shrink-0" />
         <span>{section.title}</span>
         <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-[9px] font-mono text-text-muted dark:text-text-muted-dark">
           {section.nodes.length}
@@ -46,14 +46,14 @@ export function NodePaletteSection({
             const isEditing = node.presetId === editingPresetId;
             const showPresetActions = node.presetId !== undefined && !isEditing;
             const rowClassName =
-              "group flex w-full flex-col gap-0.5 rounded-sm border border-transparent px-2.5 py-1.5 text-left transition-colors motion-reduce:transition-none hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay";
+              "group flex w-full flex-col gap-0.5 rounded-xs border border-transparent px-2.5 py-1.5 text-left transition-colors motion-reduce:transition-none hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay";
 
             const nodeContents = (
               <>
                 <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
                   {node.method && (
                     <span
-                      className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-sm ${NodePaletteMethodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
+                      className={`inline-block px-1.5 py-0.5 text-[10px] font-mono border rounded-xs ${NodePaletteMethodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
                     >
                       {node.method}
                     </span>
@@ -74,13 +74,13 @@ export function NodePaletteSection({
                       }}
                       onBlur={() => setEditingPresetId(null)}
                       aria-label={`New name for ${node.label}`}
-                      className="min-w-0 flex-1 rounded-sm border border-border bg-surface-raised px-1.5 py-0.5 text-sm text-text-primary transition-[border-color,outline] duration-[var(--aw-transition-fast)] focus:border-primary focus:outline-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
+                      className="min-w-0 flex-1 rounded-xs border border-border bg-surface-raised px-1.5 py-0.5 text-sm text-text-primary transition-[border-color,outline] duration-(--aw-transition-fast) focus:border-primary focus:outline-hidden focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:focus:border-primary-light"
                     />
                   ) : (
                     <span className="font-medium truncate">{node.label}</span>
                   )}
                   {showPresetActions && (
-                    <span className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
                         onClick={(event) => {
@@ -88,7 +88,7 @@ export function NodePaletteSection({
                           setDraftName(node.label);
                           setEditingPresetId(node.presetId!);
                         }}
-                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+                        className="rounded-xs p-0.5 text-text-muted opacity-0 transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
                         title={`Rename preset \"${node.label}\"`}
                         aria-label={`Rename preset ${node.label}`}
                       >
@@ -100,7 +100,7 @@ export function NodePaletteSection({
                           event.stopPropagation();
                           onDeletePreset(node.presetId!, node.label);
                         }}
-                        className="rounded-sm p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
+                        className="rounded-xs p-0.5 text-text-muted opacity-0 transition-colors hover:bg-status-error/10 hover:text-status-error focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) group-hover:opacity-100 motion-reduce:transition-none dark:text-text-muted-dark"
                         title={`Delete preset \"${node.label}\"`}
                         aria-label={`Delete preset ${node.label}`}
                       >
@@ -133,7 +133,7 @@ export function NodePaletteSection({
                   event.preventDefault();
                   onSelect(node);
                 }}
-                className={`${rowClassName} cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[-2px] active:cursor-grabbing`}
+                className={`${rowClassName} cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2 active:cursor-grabbing`}
                 title={`Click to add ${node.label}, or drag it onto the canvas`}
               >
                 {nodeContents}

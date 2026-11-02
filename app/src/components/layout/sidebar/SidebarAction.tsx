@@ -12,7 +12,7 @@ export function SidebarAction({
   className = "",
 }: SidebarActionProps) {
   const baseClasses = [
-    "rounded p-1.5 transition-colors duration-150 motion-reduce:transition-none",
+    "rounded-sm p-1.5 transition-colors duration-150 motion-reduce:transition-none",
     "opacity-40 group-hover:opacity-100 group-focus-within:opacity-100",
     "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
     "cursor-pointer",

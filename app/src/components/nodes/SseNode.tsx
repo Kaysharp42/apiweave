@@ -47,7 +47,7 @@ function SseNode({ id, data, selected }: SseNodeProps) {
         { label: "duration", value: formatDuration(data.executionResult?.duration) },
       ]}
       progress={status === "running" ? "indeterminate" : null}
-      className="min-w-[200px]"
+      className="min-w-node-compact"
     />
   );
 }

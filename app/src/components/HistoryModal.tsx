@@ -261,7 +261,7 @@ export default function HistoryModal({
                   handleRunClick(run);
                 }
               }}
-              className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
+              className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
                 run.runId === highlightRunId
                   ? " bg-primary/5 dark:bg-primary/10 ring-2 ring-inset ring-primary dark:ring-primary-light"
                   : ""
@@ -271,7 +271,7 @@ export default function HistoryModal({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded ${getStatusColor(run.status)}`}
+                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-sm ${getStatusColor(run.status)}`}
                     >
                       <span>{getStatusIcon(run.status)}</span>
                       <span className="uppercase">{run.status}</span>
@@ -319,7 +319,7 @@ export default function HistoryModal({
                   )}
                 </div>
 
-                <div className="flex-shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
+                <div className="shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
                   {onShowTimeline && (
                     <IconButton
                       onClick={(e) => {

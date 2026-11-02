@@ -42,7 +42,7 @@ function SecretRow({
         "border-b border-border/50 dark:border-border-dark/50 transition-colors",
         onSelect ? "cursor-pointer" : "",
         isSelected
-          ? "bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10"
+          ? "bg-(--aw-primary)/5 dark:bg-(--aw-primary)/10"
           : "hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50",
       ].join(" ")}
       onClick={() => onSelect?.(secret)}

@@ -2,7 +2,7 @@ import { act } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { OrgWorkspaceSwitcher } from "../OrgWorkspaceSwitcher";
 import { installGitBridge, trackedStatus } from "../../../__tests__/gitFixtures";
 import type { WorkspaceContextValue } from "../../../types";

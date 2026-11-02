@@ -28,7 +28,7 @@ export function WorkflowItemBadges({
         <Badge
           variant="info"
           size="xs"
-          className="max-w-[7.5rem] min-w-0 truncate"
+          className="max-w-30 min-w-0 truncate"
           title={labels.collection.fullLabel}
         >
           {labels.collection.label}
@@ -39,10 +39,10 @@ export function WorkflowItemBadges({
         <Badge
           variant="secondary"
           size="xs"
-          className="max-w-[7.5rem] min-w-0 truncate"
+          className="max-w-30 min-w-0 truncate"
           title={labels.environment.fullLabel}
         >
-          <Globe className="w-2.5 h-2.5 mr-0.5 flex-shrink-0" />
+          <Globe className="w-2.5 h-2.5 mr-0.5 shrink-0" />
           {labels.environment.label}
         </Badge>
       )}

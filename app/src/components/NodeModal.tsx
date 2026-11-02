@@ -263,8 +263,8 @@ export function NodeModal({
         onChange={(method) => {
           if (isHttpMethod(method)) patchHttpConfig({ method });
         }}
-        buttonClass="flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-overlay px-3 font-mono text-xs font-semibold text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-raised"
-        containerClass="w-28 flex-shrink-0"
+        buttonClass="flex h-10 w-full cursor-pointer items-center justify-between rounded-xs border border-border bg-surface-overlay px-3 font-mono text-xs font-semibold text-text-primary transition-[border-color,outline,background-color] duration-(--aw-transition-fast) ease-in-out hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-raised"
+        containerClass="w-28 shrink-0"
       />
       <TemplateInput
         value={httpConfig.url || ""}
@@ -302,7 +302,7 @@ export function NodeModal({
               <Badge
                 variant="outline"
                 size="sm"
-                className="border-status-running/30 bg-status-running/10 text-status-running dark:border-[var(--aw-status-running)]/30 dark:bg-[var(--aw-status-running)]/10 dark:text-[var(--aw-status-running)]"
+                className="border-status-running/30 bg-status-running/10 text-status-running dark:border-(--aw-status-running)/30 dark:bg-(--aw-status-running)/10 dark:text-(--aw-status-running)"
               >
                 <Timer className="h-3 w-3" />
                 {formatDelayBadge(delayConfig.duration)}
@@ -414,7 +414,7 @@ export function NodeModal({
 
     if (NO_CONFIG_TYPES.includes(node.type)) {
       return (
-        <div className="rounded-sm border border-dashed border-border bg-surface-overlay p-6 text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+        <div className="rounded-xs border border-dashed border-border bg-surface-overlay p-6 text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
           No configuration needed for {node.type} nodes.
         </div>
       );

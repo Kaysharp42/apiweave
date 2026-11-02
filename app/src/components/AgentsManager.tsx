@@ -244,7 +244,7 @@ function SessionRow({
         >
           <span className="flex items-center gap-2">
             <Bot
-              className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
+              className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark"
               aria-hidden="true"
             />
             <span className="font-mono text-xs text-text-primary dark:text-text-primary-dark">
@@ -266,7 +266,7 @@ function SessionRow({
             </span>
           )}
           <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
-            <FolderOpen className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+            <FolderOpen className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{session.cwd}</span>
           </span>
           {/* When it ran. The list is ordered live-first and then by recency, so

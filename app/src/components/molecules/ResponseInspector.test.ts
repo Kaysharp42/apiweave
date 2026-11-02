@@ -1,8 +1,9 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import React, { type Dispatch, type SetStateAction } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import React from "react";
+import { fireEvent, render, within } from "@testing-library/react";
 import type { ApiResponse, NodeResultMetadata } from "../../types";
+import { ResponseInspector } from "./ResponseInspector";
 
 type ResponseInspectorTab =
   | "tree"
@@ -12,8 +13,14 @@ type ResponseInspectorTab =
   | "preview"
   | "timing";
 
-let forcedTab: ResponseInspectorTab | undefined;
-let useStateCallCount = 0;
+const TAB_LABELS: Record<ResponseInspectorTab, string> = {
+  tree: "Tree",
+  raw: "Raw",
+  headers: "Headers",
+  cookies: "Cookies",
+  preview: "Preview",
+  timing: "Timing",
+};
 
 const assertIncludes = (markup: string, expected: string): void => {
   assert.ok(
@@ -21,102 +28,6 @@ const assertIncludes = (markup: string, expected: string): void => {
     `Expected markup to include ${expected}: ${markup}`,
   );
 };
-
-type ReactDispatcher = Record<string, unknown> & {
-  useState<State>(
-    initialState: State | (() => State),
-  ): [State, Dispatch<SetStateAction<State>>];
-};
-
-const documentStub: Record<string, unknown> = {
-  head: {
-    appendChild: (): void => undefined,
-    insertAdjacentElement: (): void => undefined,
-  },
-  documentElement: {
-    style: {
-      setProperty: (): void => undefined,
-    },
-  },
-  createElement: () => ({
-    appendChild: (): void => undefined,
-    insertAdjacentElement: (): void => undefined,
-    setAttribute: (): void => undefined,
-    // React 18's renderToStaticMarkup calls getVendorPrefixedEventName which
-    // does 'WebkitAnimation' in <created-div>.style; the empty object lets
-    // every `in` check return false without throwing.
-    style: {},
-    styleSheet: { cssText: "" },
-  }),
-  createTextNode: (text: string) => ({ text }),
-  getElementsByTagName: (tagName: string) =>
-    tagName === "head" ? [documentStub.head] : [],
-};
-
-Object.defineProperty(globalThis, "document", {
-  configurable: true,
-  value: documentStub,
-});
-
-const reactInternals = (
-  React as typeof React & {
-    __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED: {
-      ReactCurrentDispatcher: { current: ReactDispatcher | null };
-    };
-  }
-).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
-
-const reactCurrentDispatcher = reactInternals.ReactCurrentDispatcher;
-const originalDispatcherDescriptor = Object.getOwnPropertyDescriptor(
-  reactCurrentDispatcher,
-  "current",
-);
-
-const installForcedTabDispatcher = (): (() => void) => {
-  const originalDispatcherValue = reactCurrentDispatcher.current;
-  let currentDispatcher: ReactDispatcher | null = originalDispatcherValue;
-
-  Object.defineProperty(reactCurrentDispatcher, "current", {
-    configurable: true,
-    get: () => currentDispatcher,
-    set: (nextDispatcher: ReactDispatcher | null) => {
-      if (nextDispatcher === null || forcedTab === undefined) {
-        currentDispatcher = nextDispatcher;
-        return;
-      }
-
-      const originalDispatcherUseState =
-        nextDispatcher.useState.bind(nextDispatcher);
-      currentDispatcher = {
-        ...nextDispatcher,
-        useState<State>(
-          initialState: State | (() => State),
-        ): [State, Dispatch<SetStateAction<State>>] {
-          useStateCallCount += 1;
-
-          if (useStateCallCount === 1) {
-            return [forcedTab as State, () => undefined];
-          }
-
-          return originalDispatcherUseState(initialState);
-        },
-      };
-    },
-  });
-
-  return () => {
-    if (originalDispatcherDescriptor) {
-      Object.defineProperty(
-        reactCurrentDispatcher,
-        "current",
-        originalDispatcherDescriptor,
-      );
-      reactCurrentDispatcher.current = originalDispatcherValue;
-    }
-  };
-};
-
-const { ResponseInspector } = await import("./ResponseInspector");
 
 const renderInspector = (
   response: ApiResponse | null,
@@ -126,25 +37,25 @@ const renderInspector = (
     rawBody?: string;
   } = {},
 ): string => {
-  forcedTab = options.activeTab;
-  useStateCallCount = 0;
-  const restoreDispatcher = options.activeTab
-    ? installForcedTabDispatcher()
-    : () => undefined;
+  const { container, unmount } = render(
+    React.createElement(ResponseInspector, {
+      response,
+      ...(options.metadata ? { metadata: options.metadata } : {}),
+      ...(options.rawBody !== undefined ? { rawBody: options.rawBody } : {}),
+    }),
+  );
 
-  try {
-    return renderToStaticMarkup(
-      React.createElement(ResponseInspector, {
-        response,
-        ...(options.metadata ? { metadata: options.metadata } : {}),
-        ...(options.rawBody !== undefined ? { rawBody: options.rawBody } : {}),
+  if (options.activeTab) {
+    fireEvent.click(
+      within(container).getByRole("tab", {
+        name: TAB_LABELS[options.activeTab],
       }),
     );
-  } finally {
-    restoreDispatcher();
-    forcedTab = undefined;
-    useStateCallCount = 0;
   }
+
+  const markup = container.innerHTML;
+  unmount();
+  return markup;
 };
 
 const createMetadata = (
@@ -225,7 +136,7 @@ test("ResponseInspector tree tab renders nested JSON data as a collapsible objec
     markup,
     'role="tabpanel" class="flex flex-1 min-h-0 flex-col gap-4"',
   );
-  assertIncludes(markup, "rounded-sm border border-border");
+  assertIncludes(markup, "rounded-xs border border-border");
 });
 
 test("ResponseInspector preview tab renders HTML in a sandboxed iframe", () => {
@@ -243,8 +154,8 @@ test("ResponseInspector preview tab renders HTML in a sandboxed iframe", () => {
   assertIncludes(markup, "<iframe");
   assertIncludes(markup, 'title="Response HTML preview"');
   assertIncludes(markup, 'sandbox=""');
-  assertIncludes(markup, "srcDoc=");
-  assertIncludes(markup, "&lt;main&gt;&lt;h1&gt;Preview&lt;/h1&gt;");
+  assertIncludes(markup, "srcdoc=");
+  assertIncludes(markup, 'srcdoc="<main><h1>Preview</h1>');
 });
 
 test("ResponseInspector timing tab displays metadata timing and response size accurately", () => {
@@ -363,7 +274,7 @@ test("ResponseInspector renders error status contract in summary bar", () => {
   assertIncludes(markup, "application/json");
 });
 
-test("ResponseInspector dark-mode detection path renders without errors in SSR env", () => {
+test("ResponseInspector renders the default tree without runtime errors", () => {
   const markup = renderInspector(createResponse());
 
   assertIncludes(markup, "Response body tree");

@@ -16,7 +16,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
   const typeChip = useMemo(
     () => (
-      <span className="flex-shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-warning)_12%,transparent)] text-[var(--aw-status-warning)]">
+      <span className="shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-warning)_12%,transparent)] text-(--aw-status-warning)">
         {humanLabel}
       </span>
     ),
@@ -53,7 +53,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
               <input
                 type="number"
                 aria-label="Delay duration in milliseconds"
-                className="nodrag flex-1 px-1.5 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                className="nodrag flex-1 px-1.5 py-1 border border-border dark:border-border-dark rounded-node-ctl text-xs font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                 value={duration}
                 onChange={(e) =>
                   patchConfig("duration", parseInt(e.target.value) || 0)

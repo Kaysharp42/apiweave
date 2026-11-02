@@ -63,24 +63,24 @@ export function ProjectItem({
     <li>
       <div
         onContextMenu={contextMenu.openAt}
-        className="group flex items-center gap-2 rounded border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
+        className="group flex items-center gap-2 rounded-sm border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
       >
         <button
           type="button"
           className={[
             "flex min-w-0 flex-1 items-center gap-2 text-left",
             "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-            "cursor-pointer rounded",
+            "cursor-pointer rounded-sm",
           ].join(" ")}
           onClick={() => onToggle(projectId)}
           aria-expanded={isExpanded}
         >
           {isExpanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <ChevronDown className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark shrink-0" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark flex-shrink-0" />
+            <ChevronRight className="w-3.5 h-3.5 text-text-muted dark:text-text-muted-dark shrink-0" />
           )}
-          <FolderKanban className="w-4 h-4 flex-shrink-0 text-primary dark:text-primary-light" />
+          <FolderKanban className="w-4 h-4 shrink-0 text-primary dark:text-primary-light" />
           <span
             className="font-medium text-text-primary dark:text-text-primary-dark truncate"
             title={projectLabel.fullLabel}
@@ -195,7 +195,7 @@ export function ProjectItem({
             </IconButton>
             <button
               type="button"
-              className="cursor-pointer rounded text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
+              className="cursor-pointer rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
               onClick={() => onAddWorkflowToProject(projectId)}
             >
               Add workflow
@@ -204,7 +204,7 @@ export function ProjectItem({
             {unassignedWorkflows.length > 0 && (
               <button
                 type="button"
-                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark dark:focus-visible:outline-primary-light"
+                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded-sm text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark dark:focus-visible:outline-primary-light"
                 onClick={() => setShowAssignDropdown(!showAssignDropdown)}
               >
                 <FilePlus className="w-3 h-3" />
@@ -218,18 +218,18 @@ export function ProjectItem({
 
           {showAssignDropdown && unassignedWorkflows.length > 0 && (
             <li className="py-1">
-              <div className="max-h-40 overflow-y-auto rounded border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
+              <div className="max-h-40 overflow-y-auto rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
                 {unassignedWorkflows.map((wf) => (
                   <button
                     key={wf.workflowId}
                     type="button"
-                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-[-2px] dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
+                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
                     onClick={() => {
                       onAssignWorkflowToProject(projectId, wf.workflowId);
                       setShowAssignDropdown(false);
                     }}
                   >
-                    <FilePlus className="w-3 h-3 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+                    <FilePlus className="w-3 h-3 shrink-0 text-text-muted dark:text-text-muted-dark" />
                     <span className="truncate text-text-primary dark:text-text-primary-dark">
                       {wf.name}
                     </span>

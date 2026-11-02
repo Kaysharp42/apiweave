@@ -335,7 +335,7 @@ function CustomEdge({
           <div className="flex items-center opacity-0 transition-opacity duration-aw-fast ease-aw-standard group-hover/edge:opacity-100 focus-within:opacity-100 motion-reduce:transition-none">
             <button
               type="button"
-              className="flex h-5 w-5 items-center justify-center rounded-node-rail border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark shadow-overlay transition-colors duration-aw-fast ease-aw-standard hover:text-[var(--aw-status-error)] hover:border-[var(--aw-status-error)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] motion-reduce:transition-none cursor-pointer"
+              className="flex h-5 w-5 items-center justify-center rounded-node-rail border border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay text-text-muted dark:text-text-muted-dark shadow-overlay transition-colors duration-aw-fast ease-aw-standard hover:text-(--aw-status-error) hover:border-(--aw-status-error) focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none cursor-pointer"
               onClick={onEdgeDelete}
               title="Delete edge"
               aria-label="Delete edge"

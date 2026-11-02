@@ -142,17 +142,17 @@ export function SseConfigPanel({ initialConfig, workingDataRef, activeTab }: Sse
     return (
       <Card title="Finish trigger" icon={SettingsCardIcon}>
         <div className="space-y-4">
-          <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
+          <div className="rounded-xs border border-status-info/30 bg-status-info/10 p-3 text-sm text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)">
             The listener closes when every rule matches the same event. Use <code className="font-mono">data.status</code> for JSON event data, or <code className="font-mono">data</code>, <code className="font-mono">event</code>, and <code className="font-mono">id</code> for event fields.
           </div>
           {config.finishConditions.map((condition, index) => (
-            <div key={index} className="space-y-3 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+            <div key={index} className="space-y-3 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
               <div className="grid gap-3 sm:grid-cols-2">
                 <FormField label="Event path">
                   <Input value={condition.path} onChange={(event) => updateCondition(index, { path: event.target.value })} placeholder="data.status" className="font-mono" />
                 </FormField>
                 <FormField label="Operator">
-                  <ButtonSelect options={FINISH_OPERATOR_OPTIONS} value={condition.operator} onChange={(operator) => updateCondition(index, { operator: operator as SseFinishCondition["operator"] })} buttonClass="flex h-10 w-full items-center justify-between rounded-sm border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark" />
+                  <ButtonSelect options={FINISH_OPERATOR_OPTIONS} value={condition.operator} onChange={(operator) => updateCondition(index, { operator: operator as SseFinishCondition["operator"] })} buttonClass="flex h-10 w-full items-center justify-between rounded-xs border border-border bg-surface-raised px-3 font-mono text-sm text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark" />
                 </FormField>
               </div>
               {condition.operator !== "exists" && condition.operator !== "notExists" && (

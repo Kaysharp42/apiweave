@@ -99,10 +99,10 @@ export default function FileUploadSection({
       {fileUploads.map((file, index) => (
         <div
           key={`${file.fieldName}-${file.name}`}
-          className="flex items-center gap-3 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
+          className="flex items-center gap-3 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay"
         >
           <FilePlus2
-            className="h-5 w-5 flex-shrink-0 text-text-muted dark:text-text-muted-dark"
+            className="h-5 w-5 shrink-0 text-text-muted dark:text-text-muted-dark"
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
@@ -152,7 +152,7 @@ export default function FileUploadSection({
               Add file
             </Button>
           }
-          className="min-h-80 rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+          className="min-h-80 rounded-xs border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
         />
       )}
 
@@ -164,7 +164,7 @@ export default function FileUploadSection({
       )}
 
       {showForm && (
-        <div className="space-y-4 rounded-sm border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+        <div className="space-y-4 rounded-xs border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
           <div className="grid gap-4 md:grid-cols-2">
             <FormField label="File name" required>
               <Input
@@ -189,7 +189,7 @@ export default function FileUploadSection({
                   }));
                   setPreviewImage(null);
                 }}
-                className="h-10 w-full cursor-pointer rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+                className="h-10 w-full cursor-pointer rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
               >
                 <option value="base64">Embedded base64</option>
                 <option value="path">Local file path</option>
@@ -291,7 +291,7 @@ export default function FileUploadSection({
             <img
               src={previewImage}
               alt="Selected file preview"
-              className="max-h-32 max-w-full rounded-sm border border-border dark:border-border-dark"
+              className="max-h-32 max-w-full rounded-xs border border-border dark:border-border-dark"
             />
           )}
 

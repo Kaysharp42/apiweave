@@ -1,7 +1,7 @@
 import { useReducer, useCallback } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import WorkflowCanvas from "../WorkflowCanvas";
 import VariablesPanel from "../VariablesPanel";
 import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
@@ -242,7 +242,7 @@ export function Workspace({ active = true }: WorkspaceProps) {
                           own `h-full` stacked below the tab bar and its footer
                           was clipped out of reach by the shell's overflow. */}
                       <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex-shrink-0">
+                        <div className="shrink-0">
                           <PanelTabs
                             tabs={panelTabs}
                             activeTab={state.activePanelTab}

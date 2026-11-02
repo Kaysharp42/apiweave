@@ -10,7 +10,7 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import {
@@ -52,9 +52,9 @@ function TutorialCompanionStrip({
       style={{ ...floatStyle, maxWidth: `min(24rem, ${floatStyle.maxWidth})` }}
       className="pointer-events-auto absolute z-30"
     >
-      <div className="flex items-center gap-2 rounded-sm border border-border bg-surface-raised px-2 py-1.5 shadow-node dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex items-center gap-2 rounded-xs border border-border bg-surface-raised px-2 py-1.5 shadow-node dark:border-border-dark dark:bg-surface-dark-raised">
         <BookOpen
-          className="h-4 w-4 flex-shrink-0 text-primary dark:text-primary-light"
+          className="h-4 w-4 shrink-0 text-primary dark:text-primary-light"
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1 truncate text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -95,17 +95,17 @@ function TutorialCompanionHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
       <div className="flex min-w-0 items-center gap-2">
         <BookOpen
-          className="h-4 w-4 flex-shrink-0 text-primary dark:text-primary-light"
+          className="h-4 w-4 shrink-0 text-primary dark:text-primary-light"
           aria-hidden="true"
         />
         <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary dark:text-text-primary-dark">
           Follow along
         </h2>
       </div>
-      <div className="flex flex-shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         {isExpandedOverContent ? (
           <Button
             variant="ghost"
@@ -174,7 +174,7 @@ function TutorialCompanionBody({
         </p>
       )}
 
-      <div className="mt-3 rounded-sm border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="mt-3 rounded-xs border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Lesson result
         </p>
@@ -187,7 +187,7 @@ function TutorialCompanionBody({
         <div className="mt-3">
           <Link
             to={destinationHref}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-primary-light"
           >
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             {lesson.destination.label}
@@ -224,8 +224,8 @@ function TutorialCompanionFooter({
   stepIndex: number;
   stepCount: number;
   stepTitle: string;
-  previousButtonRef: React.RefObject<HTMLButtonElement>;
-  nextButtonRef: React.RefObject<HTMLButtonElement>;
+  previousButtonRef: React.RefObject<HTMLButtonElement | null>;
+  nextButtonRef: React.RefObject<HTMLButtonElement | null>;
   onPreviousStep: () => void;
   onNextStep: () => void;
   onOpenLesson: () => void;
@@ -234,7 +234,7 @@ function TutorialCompanionFooter({
   onReturnToWorkspace: () => void;
 }) {
   return (
-    <div className="flex flex-shrink-0 flex-col gap-2 border-t border-border bg-surface-overlay px-3 py-2.5 dark:border-border-dark dark:bg-surface-dark-overlay">
+    <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-surface-overlay px-3 py-2.5 dark:border-border-dark dark:bg-surface-dark-overlay">
       {isLastStep && isLessonComplete && (
         <Button
           variant="primary"
@@ -307,8 +307,8 @@ function TutorialCompanionFooter({
  */
 function useTutorialCompanionStepFocus(
   lastActionRef: React.RefObject<"previous" | "next" | null>,
-  previousButtonRef: React.RefObject<HTMLButtonElement>,
-  nextButtonRef: React.RefObject<HTMLButtonElement>,
+  previousButtonRef: React.RefObject<HTMLButtonElement | null>,
+  nextButtonRef: React.RefObject<HTMLButtonElement | null>,
   stepIndex: number,
   isLastStep: boolean,
 ) {
@@ -408,7 +408,7 @@ export function TutorialCompanion({
       className={
         isExpandedOverContent
           ? "absolute inset-0 z-30 flex flex-col bg-surface dark:bg-surface-dark"
-          : "absolute z-30 flex w-80 flex-col overflow-hidden rounded-sm border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised"
+          : "absolute z-30 flex w-80 flex-col overflow-hidden rounded-xs border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised"
       }
     >
       <TutorialCompanionHeader

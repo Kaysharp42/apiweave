@@ -5,9 +5,9 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
-  JsonEditor,
+  JsonViewer,
+  type CustomComponentProps,
   type CustomNodeDefinition,
-  type CustomNodeProps,
   type JsonEditorProps,
   type NodeData,
 } from "json-edit-react";
@@ -48,17 +48,12 @@ import { PanelTabs } from "./PanelTabs";
 import { SaveVariablePopover } from "./SaveVariablePopover";
 import {
   JSON_TREE_ACTION_RESET,
-  JSON_TREE_ICONS,
+  JSON_TREE_COPY_BUTTON,
   JsonTreeActionPill,
 } from "./JsonTreeActions";
 
 type ResponseInspectorTab =
-  | "tree"
-  | "raw"
-  | "headers"
-  | "cookies"
-  | "preview"
-  | "timing";
+  "tree" | "raw" | "headers" | "cookies" | "preview" | "timing";
 
 interface CookieRow {
   name: string;
@@ -89,6 +84,8 @@ const GaugeCardIcon = createCardIcon(Gauge);
 const HardDriveDownloadCardIcon = createCardIcon(HardDriveDownload);
 const ListFilterCardIcon = createCardIcon(ListFilter);
 const NetworkCardIcon = createCardIcon(Network);
+
+const PREVIEW_TREE_CUSTOM_BUTTONS = [JSON_TREE_COPY_BUTTON];
 
 const RESPONSE_TABS: TabItem[] = [
   { key: "tree", icon: Braces, label: "Tree" },
@@ -271,11 +268,11 @@ function ExtractedValueNode({
   nodeData,
   originalNode,
   children,
-  customNodeProps,
-}: CustomNodeProps<ExtractedChipNodeProps>) {
+  componentProps,
+}: CustomComponentProps<ExtractedChipNodeProps>) {
   const build = buildBodyExtractorPath(nodeData.path);
   const variableNames = build.supported
-    ? (customNodeProps?.namesByPath.get(build.path) ?? [])
+    ? (componentProps?.namesByPath.get(build.path) ?? [])
     : [];
 
   return (
@@ -286,8 +283,8 @@ function ExtractedValueNode({
           key={variableName}
           type="button"
           title={`Remove {{variables.${variableName}}}`}
-          onClick={() => customNodeProps?.onRemove?.(variableName)}
-          className="rounded-sm border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-[10px] leading-4 text-primary transition-colors duration-[var(--aw-transition-fast)] hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-[var(--aw-status-error)] dark:hover:text-[var(--aw-status-error)]"
+          onClick={() => componentProps?.onRemove?.(variableName)}
+          className="rounded-xs border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-[10px] leading-4 text-primary transition-colors duration-(--aw-transition-fast) hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-(--aw-status-error) dark:hover:text-(--aw-status-error)"
         >
           {`{{${variableName}}}`}
         </button>
@@ -567,13 +564,13 @@ export function ResponseInspector({
           const build = buildBodyExtractorPath(nodeData.path);
           return build.supported && extractorNamesByPath.has(build.path);
         },
-        element: ExtractedValueNode,
-        customNodeProps: chipProps,
+        component: ExtractedValueNode,
+        componentProps: chipProps,
         passOriginalNode: true,
         showOnView: true,
         showOnEdit: false,
         showEditTools: true,
-        showInTypesSelector: false,
+        showInTypeSelector: false,
       },
     ];
   }, [extractorNamesByPath, removeExtractor]);
@@ -581,9 +578,13 @@ export function ResponseInspector({
   const treeCustomButtons = useMemo<
     NonNullable<JsonEditorProps["customButtons"]>
   >(() => {
-    if (!onAddExtractor) return [];
+    const buttons: NonNullable<JsonEditorProps["customButtons"]> = [
+      JSON_TREE_COPY_BUTTON,
+    ];
+    if (!onAddExtractor) return buttons;
 
     return [
+      ...buttons,
       {
         Element: SaveVariableButton,
         onClick: (nodeData: NodeData, event: ReactMouseEvent) => {
@@ -629,7 +630,7 @@ export function ResponseInspector({
   if (!response) {
     return (
       <Card title="Response inspector" icon={EyeCardIcon}>
-        <div className="rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay">
+        <div className="rounded-xs border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay">
           <EmptyState
             icon={
               <Gauge
@@ -693,7 +694,7 @@ export function ResponseInspector({
             aria-label="Filter response headers"
           />
 
-          <div className="overflow-auto rounded-sm border border-border dark:border-border-dark">
+          <div className="overflow-auto rounded-xs border border-border dark:border-border-dark">
             <table className="min-w-full divide-y divide-border dark:divide-border-dark text-sm">
               <thead className="bg-surface-overlay dark:bg-surface-dark-overlay text-left text-xs uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
                 <tr>
@@ -732,7 +733,7 @@ export function ResponseInspector({
 
   const renderCookies = () => (
     <Card title={`Cookies (${cookieRows.length})`} icon={CookieCardIcon}>
-      <div className="overflow-auto rounded-sm border border-border dark:border-border-dark">
+      <div className="overflow-auto rounded-xs border border-border dark:border-border-dark">
         <table className="min-w-full divide-y divide-border dark:divide-border-dark text-sm">
           <thead className="bg-surface-overlay dark:bg-surface-dark-overlay text-left text-xs uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
             <tr>
@@ -806,15 +807,15 @@ export function ResponseInspector({
         <Card
           title="JSON preview"
           icon={BracesCardIcon}
-          className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
+          className="flex min-h-0 flex-col *:last:min-h-0 *:last:flex-1"
         >
-          <div className="h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
-            <JsonEditor
+          <div className="h-full overflow-auto rounded-xs border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised">
+            <JsonViewer
               key={treeKey}
               data={treeData}
-              restrictEdit={true}
-              restrictAdd={true}
-              restrictDelete={true}
+              showCollectionCount={true}
+              showClipboardButton={false}
+              customButtons={PREVIEW_TREE_CUSTOM_BUTTONS}
               rootName="body"
               {...treeProps}
               {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
@@ -833,7 +834,7 @@ export function ResponseInspector({
             title="Response HTML preview"
             srcDoc={bodyText}
             sandbox=""
-            className="h-96 w-full rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
+            className="h-96 w-full rounded-xs border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised"
           />
         </Card>
       );
@@ -842,7 +843,7 @@ export function ResponseInspector({
     if (showImagePreview) {
       return (
         <Card title="Image preview" icon={EyeCardIcon}>
-          <div className="flex min-h-64 items-center justify-center rounded-sm border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+          <div className="flex min-h-64 items-center justify-center rounded-xs border border-border bg-surface-overlay p-4 dark:border-border-dark dark:bg-surface-dark-overlay">
             <img
               src={getImageSource(contentType, bodyText)}
               alt="Response preview"
@@ -856,7 +857,7 @@ export function ResponseInspector({
     if (showTextPreview && !showBinaryPreview) {
       return (
         <Card title="Text preview" icon={FileCodeCardIcon}>
-          <pre className="max-h-96 overflow-auto rounded-sm border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap break-words dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+          <pre className="max-h-96 overflow-auto rounded-xs border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap wrap-break-word dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
             {bodyText}
           </pre>
         </Card>
@@ -865,7 +866,7 @@ export function ResponseInspector({
 
     return (
       <Card title="Binary preview" icon={HardDriveDownloadCardIcon}>
-        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-sm border border-dashed border-border bg-surface-overlay p-6 text-center dark:border-border-dark dark:bg-surface-dark-overlay">
+        <div className="flex min-h-40 flex-col items-center justify-center gap-3 rounded-xs border border-dashed border-border bg-surface-overlay p-6 text-center dark:border-border-dark dark:bg-surface-dark-overlay">
           <HardDriveDownload className="h-8 w-8 text-text-secondary dark:text-text-secondary-dark" />
           <p className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
             Binary content -- download to view
@@ -880,7 +881,7 @@ export function ResponseInspector({
 
   return (
     <div className="flex h-full flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-raised px-3.5 py-2.5 dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xs border border-border bg-surface-raised px-3.5 py-2.5 dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge
             variant={
@@ -945,18 +946,16 @@ export function ResponseInspector({
                   ),
                 }
               : {})}
-            className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
+            className="flex min-h-0 flex-col *:last:min-h-0 *:last:flex-1"
           >
             <div
-              className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
+              className={`h-full overflow-auto rounded-xs border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
             >
-              <JsonEditor
+              <JsonViewer
                 key={treeKey}
                 data={treeData}
-                icons={JSON_TREE_ICONS}
-                restrictEdit={true}
-                restrictAdd={true}
-                restrictDelete={true}
+                showCollectionCount={true}
+                showClipboardButton={false}
                 rootName="body"
                 {...treeProps}
                 customButtons={treeCustomButtons}
@@ -977,7 +976,7 @@ export function ResponseInspector({
           <Card
             title="Raw body"
             icon={FileCodeCardIcon}
-            className="flex min-h-0 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
+            className="flex min-h-0 flex-col *:last:min-h-0 *:last:flex-1"
             headerActions={
               <IconButton
                 tooltip={copied ? "Copied" : "Copy raw body"}
@@ -988,7 +987,7 @@ export function ResponseInspector({
               </IconButton>
             }
           >
-            <pre className="h-full overflow-auto rounded-sm border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap break-words dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+            <pre className="h-full overflow-auto rounded-xs border border-border bg-surface-overlay p-3 font-mono text-xs text-text-primary whitespace-pre-wrap wrap-break-word dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
               {bodyText}
             </pre>
           </Card>

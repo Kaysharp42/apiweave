@@ -7,7 +7,7 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import type { Workspace } from "../types/Workspace";
 import type { WorkspaceContextValue } from "../types/WorkspaceContextValue";
 import { apiweave } from "../utils/apiweaveClient";

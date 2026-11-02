@@ -20,7 +20,7 @@ export function TitleBar() {
   return (
     <div
       style={dragStyle}
-      className="flex h-header flex-shrink-0 select-none items-center justify-between border-b border-border bg-surface-raised pl-4 dark:border-border-dark dark:bg-surface-dark-raised"
+      className="flex h-header shrink-0 select-none items-center justify-between border-b border-border bg-surface-raised pl-4 dark:border-border-dark dark:bg-surface-dark-raised"
     >
       {/* Height and brand match MainHeader exactly, so the error and
           404 screens wear the same chrome as the app instead of a shorter,
@@ -30,7 +30,7 @@ export function TitleBar() {
         <img
           src="/apiweave.png"
           alt=""
-          className="h-7 w-7 rounded object-cover"
+          className="h-7 w-7 rounded-sm object-cover"
         />
         <span className="font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
           APIWeave

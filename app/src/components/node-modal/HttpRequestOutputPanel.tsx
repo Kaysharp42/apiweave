@@ -121,7 +121,7 @@ export function HttpRequestOutputPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 flex-col gap-3 border-b border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Badge variant={statusVariant(statusCode)} size="sm">
@@ -205,14 +205,14 @@ export function HttpRequestOutputPanel({
 
       <div className="min-h-0 flex-1 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
         {errorText && (
-          <div className="mb-3 rounded-sm border border-status-error bg-[var(--aw-status-error)]/5 p-3 text-sm text-status-error dark:text-status-error-dark">
+          <div className="mb-3 rounded-xs border border-status-error bg-(--aw-status-error)/5 p-3 text-sm text-status-error dark:text-status-error-dark">
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
         {schemaErrors.length > 0 && (
           <ul
             aria-label="Schema violations"
-            className="mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded-sm border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
+            className="mb-3 max-h-48 space-y-0.5 overflow-y-auto rounded-xs border border-border bg-surface-raised p-3 font-mono text-xs dark:border-border-dark dark:bg-surface-dark-raised"
           >
             {schemaErrors.map((violation, index) => (
               <li key={index} className="text-text-primary dark:text-text-primary-dark">

@@ -30,7 +30,7 @@ export function OAuthButton({
       onClick={() => onClick(id)}
       loading={loading}
       disabled={disabled}
-      className="group relative overflow-hidden transition-colors duration-200 font-medium !justify-start pl-6"
+      className="group relative overflow-hidden transition-colors duration-200 font-medium justify-start! pl-6"
     >
       <div className="flex items-center gap-4 relative z-10 w-full">
         <IconComponent className={iconClass} />

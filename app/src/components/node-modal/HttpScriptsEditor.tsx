@@ -71,7 +71,7 @@ function ScriptEditor({
 }) {
   return (
     <FormField label={label} hint={hint}>
-      <div className="overflow-hidden rounded-sm border border-border dark:border-border-dark">
+      <div className="overflow-hidden rounded-xs border border-border dark:border-border-dark">
         <Suspense
           fallback={
             <div className="flex h-60 items-center justify-center text-sm text-text-secondary dark:text-text-secondary-dark">

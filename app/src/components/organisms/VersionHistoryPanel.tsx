@@ -399,7 +399,7 @@ export function VersionHistoryPanel({
         {shownError !== null && (
           <p
             role="alert"
-            className="text-xs text-status-error dark:text-[var(--aw-status-error)]"
+            className="text-xs text-status-error dark:text-(--aw-status-error)"
           >
             {shownError}
           </p>

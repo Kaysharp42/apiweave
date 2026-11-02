@@ -539,23 +539,23 @@ export function CollectionExportImport({
   const handleDragOver = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.add(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
   };
 
   const handleDragLeave = (e: DragEvent<HTMLButtonElement>): void => {
     e.currentTarget.classList.remove(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
   };
 
   const handleDrop = (e: DragEvent<HTMLButtonElement>): void => {
     e.preventDefault();
     e.currentTarget.classList.remove(
-      "border-[var(--aw-primary)]",
-      "bg-[var(--aw-primary)]/5",
+      "border-(--aw-primary)",
+      "bg-(--aw-primary)/5",
     );
 
     const files = e.dataTransfer.files;
@@ -611,22 +611,22 @@ export function CollectionExportImport({
         {/* Messages */}
         {message && (
           <div
-            className={`mb-4 p-4 rounded border flex gap-3 ${
+            className={`mb-4 p-4 rounded-sm border flex gap-3 ${
               message.type === "success"
-                ? "bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 text-[var(--aw-status-success)] dark:text-[var(--aw-status-success)] border-[var(--aw-status-success)]/20"
+                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-(--aw-status-success) dark:text-(--aw-status-success) border-(--aw-status-success)/20"
                 : message.type === "warning"
-                  ? "bg-[var(--aw-status-warning)]/5 dark:bg-[var(--aw-status-warning)]/10 text-[var(--aw-status-warning)] dark:text-[var(--aw-status-warning)] border-[var(--aw-status-warning)]/20"
-                  : "bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 text-[var(--aw-status-error)] dark:text-[var(--aw-status-error)] border-[var(--aw-status-error)]/20"
+                  ? "bg-(--aw-status-warning)/5 dark:bg-(--aw-status-warning)/10 text-(--aw-status-warning) dark:text-(--aw-status-warning) border-(--aw-status-warning)/20"
+                  : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-(--aw-status-error) dark:text-(--aw-status-error) border-(--aw-status-error)/20"
             }`}
           >
             {message.type === "success" && (
-              <CheckCircle size={20} className="flex-shrink-0" />
+              <CheckCircle size={20} className="shrink-0" />
             )}
             {message.type === "warning" && (
-              <AlertCircle size={20} className="flex-shrink-0" />
+              <AlertCircle size={20} className="shrink-0" />
             )}
             {message.type === "error" && (
-              <AlertCircle size={20} className="flex-shrink-0" />
+              <AlertCircle size={20} className="shrink-0" />
             )}
             <div>
               <p className="font-bold">{message.title}</p>
@@ -638,8 +638,8 @@ export function CollectionExportImport({
         {/* Export Tab */}
         {activeTab === "export" && (
           <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
+              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
                 Export this project with all workflows and environments
               </p>
             </div>
@@ -652,7 +652,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setIncludeEnvironments(e.target.checked)
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded-sm"
                 />
                 <span className="text-text-primary dark:text-text-primary-dark">
                   Include Environments
@@ -679,7 +679,7 @@ export function CollectionExportImport({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
+              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload
@@ -703,7 +703,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 p-3 rounded border border-[var(--aw-status-success)]/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -733,7 +733,7 @@ export function CollectionExportImport({
 
             {/* Validation */}
             {validation && (
-              <div className="bg-surface dark:bg-surface-dark p-4 rounded border border-border dark:border-border-dark space-y-2">
+              <div className="bg-surface dark:bg-surface-dark p-4 rounded-sm border border-border dark:border-border-dark space-y-2">
                 <h4 className="font-medium text-text-primary dark:text-text-primary-dark">
                   Validation Results
                 </h4>
@@ -759,7 +759,7 @@ export function CollectionExportImport({
                     {validation.warnings.map((warn: string) => (
                       <p
                         key={warn}
-                        className="text-[var(--aw-status-warning)] text-sm flex items-center gap-2"
+                        className="text-(--aw-status-warning) text-sm flex items-center gap-2"
                       >
                         <Info size={14} /> {warn}
                       </p>
@@ -832,7 +832,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                     setSelectedTargetProject(e.target.value)
                   }
-                  className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                  className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 >
                   <option value="">Select project…</option>
                   {projects.map((project: ProjectWithWorkflowCount) => (
@@ -877,8 +877,8 @@ export function CollectionExportImport({
         {/* Import Workflows Tab */}
         {activeTab === "import-workflows" && (
           <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
+              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
                 Import individual workflows, HAR files, or OpenAPI specs to this
                 project
               </p>
@@ -898,7 +898,7 @@ export function CollectionExportImport({
                 onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                   setSelectedTargetProject(e.target.value || null)
                 }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
+                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
               >
                 <option value="">-- Choose a project --</option>
                 {projects.map((project: ProjectWithWorkflowCount) => (
@@ -911,7 +911,7 @@ export function CollectionExportImport({
                 ))}
               </select>
               {projects.length === 0 && (
-                <p className="text-xs text-[var(--aw-status-warning)]">
+                <p className="text-xs text-(--aw-status-warning)">
                   No projects available. Create a project first.
                 </p>
               )}
@@ -923,7 +923,7 @@ export function CollectionExportImport({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
+              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload
@@ -947,7 +947,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 p-3 rounded border border-[var(--aw-status-success)]/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -962,7 +962,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setSanitize(e.target.checked)
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded-sm"
                 />
                 <span className="text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers
@@ -987,8 +987,8 @@ export function CollectionExportImport({
         {/* Import HAR Tab */}
         {activeTab === "import-har" && (
           <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
+              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
                 Import individual workflows, HAR files, or OpenAPI specs to this
                 project
               </p>
@@ -1008,7 +1008,7 @@ export function CollectionExportImport({
                 onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                   setSelectedTargetProject(e.target.value || null)
                 }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
+                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
               >
                 <option value="">-- Choose a project --</option>
                 {projects.map((project: ProjectWithWorkflowCount) => (
@@ -1021,7 +1021,7 @@ export function CollectionExportImport({
                 ))}
               </select>
               {projects.length === 0 && (
-                <p className="text-xs text-[var(--aw-status-warning)]">
+                <p className="text-xs text-(--aw-status-warning)">
                   No projects available. Create a project first.
                 </p>
               )}
@@ -1033,7 +1033,7 @@ export function CollectionExportImport({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
+              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload
@@ -1057,7 +1057,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 p-3 rounded border border-[var(--aw-status-success)]/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -1072,7 +1072,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setSanitize(e.target.checked)
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded-sm"
                 />
                 <span className="text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers
@@ -1097,8 +1097,8 @@ export function CollectionExportImport({
         {/* Import OpenAPI Tab */}
         {activeTab === "import-openapi" && (
           <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
+              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
                 Import individual workflows, HAR files, or OpenAPI specs to this
                 project
               </p>
@@ -1118,7 +1118,7 @@ export function CollectionExportImport({
                 onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                   setSelectedTargetProject(e.target.value || null)
                 }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
+                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
               >
                 <option value="">-- Choose a project --</option>
                 {projects.map((project: ProjectWithWorkflowCount) => (
@@ -1131,7 +1131,7 @@ export function CollectionExportImport({
                 ))}
               </select>
               {projects.length === 0 && (
-                <p className="text-xs text-[var(--aw-status-warning)]">
+                <p className="text-xs text-(--aw-status-warning)">
                   No projects available. Create a project first.
                 </p>
               )}
@@ -1143,7 +1143,7 @@ export function CollectionExportImport({
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
+              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload
@@ -1167,7 +1167,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 p-3 rounded border border-[var(--aw-status-success)]/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -1182,7 +1182,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setSanitize(e.target.checked)
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded-sm"
                 />
                 <span className="text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers
@@ -1213,8 +1213,8 @@ export function CollectionExportImport({
         {/* Import cURL Tab */}
         {activeTab === "import-curl" && (
           <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
+              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
                 Import cURL commands to create API test workflows in this
                 project
               </p>
@@ -1234,7 +1234,7 @@ export function CollectionExportImport({
                 onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                   setSelectedTargetProject(e.target.value || null)
                 }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-[var(--aw-primary)] focus:border-transparent"
+                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
               >
                 <option value="">-- Choose a project --</option>
                 {projects.map((project: ProjectWithWorkflowCount) => (
@@ -1247,7 +1247,7 @@ export function CollectionExportImport({
                 ))}
               </select>
               {projects.length === 0 && (
-                <p className="text-xs text-[var(--aw-status-warning)]">
+                <p className="text-xs text-(--aw-status-warning)">
                   No projects available. Create a project first.
                 </p>
               )}
@@ -1282,7 +1282,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setSanitize(e.target.checked)
                   }
-                  className="w-4 h-4 rounded"
+                  className="w-4 h-4 rounded-sm"
                 />
                 <span className="text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers

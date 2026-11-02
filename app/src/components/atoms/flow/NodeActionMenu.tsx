@@ -164,7 +164,7 @@ export function NodeActionMenu({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={[
-          "p-1 rounded-node-ctl text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+          "p-1 rounded-node-ctl text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
           triggerClassName,
         ]
           .filter(Boolean)
@@ -197,7 +197,7 @@ export function NodeActionMenu({
                 className={[
                   // The menu sits on surface-overlay, so a surface-overlay hover
                   // would be invisible; an accent tint reads in both themes.
-                  "w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-[color-mix(in_srgb,var(--aw-primary)_12%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none",
+                  "w-full text-left px-3 py-1.5 text-xs font-medium text-text-primary dark:text-text-primary-dark hover:bg-[color-mix(in_srgb,var(--aw-primary)_12%,transparent)] focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) flex items-center gap-2 cursor-pointer transition-colors motion-reduce:transition-none",
                   index > 0
                     ? "border-t border-border dark:border-border-dark"
                     : "",

@@ -104,7 +104,10 @@ test("NodeModal exposes HTTP request sections and request bar controls", () => {
 test("HTTPRequestConfigPanel updates HTTP method selection through React state", () => {
   assert.match(nodeModalSource, /const \[httpConfig, setHttpConfig\]/);
   assert.match(nodeModalSource, /patchHttpConfig\(\{ method \}\)/);
-  assert.match(nodeModalSource, /value=\{httpConfig\.method \?\? ["']GET["']\}/);
+  assert.match(
+    nodeModalSource,
+    /value=\{httpConfig\.method \?\? ["']GET["']\}/,
+  );
 });
 
 test("NodeModal uses one horizontal tab pattern for every node type", () => {
@@ -245,7 +248,7 @@ test("NodeModal uses Modal molecule with focus trapping", () => {
 
 test("NodeModal uses CSS variable tokens for colors", () => {
   assert.match(httpRequestOutputSource, /statusVariant\(statusCode\)/);
-  assert.match(badgeSource, /var\(--aw-status-info\)/);
+  assert.match(badgeSource, /\(--aw-status-info\)/);
 });
 
 test("NodeModal uses focus-visible outlines on interactive elements", () => {
@@ -254,7 +257,7 @@ test("NodeModal uses focus-visible outlines on interactive elements", () => {
     "utf8",
   );
   assert.match(headerSource, /focus-visible:outline-2/);
-  assert.match(headerSource, /focus-visible:outline-\[var\(--aw-primary\)\]/);
+  assert.match(headerSource, /focus-visible:outline-\(--aw-primary\)/);
 });
 
 test("NodeModal uses cursor-pointer on clickable elements", () => {

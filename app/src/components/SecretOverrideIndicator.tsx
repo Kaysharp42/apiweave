@@ -33,7 +33,7 @@ export function SecretOverrideIndicator({
         .join(" ")}
       title={`This secret overrides a ${parentLabel}-scoped secret with the same name`}
     >
-      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
       <span>Overrides {parentLabel}</span>
     </span>
   );

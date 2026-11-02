@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { humanizePath } from "@shared/conflict-diff";
+import type { GitBridge } from "@shared/types/GitBridge";
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict";
 import type { GitMergeNote } from "@shared/types/GitMergeNote";
 import type { GitMergePick } from "@shared/types/GitMergePick";
@@ -103,8 +104,8 @@ interface RenderOptions {
   readonly picks?: readonly GitMergePick[];
   readonly notes?: (picks: readonly GitMergePick[]) => readonly GitMergeNote[];
   readonly unrelatedHistory?: boolean;
-  readonly resolveMerge?: ReturnType<typeof vi.fn>;
-  readonly syncNow?: ReturnType<typeof vi.fn>;
+  readonly resolveMerge?: GitBridge["resolveMerge"];
+  readonly syncNow?: GitBridge["syncNow"];
   readonly merge?: FakeMerge;
 }
 

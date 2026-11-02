@@ -62,7 +62,7 @@ const KIND_CONFIG: {
     notice: {
       icon: (
         <Info
-          className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary dark:text-text-secondary-dark"
+          className="h-3.5 w-3.5 shrink-0 text-text-secondary dark:text-text-secondary-dark"
           aria-hidden="true"
         />
       ),
@@ -91,7 +91,7 @@ const KIND_CONFIG: {
     notice: {
       icon: (
         <ShieldAlert
-          className="h-3.5 w-3.5 flex-shrink-0 text-text-secondary dark:text-text-secondary-dark"
+          className="h-3.5 w-3.5 shrink-0 text-text-secondary dark:text-text-secondary-dark"
           aria-hidden="true"
         />
       ),
@@ -225,7 +225,7 @@ export function DuplicateItemDialog({
           )}
         </FormField>
 
-        <div className="rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+        <div className="rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
           <div className="flex items-center gap-2">
             {notice.icon}
             <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark">

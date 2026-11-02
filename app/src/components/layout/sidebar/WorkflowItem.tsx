@@ -42,7 +42,7 @@ export function WorkflowItem({
       <div
         onContextMenu={contextMenu.openAt}
         className={[
-          "group relative flex w-full items-start gap-2 rounded border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
+          "group relative flex w-full items-start gap-2 rounded-sm border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
           isActive
             ? "border-y-border border-r-border border-l-primary bg-primary/10 dark:border-y-border-dark dark:border-r-border-dark dark:border-l-primary-light dark:bg-primary-light/10"
             : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
@@ -56,12 +56,12 @@ export function WorkflowItem({
           className={[
             "flex min-w-0 flex-1 items-start gap-2 text-left",
             "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
-            "cursor-pointer rounded",
+            "cursor-pointer rounded-sm",
           ].join(" ")}
         >
           <FileText
             className={[
-              "mt-0.5 h-3.5 w-3.5 flex-shrink-0",
+              "mt-0.5 h-3.5 w-3.5 shrink-0",
               isActive
                 ? "text-primary dark:text-primary-light"
                 : "text-text-muted dark:text-text-muted-dark",
@@ -92,8 +92,8 @@ export function WorkflowItem({
             width; the gradient keeps long names legible underneath. */}
         <div
           className={[
-            "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded pl-6",
-            "bg-gradient-to-l from-surface-overlay from-70% to-transparent dark:from-surface-dark-overlay",
+            "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-sm pl-6",
+            "bg-linear-to-l from-surface-overlay from-70% to-transparent dark:from-surface-dark-overlay",
             "opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
             "group-hover:opacity-100 group-focus-within:opacity-100",
           ].join(" ")}

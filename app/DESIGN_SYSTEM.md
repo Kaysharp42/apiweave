@@ -122,7 +122,7 @@
 
 ## DaisyUI Themes
 
-Two custom themes are defined in `tailwind.config.js`:
+Two custom themes are defined in `src/index.css` with `@plugin "daisyui/theme"`:
 
 ### `apiweave` (Light)
 
@@ -332,7 +332,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 ```
 app/
 ├── tsconfig.json              — TypeScript strict mode configuration
-├── tailwind.config.js         — Design tokens, DaisyUI config, custom themes
+├── postcss.config.js          — @tailwindcss/postcss
 ├── vite.config.js             — Vite build configuration
 ├── index.html                 — Google Fonts import
 ├── src/
@@ -343,7 +343,7 @@ app/
 │   │   ├── ButtonVariant.ts   — ButtonVariant union type
 │   │   ├── ButtonProps.ts     — ButtonProps interface
 │   │   └── ...                — One file per type/interface
-│   ├── index.css              — Tailwind directives + ReactFlow dark mode overrides
+│   ├── index.css              — Tailwind 4 @theme tokens, daisyUI themes, ReactFlow overrides
 │   ├── main.tsx               — App entry point
 │   ├── App.tsx                — Root component with theme switching
 │   ├── styles/
@@ -526,7 +526,7 @@ Shadows must be theme-aware (different opacity/multiplier for light vs. dark).
 | `--aw-radius-xl`  | 0.5rem (8px)   | Raw CSS                                        |
 | `--aw-radius-full`| 9999px         | Raw CSS                                        |
 
-Tailwind's `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl` classes are **not** wired to these properties — `tailwind.config.js` extends `borderRadius` with the node family only, so the chrome classes keep Tailwind's stock scale (2px / 6px / 8px / 12px). Component markup uses the classes; raw CSS uses the properties.
+Tailwind's `rounded-xs` / `rounded-sm` / `rounded-md` / `rounded-lg` / `rounded-xl` classes are **not** wired to these properties — the `@theme` block in `src/index.css` adds the node family only, so the chrome classes keep Tailwind 4's stock scale (2px / 4px / 6px / 8px / 12px). Component markup uses the classes; raw CSS uses the properties.
 
 **Node scale** — the canvas only. A separate family, wired to Tailwind, so the chrome scale above never has to move:
 
@@ -645,7 +645,7 @@ The canvas states are defined once, in `BaseNode`'s `statusConfig`. Border alpha
 
 The following patterns are **explicitly forbidden** in the redesign and in all future code:
 
-1. **No hardcoded hex/rgb in components** — all colors MUST reference design tokens (`colors.primary`, `var(--aw-*)`, Tailwind semantic classes). Token-definition files (`base.css`, `tailwind.config.js`) are the only exceptions.
+1. **No hardcoded hex/rgb in components** — all colors MUST reference design tokens (`colors.primary`, `var(--aw-*)`, Tailwind semantic classes). Token-definition files (`base.css`, `src/index.css`) are the only exceptions.
 2. **No `any` type** — TypeScript strict mode is non-negotiable. Every variable, prop, hook, and API response must have an explicit type.
 3. **No extra save buttons** — all state changes trigger the 700ms debounced auto-save via `useAutoSave`. The one toolbar **Save** button and `Ctrl+S` flush it immediately; any other "Save" or "Apply" button is forbidden.
 4. **No WorkflowContext bypass** — all canvas state (nodes, edges, variables, settings, extractors) MUST flow through `WorkflowContext`. Direct mutation of ReactFlow internals or local state that shadows workflow state is forbidden.

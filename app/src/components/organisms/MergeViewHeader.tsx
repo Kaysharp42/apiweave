@@ -63,7 +63,7 @@ export function MergeViewHeader({
       {error !== null && (
         <p
           role="alert"
-          className="break-words text-xs text-status-error dark:text-[var(--aw-status-error)]"
+          className="wrap-break-word text-xs text-status-error dark:text-(--aw-status-error)"
         >
           {error}
         </p>

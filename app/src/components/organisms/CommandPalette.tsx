@@ -44,11 +44,11 @@ async function showWorkflow(workspaceId: string, workflowId: string): Promise<vo
 }
 
 const optionClass =
-  "group flex cursor-pointer items-center gap-3 rounded-sm px-3 py-2 text-sm text-text-primary data-[focus]:bg-surface-overlay dark:text-text-primary-dark dark:data-[focus]:bg-surface-dark-overlay";
+  "group flex cursor-pointer items-center gap-3 rounded-xs px-3 py-2 text-sm text-text-primary data-focus:bg-surface-overlay dark:text-text-primary-dark dark:data-focus:bg-surface-dark-overlay";
 const iconClass =
-  "h-4 w-4 flex-shrink-0 text-primary dark:text-primary-light";
+  "h-4 w-4 shrink-0 text-primary dark:text-primary-light";
 const asideClass =
-  "max-w-[45%] flex-shrink-0 truncate text-xs text-text-muted dark:text-text-muted-dark";
+  "max-w-[45%] shrink-0 truncate text-xs text-text-muted dark:text-text-muted-dark";
 
 export function CommandPalette({
   open,
@@ -149,7 +149,7 @@ export function CommandPalette({
         aria-hidden="true"
       />
       <div className="fixed inset-0 flex items-start justify-center p-4 pt-[12vh]">
-        <DialogPanel className="w-full max-w-xl overflow-hidden rounded-sm border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised">
+        <DialogPanel className="w-full max-w-xl overflow-hidden rounded-xs border border-border bg-surface-raised shadow-popover dark:border-border-dark dark:bg-surface-dark-raised">
           <Combobox<CommandPaletteItem | null> onChange={selectItem}>
             <div className="relative border-b border-border p-3 dark:border-border-dark">
               <Search

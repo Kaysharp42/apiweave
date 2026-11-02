@@ -3,7 +3,7 @@ import "../../../__tests__/setup";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { WorkspaceProvider } from "../../../contexts/WorkspaceContext";
 import type { Workspace } from "../../../types/Workspace";
 import {

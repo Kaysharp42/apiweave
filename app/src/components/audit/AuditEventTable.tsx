@@ -33,7 +33,7 @@ export function AuditEventTable({ events, loading }: AuditEventTableProps) {
   }
 
   return (
-    <div className="overflow-x-auto rounded border border-border dark:border-border-dark">
+    <div className="overflow-x-auto rounded-sm border border-border dark:border-border-dark">
       <table className="w-full border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-border dark:border-border-dark bg-surface-overlay dark:bg-surface-dark-overlay">

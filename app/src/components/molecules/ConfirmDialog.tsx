@@ -27,18 +27,18 @@ export function ConfirmDialog({
   const intentConfig = {
     error: {
       icon: XCircle,
-      iconBg: "bg-status-error/10 dark:bg-[var(--aw-status-error)]/10",
-      iconText: "text-status-error dark:text-[var(--aw-status-error)]",
+      iconBg: "bg-status-error/10 dark:bg-(--aw-status-error)/10",
+      iconText: "text-status-error dark:text-(--aw-status-error)",
     },
     warning: {
       icon: AlertTriangle,
-      iconBg: "bg-status-warning/10 dark:bg-[var(--aw-status-warning)]/10",
-      iconText: "text-status-warning dark:text-[var(--aw-status-warning)]",
+      iconBg: "bg-status-warning/10 dark:bg-(--aw-status-warning)/10",
+      iconText: "text-status-warning dark:text-(--aw-status-warning)",
     },
     info: {
       icon: Info,
-      iconBg: "bg-status-info/10 dark:bg-[var(--aw-status-info)]/10",
-      iconText: "text-status-info dark:text-[var(--aw-status-info)]",
+      iconBg: "bg-status-info/10 dark:bg-(--aw-status-info)/10",
+      iconText: "text-status-info dark:text-(--aw-status-info)",
     },
   };
 
@@ -78,10 +78,10 @@ export function ConfirmDialog({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-full max-w-md rounded-sm border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
+            <Dialog.Panel className="w-full max-w-md rounded-xs border border-border bg-surface-raised shadow-modal dark:border-border-dark dark:bg-surface-dark-raised">
               <div className="flex items-start gap-3 border-b border-border p-5 dark:border-border-dark">
                 <div
-                  className={`flex-shrink-0 rounded-full p-1 ${config.iconBg}`}
+                  className={`shrink-0 rounded-full p-1 ${config.iconBg}`}
                 >
                   <IntentIcon className={`w-5 h-5 ${config.iconText}`} />
                 </div>

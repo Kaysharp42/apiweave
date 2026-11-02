@@ -28,9 +28,9 @@ export function PanelTipsButton({
       aria-label={label}
       title={label}
       className={[
-        "inline-flex flex-shrink-0 items-center gap-1 rounded-sm border px-1.5 py-1 text-[10px] font-medium cursor-pointer",
+        "inline-flex shrink-0 items-center gap-1 rounded-xs border px-1.5 py-1 text-[10px] font-medium cursor-pointer",
         "transition-colors duration-150 ease-in-out motion-reduce:transition-none",
-        "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+        "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
         isOpen
           ? "border-primary bg-primary/10 text-primary dark:border-primary-light dark:bg-primary-light/15 dark:text-primary-light"
           : "border-border bg-surface text-text-secondary hover:border-primary/40 hover:text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-secondary-dark dark:hover:border-primary-light/40 dark:hover:text-primary-light",
@@ -39,11 +39,11 @@ export function PanelTipsButton({
         .filter(Boolean)
         .join(" ")}
     >
-      <Lightbulb className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+      <Lightbulb className="w-3 h-3 shrink-0" aria-hidden="true" />
       <span>Tips</span>
       {hasUnseen && (
         <span
-          className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary dark:bg-primary-light"
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary dark:bg-primary-light"
           aria-hidden="true"
         />
       )}
@@ -89,10 +89,10 @@ export function PanelTipsSheet({
         isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
       ].join(" ")}
     >
-      <div className="flex flex-shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
         <div className="flex min-w-0 items-center gap-1.5">
           <Lightbulb
-            className="w-3.5 h-3.5 flex-shrink-0 text-primary dark:text-primary-light"
+            className="w-3.5 h-3.5 shrink-0 text-primary dark:text-primary-light"
             aria-hidden="true"
           />
           <h3 className="min-w-0 truncate text-xs font-semibold text-text-primary dark:text-text-primary-dark">
@@ -121,7 +121,7 @@ export function PanelTipsSection({
     <section className="min-w-0 space-y-1.5">
       <div className="flex items-center gap-1.5 text-text-primary dark:text-text-primary-dark">
         {Icon && (
-          <Icon className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+          <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         )}
         <h4 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide">
           {title}
@@ -135,7 +135,7 @@ export function PanelTipsSection({
 /** PanelTipsCode — inline code chip sized for the tips sheet. */
 export function PanelTipsCode({ children }: { children: React.ReactNode }) {
   return (
-    <code className="rounded border border-border bg-surface px-1 py-0.5 font-mono text-[10px] break-all text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+    <code className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[10px] break-all text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
       {children}
     </code>
   );

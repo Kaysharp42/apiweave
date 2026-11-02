@@ -82,9 +82,9 @@ export function ScopedEnvironmentList({
             <div
               key={env.environmentId}
               className={[
-                "group flex items-center gap-3 px-3 py-2.5 rounded border transition-colors cursor-pointer",
+                "group flex items-center gap-3 px-3 py-2.5 rounded-sm border transition-colors cursor-pointer",
                 isSelected
-                  ? "border-[var(--aw-primary)] bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10"
+                  ? "border-(--aw-primary) bg-(--aw-primary)/5 dark:bg-(--aw-primary)/10"
                   : "border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
               ].join(" ")}
               onClick={() => onSelect(env)}
@@ -115,7 +115,7 @@ export function ScopedEnvironmentList({
                 )}
               </div>
 
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 {!readOnly && (
                   <IconButton
                     tooltip="Edit"
@@ -170,9 +170,9 @@ export function ScopedEnvironmentList({
               </div>
 
               <ChevronRight
-                className={`w-4 h-4 flex-shrink-0 transition-colors ${
+                className={`w-4 h-4 shrink-0 transition-colors ${
                   isSelected
-                    ? "text-[var(--aw-primary)]"
+                    ? "text-(--aw-primary)"
                     : "text-text-muted dark:text-text-muted-dark"
                 }`}
               />

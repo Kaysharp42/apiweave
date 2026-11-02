@@ -1,5 +1,5 @@
 import { useReducer, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import {
   BookOpen,
@@ -158,7 +158,7 @@ export default function VariablesPanel() {
   return (
     <div className="relative w-full min-w-0 h-full flex flex-col overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
       {/* Header — stays put; the list below it is what scrolls */}
-      <div className="flex-shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3 space-y-2">
+      <div className="shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3 space-y-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="relative min-w-0 flex-1">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted dark:text-text-muted-dark pointer-events-none" />
@@ -191,7 +191,7 @@ export default function VariablesPanel() {
       {/* Scrollable content */}
       <div className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden p-3 space-y-2">
         {state.showForm && (
-          <div className="p-2 bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded space-y-2">
+          <div className="p-2 bg-(--aw-primary)/5 dark:bg-(--aw-primary)/10 border border-(--aw-primary)/20 dark:border-(--aw-primary)/30 rounded-sm space-y-2">
             <Input
               type="text"
               placeholder="Variable name"
@@ -233,22 +233,22 @@ export default function VariablesPanel() {
             {filteredVariables.map(([varName, varValue]) => (
               <div
                 key={varName}
-                className="min-w-0 p-2 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded space-y-1.5"
+                className="min-w-0 p-2 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-sm space-y-1.5"
               >
                 <div className="flex items-center justify-between gap-2 min-w-0">
                   <code
-                    className="block min-w-0 flex-1 truncate text-xs font-semibold text-status-success dark:text-[var(--aw-status-success)] bg-status-success/10 dark:bg-[var(--aw-status-success)]/20 px-2 py-1 rounded"
+                    className="block min-w-0 flex-1 truncate text-xs font-semibold text-status-success dark:text-(--aw-status-success) bg-status-success/10 dark:bg-(--aw-status-success)/20 px-2 py-1 rounded-sm"
                     title={varName}
                   >
                     {varName}
                   </code>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <IconButton
                       onClick={() => setTracingVar(varName)}
                       variant="ghost"
                       size="xs"
                       tooltip="Trace variable provenance"
-                      className="flex-shrink-0"
+                      className="shrink-0"
                     >
                       <GitBranch className="w-3 h-3" />
                     </IconButton>
@@ -266,7 +266,7 @@ export default function VariablesPanel() {
                       variant="primary"
                       size="xs"
                       tooltip="Edit variable"
-                      className="flex-shrink-0"
+                      className="shrink-0"
                     >
                       <Pencil className="w-3 h-3" />
                     </IconButton>
@@ -275,7 +275,7 @@ export default function VariablesPanel() {
                       variant="error"
                       size="xs"
                       tooltip="Delete variable"
-                      className="flex-shrink-0"
+                      className="shrink-0"
                     >
                       <Trash2 className="w-3 h-3" />
                     </IconButton>
@@ -316,7 +316,7 @@ export default function VariablesPanel() {
                     </div>
                   </div>
                 ) : (
-                  <div className="min-w-0 max-h-24 overflow-y-auto overflow-x-hidden text-xs text-text-secondary dark:text-text-secondary-dark font-mono bg-surface-overlay dark:bg-surface-dark-overlay rounded p-1.5 border border-border/50 dark:border-border-dark/50">
+                  <div className="min-w-0 max-h-24 overflow-y-auto overflow-x-hidden text-xs text-text-secondary dark:text-text-secondary-dark font-mono bg-surface-overlay dark:bg-surface-dark-overlay rounded-sm p-1.5 border border-border/50 dark:border-border-dark/50">
                     {typeof varValue === "string" ? (
                       <pre className="whitespace-pre-wrap break-all">
                         {varValue}
@@ -332,7 +332,7 @@ export default function VariablesPanel() {
                 <div className="min-w-0 text-[10px] text-text-muted dark:text-text-muted-dark">
                   <span className="break-all">
                     Use:{" "}
-                    <code className="bg-surface dark:bg-surface-dark-raised px-1 rounded break-all">{`{{variables.${varName}}}`}</code>
+                    <code className="bg-surface dark:bg-surface-dark-raised px-1 rounded-sm break-all">{`{{variables.${varName}}}`}</code>
                   </span>
                 </div>
               </div>
@@ -363,18 +363,18 @@ export default function VariablesPanel() {
       >
         <PanelTipsSection title="Workflow variables" icon={Package}>
           <ul className="min-w-0 list-disc list-outside space-y-1.5 pl-4 marker:text-text-muted dark:marker:text-text-muted-dark">
-            <li className="break-words">
+            <li className="wrap-break-word">
               Extract values from API responses using{" "}
               <span className="font-medium text-text-primary dark:text-text-primary-dark">
                 Store Response Fields
               </span>
               .
             </li>
-            <li className="break-words">
+            <li className="wrap-break-word">
               Reference a variable in any field:{" "}
               <PanelTipsCode>{`{{variables.name}}`}</PanelTipsCode>
             </li>
-            <li className="break-words">
+            <li className="wrap-break-word">
               Values persist for the whole workflow run.
             </li>
           </ul>
@@ -382,11 +382,11 @@ export default function VariablesPanel() {
 
         <PanelTipsSection title="Parallel branches" icon={GitMerge}>
           <ul className="min-w-0 list-disc list-outside space-y-1.5 pl-4 marker:text-text-muted dark:marker:text-text-muted-dark">
-            <li className="break-words">
+            <li className="wrap-break-word">
               Access a specific branch:{" "}
               <PanelTipsCode>{`{{prev[0].response}}`}</PanelTipsCode>
             </li>
-            <li className="break-words">
+            <li className="wrap-break-word">
               Single predecessor:{" "}
               <PanelTipsCode>{`{{prev.response}}`}</PanelTipsCode>
             </li>
@@ -394,10 +394,10 @@ export default function VariablesPanel() {
         </PanelTipsSection>
 
         <PanelTipsSection title="Learn more" icon={BookOpen}>
-          <p className="break-words">
+          <p className="wrap-break-word">
             <Link
               to={tutorialHref}
-              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-primary-light"
             >
               Read the tutorial
             </Link>

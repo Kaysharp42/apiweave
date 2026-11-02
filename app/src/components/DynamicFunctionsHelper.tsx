@@ -1,5 +1,5 @@
 import { useState, type ElementType } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import {
   BookOpen,
   Copy,
@@ -220,11 +220,11 @@ export default function DynamicFunctionsHelper() {
   return (
     <div className="relative w-full h-full flex flex-col bg-surface-raised dark:bg-surface-dark-raised overflow-hidden">
       {/* Header — stays put; the function list below it is what scrolls */}
-      <div className="flex-shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3">
+      <div className="shrink-0 bg-surface-overlay dark:bg-surface-dark-overlay border-b border-border dark:border-border-dark p-3">
         <div className="flex items-start justify-between gap-2 min-w-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <Sparkles className="w-5 h-5 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
+              <Sparkles className="w-5 h-5 shrink-0 text-(--aw-primary) dark:text-(--aw-primary-light)" />
               <h2 className="font-bold text-sm text-text-primary dark:text-text-primary-dark min-w-0 truncate">
                 Dynamic Functions
               </h2>
@@ -248,7 +248,7 @@ export default function DynamicFunctionsHelper() {
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder="Search functions"
-            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark rounded text-xs focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] transition-[border-color,box-shadow] duration-[var(--aw-transition-fast)] ease-in-out"
+            className="w-full pl-8 pr-2 py-1.5 border border-border dark:border-border-dark bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) transition-[border-color,box-shadow] duration-(--aw-transition-fast) ease-in-out"
             aria-label="Search functions"
           />
         </div>
@@ -263,27 +263,27 @@ export default function DynamicFunctionsHelper() {
           return (
             <div
               key={category}
-              className="border border-border dark:border-border-dark rounded bg-surface dark:bg-surface-dark overflow-hidden"
+              className="border border-border dark:border-border-dark rounded-sm bg-surface dark:bg-surface-dark overflow-hidden"
             >
               <button
                 type="button"
                 onClick={() => setExpandedCategory(isOpen ? null : category)}
-                className="w-full flex items-center gap-2 p-2 cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                className="w-full flex items-center gap-2 p-2 cursor-pointer hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                 aria-expanded={isOpen}
                 aria-label={`Toggle ${categoryTitles[category]}`}
               >
                 <Icon
-                  className="w-4 h-4 flex-shrink-0 text-text-secondary dark:text-text-secondary-dark"
+                  className="w-4 h-4 shrink-0 text-text-secondary dark:text-text-secondary-dark"
                   aria-hidden="true"
                 />
                 <span className="text-xs font-semibold text-text-primary dark:text-text-primary-dark min-w-0 truncate flex-1 text-left">
                   {categoryTitles[category]}
                 </span>
-                <span className="inline-flex items-center justify-center text-[10px] px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark flex-shrink-0">
+                <span className="inline-flex items-center justify-center text-[10px] px-1.5 py-0.5 rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark shrink-0">
                   {funcs.length}
                 </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark transition-transform duration-200 motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
+                  className={`w-3.5 h-3.5 shrink-0 text-text-muted dark:text-text-muted-dark transition-transform duration-200 motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`}
                   aria-hidden="true"
                 />
               </button>
@@ -296,7 +296,7 @@ export default function DynamicFunctionsHelper() {
                       className="p-2 hover:bg-surface-overlay/50 dark:hover:bg-surface-dark-overlay/50 transition-colors motion-reduce:transition-none"
                     >
                       <div className="flex items-start justify-between gap-2 mb-1 min-w-0">
-                        <code className="text-xs font-mono font-bold text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] break-all min-w-0">
+                        <code className="text-xs font-mono font-bold text-(--aw-primary) dark:text-(--aw-primary-light) break-all min-w-0">
                           {func.syntax}
                         </code>
                         <Button
@@ -311,7 +311,7 @@ export default function DynamicFunctionsHelper() {
                           intent={
                             copiedFunc === func.example ? "success" : "default"
                           }
-                          className="flex-shrink-0"
+                          className="shrink-0"
                           icon={
                             copiedFunc === func.example ? (
                               <CheckCircle className="w-3 h-3" />
@@ -328,7 +328,7 @@ export default function DynamicFunctionsHelper() {
                         {func.description}
                       </p>
 
-                      <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-1.5 rounded mb-1.5 text-[10px] space-y-0.5 border border-border/50 dark:border-border-dark/50 min-w-0">
+                      <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-1.5 rounded-sm mb-1.5 text-[10px] space-y-0.5 border border-border/50 dark:border-border-dark/50 min-w-0">
                         <div className="min-w-0">
                           <span className="text-text-muted">Example: </span>
                           <code className="text-text-primary dark:text-text-primary-dark font-mono break-all">
@@ -337,7 +337,7 @@ export default function DynamicFunctionsHelper() {
                         </div>
                         <div className="min-w-0">
                           <span className="text-text-muted">Result: </span>
-                          <code className="text-status-success dark:text-[var(--aw-status-success)] font-mono break-all">
+                          <code className="text-status-success dark:text-(--aw-status-success) font-mono break-all">
                             {func.result}
                           </code>
                         </div>
@@ -346,7 +346,7 @@ export default function DynamicFunctionsHelper() {
                       {func.default !== "N/A" && (
                         <div className="text-[9px] text-text-muted dark:text-text-muted-dark flex items-start gap-1 min-w-0">
                           <Info
-                            className="w-3 h-3 flex-shrink-0 mt-0.5"
+                            className="w-3 h-3 shrink-0 mt-0.5"
                             aria-hidden="true"
                           />
                           <span className="break-all">
@@ -386,18 +386,18 @@ export default function DynamicFunctionsHelper() {
             ].map((tip) => (
               <li key={tip} className="flex items-start gap-1.5 min-w-0">
                 <CheckCircle
-                  className="w-3 h-3 flex-shrink-0 mt-0.5 text-status-success dark:text-[var(--aw-status-success)]"
+                  className="w-3 h-3 shrink-0 mt-0.5 text-status-success dark:text-(--aw-status-success)"
                   aria-hidden="true"
                 />
-                <span className="break-words">{tip}</span>
+                <span className="wrap-break-word">{tip}</span>
               </li>
             ))}
             <li className="flex items-start gap-1.5 min-w-0">
               <CheckCircle
-                className="w-3 h-3 flex-shrink-0 mt-0.5 text-status-success dark:text-[var(--aw-status-success)]"
+                className="w-3 h-3 shrink-0 mt-0.5 text-status-success dark:text-(--aw-status-success)"
                 aria-hidden="true"
               />
-              <span className="break-words">
+              <span className="wrap-break-word">
                 Combine with static text:{" "}
                 <PanelTipsCode>{`user_{{randomNumber(4)}}@test.com`}</PanelTipsCode>
               </span>
@@ -419,28 +419,28 @@ export default function DynamicFunctionsHelper() {
                 <dt>
                   <PanelTipsCode>{code}</PanelTipsCode>
                 </dt>
-                <dd className="min-w-0 break-words">{meaning}</dd>
+                <dd className="min-w-0 wrap-break-word">{meaning}</dd>
               </div>
             ))}
           </dl>
-          <p className="break-words">
+          <p className="wrap-break-word">
             Example: <PanelTipsCode>{`date("%d/%m/%Y")`}</PanelTipsCode> →
             30/10/2025
           </p>
         </PanelTipsSection>
 
         <PanelTipsSection title="In assertions" icon={CheckCircle}>
-          <p className="break-words">
+          <p className="wrap-break-word">
             Compare against a dynamic value:{" "}
             <PanelTipsCode>{`Expected: {{futureDate(1)}}`}</PanelTipsCode>
           </p>
         </PanelTipsSection>
 
         <PanelTipsSection title="Learn more" icon={BookOpen}>
-          <p className="break-words">
+          <p className="wrap-break-word">
             <Link
               to={tutorialHref}
-              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+              className="font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-primary-light"
             >
               Read the tutorial
             </Link>

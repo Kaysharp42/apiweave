@@ -10,7 +10,7 @@ import {
   Undo2,
   Wifi,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { Badge } from "./atoms/Badge";
 import { Button } from "./atoms/Button";
 import { TutorialCodeBlock } from "./molecules/TutorialCodeBlock";
@@ -67,7 +67,7 @@ function TutorialLessonHeader({
         )}
         <Link
           to={libraryHref}
-          className="inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-secondary-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+          className="inline-flex items-center gap-1.5 rounded-xs px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-text-secondary-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Tutorials
@@ -154,7 +154,7 @@ function TutorialLessonBody({
               >
                 <span
                   aria-hidden="true"
-                  className="mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-text-secondary dark:bg-text-secondary-dark"
+                  className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-text-secondary dark:bg-text-secondary-dark"
                 />
                 <span className="min-w-0">{entry}</span>
               </li>
@@ -185,7 +185,7 @@ function TutorialLessonBody({
         <Section title="Go to">
           <Link
             to={destinationHref}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-primary-light"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-primary-light"
           >
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             {lesson.destination.label}

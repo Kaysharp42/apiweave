@@ -223,7 +223,7 @@ export function WorkflowExportImport({
               ? "Select a workflow from the list to export"
               : undefined
           }
-          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${
             activeTab === "export"
               ? "border-b-2 border-primary text-primary dark:text-primary-dark"
               : "text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
@@ -235,7 +235,7 @@ export function WorkflowExportImport({
         <button
           type="button"
           onClick={() => setActiveTab("import")}
-          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] ${
+          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${
             activeTab === "import"
               ? "border-b-2 border-primary text-primary dark:text-primary-dark"
               : "text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
@@ -260,9 +260,9 @@ export function WorkflowExportImport({
               </p>
             </div>
 
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded p-4">
+            <div className="bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark rounded-sm p-4">
               <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-[var(--aw-primary)] flex-shrink-0 mt-0.5" />
+                <AlertCircle className="w-5 h-5 text-(--aw-primary) shrink-0 mt-0.5" />
                 <div className="text-sm text-text-primary dark:text-text-primary-dark">
                   <p className="font-medium mb-1">
                     Secret values are never exported
@@ -270,7 +270,7 @@ export function WorkflowExportImport({
                   <p>
                     Any detected secrets (API keys, tokens, passwords) will be
                     replaced with{" "}
-                    <code className="bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark px-1 rounded font-mono">
+                    <code className="bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark px-1 rounded-sm font-mono">
                       &lt;SECRET&gt;
                     </code>{" "}
                     placeholders. You&apos;ll need to re-enter these values
@@ -288,7 +288,7 @@ export function WorkflowExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setIncludeEnvironment(e.target.checked)
                   }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary cursor-pointer"
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Include referenced environment (if any)
@@ -297,7 +297,7 @@ export function WorkflowExportImport({
             </div>
 
             {error && (
-              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
                 {error}
               </div>
             )}
@@ -340,12 +340,12 @@ export function WorkflowExportImport({
                   onChange={handleFileSelect}
                   className="block w-full text-sm text-text-muted dark:text-text-muted-dark
                     file:mr-4 file:py-2 file:px-4
-                    file:rounded file:border-0
+                    file:rounded-sm file:border-0
                     file:text-sm file:font-medium
-                    file:bg-[var(--aw-primary)]/5 file:text-[var(--aw-primary)]
-                    hover:file:bg-[var(--aw-primary)]/10
-                    dark:file:bg-[var(--aw-primary)]/10 dark:file:text-[var(--aw-primary)]
-                    dark:hover:file:bg-[var(--aw-primary)]/20"
+                    file:bg-(--aw-primary)/5 file:text-(--aw-primary)
+                    hover:file:bg-(--aw-primary)/10
+                    dark:file:bg-(--aw-primary)/10 dark:file:text-(--aw-primary)
+                    dark:hover:file:bg-(--aw-primary)/20"
                 />
               </div>
             </div>
@@ -380,7 +380,7 @@ export function WorkflowExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setCreateMissingEnvs(e.target.checked)
                   }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded focus:ring-primary cursor-pointer"
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Create missing environments from bundle
@@ -391,17 +391,17 @@ export function WorkflowExportImport({
             {/* Dry run result */}
             {dryRunResult && (
               <div
-                className={`border rounded p-4 ${
+                className={`border rounded-sm p-4 ${
                   dryRunResult.valid
-                    ? "bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30"
-                    : "bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30"
+                    ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 border-(--aw-status-success)/20 dark:border-(--aw-status-success)/30"
+                    : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30"
                 }`}
               >
                 <div className="flex items-start gap-2">
                   {dryRunResult.valid ? (
-                    <CheckCircle className="w-5 h-5 text-[var(--aw-status-success)] flex-shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-(--aw-status-success) shrink-0" />
                   ) : (
-                    <AlertCircle className="w-5 h-5 text-[var(--aw-status-error)] flex-shrink-0" />
+                    <AlertCircle className="w-5 h-5 text-(--aw-status-error) shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
                     <p
@@ -422,8 +422,8 @@ export function WorkflowExportImport({
                         <p>Edges: {dryRunResult.stats.edges}</p>
                         <p>Variables: {dryRunResult.stats.variables}</p>
                         {dryRunResult.stats.secretReferences > 0 && (
-                          <p className="text-[var(--aw-status-warning)] flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                          <p className="text-(--aw-status-warning) flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
                             <span>
                               {dryRunResult.stats.secretReferences} secret(s)
                               need to be re-entered
@@ -443,7 +443,7 @@ export function WorkflowExportImport({
 
                     {dryRunResult.warnings &&
                       dryRunResult.warnings.length > 0 && (
-                        <ul className="mt-2 text-sm text-[var(--aw-status-warning)] list-disc list-inside">
+                        <ul className="mt-2 text-sm text-(--aw-status-warning) list-disc list-inside">
                           {dryRunResult.warnings.map((warn: string) => (
                             <li key={warn}>{warn}</li>
                           ))}
@@ -456,9 +456,9 @@ export function WorkflowExportImport({
 
             {/* Import result */}
             {importResult && (
-              <div className="bg-[var(--aw-status-success)]/5 dark:bg-[var(--aw-status-success)]/10 border border-[var(--aw-status-success)]/20 dark:border-[var(--aw-status-success)]/30 rounded p-4">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 border border-(--aw-status-success)/20 dark:border-(--aw-status-success)/30 rounded-sm p-4">
                 <div className="flex items-start gap-2">
-                  <CheckCircle className="w-5 h-5 text-[var(--aw-status-success)] flex-shrink-0" />
+                  <CheckCircle className="w-5 h-5 text-(--aw-status-success) shrink-0" />
                   <div className="min-w-0">
                     <p className="font-medium text-status-success dark:text-status-success-dark">
                       Import successful!
@@ -468,8 +468,8 @@ export function WorkflowExportImport({
                     </p>
                     {importResult.secretReferences &&
                       importResult.secretReferences.length > 0 && (
-                        <p className="text-sm text-[var(--aw-status-warning)] mt-2 flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        <p className="text-sm text-(--aw-status-warning) mt-2 flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
                           <span>
                             Remember to re-enter{" "}
                             {importResult.secretReferences.length} secret
@@ -483,7 +483,7 @@ export function WorkflowExportImport({
             )}
 
             {error && (
-              <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
                 {error}
               </div>
             )}

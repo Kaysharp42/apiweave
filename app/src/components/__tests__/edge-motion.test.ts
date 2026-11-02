@@ -111,7 +111,10 @@ describe("connection layer motion", () => {
   });
 
   it("mounts the fill head for one traversal and no longer", () => {
-    const source = readFileSync(join("src", "components", "CustomEdge.tsx"), "utf-8");
+    const source = readFileSync(
+      join("src", "components", "CustomEdge.tsx"),
+      "utf-8",
+    );
 
     // The head rides a fill that is in flight — not a per-edge flag, and not a
     // loop. `filling` is set when the phase *becomes* traversed...
@@ -127,11 +130,9 @@ describe("connection layer motion", () => {
   });
 
   it("never loops the edge fill", () => {
-    const config = readFileSync("tailwind.config.js", "utf-8");
+    const css = readFileSync(join("src", "index.css"), "utf-8");
     // The declaration, not the comment above it that names the same keyframe.
-    const fill = config
-      .split("\n")
-      .find((line) => /^\s*"edge-fill":/.test(line));
+    const fill = css.match(/--animate-edge-fill:\s*([^;]+);/)?.[1];
 
     expect(fill, "the edge fill animation must be registered").toBeDefined();
     // A traversal happens once. `infinite` here would put the canvas back into
@@ -146,7 +147,11 @@ describe("connection layer motion", () => {
     // The instant flip this replaced: the edge took its end colour the moment
     // the source settled. The reveal has to be a transition on the overlay, and
     // the colour crossfade has to be there too, or a status change still snaps.
-    expect(css).toMatch(/\.aw-edge-fill\s*\{[^}]*stroke-dashoffset\s+var\(--aw-dur-edge-fill\)/);
-    expect(css).toMatch(/\.aw-edge-fill\s*\{[^}]*stroke\s+var\(--aw-dur-fast\)/);
+    expect(css).toMatch(
+      /\.aw-edge-fill\s*\{[^}]*stroke-dashoffset\s+var\(--aw-dur-edge-fill\)/,
+    );
+    expect(css).toMatch(
+      /\.aw-edge-fill\s*\{[^}]*stroke\s+var\(--aw-dur-fast\)/,
+    );
   });
 });

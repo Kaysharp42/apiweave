@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { JsonEditor } from "json-edit-react";
+import { JsonViewer } from "json-edit-react";
 import { Braces, FileCode, FileText, type LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Card } from "../molecules/Card";
@@ -11,7 +11,7 @@ import { useDarkMode } from "../../hooks/useDarkMode";
 import { useJsonEditorDarkTheme } from "../../hooks/useJsonEditorDarkTheme";
 import {
   JSON_TREE_ACTION_RESET,
-  JSON_TREE_ICONS,
+  JSON_TREE_COPY_BUTTON,
 } from "../molecules/JsonTreeActions";
 
 type NodeOutputTab = "tree" | "raw";
@@ -50,6 +50,7 @@ function normalizeStatus(status: string): StatusBadgeProps["status"] {
 
 const BracesCardIcon = createCardIcon(Braces);
 const FileCodeCardIcon = createCardIcon(FileCode);
+const NODE_OUTPUT_TREE_CUSTOM_BUTTONS = [JSON_TREE_COPY_BUTTON];
 
 export function NodeOutputPanel({
   output,
@@ -64,7 +65,7 @@ export function NodeOutputPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-raised px-4 py-3 dark:border-border-dark dark:bg-surface-dark-raised">
         <div className="flex min-w-0 items-center gap-2">
           <FileText
             className="h-4 w-4 text-text-muted dark:text-text-muted-dark"
@@ -117,17 +118,17 @@ export function NodeOutputPanel({
             <Card
               title="Output tree"
               icon={BracesCardIcon}
-              className="flex min-h-0 flex-1 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
+              className="flex min-h-0 flex-1 flex-col *:last:min-h-0 *:last:flex-1"
             >
               <div
-                className={`h-full overflow-auto rounded-sm border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
+                className={`h-full overflow-auto rounded-xs border border-border bg-surface-raised p-3 dark:border-border-dark dark:bg-surface-dark-raised ${JSON_TREE_ACTION_RESET}`}
               >
-                <JsonEditor
+                <JsonViewer
                   data={output}
-                  icons={JSON_TREE_ICONS}
-                  restrictEdit={true}
-                  restrictAdd={true}
-                  restrictDelete={true}
+                  collapse={false}
+                  showCollectionCount={true}
+                  showClipboardButton={false}
+                  customButtons={NODE_OUTPUT_TREE_CUSTOM_BUTTONS}
                   rootName="output"
                   {...(jsonEditorTheme ? { theme: jsonEditorTheme } : {})}
                 />
@@ -137,9 +138,9 @@ export function NodeOutputPanel({
             <Card
               title="Raw output"
               icon={FileCodeCardIcon}
-              className="flex min-h-0 flex-1 flex-col [&>:last-child]:min-h-0 [&>:last-child]:flex-1"
+              className="flex min-h-0 flex-1 flex-col *:last:min-h-0 *:last:flex-1"
             >
-              <pre className="h-full overflow-auto rounded-sm border border-border bg-surface-overlay p-3 font-mono text-xs leading-relaxed text-text-primary whitespace-pre-wrap break-words dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+              <pre className="h-full overflow-auto rounded-xs border border-border bg-surface-overlay p-3 font-mono text-xs leading-relaxed text-text-primary whitespace-pre-wrap wrap-break-word dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
                 {stringifyOutput(output)}
               </pre>
             </Card>

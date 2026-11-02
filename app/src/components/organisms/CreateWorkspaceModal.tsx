@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import type { GitAccount } from "@shared/types/GitAccount";
@@ -383,14 +383,14 @@ export function CreateWorkspaceModal({
         {serverError && (
           <div
             role="alert"
-            className="rounded border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
+            className="rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:bg-status-error/20"
           >
             {serverError}
           </div>
         )}
 
         {awaitingAuthor !== null && (
-          <div className="space-y-2 rounded border border-border px-3 py-2 dark:border-border-dark">
+          <div className="space-y-2 rounded-sm border border-border px-3 py-2 dark:border-border-dark">
             <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
               The workspace is created and tracked. Tell git who is making its
               commits, and APIWeave creates the repository and connects it
@@ -403,7 +403,7 @@ export function CreateWorkspaceModal({
         {unfinished !== null && (
           <div
             role="alert"
-            className="rounded border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm text-text-primary dark:bg-status-warning/20 dark:text-text-primary-dark"
+            className="rounded-sm border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-sm text-text-primary dark:bg-status-warning/20 dark:text-text-primary-dark"
           >
             {unfinished.message}
           </div>

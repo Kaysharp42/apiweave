@@ -81,7 +81,7 @@ export function NetworkSettingsPanel() {
 
   if (draft === null || state === null) {
     return error ? (
-      <p className="text-sm text-status-error dark:text-[var(--aw-status-error)]">
+      <p className="text-sm text-status-error dark:text-(--aw-status-error)">
         {error}
       </p>
     ) : null;
@@ -332,7 +332,7 @@ export function NetworkSettingsPanel() {
       {problem && (
         <p
           role="alert"
-          className="text-sm text-status-error dark:text-[var(--aw-status-error)]"
+          className="text-sm text-status-error dark:text-(--aw-status-error)"
         >
           {problem}
         </p>

@@ -7,7 +7,7 @@ const intentClassName: Record<
   primary:
     "bg-primary/10 dark:bg-primary-light/10 border-primary dark:border-primary-light text-primary dark:text-primary-light",
   success:
-    "bg-status-success/10 dark:bg-[var(--aw-status-success)]/10 border-status-success dark:border-[var(--aw-status-success)] text-status-success dark:text-[var(--aw-status-success)]",
+    "bg-status-success/10 dark:bg-(--aw-status-success)/10 border-status-success dark:border-(--aw-status-success) text-status-success dark:text-(--aw-status-success)",
 };
 
 export function IconSwitch({
@@ -34,9 +34,9 @@ export function IconSwitch({
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={[
-        "relative inline-flex h-7 w-14 flex-shrink-0 items-center rounded-sm border p-0.5",
-        "transition-[box-shadow,background-color,border-color] duration-[var(--aw-transition-fast)] ease-in-out",
-        "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+        "relative inline-flex h-7 w-14 shrink-0 items-center rounded-xs border p-0.5",
+        "transition-[box-shadow,background-color,border-color] duration-(--aw-transition-fast) ease-in-out",
+        "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
         checked
           ? intentClassName[intent]
           : "bg-surface-raised dark:bg-surface-dark-raised border-border dark:border-border-dark text-text-muted dark:text-text-muted-dark",
@@ -57,7 +57,7 @@ export function IconSwitch({
       </span>
       <span
         className={[
-          "pointer-events-none z-10 flex h-6 w-6 items-center justify-center rounded-sm border border-border bg-surface-raised text-text-primary transition-transform duration-[var(--aw-transition-fast)] ease-in-out dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark",
+          "pointer-events-none z-10 flex h-6 w-6 items-center justify-center rounded-xs border border-border bg-surface-raised text-text-primary transition-transform duration-(--aw-transition-fast) ease-in-out dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark",
           checked ? "translate-x-7" : "translate-x-0",
         ].join(" ")}
       >

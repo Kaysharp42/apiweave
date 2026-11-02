@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import { Info, Shuffle, Timer, type LucideIcon } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { Input } from "../atoms/Input";
@@ -105,7 +105,7 @@ export function DelayConfigPanel({
                 size="lg"
                 className="max-w-48 font-mono text-lg"
               />
-              <span className="rounded-sm border border-border bg-surface-overlay px-3 py-2 font-mono text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+              <span className="rounded-xs border border-border bg-surface-overlay px-3 py-2 font-mono text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
                 {formatDuration(duration)}
               </span>
             </div>
@@ -226,7 +226,7 @@ export function DelayConfigPanel({
               }}
             />
           </FormField>
-          <div className="rounded-sm border border-status-info/30 bg-status-info/10 p-3 text-xs text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]">
+          <div className="rounded-xs border border-status-info/30 bg-status-info/10 p-3 text-xs text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)">
             Delays intentionally pause execution. Timeouts are external limits
             that can interrupt a run; this setting controls what happens if the
             delay node itself reports a failure.

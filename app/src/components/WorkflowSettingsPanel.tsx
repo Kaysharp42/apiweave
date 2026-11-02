@@ -134,24 +134,24 @@ export function WorkflowSettingsPanel() {
         {showCollectionsSection && (
           <div className="space-y-2">
             <div className="text-sm font-semibold text-text-primary dark:text-text-primary-dark flex items-center gap-2 min-w-0">
-              <LayoutGrid className="w-4 h-4 flex-shrink-0 text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)]" />
+              <LayoutGrid className="w-4 h-4 shrink-0 text-(--aw-primary) dark:text-(--aw-primary-light)" />
               <span className="min-w-0 truncate">Projects</span>
             </div>
             {showCollectionsItem && (
               <div className="relative min-w-0">
                 {isLoadingCollections ? (
-                  <div className="flex items-center justify-center py-3 px-4 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded">
+                  <div className="flex items-center justify-center py-3 px-4 bg-surface dark:bg-surface-dark border border-border dark:border-border-dark rounded-sm">
                     <Spinner size="sm" />
                     <span className="ml-2 text-sm text-text-secondary dark:text-text-secondary-dark">
                       Loading projects…
                     </span>
                   </div>
                 ) : currentCollection ? (
-                  <div className="flex items-center justify-between px-4 py-3 text-sm bg-[var(--aw-primary)]/5 dark:bg-[var(--aw-primary)]/10 border border-[var(--aw-primary)]/20 dark:border-[var(--aw-primary)]/30 rounded min-w-0 gap-3">
+                  <div className="flex items-center justify-between px-4 py-3 text-sm bg-(--aw-primary)/5 dark:bg-(--aw-primary)/10 border border-(--aw-primary)/20 dark:border-(--aw-primary)/30 rounded-sm min-w-0 gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       {(currentCollection as unknown as LocalProject).color && (
                         <div
-                          className="w-3 h-3 rounded-full flex-shrink-0 border border-[var(--aw-primary)]/30 dark:border-[var(--aw-primary)]/50"
+                          className="w-3 h-3 rounded-full shrink-0 border border-(--aw-primary)/30 dark:border-(--aw-primary)/50"
                           style={{
                             backgroundColor: (
                               currentCollection as unknown as LocalProject
@@ -160,7 +160,7 @@ export function WorkflowSettingsPanel() {
                         />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] truncate">
+                        <div className="font-medium text-(--aw-primary) dark:text-(--aw-primary-light) truncate">
                           {(currentCollection as unknown as LocalProject).name}
                         </div>
                         {(currentCollection as unknown as LocalProject)
@@ -206,14 +206,14 @@ export function WorkflowSettingsPanel() {
                     >
                       <span className="min-w-0 truncate">Add to Project</span>
                       <ChevronDown
-                        className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
+                        className={`w-4 h-4 shrink-0 transition-transform duration-200 motion-reduce:transition-none ${
                           showProjectDropdown ? "rotate-180" : ""
                         }`}
                       />
                     </Button>
 
                     {showProjectDropdown && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded max-h-60 overflow-y-auto overflow-x-hidden">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark rounded-sm max-h-60 overflow-y-auto overflow-x-hidden">
                         <div className="py-1">
                           {collections.map((collection) => {
                             const c = collection as unknown as LocalProject;
@@ -227,11 +227,11 @@ export function WorkflowSettingsPanel() {
                                   setShowProjectDropdown(false);
                                 }}
                                 disabled={assignmentLoading}
-                                className="w-full px-4 py-2 text-left text-sm hover:bg-surface dark:hover:bg-surface-dark transition-colors motion-reduce:transition-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+                                className="w-full px-4 py-2 text-left text-sm hover:bg-surface dark:hover:bg-surface-dark transition-colors motion-reduce:transition-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                               >
                                 {c.color && (
                                   <div
-                                    className="w-3 h-3 rounded-full flex-shrink-0 border border-border dark:border-border-dark"
+                                    className="w-3 h-3 rounded-full shrink-0 border border-border dark:border-border-dark"
                                     style={{ backgroundColor: c.color }}
                                   />
                                 )}
@@ -246,7 +246,7 @@ export function WorkflowSettingsPanel() {
                                   )}
                                 </div>
                                 {assignmentLoading && (
-                                  <RefreshCw className="w-4 h-4 animate-spin motion-reduce:animate-none text-[var(--aw-primary)] dark:text-[var(--aw-primary-light)] flex-shrink-0" />
+                                  <RefreshCw className="w-4 h-4 animate-spin motion-reduce:animate-none text-(--aw-primary) dark:text-(--aw-primary-light) shrink-0" />
                                 )}
                               </button>
                             );
@@ -259,7 +259,7 @@ export function WorkflowSettingsPanel() {
                   <EmptyState
                     title="No projects available"
                     description="Create a project to organize workflows"
-                    className="py-4 border border-dashed border-border dark:border-border-dark rounded"
+                    className="py-4 border border-dashed border-border dark:border-border-dark rounded-sm"
                   />
                 )}
 
@@ -280,7 +280,7 @@ export function WorkflowSettingsPanel() {
           <EmptyState
             title="No matching settings"
             description="Try a different search term"
-            className="py-4 border border-dashed border-border dark:border-border-dark rounded"
+            className="py-4 border border-dashed border-border dark:border-border-dark rounded-sm"
           />
         )}
       </div>

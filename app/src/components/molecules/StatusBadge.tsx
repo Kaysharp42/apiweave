@@ -31,30 +31,30 @@ export function StatusBadge({
       icon: Loader2,
       text: "Running",
       badgeClass:
-        "border-status-running/30 bg-status-running/10 text-status-running dark:border-[var(--aw-status-running)]/30 dark:bg-[var(--aw-status-running)]/10 dark:text-[var(--aw-status-running)]",
+        "border-status-running/30 bg-status-running/10 text-status-running dark:border-(--aw-status-running)/30 dark:bg-(--aw-status-running)/10 dark:text-(--aw-status-running)",
       iconClass:
-        "text-status-running dark:text-[var(--aw-status-running)] animate-spin motion-reduce:animate-none",
+        "text-status-running dark:text-(--aw-status-running) animate-spin motion-reduce:animate-none",
     },
     success: {
       icon: CheckCircle2,
       text: "Success",
       badgeClass:
-        "border-status-success/30 bg-status-success/10 text-status-success dark:border-[var(--aw-status-success)]/30 dark:bg-[var(--aw-status-success)]/10 dark:text-[var(--aw-status-success)]",
-      iconClass: "text-status-success dark:text-[var(--aw-status-success)]",
+        "border-status-success/30 bg-status-success/10 text-status-success dark:border-(--aw-status-success)/30 dark:bg-(--aw-status-success)/10 dark:text-(--aw-status-success)",
+      iconClass: "text-status-success dark:text-(--aw-status-success)",
     },
     error: {
       icon: XCircle,
       text: "Failed",
       badgeClass:
-        "border-status-error/30 bg-status-error/10 text-status-error dark:border-[var(--aw-status-error)]/30 dark:bg-[var(--aw-status-error)]/10 dark:text-[var(--aw-status-error)]",
-      iconClass: "text-status-error dark:text-[var(--aw-status-error)]",
+        "border-status-error/30 bg-status-error/10 text-status-error dark:border-(--aw-status-error)/30 dark:bg-(--aw-status-error)/10 dark:text-(--aw-status-error)",
+      iconClass: "text-status-error dark:text-(--aw-status-error)",
     },
     warning: {
       icon: AlertTriangle,
       text: "Warning",
       badgeClass:
-        "border-status-warning/30 bg-status-warning/10 text-status-warning dark:border-[var(--aw-status-warning)]/30 dark:bg-[var(--aw-status-warning)]/10 dark:text-[var(--aw-status-warning)]",
-      iconClass: "text-status-warning dark:text-[var(--aw-status-warning)]",
+        "border-status-warning/30 bg-status-warning/10 text-status-warning dark:border-(--aw-status-warning)/30 dark:bg-(--aw-status-warning)/10 dark:text-(--aw-status-warning)",
+      iconClass: "text-status-warning dark:text-(--aw-status-warning)",
     },
     skipped: {
       // Never a check — a skipped step did not succeed.
@@ -68,8 +68,8 @@ export function StatusBadge({
       icon: Info,
       text: "Info",
       badgeClass:
-        "border-status-info/30 bg-status-info/10 text-status-info dark:border-[var(--aw-status-info)]/30 dark:bg-[var(--aw-status-info)]/10 dark:text-[var(--aw-status-info)]",
-      iconClass: "text-status-info dark:text-[var(--aw-status-info)]",
+        "border-status-info/30 bg-status-info/10 text-status-info dark:border-(--aw-status-info)/30 dark:bg-(--aw-status-info)/10 dark:text-(--aw-status-info)",
+      iconClass: "text-status-info dark:text-(--aw-status-info)",
     },
   };
 

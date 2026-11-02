@@ -34,7 +34,7 @@ export function AuditEventRow({ event }: AuditEventRowProps) {
       <td className="px-3 py-2 text-sm text-text-secondary dark:text-text-secondary-dark">
         {event.resourceType}
       </td>
-      <td className="px-3 py-2 text-xs font-mono text-text-muted dark:text-text-muted-dark truncate max-w-[12rem]">
+      <td className="px-3 py-2 text-xs font-mono text-text-muted dark:text-text-muted-dark truncate max-w-48">
         {event.resourceId}
       </td>
     </tr>

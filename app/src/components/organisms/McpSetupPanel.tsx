@@ -118,7 +118,7 @@ export function McpSetupPanel() {
 
       {status.running && config && (
         <div className="space-y-4">
-          <div className="rounded-sm border border-border bg-surface-overlay px-3 py-2 text-xs dark:border-border-dark dark:bg-surface-dark-overlay">
+          <div className="rounded-xs border border-border bg-surface-overlay px-3 py-2 text-xs dark:border-border-dark dark:bg-surface-dark-overlay">
             <span className="text-text-secondary dark:text-text-secondary-dark">
               Listening on{" "}
             </span>
@@ -145,7 +145,7 @@ export function McpSetupPanel() {
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <pre className="overflow-x-auto rounded-sm border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
+            <pre className="overflow-x-auto rounded-xs border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
               {clientConfig(config.url, config.token)}
             </pre>
           </div>
@@ -157,7 +157,7 @@ export function McpSetupPanel() {
             <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
               Bridge stdio to this endpoint with:
             </p>
-            <pre className="mt-1 overflow-x-auto rounded-sm border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
+            <pre className="mt-1 overflow-x-auto rounded-xs border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
               {bridgeCommand}
             </pre>
           </div>
@@ -207,7 +207,7 @@ export function McpSetupPanel() {
             {approvals.map((approval) => (
               <li
                 key={approval.approvalId}
-                className="rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+                className="rounded-xs border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">

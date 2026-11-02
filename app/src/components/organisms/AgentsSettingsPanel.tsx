@@ -376,7 +376,7 @@ export function AgentsSettingsPanel() {
                     })
                   }
                   aria-label="Prompt mode"
-                  className="w-full rounded-sm border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+                  className="w-full rounded-xs border border-border bg-surface-raised px-2 py-1.5 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
                 >
                   <option value="none">Not supported</option>
                   <option value="argv">As positional argument</option>
@@ -506,7 +506,7 @@ function AgentRow({
   const installUrl = entry.definition.installUrl;
   const detail = entry.availability.detail ?? entry.definition.detectCmd;
   return (
-    <li className="flex items-center gap-3 rounded border border-border px-3 py-2 dark:border-border-dark">
+    <li className="flex items-center gap-3 rounded-sm border border-border px-3 py-2 dark:border-border-dark">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium text-text-primary dark:text-text-primary-dark">
@@ -534,7 +534,7 @@ function AgentRow({
         <p
           title={detail}
           className={`mt-0.5 text-xs text-text-secondary dark:text-text-secondary-dark ${
-            entry.availability.state === "broken" ? "break-words" : "truncate"
+            entry.availability.state === "broken" ? "wrap-break-word" : "truncate"
           }`}
         >
           {detail}

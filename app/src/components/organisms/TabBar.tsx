@@ -118,7 +118,7 @@ export function TabBar() {
                 onContextMenu={(e) => handleContextMenu(e, tab.id)}
                 className={[
                   "relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2",
+                  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
                   isActive
                     ? "bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light font-medium"
                     : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
@@ -128,12 +128,12 @@ export function TabBar() {
                 title={tab.name}
               >
                 {isActive && (
-                  <span className="absolute bottom-0 inset-x-0 h-0.5 bg-[var(--aw-primary)]" />
+                  <span className="absolute bottom-0 inset-x-0 h-0.5 bg-(--aw-primary)" />
                 )}
 
                 {tab.isDirty && (
                   <Circle
-                    className="w-2 h-2 fill-current text-[var(--aw-status-warning)] flex-shrink-0"
+                    className="w-2 h-2 fill-current text-(--aw-status-warning) shrink-0"
                     aria-label="Unsaved changes"
                   />
                 )}
@@ -150,10 +150,10 @@ export function TabBar() {
                 // others stay reachable through Ctrl+W after arrowing to a tab.
                 tabIndex={isActive ? 0 : -1}
                 className={[
-                  "px-1.5 rounded transition-colors self-center cursor-pointer flex-shrink-0",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2",
+                  "px-1.5 rounded-sm transition-colors self-center cursor-pointer shrink-0",
+                  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
                   isActive ? "" : "opacity-0 group-hover:opacity-100",
-                  "hover:bg-[var(--aw-status-error)]/20 hover:text-[var(--aw-status-error)]",
+                  "hover:bg-(--aw-status-error)/20 hover:text-(--aw-status-error)",
                 ].join(" ")}
                 aria-label={`Close ${tab.name}`}
               >
@@ -177,12 +177,12 @@ export function TabBar() {
 
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[160px] rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node py-1 text-sm"
+          className="fixed z-50 min-w-[160px] rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node py-1 text-sm"
           style={{ top: contextMenu.y, left: contextMenu.x }}
         >
           <button
             type="button"
-            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
             onClick={() => {
               const { tabId } = contextMenu;
               requestClose([tabId], () => closeTab(tabId));
@@ -193,7 +193,7 @@ export function TabBar() {
           </button>
           <button
             type="button"
-            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
             onClick={() => {
               const { tabId } = contextMenu;
               requestClose(
@@ -208,7 +208,7 @@ export function TabBar() {
           <div className="my-1 border-t border-border dark:border-border-dark" />
           <button
             type="button"
-            className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-[var(--aw-status-error)] cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+            className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-(--aw-status-error) cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
             onClick={() => {
               // Scoped: "Close All" closes this workspace's tabs, and leaves
               // the ones waiting in the other workspaces alone.

@@ -18,7 +18,7 @@ export interface TemplateAutocompleteHandle<
   E extends HTMLInputElement | HTMLTextAreaElement,
 > {
   readonly props: {
-    readonly ref: RefObject<E>;
+    readonly ref: RefObject<E | null>;
     readonly value: string;
     readonly onChange: (event: ChangeEvent<E>) => void;
     readonly onSelect: (event: SyntheticEvent<E>) => void;

@@ -523,7 +523,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                         onDragStart={() => handleDragStart(index)}
                         onDragOver={(e) => handleDragOver(e, index)}
                         onDragEnd={handleDragEnd}
-                        className={`flex items-center gap-2 p-3 border rounded transition-all ${
+                        className={`flex items-center gap-2 p-3 border rounded-sm transition-all ${
                           draggedIndex === index
                             ? "border-primary bg-primary/5 opacity-50"
                             : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised"
@@ -532,7 +532,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                         <div className="cursor-grab active:cursor-grabbing text-text-muted dark:text-text-muted-dark">
                           <GripVertical className="w-5 h-5" />
                         </div>
-                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
+                        <div className="shrink-0 w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
                           {index + 1}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -599,7 +599,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   </h3>
                   <select
                     onChange={handleSelectChange}
-                    className="w-full rounded border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
                   >
                     <option value="">Select a workflow to add…</option>
                     <option value="__new__">+ Create New Workflow</option>
@@ -632,7 +632,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
           ) : isEditing ? (
             <div className="space-y-4">
               {error && (
-                <div className="p-3 bg-status-error/5 border border-status-error/20 rounded text-sm text-status-error">
+                <div className="p-3 bg-status-error/5 border border-status-error/20 rounded-sm text-sm text-status-error">
                   {error}
                 </div>
               )}
@@ -712,13 +712,13 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                 projects.map((project) => (
                   <div
                     key={getProjectId(project)}
-                    className="p-3 border border-border dark:border-border-dark rounded hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
+                    className="p-3 border border-border dark:border-border-dark rounded-sm hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         {project.color && (
                           <div
-                            className="w-4 h-4 rounded-full flex-shrink-0"
+                            className="w-4 h-4 rounded-full shrink-0"
                             style={{ backgroundColor: project.color }}
                           />
                         )}
@@ -737,7 +737,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                           </div>
                         </div>
                       </div>
-                      <div className="flex gap-1.5 flex-shrink-0">
+                      <div className="flex gap-1.5 shrink-0">
                         {/*
                           The project's local folder is the one most users will
                           ever set — a workflow-level path only matters inside a

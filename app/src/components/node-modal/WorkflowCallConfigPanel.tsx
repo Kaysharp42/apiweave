@@ -53,9 +53,9 @@ function MappingCard({
         {Object.entries(mapping).map(([key, expr]) => (
           <div
             key={key}
-            className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded"
+            className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded-sm"
           >
-            <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+            <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark shrink-0">
               {key}
             </span>
             <span className="text-text-muted dark:text-text-muted-dark">
@@ -242,7 +242,7 @@ export function WorkflowCallConfigPanel({
             value={targetWorkflowId ?? ""}
             onChange={(e) => handleTargetChange(e.target.value)}
             disabled={loading}
-            className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+            className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
           >
             <option value="">
               {loading ? "Loading workflows..." : "Select a workflow"}

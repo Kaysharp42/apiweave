@@ -9,7 +9,7 @@ import {
   UserRound,
   type LucideIcon,
 } from "lucide-react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router";
 import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
 import { BackgroundSettingsPanel } from "../components/organisms/BackgroundSettingsPanel";
 import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";

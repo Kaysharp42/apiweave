@@ -42,13 +42,13 @@ export function SearchInput({
         placeholder={placeholder}
         autoFocus={autoFocus}
         className={[
-          "w-full rounded-sm border border-border pl-8 pr-7 transition-[border-color,outline] duration-[var(--aw-transition-fast)]",
+          "w-full rounded-xs border border-border pl-8 pr-7 transition-[border-color,outline] duration-(--aw-transition-fast)",
           sizeClass[size] ?? "h-8 text-sm",
           "bg-surface-raised dark:bg-surface-dark-raised",
           "text-text-primary dark:text-text-primary-dark",
           "placeholder:text-text-muted dark:placeholder:text-text-muted-dark",
-          "focus:border-primary focus:outline-none dark:focus:border-primary-light",
-          "focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]",
+          "focus:border-primary focus:outline-hidden dark:focus:border-primary-light",
+          "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
         ].join(" ")}
         {...rest}
       />
@@ -57,7 +57,7 @@ export function SearchInput({
         <button
           type="button"
           onClick={() => onChange("")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-sm p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
+          className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-xs p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
           aria-label="Clear search"
         >
           <X className={iconSize[size] ?? "w-3.5 h-3.5"} />

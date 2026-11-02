@@ -9,7 +9,7 @@ import { join } from "node:path";
  * Verifies that no hardcoded hex values are used in component files.
  * All colors MUST use Tailwind design tokens (e.g., `bg-primary`, `text-text-secondary`).
  *
- * Exceptions: tailwind.config.js and base.css are allowed to define hex values.
+ * Exceptions: src/index.css and base.css are allowed to define hex values.
  */
 
 const SRC_DIR = join("src", "components");

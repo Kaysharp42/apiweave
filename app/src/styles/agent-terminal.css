@@ -32,6 +32,8 @@
   --aw-term-cursor-accent: #09090b;
   --aw-term-selection: rgb(45 212 191 / 26%);
   --aw-term-selection-inactive: rgb(212 212 216 / 14%);
+  /* One thumb colour for rest, hover and drag, as the native thumb had. */
+  --aw-term-scrollbar: #3f3f46;
 
   /* The sixteen ANSI slots. Normal, then bright. */
   --aw-term-black: #27272a;
@@ -68,24 +70,16 @@
   padding: 8px 4px 8px 10px;
 }
 
-/* The scrollbar is xterm's own element, so it is themed here rather than by the
-   global scrollbar rules, which are keyed to app surfaces. */
-.aw-agent-terminal .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: #3f3f46 transparent;
-}
-
-.aw-agent-terminal .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
-}
-
-.aw-agent-terminal .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.aw-agent-terminal .xterm-viewport::-webkit-scrollbar-thumb {
-  background-color: #3f3f46;
-  border: 3px solid var(--aw-term-bg);
+/*
+ * xterm 6 replaced the native viewport scrollbar with its own scrollable
+ * element, and takes the slider's colour from the terminal theme — see
+ * `THEME_TOKENS` in `AgentTerminal`, which fills the three slider slots from
+ * `--aw-term-scrollbar`. Only the shape is left to CSS: the old thumb was a
+ * narrow pill inset from the terminal edge, so the full-width slider gets the
+ * surface colour as a border.
+ */
+.aw-agent-terminal .xterm-scrollable-element > .scrollbar > .slider {
+  border: 5px solid var(--aw-term-bg);
   border-radius: 9999px;
 }
 

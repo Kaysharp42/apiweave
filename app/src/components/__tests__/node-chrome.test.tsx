@@ -59,7 +59,7 @@ describe("node chrome", () => {
     );
 
     const handle = container.querySelector(".aw-node-handle");
-    expect(handle?.className).toContain("!h-2");
-    expect(handle?.className).toContain("!w-2");
+    expect(handle?.className).toContain("h-2!");
+    expect(handle?.className).toContain("w-2!");
   });
 });

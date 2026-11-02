@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type RefObject } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { TutorialCompanion } from "./TutorialCompanion";
 import { useElementWidth } from "../hooks/useElementWidth";
 import { useInert } from "../hooks/useInert";

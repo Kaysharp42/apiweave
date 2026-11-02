@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import {
   ArrowRight,
   Clock,
@@ -198,7 +198,7 @@ export function MergeConfigPanel({
         })}
       </div>
 
-      <div className="rounded-sm border border-border bg-surface-overlay p-3 text-xs text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+      <div className="rounded-xs border border-border bg-surface-overlay p-3 text-xs text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
         <span className="font-semibold text-text-primary dark:text-text-primary-dark">
           {STRATEGY_TIPS[mergeStrategy].split(":")[0]}:
         </span>
@@ -212,7 +212,7 @@ export function MergeConfigPanel({
       content="Conditions only apply to Conditional strategy"
       placement="top"
     >
-      <div className="rounded-sm border border-dashed border-border bg-surface-overlay p-6 text-center opacity-60 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="rounded-xs border border-dashed border-border bg-surface-overlay p-6 text-center opacity-60 dark:border-border-dark dark:bg-surface-dark-overlay">
         <Filter
           className="mx-auto mb-3 h-8 w-8 text-text-muted dark:text-text-muted-dark"
           aria-hidden="true"
@@ -350,7 +350,7 @@ export function MergeConfigPanel({
         </div>
 
         {conditions.length === 0 && (
-          <div className="rounded-sm border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+          <div className="rounded-xs border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
             No conditions yet. Add one to gate conditional merge behavior.
           </div>
         )}

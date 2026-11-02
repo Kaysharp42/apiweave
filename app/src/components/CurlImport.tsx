@@ -257,7 +257,7 @@ export function CurlImport({
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`border border-dashed rounded p-8 text-center transition-colors ${
+          className={`border border-dashed rounded-sm p-8 text-center transition-colors ${
             isDragging
               ? "border-primary/20 dark:border-primary/30 bg-primary/5 dark:bg-primary/10"
               : "border-border dark:border-border-dark"
@@ -276,7 +276,7 @@ export function CurlImport({
           />
           <label
             htmlFor="curl-file-input"
-            className="inline-block px-4 py-2 bg-primary text-white rounded hover:bg-primary-hover cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)]"
+            className="inline-block px-4 py-2 bg-primary text-white rounded-sm hover:bg-primary-hover cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           >
             Choose File
           </label>
@@ -327,7 +327,7 @@ curl -X POST "https://api.example.com/users" \\
 
         {/* Options */}
         {curlInput && (
-          <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded border border-border dark:border-border-dark">
+          <div className="space-y-3 p-3 bg-surface dark:bg-surface-dark rounded-sm border border-border dark:border-border-dark">
             {/* Workflow Selection */}
             <div>
               <label
@@ -341,7 +341,7 @@ curl -X POST "https://api.example.com/users" \\
                 value={selectedWorkflowId}
                 onChange={(e) => setSelectedWorkflowId(e.target.value)}
                 disabled={loadingWorkflows}
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {loadingWorkflows
@@ -374,7 +374,7 @@ curl -X POST "https://api.example.com/users" \\
                 type="checkbox"
                 checked={sanitize}
                 onChange={(e) => setSanitize(e.target.checked)}
-                className="w-4 h-4 text-[var(--aw-primary)] border-border dark:border-border-dark rounded focus:ring-[var(--aw-primary)]"
+                className="w-4 h-4 text-(--aw-primary) border-border dark:border-border-dark rounded-sm focus:ring-(--aw-primary)"
               />
               <span className="text-sm text-text-primary dark:text-text-primary-dark">
                 Sanitize sensitive headers (API keys, tokens, etc.)
@@ -385,9 +385,9 @@ curl -X POST "https://api.example.com/users" \\
 
         {/* Error */}
         {error && (
-          <div className="bg-[var(--aw-status-error)]/5 dark:bg-[var(--aw-status-error)]/10 border border-[var(--aw-status-error)]/20 dark:border-[var(--aw-status-error)]/30 rounded p-4">
+          <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4">
             <div className="flex items-start">
-              <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 shrink-0 mt-0.5" />
               <p className="text-sm text-status-error dark:text-status-error-dark">
                 {error}
               </p>
@@ -397,14 +397,14 @@ curl -X POST "https://api.example.com/users" \\
 
         {/* Dry Run Result */}
         {dryRunResult && (
-          <div className="bg-[var(--aw-status-info)]/5 dark:bg-[var(--aw-status-info)]/10 border border-[var(--aw-status-info)]/20 dark:border-[var(--aw-status-info)]/30 rounded p-4">
+          <div className="bg-(--aw-status-info)/5 dark:bg-(--aw-status-info)/10 border border-(--aw-status-info)/20 dark:border-(--aw-status-info)/30 rounded-sm p-4">
             <div className="flex items-start">
-              <CheckCircle className="w-5 h-5 text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] mr-2 flex-shrink-0 mt-0.5" />
+              <CheckCircle className="w-5 h-5 text-(--aw-status-info) dark:text-(--aw-status-info) mr-2 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="font-medium text-text-primary dark:text-text-primary-dark mb-2">
                   Preview: {dryRunResult.stats.totalRequests} request(s)
                 </h3>
-                <div className="text-sm text-[var(--aw-status-info)] dark:text-[var(--aw-status-info)] space-y-1">
+                <div className="text-sm text-(--aw-status-info) dark:text-(--aw-status-info) space-y-1">
                   <p>
                     <strong>Workflow:</strong> {dryRunResult.workflow.name}
                   </p>

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://react.doctor/schema.json",
+  "$schema": "https://react.doctor/schema/config.json",
   "deadCode": false,
   "ignore": {
     "rules": [

@@ -326,6 +326,11 @@ const THEME_TOKENS: readonly (readonly [keyof ITheme, string])[] = [
   ["cursorAccent", "cursor-accent"],
   ["selectionBackground", "selection"],
   ["selectionInactiveBackground", "selection-inactive"],
+  // xterm 6 draws its own scrollbar; one token covers all three states so the
+  // thumb keeps the single colour the old native scrollbar had.
+  ["scrollbarSliderBackground", "scrollbar"],
+  ["scrollbarSliderHoverBackground", "scrollbar"],
+  ["scrollbarSliderActiveBackground", "scrollbar"],
   ["black", "black"],
   ["red", "red"],
   ["green", "green"],
@@ -351,8 +356,9 @@ const THEME_TOKENS: readonly (readonly [keyof ITheme, string])[] = [
  * exception in `agent-terminal.css` honest: a colour changed there changes here,
  * and there is no second copy of the palette to forget — which is also why there
  * are no fallback values in this file. A slot whose token is missing is left
- * unset for xterm to default, because the alternative is twenty-two hex literals
- * living in a component, which is the thing the token family exists to prevent.
+ * unset for xterm to default, because the alternative is twenty-three hex
+ * literals living in a component, which is the thing the token family exists to
+ * prevent.
  */
 function themeFromTokens(element: HTMLElement): ITheme {
   const styles = getComputedStyle(element);

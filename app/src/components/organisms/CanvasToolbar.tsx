@@ -146,11 +146,11 @@ export function CanvasToolbar({
     >
       <div
         ref={barRef}
-        className="pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center gap-1.5 px-2 py-1.5 rounded-sm bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
+        className="pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center gap-1.5 px-2 py-1.5 rounded-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
         role="toolbar"
         aria-label="Workflow actions"
       >
-        <div className="flex flex-shrink-0 items-center">
+        <div className="flex shrink-0 items-center">
           <ToolbarButton
             icon={Save}
             label="Save"
@@ -275,7 +275,7 @@ export function CanvasToolbar({
         </div>
 
         {useOverflow && (
-          <div className="relative flex flex-shrink-0" ref={overflowRef}>
+          <div className="relative flex shrink-0" ref={overflowRef}>
             <IconButton
               onClick={() => setIsOverflowOpen((open) => !open)}
               tooltip="More actions"
@@ -291,7 +291,7 @@ export function CanvasToolbar({
               <div
                 role="menu"
                 aria-label="More actions"
-                className="absolute top-9 left-0 z-50 min-w-[180px] overflow-hidden rounded-sm border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
+                className="absolute top-9 left-0 z-50 min-w-[180px] overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 <OverflowItem
                   icon={History}
@@ -315,13 +315,13 @@ export function CanvasToolbar({
         )}
 
         <div
-          className="w-px h-6 flex-shrink-0 bg-border dark:bg-border-dark mx-0.5"
+          className="w-px h-6 shrink-0 bg-border dark:bg-border-dark mx-0.5"
           aria-hidden="true"
         />
 
         {/*
           The one control allowed to give ground. Everything else in this bar is
-          `flex-shrink-0`, so when the canvas gets narrower than even the icon
+          `shrink-0`, so when the canvas gets narrower than even the icon
           row wants, the environment name truncates instead of the Run button
           being pushed off the edge.
         */}
@@ -331,8 +331,8 @@ export function CanvasToolbar({
           value={selectedEnvironment || ""}
           onChange={onEnvironmentChange}
           placeholder="No Environment"
-          containerClass="min-w-[6rem] max-w-[14rem]"
-          buttonClass="flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap"
+          containerClass="min-w-24 max-w-56"
+          buttonClass="flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap"
         />
 
         <Button
@@ -340,10 +340,10 @@ export function CanvasToolbar({
           size="sm"
           onClick={onRefreshSwagger}
           disabled={!onRefreshSwagger || isSwaggerRefreshing}
-          className="h-8 flex-shrink-0 whitespace-nowrap"
+          className="h-8 shrink-0 whitespace-nowrap"
           icon={
             <RefreshCw
-              className={`w-4 h-4 flex-shrink-0 ${isSwaggerRefreshing ? "animate-spin" : ""}`}
+              className={`w-4 h-4 shrink-0 ${isSwaggerRefreshing ? "animate-spin" : ""}`}
             />
           }
           title={isSwaggerRefreshing ? "Refreshing Swagger" : "Refresh Swagger"}
@@ -358,7 +358,7 @@ export function CanvasToolbar({
           <AgentLaunchButton
             scopeKind="workflow"
             scopeId={workflowId}
-            className="flex-shrink-0"
+            className="shrink-0"
             showLabel={showLabels}
             // The workflow view owns the agent panel, so a launch from here runs
             // in it. The store rather than a prop chain: the panel is a sibling
@@ -368,7 +368,7 @@ export function CanvasToolbar({
         )}
 
         <div
-          className="w-px h-6 flex-shrink-0 bg-border dark:bg-border-dark mx-0.5"
+          className="w-px h-6 shrink-0 bg-border dark:bg-border-dark mx-0.5"
           aria-hidden="true"
         />
 
@@ -376,7 +376,7 @@ export function CanvasToolbar({
           <Badge
             variant="info"
             size="sm"
-            className="flex-shrink-0"
+            className="shrink-0"
             aria-live="polite"
           >
             Iteration {iteration.index}/{iteration.count}
@@ -411,7 +411,7 @@ export function CanvasToolbar({
           </>
         )}
 
-        <div className="relative flex flex-shrink-0" ref={runMenuRef}>
+        <div className="relative flex shrink-0" ref={runMenuRef}>
           <Button
             variant="primary"
             intent={isRunning ? "warning" : "default"}
@@ -451,7 +451,7 @@ export function CanvasToolbar({
           </IconButton>
 
           {isRunMenuOpen && (
-            <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node overflow-hidden z-50">
+            <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node overflow-hidden z-50">
               <Button
                 onClick={() => {
                   onRerunFailed?.();
@@ -518,7 +518,7 @@ function ToolbarButton({
       className="h-8 whitespace-nowrap text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
       title={tooltip || label}
       aria-label={label}
-      icon={<Icon className="w-4 h-4 flex-shrink-0" />}
+      icon={<Icon className="w-4 h-4 shrink-0" />}
     >
       {showLabel && <span>{label}</span>}
     </Button>
@@ -541,7 +541,7 @@ function OverflowItem({
       onClick={onSelect}
       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
     >
-      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-text-muted dark:text-text-muted-dark" />
+      <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
       {label}
     </button>
   );

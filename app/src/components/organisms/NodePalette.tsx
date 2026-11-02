@@ -103,7 +103,7 @@ export function NodePalette({
               }
             }}
             placeholder="Filter nodes…"
-            className="w-full rounded-sm border border-border bg-surface py-1.5 pl-8 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
+            className="w-full rounded-xs border border-border bg-surface py-1.5 pl-8 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-hidden focus:ring-2 focus:ring-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
           />
           {searchQuery && (
             <button
@@ -116,7 +116,7 @@ export function NodePalette({
                   }),
                 )
               }
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xs p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
               aria-label="Clear node filter"
               title="Clear filter"
             >

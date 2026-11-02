@@ -272,9 +272,9 @@ function JsonBodyEditor({
     <FormField label="JSON body" {...(error ? { error } : {})}>
       <div
         className={[
-          "overflow-hidden rounded-sm border",
+          "overflow-hidden rounded-xs border",
           error
-            ? "border-status-error dark:border-[var(--aw-status-error)]"
+            ? "border-status-error dark:border-(--aw-status-error)"
             : "border-border dark:border-border-dark",
         ].join(" ")}
       >
@@ -328,7 +328,7 @@ function JsonBodyEditor({
 }
 
 const SELECT_BUTTON_CLASS =
-  "flex h-10 w-full cursor-pointer items-center justify-between rounded-sm border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-[var(--aw-transition-fast)] ease-in-out hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-[var(--aw-focus-ring-offset)] dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay";
+  "flex h-10 w-full cursor-pointer items-center justify-between rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary transition-[border-color,outline,background-color] duration-(--aw-transition-fast) ease-in-out hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay";
 
 function createCardIcon(Icon: LucideIcon) {
   return function CardIcon({ className }: { className?: string }) {
@@ -366,7 +366,7 @@ function HighlightedTemplateText({ value }: { value: string }) {
         part.startsWith("{{") && part.endsWith("}}") ? (
           <span
             key={`${part}-${index}`}
-            className="rounded-sm bg-primary/10 px-1 text-primary dark:bg-primary-light/10 dark:text-primary-light"
+            className="rounded-xs bg-primary/10 px-1 text-primary dark:bg-primary-light/10 dark:text-primary-light"
           >
             {part}
           </span>
@@ -409,7 +409,7 @@ function ExtractorRow({
   };
 
   return (
-    <div className="rounded-sm border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
+    <div className="rounded-xs border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)_auto_auto] items-center gap-2">
         <code className="truncate text-xs text-status-success dark:text-status-success-dark">
           {variableName}
@@ -490,7 +490,7 @@ function ResponseSchemaSettings({
         {keys.map((key) => (
           <li
             key={key}
-            className="flex items-center justify-between gap-2 rounded-sm border border-border px-3 py-2 dark:border-border-dark"
+            className="flex items-center justify-between gap-2 rounded-xs border border-border px-3 py-2 dark:border-border-dark"
           >
             <span className="font-mono text-sm text-text-primary dark:text-text-primary-dark">
               Status {key}
@@ -770,7 +770,7 @@ export function HTTPRequestConfigPanel({
           valuePlaceholder="1"
         />
       </FormField>
-      <div className="mt-4 rounded-sm border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
+      <div className="mt-4 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
         <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
           Full URL preview
         </p>
@@ -872,7 +872,7 @@ export function HTTPRequestConfigPanel({
           <EmptyState
             title="No request body"
             description="This request will be sent without a body."
-            className="min-h-96 rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+            className="min-h-96 rounded-xs border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
           />
         )}
 
@@ -1042,7 +1042,7 @@ export function HTTPRequestConfigPanel({
             />
           ))}
           {extractorEntries.length === 0 && (
-            <div className="rounded-sm border border-dashed border-border bg-surface-overlay px-3 py-4 dark:border-border-dark dark:bg-surface-dark-overlay">
+            <div className="rounded-xs border border-dashed border-border bg-surface-overlay px-3 py-4 dark:border-border-dark dark:bg-surface-dark-overlay">
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
                 No response variables yet.
               </p>
@@ -1124,7 +1124,7 @@ export function HTTPRequestConfigPanel({
       )}
       {activeTab === "settings" && renderSettings()}
       {jsonError && activeTab === "body" && (
-        <div className="flex items-center gap-2 rounded-sm border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:border-[var(--aw-status-error)]/30 dark:bg-[var(--aw-status-error)]/10 dark:text-[var(--aw-status-error)]">
+        <div className="flex items-center gap-2 rounded-xs border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error dark:border-(--aw-status-error)/30 dark:bg-(--aw-status-error)/10 dark:text-(--aw-status-error)">
           <AlertTriangle className="h-4 w-4" />
           {jsonError}
         </div>
@@ -1159,13 +1159,13 @@ function FormDataRows({
             }
             title="No form-data rows"
             description="Add a text field or file reference to the multipart request."
-            className="rounded-sm border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+            className="rounded-xs border border-dashed border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
           />
         )}
         {entries.map((entry, index) => (
           <div
             key={`${entry.key}-${index}`}
-            className="grid gap-2 rounded-sm border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay md:grid-cols-[1fr_1fr_auto_auto_auto]"
+            className="grid gap-2 rounded-xs border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay md:grid-cols-[1fr_1fr_auto_auto_auto]"
           >
             <Input
               value={entry.key}

@@ -224,7 +224,7 @@ export function EnvironmentForm({
                 onChange={(e) =>
                   updateField("baseEnvironmentId", e.target.value || null)
                 }
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
               >
                 <option value="">None</option>
                 {baseOptions.map((opt) => (
@@ -248,13 +248,13 @@ export function EnvironmentForm({
                     {Object.entries(variables).map(([key, value]) => (
                       <div
                         key={key}
-                        className={`flex items-center gap-2 p-2 rounded border border-dashed border-border dark:border-border-dark ${
+                        className={`flex items-center gap-2 p-2 rounded-sm border border-dashed border-border dark:border-border-dark ${
                           Object.prototype.hasOwnProperty.call(form.variables, key)
                             ? "opacity-40"
                             : ""
                         }`}
                       >
-                        <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                        <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark shrink-0">
                           {key}
                         </span>
                         <span className="text-text-muted dark:text-text-muted-dark">
@@ -264,7 +264,7 @@ export function EnvironmentForm({
                           {value}
                         </span>
                         {Object.prototype.hasOwnProperty.call(form.variables, key) && (
-                          <span className="text-xs text-text-muted dark:text-text-muted-dark flex-shrink-0">
+                          <span className="text-xs text-text-muted dark:text-text-muted-dark shrink-0">
                             overridden below
                           </span>
                         )}
@@ -314,7 +314,7 @@ export function EnvironmentForm({
                   editingKey === key ? (
                     <div
                       key={key}
-                      className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded ring-1 ring-primary"
+                      className="flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded-sm ring-1 ring-primary"
                     >
                       <Input
                         autoFocus
@@ -357,10 +357,10 @@ export function EnvironmentForm({
                     <div
                       key={key}
                       onDoubleClick={() => startEditVariable(key, value)}
-                      className="group flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded cursor-text"
+                      className="group flex items-center gap-2 p-2 bg-surface-overlay dark:bg-surface-dark-overlay rounded-sm cursor-text"
                       title="Double-click to edit"
                     >
-                      <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark flex-shrink-0">
+                      <span className="font-mono text-sm text-text-secondary dark:text-text-secondary-dark shrink-0">
                         {key}
                       </span>
                       <span className="text-text-muted dark:text-text-muted-dark">
@@ -421,7 +421,7 @@ export function EnvironmentForm({
 
               <p className="text-xs text-text-muted dark:text-text-muted-dark mt-2">
                 Use in workflows:{" "}
-                <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded">
+                <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded-sm">
                   {"{{env.variableName}}"}
                 </code>
               </p>
@@ -461,7 +461,7 @@ export function EnvironmentForm({
               {availableWorkspaces.map((ws) => (
                 <label
                   key={ws.workspaceId}
-                  className="flex items-center gap-2 px-3 py-2 rounded border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay cursor-pointer transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 rounded-sm border border-transparent hover:border-border dark:hover:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay cursor-pointer transition-colors"
                 >
                   <input
                     type="checkbox"

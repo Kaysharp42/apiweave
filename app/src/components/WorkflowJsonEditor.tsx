@@ -746,7 +746,7 @@ export function WorkflowJsonEditor({
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-[var(--aw-surface)]/70 dark:bg-[var(--aw-surface-dark)]/80" />
+          <div className="fixed inset-0 bg-(--aw-surface)/70 dark:bg-(--aw-surface-dark)/80" />
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
@@ -757,7 +757,7 @@ export function WorkflowJsonEditor({
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
-            <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded border border-border dark:border-border-dark flex flex-col overflow-hidden">
+            <Dialog.Panel className="w-[90vw] max-w-5xl h-[85vh] bg-surface dark:bg-surface-dark rounded-sm border border-border dark:border-border-dark flex flex-col overflow-hidden">
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised">
                 <div className="flex items-center gap-3">
@@ -765,7 +765,7 @@ export function WorkflowJsonEditor({
                     Workflow Editor
                   </h2>
                   {isDirty && viewMode === "json" && (
-                    <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded">
+                    <span className="text-xs font-medium text-warning bg-warning/10 px-2 py-0.5 rounded-sm">
                       Unsaved changes
                     </span>
                   )}
@@ -779,7 +779,7 @@ export function WorkflowJsonEditor({
                       }
                       variant="ghost"
                       size="xs"
-                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                         viewMode === "json"
                           ? "bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark"
                           : "text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark"
@@ -794,7 +794,7 @@ export function WorkflowJsonEditor({
                       }
                       variant="ghost"
                       size="xs"
-                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded transition-colors ${
+                      className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                         viewMode === "ai-prompt"
                           ? "bg-surface dark:bg-surface-dark text-primary border border-border dark:border-border-dark"
                           : "text-text-muted dark:text-text-muted-dark hover:text-primary"
@@ -837,7 +837,7 @@ export function WorkflowJsonEditor({
                     onClick={requestClose}
                     variant="ghost"
                     size="sm"
-                    className="!p-2 !min-w-0"
+                    className="p-2! min-w-0!"
                     title="Close (Esc)"
                   >
                     <X className="w-5 h-5" />
@@ -848,7 +848,7 @@ export function WorkflowJsonEditor({
               {/* Error bar */}
               {error && viewMode === "json" && (
                 <div className="flex items-center gap-2 px-5 py-2 bg-status-error/10 border-b border-status-error/30 text-status-error text-xs font-medium">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
                   {error}
                 </div>
               )}
@@ -889,7 +889,7 @@ export function WorkflowJsonEditor({
                   <div className="absolute inset-0 flex overflow-auto">
                     {/* Line numbers */}
                     <div
-                      className="flex-shrink-0 py-3 px-2 bg-surface-raised dark:bg-surface-dark-raised text-right select-none border-r border-border dark:border-border-dark overflow-hidden"
+                      className="shrink-0 py-3 px-2 bg-surface-raised dark:bg-surface-dark-raised text-right select-none border-r border-border dark:border-border-dark overflow-hidden"
                       style={{ minWidth: 48 }}
                     >
                       {Array.from({ length: lineCount }, (_, i) => (
@@ -908,14 +908,14 @@ export function WorkflowJsonEditor({
                       onChange={handleWorkflowJsonChange}
                       spellCheck={false}
                       aria-label="Workflow JSON editor"
-                      className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-none border-none"
+                      className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-hidden border-none"
                       style={{ tabSize: 2 }}
                     />
                   </div>
                 </div>
               ) : (
                 <div className="flex-1 overflow-auto" ref={promptRef}>
-                  <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap break-words">
+                  <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap wrap-break-word">
                     {buildAIPrompt(workflowJson, includeWorkflow)}
                   </pre>
                 </div>

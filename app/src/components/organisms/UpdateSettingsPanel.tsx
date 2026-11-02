@@ -98,7 +98,7 @@ function StatusSummary({
           : "This platform installs updates from GitHub Releases by hand — the app can only tell you one exists."}
       </p>
       {error !== null && error !== "" && (
-        <p className="mt-1 text-xs text-status-error dark:text-[var(--aw-status-error)]">
+        <p className="mt-1 text-xs text-status-error dark:text-(--aw-status-error)">
           {error}
         </p>
       )}
@@ -131,12 +131,12 @@ function PolicyFieldset({
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex cursor-pointer items-start gap-3 rounded px-2 py-2 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
+            className="flex cursor-pointer items-start gap-3 rounded-sm px-2 py-2 hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
           >
             <input
               type="radio"
               name="update-policy"
-              className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-[var(--aw-primary)]"
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-(--aw-primary)"
               checked={policy === option.value}
               disabled={disabled}
               onChange={() => onSelect(option.value)}
@@ -312,7 +312,7 @@ export function UpdateSettingsPanel() {
       {state === "downloading" && (
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-overlay dark:bg-surface-dark-overlay">
           <div
-            className="h-full rounded-full bg-[var(--aw-primary)] transition-[width]"
+            className="h-full rounded-full bg-(--aw-primary) transition-[width]"
             style={{ width: `${status?.downloadProgressPercent ?? 0}%` }}
           />
         </div>

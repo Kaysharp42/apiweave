@@ -122,7 +122,7 @@ export function SaveVariablePopover({
       role="dialog"
       aria-label="Save response value as variable"
       style={{ top: position.top, left: position.left, width: POPOVER_WIDTH }}
-      className="fixed z-[60] rounded-sm border border-border bg-surface-raised p-3 shadow-[var(--aw-shadow-popover)] dark:border-border-dark dark:bg-surface-dark-raised"
+      className="fixed z-60 rounded-xs border border-border bg-surface-raised p-3 shadow-(--aw-shadow-popover) dark:border-border-dark dark:bg-surface-dark-raised"
     >
       <p className="mb-2 truncate font-mono text-[11px] text-status-info dark:text-status-info-dark">
         {path}

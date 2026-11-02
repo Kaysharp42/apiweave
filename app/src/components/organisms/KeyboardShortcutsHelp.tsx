@@ -56,7 +56,7 @@ export function KeyboardShortcutsHelp({
                                   +
                                 </span>
                               )}
-                              <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark text-text-primary dark:text-text-primary-dark text-xs min-w-[24px] font-mono">
+                              <kbd className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-sm bg-surface-overlay dark:bg-surface-dark-overlay border border-border dark:border-border-dark text-text-primary dark:text-text-primary-dark text-xs min-w-[24px] font-mono">
                                 {key}
                               </kbd>
                             </Fragment>

@@ -1,5 +1,5 @@
 import React from "react";
-import { useNavigate, useLocation, useParams } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router";
 import {
   Bot,
   Home,
@@ -116,7 +116,7 @@ export function AppNavBar() {
               type="button"
               key={id}
               className={[
-                "relative w-full rounded focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+                "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
               ].join(" ")}
               onClick={() => {
                 if (disabled) return;
@@ -144,7 +144,7 @@ export function AppNavBar() {
               )}
               <div
                 className={[
-                  "flex w-full items-center gap-2 rounded px-2 py-1.5 transition-colors duration-200 motion-reduce:transition-none",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 transition-colors duration-200 motion-reduce:transition-none",
                   "justify-center",
                   !isNavBarCollapsed && "md:justify-start",
                   isSelected

@@ -1,5 +1,5 @@
 import { useContext, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router";
 import { AppContext } from "../../App";
 import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
 import { Tooltip } from "../atoms/Tooltip";
@@ -88,12 +88,12 @@ export function MainHeader() {
           would leave most of the bar dead: daisyUI sizes .navbar-start and
           .navbar-end at 50% each and never grows .navbar-center, so the wide
           gap in the middle belongs to those halves, not to a centre spacer. */}
-      <div className="navbar-start min-w-0 flex-shrink-0 gap-3">
+      <div className="navbar-start min-w-0 shrink-0 gap-3">
         <IconButton
           tooltip="Toggle sidebar"
           size="sm"
           onClick={toggleMobileSidebar}
-          className="md:hidden flex-shrink-0"
+          className="md:hidden shrink-0"
           aria-label="Toggle sidebar"
           style={noDragStyle}
         >
@@ -103,7 +103,7 @@ export function MainHeader() {
         <img
           src="/apiweave.png"
           alt="APIWeave Logo"
-          className="h-7 w-7 rounded object-cover"
+          className="h-7 w-7 rounded-sm object-cover"
         />
         <h1 className="hidden font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark sm:block">
           APIWeave
@@ -117,7 +117,7 @@ export function MainHeader() {
           only place the choice means anything — a second, global one in the
           chrome could only disagree with it. Environments are managed from
           Settings → Environments. */}
-      <div className="navbar-end min-w-0 flex-shrink gap-2">
+      <div className="navbar-end min-w-0 shrink gap-2">
         <GitSyncControl feed={gitStatus} />
 
         <div style={noDragStyle}>
@@ -139,7 +139,7 @@ export function MainHeader() {
           disabledTooltip="Auto-save disabled"
           enabledAriaLabel="Disable auto-save"
           disabledAriaLabel="Enable auto-save"
-          className={`inline-flex items-center justify-center w-9 h-9 rounded-sm border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2 ${
+          className={`inline-flex items-center justify-center w-9 h-9 rounded-xs border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 ${
             autoSaveEnabled
               ? "border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
               : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
@@ -154,7 +154,7 @@ export function MainHeader() {
           disabledTooltip="Switch to Dark mode"
           enabledAriaLabel="Switch to light mode"
           disabledAriaLabel="Switch to dark mode"
-          className="inline-flex items-center justify-center w-9 h-9 rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-[var(--aw-primary)] focus-visible:outline-offset-2"
+          className="inline-flex items-center justify-center w-9 h-9 rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
           icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         />
 
