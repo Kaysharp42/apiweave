@@ -9,6 +9,86 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.22.0] — 2026-11-02
+
+Agents can now orient themselves in a workspace and find every node that uses
+a route or a credential without reading whole graphs, and APIWeave can keep
+running in the tray so the MCP server and git sync stay reachable. See
+[MCP Integration](docs/features/mcp-integration.md).
+
+### Added
+
+- **A map of a workspace for agents.** `workspaces_map` returns, per workflow
+  and in pages of 30, the endpoints its request and SSE nodes call as
+  `METHOD /path/{{…}}`, the variables it produces and consumes, the `env` and
+  `secrets` names it references, the workflows it calls, and its latest run's
+  status. It is built from names and path templates, never a config value;
+  empty lists are left out and a list longer than 20 names is cut and counted
+  in `omitted`.
+- **Find every node that touches a route or a reference.**
+  `workflows_searchNodes` now searches the whole workspace, or one project
+  with `collectionId`, when `workflowId` is omitted. `query` matches a literal
+  substring of the node id, label, type, request method, URL path or extractor
+  name, and `ref` finds the nodes that use `variables.NAME`, `env.NAME` or
+  `secrets.NAME` — in URLs, headers, query parameters, cookies, bodies,
+  GraphQL, auth, scripts, extractor and assertion paths — marked `produces` or
+  `consumes`, with the field each match was found in. Request matches carry
+  `method` and `urlPath`. The command palette uses the same search.
+- **Node schemas on demand.** `workflows_nodeSchema` returns one node type's
+  config as JSON Schema, generated from the definitions the write path
+  validates with, so the write tools advertise `config` as an open object
+  instead of repeating the full per-type union. A rejected config names its
+  node list and index in the error path, such as
+  `["nodes", 1, "config", "body"]`.
+- **Keep running in the tray.** **Settings > Background > Keep running in the
+  tray** makes closing the window hide it instead of quitting, so the MCP
+  bridge and git sync stay reachable with no window open; quit from the tray
+  menu. **Open at login** starts the app hidden when you sign in, using
+  Electron's login items on Windows and macOS and an XDG autostart entry on
+  Linux (with an `exec-once` hint for compositors that do not read it). A
+  second launch or a dock click shows a hidden window.
+- **Skip secret approval for agent runs.** **Settings > MCP Server > Skip
+  secret approval for agent runs** — off by default — removes the native
+  approval question for every agent-started run. The destination and script
+  limits still apply to each run. The preference is owned by the trusted
+  bridge, so no MCP client can turn it on.
+- **A code map for launched agents.** When a project's folder holds a graphify
+  `graphify-out/graph.json`, the session briefing tells the agent to query it
+  (`graphify query`, `graphify path`, `graphify explain`) instead of grepping;
+  if graphify is installed but no graph exists, it suggests building one
+  rather than running it unasked. Detection reads paths only, never repository
+  files. **Settings > Agents** has a dismissible card with the install prompt,
+  and the `start-here` guide points every other agent at the map.
+
+### Changed
+
+- **MCP reads are outline-first and bounded.** `workflows_get` defaults to an
+  outline of node ids, types, labels and edges; `view: "nodes"` reads configs
+  for named nodes, and `view: "full"` is refused above 64 KiB. Workflow search
+  rows, run history, debug context and node evidence are compact projections
+  with short cursors and explicit `omitted` counts, so a large workspace no
+  longer arrives in one response.
+- **One write path for agents.** `workflows_update` is gone; `workflows_patch`
+  changes a subset by id, including name, description and tags, and both write
+  tools lay out topology changes automatically. `guides_list` is gone too —
+  `server_info` lists the guides and `guides_get` reads one.
+- **The renderer stack is current.** React 19, React Router 7, Vite 8 and
+  Vitest 5, Tailwind CSS 4 with daisyUI 5.7, Monaco 0.57 and xterm 6, with the
+  renderer stylesheet cut from about 350 KB to 218 KB by scanning only the
+  files it uses.
+
+### Fixed
+
+- **Settings page headers show the workspace name.** Secrets, Environments and
+  Version history used to print the route's workspace id instead of the
+  workspace's name.
+
+### Security
+
+- **Shipped dependencies patched.** Electron, the MCP SDK, zod, postcss and
+  undici were updated to versions that clear the advisories affecting the
+  packaged app.
+
 ## [0.21.0] — 2026-10-26
 
 A workspace's git history can now sync as your GitHub or GitLab account, and
