@@ -208,6 +208,23 @@ describe("RunRepository", () => {
     return { workspaceId, workflowId, runId }
   }
 
+  it("reads each workflow's newest run in one query, agreeing with getLatestRun and scoped by workspace", () => {
+    const workspaceId = seedWorkspace()
+    const a = workflows.create({ workspaceId, name: "a" }).workflowId
+    const b = workflows.create({ workspaceId, name: "b" }).workflowId
+    const never = workflows.create({ workspaceId, name: "never" }).workflowId
+    for (let index = 0; index < 3; index += 1) runs.create({ workspaceId, workflowId: a })
+    const onlyB = runs.create({ workspaceId, workflowId: b, status: "failed" })
+    // A foreign workspace's run for the same workflow id is never returned.
+    runs.create({ workspaceId: seedWorkspace(), workflowId: b })
+
+    const latest = runs.latestRunsByWorkflow(workspaceId, [a, b, never])
+    expect(latest.get(a)).toEqual({ runId: runs.getLatestRun(a, workspaceId)?.runId, status: "pending" })
+    expect(latest.get(b)).toEqual({ runId: onlyB.runId, status: "failed" })
+    expect(latest.has(never)).toBe(false)
+    expect(runs.latestRunsByWorkflow(workspaceId, []).size).toBe(0)
+  })
+
   it("stamps startedAt/completedAt/duration across a status lifecycle", () => {
     const { runId } = seedRun()
     expect(runs.getById(runId)?.status).toBe("pending")

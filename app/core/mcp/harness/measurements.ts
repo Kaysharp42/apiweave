@@ -38,6 +38,22 @@ export function structuredContentBytes(result: unknown): number {
   return jsonUtf8Bytes(result["structuredContent"])
 }
 
+/** Every text block in a CallToolResult, concatenated. */
+export function toolResultText(result: unknown): string {
+  if (!isRecord(result) || !Array.isArray(result["content"])) return ""
+  return result["content"].reduce((total, item) => {
+    if (!isRecord(item) || typeof item["text"] !== "string") return total
+    return total + item["text"]
+  }, "")
+}
+
+/** The compact JSON body a tool returned as its text content. */
+export function toolResultBody(result: unknown): unknown {
+  const text = toolResultText(result)
+  if (text.length === 0) throw new Error("MCP tool result has no text content")
+  return JSON.parse(text) as unknown
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }

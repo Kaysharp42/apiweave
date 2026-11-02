@@ -26,7 +26,34 @@ export interface AgentBriefingContext {
    * through a tool that will not be there.
    */
   readonly mcpWired: boolean
+  /**
+   * What the user's folder offers for learning the API under test, detected by
+   * path alone at launch (never by reading a file): `graph` — a graphify
+   * `graphify-out/graph.json` exists; `tool` — graphify is on PATH but no graph
+   * has been built; `none` (or absent) — neither, and the briefing says nothing.
+   */
+  readonly codeMap?: "graph" | "tool" | "none"
 }
+
+const CODE_MAP_SECTIONS = {
+  graph: `
+## A code map exists for this folder
+
+To learn the API under test (routes, request and response shapes, auth), query
+the graph instead of grepping: \`graphify query "<route or handler>"\`,
+\`graphify path A B\`, \`graphify explain X\`. Read \`graphify-out/GRAPH_REPORT.md\`
+for broad context only. graphify for the code; \`workflows_searchNodes\` /
+\`workspaces_map\` for the workflows.
+`,
+  tool: `
+## A code map could be built for this folder
+
+\`graphify\` is installed but this folder has no \`graphify-out/\` yet. \`/graphify .\`
+would build a map of it — suggest that to the user
+rather than running it unasked.
+`,
+  none: "",
+} as const
 
 /**
  * The briefing scratch kind. Exported as the object rather than re-exported
@@ -65,6 +92,7 @@ export function buildSessionBriefing(context: AgentBriefingContext): string {
     ? context.scopeId
     : `${JSON.stringify(context.scopeName)} (${context.scopeId})`
   const idVariable = isWorkflow ? "APIWEAVE_WORKFLOW_ID" : "APIWEAVE_PROJECT_ID"
+  const codeMapSection = CODE_MAP_SECTIONS[context.codeMap ?? "none"]
 
   return `# APIWeave session briefing
 
@@ -87,21 +115,23 @@ The same ids are in your environment, as \`APIWEAVE_WORKSPACE_ID\` and
 It lives in APIWeave's own database. ${
     context.mcpWired
       ? "The `apiweave` MCP server is already connected to this session, and it is the only way to read or change one."
-      : "This session was launched without APIWeave's MCP server, so you cannot read or change one — say so if the user asks you to, rather than editing files and hoping."
+      : "This session was launched without APIWeave's MCP server, so the workflow tools are absent: you cannot read or change one — say so if the user asks you to, rather than editing files and hoping."
   }
 The folder above is the user's own code: read it to learn what the API under
 test actually does, but do not go looking for the workflow in it.
-
+${codeMapSection}
 ## Before your first tool call
 
 1. Read \`apiweave://guide/start-here\` (or \`guides_get\` with slug
    \`start-here\` when resources are unavailable), then the
-   ${label.toLowerCase()} itself — \`workflows_get\` with the id above${
-    isWorkflow ? "" : ", or `workflows_search` with collectionId for what the project contains"
+   ${label.toLowerCase()} itself — ${
+    isWorkflow
+      ? "`workflows_get` with the id above and `view: \"outline\"`, then `nodes` for the ids you will touch"
+      : "`workspaces_map` with collectionId for what the project's workflows call and use, then `workflows_get` with `view: \"outline\"` on a workflow, then `nodes` for the ids you will touch"
   }.
 2. The initialize instructions plus that guide carry the revision, patch, and
    diagnosis rules — follow them rather than re-deriving the flow here.
-${context.mcpWired ? "" : "This session was launched without APIWeave's MCP server (see above): the workflow tools are absent, so say so instead of working around them.\n"}
+
 The user asked for an agent, not an autopilot: confirm before deleting anything
 you did not create.
 `

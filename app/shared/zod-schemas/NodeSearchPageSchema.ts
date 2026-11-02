@@ -3,19 +3,20 @@ import { RevisionSchema } from "./RevisionSchema"
 import { WorkflowNodeMatchSchema } from "./WorkflowNodeMatchSchema"
 
 /**
- * Bounded node-search result over one workflow's graph. `totalMatched` always
- * describes every match; when it exceeds the returned slice,
- * `omittedMatchCount` says how many were left out so the caller narrows the
- * query instead of assuming the slice is complete.
+ * One page of a node search, over one workflow (`workflowId` and `rev` set) or
+ * every workflow of a workspace. `totalMatched` always describes every match
+ * and `omittedMatchCount` how many this page leaves out; `nextCursor` is
+ * present if and only if more matches follow, and is rejected once the
+ * searched workflows change.
  */
 export const NodeSearchPageSchema = z
   .object({
-    workflowId: z.string().min(1),
     workspaceId: z.string().min(1),
-    rev: RevisionSchema,
-    query: z.string().max(200),
+    workflowId: z.string().min(1).optional(),
+    rev: RevisionSchema.optional(),
     items: z.array(WorkflowNodeMatchSchema),
     totalMatched: z.number().int().nonnegative(),
     omittedMatchCount: z.number().int().nonnegative(),
+    nextCursor: z.string().min(1).nullable(),
   })
   .strict()

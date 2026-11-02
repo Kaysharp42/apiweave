@@ -8,6 +8,7 @@ import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import { MCP_GUIDES, guideUri } from "./guide"
 import { projectRunSnapshot } from "./run-projection"
+import { encodeMcpResult } from "./result-encoding"
 
 /**
  * MCP resources — read-only, safe run snapshots the agent can pull for context
@@ -82,7 +83,7 @@ export function registerResources(server: McpServer, router: IpcRouter, broker?:
 
       const snapshot = projectRunSnapshot(result.data, broker?.getLatestSequence(runId) ?? 0)
       return {
-        contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(snapshot, null, 2) }],
+        contents: [{ uri: uri.href, mimeType: "application/json", text: encodeMcpResult(snapshot) }],
       }
     },
   )

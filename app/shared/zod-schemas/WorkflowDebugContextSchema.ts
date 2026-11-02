@@ -41,7 +41,7 @@ const DebugRunSchema = z
 
 const DebugCorrelationSchema = z
   .object({
-    status: z.literal("unknown"),
+    status: z.enum(["current", "stale", "unknown"]),
     reason: z.string().min(1),
   })
   .strict()
@@ -151,8 +151,9 @@ const DebugNextReadSchema = z
  * `omittedNodeIds`/`nextReads` with explicit continuation arguments — counts
  * still describe every failure, and partial reads are never presented as
  * complete. `run.runRev` is the run record's own revision, never a workflow
- * revision; `graphCorrelation` stays unknown because run records do not carry
- * the executed workflow revision.
+ * revision; `graphCorrelation` compares the revision the run was created
+ * against with the current one (unknown only for runs recorded before that
+ * was tracked).
  */
 export const WorkflowDebugContextSchema = z
   .object({

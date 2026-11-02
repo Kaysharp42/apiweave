@@ -2,7 +2,6 @@ import type { Workflow } from "@shared/types/Workflow"
 import type { AssertionItem } from "@shared/types/AssertionItem"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { NodeSearchPage } from "@shared/types/NodeSearchPage"
-import type { WorkspaceNodeSearchPage } from "@shared/types/WorkspaceNodeSearchPage"
 import type { WorkflowNodesView } from "@shared/types/WorkflowNodesView"
 import type { WorkflowOutlineView } from "@shared/types/WorkflowOutlineView"
 import type { WorkflowRevision } from "@shared/types/WorkflowRevision"
@@ -12,6 +11,7 @@ import type {
   EnvironmentRepository,
   WorkflowCreate,
   WorkflowRepository,
+  WorkflowSummaryCursor,
   WorkflowSummaryFilters,
   WorkflowSummaryRow,
   WorkflowUpdate,
@@ -26,6 +26,7 @@ import {
   sealSearchCursor,
   type NodeSearchRequest,
 } from "./workflow_reads"
+import { ZodError } from "zod"
 import { ConflictError, NotFoundError, ValidationError } from "../ipc/errors"
 import { AssertionItemSchema } from "@shared/zod-schemas/AssertionItemSchema"
 import { WorkflowNodeSchema } from "@shared/zod-schemas/WorkflowNodeSchema"
@@ -41,6 +42,8 @@ export interface WorkflowGraphPatch {
   readonly expectedRevision?: number
   readonly name?: string
   readonly description?: string | null
+  /** Replaces the stored tag list. */
+  readonly tags?: readonly string[]
   readonly upsertNodes?: readonly WorkflowNodePatch[]
   readonly removeNodeIds?: readonly string[]
   readonly upsertEdges?: readonly Workflow["edges"][number][]
@@ -146,6 +149,7 @@ export function mergeGraphPatch(existing: Workflow, patch: WorkflowGraphPatch): 
     variables,
     ...(patch.name !== undefined ? { name: patch.name } : {}),
     ...(patch.description !== undefined ? { description: patch.description } : {}),
+    ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {}),
   }
 }
 
@@ -163,10 +167,10 @@ export function mergeWorkflowNodePatches(
   const nodes = existing.filter((node) => !(removeIds ?? []).includes(node.nodeId))
   const indexById = new Map(nodes.map((node, index) => [node.nodeId, index]))
 
-  for (const patch of upserts ?? []) {
+  for (const [upsertIndex, patch] of (upserts ?? []).entries()) {
     const index = indexById.get(patch.nodeId)
     if (index === undefined) {
-      const node = WorkflowNodeSchema.parse(canonicalizeNodeConfig(patch))
+      const node = parseUpsertedNode(canonicalizeNodeConfig(patch), upsertIndex, patch.nodeId)
       indexById.set(node.nodeId, nodes.length)
       nodes.push(node)
       continue
@@ -187,9 +191,25 @@ export function mergeWorkflowNodePatches(
     // (and the canvas) say "no parent" by omitting the key, so drop it rather
     // than persist a second spelling the node schema would reject anyway.
     if (patch.parentId === null) delete merged.parentId
-    nodes[index] = WorkflowNodeSchema.parse(canonicalizeNodeConfig(merged))
+    nodes[index] = parseUpsertedNode(canonicalizeNodeConfig(merged), upsertIndex, patch.nodeId)
   }
   return nodes
+}
+
+/**
+ * Parse one upserted node. A failure is the caller's request being wrong, so the
+ * issues are re-thrown with the path the caller sent it under (`upsertNodes`,
+ * the list index) and a message naming the nodeId — the bare node-relative path
+ * (`config.method`) tells an agent patching ten nodes nothing.
+ */
+function parseUpsertedNode(value: unknown, upsertIndex: number, nodeId: string): Workflow["nodes"][number] {
+  const parsed = WorkflowNodeSchema.safeParse(value)
+  if (parsed.success) return parsed.data
+  throw new ZodError(parsed.error.issues.map((issue) => ({
+    ...issue,
+    path: ["upsertNodes", upsertIndex, ...issue.path],
+    message: `nodeId "${nodeId}": ${issue.message}`,
+  })))
 }
 
 /** Recursively merge plain-object config values; arrays and scalar values replace. */
@@ -289,7 +309,6 @@ export class WorkflowService {
         ? sealSearchCursor({
           workspaceId,
           filters,
-          limit,
           after: { updatedAt: last.updatedAt, workflowId: last.workflowId },
           snapshot: page.snapshot,
         })
@@ -314,16 +333,40 @@ export class WorkflowService {
     return buildNodesView(this.mustGet(workspaceId, workflowId), nodeIds)
   }
 
-  /** Locate nodes by safe fields only — never bodies, headers, auth or values. */
-  async searchNodes(workspaceId: string, workflowId: string, request: NodeSearchRequest): Promise<NodeSearchPage> {
+  /**
+   * Locate nodes by safe fields and placeholder references — never values.
+   * With `workflowId`, one workflow (with neighbour context); without it,
+   * every workflow of the workspace, or of one project with `collectionId`.
+   */
+  async searchNodes(
+    workspaceId: string,
+    target: { readonly workflowId: string } | { readonly collectionId?: string },
+    request: NodeSearchRequest,
+  ): Promise<NodeSearchPage> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return searchWorkflowNodes(this.mustGet(workspaceId, workflowId), request)
+    if ("workflowId" in target) return searchWorkflowNodes(this.mustGet(workspaceId, target.workflowId), request)
+    const filters: WorkflowSummaryFilters = target.collectionId === undefined ? {} : { collectionId: target.collectionId }
+    const workflows = this.workflows.listByWorkspace(workspaceId, true).items
+      .filter((workflow) => target.collectionId === undefined || workflow.collectionId === target.collectionId)
+    return searchWorkspaceNodes(workflows, {
+      workspaceId,
+      ...filters,
+      snapshot: this.workflows.summariesSnapshot(workspaceId, filters),
+    }, request)
   }
 
-  /** `searchNodes` across every workflow of the workspace, project-attached ones included. */
-  async searchWorkspaceNodes(workspaceId: string, query: string, limit: number): Promise<WorkspaceNodeSearchPage> {
+  /**
+   * Whole workflows of a workspace (or one project), newest-updated first,
+   * keyset-paged — for reads that summarise graphs page by page.
+   */
+  async listGraphPage(
+    workspaceId: string,
+    filters: WorkflowSummaryFilters,
+    after: WorkflowSummaryCursor | undefined,
+    limit: number,
+  ): Promise<{ readonly items: readonly Workflow[]; readonly hasMore: boolean; readonly snapshot: string }> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return searchWorkspaceNodes(this.workflows.listByWorkspace(workspaceId, true).items, query, limit)
+    return this.workflows.listGraphPage(workspaceId, filters, after, limit)
   }
 
 // fallow-ignore-next-line complexity

@@ -5,6 +5,7 @@ import {
   McpWorkflowWriteToolResultSchema,
   WorkflowDebugContextSchema,
   WorkflowDiagnosisSchema,
+  WorkflowNodeTypeSchema,
   WorkflowNodesViewSchema,
   WorkflowOutlineViewSchema,
   WorkflowSchema,
@@ -14,6 +15,12 @@ import { RUN_WAIT_DEFAULT_MS } from "../services/read_budgets"
 import { projectRunToolResult } from "./run-projection"
 import { MCP_TOOLS, toolAnnotations, toolName, type McpToolSpec } from "./tools"
 import { encodeMcpResult } from "./result-encoding"
+import {
+  McpRunHistoryPageSchema,
+  McpWorkflowSearchPageSchema,
+  projectRunHistoryPage,
+  projectWorkflowSearchPage,
+} from "./projections/list-rows"
 import { projectMcpError } from "./error-projection"
 import {
   compactWorkflowDiagnosis,
@@ -21,6 +28,9 @@ import {
   unavailableWorkflowDiagnosis,
   workflowIdentity,
 } from "./projections/workflow-write"
+
+/** Largest `workflows_get` full view an agent is handed: 64 KiB of encoded JSON. */
+const WORKFLOW_FULL_VIEW_MAX_BYTES = 64 * 1024
 
 /**
  * A stored node object, advertised without the ~22 KB `WorkflowNodeSchema`
@@ -30,12 +40,44 @@ import {
  * is always satisfied by the stricter data — the router still validates every
  * response against the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`
  * on the shared IPC path, so nothing about validation strength or the bytes an
- * agent receives changes. What changes is that the node union is advertised
- * ONCE, on the write tools' *input* schemas (`workflows_create/update/patch`),
- * which is where it is actually enforced and where an agent has to read it
- * anyway to author a node.
+ * agent receives changes.
  */
 const AdvertisedNodeSchema = z.record(z.string(), z.unknown())
+
+/**
+ * The node items the write tools advertise on their *input* side: identity,
+ * type and placement typed, `config` an open record. Inlining the union here
+ * cost ~10k tokens per write tool on every catalogue load; an agent instead
+ * asks `workflows_nodeSchema` for the one type it is authoring and learns the
+ * rest from validation errors, which name the list, index and nodeId.
+ *
+ * Advertisement only — never the gate. The SDK parses arguments with the
+ * advertised schema before the handler runs, so every object here is loose:
+ * unknown keys must reach `router.dispatch`, whose real input schema
+ * (`WorkflowNodeSchema`, strict per member) rejects them with a precise path.
+ * A stripping schema here would silently weaken that validation.
+ */
+const advertisedNodeFields = {
+  nodeId: z.string().min(1),
+  label: z.string().nullable().optional(),
+  parentId: z.string().min(1).nullable().optional().describe("Group node this node sits inside; null takes it out (patch only)."),
+  position: z.looseObject({ x: z.number().optional(), y: z.number().optional() }).optional(),
+  config: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Per-type config. Call workflows_nodeSchema with the type for its fields."),
+}
+const AdvertisedNewNodeSchema = z.looseObject({ ...advertisedNodeFields, type: WorkflowNodeTypeSchema })
+const AdvertisedNodePatchSchema = z.looseObject({ ...advertisedNodeFields, type: WorkflowNodeTypeSchema.optional() })
+
+/** Which input field of which write tool carries node items, keyed by public tool name. */
+const ADVERTISED_NODE_INPUT: ReadonlyMap<string, { readonly field: string; readonly node: z.ZodObject }> = new Map([
+  ["workflows_create", { field: "nodes", node: AdvertisedNewNodeSchema }],
+  ["workflows_patch", { field: "upsertNodes", node: AdvertisedNodePatchSchema }],
+])
+
+/** `_meta` key Claude Code reads to load a tool up front instead of behind tool search. */
+const ALWAYS_LOAD_META = { "anthropic/alwaysLoad": true } as const
 
 /**
  * MCP-only output advertisements for the two reads whose schemas re-embedded
@@ -54,6 +96,8 @@ const ADVERTISED_OUTPUT: ReadonlyMap<string, z.ZodTypeAny> = new Map<string, z.Z
     ]),
   ],
   ["workflows_debugContext", WorkflowDebugContextSchema.extend({ nodes: z.array(AdvertisedNodeSchema) })],
+  ["workflows_search", McpWorkflowSearchPageSchema],
+  ["runs_history", McpRunHistoryPageSchema],
 ])
 
 /**
@@ -75,7 +119,9 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
     // Pass the complete object: rebuilding from `.shape` loses strictness and
     // lets the SDK strip unknown keys before the router can reject them.
     // NoInput is an optional empty object; MCP supplies an argument object.
-    const inputSchema = reg.input instanceof z.ZodObject ? reg.input : z.object({}).strict()
+    const inputSchema = reg.input instanceof z.ZodObject
+      ? advertisedInput(toolName(spec), reg.input)
+      : z.object({}).strict()
     const outputValueSchema = spec.resultProjection === "run"
       ? z.unknown()
       : ADVERTISED_OUTPUT.get(toolName(spec)) ?? reg.output
@@ -90,12 +136,26 @@ export function registerBridgeTools(server: McpServer, router: IpcRouter): void 
         inputSchema,
         outputSchema,
         annotations: toolAnnotations(spec),
+        ...(spec.alwaysLoad === true ? { _meta: ALWAYS_LOAD_META } : {}),
       },
       (args: Record<string, unknown>, extra?: { readonly signal?: AbortSignal }) =>
         // The client's name from `initialize`; a sessionless one-shot never sent one.
         dispatchAsTool(router, spec, args, server.server.getClientVersion()?.name ?? "An unnamed MCP client", extra?.signal),
     )
   }
+}
+
+/**
+ * The input schema a tool advertises: the router's own, except that node items
+ * on the graph-write tools are swapped for the loose shape above. Extending
+ * the complete object keeps its strictness and every other field verbatim.
+ */
+function advertisedInput(name: string, input: z.ZodObject): z.ZodObject {
+  const loose = ADVERTISED_NODE_INPUT.get(name)
+  if (loose === undefined) return input
+  const description = input.shape[loose.field]?.description
+  const list = z.array(loose.node).optional()
+  return input.extend({ [loose.field]: description === undefined ? list : list.describe(description) })
 }
 
 // fallow-ignore-next-line complexity
@@ -124,6 +184,13 @@ async function dispatchAsTool(
   // lives on the MCP transport, never on the shared IPC handler.
   if (spec.domain === "runs" && spec.action === "create" && payload["waitMs"] === undefined) {
     payload["waitMs"] = RUN_WAIT_DEFAULT_MS
+  }
+  // MCP default: `workflows_get` returns the bounded outline. The handler (and
+  // therefore the renderer) defaults to the whole graph, which on a large
+  // workflow is past an agent client's output limit. `nodeIds` alone still
+  // implies the nodes view, so it is left for the handler to resolve.
+  if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === undefined && payload["nodeIds"] === undefined) {
+    payload["view"] = "outline"
   }
 
   let result
@@ -173,9 +240,19 @@ async function dispatchAsTool(
         structuredContent: response,
       }
     }
-    const data = spec.resultProjection === "run" ? projectRunToolResult(result.data) : result.data
+    const data = projectResult(spec, result.data)
+    const text = encodeMcpResult(data)
+    if (spec.domain === "workflows" && spec.action === "get" && payload["view"] === "full" && Buffer.byteLength(text) > WORKFLOW_FULL_VIEW_MAX_BYTES) {
+      const error = projectMcpError(
+        "validation",
+        `The full view of this workflow is ${Buffer.byteLength(text)} bytes, over the ${WORKFLOW_FULL_VIEW_MAX_BYTES}-byte limit. `
+          + 'Use view: "outline" for node ids, types and edges, then view: "nodes" with nodeIds for the configs you need.',
+        undefined,
+      )
+      return { content: [{ type: "text", text: encodeMcpResult({ error }) }], isError: true }
+    }
     return {
-      content: [{ type: "text", text: encodeMcpResult(data) }],
+      content: [{ type: "text", text }],
       structuredContent: { result: data },
     }
   }
@@ -183,6 +260,19 @@ async function dispatchAsTool(
   return {
     content: [{ type: "text", text: encodeMcpResult({ error }) }],
     isError: true,
+  }
+}
+
+function projectResult(spec: McpToolSpec, data: unknown): unknown {
+  switch (spec.resultProjection) {
+    case "run":
+      return projectRunToolResult(data)
+    case "workflowSearch":
+      return projectWorkflowSearchPage(data)
+    case "runHistory":
+      return projectRunHistoryPage(data)
+    default:
+      return data
   }
 }
 

@@ -318,6 +318,7 @@ describe("Phase 6 — project membership through the workflow tools", () => {
  * is actually enforced. The advertised contract is looser than the data, never
  * looser than the validation: the router still checks every response against
  * the real `WorkflowGetViewSchema` / `WorkflowDebugContextSchema`.
+ * (Token-efficiency Phase 3 then moved the input side to a loose node shape too.)
  */
 describe("Phase 6 — advertised output schemas publish the node union once", () => {
   const OPAQUE_NODE = { type: "object", propertyNames: { type: "string" }, additionalProperties: {} }
@@ -352,13 +353,14 @@ describe("Phase 6 — advertised output schemas publish the node union once", ()
     expect(debugContext?.properties?.nodes?.items).toEqual(OPAQUE_NODE)
   })
 
-  it("publishes the node union on the write inputs that enforce it", async () => {
+  it("advertises the node union nowhere: write inputs carry the loose node shape", async () => {
     const client = await connectClient()
     const { tools } = await client.listTools()
     await client.close()
-    for (const name of ["workflows_create", "workflows_update", "workflows_patch"]) {
-      const input = JSON.stringify(tools.find((tool) => tool.name === name)?.inputSchema)
-      expect(input, name).toContain('"const":"http-request"')
+    // Per-type configs come from workflows_nodeSchema; the router still enforces
+    // the union on dispatch (see token-efficiency-phase3.test.ts).
+    for (const tool of tools) {
+      expect(JSON.stringify(tool.inputSchema), tool.name).not.toContain('"const":"http-request"')
     }
   })
 
@@ -386,7 +388,7 @@ describe("Phase 6 — advertised output schemas publish the node union once", ()
         isError?: boolean
       }
 
-    const full = await call({})
+    const full = await call({ view: "full" })
     expect(full.isError).toBeFalsy()
     const fullNodes = full.structuredContent?.result["nodes"] as Array<Record<string, unknown>>
     // The opaque advertisement changes no bytes: configs and positions still ship.

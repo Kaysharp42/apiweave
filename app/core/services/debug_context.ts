@@ -35,8 +35,8 @@ export interface DebugContextRequest {
  * ONCE (explicit `runId`, otherwise the latest failed run) and threaded
  * through every section, so sub-reads cannot disagree about which run or
  * revision they describe. Current workflow `rev` is returned separately from
- * the run record's own `runRev`, and graph correlation stays `unknown` because
- * run records do not carry the executed workflow revision — a past run is
+ * the run record's own `runRev`, and graph correlation compares the workflow
+ * revision the run recorded at creation with the current one — a past run is
  * never assumed to describe the graph now on canvas.
  *
  * Deterministic throughout: ordered failure ids, severity-ordered diagnosis,
@@ -97,10 +97,7 @@ export class DebugContextService {
       },
       runSelection,
       run: run === null ? null : describeRun(run),
-      graphCorrelation: {
-        status: "unknown",
-        reason: "Run records do not carry the executed workflow revision, so a past run cannot be proven to describe the current graph.",
-      },
+      graphCorrelation: correlateGraph(workflow.rev, run),
       failureSummary,
       diagnosis,
       nodes,
@@ -210,7 +207,17 @@ export class DebugContextService {
   }
 }
 
-/** The workspace that owns the workflow — the only scope environments resolve in. */
+/** Whether the run executed the graph now stored, from the revision it recorded at creation. */
+function correlateGraph(currentRev: number, run: Run | null): WorkflowDebugContext["graphCorrelation"] {
+  if (run === null) return { status: "unknown", reason: "No run was selected." }
+  const ran = run.workflowRev
+  if (ran === null || ran === undefined) {
+    return { status: "unknown", reason: "This run was recorded before runs tracked the workflow revision." }
+  }
+  return ran === currentRev
+    ? { status: "current", reason: `The run executed workflow revision ${ran}, which is the current revision.` }
+    : { status: "stale", reason: `The run executed workflow revision ${ran}; the workflow is now at revision ${currentRev}, so node configs may differ from what ran.` }
+}
 
 function dedupe(ids: readonly string[]): string[] {
   return [...new Set(ids)]

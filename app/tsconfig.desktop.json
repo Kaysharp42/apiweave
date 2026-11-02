@@ -22,7 +22,7 @@
     },
     "noEmit": true
   },
-  "include": ["electron/**/*.ts", "core/**/*.ts", "shared/**/*.ts"],
+  "include": ["electron/**/*.ts", "core/**/*.ts", "core/**/*.cts", "shared/**/*.ts"],
   "exclude": [
     "node_modules",
     "dist",

@@ -17,6 +17,10 @@ export const WORKFLOW_OUTLINE_MAX_LIMIT = 500
 export const NODE_SEARCH_DEFAULT_LIMIT = 20
 export const NODE_SEARCH_MAX_LIMIT = 100
 
+/** Default/maximum workflows per `workspaces.map` page. A 30-workflow workspace fits one default page. */
+export const WORKSPACE_MAP_DEFAULT_LIMIT = 30
+export const WORKSPACE_MAP_MAX_LIMIT = 100
+
 /** Default/maximum nodes per `workflows.get` nodes view and evidence page. */
 export const NODE_DETAIL_DEFAULT_LIMIT = 10
 export const NODE_DETAIL_MAX_LIMIT = 50

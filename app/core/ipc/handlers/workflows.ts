@@ -11,9 +11,9 @@ import {
   WorkflowSearchPageSchema,
   WorkflowGetViewSchema,
   NodeSearchPageSchema,
-  WorkspaceNodeSearchPageSchema,
   WorkflowRevisionSchema,
   WorkflowRevisionSummarySchema,
+  WorkflowNodeTypeSchema,
 } from "@shared/zod-schemas"
 import type { WorkflowSummaryFilters } from "../../repositories/WorkflowRepository"
 import {
@@ -30,6 +30,7 @@ import {
 import { ValidationError } from "../errors"
 import { canonicalizeNodeConfig } from "../../repositories/helpers"
 import { DebugContextService } from "../../services/debug_context"
+import { REFERENCE_FILTER_RE } from "../../services/node_facts"
 import { layoutWorkflowNodes } from "@shared/layout/workflowLayout"
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
@@ -49,7 +50,7 @@ const canonicalNodes = z.preprocess(
 const partialNodePatch = z
   .object({
     nodeId: z.string().min(1),
-    type: z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow", "group", "note"]).optional(),
+    type: WorkflowNodeTypeSchema.optional(),
     label: z.string().nullable().optional(),
     position: PositionSchema.partial().optional(),
     parentId: z.string().min(1).nullable().optional().describe("Group frame this node sits inside; null takes it out of its frame. Changing it is a topology change for auto-layout."),
@@ -114,6 +115,7 @@ const patchInput = z
     ),
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
+    tags: z.array(z.string()).optional().describe("Replaces the stored tag list."),
     upsertNodes: patchNodes
       .optional()
       .describe("Nodes to add or patch, matched by nodeId. Existing nodes merge recursively: omitted config fields and position stay as stored. A new node must include its type and complete schema-valid config."),
@@ -143,7 +145,7 @@ const patchInput = z
 const idInput = z.object({ workspaceId: ws, workflowId: z.string().min(1) }).strict()
 const getInput = idInput.extend({
   nodeIds: z.array(z.string().min(1)).min(1).max(NODE_DETAIL_MAX_LIMIT).optional().describe("Nodes view: return full configs for these nodes plus incident edges and boundary-node identities. Implies view nodes."),
-  view: z.enum(["full", "outline", "nodes"]).optional().describe("full (default) returns the whole stored graph. outline returns bounded node ids/types/labels plus edge structure without positions or configs. nodes returns full configs for nodeIds plus incident edges. Partial views are marked partial:true and are never complete graphs."),
+  view: z.enum(["full", "outline", "nodes"]).optional().describe("outline (default over MCP) returns bounded node ids/types/labels plus edge structure without positions or configs. nodes returns full configs for nodeIds plus incident edges. full returns the whole stored graph and is refused over MCP above 64 KiB. Partial views are marked partial:true and are never complete graphs."),
   nodeLimit: z.number().int().min(1).max(WORKFLOW_OUTLINE_MAX_LIMIT).optional().describe("Outline view: how many node summaries per page (default 100). Further pages arrive via nextNodeCursor."),
   nodeCursor: z.string().min(1).optional().describe("Outline view: continue a paged outline. Bound to the workflow revision; a stale cursor is rejected."),
 }).strict().superRefine((value, context) => {
@@ -176,21 +178,21 @@ const searchInput = z.object({
 
 const searchNodesInput = z.object({
   workspaceId: ws,
-  workflowId: z.string().min(1),
+  workflowId: z.string().min(1).optional().describe("One workflow, with neighbour/edge ids per match. Omit to search every workflow."),
+  collectionId: z.string().min(1).optional().describe("Without workflowId: only this project's workflows."),
   query: z.string().min(1).max(200).optional().describe("Literal substring (never a regex) matched against nodeId, label, type, request method, URL path and extractor names. Bodies, headers, auth and values are never inspected."),
-  nodeTypes: z.array(z.enum(["http-request", "sse", "assertion", "delay", "merge", "start", "end", "workflow", "group", "note"])).max(10).optional().describe("Only consider these node types."),
-  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional().describe("Matches per result (default 20, max 100). totalMatched always describes every match."),
+  ref: z.string().regex(REFERENCE_FILTER_RE, 'A reference by name: "variables.NAME", "env.NAME" or "secrets.NAME".').optional().describe('Nodes using this reference anywhere in config, scripts, mappings, extractors or assertions, e.g. "env.BASE_URL"; each match gives field and produces/consumes.'),
+  nodeTypes: z.array(WorkflowNodeTypeSchema).max(10).optional().describe("Only consider these node types."),
+  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional().describe("Matches per page (default 20, max 100). totalMatched always describes every match."),
+  cursor: z.string().min(1).optional().describe("Next page; send the same filters."),
 }).strict().superRefine((value, context) => {
-  if ((value.query === undefined || value.query.trim().length === 0) && value.nodeTypes === undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "Give a query, nodeTypes, or both: an unfiltered search is just the outline." })
+  if ((value.query === undefined || value.query.trim().length === 0) && value.ref === undefined && value.nodeTypes === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["query"], message: "Give a query, ref, nodeTypes, or a combination: an unfiltered search is just the outline." })
+  }
+  if (value.workflowId !== undefined && value.collectionId !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["collectionId"], message: "collectionId narrows a workspace-wide search; with workflowId, omit it." })
   }
 })
-
-const searchWorkspaceNodesInput = z.object({
-  workspaceId: ws,
-  query: z.string().trim().min(1).max(200),
-  limit: z.number().int().min(1).max(NODE_SEARCH_MAX_LIMIT).optional(),
-}).strict()
 
 const layoutDirection = z.enum(["LR", "TB"]).optional().describe('"LR" (default) for left-to-right request chains, "TB" for top-to-bottom.')
 
@@ -203,6 +205,28 @@ const layoutFlag = z
   .boolean()
   .optional()
   .describe("Lay out the graph when this write changes topology (default true). Set false to keep the positions you sent as-is.")
+
+const nodeSchemaOutput = z.object({
+  type: WorkflowNodeTypeSchema,
+  description: z.string(),
+  config: z.record(z.string(), JsonValueSchema),
+}).strict()
+
+/**
+ * One node type's config as JSON Schema, converted from the very zod member
+ * `WorkflowNodeSchema` validates writes with — the same conversion (draft-7,
+ * input side) the MCP SDK applies to tool schemas — so it cannot drift from
+ * what a write accepts. Built once: the zod definitions are static.
+ */
+const NODE_CONFIG_SCHEMAS: ReadonlyMap<string, z.infer<typeof nodeSchemaOutput>> = new Map(
+  WorkflowNodeSchema.options.map((member) => {
+    // The dialect marker is noise to an agent reading one config shape.
+    const config: Record<string, unknown> = { ...z.toJSONSchema(member.shape.config.unwrap(), { target: "draft-7", io: "input" }) }
+    delete config["$schema"]
+    const type = member.shape.type.value
+    return [type, { type, description: member.description ?? "", config: config as Record<string, z.infer<typeof JsonValueSchema>> }]
+  }),
+)
 
 export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): void {
   const { workflows, workflowAnalysis, runs, environments } = deps
@@ -236,6 +260,18 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
         return workflows.getNodesView(i.workspaceId, i.workflowId, nodeIds)
       }
       return workflows.get(i.workspaceId, i.workflowId)
+    },
+  })
+
+  router.register("workflows", "nodeSchema", {
+    input: z.object({ type: WorkflowNodeTypeSchema.describe("The node type whose config shape to return.") }).strict(),
+    output: nodeSchemaOutput,
+    handle: ({ type }) => {
+      const schema = NODE_CONFIG_SCHEMAS.get(type)
+      // Unreachable while WorkflowNodeTypeSchema and the node union agree; a
+      // test pins that they do.
+      if (schema === undefined) throw new Error(`no config schema for node type ${type}`)
+      return schema
     },
   })
 
@@ -281,17 +317,19 @@ export function registerWorkflowHandlers(router: IpcRouter, deps: HandlerDeps): 
   router.register("workflows", "searchNodes", {
     input: searchNodesInput,
     output: NodeSearchPageSchema,
-    handle: (i) => workflows.searchNodes(i.workspaceId, i.workflowId, {
-      query: i.query?.trim() ?? "",
-      ...(i.nodeTypes !== undefined ? { nodeTypes: i.nodeTypes } : {}),
-      limit: i.limit ?? NODE_SEARCH_DEFAULT_LIMIT,
-    }),
-  })
-
-  router.register("workflows", "searchWorkspaceNodes", {
-    input: searchWorkspaceNodesInput,
-    output: WorkspaceNodeSearchPageSchema,
-    handle: (i) => workflows.searchWorkspaceNodes(i.workspaceId, i.query, i.limit ?? NODE_SEARCH_DEFAULT_LIMIT),
+    handle: (i) => workflows.searchNodes(
+      i.workspaceId,
+      i.workflowId !== undefined
+        ? { workflowId: i.workflowId }
+        : i.collectionId !== undefined ? { collectionId: i.collectionId } : {},
+      {
+        ...(i.query !== undefined ? { query: i.query } : {}),
+        ...(i.ref !== undefined ? { ref: i.ref } : {}),
+        ...(i.nodeTypes !== undefined ? { nodeTypes: i.nodeTypes } : {}),
+        limit: i.limit ?? NODE_SEARCH_DEFAULT_LIMIT,
+        ...(i.cursor !== undefined ? { cursor: i.cursor } : {}),
+      },
+    ),
   })
 
   router.register("workflows", "update", {

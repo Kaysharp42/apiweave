@@ -91,7 +91,7 @@ export function isSecretReference(value: string): boolean {
  * `prev`/`secrets` — a reference, not a literal. Round-trip redaction by value
  * (not key name) keys off this: a value that is one of these references holds
  * no secret and must survive a read verbatim, so `workflows_get` →
- * `workflows_update` does not silently clobber `bearer.token: "{{variables.token}}"`,
+ * `workflows_patch` does not silently clobber `bearer.token: "{{variables.token}}"`,
  * `extractors.token: "response.body.token"`, or `body.password: "{{env.PASSWORD}}"`
  * with the `<SECRET>` literal. `{{funcName(...)}}` is intentionally out of scope: a function call only ever
  * yields a literal value, never the credential shape itself, and including it

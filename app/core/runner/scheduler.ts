@@ -208,6 +208,7 @@ export class RunScheduler {
       workspaceId: request.workspaceId,
       workflowId: request.workflowId,
       status: "pending",
+      workflowRev: workflow.rev,
       ...(variables ? { variables } : {}),
       selectedEnvironmentId: inheritedEnvironmentId,
       ...(request.iteration ? { iteration: request.iteration } : {}),
@@ -429,10 +430,12 @@ export class RunScheduler {
         // not wait behind the concurrency cap the caller is occupying.
         subRun: {
           begin: (workflowId) => {
+            const subWorkflowRev = this.deps.workflows.getByIdInWorkspace(workflowId, run.workspaceId)?.rev
             const child = this.deps.runs.create({
               workspaceId: run.workspaceId,
               workflowId,
               selectedEnvironmentId,
+              ...(subWorkflowRev !== undefined ? { workflowRev: subWorkflowRev } : {}),
             })
             this.deps.runs.updateStatus(child.runId, "running")
             return {

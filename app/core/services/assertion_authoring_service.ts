@@ -36,7 +36,7 @@ export class AssertionAuthoringService {
     runId: string,
     sourceNodeId: string,
   ): Promise<AssertionSuggestionResult> {
-    const { run, sourceResult } = await this.getEvidence(workspaceId, workflowId, runId, sourceNodeId)
+    const { run, sourceResult, rev } = await this.getEvidence(workspaceId, workflowId, runId, sourceNodeId)
     if (sourceResult === undefined) {
       throw new NotFoundError(`result for node ${sourceNodeId} not found`)
     }
@@ -117,7 +117,7 @@ export class AssertionAuthoringService {
       })
     }
 
-    return { workflowId, runId: run.runId, sourceNodeId, suggestions }
+    return { workflowId, rev, runId: run.runId, sourceNodeId, suggestions }
   }
 
   async validate(
@@ -218,12 +218,12 @@ export class AssertionAuthoringService {
     workflowId: string,
     runId: string,
     sourceNodeId: string,
-  ): Promise<{ readonly run: Run; readonly sourceResult: RunResult | undefined }> {
+  ): Promise<{ readonly run: Run; readonly sourceResult: RunResult | undefined; readonly rev: number }> {
     const workflow = await this.workflows.get(workspaceId, workflowId)
     requireResponseNode(workflow, sourceNodeId)
     const run = await this.runs.get(workspaceId, runId)
     if (run.workflowId !== workflowId) throw new NotFoundError(`run ${runId} not found`)
-    return { run, sourceResult: run.results.find((result) => result.nodeId === sourceNodeId) }
+    return { run, sourceResult: run.results.find((result) => result.nodeId === sourceNodeId), rev: workflow.rev }
   }
 }
 

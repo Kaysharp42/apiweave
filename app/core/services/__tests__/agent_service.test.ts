@@ -1475,6 +1475,86 @@ describe("AgentService — session briefings", () => {
     expect(briefingHandedOver()?.text).toContain("without APIWeave's MCP server")
   })
 
+  describe("code map detection", () => {
+    const originalPath = process.env["PATH"]
+    const originalWinPath = process.env["Path"]
+    let binDir: string
+
+    beforeEach(() => {
+      // An empty PATH directory: no real graphify on the machine can leak in.
+      binDir = fs.mkdtempSync(path.join(os.tmpdir(), "apiweave-graphify-bin-"))
+      process.env["PATH"] = binDir
+      if (originalWinPath !== undefined) process.env["Path"] = binDir
+    })
+
+    afterEach(() => {
+      const restore = (key: string, value: string | undefined): void => {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      restore("PATH", originalPath)
+      restore("Path", originalWinPath)
+      fs.rmSync(binDir, { recursive: true, force: true })
+    })
+
+    function installGraphify(): void {
+      const file = path.join(binDir, process.platform === "win32" ? "graphify.cmd" : "graphify")
+      fs.writeFileSync(file, "#!/bin/sh\n", { mode: 0o755 })
+    }
+
+    function installGraph(): void {
+      fs.mkdirSync(path.join(tempDir, "graphify-out"))
+      fs.writeFileSync(path.join(tempDir, "graphify-out", "graph.json"), "{}")
+    }
+
+    async function launchAndRead(): Promise<string> {
+      const { seeded, briefed } = await seedBriefed()
+      await briefed.launchEmbedded({
+        workspaceId: seeded.workspaceId,
+        agentKey: "briefed-runner",
+        scope: { kind: "workflow", id: seeded.workflowId },
+        cols: 100,
+        rows: 30,
+      })
+      return briefingHandedOver()?.text ?? ""
+    }
+
+    it("tells the agent to query the graph when graphify-out/graph.json exists", async () => {
+      installGraph()
+
+      const text = await launchAndRead()
+
+      expect(text).toContain("A code map exists for this folder")
+      expect(text).toContain("graphify query")
+    })
+
+    it("prefers the graph over the executable when both are present", async () => {
+      installGraph()
+      installGraphify()
+
+      const text = await launchAndRead()
+
+      expect(text).toContain("graphify query")
+      expect(text).not.toContain("is installed")
+    })
+
+    it("suggests building a map when only the executable exists", async () => {
+      installGraphify()
+
+      const text = await launchAndRead()
+
+      expect(text).toContain("A code map could be built")
+      expect(text).toContain("/graphify .")
+      expect(text).not.toContain("graphify query")
+    })
+
+    it("says nothing about a code map when neither exists", async () => {
+      const text = await launchAndRead()
+
+      expect(text).not.toContain("graphify")
+    })
+  })
+
   /** Scratch is scratch: it goes when the session that owned it is over. */
   it("deletes the briefing when the session reaches a terminal state", async () => {
     const { seeded, briefed } = await seedBriefed()

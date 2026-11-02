@@ -31,39 +31,43 @@ export function guideUri(slug: string): string {
   return `${GUIDE_URI_PREFIX}${slug}`
 }
 
-const START_HERE = `# Building a workflow with APIWeave
+const START_HERE = `# Building and editing an APIWeave workflow
 
-An APIWeave workflow is a directed graph of nodes. A run starts at the \`start\`
-node and follows edges. Nothing runs unless an edge leads to it.
+A workflow is a directed graph of nodes. A run starts at the \`start\` node and
+follows edges; nothing runs unless an edge leads to it.
 
-## Order of operations that avoids wasted runs
+## The loop
 
-1. **Look for an existing workflow first.** \`workflows_search\` then
-   \`workflows_get\` (outline first, then nodes) on anything similar in the workspace. A real workflow shows
-   you the conventions this workspace already uses — base URLs, auth headers,
-   variable names — faster than any documentation. Credential values are
-   withheld, the structure is not.
-2. **Read \`apiweave://guide/workflow-authoring\`** for the node and edge shapes,
-   and \`apiweave://guide/placeholders\` for the interpolation syntax.
-3. **Build ONE branch end to end**, not three in parallel. A syntax mistake made
-   once is one diagnostic; made three times it is nine, and the report gets hard
-   to read. Get one chain clean, then copy it.
-4. **Read the one \`diagnosis\` in a graph-write response.** Graph writes return a
-   compact result plus a static diagnosis. \`status: "unavailable"\` means the
-   write saved but analysis did not run; it is not a clean result. Fix every
-   \`error\` before going further — see
-   \`apiweave://guide/diagnostics\`.
-5. **Fix with \`workflows_patch\`, not \`workflows_update\`.** Patch changes nodes
-   and edges by id; update replaces the whole graph and makes you re-send every
-   node to change one field.
-6. **Only then \`runs_create\`.** A run sends real HTTP requests to a real
-   service. Everything above is free; a run is not. A run that uses stored
-   secrets waits for the user to approve it in APIWeave; \`deniedByUser: true\`
-   means they refused — say so rather than retrying.
-7. **After a successful run, use \`assertion_suggest\`.** It reads a response
-   that actually happened and returns rules with verified paths. That is a
-   better starting point for assertions than writing them by hand — and the
-   canonical way to get a path right on the first try.
+1. **Find.** \`workflows_search\` (summaries, never graphs), then
+   \`workflows_get\` outline, then \`view: "nodes"\` for the ids you will touch.
+   A similar workflow shows this workspace's base URLs, auth headers and
+   variable names; credential values are withheld, the structure is not.
+   \`workspaces_map\` orients in a whole workspace; \`workflows_searchNodes\`
+   without \`workflowId\` maps a route (\`query\`) or a \`ref\` such as
+   \`secrets.API_KEY\` to every node using it.
+2. **Learn the shapes.** \`apiweave://guide/workflow-authoring\` for nodes and
+   edges, \`apiweave://guide/placeholders\` for \`{{…}}\` syntax, and
+   \`workflows_nodeSchema\` for one node type's config fields.
+3. **Write one branch end to end** with \`workflows_create\` or
+   \`workflows_patch\`, then copy it. Patch by id with \`expectedRevision\` from
+   the rev you read; a conflict means re-read and recompute. Insert a node and
+   rewire it in one patch: new node, old edge removals, replacement edges.
+4. **Read the write's \`diagnosis\`.** Fix every \`error\` first
+   (\`apiweave://guide/diagnostics\`); \`status: "unavailable"\` means saved but
+   unchecked, never clean. A validation error's path names the node's index.
+5. **Only then \`runs_create\`.** It sends real HTTP; everything above is free.
+   A wait timeout returns the runId for \`runs_wait\` and never cancels the run.
+   A run using stored secrets waits for the user's approval;
+   \`deniedByUser: true\` means they refused — say so, do not retry.
+6. **Debug** with \`workflows_debugContext\` (one bounded call: failed nodes,
+   diagnosis, configs, placeholders, error previews), then
+   \`runs_getNodeResult\` for evidence slices.
+7. **Assertions.** After a run, \`assertion_suggest\` derives rules with
+   verified paths from a real response; \`assertion_apply\` writes them.
+
+If the user's repository has a \`graphify-out/\` folder, query it with
+\`graphify query "<route or handler>"\` instead of grepping when learning the API
+under test (graphify for the code, the tools above for the workflows).
 
 ## Minimal working graph
 
@@ -72,26 +76,13 @@ node and follows edges. Nothing runs unless an edge leads to it.
   "name": "Fetch a pet",
   "nodes": [
     { "nodeId": "start", "type": "start" },
-    {
-      "nodeId": "get_pet",
-      "type": "http-request",
-      "config": {
-        "method": "GET",
-        "url": "{{env.BASE_URL}}/pets/{{variables.petId}}",
-        "headers": [{ "key": "Accept", "value": "application/json" }],
-        "extractors": { "petName": "response.body.name" }
-      }
-    },
-    {
-      "nodeId": "check",
-      "type": "assertion",
-      "config": {
-        "assertions": [
-          { "source": "status", "path": "", "operator": "equals", "expectedValue": 200 },
-          { "source": "prev", "path": "response.body.id", "operator": "exists" }
-        ]
-      }
-    },
+    { "nodeId": "get_pet", "type": "http-request", "config": {
+      "method": "GET", "url": "{{env.BASE_URL}}/pets/{{variables.petId}}",
+      "headers": [{ "key": "Accept", "value": "application/json" }],
+      "extractors": { "petName": "response.body.name" } } },
+    { "nodeId": "check", "type": "assertion", "config": { "assertions": [
+      { "source": "status", "path": "", "operator": "equals", "expectedValue": 200 },
+      { "source": "prev", "path": "response.body.id", "operator": "exists" } ] } },
     { "nodeId": "done", "type": "end" }
   ],
   "edges": [
@@ -103,36 +94,14 @@ node and follows edges. Nothing runs unless an edge leads to it.
 }
 \`\`\`
 
-Three things to copy from this:
+- Edges leaving an assertion set \`sourceHandle\` \`pass\` or \`fail\`; without
+  it the branch stops silently. Leaving \`fail\` unwired is normal.
+- Paths start at the response: \`response.body.id\`, \`[0]\` for arrays.
+- Exactly one \`start\`, at least one \`end\`.
+- \`<SECRET>\` in a read is a placeholder: omit the field, or send the real value
+  or \`{{secrets.NAME}}\` — never write it back.
 
-- Edges leaving \`check\` carry \`sourceHandle\`. Without it the branch stops silently.
-- The \`prev\` path is \`response.body.id\`, not \`id\`.
-- There is **exactly one \`start\` and at least one \`end\`**. Branches may converge
-  on one end or terminate at separate end nodes for distinct success/failure
-  paths.
-
-This graph leaves \`check\`'s \`fail\` handle unwired — the normal, expected shape:
-the run still records the failed assertion and terminates that branch. Wire
-\`fail\` only when you want a distinct failure path (a cleanup request, a
-notification, a compensating call), by adding a node and edges with
-\`"sourceHandle": "fail"\`:
-
-\`\`\`json
-{ "nodeId": "report_failure", "type": "http-request", "config": { "method": "POST", "url": "{{env.BASE_URL}}/report" } }
-\`\`\`
-
-\`\`\`json
-{ "edgeId": "e4", "source": "check", "target": "report_failure", "sourceHandle": "fail" },
-{ "edgeId": "e5", "source": "report_failure", "target": "done" }
-\`\`\`
-
-## Related
-
-- \`apiweave://guide/workflow-authoring\` — node types and their config shapes
-- \`apiweave://guide/placeholders\` — \`{{env.x}}\`, \`{{variables.x}}\`, \`{{prev.x}}\`, \`{{secrets.x}}\`
-- \`apiweave://guide/assertions\` — assertion rules and the authoring flow
-- \`apiweave://guide/diagnostics\` — what each diagnostic code means
-- \`apiweave://guide/redaction\` — what reads withhold, and why you must not write it back
+Also: \`apiweave://guide/assertions\`, \`apiweave://guide/redaction\`.
 `
 
 const WORKFLOW_AUTHORING = `# Nodes and edges
@@ -141,7 +110,9 @@ const WORKFLOW_AUTHORING = `# Nodes and edges
 
 Every node is \`{ nodeId, type, config?, label?, position? }\`. \`position\` is
 canvas layout only — execution order comes from the edges, never from position
-or array order.
+or array order. The write tools advertise \`config\` as an open object:
+\`workflows_nodeSchema\` returns one type's config fields as JSON Schema, and a
+rejected config names its node's list index and field in the error path.
 
 | type | what it does | handles |
 | --- | --- | --- |
@@ -303,10 +274,9 @@ all other node types have one output; leave \`sourceHandle\` unset for them.
 
 ## Changing a graph
 
-\`workflows_update\` replaces \`nodes\`, \`edges\` and \`variables\` wholesale — a
-field you omit is not "unchanged", the whole list is overwritten by what you
-send. To change part of a graph, use \`workflows_patch\`, which upserts and
-removes by id:
+Change an existing workflow with \`workflows_patch\`, which upserts and removes
+by id and leaves everything you do not name as stored — including name,
+description and tags:
 
 \`\`\`json
 {
@@ -319,8 +289,8 @@ removes by id:
 }
 \`\`\`
 
-\`expectedRevision\` (the workflow's current \`rev\`, accepted by
-\`workflows_update\` too) makes the write a compare-and-swap: if someone edited the workflow meanwhile you get a conflict
+\`expectedRevision\` (the workflow's current \`rev\`) makes the write a
+compare-and-swap: if someone edited the workflow meanwhile you get a conflict
 instead of silently clobbering their change. Removing a node also removes the
 edges attached to it.
 
@@ -533,7 +503,7 @@ const DIAGNOSTICS = `# Diagnostics
 
 \`workflow_diagnose\` statically analyses a stored graph and, given a \`runId\`,
 correlates a past run. It sends no HTTP and changes nothing, so run it freely.
-The write tools (\`workflows_create\`, \`workflows_update\`, \`workflows_patch\`)
+The write tools (\`workflows_create\`, \`workflows_patch\`)
 return the same report as \`diagnosis\` in their own response — read it there
 first.
 
@@ -623,8 +593,7 @@ secret, and seeing it is how you know which credential a request uses.
 
 \`<SECRET>\` is what a read substituted for a value; it is not a value. Writing it
 back replaces a working credential with a literal that gets sent upstream on the
-next run, so \`workflows_create\`, \`workflows_update\`, \`workflows_patch\` and the
-preset tools reject it and name the offending paths.
+next run, so \`workflows_create\`, \`workflows_patch\` and the preset tools reject it and name the offending paths.
 
 When editing something you read: send the real value, send a
 \`{{secrets.NAME}}\` reference, or omit the field. With \`workflows_patch\` you can
@@ -653,44 +622,6 @@ name binds to — never a value, plaintext or encrypted. Secrets cannot be creat
 changed or deleted over MCP; that is a desktop action.
 `
 
-const EDIT_DEBUG = `# Edit and debug loop
-
-For an existing workflow: find it, read the failing part, patch it, re-check it.
-
-1. **Find.** \`workflows_search\` by name (summaries carry rev, counts, project —
-   never graphs), then \`workflows_get\` outline, then nodes for the few ids you
-   will touch. Outline pages explicitly; a stale cursor means re-read.
-2. **Explain.** \`workflows_debugContext\` with the workflow id (and a run id, or
-   none for the latest failed run). One bounded call: current rev, run status,
-   failed/blocked nodes with run-correlated diagnosis, configs of the relevant
-   failures plus predecessors, placeholders, environment key presence, secret
-   resolution metadata, and error previews with \`runs_getNodeResult\` selectors.
-   Counts describe every failure even when detail is capped.
-3. **Patch.** \`workflows_patch\` with \`expectedRevision\` from the rev you read.
-   One call carries the new node, old edge removals, and replacement edges
-   together. Topology changes (new/removed nodes or edges, retargeted edge
-   handles, group membership — \`parentId\` on an upserted node, \`null\` to take
-   it out of its frame) lay out once on the saved revision; config/label-only
-   patches keep every position. A conflict means someone edited meanwhile:
-   re-read and recompute.
-4. **Verify.** Read the write's \`diagnosis\` (errors first, then warnings; an
-   \`unavailable\` check is not clean), then \`runs_create\` with a bounded wait
-   for short runs. A wait timeout returns the run id for \`runs_wait\` — it never
-   cancels the run.
-5. **Assertions.** \`assertion_suggest\` derives rules from a stored response;
-   suggestions never modify anything. \`assertion_validate\` is for previews and
-   evidence checks; direct \`assertion_apply\` (with optional \`runId\`) is correct
-   when the rules are already decided. Paths use \`response.body.x\` with
-   \`[0]\` for arrays; a bare field name is not a path.
-
-Two mistakes this loop prevents: edges leaving an assertion need
-\`sourceHandle\` \`pass\`/\`fail\` (an unhandled edge never runs), and
-\`<SECRET>\` from a read is a placeholder — omit the field, send the real value,
-or send \`{{secrets.NAME}}\`, never write it back. Full references:
-\`apiweave://guide/workflow-authoring\`, \`apiweave://guide/assertions\`,
-\`apiweave://guide/diagnostics\`.
-`
-
 /**
  * What the server says about itself in `initialize`, before a single tool has
  * been called.
@@ -712,26 +643,26 @@ are the only way to reach one.
 Scope: if launched from APIWeave, APIWEAVE_WORKSPACE_ID plus APIWEAVE_WORKFLOW_ID
 or APIWEAVE_PROJECT_ID name what the user was looking at. Start there.
 
-Rules for every edit: prefer \`workflows_patch\` (subset change by id) over
-\`workflows_update\` (whole-graph replace); send the \`rev\` you last read as
-\`expectedRevision\` and re-read on a conflict; read the one \`diagnosis\` graph
-writes return (\`unavailable\` means saved-but-unchecked, never clean).
+Rules for every edit: change a workflow with \`workflows_patch\` (by id); send
+the \`rev\` you last read as \`expectedRevision\` and re-read on a conflict;
+read the one \`diagnosis\` graph writes return (\`unavailable\` means
+saved-but-unchecked, never clean).
 \`runs_create\` sends real HTTP; everything else is free. Reads withhold secret
 values — reference them as {{secrets.NAME}}, never write an observed credential.
 
-Focused context, cheapest first: \`workflows_search\` (summaries, never graphs)
--> \`workflows_get\` outline then nodes -> \`workflows_debugContext\` for a
-failure (one bounded call) -> \`runs_getNodeResult\` for evidence slices.
-Read ${GUIDE_URI_PREFIX}start-here before authoring and
-${GUIDE_URI_PREFIX}edit-debug for the repair loop; \`server_info\` lists
-the rest.`
+Focused context, cheapest first: \`workflows_search\` (summaries, never graphs;
+\`workspaces_map\` to orient in a whole workspace) -> \`workflows_get\` outline
+then nodes -> \`workflows_debugContext\` for a failure (one bounded call) ->
+\`runs_getNodeResult\` for evidence slices.
+Read ${GUIDE_URI_PREFIX}start-here before building or editing;
+\`server_info\` lists the other guides.`
 
 export const MCP_GUIDES: readonly McpGuide[] = [
   {
     slug: "start-here",
-    title: "Start here: building an APIWeave workflow",
+    title: "Start here: building and editing an APIWeave workflow",
     description:
-      "How to author a workflow over MCP, and the order of operations that finds mistakes statically instead of with live HTTP requests.",
+      "The find, write, diagnose, run, debug loop that finds mistakes statically instead of with live HTTP requests, and a minimal working graph.",
     text: START_HERE,
   },
   {
@@ -760,13 +691,6 @@ export const MCP_GUIDES: readonly McpGuide[] = [
     title: "Diagnostic codes",
     description: "What every workflow_diagnose code means and how to fix it.",
     text: DIAGNOSTICS,
-  },
-  {
-    slug: "edit-debug",
-    title: "Edit and debug loop",
-    description:
-      "The short repair loop for an existing workflow: find, explain, patch, verify, and the assertion shortcut.",
-    text: EDIT_DEBUG,
   },
   {
     slug: "redaction",

@@ -6,7 +6,7 @@ import type { ResolvedSecretInfo } from "@shared/types/ResolvedSecretInfo"
 import type { RunIteration } from "@shared/types/RunIteration"
 import type { JsonValue } from "@shared/types/JsonValue"
 import { generateId } from "../id"
-import { getMapped, insertAndRead, parseJson, queryMapped, toJson } from "./helpers"
+import { filteredSetSnapshot, getMapped, insertAndRead, keysetRows, parseJson, queryMapped, toJson } from "./helpers"
 import { AssertionEvaluationSchema } from "@shared/zod-schemas/AssertionEvaluationSchema"
 import { RunResultSchema } from "@shared/zod-schemas/RunResultSchema"
 import { RunIterationSchema } from "@shared/zod-schemas/RunIterationSchema"
@@ -24,6 +24,7 @@ export type RunCreate = Pick<Run, "workspaceId" | "workflowId"> &
       | "resumeFromRunId"
       | "resumeFromNodeIds"
       | "resumeMode"
+      | "workflowRev"
     >
   >
 
@@ -95,7 +96,7 @@ const TERMINAL_SQL = "status IN ('completed', 'failed', 'cancelled', 'interrupte
 // Node results live one row per node in `run_node_results`; a full-run read
 // stitches them back into one array in completion order.
 const COLUMNS =
-  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, rev, createdAt, updatedAt, " +
+  "id, workspace_id, workflow_id, status, node_statuses_json, extracted_variables_json, response_metadata_json, startedAt, completedAt, workflow_rev, rev, createdAt, updatedAt, " +
   "(SELECT '[' || coalesce(group_concat(result_json, ',' ORDER BY rowid), '') || ']' FROM run_node_results WHERE run_id = runs.id) AS results_json"
 
 interface RunRow extends SqliteRow {
@@ -108,6 +109,7 @@ interface RunRow extends SqliteRow {
   readonly response_metadata_json: string
   readonly startedAt: string | null
   readonly completedAt: string | null
+  readonly workflow_rev: number | null
   readonly rev: number
   readonly createdAt: string
   readonly updatedAt: string
@@ -150,7 +152,7 @@ export class RunRepository {
     const readBack = (): Run | undefined => this.getById(id)
     return insertAndRead(
       this.store,
-      "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO runs (id, workspace_id, workflow_id, scopeId, status, node_statuses_json, extracted_variables_json, response_metadata_json, workflow_rev) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         id,
         input.workspaceId,
@@ -160,6 +162,7 @@ export class RunRepository {
         toJson(input.nodeStatuses ?? {}),
         toJson(input.variables ?? {}),
         toJson(metadata),
+        input.workflowRev ?? null,
       ],
       readBack,
       `run ${id} missing after insert`,
@@ -228,15 +231,9 @@ export class RunRepository {
     after: RunHistoryCursor | undefined,
     limit: number,
   ): RunSummaryPage {
-    const { clauses, params } = runHistoryFilterClauses(workspaceId, filters)
-    const snapshot = this.runHistorySnapshot(workspaceId, filters)
-    if (after !== undefined) {
-      clauses.push("(createdAt < ? OR (createdAt = ? AND id < ?))")
-      params.push(after.createdAt, after.createdAt, after.runId)
-    }
-    params.push(limit + 1)
-    const rows = this.store.query<RunSummaryQueryRow>(
-      "SELECT id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, " +
+    const { rows, hasMore } = keysetRows<RunSummaryQueryRow>(this.store, {
+      select:
+        "id, workspace_id, workflow_id, status, startedAt, completedAt, rev, createdAt, updatedAt, " +
         "json_extract(response_metadata_json, '$.trigger') AS trigger, " +
         "json_extract(response_metadata_json, '$.duration') AS duration, " +
         // `->` (not json_extract) so a legacy scalar comes back as JSON text
@@ -244,11 +241,14 @@ export class RunRepository {
         "response_metadata_json -> '$.failedNodes' AS failed_nodes_json, " +
         "response_metadata_json -> '$.iteration' AS iteration_json, " +
         "json_extract(response_metadata_json, '$.resumeFromRunId') AS resume_from_run_id, " +
-        "(SELECT count(*) FROM run_node_results WHERE run_id = runs.id) AS node_count " +
-        `FROM runs WHERE ${clauses.join(" AND ")} ORDER BY createdAt DESC, id DESC LIMIT ?`,
-      params,
-    )
-    return { items: rows.slice(0, limit).map(rowToRunSummary), hasMore: rows.length > limit, snapshot }
+        "(SELECT count(*) FROM run_node_results WHERE run_id = runs.id) AS node_count",
+      table: "runs",
+      set: runHistoryFilterClauses(workspaceId, filters),
+      sortColumn: "createdAt",
+      ...(after !== undefined ? { after: { sortKey: after.createdAt, id: after.runId } } : {}),
+      limit,
+    })
+    return { items: rows.map(rowToRunSummary), hasMore, snapshot: this.runHistorySnapshot(workspaceId, filters) }
   }
 
   /**
@@ -257,12 +257,21 @@ export class RunRepository {
    * changed set is rejected so the caller re-reads from the start.
    */
   public runHistorySnapshot(workspaceId: string, filters: RunHistoryFilters): string {
-    const { clauses, params } = runHistoryFilterClauses(workspaceId, filters)
-    const stamp = this.store.get<{ count: number; newest: string | null } & SqliteRow>(
-      `SELECT count(*) AS count, max(updatedAt) AS newest FROM runs WHERE ${clauses.join(" AND ")}`,
-      params,
-    )
-    return `${stamp?.count ?? 0}:${stamp?.newest ?? ""}`
+    return filteredSetSnapshot(this.store, "runs", runHistoryFilterClauses(workspaceId, filters))
+  }
+
+  /**
+   * The newest run of each named workflow, in ONE query — identity and status
+   * only, no per-node results or metadata blob. A workflow never run is absent
+   * from the map. Scoped by workspace like every other read here.
+   */
+  public latestRunsByWorkflow(
+    workspaceId: string,
+    workflowIds: readonly string[],
+  ): ReadonlyMap<string, { readonly runId: string; readonly status: Run["status"] }> {
+    if (workflowIds.length === 0) return new Map()
+    const rows = this.store.query<LatestRunRow>(latestRunsSql(workflowIds.length), [workspaceId, ...workflowIds])
+    return new Map(rows.map((row) => [row.workflow_id, { runId: row.id, status: row.status as Run["status"] }]))
   }
 
   /**
@@ -528,6 +537,7 @@ function rowToRun(row: RunRow): Run {
     resumeMode: metadata.resumeMode,
     resolvedSecrets: [...metadata.resolvedSecrets],
     iteration: metadata.iteration,
+    workflowRev: row.workflow_rev,
     rev: row.rev,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -627,6 +637,22 @@ interface RunSummaryQueryRow extends SqliteRow {
   readonly iteration_json: string | null
   readonly resume_from_run_id: SqliteValue
   readonly node_count: number | null
+}
+
+interface LatestRunRow extends SqliteRow {
+  readonly workflow_id: string
+  readonly id: string
+  readonly status: string
+}
+
+/** One row per workflow: its newest run, picked with a window function over the named workflows. */
+function latestRunsSql(workflowCount: number): string {
+  return (
+    "SELECT workflow_id, id, status FROM (" +
+    "SELECT workflow_id, id, status, row_number() OVER (PARTITION BY workflow_id ORDER BY createdAt DESC, id DESC) AS position " +
+    `FROM runs WHERE workspace_id = ? AND workflow_id IN (${Array(workflowCount).fill("?").join(", ")})` +
+    ") WHERE position = 1"
+  )
 }
 
 function runHistoryFilterClauses(

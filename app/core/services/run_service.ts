@@ -175,6 +175,15 @@ export class RunService {
     return this.runs.getLatestFailedRun(workflowId, workspaceId)
   }
 
+  /** The newest run of each named workflow, from one query; never-run workflows are absent. */
+  async latestByWorkflow(
+    workspaceId: string,
+    workflowIds: readonly string[],
+  ): Promise<ReadonlyMap<string, { readonly runId: string; readonly status: Run["status"] }>> {
+    await this.scopeResolver.assertWorkspaceVisible(workspaceId)
+    return this.runs.latestRunsByWorkflow(workspaceId, workflowIds)
+  }
+
   /**
    * Bounded compact history: identity, status, timing and failure counts per
    * row, never per-node results. Pages with an opaque filter-bound
@@ -200,7 +209,6 @@ export class RunService {
           workspaceId,
           ...(filters.workflowId !== undefined ? { workflowId: filters.workflowId } : {}),
           ...(filters.status !== undefined ? { status: filters.status } : {}),
-          limit,
           after: { createdAt: last.createdAt, runId: last.runId },
           snapshot: page.snapshot,
         })
@@ -214,7 +222,8 @@ export class RunService {
    */
   async getNodeEvidence(workspaceId: string, runId: string, selection: EvidenceSelection): Promise<NodeEvidencePage> {
     await this.scopeResolver.assertWorkspaceVisible(workspaceId)
-    return buildNodeEvidencePage(this.mustGet(workspaceId, runId), selection)
+    const run = this.mustGet(workspaceId, runId)
+    return buildNodeEvidencePage(run, selection)
   }
 
   async cancel(workspaceId: string, runId: string): Promise<Run> {

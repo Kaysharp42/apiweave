@@ -204,7 +204,7 @@ export const agentsChapter: TutorialChapter = {
         {
           title: "Create and run a workflow",
           instruction:
-            "Have the agent call workflows_search, then workflows_create or workflows_update, read the returned diagnosis, and then runs_create. Poll runs_get until the status is terminal.",
+            "Have the agent call workflows_search, then workflows_create or workflows_patch, read the returned diagnosis, and then runs_create. If the run is still going, it calls runs_wait until the status is terminal.",
           detail:
             "Graph writes return a static diagnosis, so a missing edge handle or unaddressable assertion path is visible without firing a live request.",
         },

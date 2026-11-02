@@ -23,6 +23,7 @@ import { EmptyState } from "../molecules/EmptyState";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { FormField } from "../molecules/FormField";
 import { StatusBadge } from "../molecules/StatusBadge";
+import { CodeMapCard } from "./CodeMapCard";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import useAgentRosterStore from "../../stores/AgentRosterStore";
 import { agents } from "../../utils/apiweaveClient";
@@ -257,6 +258,8 @@ export function AgentsSettingsPanel() {
           Refresh
         </Button>
       </div>
+
+      <CodeMapCard />
 
       {!available && (
         <p className="text-xs text-status-warning">
