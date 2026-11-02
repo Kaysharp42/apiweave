@@ -1,0 +1,133 @@
+# Dependabot version updates for app/ are limited to minor and patch releases
+# (see .github/dependabot.yml). Majors are collected here, in one issue, so
+# they get a deliberate decision instead of a stream of stale pull requests.
+name: Dependency majors
+
+on:
+  schedule:
+    # Mondays at 06:17 UTC, alongside the weekly Dependabot run.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+      # Native addons are not needed to read versions, and skipping lifecycle
+      # scripts avoids downloading Electron and building anything.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: app
+      - name: Collect outdated dependencies
+        working-directory: app
+        shell: bash
+        run: |
+          # npm outdated exits 1 when anything is outdated and 0 when nothing
+          # is; only a larger exit code is a real failure.
+          status=0
+          npm outdated --json --long > "$RUNNER_TEMP/outdated.json" || status=$?
+          if [ "$status" -gt 1 ]; then
+            cat "$RUNNER_TEMP/outdated.json"
+            exit "$status"
+          fi
+      - name: Create or update the majors issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          OUTDATED_JSON: ${{ runner.temp }}/outdated.json
+        with:
+          script: |
+            const fs = require('fs')
+
+            const TITLE = 'Dependency majors available'
+            const raw = fs.readFileSync(process.env.OUTDATED_JSON, 'utf8').trim()
+            const outdated = raw ? JSON.parse(raw) : {}
+
+            const majorOf = (version) => {
+              const match = /^(\d+)\./.exec(String(version ?? ''))
+              return match ? Number(match[1]) : null
+            }
+
+            const majors = Object.entries(outdated)
+              .map(([name, info]) => {
+                const currentMajor = majorOf(info.current)
+                const latestMajor = majorOf(info.latest)
+                if (currentMajor === null || latestMajor === null || latestMajor <= currentMajor) return null
+                return {
+                  name,
+                  current: info.current,
+                  wanted: info.wanted ?? info.current,
+                  latest: info.latest,
+                }
+              })
+              .filter(Boolean)
+              .sort((a, b) => a.name.localeCompare(b.name))
+
+            const today = new Date().toISOString().slice(0, 10)
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const intro = [
+              'Dependabot version updates for `app/` are limited to minor and patch releases; security updates still arrive as pull requests.',
+              'This issue lists the major updates that need a deliberate decision.',
+            ].join(' ')
+            let body
+
+            if (majors.length === 0) {
+              body = `${intro}\n\nNo major npm updates are pending as of ${today}.`
+            } else {
+              const rows = majors.map((item) =>
+                `| [\`${item.name}\`](https://www.npmjs.com/package/${item.name}) | ${item.current} | ${item.wanted} | ${item.latest} |`
+              ).join('\n')
+              body = [
+                intro,
+                '',
+                '| Package | Current | Wanted | Latest |',
+                '| --- | --- | --- | --- |',
+                rows,
+                '',
+                `${majors.length} major update${majors.length === 1 ? '' : 's'} pending as of ${today}.`,
+              ].join('\n')
+            }
+
+            body += `\n\n_Updated by [workflow run](${runUrl}) on ${today}._`
+
+            const { owner, repo } = context.repo
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            })
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === TITLE)
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body,
+              })
+              core.info(`Updated #${existing.number}: ${TITLE}`)
+            } else {
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title: TITLE,
+                body,
+                labels: ['dependencies'],
+              })
+              core.info(`Created #${created.data.number}: ${TITLE}`)
+            }

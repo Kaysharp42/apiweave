@@ -4,12 +4,22 @@ updates:
     directory: /app
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     groups:
       minor-and-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
+    # Major version updates are reported in one issue by
+    # .github/workflows/dependency-majors.yml instead of opening pull
+    # requests. An ignore scoped with update-types only filters version
+    # updates, so security updates for majors still arrive.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
   - package-ecosystem: github-actions
     directory: /
     schedule:
