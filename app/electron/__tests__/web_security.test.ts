@@ -65,5 +65,9 @@ describe("CONTENT_SECURITY_POLICY", () => {
       expect(CONTENT_SECURITY_POLICY).toContain(directive)
     }
     expect(CONTENT_SECURITY_POLICY).not.toContain("'unsafe-eval'")
+    // Fonts are bundled and served from app://local; no third-party host.
+    expect(CONTENT_SECURITY_POLICY).not.toContain("fonts.googleapis.com")
+    expect(CONTENT_SECURITY_POLICY).not.toContain("fonts.gstatic.com")
+    expect(CONTENT_SECURITY_POLICY).toContain("font-src 'self' app: data:")
   })
 })

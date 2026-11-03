@@ -2,6 +2,9 @@
   "name": "apiweave",
   "version": "0.22.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "type": "module",
   "description": "APIWeave local-first API testing desktop app",
   "author": "Kaysharp42 <kaysharp42@users.noreply.github.com>",
@@ -20,6 +23,7 @@
     "build:renderer": "vite build",
     "build:electron": "node esbuild.config.cjs",
     "build:cli": "node esbuild.config.cjs --cli",
+    "build:cli:package": "npm run build:cli && node scripts/build-cli-package.mjs",
     "cli": "npm run --silent build:cli && node dist/cli/apiweave.cjs",
     "preview": "vite preview",
     "test": "vitest run",
@@ -54,6 +58,8 @@
     "@cfworker/json-schema": "^4.1.4",
     "@dagrejs/dagre": "^3.1.3",
     "@floating-ui/react": "^0.27.20",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@headlessui/react": "^2.2.9",
     "@jitl/quickjs-singlefile-cjs-release-sync": "^0.32.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -149,6 +155,10 @@
       {
         "from": "dist/renderer",
         "to": "renderer"
+      },
+      {
+        "from": "build/FONT-LICENSES.txt",
+        "to": "FONT-LICENSES.txt"
       }
     ],
     "asarUnpack": [

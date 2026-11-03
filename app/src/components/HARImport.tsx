@@ -1,5 +1,5 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import { Upload, FileText, AlertCircle, List, GitBranch } from "lucide-react";
+import { Upload, FileText, AlertCircle } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
@@ -35,8 +35,6 @@ interface HARImportProps {
   onImportSuccess?: (result: HARImportDryRunResult) => void;
 }
 
-type ImportMode = "linear" | "grouped";
-
 function getMethodBadgeClasses(method: string): string {
   switch (method) {
     case "GET":
@@ -56,7 +54,6 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   const { workspaceId } = useScopeContext();
   const [harFile, setHarFile] = useState<File | null>(null);
   const [harJson, setHarJson] = useState<Record<string, unknown> | null>(null);
-  const [importMode, setImportMode] = useState<ImportMode>("linear");
   const [sanitize, setSanitize] = useState(true);
   const [dryRunResult, setDryRunResult] =
     useState<HARImportDryRunResult | null>(null);
@@ -116,7 +113,6 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
       const result = (await apiweave.workflows.importHar({
         workspaceId: workspaceId || "",
         data: harJson,
-        importMode,
         sanitize,
         dryRun: true,
       })) as HARImportDryRunResult;
@@ -222,47 +218,6 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           {/* Import Options */}
           {harJson && (
             <div className="space-y-4">
-              <div>
-                <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Import Mode
-                </div>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="linear"
-                      checked={importMode === "linear"}
-                      onChange={(e) =>
-                        setImportMode(e.target.value as ImportMode)
-                      }
-                      aria-label="Linear import mode"
-                      className="w-4 h-4 text-primary border-border focus:ring-primary"
-                    />
-                    <List className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
-                    <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Linear (Sequential)
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 opacity-50 cursor-not-allowed">
-                    <input
-                      type="radio"
-                      value="grouped"
-                      checked={importMode === "grouped"}
-                      onChange={(e) =>
-                        setImportMode(e.target.value as ImportMode)
-                      }
-                      disabled
-                      aria-label="Grouped import mode"
-                      className="w-4 h-4 text-primary border-border focus:ring-primary"
-                    />
-                    <GitBranch className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
-                    <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Grouped (Parallel) - Coming Soon
-                    </span>
-                  </label>
-                </div>
-              </div>
-
               <label className="flex items-center gap-3">
                 <input
                   type="checkbox"

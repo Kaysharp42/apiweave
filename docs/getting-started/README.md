@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- A machine that meets the [Installation](installation.md#prerequisites) requirements: Windows 10+, macOS 11+, or a current Linux distro. Node.js 20+ if you plan to build from source.
+- A machine that meets the [Installation](installation.md#prerequisites) requirements: Windows 10+, macOS 13+, or a current Linux distro with glibc 2.34+. Node.js 22.12+ if you plan to build from source.
 - About an hour of free time for the full path. The first workflow alone takes about five minutes.
 
 ## Path

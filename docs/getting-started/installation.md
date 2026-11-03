@@ -6,12 +6,12 @@
 
 - A supported operating system:
   - **Windows**: Windows 10 or newer (x64).
-  - **macOS**: macOS 11 (Big Sur) or newer (Intel and Apple Silicon).
-  - **Linux**: a current distro with glibc 2.31+ (Ubuntu 20.04+, Debian 11+, Fedora 33+). For the AppImage, FUSE 2 must be installed; on Arch, prefer the `.pacman` package.
+  - **macOS**: macOS 13 (Ventura) or newer (Intel and Apple Silicon). Electron 44 does not run on macOS 11 or 12.
+  - **Linux**: a current distro with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+). For the AppImage, FUSE 2 must be installed; on Arch, prefer the `.pacman` package.
 - About 500 MB of free disk space for the installer and the local SQLite database.
-- A network connection on first launch. The database and the secret store stay on your machine; after launch, the only network activity is the update check — see [Updates](#updates).
+- A network connection on first launch. The database, the secret store and the bundled fonts stay on your machine, and the app loads no third-party UI assets. After launch, an untracked workspace's only automatic network activity is the update check, and a tracked workspace also fetches and pushes its git remote — see [Updates](#updates) and [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
-For contributors who want to build the desktop app from source: Node.js 20+ and npm. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
+For contributors who want to build the desktop app from source: Node.js 22.12+ and npm. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
 
 ## Download the Installer
 

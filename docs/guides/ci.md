@@ -24,7 +24,31 @@ A project bundle runs as a project run: its enabled workflows, one after another
 
 A workspace repository runs every one of its projects the same way, one after another, as one report named after the workspace (see [Run a workspace repository](#run-a-workspace-repository)). Git is never involved: the CLI reads the files of a checkout and does not need git installed.
 
-## Build the CLI
+## Install the CLI
+
+Every release attaches a small, npm-compatible CLI package. It contains the
+headless runner, its worker and the migrations; it does not contain Electron.
+
+```bash
+curl -fsSL -o apiweave-cli.tgz \
+  https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+npm install -g ./apiweave-cli.tgz
+apiweave run ./tests --env Staging
+```
+
+For a repeatable pipeline, replace `latest` with the release tag you want to
+pin:
+
+```bash
+curl -fsSL -o apiweave-cli.tgz \
+  https://github.com/Kaysharp42/apiweave/releases/download/v1.0.0/apiweave-cli.tgz
+```
+
+The package is named `@apiweave/cli`; it is distributed as the release tarball
+for now, not from the npm registry. The command it installs is `apiweave`, and
+it needs Node.js 22.12 or newer.
+
+## Build the CLI from source
 
 From the repository's `app/` folder:
 
@@ -34,7 +58,10 @@ npm run build:cli         # writes dist/cli/apiweave.cjs
 node dist/cli/apiweave.cjs run ../tests/api.awecollection --env Staging
 ```
 
-During development, `npm run cli -- run <file> ...` builds and runs in one step. `npm link` inside `app/` puts an `apiweave` command on your `PATH`.
+To build the installable package locally, run `npm run build:cli:package`; the
+tarball lands in `dist/`. During development, `npm run cli -- run <file> ...`
+builds and runs in one step. `npm link` inside `app/` puts an `apiweave`
+command on your `PATH`.
 
 ## Run a file
 
@@ -187,22 +214,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: Kaysharp42/apiweave
-          ref: main # pin a release tag or commit for repeatable builds
-          path: .apiweave-cli
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Build the APIWeave CLI
-        working-directory: .apiweave-cli/app
-        run: npm ci --ignore-scripts && npm run build:cli
+      - name: Install the APIWeave CLI
+        run: |
+          curl -fsSL -o apiweave-cli.tgz \
+            https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+          npm install -g ./apiweave-cli.tgz
       - name: Run API tests
         env:
           APIWEAVE_SECRET_API_TOKEN: ${{ secrets.API_TOKEN }}
         run: >
-          node .apiweave-cli/app/dist/cli/apiweave.cjs run .
+          apiweave run .
           --env Staging
           --reporter cli,junit,html
           --reporter-junit-export reports/apiweave.xml

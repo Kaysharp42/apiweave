@@ -11,11 +11,32 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A standalone CLI package.** Every release now attaches `apiweave-cli.tgz`,
+  so a CI pipeline can install the headless runner with
+  `npm install -g ./apiweave-cli.tgz` instead of cloning this repository and
+  building it. The package is named `@apiweave/cli` and needs Node.js 22.12 or
+  newer.
+
 ### Changed
 
 - **Connect to remote lists the repositories tagged `apiweave-workspace`**,
   including ones with commits, instead of only empty ones. A repository made
   before the topic existed appears once it is tagged, without being recreated.
+- **Fonts are bundled.** The app no longer requests Inter or JetBrains Mono
+  from Google Fonts at launch, so it loads no third-party font and works fully
+  offline.
+- **The platform floor is explicit.** The download requirements now state
+  macOS 13 Ventura, glibc 2.34 on Linux, and Node.js 22.12 for source builds.
+- **The unimplemented Parallel HAR import option is gone.** The import dialog
+  only offers the linear mode it actually performs.
+
+### Fixed
+
+- **Canvas edges stay attached after the shell resizes.** Turning the
+  off-screen render optimisation off while the canvas is idle stops React Flow
+  pruning edges during a sidebar or navigation collapse (issue #106).
 
 ## [0.22.0] — 2026-11-02
 

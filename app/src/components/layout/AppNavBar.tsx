@@ -26,7 +26,6 @@ interface NavItemConfig {
   id: string;
   label: string;
   icon: LucideIcon;
-  disabled?: boolean;
 }
 
 const navItems: NavItemConfig[] = [
@@ -57,7 +56,6 @@ const navItems: NavItemConfig[] = [
     id: AppNavBarItems.settings!.value,
     label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
-    disabled: false,
   },
 ];
 
@@ -102,14 +100,12 @@ export function AppNavBar() {
       aria-label="Main navigation"
     >
       <div className="flex-1 space-y-0.5 p-1">
-        {navItems.map(({ id, label, icon: Icon, disabled }) => {
+        {navItems.map(({ id, label, icon: Icon }) => {
           const isSelected = navigationSelectedValue === id;
           const showUpdateDot = id === "settings" && updatePending;
-          const accessibleLabel = disabled
-            ? `${label} (coming soon)`
-            : showUpdateDot
-              ? `${label} (update available)`
-              : label;
+          const accessibleLabel = showUpdateDot
+            ? `${label} (update available)`
+            : label;
 
           const content = (
             <button
@@ -119,7 +115,6 @@ export function AppNavBar() {
                 "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
               ].join(" ")}
               onClick={() => {
-                if (disabled) return;
                 // Clicking a nav icon only switches section — it never changes
                 // the collapse state. The Collapse/Expand button owns that.
                 setNavState(id as NavSection);
@@ -129,7 +124,6 @@ export function AppNavBar() {
                   navigate(shellPath);
                 }
               }}
-              disabled={disabled}
               aria-current={isSelected ? "page" : undefined}
               aria-label={accessibleLabel}
             >
@@ -150,7 +144,7 @@ export function AppNavBar() {
                   isSelected
                     ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
                     : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
-                  disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+                  "cursor-pointer",
                 ].join(" ")}
               >
                 <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -167,11 +161,6 @@ export function AppNavBar() {
                     {label}
                   </span>
                 </Transition>
-                {disabled && !isNavBarCollapsed && (
-                  <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-                    Soon
-                  </span>
-                )}
               </div>
             </button>
           );

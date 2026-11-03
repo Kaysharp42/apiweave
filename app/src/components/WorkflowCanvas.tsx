@@ -1853,7 +1853,12 @@ export function WorkflowCanvas({
         // instead of all of them, and that is the per-frame cost `setViewport`
         // pays on every write. Off-screen nodes keep their measured dimensions,
         // so the minimap and the camera keep their positions without them.
-        onlyRenderVisibleElements
+        //
+        // Never while idle: a shell resize plus `fitView` can run before the
+        // container settles, and React Flow then prunes edges whose handle
+        // bounds are momentarily missing (issue #106). The camera only needs
+        // the pruning while it is actually moving.
+        onlyRenderVisibleElements={isFollowingRun || isCameraMoving}
       >
         {/* The grid should be felt, not read.
             Validation step 2: Background dots repaint every pan frame (SVG pattern).

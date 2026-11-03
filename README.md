@@ -46,22 +46,26 @@ Four artifacts are published; pick what fits your distro:
 - The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>-linux-x86_64.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
 - If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
 
-The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newer glibc without issue.
+The Linux binaries are built on Ubuntu 22.04 and require glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Fedora 35+). They run on Arch's newer glibc without issue.
 
 ## Features
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight node types, toolbar actions, expected-status negative tests.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight executable node types plus note and group annotations, toolbar actions, expected-status negative tests.
 - [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Scripting](docs/features/scripting.md): sandboxed pre-request and post-response JavaScript for signing, transforming values and custom checks.
+- [Data-Driven Runs](docs/features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
 - [Projects](docs/features/projects.md): ordered groups of workflows and `.awecollection` v2 export and import (references only).
 - [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
+- [Network](docs/features/network.md): proxy, private certificate authorities and client certificates for every request.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
 - [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.awecollection` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
+- [Migrate from Postman](docs/guides/migrating-from-postman.md): import a Postman Collection v2.1 and its environment as a project, and what each part becomes.
 
 ## Documentation
 
@@ -71,7 +75,7 @@ There is no operations section in the desktop app: no authentication to set up, 
 
 ## Tech Stack
 
-- Frontend (renderer): React 18, React Flow 12 (`@xyflow/react`), Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
+- Frontend (renderer): React 19, React Flow 12 (`@xyflow/react`), Vite 8, Tailwind CSS 4, Zustand 5, TypeScript strict.
 - Desktop shell: Electron 44, esbuild, electron-builder, electron-updater.
 - Local store: better-sqlite3 (embedded SQLite, single file).
 - IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.

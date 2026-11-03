@@ -4,8 +4,8 @@ import { autoUpdater } from "electron-updater"
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from "electron-updater"
 // Not re-exported from the package root, and the events map is what makes
 // track() below type-safe. Type-only, so nothing is imported at runtime, and
-// electron-updater is pinned to ~6.3.9 (see package.json) — a deep path is safe
-// against a range it cannot cross.
+// electron-updater is pinned to the 6.8.x line (see package.json) — a deep path
+// is safe against a range it cannot cross.
 import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus"
@@ -115,8 +115,8 @@ function devUpdatesEnabled(): boolean {
  * GitHub release instead of an in-app install.
  *
  * electron-updater is deliberately kept out of the esbuild bundle (see
- * esbuild.config.cjs) and pinned to the 6.3.x line, so it shares the one
- * builder-util-runtime that electron-builder 25 used to write latest.yml.
+ * esbuild.config.cjs) and pinned to the 6.8.x line, so it shares the one
+ * builder-util-runtime that electron-builder 26 uses to write latest.yml.
  */
 export function platformSupportsAutoInstall(): boolean {
   if (process.platform === "win32") return true

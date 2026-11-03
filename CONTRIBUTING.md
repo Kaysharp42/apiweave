@@ -42,10 +42,13 @@ The PR description should explain the why. The diff already shows the what.
 ## Publishing A Release
 
 1. Update the version in both `app/package.json` and `app/package-lock.json`, then merge the release commit into `main`.
-2. Tag that commit with a semantic version such as `v0.7.8` and push the tag.
-3. The desktop release workflow verifies that the tag is on `main` and matches the package version before building and publishing the GitHub release.
+2. Update `CHANGELOG.md`, `ROADMAP.md`, and any support or known-limitations docs, then merge those changes.
+3. Tag that commit with a semantic version such as `v1.0.0` and push the tag.
+4. The desktop release workflow verifies that the tag is on `main` and matches the package version before building and publishing the GitHub release.
 
-The workflow publishes Windows x64, macOS Intel and Apple Silicon, and Linux x64 installers. Linux includes AppImage, Debian, RPM, and Pacman formats. Release notes are generated from merged changes and every release includes SHA-256 checksums.
+The workflow publishes Windows x64, macOS Intel and Apple Silicon, and Linux x64 installers, plus the headless `@apiweave/cli` package. Linux includes AppImage, Debian, RPM, and Pacman formats. Release notes are generated from merged changes and every release includes SHA-256 checksums.
+
+Before tagging, install the candidate build on a clean machine for each supported platform and run the update path from the previous release once per release train. The packaged smoke test proves the app launches; it does not prove an install or an upgrade.
 
 ## Code of Conduct
 

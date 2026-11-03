@@ -399,7 +399,6 @@ export function CollectionExportImport({
           : await apiweave.workflows.importHar({
               workspaceId,
               data: bundleData,
-              importMode: "linear",
               sanitize,
             })
       ) as { nodes?: Workflow["nodeTemplates"] };
@@ -793,6 +792,7 @@ export function CollectionExportImport({
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="radio"
+                  name="collection-import-target"
                   checked={createNewProject}
                   onChange={() => setCreateNewProject(true)}
                   className="w-4 h-4"
@@ -817,6 +817,7 @@ export function CollectionExportImport({
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="radio"
+                  name="collection-import-target"
                   checked={!createNewProject}
                   onChange={() => setCreateNewProject(false)}
                   className="w-4 h-4"

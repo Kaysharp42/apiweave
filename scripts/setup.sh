@@ -13,7 +13,15 @@ echo "========================================"
 echo
 
 if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js not found. Install Node.js 20+ from https://nodejs.org"
+  echo "ERROR: Node.js not found. Install Node.js 22.12 or newer from https://nodejs.org"
+  exit 1
+fi
+NODE_VERSION="$(node -v | sed 's/^v//')"
+NODE_MAJOR="${NODE_VERSION%%.*}"
+NODE_REST="${NODE_VERSION#*.}"
+NODE_MINOR="${NODE_REST%%.*}"
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; }; then
+  echo "ERROR: Node.js 22.12 or newer is required (found $(node -v)). Download it from https://nodejs.org"
   exit 1
 fi
 echo "Node.js $(node -v) detected"

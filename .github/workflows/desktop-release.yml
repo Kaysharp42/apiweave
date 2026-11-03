@@ -273,9 +273,40 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  cli:
+    name: Build CLI package
+    needs: [quality, validate]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # The CLI bundle is platform-independent and needs no Electron binary.
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci --ignore-scripts
+      - name: Build the CLI package
+        working-directory: app
+        run: npm run build:cli:package
+      # A stable name so a workflow can install the newest CLI from the
+      # /releases/latest/download permalink without knowing the tag.
+      - name: Add the latest alias
+        working-directory: app
+        run: cp dist/apiweave-cli-*.tgz dist/apiweave-cli.tgz
+      - name: Upload the CLI package to the draft release
+        working-directory: app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/apiweave-cli-*.tgz dist/apiweave-cli.tgz --repo "$GITHUB_REPOSITORY" --clobber
+
   publish:
     name: Finalize GitHub release
-    needs: build
+    needs: [build, cli]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -331,6 +362,7 @@ jobs:
             'assets/*.pacman'
             'assets/latest.yml'
             'assets/latest-linux.yml'
+            'assets/apiweave-cli*.tgz'
           )
           for pattern in "${expected[@]}"; do
             compgen -G "$pattern" >/dev/null || {
@@ -473,6 +505,7 @@ jobs:
           - **Windows:** x64 NSIS installer shipped as a `.zip` — extract it and run the `.exe` inside; installed copies update in place. The bare `.exe` asset beside it is the in-app updater's download; the `.zip` is the one to grab by hand. An `.msi` installer is also available for managed / per-machine deployment.
           - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`)
           - **Linux:** portable AppImage (can install updates in place), Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), and Arch/Manjaro (`.pacman`)
+          - **CLI:** `apiweave-cli.tgz` for headless `apiweave run` in CI. Install it with `npm install -g ./apiweave-cli.tgz`.
 
           The app notifies you when a new version exists and downloads it only once you agree; **Settings → Updates** can switch that to fully automatic or off.
 
@@ -503,7 +536,7 @@ jobs:
 
   cleanup:
     name: Discard incomplete draft
-    needs: [quality, validate, build, publish]
+    needs: [quality, validate, build, cli, publish]
     # Runs when anything upstream failed, and on cancellation — a build killed
     # halfway through still leaves the draft the validate job created.
     if: ${{ failure() || cancelled() }}

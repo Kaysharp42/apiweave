@@ -79,7 +79,6 @@ const IMPORT_TABS: TabItem[] = [
   { key: "har", icon: Upload, label: "HAR" },
   { key: "curl", icon: Terminal, label: "Curl" },
 ];
-type ImportMode = "linear" | "grouped";
 
 interface FileUploadDropzoneProps {
   accept: string;
@@ -219,7 +218,6 @@ export function ImportToNodesPanel({
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [pastedText, setPastedText] = useState<string>("");
   const [sanitize, setSanitize] = useState<boolean>(true);
-  const [importMode, setImportMode] = useState<ImportMode>("linear");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -402,7 +400,6 @@ export function ImportToNodesPanel({
       const result = (await apiweave.workflows.importHar({
         workspaceId: workspaceId || "",
         data: JSON.parse(fileContent) as Record<string, unknown>,
-        importMode,
         sanitize,
       })) as { nodes?: Node[] };
 
@@ -630,23 +627,6 @@ export function ImportToNodesPanel({
             />
 
             <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="import-to-nodes-import-mode"
-                  className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
-                >
-                  Import mode
-                </label>
-                <select
-                  id="import-to-nodes-import-mode"
-                  value={importMode}
-                  onChange={(e) => setImportMode(e.target.value as ImportMode)}
-                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-xs bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary"
-                >
-                  <option value="linear">Linear (sequential)</option>
-                  <option value="grouped">Parallel</option>
-                </select>
-              </div>
               <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
             </div>
 
