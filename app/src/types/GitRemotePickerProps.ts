@@ -4,9 +4,8 @@ import type { GitRemoteSelection } from "./GitRemoteSelection";
 
 export interface GitRemotePickerProps {
   /**
-   * `connect`: an account's empty repositories it can push to, with Create
-   * repository… above them. `open`: its `apiweave-workspace` repositories,
-   * with a switch to show all.
+   * `connect`: an account's `apiweave-workspace` repositories, with Create
+   * repository… above them. `open`: the same ones, with a switch to show all.
    */
   readonly mode: "connect" | "open";
   /** What the picker starts on: a URL to fill in, and the account it goes with. */

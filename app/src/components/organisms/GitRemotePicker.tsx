@@ -9,11 +9,11 @@ import type { GitRemotePickerProps } from "../../types";
 /**
  * Account first, then Repository from the account's own list, with Use a
  * URL instead for other hosts and anything not listed. In `connect` mode the
- * list holds the account's empty repositories it can push to, with Create
- * repository… first; in `open` mode its `apiweave-workspace` repositories,
- * with Show all repositories. An HTTPS account's choice is its HTTPS URL,
- * bound to it; an SSH account's is its SSH URL, bound to none. Each list is
- * kept for as long as the picker is open, with Refresh.
+ * list holds the account's `apiweave-workspace` repositories, with Create
+ * repository… first; in `open` mode the same ones, with Show all repositories.
+ * An HTTPS account's choice is its HTTPS URL, bound to it; an SSH account's
+ * is its SSH URL, bound to none. Each list is kept for as long as the picker
+ * is open, with Refresh.
  */
 export function GitRemotePicker({
   mode,

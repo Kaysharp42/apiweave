@@ -11,14 +11,14 @@ afterEach(() => {
 
 const WORK: GitAccountRef = { provider: "github", host: "github.com", login: "octo-work" };
 const LAB: GitAccountRef = { provider: "gitlab", host: "gitlab.com", login: "tanuki" };
-const CONNECT = { tagged: false, emptyOnly: true };
+const TAGGED = { tagged: true, emptyOnly: false };
 
 describe("useGitRepositoryList", () => {
   it("lists each account once while mounted, and again on refresh", async () => {
     const { bridge } = installGitBridge(untrackedStatus, {
       listRepositories: vi.fn(async () => ({ repositories: [], problems: ["acme: only the first 100 repositories are listed."] })),
     });
-    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, CONNECT), { initialProps: { account: WORK } });
+    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, TAGGED), { initialProps: { account: WORK } });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.problems).toEqual(["acme: only the first 100 repositories are listed."]);
@@ -36,7 +36,7 @@ describe("useGitRepositoryList", () => {
     const { bridge } = installGitBridge(untrackedStatus, {
       listRepositories: vi.fn().mockRejectedValueOnce(new Error("gh could not sign in to github.com as octo-work")).mockResolvedValue({ repositories: [], problems: [] }),
     });
-    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, CONNECT), { initialProps: { account: WORK as GitAccountRef | null } });
+    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, TAGGED), { initialProps: { account: WORK as GitAccountRef | null } });
 
     await waitFor(() => expect(result.current.problems).toEqual(["The repositories could not be listed: gh could not sign in to github.com as octo-work"]));
     rerender({ account: null });
@@ -52,7 +52,7 @@ describe("useGitRepositoryList", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { finishA = resolve; }))
       .mockResolvedValue({ repositories: [], problems: [] });
     const { bridge } = installGitBridge(untrackedStatus, { listRepositories });
-    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, CONNECT), { initialProps: { account: WORK as GitAccountRef | null } });
+    const { result, rerender } = renderHook(({ account }) => useGitRepositoryList(account, TAGGED), { initialProps: { account: WORK as GitAccountRef | null } });
 
     expect(result.current.loading).toBe(true);
     rerender({ account: LAB });
@@ -71,7 +71,7 @@ describe("useGitRepositoryList", () => {
       .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }))
       .mockResolvedValueOnce({ repositories: [], problems: [] });
     installGitBridge(untrackedStatus, { listRepositories });
-    const { result } = renderHook(() => useGitRepositoryList(WORK, CONNECT));
+    const { result } = renderHook(() => useGitRepositoryList(WORK, TAGGED));
 
     act(() => result.current.refresh());
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -90,7 +90,7 @@ describe("useGitRepositoryList", () => {
       .mockRejectedValueOnce(new Error("gh could not sign in"))
       .mockImplementationOnce(() => new Promise((resolve) => { finishRetry = resolve; }));
     installGitBridge(untrackedStatus, { listRepositories });
-    const { result } = renderHook(() => useGitRepositoryList(WORK, CONNECT));
+    const { result } = renderHook(() => useGitRepositoryList(WORK, TAGGED));
 
     await waitFor(() => expect(result.current.problems).toEqual(["The repositories could not be listed: gh could not sign in"]));
     act(() => result.current.refresh());
