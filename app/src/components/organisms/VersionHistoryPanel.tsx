@@ -113,9 +113,9 @@ function RemoteAccount({
 
 /**
  * The remote and its branch; for a workspace with none, the connect form —
- * Account, then Repository (its empty repositories, Create repository…
- * first), or Use a URL instead — and for a connected one, its account and
- * Disconnect.
+ * Account, then Repository (its `apiweave-workspace` repositories, Create
+ * repository… first), or Use a URL instead — and for a connected one, its
+ * account and Disconnect.
  */
 function RemoteSection(props: RemoteSectionProps) {
   const { remoteUrl, branch, account, busy, prefill } = props;

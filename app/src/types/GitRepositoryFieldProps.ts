@@ -3,7 +3,7 @@ import type { GitRepository } from "@shared/types/GitRepository";
 import type { GitRepositoryListFeed } from "./GitRepositoryListFeed";
 
 export interface GitRepositoryFieldProps {
-  /** `connect`: empty repositories, with Create repository… first. `open`: tagged ones, with Show all repositories. */
+  /** `connect`: tagged repositories, with Create repository… first. `open`: the same, with Show all repositories. */
   readonly mode: "connect" | "open";
   /** The account whose list this is. */
   readonly account: GitAccount;

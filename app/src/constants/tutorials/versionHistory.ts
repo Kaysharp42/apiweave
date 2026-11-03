@@ -209,7 +209,7 @@ export const versionHistoryChapter: TutorialChapter = {
         {
           title: "Pick a repository, or use a URL",
           instruction:
-            "With an account signed in, every remote form asks for the Account first, then lists its Repository: for Connect to remote, the empty repositories it can push to; for Open from git…, those tagged apiweave-workspace, with Show all repositories for the rest. Use a URL instead takes anything the list does not hold.",
+            "With an account signed in, every remote form asks for the Account first, then lists its Repository: both Connect to remote and Open from git… list the repositories tagged apiweave-workspace, with Show all repositories in Open from git… for the rest. Use a URL instead takes anything the list does not hold.",
           detail:
             "The refresh button beside Repository reads the list again, and a line under it says when an owner could not be listed or a list stopped at 100. An https:// URL on the host of an account that signs in over HTTPS is reached as that account; any other URL, and the last Account option, Your own git sign-in (credential manager or SSH key) — another host, sign in with your own git credentials. With no account signed in, the form is the URL field alone.",
         },
@@ -299,7 +299,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "In Version history (git), choose the Account to connect as, then the Repository from its list, and click Connect to remote.",
           detail:
-            "The list holds the account's empty repositories it can push to, so a repository with commits is connected with Use a URL instead. Create repository… under the list makes a new empty one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials. With no account signed in, the form is the URL field alone.",
+            "The list holds the account's repositories tagged apiweave-workspace, including ones with commits: connecting one follows the rules below — joined when it shares this workspace's history, a two-way merge when it holds this workspace without a shared commit. Create repository… under the list makes a new empty, tagged one on the host for you, and Use a URL instead takes any other repository's URL, or another host's, signed in with your own git credentials. With no account signed in, the form is the URL field alone.",
         },
         {
           title: "Know what the connect does",

@@ -342,7 +342,7 @@ describe("VersionHistoryPanel", () => {
       httpsUrl: `https://github.com/${owner}/${name}.git`,
       sshUrl: `git@github.com:${owner}/${name}.git`,
       private: true,
-      empty: true,
+      empty: false,
       canPush: true,
     });
     const listRepositories = vi.fn(
@@ -355,7 +355,7 @@ describe("VersionHistoryPanel", () => {
       }),
     );
 
-    it("starts on the first account, lists its empty repositories with Create repository… above them, and connects to one as it", async () => {
+    it("starts on the first account, lists its apiweave-workspace repositories with Create repository… above them, and connects to one as it", async () => {
       const user = userEvent.setup();
       const { bridge } = installGitBridge(local(), {
         listAccounts,
@@ -389,8 +389,8 @@ describe("VersionHistoryPanel", () => {
         screen.getByRole("button", { name: "Create repository…" }),
       ).toBeInTheDocument();
       expect(bridge.listRepositories).toHaveBeenCalledWith(ref(WORK), {
-        tagged: false,
-        emptyOnly: true,
+        tagged: true,
+        emptyOnly: false,
       });
       await user.selectOptions(picker, "acme/billing");
       await user.click(
@@ -545,7 +545,7 @@ describe("VersionHistoryPanel", () => {
       ).toBeInTheDocument();
       expect(
         screen.getByRole("option", {
-          name: "No empty repository you can push to",
+          name: "No repository tagged apiweave-workspace",
         }),
       ).toBeInTheDocument();
     });

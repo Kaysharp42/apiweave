@@ -9,6 +9,14 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Connect to remote lists the repositories tagged `apiweave-workspace`**,
+  including ones with commits, instead of only empty ones. A repository made
+  before the topic existed appears once it is tagged, without being recreated.
+
 ## [0.22.0] — 2026-11-02
 
 Agents can now orient themselves in a workspace and find every node that uses

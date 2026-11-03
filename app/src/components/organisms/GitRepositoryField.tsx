@@ -8,23 +8,21 @@ import type { GitRepositoryFieldProps } from "../../types";
 
 /** What the list's first, unchoosable line says: listing, nothing to list, or choose. */
 function placeholder({
-  mode,
   list,
   showAll,
-}: Pick<GitRepositoryFieldProps, "mode" | "list" | "showAll">): string {
+}: Pick<GitRepositoryFieldProps, "list" | "showAll">): string {
   if (list.loading) return "Listing repositories…";
   // Nothing to choose from because nothing could be read is not the same as nothing to choose.
   if (list.failed)
     return "The repository list could not be read — Refresh tries again";
   if (list.repositories.length > 0) return "Choose a repository";
-  if (mode === "connect") return "No empty repository you can push to";
   return showAll ? "No repository" : "No repository tagged apiweave-workspace";
 }
 
 /**
- * Repository, from one account's own list, with a Refresh; in `open` mode
- * the Show all repositories switch; and Use a URL instead for anything the
- * list does not hold.
+ * Repository, from one account's own list, with a Refresh; both modes list
+ * the `apiweave-workspace` repositories, `open` also offers Show all
+ * repositories; and Use a URL instead takes anything the list does not hold.
  */
 export function GitRepositoryField({
   mode,
@@ -55,7 +53,7 @@ export function GitRepositoryField({
             }
           >
             <option value="" disabled>
-              {placeholder({ mode, list, showAll })}
+              {placeholder({ list, showAll })}
             </option>
 
             {list.repositories.map((repository) => (

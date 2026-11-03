@@ -83,9 +83,11 @@ export function useGitRemotePicker({
     null;
   // Listing needs an account; without one, or asked for a URL, the URL field stands in.
   const listedAccount = urlMode ? null : account;
+  // Both forms list the repositories APIWeave can find again by the topic; only
+  // Open from git's Show all widens that to every repository.
   const loadedList = useGitRepositoryList(listedAccount, {
-    tagged: mode === "open" && !showAll,
-    emptyOnly: mode === "connect",
+    tagged: mode === "connect" || !showAll,
+    emptyOnly: false,
   });
   // Asking again starts the choice over: what was picked belongs to the list being replaced.
   const list = {

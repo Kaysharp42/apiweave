@@ -187,7 +187,7 @@ async function installGitBridge(page: Page, initial: FakeStatus): Promise<void> 
           canPush: true,
         });
         return {
-          repositories: request.emptyOnly ? [repository("acme", "empty-tests", true)] : [repository("acme", "api-tests", false)],
+          repositories: [repository("acme", "api-tests", false)],
           problems: [],
         };
       },
@@ -349,7 +349,7 @@ test.describe("git sync status", () => {
     await navigateDesktop(page, "/personal/personal/settings/version-history");
 
     // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
-    await expect(page.getByRole("option", { name: "acme/empty-tests (private)" })).toBeAttached();
+    await expect(page.getByRole("option", { name: "acme/api-tests (private)" })).toBeAttached();
     await page.getByRole("button", { name: "Create repository…" }).click();
     const dialog = page.getByRole("dialog", { name: "Create repository" });
     await expect(dialog.getByRole("combobox", { name: "Account" })).toHaveValue("github|github.com|octo-work");
@@ -362,25 +362,25 @@ test.describe("git sync status", () => {
     await expect(dialog).toBeHidden();
     await expect(page.getByText("https://github.com/acme/api-tests.git")).toBeVisible();
     expect(await page.evaluate(() => window.__gitCalls__)).toEqual([
-      ["listRepositories", "octo-work", { tagged: false, emptyOnly: true }],
+      ["listRepositories", "octo-work", { tagged: true, emptyOnly: false }],
       ["createRepository", { provider: "github", host: "github.com", login: "octo-work" }, { owner: "acme", name: "api-tests", private: true }],
       ["connectRemote", "https://github.com/acme/api-tests.git", { provider: "github", host: "github.com", login: "octo-work" }],
     ]);
   });
 
-  test("connects to one of the account's empty repositories, picked from its list", async ({ page }) => {
+  test("connects to one of the account's apiweave-workspace repositories, picked from its list", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
     await navigateDesktop(page, "/personal/personal/settings/version-history");
 
-    await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/empty-tests (private)" });
+    await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/api-tests (private)" });
     await captureEvidence(page, "git-repository-picker-connect.png");
     await page.getByRole("button", { name: "Connect to remote" }).click();
 
-    await expect(page.getByText("https://github.com/acme/empty-tests.git")).toBeVisible();
+    await expect(page.getByText("https://github.com/acme/api-tests.git")).toBeVisible();
     expect((await page.evaluate(() => window.__gitCalls__)).at(-1)).toEqual([
       "connectRemote",
-      "https://github.com/acme/empty-tests.git",
+      "https://github.com/acme/api-tests.git",
       { provider: "github", host: "github.com", login: "octo-work" },
     ]);
   });
