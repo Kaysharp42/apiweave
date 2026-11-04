@@ -1,87 +1,54 @@
-import type { ComponentType } from "react";
-import {
-  AppWindow,
-  Bot,
-  MousePointer2,
-  Network,
-  Plug,
-  RefreshCw,
-  UserRound,
-  type LucideIcon,
-} from "lucide-react";
+import { lazy, Suspense, type ComponentType } from "react";
 import { Navigate, useParams } from "react-router";
-import { AgentsSettingsPanel } from "../components/organisms/AgentsSettingsPanel";
-import { BackgroundSettingsPanel } from "../components/organisms/BackgroundSettingsPanel";
-import { CanvasSettingsPanel } from "../components/organisms/CanvasSettingsPanel";
-import { GitAccountsSettingsPanel } from "../components/organisms/GitAccountsSettingsPanel";
-import { McpSetupPanel } from "../components/organisms/McpSetupPanel";
-import { NetworkSettingsPanel } from "../components/organisms/NetworkSettingsPanel";
-import { UpdateSettingsPanel } from "../components/organisms/UpdateSettingsPanel";
-
-interface SettingsSection {
-  readonly icon: LucideIcon;
-  readonly title: string;
-  readonly subtitle: string;
-  /** Forms read better narrow; the agent roster needs the room. */
-  readonly width: string;
-  readonly Panel: ComponentType;
-}
+import { APP_SETTINGS_SECTIONS } from "../constants/appSettingsSections";
+import { Spinner } from "../components/atoms/Spinner";
+import type { AppSettingsSectionMeta } from "../types";
 
 /**
  * The app-scoped settings, keyed by the last URL segment. These used to be
  * modals opened from the sidebar, which put a dialog over the page the user was
  * already on — see `SettingsContent`, which now just navigates here.
+ *
+ * The metadata is in `constants/appSettingsSections`; each panel is its own
+ * chunk, fetched when its page opens. Importing the seven panels here would put
+ * all of them in the route chunk, which is the thing the route split is for.
  */
-export const APP_SETTINGS_SECTIONS: Record<string, SettingsSection> = {
-  agents: {
-    icon: Bot,
-    title: "Agents",
-    subtitle: "Launch a coding agent in your project folder",
-    width: "max-w-4xl",
-    Panel: AgentsSettingsPanel,
-  },
-  background: {
-    icon: AppWindow,
-    title: "Background",
-    subtitle: "Tray and start at login",
-    width: "max-w-2xl",
-    Panel: BackgroundSettingsPanel,
-  },
-  canvas: {
-    icon: MousePointer2,
-    title: "Canvas",
-    subtitle: "Drag, zoom and snap behaviour",
-    width: "max-w-2xl",
-    Panel: CanvasSettingsPanel,
-  },
-  "git-accounts": {
-    icon: UserRound,
-    title: "Git accounts",
-    subtitle: "GitHub and GitLab accounts your workspaces sync as",
-    width: "max-w-2xl",
-    Panel: GitAccountsSettingsPanel,
-  },
-  "mcp-server": {
-    icon: Plug,
-    title: "MCP Server",
-    subtitle: "Let agents drive your workflows",
-    width: "max-w-2xl",
-    Panel: McpSetupPanel,
-  },
-  network: {
-    icon: Network,
-    title: "Network",
-    subtitle: "Proxy, trusted certificates and client certificates",
-    width: "max-w-3xl",
-    Panel: NetworkSettingsPanel,
-  },
-  updates: {
-    icon: RefreshCw,
-    title: "Updates",
-    subtitle: "Check for and install new versions",
-    width: "max-w-2xl",
-    Panel: UpdateSettingsPanel,
-  },
+const APP_SETTING_PANELS: Readonly<Record<string, ComponentType>> = {
+  agents: lazy(() =>
+    import("../components/organisms/AgentsSettingsPanel").then((module) => ({
+      default: module.AgentsSettingsPanel,
+    })),
+  ),
+  background: lazy(() =>
+    import("../components/organisms/BackgroundSettingsPanel").then((module) => ({
+      default: module.BackgroundSettingsPanel,
+    })),
+  ),
+  canvas: lazy(() =>
+    import("../components/organisms/CanvasSettingsPanel").then((module) => ({
+      default: module.CanvasSettingsPanel,
+    })),
+  ),
+  "git-accounts": lazy(() =>
+    import("../components/organisms/GitAccountsSettingsPanel").then(
+      (module) => ({ default: module.GitAccountsSettingsPanel }),
+    ),
+  ),
+  "mcp-server": lazy(() =>
+    import("../components/organisms/McpSetupPanel").then((module) => ({
+      default: module.McpSetupPanel,
+    })),
+  ),
+  network: lazy(() =>
+    import("../components/organisms/NetworkSettingsPanel").then((module) => ({
+      default: module.NetworkSettingsPanel,
+    })),
+  ),
+  updates: lazy(() =>
+    import("../components/organisms/UpdateSettingsPanel").then((module) => ({
+      default: module.UpdateSettingsPanel,
+    })),
+  ),
 };
 
 export function AppSettingsPage() {
@@ -90,12 +57,13 @@ export function AppSettingsPage() {
     workspaceSlug: string;
     section: string;
   }>();
-  const entry =
+  const entry: AppSettingsSectionMeta | undefined =
     section === undefined ? undefined : APP_SETTINGS_SECTIONS[section];
+  const Panel = section === undefined ? undefined : APP_SETTING_PANELS[section];
 
   // An unknown /settings/* segment lands on the first settings page rather than
   // a 404 inside the shell — the sidebar it arrived from is still standing.
-  if (!entry) {
+  if (!entry || Panel === undefined) {
     return (
       <Navigate
         to={`/${orgSlug}/${workspaceSlug}/settings/environments`}
@@ -104,7 +72,7 @@ export function AppSettingsPage() {
     );
   }
 
-  const { icon: Icon, title, subtitle, width, Panel } = entry;
+  const { icon: Icon, title, subtitle, width } = entry;
 
   return (
     <div className="flex flex-col h-full">
@@ -125,7 +93,15 @@ export function AppSettingsPage() {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className={width}>
-          <Panel />
+          <Suspense
+            fallback={
+              <div className="flex justify-center p-6">
+                <Spinner size="lg" />
+              </div>
+            }
+          >
+            <Panel />
+          </Suspense>
         </div>
       </div>
     </div>

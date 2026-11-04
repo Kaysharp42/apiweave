@@ -67,11 +67,17 @@ async function openNodeModal(page: Page): Promise<void> {
   const workflowButton = page.getByRole("button", {
     name: /Node modal visual QA/,
   });
+  const toggleSidebar = page.getByRole("button", { name: "Toggle sidebar" });
   let openedSidebar = false;
+  // The shell and its workflow list are asynchronous, and at a width where the
+  // sidebar is a drawer the workflow button only exists after the drawer opens.
+  // Wait for whichever control this viewport offers before deciding.
+  await workflowButton.or(toggleSidebar).first().waitFor({ state: "visible" });
   if (!(await workflowButton.isVisible())) {
-    await page.getByRole("button", { name: "Toggle sidebar" }).click();
+    await toggleSidebar.click();
     openedSidebar = true;
   }
+  await workflowButton.waitFor({ state: "visible" });
   await workflowButton.click();
   if (openedSidebar) {
     await page.locator("[aria-hidden='true'].fixed.inset-0.z-40").click({

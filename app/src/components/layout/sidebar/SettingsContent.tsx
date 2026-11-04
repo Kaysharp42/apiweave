@@ -5,7 +5,7 @@ import type { UpdateStatus } from "@shared/types/UpdateStatus";
 import type { SettingsContentProps } from "../../../types";
 import { useWorkspace } from "../../../contexts/WorkspaceContext";
 import { useUpdateStatus } from "../../../contexts/UpdateStatusContext";
-import { APP_SETTINGS_SECTIONS } from "../../../pages/AppSettingsPage";
+import { APP_SETTINGS_SECTIONS } from "../../../constants/appSettingsSections";
 
 const settingItemClass = [
   "flex w-full items-center gap-3 rounded-sm border border-transparent px-3 py-2 text-left",
@@ -84,7 +84,7 @@ export function SettingsContent({
     <div className="h-full overflow-auto bg-surface-raised dark:bg-surface-dark-raised">
       {/* Workspace-scoped settings */}
       <div className="px-3 pt-3 pb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
           Workspace
         </span>
       </div>
@@ -120,7 +120,7 @@ export function SettingsContent({
 
       {/* App-scoped settings */}
       <div className="px-3 pt-4 pb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
           App
         </span>
       </div>

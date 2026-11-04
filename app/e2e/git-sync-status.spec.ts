@@ -16,6 +16,15 @@ import {
  * where its explanation and actions are.
  */
 
+async function openVersionHistory(page: Page): Promise<void> {
+  await navigateDesktop(page, "/personal/personal/settings/version-history");
+  // The settings page is a lazy route; wait for it to commit before addressing
+  // the controls it owns.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Version history (git)" }),
+  ).toBeVisible({ timeout: 20_000 });
+}
+
 interface FakeStatus {
   readonly workspaceId: string;
   readonly tracked: boolean;
@@ -346,7 +355,7 @@ test.describe("git sync status", () => {
   test("creates a repository from Version history and connects to it as the account", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
-    await navigateDesktop(page, "/personal/personal/settings/version-history");
+    await openVersionHistory(page);
 
     // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
     await expect(page.getByRole("option", { name: "acme/api-tests (private)" })).toBeAttached();
@@ -371,7 +380,7 @@ test.describe("git sync status", () => {
   test("connects to one of the account's apiweave-workspace repositories, picked from its list", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
-    await navigateDesktop(page, "/personal/personal/settings/version-history");
+    await openVersionHistory(page);
 
     await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/api-tests (private)" });
     await captureEvidence(page, "git-repository-picker-connect.png");

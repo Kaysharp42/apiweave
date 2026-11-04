@@ -48,11 +48,11 @@ describe("AppSettingsPage", () => {
     ["mcp-server", "MCP Server", "mcp panel"],
     ["network", "Network", "network panel"],
     ["updates", "Updates", "updates panel"],
-  ])("renders %s as a page", (section, heading, panel) => {
+  ])("renders %s as a page", async (section, heading, panel) => {
     renderAt(`/personal/personal/settings/${section}`);
 
     expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
-    expect(screen.getByText(panel)).toBeInTheDocument();
+    expect(await screen.findByText(panel)).toBeInTheDocument();
   });
 
   it.each(["nope", "private-networks"])(

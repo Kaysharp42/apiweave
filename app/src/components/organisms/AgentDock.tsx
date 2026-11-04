@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { CircleStop, RotateCcw, Terminal, X } from "lucide-react";
 import type { AgentSession } from "@shared/types/AgentSession";
 import { Button } from "../atoms/Button";
@@ -8,7 +8,14 @@ import { useAgentSessions } from "../../contexts/AgentSessionsContext";
 import { describeError } from "../../utils/describeError";
 import { useAgentDockControls } from "../../hooks/useAgentDockControls";
 import { useKillSessionAction } from "../../hooks/useKillSessionAction";
-import { AgentTerminal } from "./AgentTerminal";
+// xterm and its fit/webgl addons are only needed once a session exists. The
+// dock itself stays mounted while the pane is collapsed (its tree shape is what
+// keeps the canvas from remounting), so the terminal is the part that waits.
+const AgentTerminal = lazy(() =>
+  import("./AgentTerminal").then((module) => ({
+    default: module.AgentTerminal,
+  })),
+);
 
 /**
  * The agent, in its own column beside the canvas it is editing.
@@ -132,18 +139,29 @@ export function AgentDock() {
           // The terminal would simply stop, showing the old transcript under a
           // session that is running. `startedAt` moves on every resume, so the
           // key changes exactly when a new process is behind the same id.
-          <AgentTerminal
-            key={`${session.sessionId}:${session.startedAt}`}
-            sessionId={session.sessionId}
-            readOnly={!isLive}
-            // Passed rather than read from the store inside the terminal: the
-            // terminal is a plain organism that knows about a session and a
-            // bridge, and which panel decided to show it is this component's
-            // business. It is also what lets the terminal be focused by a
-            // second click on a row that is already open — the only signal
-            // that a click happened at all.
-            focusRequest={focusRequest}
-          />
+          <Suspense
+            fallback={
+              <p
+                className="px-3 py-2 text-xs text-text-secondary dark:text-text-secondary-dark"
+                role="status"
+              >
+                Loading terminal…
+              </p>
+            }
+          >
+            <AgentTerminal
+              key={`${session.sessionId}:${session.startedAt}`}
+              sessionId={session.sessionId}
+              readOnly={!isLive}
+              // Passed rather than read from the store inside the terminal: the
+              // terminal is a plain organism that knows about a session and a
+              // bridge, and which panel decided to show it is this component's
+              // business. It is also what lets the terminal be focused by a
+              // second click on a row that is already open — the only signal
+              // that a click happened at all.
+              focusRequest={focusRequest}
+            />
+          </Suspense>
         )}
       </div>
 

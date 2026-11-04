@@ -467,3 +467,4 @@ export type { MergeCompareProps } from "./MergeCompareProps";
 export type { GitMergeValueProps } from "./GitMergeValueProps";
 export type { MergeConflictGroup } from "./MergeConflictGroup";
 export type { ParsedValue } from "./ParsedValue";
+export type { AppSettingsSectionMeta } from "./AppSettingsSectionMeta";

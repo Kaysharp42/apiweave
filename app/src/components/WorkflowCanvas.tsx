@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useState,
   useCallback,
   useRef,
@@ -46,21 +48,14 @@ import { EmptyCanvasHint } from "./atoms/EmptyCanvasHint";
 import { CanvasTip } from "./atoms/CanvasTip";
 import { RunMiniMap } from "./RunMiniMap";
 import AddNodesPanel from "./AddNodesPanel";
-import NodeModal from "./NodeModal";
-import HistoryModal from "./HistoryModal";
-import ImportToNodesPanel from "./ImportToNodesPanel";
-import WorkflowJsonEditor from "./WorkflowJsonEditor";
 import { PromptDialog } from "./molecules/PromptDialog";
 import { ContextMenu } from "./molecules/ContextMenu";
-import { VersionHistoryDialog } from "./organisms/VersionHistoryDialog";
 import { RunFollowPill } from "./molecules/RunFollowPill";
-import { RunTimelinePanel } from "./organisms/RunTimelinePanel";
 import { AppContext } from "../App";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";
 import { CanvasNodeContextMenu } from "./organisms/CanvasNodeContextMenu";
-import { CommandPalette } from "./organisms/CommandPalette";
 import useTabStore from "../stores/TabStore";
 import useSidebarStore from "../stores/SidebarStore";
 import useVariableProvenanceStore from "../stores/VariableProvenanceStore";
@@ -144,6 +139,29 @@ import type { CanvasNodeTemplate } from "../types/CanvasNodeTemplate";
 import type { CanvasNodeContextMenuState } from "../types/CanvasNodeContextMenuState";
 import type { StepContextMenuState } from "../types/StepContextMenuState";
 
+// Everything that opens over the canvas is loaded when it opens. The node
+// editor alone pulls in every node-type panel, and the history, JSON, import
+// and version dialogs each carry their own editor or diff view; none of them
+// belongs in the parse the canvas needs before its first frame.
+const NodeModal = lazy(() => import("./NodeModal"));
+const HistoryModal = lazy(() => import("./HistoryModal"));
+const ImportToNodesPanel = lazy(() => import("./ImportToNodesPanel"));
+const WorkflowJsonEditor = lazy(() => import("./WorkflowJsonEditor"));
+const VersionHistoryDialog = lazy(() =>
+  import("./organisms/VersionHistoryDialog").then((module) => ({
+    default: module.VersionHistoryDialog,
+  })),
+);
+const RunTimelinePanel = lazy(() =>
+  import("./organisms/RunTimelinePanel").then((module) => ({
+    default: module.RunTimelinePanel,
+  })),
+);
+const CommandPalette = lazy(() =>
+  import("./organisms/CommandPalette").then((module) => ({
+    default: module.CommandPalette,
+  })),
+);
 const canvasLog = getLogger("WorkflowCanvas");
 
 // Kept for validation step 1 toggle — re-enable the commented div below to restore.
@@ -2042,12 +2060,16 @@ export function WorkflowCanvas({
         />
       )}
 
-      <CommandPalette
-        open={isCommandPaletteOpen}
-        commands={commands}
-        workspaceId={scope.workspaceId ?? null}
-        onClose={() => setIsCommandPaletteOpen(false)}
-      />
+      {isCommandPaletteOpen && (
+        <Suspense fallback={null}>
+          <CommandPalette
+            open
+            commands={commands}
+            workspaceId={scope.workspaceId ?? null}
+            onClose={() => setIsCommandPaletteOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Keyed by node id so each open re-mounts with that node's label
           prefilled — PromptDialog seeds its input from `defaultValue` once. */}
@@ -2064,95 +2086,112 @@ export function WorkflowCanvas({
       />
 
       {modalNode && (
-        <NodeModal
-          key={modalNode.id}
-          open={true}
-          node={{
-            ...modalNode,
-            type: modalNode.type as
-              | "http-request"
-              | "sse"
-              | "assertion"
-              | "delay"
-              | "merge"
-              | "start"
-              | "end"
-              | "workflow",
-            data: {
-              ...modalNode.data,
-              label: String(modalNode.data.label || ""),
-              config: (modalNode.data.config as Record<string, unknown>) || {},
-            },
-          }}
-          onClose={() => {
-            setIsFocusMode(false);
-            setModalNode(null);
-          }}
-          {...(previousFocusTarget
-            ? { onPrevious: () => stepFocusMode("previous") }
-            : {})}
-          {...(nextFocusTarget ? { onNext: () => stepFocusMode("next") } : {})}
-          onSave={(node) =>
-            handleModalSave(node as Node<WorkflowCanvasNodeData>)
-          }
-          onSaveWorkflow={() => void saveWorkflow(false)}
-          workspaceId={scope.workspaceId ?? ""}
-          currentWorkflowId={workflowId ?? ""}
-        />
+        <Suspense fallback={null}>
+          <NodeModal
+            key={modalNode.id}
+            open={true}
+            node={{
+              ...modalNode,
+              type: modalNode.type as
+                | "http-request"
+                | "sse"
+                | "assertion"
+                | "delay"
+                | "merge"
+                | "start"
+                | "end"
+                | "workflow",
+              data: {
+                ...modalNode.data,
+                label: String(modalNode.data.label || ""),
+                config:
+                  (modalNode.data.config as Record<string, unknown>) || {},
+              },
+            }}
+            onClose={() => {
+              setIsFocusMode(false);
+              setModalNode(null);
+            }}
+            {...(previousFocusTarget
+              ? { onPrevious: () => stepFocusMode("previous") }
+              : {})}
+            {...(nextFocusTarget
+              ? { onNext: () => stepFocusMode("next") }
+              : {})}
+            onSave={(node) =>
+              handleModalSave(node as Node<WorkflowCanvasNodeData>)
+            }
+            onSaveWorkflow={() => void saveWorkflow(false)}
+            workspaceId={scope.workspaceId ?? ""}
+            currentWorkflowId={workflowId ?? ""}
+          />
+        </Suspense>
       )}
 
       {showHistory && (
-        <HistoryModal
-          workflowId={workflowId ?? ""}
-          workspaceId={scope.workspaceId ?? ""}
-          onClose={() => {
-            setShowHistory(false);
-            setHistoryRunId(null);
-          }}
-          {...(historyRunId ? { highlightRunId: historyRunId } : {})}
-          onSelectRun={loadHistoricalRun}
-          onRerunFailed={(runId) => rerunFailed(runId)}
-          onShowTimeline={(runId) => {
-            setTimelineRunId(runId);
-            setShowHistory(false);
-          }}
-        />
+        <Suspense fallback={null}>
+          <HistoryModal
+            workflowId={workflowId ?? ""}
+            workspaceId={scope.workspaceId ?? ""}
+            onClose={() => {
+              setShowHistory(false);
+              setHistoryRunId(null);
+            }}
+            {...(historyRunId ? { highlightRunId: historyRunId } : {})}
+            onSelectRun={loadHistoricalRun}
+            onRerunFailed={(runId) => rerunFailed(runId)}
+            onShowTimeline={(runId) => {
+              setTimelineRunId(runId);
+              setShowHistory(false);
+            }}
+          />
+        </Suspense>
       )}
 
       {showVersionHistory && scope.workspaceId && workflowId && (
-        <VersionHistoryDialog
-          workspaceId={scope.workspaceId}
-          workflowId={workflowId}
-          onClose={() => setShowVersionHistory(false)}
-          onRestore={restoreRevision}
-        />
+        <Suspense fallback={null}>
+          <VersionHistoryDialog
+            workspaceId={scope.workspaceId}
+            workflowId={workflowId}
+            onClose={() => setShowVersionHistory(false)}
+            onRestore={restoreRevision}
+          />
+        </Suspense>
       )}
 
-      <RunTimelinePanel
-        isOpen={timelineRunId !== null}
-        onClose={() => setTimelineRunId(null)}
-        workspaceId={scope.workspaceId ?? null}
-        runId={timelineRunId}
-      />
+      {timelineRunId !== null && (
+        <Suspense fallback={null}>
+          <RunTimelinePanel
+            isOpen
+            onClose={() => setTimelineRunId(null)}
+            workspaceId={scope.workspaceId ?? null}
+            runId={timelineRunId}
+          />
+        </Suspense>
+      )}
 
       {showImportToNodes && (
-        <ImportToNodesPanel
-          isOpen={showImportToNodes}
-          onClose={() => setShowImportToNodes(false)}
-          workflowId={workflowId ?? ""}
-          onTemplatesSaved={handleTemplatesSaved}
-        />
+        <Suspense fallback={null}>
+          <ImportToNodesPanel
+            isOpen={showImportToNodes}
+            onClose={() => setShowImportToNodes(false)}
+            workflowId={workflowId ?? ""}
+            onTemplatesSaved={handleTemplatesSaved}
+          />
+        </Suspense>
       )}
 
       {showJsonEditor && (
-        <WorkflowJsonEditor
-          open={true}
-          workflowJson={workflowJsonMemo as unknown as Record<string, unknown>}
-          onApply={handleJsonApply}
-          onClose={() => {
-            setShowJsonEditor(false);
-          }}
-        />
+        <Suspense fallback={null}>
+          <WorkflowJsonEditor
+            open={true}
+            workflowJson={workflowJsonMemo as unknown as Record<string, unknown>}
+            onApply={handleJsonApply}
+            onClose={() => {
+              setShowJsonEditor(false);
+            }}
+          />
+        </Suspense>
       )}
     </main>
   );

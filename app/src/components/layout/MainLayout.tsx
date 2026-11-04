@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router";
@@ -23,10 +31,18 @@ import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
-import { TutorialCompanionHost } from "../TutorialCompanionHost";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
+
+// The tutorial companion carries the whole lesson curriculum. It is mounted for
+// every session but paints only during a lesson, so the curriculum belongs in
+// its own chunk rather than in the canvas entry.
+const TutorialCompanionHost = lazy(() =>
+  import("../TutorialCompanionHost").then((module) => ({
+    default: module.TutorialCompanionHost,
+  })),
+);
 
 /**
  * Below Tailwind's `md`, where the layout drops to a single content column.
@@ -144,7 +160,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         </ErrorBoundary>
       </div>
 
-      <TutorialCompanionHost contentRef={contentRegionRef} />
+      <Suspense fallback={null}>
+        <TutorialCompanionHost contentRef={contentRegionRef} />
+      </Suspense>
     </main>
   );
 
