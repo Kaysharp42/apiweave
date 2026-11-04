@@ -7,11 +7,11 @@ name: Update rollout
 # automatic update within one check interval without unpublishing anything,
 # deleting anything, or breaking the download links people already have.
 #
-# It only governs the platforms that install updates themselves (Windows NSIS,
-# Linux AppImage) — the manifests are the only thing it touches. macOS and
-# deb/rpm/pacman read version.json and are shown a notice they act on by hand,
-# so a bad release costs those users a notice rather than a broken install. To
-# pull a release back on *every* platform, mark it as a prerelease instead; see
+# It governs every platform that installs updates itself: Windows NSIS,
+# Linux AppImage, and a signed macOS build (an unsigned macOS build, and
+# deb/rpm/pacman, read version.json and are only shown a notice they act on by
+# hand). The manifests are the only thing it touches. To pull a release back on
+# *every* platform, mark it as a prerelease instead; see
 # docs/reference/release-and-updates.md.
 
 on:
@@ -66,16 +66,25 @@ jobs:
           mkdir manifests
           cd manifests
 
-          # Only the two manifests, not the whole release — the installers are
+          # Only the manifests, not the whole release — the installers are
           # hundreds of megabytes and nothing here touches them.
-          for manifest in latest.yml latest-linux.yml; do
+          manifests=(latest.yml latest-linux.yml)
+          for manifest in "${manifests[@]}"; do
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$manifest" || {
               echo "::error::$TAG has no $manifest — is it a release built before the generic provider switch?" >&2
               exit 1
             }
           done
+          # latest-mac.yml only exists for releases built with the macOS zip
+          # target (1.0 and later). Older tags stay adjustable for the
+          # platforms they do serve.
+          if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest-mac.yml; then
+            manifests+=(latest-mac.yml)
+          else
+            echo "No latest-mac.yml on $TAG; macOS releases before 1.0 update by notice only."
+          fi
 
-          for manifest in latest.yml latest-linux.yml; do
+          for manifest in "${manifests[@]}"; do
             # Drop any percentage already set, then re-add unless this is a
             # full rollout. Absent means "everyone", which is what
             # electron-updater assumes when the field is missing, so 100 is
@@ -95,7 +104,7 @@ jobs:
             grep -E '^(version|path|sha512|apiweaveSignature|stagingPercentage):' "$manifest"
           done
 
-          gh release upload "$TAG" latest.yml latest-linux.yml \
+          gh release upload "$TAG" "${manifests[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 

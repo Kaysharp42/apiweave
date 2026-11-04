@@ -86,7 +86,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 
 ## Reference
 
-The six reference pages are lookup tables and tours, not tutorials. Use them when you need the exact syntax, the full list, or a map of the surface area.
+The seven reference pages are lookup tables and tours, not tutorials. Use them when you need the exact syntax, the full list, or a map of the surface area.
 
 - [Reference Index](reference/README.md)
 - [Architecture](reference/architecture.md): how the components fit together and how a run moves through the system.
@@ -95,6 +95,7 @@ The six reference pages are lookup tables and tours, not tutorials. Use them whe
 - [Environment Variables](reference/environment-variables.md): every variable the app reads, with defaults.
 - [IPC API](reference/api.md): the typed IPC handler registry the renderer and the local MCP bridge call.
 - [Release and Updates](reference/release-and-updates.md): the update channel, policies, and rollout mechanics.
+- [Compatibility and Deprecation Policy](reference/compatibility.md): what 1.x keeps stable for agents, repository files, bundles and the CLI.
 
 ## What Goes Where
 

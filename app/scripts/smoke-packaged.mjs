@@ -12,13 +12,18 @@ const releaseDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..",
 const TIMEOUT_MS = 120_000
 
 // electron-builder's output layout: linux-unpacked/, win-unpacked/, mac/ or
-// mac-arm64/ (APIWeave.app). The Linux executable is the package name.
+// mac-arm64/ (APIWeave.app). A combined macOS build leaves both mac/ and
+// mac-arm64/ behind, so prefer the one matching the runner's architecture
+// before falling back to whatever is there.
 function packagedBinary() {
   const dirs = existsSync(releaseDir) ? readdirSync(releaseDir) : []
+  const macDirs = dirs.filter((d) => d.startsWith("mac"))
+  const preferredMacDir = process.arch === "arm64" ? "mac-arm64" : "mac"
+  macDirs.sort((a, b) => (a === preferredMacDir ? -1 : b === preferredMacDir ? 1 : 0))
   const candidates = {
     linux: dirs.filter((d) => d.startsWith("linux") && d.endsWith("unpacked")).map((d) => path.join(d, "apiweave")),
     win32: dirs.filter((d) => d.startsWith("win") && d.endsWith("unpacked")).map((d) => path.join(d, "APIWeave.exe")),
-    darwin: dirs.filter((d) => d.startsWith("mac")).map((d) => path.join(d, "APIWeave.app", "Contents", "MacOS", "APIWeave")),
+    darwin: macDirs.map((d) => path.join(d, "APIWeave.app", "Contents", "MacOS", "APIWeave")),
   }[process.platform] ?? []
   const found = candidates.map((c) => path.join(releaseDir, c)).find((c) => existsSync(c))
   if (!found) {

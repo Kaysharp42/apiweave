@@ -41,38 +41,68 @@ afterEach(() => {
 describe("verifyUpdateFile", () => {
   it("accepts an installer signed by the embedded key", async () => {
     const signature = signedBy(key.privatePem, "1.2.0", installer)
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, key.publicKey)).toBeNull()
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, key.publicKey)).toBeNull()
   })
 
   it("rejects an installer whose bytes changed after signing", async () => {
     const signature = signedBy(key.privatePem, "1.2.0", installer)
     writeFileSync(installer, "something else entirely")
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, key.publicKey)).toMatch(/signature check/)
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, key.publicKey)).toMatch(/signature check/)
   })
 
   it("rejects a signed installer relabelled as another version", async () => {
     // An old signed release dressed up as a newer one would be a downgrade.
     const signature = signedBy(key.privatePem, "1.1.0", installer)
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, key.publicKey)).toMatch(/signature check/)
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, key.publicKey)).toMatch(/signature check/)
   })
 
   it("rejects a signature from any other key", async () => {
     const signature = signedBy(keyPair().privatePem, "1.2.0", installer)
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, key.publicKey)).toMatch(/signature check/)
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, key.publicKey)).toMatch(/signature check/)
   })
 
   it("rejects an unsigned manifest", async () => {
-    expect(await verifyUpdateFile(installer, "1.2.0", undefined, key.publicKey)).toMatch(/not signed/)
-    expect(await verifyUpdateFile(installer, "1.2.0", "", key.publicKey)).toMatch(/not signed/)
+    expect(await verifyUpdateFile(installer, "1.2.0", undefined, undefined, key.publicKey)).toMatch(/not signed/)
+    expect(await verifyUpdateFile(installer, "1.2.0", "", undefined, key.publicKey)).toMatch(/not signed/)
+  })
+
+  it("uses the per-file signature for the downloaded artifact", async () => {
+    const arm64 = path.join(dir, "APIWeave-1.2.0-mac-arm64.zip")
+    writeFileSync(arm64, "arm64 installer bytes")
+    const x64Signature = signedBy(key.privatePem, "1.2.0", installer)
+    const arm64Signature = signedBy(key.privatePem, "1.2.0", arm64)
+    const signatures = {
+      "APIWeave-1.2.0-win-x64.exe": x64Signature,
+      "APIWeave-1.2.0-mac-arm64.zip": arm64Signature,
+    }
+
+    expect(await verifyUpdateFile(arm64, "1.2.0", x64Signature, signatures, key.publicKey)).toBeNull()
+  })
+
+  it("refuses a file the per-file signature map does not name", async () => {
+    const arm64 = path.join(dir, "APIWeave-1.2.0-mac-arm64.zip")
+    writeFileSync(arm64, "arm64 installer bytes")
+    const x64Signature = signedBy(key.privatePem, "1.2.0", installer)
+
+    expect(
+      await verifyUpdateFile(arm64, "1.2.0", x64Signature, { "APIWeave-1.2.0-win-x64.exe": x64Signature }, key.publicKey),
+    ).toMatch(/no signature for APIWeave-1.2.0-mac-arm64.zip/)
+  })
+
+  it("rejects a malformed per-file signature map instead of falling back", async () => {
+    const signature = signedBy(key.privatePem, "1.2.0", installer)
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, ["not", "a", "map"], key.publicKey)).toMatch(
+      /per-file signatures are malformed/,
+    )
   })
 
   it("rejects a garbage signature without throwing", async () => {
-    expect(await verifyUpdateFile(installer, "1.2.0", "not base64 at all!", key.publicKey)).toMatch(/signature check/)
+    expect(await verifyUpdateFile(installer, "1.2.0", "not base64 at all!", undefined, key.publicKey)).toMatch(/signature check/)
   })
 
   it("refuses every update while the build carries the placeholder key", async () => {
     const signature = signedBy(key.privatePem, "1.2.0", installer)
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, UPDATE_SIGNING_KEY_PLACEHOLDER)).toMatch(
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, UPDATE_SIGNING_KEY_PLACEHOLDER)).toMatch(
       /no update signing key/,
     )
   })
@@ -102,7 +132,35 @@ describe("scripts/sign-update-manifest.mjs", () => {
     const lines = text.split("\n").filter((line) => line.startsWith(`${UPDATE_SIGNATURE_FIELD}:`))
     expect(lines).toHaveLength(1)
     const signature = lines[0]?.slice(UPDATE_SIGNATURE_FIELD.length + 1).trim()
-    expect(await verifyUpdateFile(installer, "1.2.0", signature, key.publicKey)).toBeNull()
+    expect(await verifyUpdateFile(installer, "1.2.0", signature, undefined, key.publicKey)).toBeNull()
+  })
+
+  it("signs every architecture in a multi-file manifest", async () => {
+    const x64 = path.join(dir, "APIWeave-1.2.0-mac-x64.zip")
+    const arm64 = path.join(dir, "APIWeave-1.2.0-mac-arm64.zip")
+    writeFileSync(x64, "x64 installer bytes")
+    writeFileSync(arm64, "arm64 installer bytes")
+    const manifest = path.join(dir, "latest-mac.yml")
+    writeFileSync(
+      manifest,
+      `version: 1.2.0\nfiles:\n  - url: ${path.basename(x64)}\n    sha512: x\n  - url: ${path.basename(arm64)}\n    sha512: x\npath: ${path.basename(x64)}\nsha512: x\n`,
+    )
+
+    expect(run([manifest], key.privatePem).status).toBe(0)
+    expect(run([manifest], key.privatePem).status).toBe(0)
+
+    const text = readFileSync(manifest, "utf8")
+    const map: Record<string, string> = {}
+    for (const line of text.split("\n")) {
+      const match = /^  "([^"]+)": (\S+)$/.exec(line)
+      if (match?.[1] !== undefined && match[2] !== undefined) map[match[1]] = match[2]
+    }
+    expect(Object.keys(map)).toEqual([path.basename(x64), path.basename(arm64)])
+
+    expect(await verifyUpdateFile(x64, "1.2.0", map[path.basename(x64)], map, key.publicKey)).toBeNull()
+    expect(await verifyUpdateFile(arm64, "1.2.0", map[path.basename(arm64)], map, key.publicKey)).toBeNull()
+    const swapped = { ...map, [path.basename(arm64)]: map[path.basename(x64)] }
+    expect(await verifyUpdateFile(arm64, "1.2.0", undefined, swapped, key.publicKey)).toMatch(/signature check/)
   })
 
   it("fails loudly when the signing secret is missing", () => {

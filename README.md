@@ -26,11 +26,11 @@ Download the installer for your OS from the [latest release](https://github.com/
 
 ### Windows
 
-Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. The installer and binaries are not code-signed, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
+Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. Release installers are code-signed when the project's certificate is configured; a build without a signature may make SmartScreen warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
-Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. The build is unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. Release builds are signed and notarized when the project's Apple Developer certificate and notarization secrets are configured, and a signed build updates itself in place. If you downloaded an unsigned build (a local build, or a release made before signing was configured), Gatekeeper blocks the first launch: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 
 ### Linux
 
@@ -71,7 +71,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md).
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.awecollection` bundles and the CLI.
 
 ## Tech Stack
 

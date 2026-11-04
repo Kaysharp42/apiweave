@@ -17,11 +17,11 @@ export type UpdateState =
  * - `manual`    — no check on launch at all; only the Settings > Updates
  *                 "Check for updates" button reaches the network.
  *
- * `notify` is the default. The Windows and macOS builds are unsigned, so
- * electron-updater has no Authenticode publisher to verify the downloaded
- * installer against — the user consenting to a specific version is the
- * strongest check available today. Once `win.publisherName` is set against a
- * real signing certificate, `automatic` becomes a defensible default.
+ * `notify` is the default. OS code signing depends on release secrets, so a
+ * build may have no Authenticode publisher to verify the downloaded installer
+ * against; the update signature is the check that always runs, and the user
+ * consenting to a specific version remains the last check before new code
+ * runs. `automatic` is available for people who prefer it.
  */
 export type UpdatePolicy = "automatic" | "notify" | "manual"
 
@@ -35,12 +35,12 @@ export function isUpdatePolicy(value: unknown): value is UpdatePolicy {
 }
 
 /**
- * Current state of the update flow. On Windows (NSIS) and Linux (AppImage)
- * `supportsAutoInstall` is true and the app can download and stage an update
- * itself, landing on "downloaded" once a restart can apply it. Everywhere else
- * (macOS — unsigned builds can't self-update past Gatekeeper — and the
- * deb/rpm/pacman package formats, which are managed by the OS package
- * manager) it stops at "available" with a `releaseUrl` to open manually.
+ * Current state of the update flow. On Windows (NSIS), Linux (AppImage) and a
+ * signed macOS build `supportsAutoInstall` is true and the app can download and
+ * stage an update itself, landing on "downloaded" once a restart can apply it.
+ * Everywhere else (an unsigned macOS build, and the deb/rpm/pacman package
+ * formats, which are managed by the OS package manager) it stops at "available"
+ * with a `releaseUrl` to open manually.
  */
 export interface UpdateStatus {
   readonly state: UpdateState
