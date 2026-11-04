@@ -31,58 +31,76 @@ export default defineConfig(({ command, mode }) => ({
     ...(mode === "development" ? { minify: false, sourcemap: true } : {}),
     rolldownOptions: {
       output: {
-        // Vendor boundaries, not a warning silencer: React, the flow engine and
+        // Vendor boundaries, not warning silencers: React, the flow engine and
         // the UI primitives change on their own release cadence, so keeping
         // them in separate content-hashed files means a renderer change does
-        // not invalidate 1.5 MB of unchanged dependency code.
+        // not invalidate a large block of unchanged dependency code.
         //
-        // Monaco is one dynamic import whose core is 2.7 MB. The ceiling below
-        // splits it into on-demand chunks the browser can compile
-        // incrementally; the editor still loads all of them the first time it
-        // opens, but no single file has to be parsed in one go, and this is
-        // applied to real module boundaries rather than to the warning limit.
-        // The app entry itself is under the limit because the canvas, screens
-        // and dialogs are loaded on demand.
-        codeSplitting: {
-          groups: [
-            {
-              name: "vendor-react-dom",
-              test: /node_modules[\\/](react-dom|scheduler)[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "vendor-react",
-              test: /node_modules[\\/](react|react-router)[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "vendor-flow",
-              test: /node_modules[\\/](@xyflow|d3-|zustand)[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "vendor-ui",
-              test: /node_modules[\\/](@floating-ui|@headlessui|react-aria|allotment|sonner)[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "vendor-icons",
-              test: /node_modules[\\/]lucide-react[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "vendor-zod",
-              test: /node_modules[\\/]zod[\\/]/,
-              priority: 30,
-            },
-            {
-              name: "monaco",
-              test: /node_modules[\\/]monaco-editor[\\/]esm[\\/]vs[\\/]/,
-              maxSize: 1280 * 1024,
-              minSize: 16 * 1024,
-              priority: 20,
-            },
-          ],
+        // Monaco is one dynamic import, but its core is 2.7 MB and every
+        // request body, script and query waits on it. These boundaries follow
+        // Monaco's own layers — editor/browser, editor/common, base, platform —
+        // so each file compiles in one piece. Contributions deliberately stay
+        // in their module graph: splitting them by size instead re-included
+        // roughly half a megabyte of features the editor tree-shakes away.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+
+          if (id.includes("/react-dom/") || id.includes("/scheduler/")) {
+            return "vendor-react-dom";
+          }
+          if (id.includes("/react/") || id.includes("/react-router/")) {
+            return "vendor-react";
+          }
+          if (
+            id.includes("/@xyflow/") ||
+            id.includes("/d3-") ||
+            id.includes("/zustand/")
+          ) {
+            return "vendor-flow";
+          }
+          if (
+            id.includes("/@floating-ui/") ||
+            id.includes("/@headlessui/") ||
+            id.includes("/react-aria/") ||
+            id.includes("/allotment/") ||
+            id.includes("/sonner/")
+          ) {
+            return "vendor-ui";
+          }
+          if (id.includes("/lucide-react/")) return "vendor-icons";
+          if (id.includes("/zod/")) return "vendor-zod";
+
+          if (!id.includes("/monaco-editor/esm/vs/")) return undefined;
+          if (id.includes("/editor/browser/widget/diffEditor/")) {
+            return "monaco-diff";
+          }
+          if (id.includes("/editor/browser/widget/codeEditor/")) {
+            return "monaco-code-editor";
+          }
+          if (id.includes("/editor/browser/widget/multiDiffEditor/")) {
+            return "monaco-multi-diff";
+          }
+          if (id.includes("/editor/browser/widget/")) {
+            return "monaco-browser-widget";
+          }
+          if (id.includes("/editor/contrib/suggest/")) return "monaco-suggest";
+          if (id.includes("/editor/browser/viewParts/")) {
+            return "monaco-browser-view";
+          }
+          if (id.includes("/editor/browser/controller/")) {
+            return "monaco-browser-controller";
+          }
+          if (id.includes("/editor/browser/services/")) {
+            return "monaco-browser-services";
+          }
+          if (id.includes("/editor/browser/")) return "monaco-browser-rest";
+          if (id.includes("/editor/common/")) return "monaco-common";
+          if (id.includes("/editor/standalone/")) return "monaco-standalone";
+          if (id.includes("/base/browser/ui/")) return "monaco-base-ui";
+          if (id.includes("/base/browser/")) return "monaco-base-browser";
+          if (id.includes("/base/common/")) return "monaco-base-common";
+          if (id.includes("/platform/")) return "monaco-platform";
+          return undefined;
         },
       },
     },
