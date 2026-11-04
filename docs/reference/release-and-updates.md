@@ -85,7 +85,9 @@ git commit -m "chore(release): embed the update signing key"
 
 The script writes the public key into `electron/update_signing_key.ts` and prints the private key to stdout only — piped as above, it never touches the disk. Without `gh`, run the script alone, paste the printed PEM (including the `BEGIN`/`END` lines) into **Settings → Secrets and variables → Actions → New repository secret** as `UPDATE_SIGNING_PRIVATE_KEY`, then clear your terminal scrollback. **Keep an offline backup of the private key** (a password manager is fine): losing it means installs in the field can no longer be updated in place.
 
-Recommended hardening: move the secret into a GitHub **environment** (for example `release`) with a deployment rule that admits only `v*` tags, and add `environment: release` to the `validate` and `publish` jobs. A repository secret is readable by any workflow someone with write access pushes; an environment secret is not.
+Recommended hardening: the `publish` job runs in a GitHub **environment** named `release`, with a required reviewer and a deployment rule that admits only `v*` tags. That is the manual gate: a complete draft is built and tested, then someone approves publication. Without protection rules the job runs immediately.
+
+The update signing key is read by `validate` before anything is built (so a missing or mismatched key fails in seconds) and by `publish` to sign the manifests. Keeping it a repository secret is the simple configuration; moving it into the `release` environment also moves the key check behind the reviewer and before the build, which gives up the draft-first test cycle. The reviewer gate protects publication either way, but a repository secret is readable by any workflow someone with write access pushes.
 
 ### Losing or rotating the key
 
