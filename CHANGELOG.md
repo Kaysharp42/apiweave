@@ -59,6 +59,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   what lets electron-builder write one `latest-mac.yml` covering both zips
   instead of two contradictory half-manifests, and it removes the finalize
   step that used to delete the manifest.
+- **The renderer starts from a much smaller shell.** The canvas, the settings
+  screens, the node editor and its export/import dialogs, and the embedded
+  terminal are now loaded when they are first opened, and the Monaco editor
+  registers only the editing features the app uses instead of its full feature
+  set. The launch bundle drops from about 2.5 MB to under 500 KB (about 700 KB
+  to 130 KB gzipped), and every JavaScript chunk is now under the 500 KB
+  warning threshold; the editor core is split into on-demand chunks.
 - **Connect to remote lists the repositories tagged `apiweave-workspace`**,
   including ones with commits, instead of only empty ones. A repository made
   before the topic existed appears once it is tagged, without being recreated.
@@ -69,9 +76,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
   macOS 13 Ventura, glibc 2.34 on Linux, and Node.js 22.12 for source builds.
 - **The unimplemented Parallel HAR import option is gone.** The import dialog
   only offers the linear mode it actually performs.
+- **The embedded agent terminal runs on node-pty 1.1.0**, the current stable
+  release, instead of a 1.2 beta. The PTY host still owns every agent session
+  in its own process, and the packaged-app smoke test starts a real terminal.
 
 ### Fixed
 
+- **Accessibility is gated in the UI suite.** The Playwright checks now scan
+  the canvas shell, the workspace and app settings pages, and the node editor
+  dialog against WCAG 2.1 A/AA, and fail on serious or critical findings.
+  Fixing what the scan found: connection handles no longer carry ARIA labels
+  that are illegal on a bare element; the workflow tab strip has one close
+  control beside the tabs instead of a button inside each tab; the workspace
+  switcher's accessible name includes the workspace it shows; muted text used
+  for real labels and hints was raised to the secondary contrast; and the
+  template suggestion fields expose the combobox role their ARIA attributes
+  require.
 - **Canvas edges stay attached after the shell resizes.** Turning the
   off-screen render optimisation off while the canvas is idle stops React Flow
   pruning edges during a sidebar or navigation collapse (issue #106).

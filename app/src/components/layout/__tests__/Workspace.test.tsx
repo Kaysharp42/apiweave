@@ -97,7 +97,7 @@ describe("Workspace empty state", () => {
     await user.click(screen.getByRole("button", { name: /Open from git/i }));
 
     expect(
-      screen.getByRole("dialog", { name: "Open workspace from git" }),
+      await screen.findByRole("dialog", { name: "Open workspace from git" }),
     ).toBeInTheDocument();
     expect(await screen.findByRole("textbox", { name: "Repository URL" })).toBeInTheDocument();
   });

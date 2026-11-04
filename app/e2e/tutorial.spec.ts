@@ -178,6 +178,12 @@ test.describe("tutorial follow-along", () => {
 
     await page.getByRole("button", { name: "Tutorials" }).click();
     await expect(page).toHaveURL(new RegExp(`${LIBRARY_PATH}$`));
+    // The library is a lazy route. Wait for the page to commit before using the
+    // nav rail, so the click sees the tutorial route in the nav's closure
+    // rather than the workflow route it is navigating away from.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Tutorials" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Back to workspace" }).click();
     await expect(page).toHaveURL(new RegExp(`${WORKSPACE_PATH}$`));
@@ -190,6 +196,9 @@ test.describe("tutorial follow-along", () => {
     // and clicking Workflows must reveal the same canvas, not a fresh one.
     await page.getByRole("button", { name: "Tutorials" }).click();
     await expect(page).toHaveURL(new RegExp(`${LIBRARY_PATH}$`));
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Tutorials" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Workflows", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${WORKSPACE_PATH}$`));

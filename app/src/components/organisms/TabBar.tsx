@@ -79,6 +79,8 @@ export function TabBar() {
 
   if (tabs.length === 0) return null;
 
+  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+
   return (
     <div className="relative flex items-stretch bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark select-none min-h-[36px]">
       {canScrollLeft && (
@@ -104,7 +106,7 @@ export function TabBar() {
           return (
             <div
               key={tab.id}
-              className="group relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
+              className="relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
             >
               <button
                 type="button"
@@ -139,30 +141,28 @@ export function TabBar() {
                 )}
                 <span className="min-w-0 truncate">{tab.name}</span>
               </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  requestClose([tab.id], () => closeTab(tab.id));
-                }}
-                // Only the active tab's close button is in the tab order; the
-                // others stay reachable through Ctrl+W after arrowing to a tab.
-                tabIndex={isActive ? 0 : -1}
-                className={[
-                  "px-1.5 rounded-sm transition-colors self-center cursor-pointer shrink-0",
-                  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
-                  isActive ? "" : "opacity-0 group-hover:opacity-100",
-                  "hover:bg-(--aw-status-error)/20 hover:text-(--aw-status-error)",
-                ].join(" ")}
-                aria-label={`Close ${tab.name}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
             </div>
           );
         })}
       </div>
+
+      {/* Outside the tablist on purpose: ARIA allows a tablist to own tabs and
+          nothing else, and a close button nested beside a tab is the violation
+          axe reports as aria-required-children. Closing still covers every tab
+          — right-click a tab for Close/Close Others/Close All, or select one
+          and use this button or Ctrl+W. */}
+      {activeTab !== undefined && (
+        <IconButton
+          tooltip={`Close ${activeTab.name}`}
+          size="xs"
+          onClick={() =>
+            requestClose([activeTab.id], () => closeTab(activeTab.id))
+          }
+          className="rounded-none border-l border-border dark:border-border-dark"
+        >
+          <X className="w-3.5 h-3.5" />
+        </IconButton>
+      )}
 
       {canScrollRight && (
         <IconButton

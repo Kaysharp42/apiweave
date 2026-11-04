@@ -1,20 +1,21 @@
-import { useReducer, useCallback } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useReducer,
+} from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 import { useNavigate, useParams } from "react-router";
-import WorkflowCanvas from "../WorkflowCanvas";
-import VariablesPanel from "../VariablesPanel";
-import WorkflowSettingsPanel from "../WorkflowSettingsPanel";
-import DynamicFunctionsHelper from "../DynamicFunctionsHelper";
 import { WorkflowProvider } from "../../contexts/WorkflowContext";
+import { Spinner } from "../atoms/Spinner";
 import { Settings, Sparkles, Package, PanelRightClose } from "lucide-react";
 import {
   TabBar,
   WORKSPACE_TABPANEL_ID,
   workspaceTabId,
 } from "../organisms/TabBar";
-import { KeyboardShortcutsHelp } from "../organisms/KeyboardShortcutsHelp";
-import { OpenWorkspaceFromGitModal } from "../organisms/OpenWorkspaceFromGitModal";
 import { WorkspaceEmptyState } from "../molecules/WorkspaceEmptyState";
 import { PromptDialog } from "../molecules/PromptDialog";
 import { Panel } from "../molecules/Panel";
@@ -37,6 +38,25 @@ import { toast } from "sonner";
 
 const workspaceLog = getLogger("Workspace");
 
+// The canvas is the screen, but it is not the launch screen: a session with no
+// tab open shows the workflow list and never mounts it. Keeping it (and the
+// right-panel inspectors) behind its own chunk means the shell can paint before
+// ReactFlow and the node family are parsed.
+const WorkflowCanvas = lazy(() => import("../WorkflowCanvas"));
+const VariablesPanel = lazy(() => import("../VariablesPanel"));
+const DynamicFunctionsHelper = lazy(() => import("../DynamicFunctionsHelper"));
+const WorkflowSettingsPanel = lazy(() => import("../WorkflowSettingsPanel"));
+const KeyboardShortcutsHelp = lazy(() =>
+  import("../organisms/KeyboardShortcutsHelp").then((module) => ({
+    default: module.KeyboardShortcutsHelp,
+  })),
+);
+const OpenWorkspaceFromGitModal = lazy(() =>
+  import("../organisms/OpenWorkspaceFromGitModal").then((module) => ({
+    default: module.OpenWorkspaceFromGitModal,
+  })),
+);
+
 const panelTabs: TabItem[] = [
   { key: "variables", icon: Package, label: "Variables" },
   { key: "dynamic", icon: Sparkles, label: "Functions" },
@@ -44,6 +64,13 @@ const panelTabs: TabItem[] = [
 ];
 
 export function Workspace({ active = true }: WorkspaceProps) {
+  // The lazy boundary keeps the canvas out of the launch chunk, not out of the
+  // session: this is the screen the shell exists to show, so fetch it once the
+  // shell has mounted rather than making the first workflow click wait for it.
+  useEffect(() => {
+    void import("../WorkflowCanvas");
+  }, []);
+
   const { openTab, closeTab, activateNextTab, activatePrevTab } =
     useTabStore();
   const { workspaceId, isReady: isScopeReady } = useScopeContext();
@@ -203,16 +230,24 @@ export function Workspace({ active = true }: WorkspaceProps) {
               <Allotment className="h-full">
                 <Allotment.Pane>
                   <div className="h-full w-full">
-                    <WorkflowCanvas
-                      workflowId={activeTab.id}
-                      workflow={activeTab.workflow}
-                      draft={activeTab.draft}
-                      isPanelOpen={state.showVariablesPanel}
-                      showVariablesPanel={state.showVariablesPanel}
-                      onShowVariablesPanel={(value) =>
-                        dispatch({ type: "set-show-variables-panel", value })
+                    <Suspense
+                      fallback={
+                        <div className="flex h-full items-center justify-center">
+                          <Spinner size="lg" />
+                        </div>
                       }
-                    />
+                    >
+                      <WorkflowCanvas
+                        workflowId={activeTab.id}
+                        workflow={activeTab.workflow}
+                        draft={activeTab.draft}
+                        isPanelOpen={state.showVariablesPanel}
+                        showVariablesPanel={state.showVariablesPanel}
+                        onShowVariablesPanel={(value) =>
+                          dispatch({ type: "set-show-variables-panel", value })
+                        }
+                      />
+                    </Suspense>
                   </div>
                 </Allotment.Pane>
 
@@ -253,15 +288,23 @@ export function Workspace({ active = true }: WorkspaceProps) {
                         </div>
 
                         <div className="min-h-0 flex-1">
-                          {state.activePanelTab === "variables" && (
-                            <VariablesPanel />
-                          )}
-                          {state.activePanelTab === "dynamic" && (
-                            <DynamicFunctionsHelper />
-                          )}
-                          {state.activePanelTab === "settings" && (
-                            <WorkflowSettingsPanel />
-                          )}
+                          <Suspense
+                            fallback={
+                              <div className="flex justify-center p-4">
+                                <Spinner />
+                              </div>
+                            }
+                          >
+                            {state.activePanelTab === "variables" && (
+                              <VariablesPanel />
+                            )}
+                            {state.activePanelTab === "dynamic" && (
+                              <DynamicFunctionsHelper />
+                            )}
+                            {state.activePanelTab === "settings" && (
+                              <WorkflowSettingsPanel />
+                            )}
+                          </Suspense>
                         </div>
                       </div>
                     </Panel>
@@ -282,12 +325,16 @@ export function Workspace({ active = true }: WorkspaceProps) {
         )}
       </div>
 
-      <KeyboardShortcutsHelp
-        open={state.showShortcutsHelp}
-        onClose={() =>
-          dispatch({ type: "set-show-shortcuts-help", value: false })
-        }
-      />
+      {state.showShortcutsHelp && (
+        <Suspense fallback={null}>
+          <KeyboardShortcutsHelp
+            open
+            onClose={() =>
+              dispatch({ type: "set-show-shortcuts-help", value: false })
+            }
+          />
+        </Suspense>
+      )}
 
       {state.showNewWorkflowPrompt && (
         <PromptDialog
@@ -303,12 +350,16 @@ export function Workspace({ active = true }: WorkspaceProps) {
         />
       )}
 
-      <OpenWorkspaceFromGitModal
-        isOpen={state.showOpenFromGit}
-        onClose={() =>
-          dispatch({ type: "set-show-open-from-git", value: false })
-        }
-      />
+      {state.showOpenFromGit && (
+        <Suspense fallback={null}>
+          <OpenWorkspaceFromGitModal
+            isOpen
+            onClose={() =>
+              dispatch({ type: "set-show-open-from-git", value: false })
+            }
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

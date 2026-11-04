@@ -37,6 +37,13 @@ desktop operation.
 - **Videos**: Retained only on failure (`.omo/evidence/playwright-results/`)
 - **HTML report**: `.omo/evidence/playwright-report/`
 
+## Accessibility
+
+`accessibility.spec.ts` runs axe against the canvas shell, the settings pages
+and the node editor dialog with the WCAG 2.1 A/AA rule set. It fails on serious
+or critical violations, so a new control, label or dialog that breaks the
+contract fails `npm run qa:ui` rather than waiting for a manual audit.
+
 ## Adding New Tests
 
 1. Create a descriptive `*.spec.ts` file under `e2e/`.

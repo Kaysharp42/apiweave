@@ -771,7 +771,7 @@ export function HTTPRequestConfigPanel({
         />
       </FormField>
       <div className="mt-4 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
-        <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+        <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Full URL preview
         </p>
         <HighlightedTemplateText value={previewUrl} />

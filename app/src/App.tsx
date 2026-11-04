@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useState,
   useEffect,
   useLayoutEffect,
@@ -7,13 +9,8 @@ import {
   useMemo,
 } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router";
-import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
-import { WorkspaceVersionHistoryPage } from "./pages/WorkspaceVersionHistoryPage";
-import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
-import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
-import { AppSettingsPage } from "./pages/AppSettingsPage";
-import TutorialPage from "./pages/TutorialPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { Spinner } from "./components/atoms/Spinner";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
@@ -27,6 +24,36 @@ import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
 import type { AppContextType } from "./types/AppContextType";
+
+// The settings and tutorial screens are their own chunks: the canvas is the
+// app's steady state, and a session that never opens Settings should not parse
+// the agents, MCP, network and update panels (or the tutorial curriculum) on
+// the way in. One lazy boundary per route keeps the shell and the canvas out of
+// the reload.
+const WorkspaceSecretsPage = lazy(() =>
+  import("./pages/WorkspaceSecretsPage").then((module) => ({
+    default: module.WorkspaceSecretsPage,
+  })),
+);
+const WorkspaceVersionHistoryPage = lazy(() =>
+  import("./pages/WorkspaceVersionHistoryPage").then((module) => ({
+    default: module.WorkspaceVersionHistoryPage,
+  })),
+);
+const WorkspaceEnvironmentsPage = lazy(() =>
+  import("./pages/WorkspaceEnvironmentsPage"),
+);
+const WorkspaceProjectPage = lazy(() =>
+  import("./pages/WorkspaceProjectPage").then((module) => ({
+    default: module.WorkspaceProjectPage,
+  })),
+);
+const AppSettingsPage = lazy(() =>
+  import("./pages/AppSettingsPage").then((module) => ({
+    default: module.AppSettingsPage,
+  })),
+);
+const TutorialPage = lazy(() => import("./pages/TutorialPage"));
 
 const STORAGE_PREFIX = "apiweave:v1:";
 
@@ -223,7 +250,15 @@ function WorkspacePageRoute({
 
   return (
     <div className="absolute inset-0 z-10 overflow-hidden bg-surface dark:bg-surface-dark">
-      {children}
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <Spinner size="lg" />
+          </div>
+        }
+      >
+        {children}
+      </Suspense>
     </div>
   );
 }

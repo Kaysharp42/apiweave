@@ -55,7 +55,10 @@ export function TutorialCodeBlock({
           )}
         </IconButton>
       </figcaption>
-      <pre className="max-w-full overflow-x-auto rounded-xs border border-border bg-surface-overlay p-3 text-xs leading-relaxed dark:border-border-dark dark:bg-surface-dark-overlay">
+      <pre
+        tabIndex={0}
+        className="max-w-full overflow-x-auto rounded-xs border border-border bg-surface-overlay p-3 text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+      >
         <code className="font-mono text-text-primary dark:text-text-primary-dark">
           {example.code}
         </code>

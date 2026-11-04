@@ -165,6 +165,10 @@ export function useTemplateAutocomplete<
       onSelect: (event: SyntheticEvent<E>) => syncToken(event.currentTarget),
       onBlur: () => setToken(null),
       onKeyDown,
+      // The suggestion list makes this a combobox. aria-expanded and
+      // aria-activedescendant are only valid on that role; without it the
+      // browser exposes a plain textbox and ARIA rejects the attributes.
+      role: "combobox",
       "aria-autocomplete": "list",
       "aria-expanded": isOpen,
       "aria-controls": isOpen ? listId : undefined,

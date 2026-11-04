@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -17,9 +19,14 @@ import { Button } from "../atoms/Button";
 import { Tooltip } from "../atoms/Tooltip";
 import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { CreateWorkspaceModal } from "./CreateWorkspaceModal";
-import { OpenWorkspaceFromGitModal } from "./OpenWorkspaceFromGitModal";
 import { describeGitSync, GIT_SYNC_INTENT_TEXT } from "../../utils/gitSync";
 import type { Workspace, WorkspaceItemProps } from "../../types";
+
+const OpenWorkspaceFromGitModal = lazy(() =>
+  import("./OpenWorkspaceFromGitModal").then((module) => ({
+    default: module.OpenWorkspaceFromGitModal,
+  })),
+);
 
 /**
  * The current workspace's name and source. Split out of the switcher button so
@@ -37,8 +44,8 @@ function WorkspaceSwitcherLabel({
     <span className="min-w-0 flex-1">
       <span className="flex items-center gap-1 text-xs font-medium text-text-primary dark:text-text-primary-dark">
         <span className="truncate">{label}</span>
-      </span>
-      <span className="block truncate text-xxs text-text-muted dark:text-text-muted-dark">
+      </span>{" "}
+      <span className="block truncate text-xxs text-text-secondary dark:text-text-secondary-dark">
         {source}
       </span>
     </span>
@@ -128,7 +135,7 @@ export function OrgWorkspaceSwitcher() {
                     ? "border-primary/40 bg-primary/5 dark:border-primary-light/40 dark:bg-primary-light/5"
                     : "border-border bg-surface hover:border-border hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark dark:hover:bg-surface-dark-overlay",
                 ].join(" ")}
-                aria-label="Switch workspace"
+                aria-label={`Switch workspace: ${displayLabel}, ${displaySource}`}
                 aria-haspopup="listbox"
               >
                 <span
@@ -241,10 +248,14 @@ export function OrgWorkspaceSwitcher() {
         onCreated={handleWorkspaceCreated}
       />
 
-      <OpenWorkspaceFromGitModal
-        isOpen={openFromGitOpen}
-        onClose={() => setOpenFromGitOpen(false)}
-      />
+      {openFromGitOpen && (
+        <Suspense fallback={null}>
+          <OpenWorkspaceFromGitModal
+            isOpen
+            onClose={() => setOpenFromGitOpen(false)}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
