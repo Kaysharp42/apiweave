@@ -1,6 +1,6 @@
 # Reference
 
-*Lookup pages for the moving parts of APIWeave: architecture, placeholder syntax, dynamic functions, environment variables, and the typed IPC surface. Use these docs to find a name, a default, or a channel, not to learn a workflow.*
+*Lookup pages for the moving parts of APIWeave: architecture, placeholder syntax, dynamic functions, environment variables, releases, compatibility, known limitations, and the typed IPC surface. Use these docs to find a name, a default, or a channel, not to learn a workflow.*
 
 ## Prerequisites
 
