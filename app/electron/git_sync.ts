@@ -87,6 +87,9 @@ function commitRequestOf(value: unknown): WorkspaceGitCommitRequest {
 
 const RemoteUrlSchema = z.string().min(1, "a remote URL is required").max(2048, "a remote URL is at most 2048 characters")
 
+/** A branch name; git's own ref rules are checked by the service, and this bounds the string before it gets there. */
+const BranchSchema = z.string().min(1, "a branch name is required").max(255, "a branch name is at most 255 characters")
+
 /** The account a remote is reached as, or null (or nothing) for the user's own credentials. */
 const AccountSchema = GitAccountRefSchema.nullable()
 
@@ -219,8 +222,13 @@ export function registerGitHandlers(
   )
   ipcMain.handle(
     GIT_CHANNELS.connectRemote,
-    guard((workspaceId: unknown, url: unknown, account: unknown) =>
-      gitSync.connectRemote(workspaceIdOf(workspaceId), RemoteUrlSchema.parse(url), accountOf(account)),
+    guard((workspaceId: unknown, url: unknown, account: unknown, branch: unknown) =>
+      gitSync.connectRemote(
+        workspaceIdOf(workspaceId),
+        RemoteUrlSchema.parse(url),
+        accountOf(account),
+        branch === undefined || branch === null ? undefined : BranchSchema.parse(branch),
+      ),
     ),
   )
   ipcMain.handle(
@@ -229,7 +237,24 @@ export function registerGitHandlers(
   )
   ipcMain.handle(
     GIT_CHANNELS.openFromGit,
-    guard((url: unknown, account: unknown) => gitSync.openFromGit(RemoteUrlSchema.parse(url), accountOf(account))),
+    guard((url: unknown, account: unknown, branch: unknown) =>
+      gitSync.openFromGit(
+        RemoteUrlSchema.parse(url),
+        accountOf(account),
+        branch === undefined || branch === null ? undefined : BranchSchema.parse(branch),
+      ),
+    ),
+  )
+  ipcMain.handle(
+    GIT_CHANNELS.listRemoteBranches,
+    guard((url: unknown, account: unknown) =>
+      gitSync.listRemoteBranches(RemoteUrlSchema.parse(url), accountOf(account)),
+    ),
+  )
+  handleWorkspace(GIT_CHANNELS.listBranches, (workspaceId) => gitSync.listBranches(workspaceId))
+  ipcMain.handle(
+    GIT_CHANNELS.switchBranch,
+    guard((workspaceId: unknown, branch: unknown) => gitSync.switchBranch(workspaceIdOf(workspaceId), BranchSchema.parse(branch))),
   )
   ipcMain.handle(GIT_CHANNELS.listAccounts, guard(() => hostCli.listAccounts()))
   const signIns = new GitSignIns(hostCli, signInPorts)

@@ -13,6 +13,27 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Base environments sync with a workspace's git repository.** An environment's
+  base environment is written as its id in the environment file, validated on
+  read (same workspace, no cycle, at most eight environments in a chain), and
+  imported in two passes so a child may name a base that appears later in the
+  snapshot. An environment whose base leaves the repository is cleared. The
+  workspace format is now version 2; version 1 is still read, with every
+  environment extending none, and a newer version is refused with an update
+  message.
+- **Node presets sync too.** A workspace's repository now holds
+  `presets/<slug>--<id>.json` with the preset's stable id, name, node type and
+  config. The config is sanitized like a node's (`{{secrets.NAME}}` references
+  stay references), and no revision or timestamps are written. Deleting a preset
+  file removes the preset locally; a preset only in the repository is created
+  locally.
+- **Choose the branch to track, and switch it later.** Connecting a remote and
+  opening a workspace from git each offer the remote's branches with **Choose
+  branch…**, and Version history has **Switch branch…**. A switch is refused
+  while the current branch has commits the remote does not, while a merge waits,
+  or when the target branch already exists locally with unpushed commits, so
+  nothing is silently discarded; a successful switch imports the target branch's
+  tree in one transaction.
 - **A standalone CLI package.** Every release now attaches `apiweave-cli.tgz`,
   so a CI pipeline can install the headless runner with
   `npm install -g ./apiweave-cli.tgz` instead of cloning this repository and

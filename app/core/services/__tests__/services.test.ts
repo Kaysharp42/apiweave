@@ -249,6 +249,19 @@ describe("EnvironmentService — base environment inheritance", () => {
       token: "t",
     })
   })
+
+  it("caps the base chain at eight environments, the depth a run resolves", async () => {
+    const ws = seedWorkspace("a")
+    const service = new EnvironmentService(environments, scopeResolver)
+    let base = await service.create(ws, { name: "env 1" })
+    for (let depth = 2; depth <= 8; depth += 1) {
+      base = await service.create(ws, { name: `env ${depth}`, baseEnvironmentId: base.environmentId })
+    }
+
+    await expect(
+      service.create(ws, { name: "env 9", baseEnvironmentId: base.environmentId }),
+    ).rejects.toMatchObject({ code: "validation", message: expect.stringContaining("at most 8 environments") })
+  })
 })
 
 describe("NodePresetService — workspace-scoped preset library", () => {

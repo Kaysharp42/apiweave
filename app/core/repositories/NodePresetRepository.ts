@@ -5,7 +5,7 @@ import { generateId } from "../id"
 import { canonicalizeNodeConfig, mustExist, parseJson, toJson } from "./helpers"
 
 export type NodePresetCreate = Pick<NodePreset, "workspaceId" | "name" | "nodeType"> &
-  Partial<Pick<NodePreset, "config">>
+  Partial<Pick<NodePreset, "presetId" | "config">>
 
 export type NodePresetUpdate = Partial<Pick<NodePreset, "name" | "nodeType" | "config">>
 
@@ -26,7 +26,7 @@ export class NodePresetRepository {
   public constructor(private readonly store: KVStore) {}
 
   public create(input: NodePresetCreate): NodePreset {
-    const id = generateId()
+    const id = input.presetId ?? generateId()
     this.store.set(
       "INSERT INTO node_presets (id, workspace_id, name, node_type, config_json) VALUES (?, ?, ?, ?, ?)",
       [id, input.workspaceId, input.name, input.nodeType, toJson(canonicalConfig(input.nodeType, input.config ?? {}))],

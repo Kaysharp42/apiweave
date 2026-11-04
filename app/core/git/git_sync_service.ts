@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
+import type { GitBranchList } from "@shared/types/GitBranchList"
 import type { GitErrorCode } from "@shared/types/GitErrorCode"
 import type { GitIdentity } from "@shared/types/GitIdentity"
 import type { GitMergeConflict } from "@shared/types/GitMergeConflict"
@@ -30,6 +31,7 @@ import { getLogger } from "../logging/logger"
 import type {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   WorkflowRepository,
   WorkspaceGitBinding,
   WorkspaceGitRepository,
@@ -45,7 +47,7 @@ import {
 } from "../services/workspace_repo_format"
 import { WorkspaceRepoImporter } from "../services/workspace_repo_import"
 import { uniqueWorkspaceSlug } from "../services/workspace_service"
-import { assertWorkspaceRemoteUrl } from "./git_arguments"
+import { assertRefName, assertWorkspaceRemoteUrl } from "./git_arguments"
 import {
   GitAccountUnavailableError,
   GitError,
@@ -188,6 +190,13 @@ const OPEN_MARKER = "apiweave-open"
 const DISPOSING_MESSAGE = "APIWeave is closing, so the workspace was not opened. Open it again after the next start."
 
 const NO_BRANCH_MESSAGE = "The repository has no branch checked out."
+const NOT_CONNECTED_BRANCH_MESSAGE = "Connect a remote before choosing a branch."
+const MERGE_BRANCH_MESSAGE = "This workspace is merging the remote's changes. Resolve or abandon the merge before switching branches."
+const NO_REMOTE_BRANCH_MESSAGE_SWITCH = "The remote has no branch with that name. Refresh the list and choose one it has."
+const UNPUSHED_BRANCH_MESSAGE = (branch: string, count: number): string =>
+  `This branch has ${count} commit${count === 1 ? "" : "s"} that ${branch} on the remote does not. Push or discard them before switching branches; nothing was switched.`
+const UNPUSHED_LOCAL_BRANCH_MESSAGE = (branch: string, count: number): string =>
+  `The branch ${branch} already exists on this device with ${count} commit${count === 1 ? "" : "s"} the remote does not have. Push or discard them before switching to it; nothing was switched.`
 const DEFAULT_BRANCH_EMPTY_MESSAGE =
   "That repository has branches, but its default branch has nothing to check out, and only the default branch is opened. " +
   "Set the repository's default branch to the one that holds the workspace."
@@ -225,6 +234,9 @@ export type GitSyncGit = Pick<
   | "countAheadBehind"
   | "countCommits"
   | "firstRemoteRef"
+  | "listRemoteHeads"
+  | "remoteBranches"
+  | "checkout"
 >
 
 export interface GitSyncRepositories {
@@ -232,6 +244,7 @@ export interface GitSyncRepositories {
   readonly collections: CollectionRepository
   readonly workflows: WorkflowRepository
   readonly environments: EnvironmentRepository
+  readonly presets: NodePresetRepository
   readonly workspaceGit: WorkspaceGitRepository
 }
 
@@ -487,33 +500,56 @@ export class GitSyncService {
    * fetch on (see {@link credentialFor}); it must be an account on the
    * remote's host. Without one, the user's own credential helpers and SSH
    * keys answer, as they always have.
+   *
+   * `branch` names the remote branch to track; absent, it is the branch the
+   * workspace's history is on. Choosing another puts the local history on a
+   * branch of that name (keeping every commit) before the join, so a repository
+   * with no branches receives this history there and a refusal leaves the local
+   * branch as it was.
    */
-  public async connectRemote(workspaceId: string, url: string, account: GitAccountRef | null = null): Promise<WorkspaceGitStatus> {
+  public async connectRemote(
+    workspaceId: string,
+    url: string,
+    account: GitAccountRef | null = null,
+    branch?: string,
+  ): Promise<WorkspaceGitStatus> {
     const directory = this.cloneDir(workspaceId)
     return this.exclusive(workspaceId, async () => {
       const binding = this.trackedBinding(workspaceId)
       if (binding.remoteUrl !== null) throw new ConflictError(ALREADY_CONNECTED_MESSAGE)
       const remoteUrl = assertWorkspaceRemoteUrl(url)
       assertAccountFitsRemote(remoteUrl, account)
+      const targetBranch = branch ?? binding.branch
+      assertRefName(targetBranch)
       // A clone an earlier remote's fast-forward left moved holds commits the database does not: never push those.
       await this.returnToDatabase(workspaceId, directory)
       // A workspace tracked without an author has no commit yet: nothing to push or compare.
-      if ((await this.git.revParse(directory, "HEAD")) === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
+      const head = await this.git.revParse(directory, "HEAD")
+      if (head === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
       await this.removeOrigin(directory)
+      const switched = targetBranch !== binding.branch
+      if (switched) await this.switchLocalBranch(directory, targetBranch, head)
       await this.git.remoteAdd(directory, ORIGIN, remoteUrl)
       let theirCommit: string | null
       try {
-        theirCommit = await this.joinRemote(workspaceId, directory, binding.branch, account)
+        theirCommit = await this.joinRemote(workspaceId, directory, targetBranch, account)
       } catch (error) {
         await this.git.remoteRemove(directory, ORIGIN).catch((rollbackError: unknown) => {
           log.warn(`could not remove the remote a failed connect added for workspace ${workspaceId}`, rollbackError)
         })
+        if (switched) await this.rollBackBranch(workspaceId, directory, binding.branch, head)
         throw error
       }
-      this.repositories.workspaceGit.setRemote(workspaceId, remoteUrl, binding.branch, account)
+      this.repositories.workspaceGit.setRemote(workspaceId, remoteUrl, targetBranch, account)
       if (theirCommit !== null) await this.startTwoWayMerge(workspaceId, directory, theirCommit)
       return this.announce(workspaceId)
     })
+  }
+
+  /** Put the clone on `branch`, at its own tip when it already has one there and at `head` otherwise. */
+  private async switchLocalBranch(directory: string, branch: string, head: string): Promise<void> {
+    const existing = await this.git.revParse(directory, `refs/heads/${branch}`)
+    await this.git.checkout(directory, branch, existing ?? head)
   }
 
   /**
@@ -531,6 +567,113 @@ export class GitSyncService {
       this.repositories.workspaceGit.setAccount(workspaceId, account)
       return this.announce(workspaceId)
     })
+  }
+
+  /**
+   * The branches the repository at `url` has, and the one its HEAD names.
+   * Asked of the remote, so a branch can be chosen before the first clone.
+   * An `account` reaches it as that account, as a clone would.
+   */
+  public async listRemoteBranches(url: string, account: GitAccountRef | null = null): Promise<GitBranchList> {
+    const remoteUrl = assertWorkspaceRemoteUrl(url)
+    assertAccountFitsRemote(remoteUrl, account)
+    await mkdir(this.options.cloneRoot, { recursive: true })
+    const credential = await this.credentialFor(account, async () => [await this.git.resolvedUrl(remoteUrl, this.options.cloneRoot)])
+    return this.git.listRemoteHeads(remoteUrl, { credential })
+  }
+
+  /**
+   * The branches this workspace can switch to: the remote's, as the last fetch
+   * saw them, refreshed now. Rejects for an untracked or unconnected workspace.
+   *
+   * Nothing is committed or switched; the fetch only updates
+   * `refs/remotes/origin/*`. A refused fetch is the caller's error to show.
+   */
+  public async listBranches(workspaceId: string): Promise<GitBranchList> {
+    const directory = this.cloneDir(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.trackedBinding(workspaceId)
+      if (binding.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
+      await this.prepareClone(workspaceId, directory, binding.branch, {})
+      await this.pointOriginAt(directory, binding.remoteUrl)
+      await this.fetchOrigin(workspaceId, directory)
+      return { branches: await this.git.remoteBranches(directory, ORIGIN), defaultBranch: null }
+    })
+  }
+
+  /**
+   * Move the workspace onto another branch of its remote. Nothing is lost:
+   * local edits are committed first, and the switch is refused while this
+   * branch has commits the remote does not, while a merge waits, or when the
+   * target does not hold this same workspace. With none of those, the clone
+   * checks out the target, its tree is imported in one transaction, and the
+   * binding records the branch and the commit the two now agree on.
+   *
+   * A failed import puts the clone back on the branch and commit it was on, so
+   * the next cycle cannot push one branch's tree onto another.
+   */
+  public async switchBranch(workspaceId: string, branch: string): Promise<WorkspaceGitStatus> {
+    const directory = this.cloneDir(workspaceId)
+    this.cancelAutoCommit(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.trackedBinding(workspaceId)
+      if (binding.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
+      if (binding.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
+      if (branch === binding.branch) return this.announce(workspaceId)
+      // Commit local edits first: they belong to the branch being left, and the
+      // refusal below names them if they are not pushed yet.
+      await this.commitCycle(workspaceId, directory)
+      const current = this.trackedBinding(workspaceId)
+      if (current.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
+      if (current.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
+      await this.prepareClone(workspaceId, directory, current.branch, {})
+      await this.pointOriginAt(directory, current.remoteUrl)
+      await this.fetchOrigin(workspaceId, directory)
+      const branches = await this.git.remoteBranches(directory, ORIGIN)
+      if (!branches.includes(branch)) throw new ConflictError(NO_REMOTE_BRANCH_MESSAGE_SWITCH)
+      const target = `${ORIGIN}/${branch}`
+      const head = await this.git.revParse(directory, "HEAD")
+      if (head === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
+      const currentRemote = `${ORIGIN}/${current.branch}`
+      if ((await this.git.revParse(directory, currentRemote)) === undefined) {
+        throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(current.branch, await this.git.countCommits(directory, "HEAD")))
+      }
+      const { ahead } = await this.git.countAheadBehind(directory, "HEAD", currentRemote)
+      if (ahead > 0) throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(current.branch, ahead))
+      // A local branch of the target's name may hold commits of its own; never reset it over them.
+      const localTarget = await this.git.revParse(directory, `refs/heads/${branch}`)
+      if (localTarget !== undefined) {
+        const targetAhead = await this.git.countAheadBehind(directory, localTarget, target)
+        if (targetAhead.ahead > 0) throw new ConflictError(UNPUSHED_LOCAL_BRANCH_MESSAGE(branch, targetAhead.ahead))
+      }
+      await this.assertSameWorkspaceAt(workspaceId, directory, target)
+      this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
+      try {
+        await this.git.checkout(directory, branch, target, { track: true })
+        if (!(await this.importRemoteTree(workspaceId, directory, false, branch))) {
+          throw new ConflictError("The branch's tree changed while it was being imported. Try the switch again.")
+        }
+        const targetSha = await this.git.revParse(directory, "HEAD")
+        if (targetSha !== undefined) this.recordSynced(workspaceId, targetSha)
+      } catch (error) {
+        await this.rollBackBranch(workspaceId, directory, current.branch, head)
+        throw error
+      }
+      this.settleIdle(workspaceId)
+      return this.announce(workspaceId)
+    })
+  }
+
+  /** The clone and the binding back on the branch a failed switch was leaving; a failure here is logged, not thrown over it. */
+  private async rollBackBranch(workspaceId: string, directory: string, branch: string, head: string): Promise<void> {
+    try {
+      await this.git.checkout(directory, branch, head)
+      await this.git.resetHard(directory, head)
+      await this.git.clean(directory, ["."])
+      this.repositories.workspaceGit.setIntegratingFrom(workspaceId, null)
+    } catch (error) {
+      log.warn(`could not move the clone of workspace ${workspaceId} back to ${branch} after a failed switch`, error)
+    }
   }
 
   /**
@@ -587,8 +730,8 @@ export class GitSyncService {
    * With an `account`, the clone and every later sync reach the remote as
    * that account, as {@link connectRemote}'s does.
    */
-  public openFromGit(url: string, account: GitAccountRef | null = null): Promise<OpenWorkspaceFromGitResult> {
-    return this.inOpenQueue(() => this.openNow(url, account))
+  public openFromGit(url: string, account: GitAccountRef | null = null, branch?: string): Promise<OpenWorkspaceFromGitResult> {
+    return this.inOpenQueue(() => this.openNow(url, account, branch))
   }
 
   public async setMode(workspaceId: string, mode: WorkspaceGitMode): Promise<WorkspaceGitStatus> {
@@ -1203,14 +1346,15 @@ export class GitSyncService {
     return result
   }
 
-  private async openNow(url: string, account: GitAccountRef | null): Promise<OpenWorkspaceFromGitResult> {
+  private async openNow(url: string, account: GitAccountRef | null, branch: string | undefined): Promise<OpenWorkspaceFromGitResult> {
     const remoteUrl = assertWorkspaceRemoteUrl(url)
     assertAccountFitsRemote(remoteUrl, account)
+    if (branch !== undefined) assertRefName(branch)
     // The scratch clone lives under the clone root so that moving it into place stays on one volume.
     await mkdir(this.options.cloneRoot, { recursive: true })
     const scratch = path.join(this.options.cloneRoot, `${OPEN_SCRATCH_PREFIX}${randomUUID()}`)
     try {
-      return await this.openFromScratch(remoteUrl, account, scratch)
+      return await this.openFromScratch(remoteUrl, account, scratch, branch)
     } finally {
       // Gone already when the clone was moved into place. A scratch clone that
       // will not go is the startup sweep's, and must not hide how the open ended.
@@ -1220,10 +1364,10 @@ export class GitSyncService {
     }
   }
 
-  private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string): Promise<OpenWorkspaceFromGitResult> {
-    const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
+  private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string, branch: string | undefined): Promise<OpenWorkspaceFromGitResult> {
+    const { workspaces, collections, workflows, environments, presets, workspaceGit } = this.repositories
     const credential = await this.credentialFor(account, async () => [await this.git.resolvedUrl(remoteUrl, this.options.cloneRoot)])
-    await this.git.clone(remoteUrl, scratch, { credential })
+    await this.git.clone(remoteUrl, scratch, { credential, ...(branch === undefined ? {} : { branch }) })
     this.assertNotDisposed()
     await this.assertCheckedOut(scratch)
     const snapshot = parseWorkspace(await readWorkspaceTree(scratch))
@@ -1232,8 +1376,8 @@ export class GitSyncService {
     if (existing !== undefined) return { kind: "duplicate", workspaceId, slug: existing.slug, name: existing.name }
     this.assertNoCaseVariantWorkspace(workspaceId)
     // The binding needs a branch to name, and a detached HEAD has none.
-    const branch = (await this.git.status(scratch)).branch
-    if (branch === undefined) throw new ValidationError(NO_BRANCH_MESSAGE)
+    const checkedOut = (await this.git.status(scratch)).branch
+    if (checkedOut === undefined) throw new ValidationError(NO_BRANCH_MESSAGE)
     const head = await this.git.revParse(scratch, "HEAD")
 
     const directory = this.cloneDir(workspaceId)
@@ -1268,9 +1412,9 @@ export class GitSyncService {
       this.assertNotDisposed()
       workspaces.transaction(() => {
         workspaces.create({ workspaceId, name, description: snapshot.workspace.description, slug, isPersonal: false })
-        warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+        warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets).apply(workspaceId, snapshot)
         workspaceGit.insert(workspaceId, "auto")
-        workspaceGit.setRemote(workspaceId, remoteUrl, branch, account)
+        workspaceGit.setRemote(workspaceId, remoteUrl, checkedOut, account)
         // The database and the clone hold exactly the remote's tip.
         if (head !== undefined) workspaceGit.recordSynced(workspaceId, head, new Date().toISOString())
       })
@@ -2172,13 +2316,15 @@ export class GitSyncService {
    * The transaction also clears `integratingFrom`: the database and the clone
    * agree again at the same instant the import commits.
    */
-  private async importRemoteTree(workspaceId: string, directory: string, unlessWritten = false): Promise<boolean> {
+  private async importRemoteTree(workspaceId: string, directory: string, unlessWritten = false, branch?: string): Promise<boolean> {
     const snapshot = parseWorkspace(await readWorkspaceTree(directory))
     if (unlessWritten && this.uncommittedWrites(workspaceId)) return false
-    const { workspaces, collections, workflows, environments, workspaceGit } = this.repositories
+    const { workspaces, collections, workflows, environments, presets, workspaceGit } = this.repositories
     const warnings = workspaces.transaction(() => {
-      const applied = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+      const applied = new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets).apply(workspaceId, snapshot)
       workspaceGit.setIntegratingFrom(workspaceId, null)
+      // A switch moves the binding in the same transaction as the tree it imported.
+      if (branch !== undefined) workspaceGit.setBranch(workspaceId, branch)
       // Any import lands the tree the merge was waiting on (or a discard's):
       // whatever a merge row said about conflicts no longer has a subject.
       workspaceGit.clearMerge(workspaceId)
@@ -2270,7 +2416,7 @@ export class GitSyncService {
   }
 
   private records(workspaceId: string): WorkspaceRecords {
-    const { workspaces, collections, workflows, environments } = this.repositories
+    const { workspaces, collections, workflows, environments, presets } = this.repositories
     const workspace = workspaces.getById(workspaceId)
     if (workspace === undefined) throw new NotFoundError(`workspace ${workspaceId} not found`)
     return {
@@ -2278,6 +2424,7 @@ export class GitSyncService {
       projects: collections.listByWorkspace(workspaceId).items,
       workflows: workflows.listByWorkspace(workspaceId, true).items,
       environments: environments.listByWorkspace(workspaceId).items,
+      presets: presets.listByWorkspace(workspaceId).items,
     }
   }
 

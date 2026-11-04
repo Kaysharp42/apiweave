@@ -42,6 +42,7 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitAccountList } from "@shared/types/GitAccountList";
+import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest";
@@ -1302,9 +1303,15 @@ export const git = {
     workspaceId: string,
     url: string,
     account: GitAccountRef | null = null,
-  ): Promise<WorkspaceGitStatus> =>
-    getGitBridge()?.connectRemote(workspaceId, url, account).catch(unwrapRemoteError) ??
-    gitDesktopOnly(),
+    branch?: string,
+  ): Promise<WorkspaceGitStatus> => {
+    const bridge = getGitBridge();
+    if (bridge === undefined) return gitDesktopOnly();
+    return (branch === undefined
+      ? bridge.connectRemote(workspaceId, url, account)
+      : bridge.connectRemote(workspaceId, url, account, branch)
+    ).catch(unwrapRemoteError);
+  },
   setAccount: (
     workspaceId: string,
     account: GitAccountRef | null,
@@ -1320,8 +1327,29 @@ export const git = {
   openFromGit: (
     url: string,
     account: GitAccountRef | null = null,
-  ): Promise<OpenWorkspaceFromGitResult> =>
-    getGitBridge()?.openFromGit(url, account).catch(unwrapRemoteError) ??
+    branch?: string,
+  ): Promise<OpenWorkspaceFromGitResult> => {
+    const bridge = getGitBridge();
+    if (bridge === undefined) return gitDesktopOnly();
+    return (branch === undefined
+      ? bridge.openFromGit(url, account)
+      : bridge.openFromGit(url, account, branch)
+    ).catch(unwrapRemoteError);
+  },
+  listRemoteBranches: (
+    url: string,
+    account: GitAccountRef | null = null,
+  ): Promise<GitBranchList> =>
+    getGitBridge()?.listRemoteBranches(url, account).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  listBranches: (workspaceId: string): Promise<GitBranchList> =>
+    getGitBridge()?.listBranches(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  switchBranch: (
+    workspaceId: string,
+    branch: string,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.switchBranch(workspaceId, branch).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   listAccounts: (): Promise<GitAccountList> =>
     getGitBridge()?.listAccounts().catch(unwrapRemoteError) ??

@@ -127,6 +127,11 @@ export class WorkspaceGitRepository {
     return this.store.set("UPDATE workspace_git SET mode = ? WHERE workspace_id = ?", [mode, workspaceId]).changes > 0
   }
 
+  /** The branch the clone and the remote are tracked on, after a switch that has already moved the clone. */
+  public setBranch(workspaceId: string, branch: string): boolean {
+    return this.store.set("UPDATE workspace_git SET branch = ? WHERE workspace_id = ?", [branch, workspaceId]).changes > 0
+  }
+
   /** Whether the host refuses this user's pushes. Not part of {@link CLEAR_SYNC_RECORD}: a push sets and clears it, not a change of remote. */
   public setReadOnly(workspaceId: string, readOnly: boolean): boolean {
     return this.store.set("UPDATE workspace_git SET read_only = ? WHERE workspace_id = ?", [readOnly ? 1 : 0, workspaceId]).changes > 0

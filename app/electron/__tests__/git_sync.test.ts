@@ -63,20 +63,35 @@ describe("the account a remote is reached as", () => {
     const connectRemote = vi.fn(async () => ({}))
     const setAccount = vi.fn(async () => ({}))
     const openFromGit = vi.fn(async () => ({}))
-    const handlers = handlersOf({ connectRemote, setAccount, openFromGit } as unknown as GitSyncService)
+    const listRemoteBranches = vi.fn(async () => ({ branches: [], defaultBranch: null }))
+    const listBranches = vi.fn(async () => ({ branches: [], defaultBranch: null }))
+    const switchBranch = vi.fn(async () => ({}))
+    const handlers = handlersOf({ connectRemote, setAccount, openFromGit, listRemoteBranches, listBranches, switchBranch } as unknown as GitSyncService)
     const call = (channel: string, ...args: unknown[]): unknown => handlers.get(channel)?.({} as IpcMainInvokeEvent, ...args)
 
     await call(GIT_CHANNELS.connectRemote, "ws-1", URL, ACCOUNT)
     await call(GIT_CHANNELS.connectRemote, "ws-1", URL)
     await call(GIT_CHANNELS.setAccount, "ws-1", null)
     await call(GIT_CHANNELS.openFromGit, URL, ACCOUNT)
+    await call(GIT_CHANNELS.openFromGit, URL, ACCOUNT, "feature")
+    await call(GIT_CHANNELS.listRemoteBranches, URL, ACCOUNT)
+    await call(GIT_CHANNELS.listBranches, "ws-1")
+    await call(GIT_CHANNELS.switchBranch, "ws-1", "feature")
+    await call(GIT_CHANNELS.connectRemote, "ws-1", URL, ACCOUNT, "feature")
 
     expect(connectRemote.mock.calls).toEqual([
-      ["ws-1", URL, ACCOUNT],
-      ["ws-1", URL, null],
+      ["ws-1", URL, ACCOUNT, undefined],
+      ["ws-1", URL, null, undefined],
+      ["ws-1", URL, ACCOUNT, "feature"],
     ])
     expect(setAccount).toHaveBeenCalledWith("ws-1", null)
-    expect(openFromGit).toHaveBeenCalledWith(URL, ACCOUNT)
+    expect(openFromGit.mock.calls).toEqual([
+      [URL, ACCOUNT, undefined],
+      [URL, ACCOUNT, "feature"],
+    ])
+    expect(listRemoteBranches).toHaveBeenCalledWith(URL, ACCOUNT)
+    expect(listBranches).toHaveBeenCalledWith("ws-1")
+    expect(switchBranch).toHaveBeenCalledWith("ws-1", "feature")
   })
 
   it.each([

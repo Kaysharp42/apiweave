@@ -8,6 +8,7 @@ import type { WorkspacePendingChangeKind } from "../types/WorkspacePendingChange
 import {
   ATTRIBUTES_FILE,
   ATTRIBUTES_TEXT,
+  EnvironmentFileV1Schema,
   FORMAT_FILE,
   FormatFileSchema,
   RECORD_FOLDER,
@@ -52,16 +53,17 @@ export class GitMergeInputError extends Error {
   }
 }
 
-const RECORD_KINDS: readonly WorkspacePendingChangeKind[] = ["workspace", "project", "workflow", "environment"]
+const RECORD_KINDS: readonly WorkspacePendingChangeKind[] = ["workspace", "project", "workflow", "environment", "preset"]
 const CONFLICT_ORDER: readonly GitMergeConflict["kind"][] = [...RECORD_KINDS, "file"]
 
 /** Which copy of the tree is being read: the common ancestor, or one of the two copies. */
 type CopyName = "base" | GitMergeSide
 
-/** One copy of the tree, read: its records by kind and id, and the files the format does not own. */
+/** One copy of the tree, read: its records by kind and id, the files the format does not own, and the format version it was written at. */
 interface TreeCopy {
   readonly records: ReadonlyMap<WorkspacePendingChangeKind, Map<string, RecordDocument>>
   readonly others: Map<string, string>
+  readonly version: 1 | 2
 }
 
 /**
@@ -211,7 +213,11 @@ type Reads = Map<string, { readonly text: string; readonly record: RecordDocumen
 
 /** One copy of the tree, every file read. Your copy and the remote's must read whole; see {@link mergeTree}. */
 function readCopy(files: ReadonlyMap<string, string>, copy: CopyName, reads: Reads): TreeCopy {
-  const tree: TreeCopy = { records: new Map(RECORD_KINDS.map((kind) => [kind, new Map<string, RecordDocument>()])), others: new Map() }
+  const tree: TreeCopy = {
+    records: new Map(RECORD_KINDS.map((kind) => [kind, new Map<string, RecordDocument>()])),
+    others: new Map(),
+    version: readFormatVersion(files, copy),
+  }
   const doubled = new Set<string>()
   for (const path of [...files.keys()].sort(compare)) readPath(tree, copy, path, files.get(path)!, doubled, reads)
   if (copy === "base") return tree
@@ -224,17 +230,33 @@ function readCopy(files: ReadonlyMap<string, string>, copy: CopyName, reads: Rea
 function readPath(tree: TreeCopy, copy: CopyName, path: string, text: string, doubled: Set<string>, reads: Reads): void {
   if (!isTreePath(path)) return refuse(copy, path, "is not a path a repository may hold: it leaves the tree or names git's own .git folder")
   if (path === ATTRIBUTES_FILE) return
-  if (path === FORMAT_FILE) return readFormat(copy, path, text)
+  if (path === FORMAT_FILE) return
   const kind = path === WORKSPACE_FILE ? "workspace" : folderKind(path)
   if (kind === undefined) tree.others.set(path, text)
   else readRecordFile(tree, copy, kind, path, text, doubled, reads)
 }
 
-function readFormat(copy: CopyName, path: string, text: string): void {
+/**
+ * The version a copy's `format.json` names. Your copy and the remote's must
+ * hold a readable one; an ancestor's absent or unreadable file is simply no
+ * ancestor to read, and the current version is assumed for its environment
+ * files (a version-1 file still reads through the fallback in `recordInFile`).
+ */
+function readFormatVersion(files: ReadonlyMap<string, string>, copy: CopyName): 1 | 2 {
+  const text = files.get(FORMAT_FILE)
+  if (text === undefined) {
+    if (copy === "base") return WORKSPACE_FORMAT_VERSION
+    throw new GitMergeInputError(copy, FORMAT_FILE, "is missing: this is not an APIWeave workspace repository")
+  }
   const value = parseJson(text)
-  if (value === undefined) return refuse(copy, path, NOT_JSON)
-  const parsed = FormatFileSchema.safeParse(value)
-  if (!parsed.success) refuse(copy, path, `cannot be read: ${issueText(parsed.error)}`)
+  const parsed = value === undefined ? undefined : FormatFileSchema.safeParse(value)
+  if (parsed !== undefined && parsed.success) return parsed.data.version === 1 ? 1 : WORKSPACE_FORMAT_VERSION
+  if (copy === "base") return WORKSPACE_FORMAT_VERSION
+  throw new GitMergeInputError(
+    copy,
+    FORMAT_FILE,
+    `cannot be read: ${parsed === undefined ? NOT_JSON : issueText(parsed.error)}`,
+  )
 }
 
 const NOT_JSON = "is not valid JSON (an unresolved merge conflict?)"
@@ -242,12 +264,12 @@ const NOT_JSON = "is not valid JSON (an unresolved merge conflict?)"
 /** The kind of record a file under a record folder holds; undefined for a path outside them. */
 function folderKind(path: string): WorkspacePendingChangeKind | undefined {
   const folder = path.split("/")[0]
-  return (["project", "workflow", "environment"] as const).find((kind) => RECORD_FOLDER[kind] === folder)
+  return (["project", "workflow", "environment", "preset"] as const).find((kind) => RECORD_FOLDER[kind] === folder)
 }
 
 function readRecordFile(tree: TreeCopy, copy: CopyName, kind: WorkspacePendingChangeKind, path: string, text: string, doubled: Set<string>, reads: Reads): void {
   const known = reads.get(path)
-  const record = known !== undefined && known.text === text ? known.record : recordInFile(kind, path, text)
+  const record = known !== undefined && known.text === text ? known.record : recordInFile(kind, path, text, tree.version)
   if (known === undefined) reads.set(path, { text, record })
   if (typeof record === "string") return refuse(copy, path, record)
   const id = recordIdOf(kind, record)
@@ -265,18 +287,24 @@ function readRecordFile(tree: TreeCopy, copy: CopyName, kind: WorkspacePendingCh
 }
 
 /** The record a file holds — directly in its folder, schema-valid, named `<slug>--<id>.json` after its id — or what is wrong with the file. */
-function recordInFile(kind: WorkspacePendingChangeKind, path: string, text: string): RecordDocument | string {
+function recordInFile(kind: WorkspacePendingChangeKind, path: string, text: string, version: 1 | 2): RecordDocument | string {
   const folder = kind === "workspace" ? undefined : `${RECORD_FOLDER[kind]}/`
   if (folder !== undefined && !/^[^/]+\.json$/.test(path.slice(folder.length))) return `is not a <name>--<id>.json file directly inside ${folder}`
   const value = parseJson(text)
   if (value === undefined) return NOT_JSON
   const secret = secretStorageIn(value)
   if (secret !== undefined) return secret
-  const read = readRecord(kind, value)
+  const read = kind === "environment" && version === 1 ? readLegacyEnvironment(value) : readRecord(kind, value)
   if (!("document" in read)) return `does not hold a valid ${kind}: ${read.invalid}`
   const id = recordIdOf(kind, read.document)
   if (folder !== undefined && !new RegExp(`^${folder}[a-z0-9-]+--${id}\\.json$`).test(path)) return `is not named <name>--${id}.json, after the id it holds`
   return read.document
+}
+
+/** A version-1 environment file as the current record: it holds no base, so it extends none. */
+function readLegacyEnvironment(value: JsonValue) {
+  const parsed = EnvironmentFileV1Schema.safeParse(value)
+  return parsed.success ? readRecord("environment", { ...parsed.data, baseEnvironmentId: null }) : readRecord("environment", value)
 }
 
 /** Where a file's JSON holds secret storage, which the importer refuses in any repository file; undefined when it holds none. */

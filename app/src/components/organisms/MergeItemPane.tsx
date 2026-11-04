@@ -12,6 +12,7 @@ const KIND_LABELS: Readonly<Record<GitMergeConflict["kind"], string>> = {
   project: "Project",
   workflow: "Workflow",
   environment: "Environment",
+  preset: "Preset",
   file: "File",
 };
 
