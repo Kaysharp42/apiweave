@@ -359,6 +359,11 @@ jobs:
   publish:
     name: Finalize GitHub release
     needs: [build, cli]
+    # The draft is complete before this job runs. Put a required reviewer on
+    # the `release` environment so the candidate can be installed, upgraded and
+    # rolled back from the draft before it is made public. Without protection
+    # rules the job runs immediately, exactly as before.
+    environment: release
     runs-on: ubuntu-22.04
     permissions:
       contents: write
