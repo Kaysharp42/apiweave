@@ -3,7 +3,7 @@ import path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { initDatabase, type InitializedDatabase } from "../../db"
 import { generateId } from "../../id"
-import { CollectionRepository, EnvironmentRepository, SecretRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
+import { CollectionRepository, EnvironmentRepository, NodePresetRepository, SecretRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import {
   describeRecordFile,
   parseWorkspace,
@@ -24,6 +24,7 @@ interface Store {
   readonly workflows: WorkflowRepository
   readonly environments: EnvironmentRepository
   readonly collections: CollectionRepository
+  readonly presets: NodePresetRepository
   readonly secrets: SecretRepository
   readonly workspaceId: string
 }
@@ -39,6 +40,7 @@ function openStore(): Store {
     workflows: new WorkflowRepository(db.kvStore),
     environments: new EnvironmentRepository(db.kvStore),
     collections: new CollectionRepository(db.kvStore),
+    presets: new NodePresetRepository(db.kvStore),
     secrets: new SecretRepository(db.kvStore),
     workspaceId: workspaces.create({ name: "Acme QA", slug: "acme-qa", description: "Shared API tests" }).workspaceId,
   }
@@ -140,6 +142,20 @@ function seed(store: Store): void {
     edges: [{ edgeId: "e1", source: "start", target: "list" }],
   })
   store.workflows.create({ workflowId: "wf-login-copy", workspaceId, name: "Login", nodes: [{ nodeId: "start", type: "start", position: { x: 0, y: 0 } } as WorkflowNode] })
+  store.presets.create({
+    presetId: "preset-login",
+    workspaceId,
+    name: "Login request",
+    nodeType: "http-request",
+    config: {
+      method: "GET",
+      url: "{{env.baseUrl}}/login",
+      headers: [
+        { key: "Authorization", value: "Bearer preset-literal-token" },
+        { key: "X-Trace", value: "{{secrets.API_TOKEN}}" },
+      ],
+    },
+  })
   store.collections.update(project.collectionId, {
     workflowOrder: [
       { workflowId: "wf-login", order: 1, enabled: false, continueOnFail: true },
@@ -156,6 +172,7 @@ function recordsOf(store: Store): WorkspaceRecords {
     projects: store.collections.listByWorkspace(store.workspaceId).items,
     workflows: store.workflows.listByWorkspace(store.workspaceId, true).items,
     environments,
+    presets: store.presets.listByWorkspace(store.workspaceId).items,
   }
 }
 
@@ -203,13 +220,14 @@ describe("workspace repository format", () => {
       ".gitattributes",
       "environments/base--env-base.json",
       "environments/staging--env-staging.json",
+      "presets/login-request--preset-login.json",
       "projects/shop-api--proj-shop.json",
       "workflows/login--wf-login-copy.json",
       "workflows/login--wf-login.json",
       "workflows/orders-list--wf-orders.json",
       "workspace.json",
     ])
-    expect(files.get(".apiweave/format.json")).toBe('{\n  "format": "apiweave-workspace",\n  "version": 1\n}\n')
+    expect(files.get(".apiweave/format.json")).toBe('{\n  "format": "apiweave-workspace",\n  "version": 2\n}\n')
     expect(files.get(".gitattributes")).toBe("* text eol=lf\n")
     for (const text of files.values()) {
       expect(text.endsWith("\n")).toBe(true)
@@ -320,6 +338,7 @@ describe("workspace repository format", () => {
       projects: reversed(records.projects),
       workflows: reversed(records.workflows).map((workflow) => ({ ...workflow, nodes: reversed(workflow.nodes), edges: reversed(workflow.edges) })),
       environments: reversed(records.environments),
+      presets: reversed(records.presets),
     }
     const snapshot = workspaceSnapshot(records)
     const expected = [...serializeWorkspace(snapshot)]
@@ -330,6 +349,7 @@ describe("workspace repository format", () => {
       workflows: reversed(snapshot.workflows),
       environments: reversed(snapshot.environments),
       projects: reversed(snapshot.projects),
+      presets: reversed(snapshot.presets),
     })]).toEqual(expected)
   })
 
@@ -356,8 +376,8 @@ describe("workspace repository format", () => {
     const files = serializeWorkspace(workspaceSnapshot(records))
     const tree = [...files.values()].join("\n")
 
-    for (const literal of ["literal-key", "hunter2", "live-literal-token", "live-query-token", "template-literal-token"]) expect(tree).not.toContain(literal)
-    for (const key of ["rev", "createdAt", "updatedAt", "slug", "isPersonal", "deletedAt", "baseEnvironmentId", "secrets", "secretNames", "scopeType", "collectionId", "workflowCount", "order"]) {
+    for (const literal of ["literal-key", "hunter2", "live-literal-token", "live-query-token", "template-literal-token", "preset-literal-token"]) expect(tree).not.toContain(literal)
+    for (const key of ["rev", "createdAt", "updatedAt", "slug", "isPersonal", "deletedAt", "secrets", "secretNames", "scopeType", "collectionId", "workflowCount", "order"]) {
       expect(tree).not.toContain(`"${key}"`)
     }
     expect([...files.keys()].filter((file) => file !== "workspace.json").every((file) => !files.get(file)!.includes('"workspaceId"'))).toBe(true)
@@ -365,10 +385,17 @@ describe("workspace repository format", () => {
     expect(files.get("workflows/login--wf-login.json")).toContain("Bearer {{secrets.API_TOKEN}}")
     expect(files.get("workflows/login--wf-login.json")).toContain('"password": "<SECRET>"')
     expect(JSON.parse(files.get("environments/staging--env-staging.json")!)).toMatchObject({
+      baseEnvironmentId: "env-base",
       isDefault: true,
       variables: { baseUrl: "https://staging.example.com", apiKey: "<SECRET>" },
     })
-    expect(JSON.parse(files.get("environments/base--env-base.json")!)).toMatchObject({ isDefault: false })
+    expect(JSON.parse(files.get("environments/base--env-base.json")!)).toMatchObject({ baseEnvironmentId: null, isDefault: false })
+    expect(JSON.parse(files.get("presets/login-request--preset-login.json")!)).toMatchObject({
+      presetId: "preset-login",
+      name: "Login request",
+      nodeType: "http-request",
+      config: { url: "{{env.baseUrl}}/login", headers: [{ key: "X-Trace", value: "{{secrets.API_TOKEN}}" }] },
+    })
   })
 
   it("refuses a secret-storage field anywhere in the tree, on the way out and on the way in", () => {
@@ -481,8 +508,62 @@ describe("reading a workspace repository", () => {
       doc["format"] = "apiweave-project"
     }))).toThrow(/\.apiweave\/format\.json: format: this is not an APIWeave workspace repository/)
     expect(() => parseWorkspace(editJson(tree(), ".apiweave/format.json", (doc) => {
-      doc["version"] = 2
+      doc["version"] = 3
     }))).toThrow(/written by a newer APIWeave .*update APIWeave/)
+  })
+
+  it("reads a version-1 environment file as extending no base, and writes the current version", () => {
+    const files = tree()
+    for (const [path, text] of files) {
+      if (!path.startsWith("environments/")) continue
+      const environment = JSON.parse(text) as Record<string, unknown>
+      delete environment["baseEnvironmentId"]
+      files.set(path, JSON.stringify(environment))
+    }
+    files.set(".apiweave/format.json", JSON.stringify({ format: "apiweave-workspace", version: 1 }))
+
+    const snapshot = parseWorkspace(files)
+
+    expect(snapshot.environments.every((environment) => environment.baseEnvironmentId === null)).toBe(true)
+    const rewritten = parseWorkspace(serializeWorkspace(snapshot))
+    expect(rewritten).toEqual(snapshot)
+    expect(rewritten.environments.every((environment) => environment.baseEnvironmentId === null)).toBe(true)
+  })
+
+  it("refuses a base that is missing, names another workspace, or makes a cycle", () => {
+    const missing = editJson(tree(), "environments/staging--env-staging.json", (doc) => {
+      doc["baseEnvironmentId"] = "env-ghost"
+    })
+    expect(() => parseWorkspace(missing)).toThrow(/environment env-staging extends env-ghost, which is not in this workspace/)
+
+    const self = editJson(tree(), "environments/staging--env-staging.json", (doc) => {
+      doc["baseEnvironmentId"] = "env-staging"
+    })
+    expect(() => parseWorkspace(self)).toThrow(/environment env-staging extends itself through env-staging/)
+
+    const cyclic = editJson(editJson(tree(), "environments/base--env-base.json", (doc) => {
+      doc["baseEnvironmentId"] = "env-staging"
+    }), "environments/staging--env-staging.json", (doc) => {
+      doc["baseEnvironmentId"] = "env-base"
+    })
+    expect(() => parseWorkspace(cyclic)).toThrow(/base environment chain would create a cycle/)
+  })
+
+  it("refuses to write a snapshot whose base environment is not in it, and clears a base outside the synced environments", () => {
+    const snapshot = workspaceSnapshot(seededRecords())
+    const dangling: WorkspaceSnapshot = {
+      ...snapshot,
+      environments: snapshot.environments.map((environment) =>
+        (environment.environmentId === "env-staging" ? { ...environment, baseEnvironmentId: "env-ghost" } : environment)),
+    }
+    expect(() => serializeWorkspace(dangling)).toThrow(/environment env-staging extends env-ghost, which is not in this workspace/)
+
+    // A base that is user-scoped (and so never in the tree) is written as no base.
+    const store = openStore()
+    seed(store)
+    store.environments.update("env-staging", { baseEnvironmentId: "env-mine" })
+    const files = serializeWorkspace(workspaceSnapshot(recordsOf(store)))
+    expect(JSON.parse(files.get("environments/staging--env-staging.json")!)["baseEnvironmentId"]).toBeNull()
   })
 
   it("refuses a file that does not match its schema, naming the file", () => {
@@ -524,6 +605,7 @@ describe("reading a workspace repository", () => {
     expect(describe("workspace.json")).toEqual({ kind: "workspace", id: expect.any(String), name: "Acme QA" })
     expect(describe("workflows/login--wf-login.json")).toEqual({ kind: "workflow", id: "wf-login", name: "Login" })
     expect(describe("projects/shop-api--proj-shop.json")).toMatchObject({ kind: "project", id: "proj-shop" })
+    expect(describe("presets/login-request--preset-login.json")).toEqual({ kind: "preset", id: "preset-login", name: "Login request" })
     const environment = [...files.keys()].find((path) => path.startsWith("environments/"))!
     expect(describe(environment)).toMatchObject({ kind: "environment" })
     for (const path of [".apiweave/format.json", ".gitattributes", "README.md", "workflows/archive/login--wf-login.json", "workflows/notes.txt"]) {

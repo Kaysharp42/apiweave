@@ -8,7 +8,7 @@ import type { GitService } from "./git_service"
 import type { GitTreeContents } from "./git_types"
 
 /** The folders whose `.json` files belong to the format: a file there that maps to no record is the format's to remove. */
-export const RECORD_FOLDERS = ["projects", "workflows", "environments"] as const
+export const RECORD_FOLDERS = ["projects", "workflows", "environments", "presets"] as const
 
 /** Everything the format owns in a commit's tree: the format file's folder, `.gitattributes`, `workspace.json` and the record folders. */
 export const FORMAT_PATHS = [".apiweave", ".gitattributes", "workspace.json", ...RECORD_FOLDERS] as const

@@ -77,6 +77,7 @@ describe("canonicalizeRecord", () => {
       name: "Dev",
       description: null,
       swaggerDocUrl: null,
+      baseEnvironmentId: null,
       isDefault: true,
       variables: { baseUrl: "https://dev.example.test" },
     })
@@ -84,5 +85,16 @@ describe("canonicalizeRecord", () => {
 
     expect(recordIdOf("environment", read.document)).toBe("env_1")
     expect(recordNameOf(read.document)).toBe("Dev")
+
+    const preset = canonicalizeRecord("preset", {
+      presetId: "ps_1",
+      name: "Poll",
+      nodeType: "delay",
+      config: { duration: 100 },
+    })
+    if (!("document" in preset)) throw new Error(preset.invalid)
+
+    expect(recordIdOf("preset", preset.document)).toBe("ps_1")
+    expect(recordNameOf(preset.document)).toBe("Poll")
   })
 })

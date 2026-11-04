@@ -429,6 +429,7 @@ export type { UnfinishedWorkspaceSync } from "./UnfinishedWorkspaceSync";
 export type { GitRepositoryRouteState } from "./GitRepositoryRouteState";
 export { routeRepositoryDraft } from "./GitRepositoryRouteState";
 export type { RemoteSectionProps } from "./RemoteSectionProps";
+export type { GitBranchDialogProps } from "./GitBranchDialogProps";
 export type { RemoteAccountProps } from "./RemoteAccountProps";
 export type { GitRepositoryFieldProps } from "./GitRepositoryFieldProps";
 export type { GitRemoteUrlFieldProps } from "./GitRemoteUrlFieldProps";

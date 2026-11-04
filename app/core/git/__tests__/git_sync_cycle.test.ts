@@ -7,6 +7,7 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   WorkflowRepository,
   WorkspaceGitRepository,
   WorkspaceRepository,
@@ -61,6 +62,7 @@ function openDevice(sandbox: GitSandbox, name: string, wrap?: (git: GitService) 
     collections: new CollectionRepository(db.kvStore, note),
     workflows: new WorkflowRepository(db.kvStore, (event) => sync?.workflowChanged(event)),
     environments: new EnvironmentRepository(db.kvStore, note),
+    presets: new NodePresetRepository(db.kvStore),
     workspaceGit: new WorkspaceGitRepository(db.kvStore),
   }
   // Devices are different computers: each one commits under its own identity, so a clone's history says which machine wrote what.
@@ -115,12 +117,13 @@ function binding(device: Device, workspaceId: string) {
 }
 
 function snapshotOf(device: Device, workspaceId: string): WorkspaceSnapshot {
-  const { workspaces, collections, workflows, environments } = device.repositories
+  const { workspaces, collections, workflows, environments, presets } = device.repositories
   return workspaceSnapshot({
     workspace: workspaces.getById(workspaceId)!,
     projects: collections.listByWorkspace(workspaceId).items,
     workflows: workflows.listByWorkspace(workspaceId, true).items,
     environments: environments.listByWorkspace(workspaceId).items,
+    presets: presets.listByWorkspace(workspaceId).items,
   })
 }
 
@@ -131,6 +134,7 @@ function treeOf(device: Device, workspaceId: string): Map<string, string> {
     projects: device.repositories.collections.listByWorkspace(workspaceId).items,
     workflows: device.repositories.workflows.listByWorkspace(workspaceId, true).items,
     environments: device.repositories.environments.listByWorkspace(workspaceId).items,
+    presets: device.repositories.presets.listByWorkspace(workspaceId).items,
   }))
 }
 

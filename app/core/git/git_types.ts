@@ -19,6 +19,7 @@ export type GitCommand =
   | "mergeFastForward"
   | "mergeNoCommit"
   | "resetHard"
+  | "checkout"
   | "revList"
   | "log"
   | "lsTree"

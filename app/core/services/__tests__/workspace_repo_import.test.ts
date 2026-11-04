@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import { initDatabase, type InitializedDatabase } from "../../db"
-import { CollectionRepository, EnvironmentRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
+import { CollectionRepository, EnvironmentRepository, NodePresetRepository, WorkflowRepository, WorkspaceRepository } from "../../repositories"
 import { workspaceSnapshot, type WorkspaceSnapshot } from "../workspace_repo_format"
 import { WorkspaceRepoImporter } from "../workspace_repo_import"
 
@@ -11,6 +11,7 @@ interface Store {
   readonly collections: CollectionRepository
   readonly workflows: WorkflowRepository
   readonly environments: EnvironmentRepository
+  readonly presets: NodePresetRepository
   readonly workspaceId: string
   readonly importer: WorkspaceRepoImporter
   readonly changes: Array<{ readonly kind: string; readonly workflowId?: string }>
@@ -25,6 +26,7 @@ function openStore(): Store {
   const changes: Array<{ readonly kind: string; readonly workflowId?: string }> = []
   const workflows = new WorkflowRepository(db.kvStore, (event) => changes.push({ kind: event.kind, workflowId: event.workflowId }))
   const environments = new EnvironmentRepository(db.kvStore)
+  const presets = new NodePresetRepository(db.kvStore)
   const workspaceId = workspaces.create({ name: "Workspace", slug: "workspace", description: "local description" }).workspaceId
   const store = {
     db,
@@ -32,8 +34,9 @@ function openStore(): Store {
     collections,
     workflows,
     environments,
+    presets,
     workspaceId,
-    importer: new WorkspaceRepoImporter(workspaces, collections, workflows, environments),
+    importer: new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets),
     changes,
   }
   stores.push(store)
@@ -59,7 +62,27 @@ function seed(store: Store): void {
     name: "Main",
     workflowOrder: [{ workflowId: "wf-stale", order: 0, enabled: false, continueOnFail: true }],
   })
-  store.environments.create({ environmentId: "env-main", workspaceId: store.workspaceId, name: "Main env", isDefault: true, variables: { token: "local-env-token" } })
+  store.environments.create({ environmentId: "env-root", workspaceId: store.workspaceId, name: "Root env", variables: { region: "eu" } })
+  store.environments.create({
+    environmentId: "env-main",
+    workspaceId: store.workspaceId,
+    name: "Main env",
+    baseEnvironmentId: "env-root",
+    isDefault: true,
+    variables: { token: "local-env-token" },
+  })
+  store.presets.create({
+    presetId: "preset-main",
+    workspaceId: store.workspaceId,
+    name: "Main request",
+    nodeType: "http-request",
+    config: {
+      method: "GET",
+      url: "https://api.example.test",
+      headers: [{ key: "X-Trace", value: "{{secrets.TRACE}}" }],
+      body: '{"password":"preset-literal"}',
+    },
+  })
   store.workflows.create({
     workflowId: "wf-member",
     workspaceId: store.workspaceId,
@@ -83,6 +106,7 @@ function snapshotOf(store: Store): WorkspaceSnapshot {
     projects: store.collections.listByWorkspace(store.workspaceId).items,
     workflows: store.workflows.listByWorkspace(store.workspaceId, true).items,
     environments,
+    presets: store.presets.listByWorkspace(store.workspaceId).items,
   })
 }
 
@@ -91,12 +115,14 @@ function withSnapshot(snapshot: WorkspaceSnapshot, edit: (draft: {
   projects: Array<WorkspaceSnapshot["projects"][number]>
   workflows: Array<WorkspaceSnapshot["workflows"][number]>
   environments: Array<WorkspaceSnapshot["environments"][number]>
+  presets: Array<WorkspaceSnapshot["presets"][number]>
 }) => void): WorkspaceSnapshot {
   const draft = {
     workspace: { ...snapshot.workspace },
     projects: snapshot.projects.map((project) => ({ ...project, workflowOrder: [...project.workflowOrder] })),
     workflows: snapshot.workflows.map((workflow) => ({ ...workflow, variables: { ...workflow.variables }, nodes: [...workflow.nodes] })),
     environments: snapshot.environments.map((environment) => ({ ...environment, variables: { ...environment.variables } })),
+    presets: snapshot.presets.map((preset) => ({ ...preset, config: { ...preset.config } })),
   }
   edit(draft)
   return draft
@@ -109,6 +135,7 @@ it("WorkspaceRepoImporter upserts by id, removes absent workspace records and pr
     store.collections.create({ collectionId: "proj-extra", workspaceId: store.workspaceId, name: "Extra" })
     store.workflows.create({ workflowId: "wf-extra", workspaceId: store.workspaceId, name: "Extra" })
     store.environments.create({ environmentId: "env-extra", workspaceId: store.workspaceId, name: "Extra" })
+    store.presets.create({ presetId: "preset-extra", workspaceId: store.workspaceId, name: "Extra", nodeType: "delay", config: { duration: 10 } })
     store.db.kvStore.set(
       "INSERT INTO environments (id, workspace_id, scopeType, scopeId, name, slug, variables_json, settings_json) VALUES (?, ?, 'user', ?, ?, ?, ?, ?)",
       ["env-user", store.workspaceId, "owner", "User env", "user-env", "{}", JSON.stringify({ description: null, swaggerDocUrl: null, baseEnvironmentId: null, secrets: {}, isDefault: true })],
@@ -119,7 +146,8 @@ it("WorkspaceRepoImporter upserts by id, removes absent workspace records and pr
 
     expect(store.collections.listByWorkspace(store.workspaceId).items.map((project) => project.collectionId)).toEqual(["proj-main"])
     expect(store.workflows.listByWorkspace(store.workspaceId, true).items.map((workflow) => workflow.workflowId).sort()).toEqual(["wf-free", "wf-member"])
-    expect(store.environments.listByWorkspace(store.workspaceId).items.map((environment) => environment.environmentId).sort()).toEqual(["env-main", "env-user"])
+    expect(store.environments.listByWorkspace(store.workspaceId).items.map((environment) => environment.environmentId).sort()).toEqual(["env-main", "env-root", "env-user"])
+    expect(store.presets.listByWorkspace(store.workspaceId).items.map((preset) => preset.presetId)).toEqual(["preset-main"])
     expect(store.changes).toEqual([{ kind: "delete", workflowId: "wf-extra" }])
 })
 
@@ -234,6 +262,96 @@ it("WorkspaceRepoImporter repairs a missing workspace default without changing a
     expect(store.environments.getById("env-main")?.isDefault).toBe(true)
     expect(store.environments.getById("env-user")?.isDefault).toBe(true)
     expect(warnings).toEqual(["No default environment was set; 'env-main' is now the workspace default."])
+})
+
+it("WorkspaceRepoImporter resolves a base that appears after the environment extending it, and refuses a missing one", () => {
+    const store = openStore()
+    seed(store)
+    const snapshot = snapshotOf(store)
+    const childFirst = withSnapshot(snapshot, (draft) => {
+      draft.environments = [...draft.environments].reverse()
+      draft.environments.push({
+        ...draft.environments[0]!,
+        environmentId: "env-leaf",
+        name: "Leaf",
+        baseEnvironmentId: "env-main",
+      })
+    })
+    childFirst.environments.sort((left, right) => left.environmentId.localeCompare(right.environmentId))
+
+    store.importer.apply(store.workspaceId, childFirst)
+    expect(store.environments.getById("env-leaf")?.baseEnvironmentId).toBe("env-main")
+    expect(store.environments.getById("env-main")?.baseEnvironmentId).toBe("env-root")
+
+    const missing = withSnapshot(snapshotOf(store), (draft) => {
+      draft.environments = draft.environments.map((environment) =>
+        (environment.environmentId === "env-leaf" ? { ...environment, baseEnvironmentId: "env-ghost" } : environment))
+    })
+    expect(() => store.importer.apply(store.workspaceId, missing)).toThrow(/environment env-leaf extends env-ghost, which is not in this workspace/)
+    expect(store.environments.getById("env-leaf")?.baseEnvironmentId).toBe("env-main")
+})
+
+it("WorkspaceRepoImporter clears a base reference to an environment the repository removed", () => {
+    const store = openStore()
+    seed(store)
+    const snapshot = withSnapshot(snapshotOf(store), (draft) => {
+      draft.environments = draft.environments.filter((environment) => environment.environmentId !== "env-root")
+      draft.environments = draft.environments.map((environment) =>
+        (environment.environmentId === "env-main" ? { ...environment, baseEnvironmentId: null } : environment))
+    })
+    // A local-only environment the repository never held, extending the removed one.
+    store.environments.create({ environmentId: "env-local", workspaceId: store.workspaceId, name: "Local only", baseEnvironmentId: "env-root" })
+
+    store.importer.apply(store.workspaceId, snapshot)
+
+    expect(store.environments.getById("env-root")).toBeUndefined()
+    expect(store.environments.getById("env-local")).toBeUndefined()
+    expect(store.environments.getById("env-main")?.baseEnvironmentId).toBeNull()
+})
+
+it("WorkspaceRepoImporter creates, updates and deletes presets by their stable id, keeping a withheld literal config", () => {
+    const store = openStore()
+    seed(store)
+    const snapshot = snapshotOf(store)
+    const changed = withSnapshot(snapshot, (draft) => {
+      const preset = draft.presets.find((item) => item.presetId === "preset-main")!
+      preset.name = "Renamed"
+      preset.config = { method: "POST", url: "https://api.example.test" }
+      draft.presets.push({
+        presetId: "preset-new",
+        name: "New",
+        nodeType: "delay",
+        config: { duration: 100 },
+      })
+    })
+
+    store.importer.apply(store.workspaceId, changed)
+
+    expect(store.presets.listByWorkspace(store.workspaceId).items.map((preset) => [preset.presetId, preset.name]).sort()).toEqual([
+      ["preset-main", "Renamed"],
+      ["preset-new", "New"],
+    ])
+    expect(store.presets.getById("preset-main")?.config).toEqual({ method: "POST", url: "https://api.example.test" })
+
+    const redactedStore = openStore()
+    seed(redactedStore)
+    const redacted = withSnapshot(snapshotOf(redactedStore), (draft) => {
+      const preset = draft.presets.find((item) => item.presetId === "preset-main")!
+      preset.config["body"] = JSON.stringify({ password: "<SECRET>" }, null, 2)
+    })
+    redactedStore.importer.apply(redactedStore.workspaceId, redacted)
+    expect(redactedStore.presets.getById("preset-main")?.config).toEqual({
+      method: "GET",
+      url: "https://api.example.test",
+      headers: [{ key: "X-Trace", value: "{{secrets.TRACE}}" }],
+      body: '{"password":"preset-literal"}',
+    })
+
+    const removed = withSnapshot(snapshotOf(store), (draft) => {
+      draft.presets = draft.presets.filter((preset) => preset.presetId !== "preset-new")
+    })
+    store.importer.apply(store.workspaceId, removed)
+    expect(store.presets.getById("preset-new")).toBeUndefined()
 })
 
 it("WorkspaceRepoImporter detaches selections for deleted environments but preserves user-scoped selections", () => {

@@ -10,10 +10,12 @@ export interface RemoteSectionProps {
   readonly busy: boolean;
   /** What the connect form starts with: a repository just created that could not be connected to. */
   readonly prefill: GitRemoteSelection | null;
-  readonly onConnect: (url: string, account: GitAccountRef | null) => void;
+  readonly onConnect: (url: string, account: GitAccountRef | null, branch?: string) => void;
   readonly onCreateRepository: (account: GitAccount) => void;
   readonly onChangeAccount: (account: GitAccountRef | null) => void;
   readonly onDisconnect: () => void;
+  /** Open the branch list; undefined while there is no remote to list branches from. */
+  readonly onSwitchBranch?: (() => void) | undefined;
   /** The accounts, held by the panel so a sign-in anywhere on it is seen everywhere. */
   readonly accounts: GitAccountsFeed;
 }

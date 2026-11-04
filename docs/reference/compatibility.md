@@ -29,11 +29,11 @@ Tool names are listed in `app/core/mcp/tools.ts` and the MCP integration guide (
 A workspace tracked in git is a directory whose `.apiweave/format.json` declares:
 
 ```json
-{ "format": "apiweave-workspace", "version": 1 }
+{ "format": "apiweave-workspace", "version": 2 }
 ```
 
-- **Version 1 is the contract.** Every 1.x release writes version 1 and reads version 1, so a repository committed by one 1.x build opens in any other.
-- **The layout is stable.** `workspace.json`, `projects/`, `workflows/` and `environments/` keep their documented shape for the life of 1.x. The layout is described in [Keep Tests in a Git Repository](../guides/git-workflows.md).
+- **Version 2 is the 1.0 contract.** Every 1.x release writes version 2 and reads versions 1 and 2, so a repository committed by one 1.x build opens in any other. Version 1 is the pre-1.0 layout: it lacks `baseEnvironmentId` and node presets, and every environment extends none. Opening a version 1 repository and committing upgrades it to version 2.
+- **The layout is stable.** `workspace.json`, `projects/`, `workflows/`, `environments/` and `presets/` keep their documented shape for the life of 1.x. The layout is described in [Keep Tests in a Git Repository](../guides/git-workflows.md).
 - **A newer version is refused, not guessed at.** If a future release changes the format, it will use a new `version` number. A 1.x app that meets a higher version stops with a message telling the user to update, rather than reading or rewriting a tree it does not understand.
 - **Running a repository is read-only.** `apiweave run` parses the files and leaves the checkout exactly as it found it; it never migrates a repository in place.
 
@@ -62,7 +62,7 @@ The headless runner is `apiweave run <path>` from the `@apiweave/cli` package (o
   A 1.x release does not add another successful exit code or reuse one of these for a different outcome.
 
 - **Secret inputs are stable.** `APIWEAVE_SECRET_<NAME>`, `--secret NAME=value` and `--secrets-file` keep their precedence and meaning, and secret values stay out of stdout, stderr and reports.
-- **Input formats are stable.** A workspace repository (`format.version` 1), a `.awecollection` (`schemaVersion` `2.0`) and a Postman Collection v2.1 continue to run in 1.x.
+- **Input formats are stable.** A workspace repository (`format.version` 2, or the readable version 1), a `.awecollection` (`schemaVersion` `2.0`) and a Postman Collection v2.1 continue to run in 1.x.
 - **Output wording is not a contract.** Human-readable log lines, the exact HTML report markup and the order of unrelated diagnostics may change. Rely on the exit code, the documented report paths, and JUnit's own schema rather than on prose.
 
 ## Deprecation

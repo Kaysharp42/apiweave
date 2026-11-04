@@ -4,6 +4,7 @@ import {
   parseBlobBatch,
   parseCommitCount,
   parseLog,
+  parseRemoteHeads,
   parseStatus,
   parseTreeEntries,
   parseTreeListings,
@@ -122,6 +123,26 @@ describe("parseLog", () => {
   it("keeps a body's unicode", () => {
     const body = "héllo 🌍 — naïve\n"
     expect(parseLog(log(SHA_A, "", "A", "a@x", "d", "S", body))[0]?.body).toBe(body)
+  })
+})
+
+describe("parseRemoteHeads", () => {
+  it("reads the branches and the HEAD symref, ignoring tags", () => {
+    const output = [
+      `ref: refs/heads/main\tHEAD`,
+      `${SHA_A}\tHEAD`,
+      `${SHA_A}\trefs/heads/main`,
+      `${SHA_B}\trefs/heads/feature/login`,
+      `${SHA_B}\trefs/tags/v1.0.0`,
+      "",
+    ].join("\n")
+
+    expect(parseRemoteHeads(output)).toEqual({ branches: ["feature/login", "main"], defaultBranch: "main" })
+  })
+
+  it("names no default for an empty remote or one whose HEAD is unborn", () => {
+    expect(parseRemoteHeads("")).toEqual({ branches: [], defaultBranch: null })
+    expect(parseRemoteHeads(`${SHA_A}\trefs/heads/main\n`)).toEqual({ branches: ["main"], defaultBranch: null })
   })
 })
 

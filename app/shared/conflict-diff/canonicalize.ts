@@ -3,11 +3,13 @@ import type { JsonValue } from "../types/JsonValue"
 import type { WorkspacePendingChangeKind } from "../types/WorkspacePendingChangeKind"
 import {
   EnvironmentFileSchema,
+  PresetFileSchema,
   ProjectFileSchema,
   WorkflowFileSchema,
   WorkspaceFileSchema,
   environmentDocument,
   issueText,
+  presetDocument,
   projectDocument,
   workflowDocument,
   workspaceDocument,
@@ -58,6 +60,7 @@ const FORMATS: Readonly<Record<WorkspacePendingChangeKind, RecordFormat>> = {
   project: recordFormat("projectId", ProjectFileSchema, projectDocument),
   workflow: recordFormat("workflowId", WorkflowFileSchema, (workflow) => workflowDocument(workflow, { projectId: workflow.projectId })),
   environment: recordFormat("environmentId", EnvironmentFileSchema, (environment) => environmentDocument(environment, { isDefault: environment.isDefault })),
+  preset: recordFormat("presetId", PresetFileSchema, presetDocument),
 }
 
 /** A file's JSON as the canonical record it holds — validated, in the serializer's field order — or why it is not one. */

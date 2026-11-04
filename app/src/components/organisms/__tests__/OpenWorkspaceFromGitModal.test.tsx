@@ -40,10 +40,11 @@ const duplicate: OpenWorkspaceFromGitResult = {
 /** No account signed in: the picker is the URL field, as before accounts. */
 const NO_ACCOUNTS: Pick<
   GitBridge,
-  "listAccounts" | "listRepositories" | "onSignInPrompt"
+  "listAccounts" | "listRepositories" | "listRemoteBranches" | "onSignInPrompt"
 > = {
   listAccounts: async () => ({ clis: [], accounts: [] }),
   listRepositories: async () => ({ repositories: [], problems: [] }),
+  listRemoteBranches: async () => ({ branches: ["main"], defaultBranch: "main" }),
   onSignInPrompt: () => () => undefined,
 };
 
@@ -136,6 +137,52 @@ describe("OpenWorkspaceFromGitModal", () => {
     expect(mockRefresh.mock.invocationCallOrder[0]).toBeLessThan(
       mockSwitchTo.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("chooses a branch from the remote's list and opens that branch", async () => {
+    const listRemoteBranches = vi.fn<GitBridge["listRemoteBranches"]>(
+      async () => ({ branches: ["main", "feature"], defaultBranch: "main" }),
+    );
+    const openFromGit = installBridge(opened, { listRemoteBranches });
+    const user = userEvent.setup();
+    const onClose = renderModal();
+
+    await user.type(await findUrlField(), REPOSITORY);
+    await user.click(screen.getByRole("button", { name: "Choose branch…" }));
+
+    const select = await screen.findByRole("combobox", { name: "Branch" });
+    expect(listRemoteBranches).toHaveBeenCalledWith(REPOSITORY, null);
+    expect(
+      screen.getByRole("option", { name: "Default branch (main)" }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(select, "feature");
+    await user.click(screen.getByRole("button", { name: "Open workspace" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(openFromGit).toHaveBeenCalledWith(REPOSITORY, null, "feature");
+  });
+
+  it("shows a branch-listing failure but still opens the default branch", async () => {
+    const listRemoteBranches = vi.fn<GitBridge["listRemoteBranches"]>(
+      async () => {
+        throw new Error("Can't reach git.example.com");
+      },
+    );
+    const openFromGit = installBridge(opened, { listRemoteBranches });
+    const user = userEvent.setup();
+    const onClose = renderModal();
+
+    await user.type(await findUrlField(), REPOSITORY);
+    await user.click(screen.getByRole("button", { name: "Choose branch…" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Could not list the repository's branches: Can't reach git.example.com",
+    );
+    await user.click(screen.getByRole("button", { name: "Open workspace" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(openFromGit).toHaveBeenCalledWith(REPOSITORY, null);
   });
 
   it("shows the button busy and the field locked while the clone runs", async () => {

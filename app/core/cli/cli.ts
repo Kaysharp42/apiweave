@@ -10,6 +10,7 @@ import { initDatabase } from "../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   ProjectRunRepository,
   RunRepository,
   WorkflowRepository,
@@ -316,6 +317,7 @@ interface CliRepositories {
   readonly runs: RunRepository
   readonly environments: EnvironmentRepository
   readonly collections: CollectionRepository
+  readonly presets: NodePresetRepository
   readonly projectRuns: ProjectRunRepository
 }
 
@@ -347,6 +349,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       runs: new RunRepository(database.kvStore),
       environments: new EnvironmentRepository(database.kvStore),
       collections: new CollectionRepository(database.kvStore),
+      presets: new NodePresetRepository(database.kvStore),
       projectRuns: new ProjectRunRepository(database.kvStore),
     }
     const where = repository === undefined ? "the file" : "the repository"
@@ -495,9 +498,9 @@ function importRepository(
   options: CliOptions,
   iterating: boolean,
   workspaceId: string,
-  { workspaces, workflows, environments, collections }: CliRepositories,
+  { workspaces, workflows, environments, collections, presets }: CliRepositories,
 ): CliImport {
-  const warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+  const warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets).apply(workspaceId, snapshot)
   const notes = warnings.map((warning) => `warning: ${warning}`)
   const project = options.project === undefined
     ? undefined

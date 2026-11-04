@@ -1,0 +1,15 @@
+{
+  "presetId": "preset-login",
+  "name": "Login request",
+  "nodeType": "http-request",
+  "config": {
+    "headers": [
+      {
+        "key": "X-Trace",
+        "value": "{{secrets.API_TOKEN}}"
+      }
+    ],
+    "method": "GET",
+    "url": "{{env.baseUrl}}/login"
+  }
+}

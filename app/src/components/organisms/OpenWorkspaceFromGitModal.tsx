@@ -1,12 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { GitBranch } from "lucide-react";
 import { toast } from "sonner";
+import type { GitBranchList } from "@shared/types/GitBranchList";
 import { Button } from "../atoms/Button";
+import { Select } from "../atoms/Select";
+import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
 import { GitRemotePicker } from "./GitRemotePicker";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { git } from "../../utils/apiweaveClient";
+import { errorText } from "../../utils/gitRemote";
 import type {
   ExistingWorkspace,
   GitRemoteSelection,
@@ -23,10 +27,21 @@ export function OpenWorkspaceFromGitModal({
   // dialog is open, and again each time it opens: an account signed in since is not missed.
   const accounts = useGitAccounts({ enabled: isOpen });
   const [selection, setSelection] = useState<GitRemoteSelection | null>(null);
+  const [branchList, setBranchList] = useState<GitBranchList | null>(null);
+  const [branch, setBranch] = useState("");
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const [branchesBusy, setBranchesBusy] = useState(false);
   const [existing, setExisting] = useState<ExistingWorkspace | null>(null);
   const [pending, setPending] = useState<PendingWorkspaceOpen | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setBranchList(null);
+    setBranch("");
+    setBranchError(null);
+    setBranchesBusy(false);
+  }, [selection]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -39,6 +54,20 @@ export function OpenWorkspaceFromGitModal({
   }, [isOpen]);
 
   const canSubmit = selection !== null && !isSubmitting;
+
+  /** Ask the remote for its branches only when the user chooses to; the default needs no network call beyond the clone. */
+  const loadBranches = async (): Promise<void> => {
+    if (selection === null || branchesBusy) return;
+    setBranchesBusy(true);
+    setBranchError(null);
+    try {
+      setBranchList(await git.listRemoteBranches(selection.url, selection.account));
+    } catch (error) {
+      setBranchError(errorText(error));
+    } finally {
+      setBranchesBusy(false);
+    }
+  };
 
   const goToWorkspace = async (slug: string): Promise<void> => {
     await refresh();
@@ -63,7 +92,10 @@ export function OpenWorkspaceFromGitModal({
     if (selection === null || isSubmitting) return;
 
     await run(async () => {
-      const result = await git.openFromGit(selection.url, selection.account);
+      const result =
+        branch === ""
+          ? await git.openFromGit(selection.url, selection.account)
+          : await git.openFromGit(selection.url, selection.account, branch);
       if (result.kind === "duplicate") {
         setExisting({ slug: result.slug, name: result.name });
         return;
@@ -205,6 +237,50 @@ export function OpenWorkspaceFromGitModal({
               accounts={accounts}
               disabled={isSubmitting}
             />
+            {selection !== null && (
+              <div className="space-y-2">
+                {branchList === null ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    loading={branchesBusy}
+                    disabled={isSubmitting}
+                    onClick={() => void loadBranches()}
+                  >
+                    Choose branch…
+                  </Button>
+                ) : (
+                  <FormField
+                    label="Branch"
+                    hint="The workspace is cloned from this branch, and syncs with it from then on."
+                  >
+                    <Select
+                      aria-label="Branch"
+                      value={branch}
+                      onChange={(event) => setBranch(event.target.value)}
+                      disabled={isSubmitting}
+                    >
+                      <option value="">
+                        Default branch
+                        {branchList.defaultBranch === null
+                          ? ""
+                          : ` (${branchList.defaultBranch})`}
+                      </option>
+                      {branchList.branches.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </Select>
+                  </FormField>
+                )}
+                {branchError !== null && (
+                  <p role="status" className="text-xs text-status-warning">
+                    Could not list the repository&apos;s branches: {branchError}
+                  </p>
+                )}
+              </div>
+            )}
           </form>
         )}
       </div>

@@ -2,19 +2,23 @@ import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 import type { GitAccount } from "@shared/types/GitAccount";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
+import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
+import { Select } from "../atoms/Select";
 import { Spinner } from "../atoms/Spinner";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { DetailField } from "../molecules/DetailField";
+import { FormField } from "../molecules/FormField";
 import { GitAccountPicker } from "../molecules/GitAccountPicker";
 import { GitAuthorForm } from "./GitAuthorForm";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
+import { GitBranchDialog } from "./GitBranchDialog";
 import { MergeView } from "./MergeView";
 import { GitRemotePicker } from "./GitRemotePicker";
 import { GitSignInButtons } from "./GitSignInButtons";
@@ -122,6 +126,31 @@ function RemoteSection(props: RemoteSectionProps) {
   const [selection, setSelection] = useState<GitRemoteSelection | null>(
     prefill,
   );
+  const [branchList, setBranchList] = useState<GitBranchList | null>(null);
+  const [connectBranch, setConnectBranch] = useState("");
+  const [branchesBusy, setBranchesBusy] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+
+  const chooseRemote = (next: GitRemoteSelection | null): void => {
+    setSelection(next);
+    setBranchList(null);
+    setConnectBranch("");
+    setBranchError(null);
+  };
+
+  const loadBranches = async (): Promise<void> => {
+    if (selection === null || branchesBusy) return;
+    setBranchesBusy(true);
+    setBranchError(null);
+    try {
+      setBranchList(await git.listRemoteBranches(selection.url, selection.account));
+    } catch (error) {
+      setBranchError(errorText(error));
+    } finally {
+      setBranchesBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -130,23 +159,80 @@ function RemoteSection(props: RemoteSectionProps) {
       <DetailField label="Branch" mono>
         {branch}
       </DetailField>
+      {remoteUrl !== null && props.onSwitchBranch !== undefined && (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={props.onSwitchBranch}
+        >
+          Switch branch…
+        </Button>
+      )}
       {remoteUrl === null ? (
         <form
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (selection !== null)
-              props.onConnect(selection.url, selection.account);
+              props.onConnect(
+                selection.url,
+                selection.account,
+                connectBranch === "" ? undefined : connectBranch,
+              );
           }}
         >
           <GitRemotePicker
             mode="connect"
             initial={prefill}
             accounts={props.accounts}
-            onChange={setSelection}
+            onChange={chooseRemote}
             onCreateRepository={props.onCreateRepository}
             disabled={busy}
           />
+          {selection !== null && (
+            <div className="space-y-2">
+              {branchList === null ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  loading={branchesBusy}
+                  disabled={busy}
+                  onClick={() => void loadBranches()}
+                >
+                  Choose branch…
+                </Button>
+              ) : (
+                <FormField
+                  label="Branch"
+                  hint="The branch this workspace tracks; leave it on the default unless the workspace lives on another one."
+                >
+                  <Select
+                    aria-label="Branch"
+                    value={connectBranch}
+                    onChange={(event) => setConnectBranch(event.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="">
+                      Default branch
+                      {branchList.defaultBranch === null
+                        ? ""
+                        : ` (${branchList.defaultBranch})`}
+                    </option>
+                    {branchList.branches.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </Select>
+                </FormField>
+              )}
+              {branchError !== null && (
+                <p role="status" className="text-xs text-status-warning">
+                  Could not list the repository&apos;s branches: {branchError}
+                </p>
+              )}
+            </div>
+          )}
           <Button
             type="submit"
             variant="primary"
@@ -265,6 +351,7 @@ export function VersionHistoryPanel({
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
   );
+  const [switchingBranch, setSwitchingBranch] = useState(false);
   // A merge a connect started, shown over the panel: the repository holds this
   // same workspace with no commit in common, so the copies merge two ways.
   const [merge, setMerge] = useState<WorkspaceGitStatus | null>(null);
@@ -301,8 +388,11 @@ export function VersionHistoryPanel({
   const connectTo = async (
     url: string,
     account: GitAccountRef | null,
+    branch?: string,
   ): Promise<void> => {
-    const next = await run(() => git.connectRemote(workspaceId, url, account));
+    const next = await run(() =>
+      git.connectRemote(workspaceId, url, account, branch),
+    );
     if (next?.state === "merging") setMerge(next);
   };
 
@@ -376,7 +466,9 @@ export function VersionHistoryPanel({
             account={status.account}
             busy={busy}
             prefill={prefill}
-            onConnect={(url, account) => void connectTo(url, account)}
+            onConnect={(url, account, branch) =>
+              void connectTo(url, account, branch)
+            }
             onCreateRepository={(account) =>
               setCreation({ step: "dialog", account })
             }
@@ -384,6 +476,7 @@ export function VersionHistoryPanel({
               void run(() => git.setAccount(workspaceId, account))
             }
             onDisconnect={() => setConfirming("disconnect")}
+            onSwitchBranch={() => setSwitchingBranch(true)}
             accounts={accounts}
           />
         }
@@ -427,6 +520,14 @@ export function VersionHistoryPanel({
           status={merge}
           onClose={() => setMerge(null)}
           onStatus={apply}
+        />
+      )}
+      {switchingBranch && status !== null && (
+        <GitBranchDialog
+          workspaceId={workspaceId}
+          currentBranch={status.branch}
+          onClose={() => setSwitchingBranch(false)}
+          onSwitched={apply}
         />
       )}
       <ConfirmDialog

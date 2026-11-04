@@ -1,3 +1,4 @@
+import type { GitBranchList } from "@shared/types/GitBranchList"
 import type {
   GitAheadBehind,
   GitLogEntry,
@@ -8,6 +9,22 @@ import type {
   GitTreeListing,
   GitVersion,
 } from "./git_types"
+
+/** `ls-remote --symref`: the line that names HEAD's branch, and one line per branch (tag lines are ignored). */
+export function parseRemoteHeads(output: string): GitBranchList {
+  const branches = new Set<string>()
+  let defaultBranch: string | null = null
+  for (const line of output.split(/\r?\n/)) {
+    const symref = /^ref:\s+refs\/heads\/(\S+)\s+HEAD$/.exec(line.trim())
+    if (symref !== null) {
+      defaultBranch = symref[1] ?? null
+      continue
+    }
+    const head = /^[0-9a-f]+\s+refs\/heads\/(\S+)$/.exec(line.trim())
+    if (head?.[1] !== undefined) branches.add(head[1])
+  }
+  return { branches: [...branches].sort(), defaultBranch }
+}
 
 export function parseVersion(output: string): GitVersion | undefined {
   const match = /^git version ((\d+)\.(\d+)(?:\.(\d+))?.*)$/m.exec(output)

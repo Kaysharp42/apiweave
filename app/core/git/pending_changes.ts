@@ -4,16 +4,17 @@ import type { WorkspacePendingChangeKind } from "@shared/types/WorkspacePendingC
 import { describeRecordFile, type RecordFileSummary } from "../services/workspace_repo_format"
 import type { GitTreeEntry } from "./git_types"
 
-const KIND_ORDER: readonly WorkspacePendingChangeKind[] = ["workspace", "project", "workflow", "environment"]
+const KIND_ORDER: readonly WorkspacePendingChangeKind[] = ["workspace", "project", "workflow", "environment", "preset"]
 
 const FOLDER_KINDS: Readonly<Record<string, WorkspacePendingChangeKind>> = {
   projects: "project",
   workflows: "workflow",
   environments: "environment",
+  presets: "preset",
 }
 
 /** The files a commit would delete when no record maps to them: `writeWorkspaceTree` removes exactly these. */
-const DELETABLE_PATH = /^(?:projects|workflows|environments)\/[^/]+\.json$/
+const DELETABLE_PATH = /^(?:projects|workflows|environments|presets)\/[^/]+\.json$/
 
 /** One path a commit would touch: the blob the last commit holds there (none: it would be added) and whether the tree to commit still has it. */
 export interface PathChange {

@@ -1,5 +1,6 @@
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
+import { MAX_BASE_ENVIRONMENT_CHAIN_DEPTH } from "@shared/environments/environment_chain"
 import type {
   EnvironmentCreate,
   EnvironmentRepository,
@@ -9,8 +10,6 @@ import type {
 } from "../repositories"
 import { NotFoundError, ValidationError } from "../ipc/errors"
 import type { ScopeResolver } from "./scope_resolver"
-
-const MAX_BASE_ENVIRONMENT_CHAIN_DEPTH = 8
 
 /** Workspace-scoped environment CRUD + variable ops. Collapses Python `environment_service` + `scoped_environment_service`. */
 export class EnvironmentService {
@@ -234,16 +233,18 @@ export class EnvironmentService {
     if (base?.workspaceId !== workspaceId) {
       throw new ValidationError(`base environment ${baseEnvironmentId} not found in workspace`)
     }
-    if (environmentId === undefined) {
-      return
-    }
     let current: Environment | undefined = base
     const seen = new Set<string>()
-    while (current !== undefined && !seen.has(current.environmentId) && seen.size < MAX_BASE_ENVIRONMENT_CHAIN_DEPTH) {
+    let depth = 1
+    while (current !== undefined && !seen.has(current.environmentId)) {
       if (current.environmentId === environmentId) {
         throw new ValidationError("base environment chain would create a cycle")
       }
       seen.add(current.environmentId)
+      depth += 1
+      if (depth > MAX_BASE_ENVIRONMENT_CHAIN_DEPTH) {
+        throw new ValidationError(`base environment chain may hold at most ${MAX_BASE_ENVIRONMENT_CHAIN_DEPTH} environments`)
+      }
       current = current.baseEnvironmentId ? this.environments.getById(current.baseEnvironmentId) : undefined
     }
   }

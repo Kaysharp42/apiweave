@@ -685,16 +685,34 @@ describe("the other kinds of record", () => {
     expect(result.merged).toEqual({ workspaceId: "ws_01", name: "Acme QA", description: "API tests" })
   })
 
-  it("an environment merges its variables by name, and its default flag like any field", () => {
+  it("an environment merges its variables by name, its default flag and its base like any field", () => {
     const base = environment("env_dev", { variables: { baseUrl: "https://dev.test", region: "eu" } })
     const result = mergeRecord(
       "environment",
       base,
-      { ...base, variables: { baseUrl: "https://dev2.test", region: "eu" } },
+      { ...base, baseEnvironmentId: "env_root", variables: { baseUrl: "https://dev2.test", region: "eu" } },
       { ...base, isDefault: true, variables: { baseUrl: "https://dev.test", region: "eu", token: "{{secrets.TOKEN}}" } },
     )
 
-    expect(result.merged).toEqual({ ...base, isDefault: true, variables: { baseUrl: "https://dev2.test", region: "eu", token: "{{secrets.TOKEN}}" } })
+    expect(result.merged).toEqual({
+      ...base,
+      baseEnvironmentId: "env_root",
+      isDefault: true,
+      variables: { baseUrl: "https://dev2.test", region: "eu", token: "{{secrets.TOKEN}}" },
+    })
+    expect(result.conflicts).toEqual([])
+  })
+
+  it("a preset merges its config by key and keeps its stable id", () => {
+    const base = { presetId: "ps_1", name: "Poll", nodeType: "delay" as const, config: { duration: 100, continueOnFail: false } }
+    const result = mergeRecord(
+      "preset",
+      base,
+      { ...base, name: "Polling", config: { duration: 100, continueOnFail: true } },
+      { ...base, config: { duration: 250, continueOnFail: false } },
+    )
+
+    expect(result.merged).toEqual({ ...base, name: "Polling", config: { duration: 250, continueOnFail: true } })
     expect(result.conflicts).toEqual([])
   })
 

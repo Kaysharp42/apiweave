@@ -14,6 +14,7 @@ const SECTIONS: readonly {
   { kind: "project", label: "Projects" },
   { kind: "workflow", label: "Workflows" },
   { kind: "environment", label: "Environments" },
+  { kind: "preset", label: "Node presets" },
   { kind: "file", label: "Files" },
 ];
 

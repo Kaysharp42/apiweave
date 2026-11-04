@@ -20,6 +20,7 @@ import {
   parseBlobBatch,
   parseCommitCount,
   parseLog,
+  parseRemoteHeads,
   parseStatus,
   parseTreeEntries,
   parseTreeListings,
@@ -51,6 +52,7 @@ import type {
   GitTreeListing,
   GitVersion,
 } from "./git_types"
+import type { GitBranchList } from "@shared/types/GitBranchList"
 
 /** A `cat-file --batch` at most this large stays well inside the process output cap; the caps keep the whole tree below 100 MB. */
 const TREE_BATCH_BYTES = 32 * 1024 * 1024
@@ -269,6 +271,51 @@ export class GitService {
       repoDir,
     )
     return ref.trim() === "" ? undefined : ref.trim()
+  }
+
+  /**
+   * Every branch of `url` and the branch its HEAD names, from one
+   * `git ls-remote --symref`. The remote is asked, not a clone, so it works
+   * before the first clone. `credential` reaches the remote as a bound
+   * account, as `clone` does.
+   */
+  async listRemoteHeads(url: string, options: GitRemoteOptions = {}): Promise<GitBranchList> {
+    assertSafeRemoteUrl(url)
+    const args = ["ls-remote", "--symref", "--", url]
+    return parseRemoteHeads(await this.run("lsRemote", args, undefined, undefined, options.credential))
+  }
+
+  /**
+   * The branches of `remote` this clone already knows — its remote-tracking
+   * refs, `refs/remotes/<remote>/<name>` — for listing without a network call.
+   * `HEAD` is not a branch. Sorted.
+   */
+  async remoteBranches(repoDir: string, remote: string): Promise<string[]> {
+    assertRefName(remote)
+    const output = await this.run(
+      "forEachRef",
+      ["for-each-ref", "--format=%(refname)", `refs/remotes/${remote}/`],
+      repoDir,
+    )
+    const prefix = `refs/remotes/${remote}/`
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((ref) => ref.startsWith(prefix) && ref !== `${prefix}HEAD`)
+      .map((ref) => ref.slice(prefix.length))
+      .sort()
+  }
+
+  /**
+   * Check out `branch`, resetting it to `startPoint` (`-B`): a target branch
+   * that already exists locally moves rather than being refused. With
+   * `track`, the branch's upstream becomes the remote-tracking branch.
+   */
+  async checkout(repoDir: string, branch: string, startPoint: string, options: { readonly track?: boolean } = {}): Promise<void> {
+    assertRefName(branch)
+    assertRevision(startPoint)
+    const track = options.track === true ? ["--track"] : []
+    await this.run("checkout", ["checkout", "-B", branch, ...track, startPoint, "--"], repoDir)
   }
 
   /** The file as stored at `rev` (`git show <rev>:<path>`), or undefined when `rev` has no such path. */

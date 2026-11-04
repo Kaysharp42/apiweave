@@ -980,6 +980,7 @@ if (!hasSingleInstanceLock) {
         collections,
         workflows,
         environments,
+        presets: nodePresets,
         workspaceGit: new WorkspaceGitRepository(database.kvStore),
       },
       hostCli,

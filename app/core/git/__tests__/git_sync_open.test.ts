@@ -2,7 +2,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it, vi } from "vitest"
+import type { JsonValue } from "@shared/types/JsonValue"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
+import { WORKSPACE_FILE, fileText } from "@shared/workspace-repo/format"
+import { readWorkspaceTree, writeWorkspaceTree } from "../workspace_tree"
 import { serializeWorkspace, workspaceSnapshot, type WorkspaceSnapshot } from "../../services/workspace_repo_format"
 import { openHarness, passthrough, type Harness } from "./git_sync_harness"
 import { makeBareRemote, rawGit } from "./git_test_utils"
@@ -27,12 +30,13 @@ function seed(harness: Harness): void {
 }
 
 function snapshotOf(harness: Harness, workspaceId = harness.workspaceId): WorkspaceSnapshot {
-  const { workspaces, collections, workflows, environments } = harness.repositories
+  const { workspaces, collections, workflows, environments, presets } = harness.repositories
   return workspaceSnapshot({
     workspace: workspaces.getById(workspaceId)!,
     projects: collections.listByWorkspace(workspaceId).items,
     workflows: workflows.listByWorkspace(workspaceId, true).items,
     environments: environments.listByWorkspace(workspaceId).items,
+    presets: presets.listByWorkspace(workspaceId).items,
   })
 }
 
@@ -111,6 +115,40 @@ describe("GitSyncService.openFromGit", () => {
     expect(await target.sync.commitLocal(source.workspaceId)).toBeUndefined()
     const status = await target.sync.status(source.workspaceId)
     expect(status.lastCommit?.sha).toBe(rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim())
+  })
+
+  it("opens the branch it is asked for, not the repository's default, and binds the workspace to that branch", async () => {
+    const { source, url } = await publishedWorkspace()
+    const work = path.join(source.sandbox.root, "open-feature-work")
+    await source.git.clone(url, work)
+    await source.git.checkout(work, "feature", "origin/main")
+    const files = await readWorkspaceTree(work)
+    const text = files.get(WORKSPACE_FILE)
+    if (text === undefined) throw new Error("the tree holds no workspace.json")
+    files.set(WORKSPACE_FILE, fileText({ ...(JSON.parse(text) as Record<string, JsonValue>), name: "Acme QA Feature" }))
+    await writeWorkspaceTree(work, files)
+    await source.git.add(work, ["."])
+    await source.git.commit(work, "Feature branch")
+    await source.git.push(work, "origin", "feature")
+    const featureTip = rawGit(work, source.sandbox.env, "rev-parse", "HEAD").trim()
+
+    const target = openHarness()
+    const result = await target.sync.openFromGit(url, null, "feature")
+
+    expect(result).toMatchObject({ kind: "opened", name: "Acme QA Feature" })
+    expect(binding(target, source.workspaceId)).toMatchObject({ remoteUrl: url, branch: "feature", lastSyncedCommit: featureTip })
+    expect(target.repositories.workspaces.getById(source.workspaceId)?.name).toBe("Acme QA Feature")
+    expect((await target.git.status(path.join(target.cloneRoot, source.workspaceId))).branch).toBe("feature")
+  })
+
+  it("refuses a branch the repository does not have, and leaves nothing behind", async () => {
+    const { source, url } = await publishedWorkspace()
+    const target = openHarness()
+
+    await expect(target.sync.openFromGit(url, null, "no-such-branch")).rejects.toThrow()
+
+    expectNothingCreated(target)
+    expect(source.repositories.workspaces.listAll()).toHaveLength(1)
   })
 
   it("trims the URL it is given, and gives the opened workspace a slug of its own when the name's is taken", async () => {
@@ -373,7 +411,7 @@ describe("GitSyncService.openFromGit", () => {
 
     it("refuses a newer format version, saying so", async () => {
       const files = validTree()
-      files.set(".apiweave/format.json", `${JSON.stringify({ format: "apiweave-workspace", version: 2 })}\n`)
+      files.set(".apiweave/format.json", `${JSON.stringify({ format: "apiweave-workspace", version: 3 })}\n`)
       const target = openHarness()
 
       await expect(target.sync.openFromGit(await publishFiles(target, "newer", files))).rejects.toThrow(
