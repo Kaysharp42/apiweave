@@ -51,6 +51,8 @@ That is the check that a manifest is *true*, as distinct from merely *present*. 
 
 > **CI does not prove the updater works.** It proves the assets are coherent. Those are different claims, and only [Rehearsing the update path](#rehearsing-the-update-path-before-users-run-it) closes the gap.
 
+The manual checks CI cannot perform — clean-machine installs, the 0.22.0 to 1.0.0 upgrade, and the first signed/notarized build — are listed in the [1.0 release checklist](../plans/1.0-release-checklist.md). That checklist is an internal operator aid, not a public contract.
+
 ## Update signatures
 
 OS code signing protects the first download and the app bundle a platform will

@@ -11,6 +11,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-04
+
+APIWeave 1.0 is the first release of the local-first desktop app as a supported
+product. It brings the surface together: a visual canvas for building and
+running API test workflows, git sync for a workspace's projects, workflows,
+environments and node presets, a headless CI runner and standalone CLI package,
+a loopback MCP bridge with embedded coding agents, signed and notarized desktop
+builds that can update in place, and an accessibility-gated UI. It is the first
+release covered by the 1.x compatibility policy.
+
 ### Added
 
 - **Signed and notarized desktop releases.** When the release secrets are

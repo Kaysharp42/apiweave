@@ -71,7 +71,7 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.awecollection` bundles and the CLI.
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.awecollection` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
 
 ## Tech Stack
 

@@ -27,6 +27,10 @@ None. Reference docs assume you already know what you are looking for. If you ar
 
 - [Compatibility and Deprecation Policy](compatibility.md): what 1.x keeps stable for MCP tools, workspace repositories, `.awecollection` bundles and the CLI, and how deprecations work.
 
+## Limitations
+
+- [Known Limitations](known-limitations.md): the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
+
 ## IPC Surface
 
 - [IPC API](api.md): the typed IPC handler registry the renderer and the local MCP bridge call.

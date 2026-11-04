@@ -5,8 +5,8 @@
 ## Prerequisites
 
 - Something to run: a workspace repository (a folder holding `.apiweave/format.json`, see [Keep Tests in a Git Repository](git-workflows.md)), a workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
-- Node.js 22 or later on the machine that runs the tests.
-- A checkout of the APIWeave repository to build the CLI from. It is not published to npm yet.
+- Node.js 22.12 or later on the machine that runs the tests.
+- The released CLI tarball (see [Install the CLI](#install-the-cli)), or a checkout of this repository if you are [building the CLI from source](#build-the-cli-from-source).
 
 ## How it works
 
