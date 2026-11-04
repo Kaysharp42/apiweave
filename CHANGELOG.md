@@ -13,14 +13,31 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Signed and notarized desktop releases.** When the release secrets are
+  configured, the workflow signs macOS with a Developer ID certificate and
+  notarizes it with Apple, and signs the Windows installer. A signed macOS
+  build now updates itself in place: both architectures are packaged in one
+  job, so a single `latest-mac.yml` covers the x64 and arm64 zips. Update
+  signatures gained a per-file map so the arm64 download is verified against
+  its own bytes. A release without the certificate secrets still builds,
+  installs and is clearly labelled unsigned.
 - **A standalone CLI package.** Every release now attaches `apiweave-cli.tgz`,
   so a CI pipeline can install the headless runner with
   `npm install -g ./apiweave-cli.tgz` instead of cloning this repository and
   building it. The package is named `@apiweave/cli` and needs Node.js 22.12 or
   newer.
+- **A 1.x compatibility policy.** The [compatibility
+  reference](docs/reference/compatibility.md) states what stays stable for MCP
+  tool names and arguments, the workspace repository format, the
+  `.awecollection` schema and CLI flags and exit codes, and how deprecations
+  work.
 
 ### Changed
 
+- **The release pipeline builds both macOS architectures in one job.** That is
+  what lets electron-builder write one `latest-mac.yml` covering both zips
+  instead of two contradictory half-manifests, and it removes the finalize
+  step that used to delete the manifest.
 - **Connect to remote lists the repositories tagged `apiweave-workspace`**,
   including ones with commits, instead of only empty ones. A repository made
   before the topic existed appears once it is tagged, without being recreated.

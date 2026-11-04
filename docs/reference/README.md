@@ -23,6 +23,10 @@ None. Reference docs assume you already know what you are looking for. If you ar
 
 - [Releases and the Update Channel](release-and-updates.md): how a published release reaches installed clients, how to rehearse the update path before users run it, and the two levers for pulling a bad release back.
 
+## Compatibility
+
+- [Compatibility and Deprecation Policy](compatibility.md): what 1.x keeps stable for MCP tools, workspace repositories, `.awecollection` bundles and the CLI, and how deprecations work.
+
 ## IPC Surface
 
 - [IPC API](api.md): the typed IPC handler registry the renderer and the local MCP bridge call.

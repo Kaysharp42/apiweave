@@ -65,7 +65,7 @@ jobs:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
         run: node app/scripts/sign-update-manifest.mjs --check
 
-      # The four packaging jobs each run `electron-builder --publish always`,
+      # The three packaging jobs each run `electron-builder --publish always`,
       # and electron-builder's GitHub publisher resolves the target release by
       # listing releases and creating one when it finds no match. That
       # find-or-create is not atomic: two jobs starting together can both miss
@@ -120,20 +120,22 @@ jobs:
             id: windows-x64
             os: windows-latest
             command: npx electron-builder --win nsis msi --x64 --publish always
-          - name: macOS Intel
-            id: macos-x64
+          # Both macOS architectures in one invocation. electron-builder merges
+          # the per-arch update-info tasks into a single latest-mac.yml with
+          # both zip entries, which is what lets macOS self-update; split
+          # across two jobs, each manifest would describe only its own arch.
+          # The Intel runner is deliberate: the smoke test runs the host-arch
+          # app, and both native dependencies ship prebuilds for both arches.
+          - name: macOS x64 and arm64
+            id: macos
             os: macos-15-intel
-            command: npx electron-builder --mac dmg --x64 --publish always
-          - name: macOS Apple Silicon
-            id: macos-arm64
-            os: macos-15
-            command: npx electron-builder --mac dmg --arm64 --publish always
+            command: npx electron-builder --mac dmg zip --x64 --arm64 --publish always
           - name: Linux x64
             id: linux-x64
             os: ubuntu-22.04
             command: npx electron-builder --linux AppImage deb rpm pacman --x64 --publish always
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -187,34 +189,83 @@ jobs:
           done
           # Without a certificate, keep electron-builder from hunting the
           # runner's keychain for any identity it can find.
-          if [[ "$RUNNER_OS" == "macOS" && -z "$CSC_LINK" ]]; then
-            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
-            echo "::notice::No CSC_LINK secret; the macOS build is unsigned."
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            if [[ -z "$CSC_LINK" ]]; then
+              echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+              echo "::notice::No CSC_LINK secret; the macOS build is unsigned and will not notarize."
+            elif [[ -z "$APPLE_ID" || -z "$APPLE_APP_SPECIFIC_PASSWORD" || -z "$APPLE_TEAM_ID" ]]; then
+              echo "::warning::CSC_LINK is configured but APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are not all set; the macOS build will be signed but not notarized."
+            else
+              echo "macOS signing and notarization credentials are configured."
+            fi
           fi
-          if [[ "$RUNNER_OS" == "Windows" && -z "$WIN_CSC_LINK" ]]; then
-            echo "::notice::No WIN_CSC_LINK secret; the Windows build is unsigned."
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            if [[ -z "$WIN_CSC_LINK" ]]; then
+              echo "::notice::No WIN_CSC_LINK secret; the Windows build is unsigned."
+            else
+              echo "Windows code-signing credentials are configured."
+            fi
           fi
 
       # electron-builder publishes straight to the draft GitHub release for
       # this tag as part of packaging — that's also what makes it write the
-      # electron-updater manifests (latest.yml / latest-linux.yml) and
-      # differential blockmaps, since those are only ever generated during an
-      # actual publish, never with `--publish never`. The draft already exists
-      # (the validate job created it), so every matrix job resolves the same
-      # release rather than racing to create one.
+      # electron-updater manifests (latest.yml / latest-linux.yml /
+      # latest-mac.yml) and differential blockmaps, since those are only ever
+      # generated during an actual publish, never with `--publish never`. The
+      # draft already exists (the validate job created it), so every matrix
+      # job resolves the same release rather than racing to create one.
       #
       # `build.publish` lists the generic provider first so app-update.yml
       # points the updater at /releases/latest/download/latest.yml — a
       # documented permalink — instead of letting electron-updater's GitHub
       # provider resolve versions by parsing releases.atom. The github entry
-      # stays second and does the actual uploading. Consequence: latest.yml and
-      # latest-linux.yml are now load-bearing for updates, not just metadata,
-      # which is what the asset check in the finalize job below guards.
+      # stays second and does the actual uploading. Consequence: those
+      # manifests are now load-bearing for updates, not just metadata, which
+      # is what the asset check in the finalize job below guards.
       - name: Package and publish installer
         working-directory: app
         env:
           GH_TOKEN: ${{ github.token }}
         run: ${{ matrix.command }}
+
+      # A configured certificate that electron-builder could not actually use
+      # must fail the job here, not become a release note claiming a signature
+      # that is not on the artifact. The credentials are exported above only
+      # when their secrets exist.
+      - name: Verify code signatures (when configured)
+        working-directory: app
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            if [[ -z "$CSC_LINK" ]]; then
+              echo "macOS build is unsigned (no CSC_LINK secret); skipping signature verification."
+              exit 0
+            fi
+            for app in release/mac/APIWeave.app release/mac-arm64/APIWeave.app; do
+              if [[ ! -d "$app" ]]; then
+                echo "::error::$app is missing; electron-builder did not produce both macOS architectures." >&2
+                exit 1
+              fi
+              codesign --verify --deep --strict --verbose=2 "$app"
+              if [[ -n "$APPLE_ID" ]]; then
+                xcrun stapler validate "$app"
+              fi
+            done
+          elif [[ "$RUNNER_OS" == "Windows" && -n "$WIN_CSC_LINK" ]]; then
+            exe="$(find release -maxdepth 1 -name '*-win-x64.exe' -print -quit)"
+            if [[ -z "$exe" ]]; then
+              echo "::error::no Windows installer to verify." >&2
+              exit 1
+            fi
+            powershell -NoProfile -Command "
+              \$sig = Get-AuthenticodeSignature -FilePath '$exe'
+              if (\$sig.Status -ne 'Valid') {
+                Write-Error \"$exe is not validly signed: \$(\$sig.Status)\"
+                exit 1
+              }
+              Write-Host \"$exe is signed: \$(\$sig.SignerCertificate.Subject)\"
+            "
+          fi
 
       # The installers wrap the unpacked app electron-builder leaves in
       # release/; launch that with --smoke-test (app/electron/smoke_test.ts).
@@ -264,6 +315,7 @@ jobs:
             app/release/*.msi
             app/release/*-win-x64.zip
             app/release/*.dmg
+            app/release/*-mac-*.zip
             app/release/*.AppImage
             app/release/*.deb
             app/release/*.rpm
@@ -326,21 +378,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The two macOS jobs each publish their own latest-mac.yml listing
-          # only the arch they built, so whichever finished last left a
-          # manifest that advertises half the release. Nothing reads it —
-          # macOS is on the notice-only path because an unsigned build can't
-          # get a self-update past Gatekeeper — so drop it rather than ship a
-          # manifest that is wrong by construction. If macOS signing lands,
-          # the fix is to build both arches in one job (`--x64 --arm64`) so
-          # electron-builder emits a single manifest covering both.
-          for stale in latest-mac.yml latest-mac.yml.blockmap; do
-            gh release delete-asset "$GITHUB_REF_NAME" "$stale" \
-              --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null \
-              && echo "Removed single-arch $stale" \
-              || echo "No $stale to remove"
-          done
-
+          # The macOS job builds both architectures in one electron-builder
+          # invocation, so the single latest-mac.yml it publishes describes
+          # both zips. Keep every manifest the updater reads; they are checked
+          # for internal consistency below and signed afterwards.
           mkdir assets
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir assets
 
@@ -356,12 +397,15 @@ jobs:
             'assets/*-win-x64.zip'
             'assets/*-mac-x64.dmg'
             'assets/*-mac-arm64.dmg'
+            'assets/*-mac-x64.zip'
+            'assets/*-mac-arm64.zip'
             'assets/*.AppImage'
             'assets/*.deb'
             'assets/*.rpm'
             'assets/*.pacman'
             'assets/latest.yml'
             'assets/latest-linux.yml'
+            'assets/latest-mac.yml'
             'assets/apiweave-cli*.tgz'
           )
           for pattern in "${expected[@]}"; do
@@ -371,9 +415,10 @@ jobs:
             }
           done
 
-          # The manifest the in-app update check reads, on the platforms that
-          # can't self-install (macOS, deb/rpm/pacman). It exists so that check
-          # depends on a documented GitHub permalink
+          # The manifest the in-app update check reads on platforms that
+          # cannot take an electron-updater update (an unsigned macOS build,
+          # and deb/rpm/pacman). It exists so that check depends on a
+          # documented GitHub permalink
           # (/releases/latest/download/<asset>) carrying a payload we define,
           # rather than on the shape of a redirect, an Atom feed, or
           # api.github.com's 60-request unauthenticated hourly budget.
@@ -472,14 +517,17 @@ jobs:
 
           check_manifest assets/latest.yml
           check_manifest assets/latest-linux.yml
+          check_manifest assets/latest-mac.yml
 
       # Signs each manifest's version and installer sha512 with the update
       # signing key; every client verifies that against the key compiled into
       # it before installing anything (app/electron/update_signature.ts). The
       # script hashes the installer bytes itself rather than trusting the
-      # manifest, and fails the job if the secret is missing. The signature
-      # does not cover stagingPercentage, so the rollout workflow can still
-      # rewrite it without the key.
+      # manifest, fails the job if the secret is missing, and writes a
+      # per-file signature for every entry in a multi-file manifest (the two
+      # macOS zip architectures). The signature does not cover
+      # stagingPercentage, so the rollout workflow can still rewrite it
+      # without the key.
       - name: Sign update manifests
         shell: bash
         env:
@@ -487,8 +535,8 @@ jobs:
           UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          node app/scripts/sign-update-manifest.mjs assets/latest.yml assets/latest-linux.yml
-          gh release upload "$GITHUB_REF_NAME" assets/latest.yml assets/latest-linux.yml \
+          node app/scripts/sign-update-manifest.mjs assets/latest.yml assets/latest-linux.yml assets/latest-mac.yml
+          gh release upload "$GITHUB_REF_NAME" assets/latest.yml assets/latest-linux.yml assets/latest-mac.yml \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
@@ -496,20 +544,43 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
         run: |
+          if [[ -n "$CSC_LINK" && -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            mac_status="The macOS build is **signed and notarized** by Apple and updates itself in place."
+          elif [[ -n "$CSC_LINK" ]]; then
+            mac_status="The macOS build is **code-signed but not notarized**; Gatekeeper may still ask you to confirm the first launch."
+          else
+            mac_status="The macOS build is **unsigned**; see the installation guide for the first-launch Gatekeeper step."
+          fi
+          if [[ -n "$WIN_CSC_LINK" ]]; then
+            win_status="The Windows build is **code-signed**."
+          else
+            win_status="The Windows build is **unsigned**; SmartScreen may warn on first launch."
+          fi
+
           cat > release-notes.md <<'EOF'
           APIWeave desktop builds for Windows, macOS, and Linux.
 
           ## Downloads
 
           - **Windows:** x64 NSIS installer shipped as a `.zip` — extract it and run the `.exe` inside; installed copies update in place. The bare `.exe` asset beside it is the in-app updater's download; the `.zip` is the one to grab by hand. An `.msi` installer is also available for managed / per-machine deployment.
-          - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`)
+          - **macOS:** Intel x64 and Apple Silicon arm64 disk images (`.dmg`). Installed copies update in place when the build is signed and notarized.
           - **Linux:** portable AppImage (can install updates in place), Debian/Ubuntu (`.deb`), Fedora/RHEL/openSUSE (`.rpm`), and Arch/Manjaro (`.pacman`)
           - **CLI:** `apiweave-cli.tgz` for headless `apiweave run` in CI. Install it with `npm install -g ./apiweave-cli.tgz`.
 
           The app notifies you when a new version exists and downloads it only once you agree; **Settings → Updates** can switch that to fully automatic or off.
 
-          The Windows and macOS builds are currently unsigned. See the [installation guide](https://github.com/Kaysharp42/apiweave/blob/main/docs/getting-started/installation.md) for first-launch instructions. Verify downloads with `SHA256SUMS.txt`.
+          EOF
+
+          printf '%s %s\n\n' "$mac_status" "$win_status" >> release-notes.md
+
+          cat >> release-notes.md <<'EOF'
+          Verify downloads with `SHA256SUMS.txt`. See the [installation guide](https://github.com/Kaysharp42/apiweave/blob/main/docs/getting-started/installation.md) for first-launch notes.
 
           EOF
 

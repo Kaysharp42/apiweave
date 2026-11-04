@@ -15,6 +15,7 @@ vi.mock("electron", () => ({
       return electronApp.isPackaged
     },
     getVersion: () => electronApp.getVersion(),
+    getPath: () => "/Applications/APIWeave.app/Contents/MacOS/APIWeave",
     on: (_event: "quit", handler: (event: unknown, exitCode: number) => void) => quitListeners.add(handler),
     off: (_event: "quit", handler: (event: unknown, exitCode: number) => void) => quitListeners.delete(handler),
   },
@@ -22,6 +23,11 @@ vi.mock("electron", () => ({
     openExternal: (...args: unknown[]) => mockOpenExternal(...args),
   },
 }))
+
+// macOS chooses between the self-installing and notice-only paths by asking
+// codesign whether the running bundle carries a Developer ID signature.
+const mockSpawnSync = vi.hoisted(() => vi.fn())
+vi.mock("node:child_process", () => ({ spawnSync: mockSpawnSync }))
 
 // electron-log reaches into app paths and the ipcMain singleton at import time,
 // neither of which exist here. The logger's only contract that matters to these
@@ -61,6 +67,7 @@ function listenerCount(): number {
 const mockVerify = vi.hoisted(() => vi.fn((): Promise<string | null> => Promise.resolve(null)))
 vi.mock("../update_signature", () => ({
   UPDATE_SIGNATURE_FIELD: "apiweaveSignature",
+  UPDATE_FILE_SIGNATURES_FIELD: "apiweaveSignatures",
   verifyUpdateFile: mockVerify,
 }))
 
@@ -153,6 +160,8 @@ const MANIFEST_URL = "https://github.com/Kaysharp42/apiweave/releases/latest/dow
 
 beforeEach(() => {
   electronApp.isPackaged = true
+  mockSpawnSync.mockReset()
+  mockSpawnSync.mockReturnValue({ status: 1, stdout: "", stderr: "code object is not signed at all" })
   updaterListeners.clear()
   quitListeners.clear()
   mockVerify.mockReset()
@@ -259,7 +268,22 @@ describe("platformSupportsAutoInstall", () => {
     })
   })
 
-  it("is false on macOS, where Gatekeeper blocks an unsigned self-update", () => {
+  it("is true on macOS only when the bundle has a Developer ID signature", () => {
+    withPlatform("darwin", undefined, () => {
+      expect(platformSupportsAutoInstall()).toBe(false)
+    })
+
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "",
+      stderr: "Authority=Developer ID Application: Example Corp (ABCDE12345)\n",
+    })
+    withPlatform("darwin", undefined, () => {
+      expect(platformSupportsAutoInstall()).toBe(true)
+    })
+
+    // Electron's own ad-hoc signature is not enough for Squirrel.Mac.
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "", stderr: "Signature=adhoc\n" })
     withPlatform("darwin", undefined, () => {
       expect(platformSupportsAutoInstall()).toBe(false)
     })
@@ -434,7 +458,17 @@ describe("UpdateManager on the auto-installing path", () => {
 
     emit("update-downloaded", downloaded("0.7.0"))
     await vi.waitFor(() => expect(manager.getStatus()).toMatchObject({ state: "downloaded", downloadProgressPercent: 100 }))
-    expect(mockVerify).toHaveBeenCalledWith("/cache/APIWeave-0.7.0.exe", "0.7.0", "c2ln")
+    expect(mockVerify).toHaveBeenCalledWith("/cache/APIWeave-0.7.0.exe", "0.7.0", "c2ln", undefined)
+  })
+
+  it("passes per-file signatures from a multi-file manifest to the verifier", async () => {
+    const { manager } = createManager("win32", "automatic")
+    const signatures = { "APIWeave-0.7.0-mac-arm64.zip": "YXJtNjQ=" }
+    emit("update-available", { version: "0.7.0" })
+    emit("update-downloaded", { ...downloaded("0.7.0"), apiweaveSignatures: signatures })
+
+    await vi.waitFor(() => expect(manager.getStatus().state).toBe("downloaded"))
+    expect(mockVerify).toHaveBeenCalledWith("/cache/APIWeave-0.7.0.exe", "0.7.0", "c2ln", signatures)
   })
 
   it("refuses a download whose signature does not verify", async () => {
@@ -791,7 +825,9 @@ describe("UpdateManager dev update override", () => {
     const fetchSpy = vi.fn(() => Promise.resolve(manifestResponse({ schema: 1, version: "0.7.0" })))
     vi.stubGlobal("fetch", fetchSpy)
 
-    const { manager } = createManager("darwin", "notify")
+    // Linux without APPIMAGE is a notice-only platform, so the override reaches
+    // the version.json check that a packaged deb/rpm install would use.
+    const { manager } = createManager("linux", "notify")
     const status = await manager.check()
 
     // Without this the download-and-install path first executes on a user's
