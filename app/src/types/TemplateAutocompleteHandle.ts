@@ -24,6 +24,7 @@ export interface TemplateAutocompleteHandle<
     readonly onSelect: (event: SyntheticEvent<E>) => void;
     readonly onKeyDown: (event: KeyboardEvent<E>) => void;
     readonly onBlur: () => void;
+    readonly role: "combobox";
     readonly "aria-autocomplete": "list";
     readonly "aria-expanded": boolean;
     readonly "aria-controls": string | undefined;

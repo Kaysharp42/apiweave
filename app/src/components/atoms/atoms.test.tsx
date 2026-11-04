@@ -488,13 +488,17 @@ describe("NodeHandle", () => {
     // react-flow adds data-id and data-handlepos attributes
     const handle = container.querySelector(".react-flow__handle");
     expect(handle).not.toBeNull();
-    expect(handle?.getAttribute("aria-label")).toBe("source handle");
+    expect(handle?.classList.contains("source")).toBe(true);
+    // A handle is a pointer affordance with no role or keyboard model, so it
+    // must not carry a name: ARIA prohibits aria-label on a bare div.
+    expect(handle?.hasAttribute("aria-label")).toBe(false);
   });
 
   it('renders a target handle when type="target"', () => {
     const { container } = renderInReactFlow(<NodeHandle type="target" />);
     const handle = container.querySelector(".react-flow__handle");
-    expect(handle?.getAttribute("aria-label")).toBe("target handle");
+    expect(handle?.classList.contains("target")).toBe(true);
+    expect(handle?.hasAttribute("aria-label")).toBe(false);
   });
 
   it("maps the position prop to the react-flow Position enum", () => {

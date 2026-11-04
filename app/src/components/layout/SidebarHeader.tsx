@@ -208,7 +208,7 @@ export function SidebarHeader({
         </div>
 
         <div className="flex items-center gap-1.5 px-3 pb-1.5 min-w-0">
-          <h2 className="truncate text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+          <h2 className="truncate text-xxs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
             {getNavLabel()}
           </h2>
           {isRefreshing && (

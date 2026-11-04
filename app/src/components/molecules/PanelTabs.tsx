@@ -39,7 +39,6 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
             ].join(" ")}
             role="tab"
             aria-selected={isActive}
-            aria-controls={`panel-tab-${tab.key}`}
             tabIndex={isActive ? 0 : -1}
           >
             {Icon && (

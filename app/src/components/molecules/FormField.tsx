@@ -53,7 +53,7 @@ export function FormField({
               {error}
             </span>
           ) : (
-            <span className="text-xs text-text-muted dark:text-text-muted-dark">
+            <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
               {hint}
             </span>
           )}

@@ -111,7 +111,7 @@ export function HttpRequestOutputPanel({
       <div className="flex h-full min-h-0 items-center justify-center bg-surface-raised p-6 dark:bg-surface-dark-raised">
         <div className="text-center">
           <FileText className="mx-auto mb-4 h-16 w-16 text-text-muted dark:text-text-muted-dark/70" />
-          <p className="mb-2 text-sm text-text-muted dark:text-text-muted-dark">
+          <p className="mb-2 text-sm text-text-secondary dark:text-text-secondary-dark">
             Execute this node to view data
           </p>
         </div>

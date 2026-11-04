@@ -87,9 +87,8 @@ test("ResponseInspector renders all six response tabs", () => {
     },
   );
 
-  ["tree", "raw", "headers", "cookies", "preview", "timing"].forEach((key) => {
-    assertIncludes(markup, `aria-controls="panel-tab-${key}"`);
-  });
+  assertIncludes(markup, 'role="tablist"');
+  assertIncludes(markup, 'aria-selected="true"');
 });
 
 test("ResponseInspector renders refreshed empty state when no response exists", () => {
