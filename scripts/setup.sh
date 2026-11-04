@@ -25,9 +25,23 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
   exit 1
 fi
 echo "Node.js $(node -v) detected"
-echo
 
-cd "$APP_DIR"
+# node-pty 1.1.0 ships prebuilds for macOS and Windows, but not Linux, so the
+# install script compiles it here. Fail with a useful message instead of a
+# node-gyp stack trace.
+if [ "$(uname -s)" = "Linux" ]; then
+  for tool in make python3; do
+    if ! command -v "$tool" &>/dev/null; then
+      echo "ERROR: building on Linux needs $tool (install build-essential)." >&2
+      exit 1
+    fi
+  done
+  if ! command -v g++ &>/dev/null && ! command -v clang++ &>/dev/null; then
+    echo "ERROR: building on Linux needs a C++ compiler (g++ or clang++)." >&2
+    exit 1
+  fi
+fi
+echo
 echo "Installing app dependencies..."
 npm install
 

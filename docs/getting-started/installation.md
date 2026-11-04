@@ -11,7 +11,7 @@
 - About 500 MB of free disk space for the installer and the local SQLite database.
 - A network connection on first launch. The database, the secret store and the bundled fonts stay on your machine, and the app loads no third-party UI assets. After launch, an untracked workspace's only automatic network activity is the update check, and a tracked workspace also fetches and pushes its git remote — see [Updates](#updates) and [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
-For contributors who want to build the desktop app from source: Node.js 22.12+ and npm. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
+For contributors who want to build the desktop app from source: Node.js 22.12+ and npm. On Linux, the `node-pty` dependency compiles a native addon, so the source build also needs a C++ toolchain (`build-essential` on Debian/Ubuntu, or `make`, `python3` and `g++`/`clang++`). The prebuilt installers do not need it. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
 
 ## Download the Installer
 
