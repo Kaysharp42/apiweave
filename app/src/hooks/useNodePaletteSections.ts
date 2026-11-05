@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import {
   Bookmark,
   CheckCircle,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import useNodePresetStore from "../stores/NodePresetStore";
+import { useWorkspacePresets } from "./useWorkspacePresets";
 import { NODE_MODAL_TYPE_LABELS } from "../utils/nodeModalMeta";
 import { presetDragTemplate } from "../utils/nodePresets";
 import type {
@@ -139,14 +140,8 @@ export function useNodePaletteSections(
   const loadedWorkspaceId = useNodePresetStore(
     (state) => state.loadedWorkspaceId,
   );
-  const isLoadingPresets = useNodePresetStore((state) => state.isLoading);
 
-  useEffect(() => {
-    if (!workspaceId || loadedWorkspaceId === workspaceId || isLoadingPresets) {
-      return;
-    }
-    void useNodePresetStore.getState().fetchPresets(workspaceId);
-  }, [workspaceId, loadedWorkspaceId, isLoadingPresets]);
+  useWorkspacePresets(workspaceId);
 
   return useMemo<NodePaletteSectionType[]>(() => {
     const sections = [...builtInNodePaletteSections];

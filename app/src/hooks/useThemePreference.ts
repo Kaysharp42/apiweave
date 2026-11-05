@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { ThemePreference, UseThemePreferenceResult } from "../types";
 import { getStoredValue, setStoredValue } from "../utils/storedValue";
+import { useMediaQuery } from "./useMediaQuery";
 
 const THEME_PREFERENCE_KEY = "themePreference";
 const DARK_SCHEME_QUERY = "(prefers-color-scheme: dark)";
@@ -16,14 +17,6 @@ function readThemePreference(): ThemePreference {
   } catch {
     return "system";
   }
-}
-
-function systemPrefersDark(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(DARK_SCHEME_QUERY).matches
-  );
 }
 
 /** The one rule that turns a preference and the OS setting into a theme. */
@@ -46,22 +39,7 @@ export function resolveDarkMode(
 export function useThemePreference(): UseThemePreferenceResult {
   const [themePreference, setPreference] =
     useState<ThemePreference>(readThemePreference);
-  const [prefersDark, setPrefersDark] = useState<boolean>(systemPrefersDark);
-
-  useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
-      return;
-    }
-    const media = window.matchMedia(DARK_SCHEME_QUERY);
-    const sync = () => setPrefersDark(media.matches);
-    // The OS can have flipped between the seeding render and this effect.
-    sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  }, []);
+  const prefersDark = useMediaQuery(DARK_SCHEME_QUERY);
 
   const setThemePreference = useCallback((next: ThemePreference) => {
     setPreference(next);

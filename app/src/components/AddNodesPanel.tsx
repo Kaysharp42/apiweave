@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Popover, Transition } from "@headlessui/react";
 import { PanelRightOpen, Plus, X } from "lucide-react";
 import { NodePalette } from "./organisms/NodePalette";
 import { Tooltip } from "./atoms/Tooltip";
-import useNodePresetStore from "../stores/NodePresetStore";
 import useCanvasPrefsStore from "../stores/CanvasPrefsStore";
+import { useWorkspacePresets } from "../hooks/useWorkspacePresets";
 import {
   canvasActionsBottom,
   CanvasCornerGutter,
@@ -20,18 +20,9 @@ export default function AddNodesPanel({
   onAddNode = () => {},
 }: AddNodesPanelProps) {
   const [paletteKey, setPaletteKey] = useState(0);
-  const loadedWorkspaceId = useNodePresetStore(
-    (state) => state.loadedWorkspaceId,
-  );
-  const isLoadingPresets = useNodePresetStore((state) => state.isLoading);
   const minimapVisible = useCanvasPrefsStore((state) => state.minimapVisible);
 
-  useEffect(() => {
-    if (!workspaceId || loadedWorkspaceId === workspaceId || isLoadingPresets) {
-      return;
-    }
-    void useNodePresetStore.getState().fetchPresets(workspaceId);
-  }, [isLoadingPresets, loadedWorkspaceId, workspaceId]);
+  useWorkspacePresets(workspaceId);
 
   return (
     <div
