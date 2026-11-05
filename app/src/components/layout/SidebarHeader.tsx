@@ -128,8 +128,6 @@ export function SidebarHeader({
         return "Projects";
       case "agents":
         return "Agents";
-      case "mcp":
-        return "MCP";
       case "settings":
         return "Settings";
       default:
@@ -162,7 +160,7 @@ export function SidebarHeader({
 
   const collectionImportItems: ImportMenuItem[] = [
     {
-      label: "Collection",
+      label: "Project (.awecollection)",
       icon: FolderOpen,
       action: () =>
         dispatch({ type: "open-collection-import", mode: "import-collection" }),
@@ -208,7 +206,7 @@ export function SidebarHeader({
         </div>
 
         <div className="flex items-center gap-1.5 px-3 pb-1.5 min-w-0">
-          <h2 className="truncate text-xxs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
+          <h2 className="truncate text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
             {getNavLabel()}
           </h2>
           {isRefreshing && (

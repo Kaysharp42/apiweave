@@ -52,7 +52,7 @@ Secrets do not move between machines. `keyfile.json` is sealed by the operating 
 
 - **If development changes do not appear**, stop and restart `npm run dev`. The Vite renderer reloads browser changes, while Electron main-process changes require a restart.
 - **If the main process refuses to start with a database error**, the user data directory is not writable. Check permissions and free disk space.
-- **If an MCP client cannot connect**, enable the bridge in **Settings** and copy the live loopback URL from the **MCP** panel. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
+- **If an MCP client cannot connect**, enable the bridge in **Settings → MCP Server** and copy the live loopback URL from that page. APIWeave prefers port `47271` and automatically selects a free fallback if that port is occupied.
 - **If APIWeave says your stored secrets cannot be decrypted at startup**, `keyfile.json` is missing or the operating system keychain will not open it. Quit, then restore `keyfile.json` from the same backup as the database, or unlock the keychain (on Linux, start GNOME Keyring or KWallet). After moving to a new machine, choose to delete the stored secrets and re-enter them.
 
 ## Related

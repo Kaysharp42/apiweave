@@ -30,16 +30,6 @@ const RUN_RESOURCE_NAME = "run-snapshot"
 const RUN_RESOURCE_DESCRIPTION =
   "A safe, current snapshot of one workflow run: status, timing, and per-node status/statusCode. Metadata only — never response bodies, headers, cookies, URLs, or secret values."
 
-/** Inventory for the setup control plane / MCPManager. Mirrors MCP_TOOLS/MCP_PROMPTS. */
-export const MCP_RESOURCES: readonly { name: string; uriTemplate: string; description: string }[] = [
-  { name: RUN_RESOURCE_NAME, uriTemplate: RUN_RESOURCE_URI_TEMPLATE, description: RUN_RESOURCE_DESCRIPTION },
-  ...MCP_GUIDES.map((guide) => ({
-    name: guide.slug,
-    uriTemplate: guideUri(guide.slug),
-    description: guide.description,
-  })),
-]
-
 /**
  * Register the authoring guides as CONCRETE resources, not a template.
  *

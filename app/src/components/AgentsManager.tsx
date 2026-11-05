@@ -25,10 +25,10 @@ interface AgentsManagerProps {
 /**
  * The Agents section: every session in this workspace, live ones first.
  *
- * Owns the domain the way `MCPManager` owns MCP — a full-height sidebar section
- * rather than a modal, because this is where the user comes to find a session
- * again, not to configure one. Configuration is Settings → Agents; launching is
- * the canvas toolbar and the Projects list. This is the list.
+ * A full-height sidebar section rather than a modal, because this is where the
+ * user comes to find a session again, not to configure one. Configuration is
+ * Settings → Agents; launching is the canvas toolbar and the Projects list.
+ * This is the list.
  *
  * Selecting a session opens it in the terminal dock, which lives in the main
  * pane rather than in here: a 380px-wide terminal is a terminal you fight, and
@@ -265,7 +265,7 @@ function SessionRow({
               {session.title}
             </span>
           )}
-          <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-[11px] text-text-muted dark:text-text-muted-dark">
+          <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-2xs text-text-muted dark:text-text-muted-dark">
             <FolderOpen className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{session.cwd}</span>
           </span>
@@ -273,11 +273,11 @@ function SessionRow({
               without this every finished session below the fold is undated —
               and the row that reads identically to the one under it is usually
               the same agent in the same folder on a different day. */}
-          <span className="mt-0.5 block text-[11px] text-text-muted dark:text-text-muted-dark">
+          <span className="mt-0.5 block text-2xs text-text-muted dark:text-text-muted-dark">
             {formatTimestamp(session.startedAt)}
           </span>
           {session.error !== null && session.error !== undefined && (
-            <span className="mt-1 block text-[11px] text-status-error">
+            <span className="mt-1 block text-2xs text-status-error">
               {session.error}
             </span>
           )}

@@ -173,7 +173,7 @@ export const agentsChapter: TutorialChapter = {
         {
           title: "Copy the connection details",
           instruction:
-            "Copy the live URL and token from the MCP panel. It also offers a ready-made client config and an npx mcp-remote bridge command for stdio-only clients.",
+            "Copy the live URL and token from the MCP Server settings page. It also offers a ready-made client config and an npx mcp-remote bridge command for stdio-only clients.",
         },
         {
           title: "Add the client configuration",
@@ -234,7 +234,7 @@ export const agentsChapter: TutorialChapter = {
         {
           title: "Connection refused",
           instruction:
-            "APIWeave must be running and the bridge enabled. Copy the current URL from the MCP panel instead of assuming 47271.",
+            "APIWeave must be running and the bridge enabled. Copy the current URL from the MCP Server settings page instead of assuming 47271.",
         },
         {
           title: "401 Unauthorized",

@@ -66,12 +66,12 @@ describe("AppNavBar settings navigation", () => {
     workspaceContext.currentWorkspace = { slug: "personal" };
   });
 
-  it("opens MCP from settings without falling onto the malformed workflows slug", async () => {
+  it("opens Agents from settings without falling onto the malformed workflows slug", async () => {
     const user = userEvent.setup();
     workspaceContext.currentWorkspace = null;
     renderNavAt("/personal/personal/settings/environments");
 
-    await user.click(screen.getByRole("button", { name: "MCP" }));
+    await user.click(screen.getByRole("button", { name: "Agents" }));
 
     expect(screen.getByTestId("location-probe").textContent).toBe(
       "/personal/personal/workflows",

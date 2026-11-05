@@ -96,7 +96,7 @@ The local MCP bridge is opt-in. To enable it for a local AI agent:
 
 1. Open **Settings** from the left navigation rail.
 2. Toggle **Enable MCP bridge**.
-3. The app binds a loopback HTTP server on `127.0.0.1` and writes a per-install token to a file in the data directory. **Regenerate token** in the MCP settings replaces it and closes sessions opened with the old one. The **MCP** panel in the app shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
+3. The app binds a loopback HTTP server on `127.0.0.1` and writes a per-install token to a file in the data directory. **Regenerate token** in the MCP settings replaces it and closes sessions opened with the old one. The **Settings → MCP Server** page shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
 
@@ -159,7 +159,7 @@ A quick checklist after first launch:
 1. The window opens at the workflows list. No login screen.
 2. The data directory was created and contains `apiweave.db` and `keyfile.json`.
 3. **Settings → Updates** shows the version you installed.
-4. (Optional) Toggle the MCP bridge in **Settings** and confirm the **MCP** panel shows a `127.0.0.1` URL and a token.
+4. (Optional) Toggle the MCP bridge in **Settings** and confirm **Settings → MCP Server** shows a `127.0.0.1` URL and a token.
 
 ## Where Things Live
 
@@ -198,7 +198,7 @@ Move on to [Your First Workflow](first-workflow.md) for a 5-minute tour of the c
 - **If the app shows "APIWeave could not start"**, startup failed before a window could open — for example the database was written by a newer APIWeave build, the database fails its integrity check, a schema upgrade failed, or the keyfile is unreadable. The dialog names the error, the log file, and the data folder, and for a damaged database or a failed upgrade it names the backup to restore: quit, replace `apiweave.db` with the backup copy, and relaunch; the app then exits, so it can be relaunched once the cause is fixed. Attach the log file to a bug report.
 - **If the window crashes**, a dialog offers **Reload** or **Quit**. The crash reason is recorded in the log, along with any uncaught error in the main process; each session's log opens with the app version, Electron version, and OS.
 - **If the data directory is read-only**, the OS user account does not have write permission to the user data path. Check the OS-level permission on the path and the disk's free space.
-- **If the MCP bridge refuses to start**, another process is already bound to the preferred loopback port. APIWeave automatically selects a free fallback port; check the live URL in the **MCP** panel, or stop the conflicting process to reclaim `47271`.
+- **If the MCP bridge refuses to start**, another process is already bound to the preferred loopback port. APIWeave automatically selects a free fallback port; check the live URL under **Settings → MCP Server**, or stop the conflicting process to reclaim `47271`.
 
 ## Related
 
