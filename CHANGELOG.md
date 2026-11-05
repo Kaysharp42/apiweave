@@ -11,6 +11,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Project bundles use the `.aweproject` extension.** The export filename, the
+  import picker and detection, the bundle's `type` identifier, the headless CLI
+  and the guides now name the format by its new extension. The JSON shape is
+  unchanged.
+
 ## [1.0.0] — 2026-11-04
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported
@@ -60,7 +67,7 @@ release covered by the 1.x compatibility policy.
 - **A 1.x compatibility policy.** The [compatibility
   reference](docs/reference/compatibility.md) states what stays stable for MCP
   tool names and arguments, the workspace repository format, the
-  `.awecollection` schema and CLI flags and exit codes, and how deprecations
+  `.aweproject` schema and CLI flags and exit codes, and how deprecations
   work.
 
 ### Changed

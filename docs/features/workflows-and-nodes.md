@@ -31,7 +31,7 @@
 
 Every workflow can live inside a project on your local machine. A workflow belongs to at most one project at a time, or can be left outside any project. The sidebar lists every project and every workflow in the project. Workflows open as tabs, so you can switch between several open workflows on the canvas with `Ctrl+Tab`.
 
-Workflows are members of a project. A workflow can be inside one project at a time, and the project list records the order you intend to run them in. See [Projects](projects.md) for the grouping flow and the `.awecollection` export.
+Workflows are members of a project. A workflow can be inside one project at a time, and the project list records the order you intend to run them in. See [Projects](projects.md) for the grouping flow and the `.aweproject` export.
 
 ## Building a Workflow
 

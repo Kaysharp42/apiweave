@@ -6,7 +6,7 @@
 -- (`core/sync/cloud-mutations.ts`), so a column there would technically stay
 -- local — but only for as long as nobody adds it to that list, and an absolute
 -- Windows path arriving on someone's Mac is a silent, confusing failure. A
--- separate table has no sync path to add it to, and keeps `.awecollection`
+-- separate table has no sync path to add it to, and keeps `.aweproject`
 -- export bundles free of machine paths by construction.
 --
 -- The scope is polymorphic (`project` = a collection row, `workflow` = a

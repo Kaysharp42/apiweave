@@ -52,7 +52,7 @@ The id is part of every file name, so two people creating "Get user" at the same
 Secret values never reach a repository:
 
 - `{{secrets.NAME}}` references stay as written, so the repository says which secrets a workflow uses and CI supplies each as `APIWEAVE_SECRET_<NAME>`.
-- A credential typed straight into a request or a variable is withheld, the way an `.awecollection` export withholds it: it becomes `<SECRET>`, or a secret-named header is left out.
+- A credential typed straight into a request or a variable is withheld, the way an `.aweproject` export withholds it: it becomes `<SECRET>`, or a secret-named header is left out.
 - Secret values, their ciphertext and keys, and the list of secret names stored on this machine are never written.
 - Never written either: user-scoped environments, run history, agents, and workflow revisions.
 - An environment's base environment is written as its id, and is validated when the repository is read: it must be another workspace-scoped environment in the same repository, and the chain may not form a cycle or run deeper than eight environments.
@@ -306,7 +306,7 @@ apiweave run ./tests --workflow "Login" --env Staging    # one workflow
 - Exit code `0` when everything passed, `1` when a test failed, `2` for a usage or configuration error, such as a missing secret or an invalid file (the message names the file).
 - `--bail` also stops the sequence at the first project that did not complete.
 
-A `.awecollection` bundle, a single workflow export and a Postman collection still run with the same command. Every option, the reports and a GitHub Actions job are in [Run Tests in CI](ci.md).
+A `.aweproject` bundle, a single workflow export and a Postman collection still run with the same command. Every option, the reports and a GitHub Actions job are in [Run Tests in CI](ci.md).
 
 ## Not covered in this release
 
@@ -344,6 +344,6 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 ## Related
 
 - [Run Tests in CI](ci.md): every `apiweave run` option and a GitHub Actions job.
-- [Projects](../features/projects.md): project runs and `.awecollection` bundles.
+- [Projects](../features/projects.md): project runs and `.aweproject` bundles.
 - [Environments and Secrets](../features/environments-and-secrets.md): secrets and how references resolve.
 - [Workflows and Nodes: Version history](../features/workflows-and-nodes.md#version-history): a workflow's own saved versions.

@@ -64,7 +64,7 @@ A failed iteration does not stop the next one. **Cancel** stops the iteration th
 ## Run with data in CI
 
 ```bash
-apiweave run api.awecollection --env Staging --iteration-data users.csv
+apiweave run api.aweproject --env Staging --iteration-data users.csv
 apiweave run login.json -d users.json --bail --reporter cli,junit
 apiweave run smoke.json --iteration-count 5
 ```

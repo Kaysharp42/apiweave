@@ -10,7 +10,7 @@ import { safeName } from "@shared/env-file/envFile"
 
 /**
  * Postman Collection v2.1 → APIWeave project bundle. Pure: it builds the same
- * `.awecollection` bundle an export produces, and `ProjectExportService`
+ * `.aweproject` bundle an export produces, and `ProjectExportService`
  * imports it, so a Postman import gets the bundle import's validation, single
  * transaction and missing-secret check for free. Every mapping rule is
  * documented in docs/guides/migrating-from-postman.md; keep the two in step.
@@ -371,7 +371,7 @@ class PostmanConverter {
 
     const bundle: ProjectBundle = {
       schemaVersion: SCHEMA_VERSION,
-      type: "awecollection",
+      type: "aweproject",
       project: {
         projectId: "postman_collection",
         name,

@@ -40,7 +40,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 - [Data-Driven Runs](features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
 - [Node Presets](features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](features/visualization-and-debugging.md): the run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
-- [Projects](features/projects.md): ordered groups of workflows and `.awecollection` export and import (references only).
+- [Projects](features/projects.md): ordered groups of workflows and `.aweproject` export and import (references only).
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [Network](features/network.md): proxy, private certificate authorities and client certificates for every request.
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
@@ -74,7 +74,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Variables and Extractors](features/variables-and-extractors.md): pass data between steps with the four placeholder namespaces.
 - [Node Presets](features/node-presets.md): a saved, workspace-wide library of reusable node configurations.
 - [Visualization and Debugging](features/visualization-and-debugging.md): timeline, provenance, secret confidence, and the run camera.
-- [Projects](features/projects.md): group workflows into ordered runs and export them as `.awecollection` bundles.
+- [Projects](features/projects.md): group workflows into ordered runs and export them as `.aweproject` bundles.
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance, the encrypted secret store, and the metadata-only display.
 - [MCP Integration](features/mcp-integration.md): the loopback HTTP bridge for local AI agents.
 - [Swagger and OpenAPI Import](features/swagger-import.md): import endpoints from a spec.

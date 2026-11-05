@@ -31,7 +31,7 @@ admin) are GitHub's repository roles, word for word.
 | D8 | **APIWeave does the merge.** A semantic 3-way merge by node, edge and field, not git's line merge. The result is committed as a real two-parent merge commit. |
 | D9 | **Hard cut.** There are no real Cloud users, so the `cloud_*` tables and all Cloud code are deleted with no sunset or migration path. Every desktop already holds a full local copy, so no data is lost. |
 | D10 | **`apiweave-cloud` becomes a static export** (Next `output: "export"`) on GitHub Pages or Cloudflare Pages. The Go API, Postgres, Zitadel, Caddy and the server are retired. |
-| D11 | **The one-shot "Export/Import project folder" is removed.** Its serializer becomes the core of the repo format. The single-file `.awecollection` export stays for sharing a copy. |
+| D11 | **The one-shot "Export/Import project folder" is removed.** Its serializer becomes the core of the repo format. The single-file `.aweproject` export stays for sharing a copy. |
 
 Defaults chosen by the plan, open to objection:
 - Workspaces with E2EE enabled lose the setting. A private repo replaces it.

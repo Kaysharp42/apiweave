@@ -25,7 +25,7 @@ None. Reference docs assume you already know what you are looking for. If you ar
 
 ## Compatibility
 
-- [Compatibility and Deprecation Policy](compatibility.md): what 1.x keeps stable for MCP tools, workspace repositories, `.awecollection` bundles and the CLI, and how deprecations work.
+- [Compatibility and Deprecation Policy](compatibility.md): what 1.x keeps stable for MCP tools, workspace repositories, `.aweproject` bundles and the CLI, and how deprecations work.
 
 ## Limitations
 

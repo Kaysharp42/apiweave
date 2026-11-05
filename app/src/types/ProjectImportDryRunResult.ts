@@ -1,4 +1,4 @@
-/** What validating an `.awecollection` bundle reports before anything is imported. */
+/** What validating an `.aweproject` bundle reports before anything is imported. */
 export interface ProjectImportDryRunResult {
   valid: boolean;
   errors: string[];

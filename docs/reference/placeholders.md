@@ -103,7 +103,7 @@ You can also address a node's result directly by its node ID, without `prev.*` a
 
 ## Secrets
 
-`secrets.*` reads from the local encrypted secret store through the [scope chain](#the-scope-chain). Secret values are write-only at every layer. The metadata-only display shows the secret name, scope, key id, and last update time. The runner decrypts the value, substitutes the plaintext into the request field, header, or body, and the masking layer scrubs the value before any result is persisted. The plaintext never appears in the canvas, run history, or `.awecollection` bundle.
+`secrets.*` reads from the local encrypted secret store through the [scope chain](#the-scope-chain). Secret values are write-only at every layer. The metadata-only display shows the secret name, scope, key id, and last update time. The runner decrypts the value, substitutes the plaintext into the request field, header, or body, and the masking layer scrubs the value before any result is persisted. The plaintext never appears in the canvas, run history, or `.aweproject` bundle.
 
 ```text
 {{secrets.API_KEY}}        # resolved from the scope chain, never persisted

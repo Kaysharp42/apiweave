@@ -194,7 +194,7 @@ page or through the CLI flags.
   before a schema upgrade, keep the newest five, and contain the database only.
   A copied keyfile still only opens for the same user on the same machine, so
   moving to a new machine means re-entering the secrets.
-- **Exports carry references, never values.** `.awecollection` bundles and
+- **Exports carry references, never values.** `.aweproject` bundles and
   workspace repositories keep `{{secrets.NAME}}` references and withheld
   credentials as `<SECRET>`; neither includes secret values or run history.
   JUnit and HTML run reports are built from the stored, masked run and leave out

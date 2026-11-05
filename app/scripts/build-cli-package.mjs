@@ -54,7 +54,7 @@ fs.writeFileSync(
 
 Headless \`apiweave run\` for CI: no Electron, no window and no APIWeave data
 folder. It reads a workspace repository, a workflow export, an
-\`.awecollection\` project or a Postman collection, and exits 0 when every run
+\`.aweproject\` project or a Postman collection, and exits 0 when every run
 passes, 1 when a test fails and 2 on a usage or configuration error.
 
 \`\`\`bash

@@ -159,7 +159,7 @@ export function CollectionExportImport({
       );
 
       downloadTextFile(
-        `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`,
+        `${(projectName ?? "project").replace(/\s+/g, "_")}.aweproject`,
         JSON.stringify(bundle, null, 2),
         "application/json",
       );
@@ -688,13 +688,13 @@ export function CollectionExportImport({
               <p className="font-medium text-text-primary dark:text-text-primary-dark">
                 Drag & drop project bundle
               </p>
-              <p className="text-sm text-text-muted dark:text-text-muted-dark">
+              <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
                 or click to browse
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".awecollection,.json"
+                accept=".aweproject,.json"
                 onChange={handleFileInputChange}
                 aria-label="Project bundle file upload"
                 className="hidden"
@@ -702,7 +702,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -737,7 +737,7 @@ export function CollectionExportImport({
                   Validation Results
                 </h4>
                 {validation.valid ? (
-                  <p className="text-status-success dark:text-status-success-dark text-sm flex items-center gap-2">
+                  <p className="text-status-success text-sm flex items-center gap-2">
                     <CheckCircle size={16} /> Valid project bundle
                   </p>
                 ) : (
@@ -745,7 +745,7 @@ export function CollectionExportImport({
                     {validation.errors.map((err: string) => (
                       <p
                         key={err}
-                        className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2"
+                        className="text-status-error text-sm flex items-center gap-2"
                       >
                         <AlertCircle size={14} /> {err}
                       </p>
@@ -934,7 +934,7 @@ export function CollectionExportImport({
               <p className="font-medium text-text-primary dark:text-text-primary-dark">
                 Drag & drop file or click to browse
               </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                 Supports: .json (workflow/OpenAPI), .har (HAR files)
               </p>
               <input
@@ -948,7 +948,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -1044,7 +1044,7 @@ export function CollectionExportImport({
               <p className="font-medium text-text-primary dark:text-text-primary-dark">
                 Drag & drop file or click to browse
               </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                 Supports: .json (workflow/OpenAPI), .har (HAR files)
               </p>
               <input
@@ -1058,7 +1058,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
@@ -1154,7 +1154,7 @@ export function CollectionExportImport({
               <p className="font-medium text-text-primary dark:text-text-primary-dark">
                 Drag & drop file or click to browse
               </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                 Supports: .json (workflow/OpenAPI), .har (HAR files)
               </p>
               <input
@@ -1168,7 +1168,7 @@ export function CollectionExportImport({
             </button>
 
             {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>

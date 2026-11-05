@@ -20,7 +20,7 @@ export const SECRET_PLACEHOLDER = "<SECRET>"
  * Which consumer a sanitizer pass is serving. Both withhold every credential
  * value; they differ in what they do to the surrounding structure.
  *
- * - `export` — a workflow or `.awecollection` bundle leaving the app.
+ * - `export` — a workflow or `.aweproject` bundle leaving the app.
  *   Fail closed and drop, so nothing downstream can mistake a placeholder for a
  *   working credential.
  * - `agent-read` — a read crossing the local MCP bridge. Keep the shape intact
@@ -111,7 +111,7 @@ function containsIndirectionRef(value: string): boolean {
  * Payload redaction contract
  *
  * Secrets must not leave the app. A workflow or project export, an
- * `.awecollection` bundle, or any other payload handed out may carry only what
+ * `.aweproject` bundle, or any other payload handed out may carry only what
  * these predicates allow, and this is the one place that decision is made.
  *
  * The contract, stated once:

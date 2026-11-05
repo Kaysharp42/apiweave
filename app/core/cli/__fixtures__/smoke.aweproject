@@ -1,6 +1,6 @@
 {
   "schemaVersion": "2.0",
-  "type": "awecollection",
+  "type": "aweproject",
   "project": {
     "projectId": "prj_cli_smoke",
     "name": "CLI smoke",

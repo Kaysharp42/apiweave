@@ -103,7 +103,7 @@ A preset stores exactly what the node had. That means:
 
 Presets are local-only: a preset lives in the workspace on this machine and never appears on another machine.
 
-Practically: a preset library is a per-machine convenience, not something that travels between machines. To move a configuration between machines, export a project as an `.awecollection` bundle.
+Practically: a preset library is a per-machine convenience, not something that travels between machines. To move a configuration between machines, export a project as an `.aweproject` bundle.
 
 ## Presets Over MCP
 

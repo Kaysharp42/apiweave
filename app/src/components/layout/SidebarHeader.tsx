@@ -160,7 +160,7 @@ export function SidebarHeader({
 
   const collectionImportItems: ImportMenuItem[] = [
     {
-      label: "Project (.awecollection)",
+      label: "Project (.aweproject)",
       icon: FolderOpen,
       action: () =>
         dispatch({ type: "open-collection-import", mode: "import-collection" }),

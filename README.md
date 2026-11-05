@@ -58,20 +58,20 @@ The feature guides are the deep reference for everything you can do in APIWeave.
 - [Data-Driven Runs](docs/features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
-- [Projects](docs/features/projects.md): ordered groups of workflows and `.awecollection` v2 export and import (references only).
+- [Projects](docs/features/projects.md): ordered groups of workflows and `.aweproject` v2 export and import (references only).
 - [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [Network](docs/features/network.md): proxy, private certificate authorities and client certificates for every request.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
-- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.awecollection` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
+- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.aweproject` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
 - [Migrate from Postman](docs/guides/migrating-from-postman.md): import a Postman Collection v2.1 and its environment as a project, and what each part becomes.
 
 ## Documentation
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.awecollection` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.aweproject` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
 
 ## Tech Stack
 

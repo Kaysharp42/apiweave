@@ -9,7 +9,7 @@ feedback.
 
 **The 1.0 surface.** Single Electron process: ReactFlow canvas, eight executable
 node types plus note and group annotations, workflow variables and extractors,
-projects with `.awecollection` v2 export (references only), explicit per-run
+projects with `.aweproject` v2 export (references only), explicit per-run
 environment selection, the encrypted local secret store with the
 `environment > workspace` scope chain, the in-process runner, OpenAPI, Swagger,
 HAR and cURL import, and auto-update through the GitHub release channel.

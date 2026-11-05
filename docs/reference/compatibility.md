@@ -37,9 +37,9 @@ A workspace tracked in git is a directory whose `.apiweave/format.json` declares
 - **A newer version is refused, not guessed at.** If a future release changes the format, it will use a new `version` number. A 1.x app that meets a higher version stops with a message telling the user to update, rather than reading or rewriting a tree it does not understand.
 - **Running a repository is read-only.** `apiweave run` parses the files and leaves the checkout exactly as it found it; it never migrates a repository in place.
 
-## `.awecollection` project bundles
+## `.aweproject` project bundles
 
-A project bundle is a JSON file with `"type": "awecollection"` and `"schemaVersion": "2.0"`.
+A project bundle is a JSON file with `"type": "aweproject"` and `"schemaVersion": "2.0"`.
 
 - **1.x exports `2.0` and imports `2.0`.** A bundle exported by any 1.x release imports into any other 1.x release.
 - **Secret references only.** A bundle carries the names and scopes of secrets, never values, ciphertext or private keys. That is a security property, not a version-specific detail, and it does not change in 1.x.
@@ -62,7 +62,7 @@ The headless runner is `apiweave run <path>` from the `@apiweave/cli` package (o
   A 1.x release does not add another successful exit code or reuse one of these for a different outcome.
 
 - **Secret inputs are stable.** `APIWEAVE_SECRET_<NAME>`, `--secret NAME=value` and `--secrets-file` keep their precedence and meaning, and secret values stay out of stdout, stderr and reports.
-- **Input formats are stable.** A workspace repository (`format.version` 2, or the readable version 1), a `.awecollection` (`schemaVersion` `2.0`) and a Postman Collection v2.1 continue to run in 1.x.
+- **Input formats are stable.** A workspace repository (`format.version` 2, or the readable version 1), a `.aweproject` (`schemaVersion` `2.0`) and a Postman Collection v2.1 continue to run in 1.x.
 - **Output wording is not a contract.** Human-readable log lines, the exact HTML report markup and the order of unrelated diagnostics may change. Rely on the exit code, the documented report paths, and JUnit's own schema rather than on prose.
 
 ## Deprecation
@@ -93,6 +93,6 @@ These are implementation details. They may change in any release, including a pa
 - [Releases and the Update Channel](release-and-updates.md) — release and update mechanics
 - [MCP Integration](../features/mcp-integration.md) — the agent surface in use
 - [Keep Tests in a Git Repository](../guides/git-workflows.md) — workspace repository layout
-- [Projects](../features/projects.md) — `.awecollection` export and import
+- [Projects](../features/projects.md) — `.aweproject` export and import
 - [Run Tests in CI](../guides/ci.md) — CLI flags, secrets and exit codes
 - [Changelog](../../CHANGELOG.md) — where additions and deprecations are recorded
