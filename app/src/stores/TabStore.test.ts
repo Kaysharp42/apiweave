@@ -117,6 +117,32 @@ test("updateTabWorkflow replaces stored workflow snapshot", () => {
   assert.deepEqual(tab.workflow!.variables, updated.variables);
 });
 
+test("setTabViewport remembers where one tab's canvas was left", () => {
+  resetStore();
+
+  const make = (workflowId: string) =>
+    ({
+      workflowId,
+      workspaceId: "ws-1",
+      name: workflowId,
+      nodes: [],
+      edges: [],
+      variables: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    }) as unknown as Workflow;
+
+  useTabStore.getState().openTab(make("wf-1"));
+  useTabStore.getState().openTab(make("wf-2"));
+
+  const viewport = { x: 48, y: 370, zoom: 0.6 };
+  useTabStore.getState().setTabViewport("wf-1", viewport);
+
+  const [first, second] = useTabStore.getState().tabs;
+  assert.deepEqual(first!.viewport, viewport);
+  assert.equal(second!.viewport, undefined);
+});
+
 test("tabs stay scoped to the workspace their workflow lives in", () => {
   resetStore();
 

@@ -1,39 +1,19 @@
-interface SidebarItemLabelResult {
-  label: string;
-  fullLabel: string;
-  truncated: boolean;
-}
-
 const DEFAULT_FALLBACK = "Untitled";
 
-const normalizeLabel = (
+/**
+ * A sidebar row's visible name.
+ *
+ * One job: turn a missing or whitespace-only name into something printable.
+ * It used to also cut the string at a character budget, which was a second
+ * truncation running before CSS's `truncate` — a row lost the tail of a name
+ * even when it had room, while `title` still showed the whole thing. Length is
+ * the layout's decision, so the full value is returned and CSS truncates it.
+ */
+export const getSidebarItemLabel = (
   value: unknown,
   fallback = DEFAULT_FALLBACK,
 ): string => {
   if (typeof value !== "string") return fallback;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : fallback;
-};
-
-export const getSidebarItemLabel = (
-  value: unknown,
-  maxLength = 42,
-  fallback = DEFAULT_FALLBACK,
-): SidebarItemLabelResult => {
-  const fullLabel = normalizeLabel(value, fallback);
-  const safeMax = Math.max(2, Number(maxLength) || 42);
-
-  if (fullLabel.length <= safeMax) {
-    return {
-      label: fullLabel,
-      fullLabel,
-      truncated: false,
-    };
-  }
-
-  return {
-    label: `${fullLabel.slice(0, safeMax - 1).trimEnd()}...`,
-    fullLabel,
-    truncated: true,
-  };
 };

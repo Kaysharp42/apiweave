@@ -1,5 +1,6 @@
 import { FileText, Download, Trash2 } from "lucide-react";
 import { SidebarAction } from "./SidebarAction";
+import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItemBadges } from "./WorkflowItemBadges";
 import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
@@ -16,6 +17,7 @@ import type { WorkflowItemProps } from "../../../types";
 export function WorkflowItem({
   workflow,
   isActive,
+  hideProject = false,
   collections,
   environments,
   onWorkflowClick,
@@ -55,7 +57,7 @@ export function WorkflowItem({
           onKeyDown={handleKeyDown}
           className={[
             "flex min-w-0 flex-1 items-start gap-2 text-left",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
             "cursor-pointer rounded-sm",
           ].join(" ")}
         >
@@ -76,28 +78,22 @@ export function WorkflowItem({
                   ? "text-primary dark:text-primary-light"
                   : "text-text-primary dark:text-text-primary-dark",
               ].join(" ")}
-              title={labels.name.fullLabel}
+              title={labels.name}
             >
-              {labels.name.label}
+              {labels.name}
             </div>
 
             <WorkflowItemBadges
               nodeCount={workflow.nodes?.length ?? 0}
               labels={labels}
+              hideProject={hideProject}
             />
           </div>
         </button>
 
         {/* Overlaid rather than inline so the workflow name gets the full row
             width; the gradient keeps long names legible underneath. */}
-        <div
-          className={[
-            "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-sm pl-6",
-            "bg-linear-to-l from-surface-overlay from-70% to-transparent dark:from-surface-dark-overlay",
-            "opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
-            "group-hover:opacity-100 group-focus-within:opacity-100",
-          ].join(" ")}
-        >
+        <SidebarRowActions active={isActive}>
           <SidebarAction
             icon={Download}
             label="Export workflow"
@@ -116,7 +112,7 @@ export function WorkflowItem({
               onDeleteWorkflow(workflow.workflowId, workflow.name);
             }}
           />
-        </div>
+        </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (

@@ -77,9 +77,15 @@ export function TabBar() {
     }
   };
 
-  if (tabs.length === 0) return null;
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    tabId: string,
+  ) => {
+    if (e.key !== "Delete") return;
+    requestClose([tabId], () => closeTab(tabId));
+  };
 
-  const activeTab = tabs.find((tab) => tab.id === activeTabId);
+  if (tabs.length === 0) return null;
 
   return (
     <div className="relative flex items-stretch bg-surface-raised dark:bg-surface-dark-raised border-b border-border dark:border-border-dark select-none min-h-[36px]">
@@ -106,7 +112,7 @@ export function TabBar() {
           return (
             <div
               key={tab.id}
-              className="relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
+              className="group relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
             >
               <button
                 type="button"
@@ -114,9 +120,11 @@ export function TabBar() {
                 id={workspaceTabId(tab.id)}
                 aria-selected={isActive}
                 aria-controls={WORKSPACE_TABPANEL_ID}
+                aria-keyshortcuts="Delete"
                 tabIndex={isActive ? 0 : -1}
                 onClick={() => setActive(tab.id)}
                 onMouseDown={(e) => handleMouseDown(e, tab.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
                 onContextMenu={(e) => handleContextMenu(e, tab.id)}
                 className={[
                   "relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer",
@@ -141,28 +149,36 @@ export function TabBar() {
                 )}
                 <span className="min-w-0 truncate">{tab.name}</span>
               </button>
+
+              {/* Pointer-only: `aria-hidden` keeps it out of the accessibility
+                  tree, so a tablist that may own tabs and nothing else stays
+                  valid. Keyboard users close the focused tab with Delete,
+                  Ctrl+W, or the context menu. */}
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-hidden="true"
+                title={`Close ${tab.name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  requestClose([tab.id], () => closeTab(tab.id));
+                }}
+                className={[
+                  "flex h-5 w-5 items-center justify-center self-center mr-1 shrink-0 rounded-sm transition-colors cursor-pointer",
+                  "text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-primary dark:hover:text-primary-light",
+                  isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                ].join(" ")}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           );
         })}
       </div>
 
-      {/* Outside the tablist on purpose: ARIA allows a tablist to own tabs and
-          nothing else, and a close button nested beside a tab is the violation
-          axe reports as aria-required-children. Closing still covers every tab
-          — right-click a tab for Close/Close Others/Close All, or select one
-          and use this button or Ctrl+W. */}
-      {activeTab !== undefined && (
-        <IconButton
-          tooltip={`Close ${activeTab.name}`}
-          size="xs"
-          onClick={() =>
-            requestClose([activeTab.id], () => closeTab(activeTab.id))
-          }
-          className="rounded-none border-l border-border dark:border-border-dark"
-        >
-          <X className="w-3.5 h-3.5" />
-        </IconButton>
-      )}
+      {/* No separate close button outside the tablist: ARIA lets a tablist own
+          tabs and nothing else, which is the violation axe reports as
+          aria-required-children. Each tab carries its own instead. */}
 
       {canScrollRight && (
         <IconButton

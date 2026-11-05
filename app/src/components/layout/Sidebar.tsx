@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import CollectionManager from "../CollectionManager";
 import AgentsManager from "../AgentsManager";
-import MCPManager from "../MCPManager";
 import { SidebarHeader } from "./SidebarHeader";
 import { WorkflowList } from "./sidebar/WorkflowList";
 import { ProjectList } from "./sidebar/ProjectList";
@@ -417,6 +416,7 @@ export function Sidebar() {
               isRefreshing ? "opacity-50" : "opacity-100",
               selectedNav === "projects" ? "" : "hidden",
             ].join(" ")}
+            style={{ scrollbarGutter: "stable" }}
           >
               <ProjectList
                 projects={filteredProjects}
@@ -449,7 +449,6 @@ export function Sidebar() {
               />
             </div>
           {selectedNav === "agents" && <AgentsManager className="h-full" />}
-          {selectedNav === "mcp" && <MCPManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent
               onNavigate={(path: string) => navigate(path)}

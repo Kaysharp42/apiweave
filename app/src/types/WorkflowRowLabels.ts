@@ -1,9 +1,7 @@
-import type { getSidebarItemLabel } from "../utils/sidebarItemLabel";
-
 export interface WorkflowRowLabels {
-  readonly name: ReturnType<typeof getSidebarItemLabel>;
+  readonly name: string;
   /** Null when the workflow is in no project, or its project is not in `collections`. */
-  readonly collection: ReturnType<typeof getSidebarItemLabel> | null;
+  readonly collection: string | null;
   /** Null when no environment is selected for this workflow. */
-  readonly environment: ReturnType<typeof getSidebarItemLabel> | null;
+  readonly environment: string | null;
 }

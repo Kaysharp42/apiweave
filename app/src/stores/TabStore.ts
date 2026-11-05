@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Viewport } from "@xyflow/react";
 import type { WorkspaceTab } from "../types/WorkspaceTab";
 import type { Workflow } from "../types/Workflow";
 
@@ -27,6 +28,11 @@ interface TabStoreState {
    */
   stashDraft: (id: string, draft: Workflow | null) => void;
   renameTab: (id: string, name: string) => void;
+  /**
+   * Remembers where the canvas of one tab was left, so showing the tab again
+   * restores that view rather than recomputing an opening one. Memory only.
+   */
+  setTabViewport: (id: string, viewport: Viewport) => void;
   updateTabWorkflow: (workflowId: string, workflow: Workflow | null) => void;
   activateNextTab: (workspaceId: string) => void;
   activatePrevTab: (workspaceId: string) => void;
@@ -183,6 +189,11 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
   renameTab: (id: string, name: string) =>
     set((s) => ({
       tabs: s.tabs.map((t) => (t.id === id ? { ...t, name } : t)),
+    })),
+
+  setTabViewport: (id: string, viewport: Viewport) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => (t.id === id ? { ...t, viewport } : t)),
     })),
 
   updateTabWorkflow: (workflowId: string, workflow: Workflow | null) =>

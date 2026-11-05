@@ -1,8 +1,9 @@
+import { Tooltip } from "../../atoms/Tooltip";
 import type { SidebarActionProps } from "../../../types";
 
 /**
  * Reusable action button for sidebar items (export, delete, etc.).
- * Visible on hover/focus-within, hidden by default via opacity transition.
+ * The owning row hides the whole action overlay until hover/focus-within.
  */
 export function SidebarAction({
   icon: Icon,
@@ -12,9 +13,8 @@ export function SidebarAction({
   className = "",
 }: SidebarActionProps) {
   const baseClasses = [
-    "rounded-sm p-1.5 transition-colors duration-150 motion-reduce:transition-none",
-    "opacity-40 group-hover:opacity-100 group-focus-within:opacity-100",
-    "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+    "inline-flex items-center justify-center rounded-sm p-2 transition-colors duration-150 motion-reduce:transition-none",
+    "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
     "cursor-pointer",
   ].join(" ");
 
@@ -23,16 +23,17 @@ export function SidebarAction({
     : "text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark";
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[baseClasses, variantClasses, className]
-        .filter(Boolean)
-        .join(" ")}
-      title={label}
-      aria-label={label}
-    >
-      <Icon className="w-3.5 h-3.5" />
-    </button>
+    <Tooltip content={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={[baseClasses, variantClasses, className]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={label}
+      >
+        <Icon className="w-3.5 h-3.5" />
+      </button>
+    </Tooltip>
   );
 }

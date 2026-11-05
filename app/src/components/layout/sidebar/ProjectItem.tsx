@@ -13,6 +13,7 @@ import { Badge } from "../../atoms/Badge";
 import { IconButton } from "../../atoms/IconButton";
 import { AgentLaunchButton } from "../../organisms/AgentLaunchButton";
 import { SidebarAction } from "./SidebarAction";
+import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItem } from "./WorkflowItem";
 import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
@@ -53,23 +54,19 @@ export function ProjectItem({
         (wf) => !wf.collectionId || wf.collectionId !== projectId,
       )
     : [];
-  const projectLabel = getSidebarItemLabel(
-    project.name,
-    40,
-    "Untitled project",
-  );
+  const projectLabel = getSidebarItemLabel(project.name, "Untitled project");
 
   return (
     <li>
       <div
         onContextMenu={contextMenu.openAt}
-        className="group flex items-center gap-2 rounded-sm border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
+        className="group relative flex items-center gap-2 rounded-sm border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
       >
         <button
           type="button"
           className={[
             "flex min-w-0 flex-1 items-center gap-2 text-left",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
             "cursor-pointer rounded-sm",
           ].join(" ")}
           onClick={() => onToggle(projectId)}
@@ -83,25 +80,28 @@ export function ProjectItem({
           <FolderKanban className="w-4 h-4 shrink-0 text-primary dark:text-primary-light" />
           <span
             className="font-medium text-text-primary dark:text-text-primary-dark truncate"
-            title={projectLabel.fullLabel}
+            title={projectLabel}
           >
-            {projectLabel.label}
+            {projectLabel}
           </span>
-          <Badge variant="ghost" size="xs">
+          <Badge variant="ghost" size="xs" className="shrink-0">
             {projectWorkflows.length}
           </Badge>
         </button>
 
-        <div className="ml-1 flex w-[92px] shrink-0 items-center justify-end gap-1">
+        {/* Overlaid rather than inline so the project name gets the full row
+            width; the gradient keeps long names legible underneath. */}
+        <SidebarRowActions>
           {/*
             Where the Agents section says agents are launched from. It renders
             nothing outside the desktop app, and `collectionId` rather than the
             `projectId` alias because the local-path table keys on the DB
             primary key — the same id `CollectionManager` passes.
 
-            Compact: the list panel is 236px wide and clips, so this is the
-            launch on its own. Choosing another agent or repointing the folder
-            stays in the Projects dialog and the canvas toolbar.
+            Compact: the row has room for one icon and the name needs the rest,
+            so this is the launch on its own. Choosing another agent or
+            repointing the folder stays in the Projects dialog and the canvas
+            toolbar.
 
             ponytail: one path resolution per row on mount (the roster fetch
             beside it is already cached in the service for 30s). Lift it to a
@@ -113,7 +113,6 @@ export function ProjectItem({
             scopeId={project.collectionId}
             showLabel={false}
             compact
-            className="opacity-40 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
           />
 
           <SidebarAction
@@ -134,7 +133,7 @@ export function ProjectItem({
               onDeleteProject(projectId, project.name);
             }}
           />
-        </div>
+        </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (
@@ -168,6 +167,7 @@ export function ProjectItem({
               key={workflow.workflowId}
               workflow={workflow}
               isActive={selectedWorkflowId === workflow.workflowId}
+              hideProject
               collections={
                 projects.map((p) => ({
                   collectionId: p.projectId ?? p.collectionId,
@@ -195,7 +195,7 @@ export function ProjectItem({
             </IconButton>
             <button
               type="button"
-              className="cursor-pointer rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
+              className="cursor-pointer rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light"
               onClick={() => onAddWorkflowToProject(projectId)}
             >
               Add workflow
@@ -204,7 +204,7 @@ export function ProjectItem({
             {unassignedWorkflows.length > 0 && (
               <button
                 type="button"
-                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded-sm text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark dark:focus-visible:outline-primary-light"
+                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded-sm text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark"
                 onClick={() => setShowAssignDropdown(!showAssignDropdown)}
               >
                 <FilePlus className="w-3 h-3" />
@@ -223,7 +223,7 @@ export function ProjectItem({
                   <button
                     key={wf.workflowId}
                     type="button"
-                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
+                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2 dark:hover:bg-surface-dark-overlay"
                     onClick={() => {
                       onAssignWorkflowToProject(projectId, wf.workflowId);
                       setShowAssignDropdown(false);
