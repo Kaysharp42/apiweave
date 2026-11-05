@@ -177,6 +177,14 @@ async function nextMillisecond(): Promise<void> {
   } while (Date.now() === started)
 }
 
+/** Wait until the wall clock has moved past a timestamp the touch trigger stamped ahead of it. */
+async function waitPast(timestamp: string): Promise<void> {
+  const until = Date.parse(timestamp)
+  while (Date.now() <= until) {
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+}
+
 async function call(name: string, args: Record<string, unknown>): Promise<{ text: string; body: Record<string, unknown>; isError: boolean }> {
   const result = (await client.callTool({ name, arguments: args })) as ToolResult
   const text = result.content[0]?.text ?? "{}"
@@ -405,7 +413,7 @@ describe("workspaces_map", () => {
     expect(second.page.nextCursor).toBeNull()
     const wrongScope = await call("workspaces_map", { workspaceId, collectionId: projectId, cursor: first.page.nextCursor })
     expect(wrongScope.isError).toBe(true)
-    await runtime.deps.workflows.patch(workspaceId, authId, { name: "auth v2" })
+    const patched = await runtime.deps.workflows.patch(workspaceId, authId, { name: "auth v2" })
     const stale = await call("workspaces_map", { workspaceId, limit: 1, cursor: first.page.nextCursor })
     expect(stale.isError).toBe(true)
     expect(stale.text).toContain("conflict")
@@ -413,6 +421,10 @@ describe("workspaces_map", () => {
     const project = await workspaceMap({ collectionId: projectId })
     expect(project.page.items.map((entry) => entry.workflowId)).toEqual([authId])
 
+    // The touch trigger stamps an edit `rev + 1` milliseconds ahead of the wall
+    // clock, so a workflow created before that offset passes would sort behind
+    // `auth v2` (or tie with it and lose the id tie-break).
+    await waitPast(patched.updatedAt)
     await runtime.deps.workflows.create(workspaceId, {
       name: "wide",
       nodes: Array.from({ length: 25 }, (_, index) => ({

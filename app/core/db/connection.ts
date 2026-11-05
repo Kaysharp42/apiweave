@@ -27,9 +27,16 @@ export function openDatabase(options: InitDatabaseOptions | string): Database {
   }
   const sqliteFactory: BetterSqlite3Factory = require("better-sqlite3")
   const database = new sqliteFactory(databasePath)
-  database.pragma("journal_mode = WAL")
-  database.pragma("foreign_keys = ON")
-  return database
+  try {
+    database.pragma("journal_mode = WAL")
+    database.pragma("foreign_keys = ON")
+    return database
+  } catch (error) {
+    // A failed pragma (a damaged file, a read-only one) still holds an open
+    // handle; the caller never receives this instance, so close it here.
+    database.close()
+    throw error
+  }
 }
 
 export function initDatabase(options: InitDatabaseOptions | string): InitializedDatabase {
