@@ -79,24 +79,37 @@ function fileUrls(text) {
   return urls
 }
 
-/** Removes this script's previous fields, so a retried job replaces them
- * instead of stacking a second copy (or leaving a stale arch behind). */
-function stripSignatures(text) {
+/** A line the per-file signature map owns: blank, or indented under its key. */
+function signatureMapLine(line) {
+  return line.trim() === "" || /^[ \t]/.test(line)
+}
+
+/** Whether `line` keeps the map going: a map line while the map is open. */
+function mapContinues(inMap, line) {
+  return inMap && signatureMapLine(line)
+}
+
+/** The lines without the per-file signature map: its key and every line the
+ * map owns, up to the next top-level key. */
+function withoutSignatureMap(lines) {
   const kept = []
   let inMap = false
-  for (const line of text.split("\n")) {
-    if (line.startsWith(`${SIGNATURE_FIELD}:`)) continue
+  for (const line of lines) {
     if (line.startsWith(`${FILE_SIGNATURES_FIELD}:`)) {
       inMap = true
       continue
     }
-    if (inMap) {
-      if (line.trim() === "" || /^[ \t]/.test(line)) continue
-      inMap = false
-    }
-    kept.push(line)
+    inMap = mapContinues(inMap, line)
+    if (!inMap) kept.push(line)
   }
-  return kept.join("\n").replace(/\n*$/, "\n")
+  return kept
+}
+
+/** Removes this script's previous fields, so a retried job replaces them
+ * instead of stacking a second copy (or leaving a stale arch behind). */
+function stripSignatures(text) {
+  const withoutPrimary = text.split("\n").filter((line) => !line.startsWith(`${SIGNATURE_FIELD}:`))
+  return withoutSignatureMap(withoutPrimary).join("\n").replace(/\n*$/, "\n")
 }
 
 async function sha512Base64(file) {
@@ -110,23 +123,40 @@ async function signatureFor(manifest, key, version, installer) {
   return sign(null, Buffer.from(`apiweave-update/1\n${version}\n${digest}\n`, "utf8"), key).toString("base64")
 }
 
-async function signManifest(manifest, key) {
+/** The manifest's text and the two fields a signature needs, taken from its top level. */
+function manifestFields(manifest) {
   const text = readFileSync(manifest, "utf8")
   const version = topScalar(text, "version")
   const installer = topScalar(text, "path")
   if (!version || !installer) fail(`${manifest} has no top-level version or path`)
+  return { text, version, installer }
+}
 
+/** Every installer to sign: those the manifest's `files:` list names, and the
+ * primary `path` even when the list leaves it out. */
+function installersToSign(text, installer) {
   const urls = fileUrls(text)
   if (!urls.includes(installer)) urls.unshift(installer)
+  return urls
+}
 
-  const signatures = new Map()
-  for (const url of urls) signatures.set(url, await signatureFor(manifest, key, version, url))
-
+/** The manifest's text with this script's signature fields appended. */
+function signedText(text, installer, signatures) {
   let output = stripSignatures(text)
   output += `${SIGNATURE_FIELD}: ${signatures.get(installer)}\n`
   output += `${FILE_SIGNATURES_FIELD}:\n`
   for (const [url, signature] of signatures) output += `  ${JSON.stringify(url)}: ${signature}\n`
-  writeFileSync(manifest, output)
+  return output
+}
+
+async function signManifest(manifest, key) {
+  const { text, version, installer } = manifestFields(manifest)
+  const urls = installersToSign(text, installer)
+
+  const signatures = new Map()
+  for (const url of urls) signatures.set(url, await signatureFor(manifest, key, version, url))
+
+  writeFileSync(manifest, signedText(text, installer, signatures))
   console.log(`${manifest}: signed ${urls.length} file(s) for v${version}: ${urls.join(", ")}`)
 }
 
