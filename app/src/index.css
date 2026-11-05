@@ -372,7 +372,7 @@
   stroke: var(--aw-border);
 }
 
-.dark .react-flow .react-flow__edge-path {
+.dark .react-flow__edge-path {
   stroke: color-mix(in srgb, var(--aw-text-muted) 70%, transparent);
 }
 
@@ -413,7 +413,7 @@
   overflow: hidden;
 }
 
-.react-flow .react-flow__controls button {
+.react-flow__controls button {
   cursor: pointer;
   background-color: var(--aw-surface-raised);
   border-bottom: 1px solid var(--aw-border);
@@ -421,18 +421,14 @@
   transition: background-color var(--aw-transition-fast, 150ms);
 }
 
-.react-flow .react-flow__controls button:hover {
+.react-flow__controls button:hover {
   background-color: var(--aw-surface-overlay);
 }
 
-.react-flow .react-flow__controls button:focus-visible {
+.react-flow__controls button:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: var(--aw-focus-ring-offset);
   border-radius: var(--aw-radius-sm);
-}
-
-.react-flow .react-flow__controls button svg {
-  fill: var(--aw-text-primary);
 }
 
 /* Minimap — token-based styling, both themes */
@@ -452,7 +448,7 @@
   fill: color-mix(in srgb, var(--aw-text-primary) 5%, transparent);
 }
 
-.dark .react-flow .react-flow__minimap-mask {
+.dark .react-flow__minimap-mask {
   fill: color-mix(in srgb, var(--aw-surface) 64%, transparent);
 }
 
@@ -466,13 +462,13 @@
   background: transparent;
   border: none;
   color: var(--aw-text-muted);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   line-height: 1;
   padding: 0;
   margin: 0 0 0 52px;
 }
 
-.react-flow .react-flow__attribution a {
+.react-flow__attribution a:any-link {
   color: inherit;
   text-decoration: none;
 }
@@ -639,23 +635,23 @@
 
 /* The drag area itself is transparent; only the centred hairline is painted. */
 .sash {
-  background-color: transparent !important;
+  background-color: transparent;
 }
 
-.sash::before {
-  background-color: var(--aw-border) !important;
-  transition: background-color 140ms ease-out 70ms !important;
+/* One element selector buys the specificity the stock rule lacks; the
+   library's own hover/active classes then repaint var(--focus-border). */
+div.sash::before {
+  background-color: var(--aw-border);
+  transition: background-color 140ms ease-out 70ms;
 }
 
-.sash:hover::before,
-.sash.sash-hover::before,
-.sash.sash-active::before {
-  background-color: var(--aw-primary) !important;
+.sash:hover::before {
+  background-color: var(--aw-primary);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sash::before {
-    transition: none !important;
+  div.sash::before {
+    transition: none;
   }
 }
 
@@ -794,7 +790,7 @@
   border-radius: 999px;
   background: var(--aw-surface-raised);
   color: var(--aw-text-secondary);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   font-weight: 500;
   line-height: 1.5;
   cursor: grab;
