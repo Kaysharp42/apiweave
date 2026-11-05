@@ -14,6 +14,7 @@ import type { MergeRecordCommits } from "@shared/types/MergeRecordCommits"
 import type { MergeSideCommit } from "@shared/types/MergeSideCommit"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
+import type { Workspace } from "@shared/types/Workspace"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { WorkspaceGitCommit } from "@shared/types/WorkspaceGitCommit"
 import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommitRequest"
@@ -727,8 +728,10 @@ export class GitSyncService {
    * and parsed in a scratch clone first, then moved to `<cloneRoot>/<id>`,
    * imported, and tracked in auto mode, bound to `url` and the branch the
    * clone is on. A workspace whose id is already here is not opened again:
-   * that resolves `duplicate`, which is how the caller links to it. `opened`
-   * carries the importer's warnings, for the caller to show before switching.
+   * that resolves `duplicate`, which is how the caller links to it. A
+   * repository one of the workspaces here is already connected to answers the
+   * same way before anything is cloned. `opened` carries the importer's
+   * warnings, for the caller to show before switching.
    *
    * A clone already at the id, or a workspace id that collides with one here
    * only in letter case, is refused before anything is moved: a clone no row
@@ -1367,6 +1370,9 @@ export class GitSyncService {
     const remoteUrl = assertWorkspaceRemoteUrl(url)
     assertAccountFitsRemote(remoteUrl, account)
     if (branch !== undefined) assertRefName(branch)
+    // Already connected here: no clone can tell the caller more than the row it holds.
+    const known = this.workspaceOnRemote(remoteUrl)
+    if (known !== undefined) return { kind: "duplicate", workspaceId: known.workspaceId, slug: known.slug, name: known.name }
     // The scratch clone lives under the clone root so that moving it into place stays on one volume.
     await mkdir(this.options.cloneRoot, { recursive: true })
     const scratch = path.join(this.options.cloneRoot, `${OPEN_SCRATCH_PREFIX}${randomUUID()}`)
@@ -1379,6 +1385,21 @@ export class GitSyncService {
         log.warn("could not remove the scratch clone of an open", cleanupError)
       })
     }
+  }
+
+  /**
+   * The workspace here whose remote is `remoteUrl`, if any, matched across the
+   * https, ssh:// and user@host:path spellings of one repository.
+   */
+  private workspaceOnRemote(remoteUrl: string): Workspace | undefined {
+    const identity = remoteIdentity(remoteUrl)
+    if (identity === undefined) return undefined
+    for (const binding of this.repositories.workspaceGit.listAll()) {
+      if (binding.remoteUrl === null || remoteIdentity(binding.remoteUrl) !== identity) continue
+      const workspace = this.repositories.workspaces.getById(binding.workspaceId)
+      if (workspace !== undefined) return workspace
+    }
+    return undefined
   }
 
   /**
@@ -2737,6 +2758,28 @@ const SSH_URL = /^ssh:\/\//i
  */
 function authorityOf(host: string): string {
   return host.toLowerCase().replace(/:443$/, "")
+}
+
+/**
+ * A remote URL as host and repository path, so the https, ssh:// and scp-like
+ * spellings of one repository compare equal. Undefined for a URL that is not a
+ * host remote (a `file://` one), which has no other spelling to match.
+ */
+function remoteIdentity(url: string): string | undefined {
+  const trimmed = url.trim().replace(/\/+$/, "")
+  if (trimmed === "") return undefined
+  if (URL.canParse(trimmed)) {
+    const { protocol, hostname, port, pathname } = new URL(trimmed)
+    if (protocol !== "https:" && protocol !== "ssh:") return undefined
+    return `${authorityOf(port === "" ? hostname : `${hostname}:${port}`)}/${repositoryPath(pathname)}`
+  }
+  const scpLike = /^(?:[^@/\s]+@)?([^:/\s]+):(.+)$/.exec(trimmed)
+  return scpLike === null ? undefined : `${authorityOf(scpLike[1]!)}/${repositoryPath(scpLike[2]!)}`
+}
+
+/** A repository's path as the host names it: no leading or trailing slash, no `.git`, in one case. */
+function repositoryPath(pathname: string): string {
+  return pathname.replace(/^\/+/, "").replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase()
 }
 
 /** A remote URL as scheme and host (and port) only — `ssh://github.com`, `https://gitlab.com:8443` — for a message that must not repeat a whole URL. */

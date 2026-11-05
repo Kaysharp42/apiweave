@@ -117,6 +117,17 @@ describe("GitSyncService.openFromGit", () => {
     expect(status.lastCommit?.sha).toBe(rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim())
   })
 
+  it("answers duplicate without cloning when a workspace here is already bound to that repository", async () => {
+    const target = openHarness()
+    target.repositories.workspaceGit.insert(target.workspaceId, "auto")
+    target.repositories.workspaceGit.setRemote(target.workspaceId, "https://github.com/Acme/Tests.git", "main", null)
+
+    const result = await target.sync.openFromGit("git@github.com:acme/tests")
+
+    expect(result).toEqual({ kind: "duplicate", workspaceId: target.workspaceId, slug: "acme-qa", name: "Acme QA" })
+    expect(fs.existsSync(target.cloneRoot)).toBe(false)
+  })
+
   it("opens the branch it is asked for, not the repository's default, and binds the workspace to that branch", async () => {
     const { source, url } = await publishedWorkspace()
     const work = path.join(source.sandbox.root, "open-feature-work")

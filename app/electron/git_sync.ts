@@ -306,6 +306,12 @@ export interface GitSignInPorts {
   readonly showPrompt: (prompt: GitSignInPrompt) => void
   /** Brings the app back to the front once the browser part is done. */
   readonly focus: () => void
+  /**
+   * Told who signed in, after the tool finished and the app is back in front:
+   * how the workspaces the account's tagged repositories hold are imported
+   * without keeping the dialog waiting.
+   */
+  readonly signedIn: (account: GitAccountRef) => void
 }
 
 /** One sign-in's tool: how to stop it, the page it printed, and when it has ended. */
@@ -368,7 +374,17 @@ export class GitSignIns {
       },
     })
     this.ports.focus()
+    this.announceSignedIn(account)
     return account
+  }
+
+  /** The dialog is done; an import that fails is the startup's to log, never the sign-in's to refuse. */
+  private announceSignedIn(account: GitAccountRef): void {
+    try {
+      this.ports.signedIn(account)
+    } catch (error) {
+      log.warn("could not start importing the signed-in account's tagged workspaces", error)
+    }
   }
 
   /** Stop the sign-in in progress, if any — its `signIn` rejects as cancelled — and resolve once its tool has gone. */
