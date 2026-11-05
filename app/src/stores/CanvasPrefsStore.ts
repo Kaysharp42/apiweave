@@ -22,18 +22,28 @@ const useCanvasPrefsStore = create<CanvasPrefsState>()(
       gridSize: 24,
       wheelZoom: true,
       tipsEnabled: true,
+      minimapVisible: false,
 
       setCanvasPrefs: (patch: Partial<CanvasPrefs>) => set(patch),
     }),
     {
       name: "apiweave:v1:canvasPrefs",
-      partialize: ({ dragMode, locked, snapToGrid, gridSize, wheelZoom, tipsEnabled }) => ({
+      partialize: ({
         dragMode,
         locked,
         snapToGrid,
         gridSize,
         wheelZoom,
         tipsEnabled,
+        minimapVisible,
+      }) => ({
+        dragMode,
+        locked,
+        snapToGrid,
+        gridSize,
+        wheelZoom,
+        tipsEnabled,
+        minimapVisible,
       }),
     },
   ),

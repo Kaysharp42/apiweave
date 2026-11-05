@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { CanvasToolbarProps } from "../../../types/CanvasToolbarProps";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CanvasToolbar } from "../CanvasToolbar";
 
 function renderToolbar(props: Partial<CanvasToolbarProps> = {}) {
@@ -75,6 +75,49 @@ describe("CanvasToolbar", () => {
     expect(onVersionHistory).toHaveBeenCalled();
   });
 
+  it("separates the toolbar into save, history, structure and action groups", () => {
+    renderToolbar();
+
+    expect(screen.getAllByTestId("toolbar-divider")).toHaveLength(5);
+  });
+
+  it("names run history and version history as different things", () => {
+    renderToolbar();
+
+    expect(
+      screen.getByRole("button", { name: "Run history" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Version history" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows toolbar tooltips on keyboard focus", async () => {
+    renderToolbar();
+
+    fireEvent.focus(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Save workflow (Ctrl+S)",
+    );
+  });
+
+  it("hides Refresh from OpenAPI spec when the environment has no spec", () => {
+    renderToolbar();
+
+    expect(
+      screen.queryByRole("button", { name: "Refresh from OpenAPI spec" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Refresh from OpenAPI spec when the environment has one", () => {
+    renderToolbar({ hasOpenApiSource: true });
+
+    expect(
+      screen.getByRole("button", { name: "Refresh from OpenAPI spec" }),
+    ).toBeInTheDocument();
+  });
+
   it("runs with the data file the user picks", () => {
     const onRunWithData = vi.fn();
     renderToolbar({ onRunWithData });
@@ -91,5 +134,70 @@ describe("CanvasToolbar", () => {
 
     expect(screen.getByText("Iteration 3/10")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run with data" })).toBeDisabled();
+  });
+});
+
+describe("CanvasToolbar at the compact density", () => {
+  const initialScrollWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "scrollWidth",
+  );
+  const initialClientWidth = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientWidth",
+  );
+
+  // jsdom has no layout, so the bar's own measure always reads zero. Forcing
+  // "twice as wide as it was given" walks the same step-down loop the real
+  // element runs at a narrow canvas width.
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+      configurable: true,
+      get: () => 1000,
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get: () => 100,
+    });
+  });
+
+  afterEach(() => {
+    if (initialScrollWidth) {
+      Object.defineProperty(HTMLElement.prototype, "scrollWidth", initialScrollWidth);
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollWidth");
+    }
+    if (initialClientWidth) {
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", initialClientWidth);
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+    }
+  });
+
+  it("keeps Save and Run, folds structure into the menu and collapses the environment picker", async () => {
+    renderToolbar({
+      environments: [{ environmentId: "env-prod", name: "Production" }],
+      selectedEnvironment: "env-prod",
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("toolbar")).toHaveAttribute(
+        "data-density",
+        "compact",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Frame selection" })).toBeNull();
+
+    const environment = screen.getByRole("button", { name: "Production" });
+    expect(environment.textContent).toBe("");
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Undo" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Frame selection" }),
+    ).toBeInTheDocument();
   });
 });

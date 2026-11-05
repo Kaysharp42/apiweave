@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
+import { Tooltip } from "./atoms/Tooltip";
 import type { SelectOption, ButtonSelectProps } from "../types";
 
 const EMPTY_OPTIONS: SelectOption[] = [];
@@ -11,6 +12,8 @@ export default function ButtonSelect({
   placeholder = "Select",
   buttonClass = "",
   containerClass = "",
+  icon,
+  iconOnly = false,
 }: ButtonSelectProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -26,6 +29,26 @@ export default function ButtonSelect({
   }, []);
 
   const selected = options.find((o) => o.value === value);
+  const selectedLabel = selected?.label ?? placeholder;
+
+  const trigger = (
+    <button
+      type="button"
+      onClick={() => setOpen((s) => !s)}
+      className={["cursor-pointer", buttonClass].filter(Boolean).join(" ")}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      aria-label={iconOnly ? selectedLabel : undefined}
+    >
+      {icon !== undefined && (
+        <span className="shrink-0" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      {!iconOnly && <span className="truncate">{selectedLabel}</span>}
+      {!iconOnly && <ChevronDown className="w-4 h-4 ml-2 shrink-0" />}
+    </button>
+  );
 
   return (
     <div
@@ -37,20 +60,18 @@ export default function ButtonSelect({
         if (event.key === "Escape") setOpen(false);
       }}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((s) => !s)}
-        className={["cursor-pointer", buttonClass].filter(Boolean).join(" ")}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        <span className="truncate">{selected?.label ?? placeholder}</span>
-        <ChevronDown className="w-4 h-4 ml-2 shrink-0" />
-      </button>
+      {iconOnly ? (
+        <Tooltip content={selectedLabel}>{trigger}</Tooltip>
+      ) : (
+        trigger
+      )}
 
       {open && (
         <ul
-          className="absolute inset-x-0 top-full z-50 mt-1 max-h-56 w-full overflow-auto rounded-xs border border-border bg-surface-raised py-1 shadow-overlay dark:border-border-dark dark:bg-surface-dark-raised"
+          className={[
+            "absolute top-full z-50 mt-1 max-h-56 overflow-auto rounded-xs border border-border bg-surface-raised py-1 shadow-overlay dark:border-border-dark dark:bg-surface-dark-raised",
+            iconOnly ? "right-0 w-56" : "inset-x-0 w-full",
+          ].join(" ")}
           role="listbox"
         >
           {options.map((opt) => (

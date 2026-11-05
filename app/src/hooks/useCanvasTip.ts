@@ -48,6 +48,13 @@ export function useCanvasTip(context: CanvasTipContext) {
     });
   }, [candidate]);
 
+  // A run suppresses tips through `selectCanvasTip`, but that answer only
+  // reaches `settledContext` after `SETTLE_MS`. Clearing here means a tip does
+  // not sit under the run camera for half a second after the run starts.
+  useEffect(() => {
+    if (context.isRunning) setActiveTip(null);
+  }, [context.isRunning]);
+
   const dismiss = useCallback((id: string) => {
     setDismissed((current) => new Set(current).add(id));
     setActiveTip((current) => (current?.id === id ? null : current));

@@ -9,9 +9,8 @@ import {
 } from "react";
 import type { Edge, Node, Viewport } from "@xyflow/react";
 import {
-  CanvasCornerGutter,
   CanvasToolbarBand,
-  MiniMapSize,
+  canvasActionsBottom,
 } from "../constants/CanvasChrome";
 import { NODE_FALLBACK_HEIGHT, NODE_FALLBACK_WIDTH } from "../utils/autoLayout";
 import { isTerminalStatus } from "../utils/runChoreography";
@@ -72,6 +71,12 @@ interface UseRunCameraParams {
    * overruled by the next run.
    */
   lockedRef?: MutableRefObject<boolean>;
+  /**
+   * Whether the minimap is showing. The camera keeps its framing clear of the
+   * tallest corner fixture, so hiding the map frees the bottom band instead of
+   * leaving the camera aiming above empty space.
+   */
+  minimapVisible?: boolean;
 }
 
 interface UseRunCameraResult {
@@ -213,7 +218,10 @@ function attentionPoints(
   return points;
 }
 
-function readViewportBox(element: HTMLElement | null): CameraViewport | null {
+function readViewportBox(
+  element: HTMLElement | null,
+  minimapVisible: boolean,
+): CameraViewport | null {
   if (!element) return null;
 
   const { width, height } = element.getBoundingClientRect();
@@ -224,9 +232,10 @@ function readViewportBox(element: HTMLElement | null): CameraViewport | null {
     width,
     height,
     insetTop: CanvasToolbarBand,
-    // The minimap is the tallest fixture on the canvas floor, and the band it
-    // occupies is derived the same way `CanvasActionsBottom` derives its own.
-    insetBottom: MiniMapSize.height + CanvasCornerGutter * 2,
+    // The minimap is the tallest fixture on the canvas floor when it is
+    // showing; when it is hidden the action stack is, and both derive from the
+    // same geometry `canvasActionsBottom` owns.
+    insetBottom: canvasActionsBottom(minimapVisible),
   };
 }
 
@@ -410,6 +419,7 @@ export default function useRunCamera({
   edgesRef,
   containerRef,
   lockedRef,
+  minimapVisible = true,
 }: UseRunCameraParams): UseRunCameraResult {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isSuspended, setIsSuspended] = useState(false);
@@ -529,7 +539,7 @@ export default function useRunCamera({
     if (!followingRef.current || suspendedRef.current) return;
 
     const instance = instanceRef.current;
-    const box = readViewportBox(containerRef.current);
+    const box = readViewportBox(containerRef.current, minimapVisible);
     const fronts = frontsRef.current;
     const now = Date.now();
 
@@ -586,7 +596,7 @@ export default function useRunCamera({
     }
 
     frameRef.current = requestAnimationFrame(step);
-  }, [collectPoints, containerRef, instanceRef, release, schedule, suspend]);
+  }, [collectPoints, containerRef, instanceRef, minimapVisible, release, schedule, suspend]);
 
   useEffect(() => {
     stepRef.current = step;

@@ -15,4 +15,6 @@ export interface CanvasPrefs {
   wheelZoom: boolean;
   /** Contextual hints appear on the canvas until the user turns them off. */
   tipsEnabled: boolean;
+  /** The overview map in the bottom-right corner. Off leaves the canvas clear. */
+  minimapVisible: boolean;
 }

@@ -22,7 +22,9 @@ import {
   Panel as FlowPanel,
   useNodesState,
   useEdgesState,
+  useNodesInitialized,
   addEdge,
+  getNodesBounds,
   type Node,
   type Edge,
   type Connection,
@@ -110,6 +112,10 @@ import {
 import { apiweave, IpcError } from "../utils/apiweaveClient";
 import { restoreAfterSave } from "../utils/restoreAfterSave";
 import { autoLayoutRootNodes } from "../utils/autoLayout";
+import {
+  OPENING_VIEW_PADDING,
+  openingViewport,
+} from "../utils/openingViewport";
 import { canvasInteractionProps } from "../utils/canvasInteraction";
 import { nearestInDirection } from "../utils/directionalFocus";
 import type { FocusDirection } from "../types/FocusDirection";
@@ -254,6 +260,24 @@ const initialNodes: Node<WorkflowCanvasNodeData>[] = [
   },
 ];
 
+/**
+ * ReactFlow answers "are all nodes measured" from its own store, which
+ * `<ReactFlow>` provides to its children — so the canvas, which renders
+ * `<ReactFlow>` and owns the viewport, cannot ask the question itself. This
+ * renders nothing and forwards the answer. The opening view must wait for it:
+ * bounds computed from unmeasured nodes are zero, and fitting zeros is how the
+ * canvas opened at a meaningless transform.
+ */
+function NodesInitializedProbe({
+  onChange,
+}: {
+  onChange: (initialized: boolean) => void;
+}) {
+  const initialized = useNodesInitialized();
+  useEffect(() => onChange(initialized), [initialized, onChange]);
+  return null;
+}
+
 export function WorkflowCanvas({
   workflowId,
   workflow,
@@ -356,6 +380,14 @@ export function WorkflowCanvas({
 
   const canvasRef = useRef<HTMLElement | null>(null);
 
+  // The opening view waits on three facts that are all false on mount: the
+  // ReactFlow instance exists, every node has been measured, and the container
+  // has a real size. Applying it on any of the early renders is what made the
+  // first frame a fit against the seed node or against unmeasured zeros.
+  const [hasFlowInstance, setHasFlowInstance] = useState(false);
+  const [nodesInitialized, setNodesInitialized] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+
   const {
     camera: runCamera,
     isFollowing: isFollowingRun,
@@ -370,6 +402,7 @@ export function WorkflowCanvas({
     edgesRef,
     containerRef: canvasRef,
     lockedRef,
+    minimapVisible: canvasPrefs.minimapVisible,
   });
 
   // `lockedRef` only covers runs that *start* locked. A lock thrown mid-run has
@@ -438,6 +471,17 @@ export function WorkflowCanvas({
         workflow?.selectedEnvironmentId ?? undefined,
       ),
     [workflowId, workflow?.selectedEnvironmentId, selectedEnvMap],
+  );
+  // Refresh only means something when the environment the workflow is using
+  // names an OpenAPI/Swagger document; without one the request would fail.
+  const hasOpenApiSource = useMemo(
+    () =>
+      Boolean(
+        environments
+          .find((env) => env.environmentId === selectedEnvironment)
+          ?.swaggerDocUrl?.trim(),
+      ),
+    [environments, selectedEnvironment],
   );
 
   // Publish the resolved environment back into the store, so anything that
@@ -1000,12 +1044,87 @@ export function WorkflowCanvas({
     [selectAndFrame],
   );
 
+  // ── Opening view ─────────────────────────────────────────────────────
+  //
+  // Fit-view answers "show me everything", which on a long left-to-right chain
+  // means "from 5% away": every node a few pixels of dotted line. The canvas
+  // opens the way a reader would — at a readable zoom, at the start of the
+  // graph — and computes that once per mount, never again. The controls'
+  // fit-view button and the pane double-click keep the deliberate overview.
+
+  const didApplyOpeningViewRef = useRef(false);
+
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      setCanvasSize((previous) =>
+        previous.width === width && previous.height === height
+          ? previous
+          : { width, height },
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (didApplyOpeningViewRef.current) return;
+    if (!workflowId || !isHydrated || !nodesInitialized || !hasFlowInstance) {
+      return;
+    }
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return;
+    const instance = reactFlowInstanceRef.current;
+    if (!instance) return;
+
+    // A tab the user has already looked at wins over any computed view.
+    let view = useTabStore
+      .getState()
+      .tabs.find((tab) => tab.id === workflowId)?.viewport;
+
+    if (!view) {
+      // The instance's nodes are the measured ones: ReactFlow writes their
+      // dimensions into its own store, so reading our state here could run a
+      // render behind and produce zero bounds.
+      const bounds = getNodesBounds(instance.getNodes());
+      // Zero bounds are not a graph to frame — wait for measurement.
+      if (bounds.width <= 0 || bounds.height <= 0) return;
+      view = openingViewport({
+        bounds,
+        container: canvasSize,
+        padding: OPENING_VIEW_PADDING,
+      });
+    }
+
+    didApplyOpeningViewRef.current = true;
+    instance.setViewport(snapTransform(view, window.devicePixelRatio));
+  }, [canvasSize, hasFlowInstance, isHydrated, nodesInitialized, workflowId]);
+
+  // Recorded on the way out, not on every move: a drag fires `onMove` per
+  // frame, and the tab row is shared by every view that reads it.
+  useEffect(() => {
+    return () => {
+      if (!workflowId || !didApplyOpeningViewRef.current) return;
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) return;
+      useTabStore.getState().setTabViewport(workflowId, instance.getViewport());
+    };
+  }, [workflowId]);
+
   // A palette search result asked for a node of this workflow. Like
   // `pendingHistory`, the request usually predates this canvas's mount, so it
-  // is read from the store once the graph is hydrated.
+  // is read from the store once the graph is hydrated — and framed, so it has
+  // to wait for measurement like the opening view does.
   const pendingFocus = useCanvasStore((state) => state.pendingFocus);
   useEffect(() => {
-    if (!isHydrated || !workflowId || pendingFocus?.workflowId !== workflowId) {
+    if (
+      !isHydrated ||
+      !nodesInitialized ||
+      !workflowId ||
+      pendingFocus?.workflowId !== workflowId
+    ) {
       return;
     }
     useCanvasStore.getState().clearPendingFocus();
@@ -1014,7 +1133,7 @@ export function WorkflowCanvas({
     } else {
       toast.info("That node is no longer in this workflow.");
     }
-  }, [isHydrated, pendingFocus, selectAndFrame, workflowId]);
+  }, [isHydrated, nodesInitialized, pendingFocus, selectAndFrame, workflowId]);
 
   /**
    * Frame the current selection.
@@ -1666,6 +1785,7 @@ export function WorkflowCanvas({
       rfInstanceRef.current = instance;
       (reactFlowInstanceRef as React.MutableRefObject<unknown>).current =
         instance;
+      setHasFlowInstance(true);
     },
     [],
   );
@@ -1800,10 +1920,13 @@ export function WorkflowCanvas({
    * So the camera follows the run, and the original objection becomes the
    * constraint rather than the verdict: the first pan, zoom, node click or drag
    * hands it straight back and nothing takes it again except the pill. Outside a
-   * run nothing here moves the camera — fitting the view is a deliberate act,
-   * via the auto-layout control and ReactFlow's own fit-view button, and that
-   * includes the end of a run: the camera stays where the last node was rather
-   * than pulling back out to the overview it was called in to escape.
+   * run nothing here moves the camera — the one exception is the opening view
+   * applied once at mount (see the "Opening view" block above), and every later
+   * visit to the tab restores where the user left it instead. Fitting the whole
+   * graph is a deliberate act, via the auto-layout control and ReactFlow's own
+   * fit-view button, and that includes the end of a run: the camera stays where
+   * the last node was rather than pulling back out to the overview it was called
+   * in to escape.
    */
 
   return (
@@ -1824,6 +1947,10 @@ export function WorkflowCanvas({
       <ReactFlow
         className="relative z-10 bg-transparent"
         style={reactFlowStyle}
+        // Bottom-left and inset past the Controls column. The default
+        // bottom-right corner is where the minimap and the "+" action stack
+        // live, and the credit was reading as a grey plate under their edge.
+        attributionPosition="bottom-left"
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
@@ -1860,7 +1987,6 @@ export function WorkflowCanvas({
         defaultEdgeOptions={defaultEdgeOptions}
         connectionLineType={ConnectionLineType.Bezier}
         connectionLineStyle={connectionLineStyle}
-        fitView
         fitViewOptions={fitViewOptions}
         minZoom={0.02}
         maxZoom={2.5}
@@ -1878,6 +2004,10 @@ export function WorkflowCanvas({
         // the pruning while it is actually moving.
         onlyRenderVisibleElements={isFollowingRun || isCameraMoving}
       >
+        {/* Reports when every node has been measured; the opening view waits
+            for it. Renders nothing. */}
+        <NodesInitializedProbe onChange={setNodesInitialized} />
+
         {/* The grid should be felt, not read.
             Validation step 2: Background dots repaint every pan frame (SVG pattern).
             Keep enabled for now — next toggle to test is commenting this out.
@@ -1925,23 +2055,26 @@ export function WorkflowCanvas({
         {/* The action stack in AddNodesPanel sits directly above this, keyed off
             the same shared geometry — see constants/CanvasChrome. Frozen while
             the run camera is mid-motion, so following a run costs the minimap
-            no repaints. */}
-        <RunMiniMap
-          nodes={nodes}
-          frozen={isCameraMoving || isUserPanning}
-          position="bottom-right"
-          paint={{
-            nodeColor: getNodeColor,
-            nodeStrokeColor: getNodeStrokeColor,
-            nodeStrokeWidth: 1,
-            maskColor: darkMode
-              ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
-              : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)",
-          }}
-          style={miniMapStyle}
-          zoomable
-          pannable
-        />
+            no repaints. Off by default: the canvas is the product, and the map
+            is available from App Settings → Canvas when it is wanted. */}
+        {canvasPrefs.minimapVisible && (
+          <RunMiniMap
+            nodes={nodes}
+            frozen={isCameraMoving || isUserPanning}
+            position="bottom-right"
+            paint={{
+              nodeColor: getNodeColor,
+              nodeStrokeColor: getNodeStrokeColor,
+              nodeStrokeWidth: 1,
+              maskColor: darkMode
+                ? "color-mix(in srgb, var(--aw-surface) 64%, transparent)"
+                : "color-mix(in srgb, var(--aw-text-primary) 5%, transparent)",
+            }}
+            style={miniMapStyle}
+            zoomable
+            pannable
+          />
+        )}
       </ReactFlow>
 
       {isCanvasEmpty && <EmptyCanvasHint />}
@@ -1982,6 +2115,7 @@ export function WorkflowCanvas({
         {...(selectedEnvironment ? { selectedEnvironment } : {})}
         onRefreshSwagger={handleManualSwaggerRefresh}
         isSwaggerRefreshing={isSwaggerRefreshing}
+        hasOpenApiSource={hasOpenApiSource}
         resumeOptions={resumeOptions}
         isResumeLoading={isResumeLoading}
         onEnvironmentChange={(val) => {
@@ -1993,11 +2127,6 @@ export function WorkflowCanvas({
           } else {
             useEnvironmentStore.getState().clearSelectedEnv(wfId);
           }
-          const selectedEnv = processed
-            ? environments.find((e) => e.environmentId === processed)
-            : undefined;
-          const envName = selectedEnv ? selectedEnv.name : "No Environment";
-          toast.success(`Environment: ${envName}`);
         }}
         workflowId={workflowId ?? ""}
       />
@@ -2050,7 +2179,7 @@ export function WorkflowCanvas({
         />
       )}
 
-      {canvasPrefs.tipsEnabled && canvasTip && (
+      {canvasPrefs.tipsEnabled && canvasTip && !isRunning && (
         <CanvasTip
           tip={canvasTip}
           shortcut={

@@ -189,10 +189,8 @@ async function openCanvas(page: Page): Promise<void> {
   await page.waitForTimeout(900);
 
   // Give the canvas the whole window so the shots frame the graph, not the shell.
-  for (const label of ["Collapse sidebar", "Collapse Navigation"]) {
-    const button = page.getByRole("button", { name: label }).first();
-    if (await button.count()) await button.click().catch(() => undefined);
-  }
+  const collapse = page.getByRole("button", { name: "Collapse Navigation" }).first();
+  if (await collapse.count()) await collapse.click().catch(() => undefined);
   await fitView(page);
 }
 

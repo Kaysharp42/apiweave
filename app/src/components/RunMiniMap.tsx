@@ -32,8 +32,8 @@ import {
  * without a canvas.
  */
 
-const DEFAULT_WIDTH = 200;
-const DEFAULT_HEIGHT = 150;
+const DEFAULT_WIDTH = 160;
+const DEFAULT_HEIGHT = 100;
 const OFFSET_SCALE = 5;
 const ZOOM_STEP = 10;
 const NODE_RADIUS = 5;
