@@ -36,13 +36,13 @@ export function NodeModalHeader({
   return (
     <div className="mb-4 flex items-start justify-between border-b border-border pb-4 dark:border-border-dark">
       <div className="flex flex-col gap-2 w-full pr-4">
-        <div className="flex items-center gap-2 font-mono text-2xs font-medium uppercase tracking-widest text-text-muted dark:text-text-muted-dark">
+        <div className="flex items-center gap-2 font-mono text-2xs font-medium uppercase tracking-widest text-text-secondary dark:text-text-secondary-dark">
           <Icon className="w-6 h-6" />
           <span>{typeName}</span>
         </div>
         <label
           htmlFor="node-modal-name"
-          className="text-xs font-medium text-text-muted dark:text-text-muted-dark"
+          className="text-xs font-medium text-text-secondary dark:text-text-secondary-dark"
         >
           Node Name
         </label>

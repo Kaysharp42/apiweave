@@ -10,4 +10,12 @@ describe("EmptyCanvasHint", () => {
     const { container } = render(<EmptyCanvasHint />);
     expect(container.firstElementChild).toHaveClass("pointer-events-none");
   });
+
+  it("sits below the start and end nodes rather than over them", () => {
+    const { container } = render(<EmptyCanvasHint />);
+    const root = container.firstElementChild;
+
+    expect(root).toHaveClass("items-end", "pb-24");
+    expect(root).not.toHaveClass("items-center");
+  });
 });

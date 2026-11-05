@@ -113,7 +113,7 @@ export default function FileUploadSection({
               {file.type} · {file.fieldName} · {file.mimeType}
             </p>
             {file.description && (
-              <p className="mt-1 text-xs text-text-muted dark:text-text-muted-dark">
+              <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
                 {file.description}
               </p>
             )}

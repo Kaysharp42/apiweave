@@ -265,7 +265,7 @@ function SessionRow({
               {session.title}
             </span>
           )}
-          <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-2xs text-text-muted dark:text-text-muted-dark">
+          <span className="mt-1 flex items-center gap-1.5 truncate font-mono text-2xs text-text-secondary dark:text-text-secondary-dark">
             <FolderOpen className="h-3 w-3 shrink-0" aria-hidden="true" />
             <span className="truncate">{session.cwd}</span>
           </span>
@@ -273,7 +273,7 @@ function SessionRow({
               without this every finished session below the fold is undated —
               and the row that reads identically to the one under it is usually
               the same agent in the same folder on a different day. */}
-          <span className="mt-0.5 block text-2xs text-text-muted dark:text-text-muted-dark">
+          <span className="mt-0.5 block text-2xs text-text-secondary dark:text-text-secondary-dark">
             {formatTimestamp(session.startedAt)}
           </span>
           {session.error !== null && session.error !== undefined && (

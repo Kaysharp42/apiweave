@@ -411,13 +411,13 @@ function ExtractorRow({
   return (
     <div className="rounded-xs border border-border bg-surface-overlay px-3 py-2 dark:border-border-dark dark:bg-surface-dark-overlay">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.4fr)_auto_auto] items-center gap-2">
-        <code className="truncate text-xs text-status-success dark:text-status-success-dark">
+        <code className="truncate text-xs text-status-success">
           {variableName}
         </code>
         <span className="text-text-muted dark:text-text-muted-dark">
           &larr;
         </span>
-        <code className="truncate text-xs text-status-info dark:text-status-info-dark">
+        <code className="truncate text-xs text-status-info">
           {responsePath}
         </code>
         <IconButton
@@ -440,12 +440,12 @@ function ExtractorRow({
       {resolution && (
         <p className="mt-1 truncate font-mono text-2xs">
           {resolution.failureReason === null ? (
-            <span className="text-status-success dark:text-status-success-dark">
+            <span className="text-status-success">
               Last response:{" "}
               {previewValue(resolution.value, EXTRACTOR_PREVIEW_LIMIT)}
             </span>
           ) : (
-            <span className="text-status-warning dark:text-status-warning-dark">
+            <span className="text-status-warning">
               {resolution.failureReason === "path-missing"
                 ? "Not found in the last response"
                 : "The last response had a different shape at this path"}
@@ -1046,7 +1046,7 @@ export function HTTPRequestConfigPanel({
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
                 No response variables yet.
               </p>
-              <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-muted dark:text-text-muted-dark">
+              <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-text-secondary dark:text-text-secondary-dark">
                 Run the request, then hover a value in the response tree and
                 click
                 <Variable

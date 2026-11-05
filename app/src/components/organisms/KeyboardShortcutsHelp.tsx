@@ -21,14 +21,14 @@ export function KeyboardShortcutsHelp({
   return (
     <Modal isOpen={open} onClose={onClose} title="Keyboard Shortcuts" size="md">
       <div className="space-y-5 py-2">
-        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
           Node copy/paste shortcuts are context-aware. When typing or selecting
           text in editors/modals, native text copy/paste is used instead of node
           copy/paste.
         </p>
         {GROUPS.map((group) => (
           <div key={group}>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark mb-2">
               {group}
             </h3>
             <div className="space-y-1">

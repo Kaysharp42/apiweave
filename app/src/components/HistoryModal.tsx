@@ -202,7 +202,7 @@ export default function HistoryModal({
         )
       }
     >
-      <p className="px-5 pt-3 text-xs text-text-muted dark:text-text-muted-dark">
+      <p className="px-5 pt-3 text-xs text-text-secondary dark:text-text-secondary-dark">
         {runs.length}
         {nextCursor !== null ? "+" : ""} run
         {runs.length !== 1 || nextCursor !== null ? "s" : ""}, newest first
@@ -219,7 +219,7 @@ export default function HistoryModal({
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
             <div className="animate-spin motion-reduce:animate-none rounded-full h-10 w-10 border-b-2 border-primary"></div>
-            <p className="text-sm text-text-muted dark:text-text-muted-dark">
+            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
               Loading history…
             </p>
           </div>
@@ -230,7 +230,7 @@ export default function HistoryModal({
           <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">
             No runs yet
           </p>
-          <p className="text-xs text-text-muted dark:text-text-muted-dark text-center">
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark text-center">
             Click the Run button to execute this workflow
           </p>
         </div>
@@ -276,7 +276,7 @@ export default function HistoryModal({
                       <span>{getStatusIcon(run.status)}</span>
                       <span className="uppercase">{run.status}</span>
                     </span>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                    <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                       {formatDate(run.createdAt)}
                     </span>
                   </div>

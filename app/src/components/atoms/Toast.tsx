@@ -1,4 +1,7 @@
+import { useContext, type CSSProperties } from "react";
 import { Toaster } from "sonner";
+import { AppContext } from "../../App";
+import type { AppContextType } from "../../types/AppContextType";
 import { CanvasCornerGutter } from "../../constants/CanvasChrome";
 
 /**
@@ -13,6 +16,11 @@ import { CanvasCornerGutter } from "../../constants/CanvasChrome";
 const ACTION_STACK_CLEARANCE = CanvasCornerGutter + 36 + 8;
 
 export function Toast() {
+  // Sonner's own `system` follows the OS, which is not necessarily the app's
+  // theme: picking Light in APIWeave while the OS is dark used to give dark
+  // toasts on a light page. The effective theme is the app's, not the OS's.
+  const { darkMode } = useContext(AppContext) as AppContextType;
+
   return (
     <Toaster
       // Bottom-right, clear of the 32px status bar plus an 8px gap, and left of
@@ -23,7 +31,12 @@ export function Toast() {
       offset={{ bottom: 40, right: ACTION_STACK_CLEARANCE }}
       closeButton
       expand
-      theme="system"
+      theme={darkMode ? "dark" : "light"}
+      // Sonner writes `--width: 356px` into its own inline style before
+      // spreading this one, so overriding the variable here narrows every
+      // toast. 300px keeps the stack clear of the canvas zoom controls at an
+      // 800px-wide window without shortening the text enough to wrap.
+      style={{ "--width": "300px" } as CSSProperties}
       toastOptions={{
         duration: 4000,
         className:

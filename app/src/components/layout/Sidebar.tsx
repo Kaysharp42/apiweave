@@ -379,37 +379,35 @@ export function Sidebar() {
         />
 
         <div className="flex-1 overflow-hidden">
+          {/* One scroll region per panel: the workflow list is the only
+              element that scrolls, and it owns the stable gutter. No second
+              scroll container sits beside it on the sidebar's right edge. */}
           <div
-            className={`h-full flex flex-col ${
-              selectedNav === "workflows" ? "" : "hidden"
-            }`}
+            className={[
+              "h-full overflow-y-auto overflow-x-hidden transition-opacity duration-300",
+              isRefreshing ? "opacity-50" : "opacity-100",
+              selectedNav === "workflows" ? "" : "hidden",
+            ].join(" ")}
+            style={{ scrollbarGutter: "stable" }}
           >
-            <div
-                className={[
-                  "flex-1 overflow-y-auto overflow-x-hidden transition-opacity duration-300",
-                  isRefreshing ? "opacity-50" : "opacity-100",
-                ].join(" ")}
-                style={{ scrollbarGutter: "stable" }}
-              >
-                <WorkflowList
-                  workflows={filteredWorkflows}
-                  collections={collections}
-                  environments={environments}
-                  selectedWorkflowId={selectedWorkflowId}
-                  isRefreshing={isRefreshing}
-                  searchQuery={searchQuery}
-                  onWorkflowClick={handleWorkflowClick}
-                  onExportWorkflow={handleExportWorkflow}
-                  onDeleteWorkflow={(workflowId: string, name: string) =>
-                    setDeleteWorkflowTarget({ workflowId, name })
-                  }
-                  onRenameWorkflow={rowActions.open.renameWorkflow}
-                  onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
-                  onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
-                  onCreateWorkflow={createNewWorkflow}
-                />
-              </div>
-            </div>
+            <WorkflowList
+              workflows={filteredWorkflows}
+              collections={collections}
+              environments={environments}
+              selectedWorkflowId={selectedWorkflowId}
+              isRefreshing={isRefreshing}
+              searchQuery={searchQuery}
+              onWorkflowClick={handleWorkflowClick}
+              onExportWorkflow={handleExportWorkflow}
+              onDeleteWorkflow={(workflowId: string, name: string) =>
+                setDeleteWorkflowTarget({ workflowId, name })
+              }
+              onRenameWorkflow={rowActions.open.renameWorkflow}
+              onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
+              onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
+              onCreateWorkflow={createNewWorkflow}
+            />
+          </div>
           <div
             className={[
               "h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none",

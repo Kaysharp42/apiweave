@@ -707,6 +707,18 @@ describe("WorkspaceEmptyState", () => {
       screen.queryByRole("list", { name: "Recent workflows" }),
     ).not.toBeInTheDocument();
   });
+
+  it("scrolls instead of clipping when the window is short", () => {
+    // At 800x560 the welcome screen is taller than the pane. Centring a
+    // scroll container clips its top, so the safe variant is the one that
+    // falls back to start alignment once the content overflows.
+    const { container } = render(<WorkspaceEmptyState />);
+    const root = container.firstElementChild as HTMLElement;
+
+    expect(root).toHaveClass("overflow-y-auto");
+    expect(root).toHaveClass("justify-center-safe");
+    expect(root).toHaveClass("py-8");
+  });
 });
 
 describe("StatusBadge", () => {

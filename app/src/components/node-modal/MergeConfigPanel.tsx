@@ -350,7 +350,7 @@ export function MergeConfigPanel({
         </div>
 
         {conditions.length === 0 && (
-          <div className="rounded-xs border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+          <div className="rounded-xs border border-dashed border-border bg-surface-overlay py-8 text-center text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
             No conditions yet. Add one to gate conditional merge behavior.
           </div>
         )}

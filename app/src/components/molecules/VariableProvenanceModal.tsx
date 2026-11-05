@@ -36,7 +36,7 @@ export function VariableProvenanceModal({
                 Produced by
               </div>
               {producers.length === 0 ? (
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                   No extractor on the canvas defines this variable (manual variable).
                 </p>
               ) : (
@@ -64,7 +64,7 @@ export function VariableProvenanceModal({
                 Consumed by
               </div>
               {consumers.length === 0 ? (
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                   No node on the canvas references this variable yet.
                 </p>
               ) : (

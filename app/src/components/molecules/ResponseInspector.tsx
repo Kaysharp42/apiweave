@@ -768,7 +768,7 @@ export function ResponseInspector({
                       </Badge>
                     ))}
                     {cookieRow.attributes.length === 0 && (
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                         None
                       </span>
                     )}
@@ -936,7 +936,7 @@ export function ResponseInspector({
             {...(onAddExtractor
               ? {
                   headerActions: (
-                    <span className="flex items-center gap-1.5 text-2xs text-text-muted dark:text-text-muted-dark">
+                    <span className="flex items-center gap-1.5 text-2xs text-text-secondary dark:text-text-secondary-dark">
                       <Variable
                         className="h-3.5 w-3.5 text-primary dark:text-primary-light"
                         aria-hidden="true"

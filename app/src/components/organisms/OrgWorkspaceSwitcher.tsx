@@ -166,7 +166,7 @@ export function OrgWorkspaceSwitcher() {
                 className="z-50 w-64 min-w-(--button-width) overflow-hidden rounded-sm border border-border bg-surface-raised shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
-                  <span className="text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                  <span className="text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
                     Switch workspace
                   </span>
                 </div>
@@ -202,7 +202,7 @@ export function OrgWorkspaceSwitcher() {
                   })}
 
                   {flatList.length === 0 && (
-                    <div className="px-3 py-6 text-center text-xs text-text-muted dark:text-text-muted-dark">
+                    <div className="px-3 py-6 text-center text-xs text-text-secondary dark:text-text-secondary-dark">
                       No workspaces available
                     </div>
                   )}
@@ -300,7 +300,7 @@ function WorkspaceItem({
         <div className="flex items-center gap-1 text-sm font-medium">
           <span className="truncate">{workspace.name}</span>
         </div>
-        <div className="truncate text-xs text-text-muted dark:text-text-muted-dark">
+        <div className="truncate text-xs text-text-secondary dark:text-text-secondary-dark">
           {source}
         </div>
       </div>

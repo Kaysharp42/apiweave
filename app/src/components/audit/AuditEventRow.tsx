@@ -15,7 +15,7 @@ function formatTimestamp(iso: string): string {
 export function AuditEventRow({ event }: AuditEventRowProps) {
   return (
     <tr className="border-b border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors duration-200 motion-reduce:transition-none">
-      <td className="px-3 py-2 text-xs font-mono text-text-muted dark:text-text-muted-dark">
+      <td className="px-3 py-2 text-xs font-mono text-text-secondary dark:text-text-secondary-dark">
         {formatTimestamp(event.createdAt)}
       </td>
       <td className="px-3 py-2">
@@ -34,7 +34,7 @@ export function AuditEventRow({ event }: AuditEventRowProps) {
       <td className="px-3 py-2 text-sm text-text-secondary dark:text-text-secondary-dark">
         {event.resourceType}
       </td>
-      <td className="px-3 py-2 text-xs font-mono text-text-muted dark:text-text-muted-dark truncate max-w-48">
+      <td className="px-3 py-2 text-xs font-mono text-text-secondary dark:text-text-secondary-dark truncate max-w-48">
         {event.resourceId}
       </td>
     </tr>

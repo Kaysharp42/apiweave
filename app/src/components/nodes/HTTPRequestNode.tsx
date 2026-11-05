@@ -375,7 +375,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {result.error && (
-        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-(--aw-status-error)/5 text-status-error dark:text-status-error-dark">
+        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-(--aw-status-error)/5 text-status-error">
           <span className="font-semibold">Error:</span> {result.error}
         </div>
       )}
@@ -615,13 +615,13 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             key={varName}
                             className="flex gap-1 items-center text-xs"
                           >
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-success)/10 text-status-success">
                               {varName}
                             </code>
                             <span className="text-(--aw-node-text-muted)">
                               &larr;
                             </span>
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-info)/10 text-status-info dark:text-status-info-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-info)/10 text-status-info">
                               {displayPath}
                             </code>
                             <button

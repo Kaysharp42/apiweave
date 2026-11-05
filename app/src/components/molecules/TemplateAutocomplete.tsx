@@ -321,7 +321,7 @@ function SuggestionList({
               {suggestion.insert}
             </span>
             {suggestion.detail && (
-              <span className="truncate text-text-muted dark:text-text-muted-dark">
+              <span className="truncate text-text-secondary dark:text-text-secondary-dark">
                 {suggestion.detail}
               </span>
             )}

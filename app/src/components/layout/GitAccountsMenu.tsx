@@ -53,7 +53,7 @@ function GitAccountsMenuPanel({
             key={`${group.provider}|${group.host}`}
             aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}
           >
-            <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+            <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
               {group.host}
             </h3>
             <ul className="space-y-2">
@@ -109,7 +109,7 @@ function GitAccountsMenuPanel({
                 Add {GIT_PROVIDERS[provider].name} account
               </Button>
               {missing && (
-                <p className="px-3 text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="px-3 text-xs text-text-secondary dark:text-text-secondary-dark">
                   The {GIT_PROVIDERS[provider].cliName} is not installed;
                   Settings &gt; Git accounts says where to get it.
                 </p>
@@ -118,7 +118,7 @@ function GitAccountsMenuPanel({
           );
         })}
         {hasGitLab && (
-          <p className="px-3 text-xs text-text-muted dark:text-text-muted-dark">
+          <p className="px-3 text-xs text-text-secondary dark:text-text-secondary-dark">
             glab keeps one account per host: signing in to the same GitLab host
             again replaces its account.
           </p>

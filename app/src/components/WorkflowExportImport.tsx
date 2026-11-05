@@ -297,7 +297,7 @@ export function WorkflowExportImport({
             </div>
 
             {error && (
-              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error">
                 {error}
               </div>
             )}
@@ -338,7 +338,7 @@ export function WorkflowExportImport({
                   type="file"
                   accept=".json"
                   onChange={handleFileSelect}
-                  className="block w-full text-sm text-text-muted dark:text-text-muted-dark
+                  className="block w-full text-sm text-text-secondary dark:text-text-secondary-dark
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-sm file:border-0
                     file:text-sm file:font-medium
@@ -407,8 +407,8 @@ export function WorkflowExportImport({
                     <p
                       className={`font-medium ${
                         dryRunResult.valid
-                          ? "text-status-success dark:text-status-success-dark"
-                          : "text-status-error dark:text-status-error-dark"
+                          ? "text-status-success"
+                          : "text-status-error"
                       }`}
                     >
                       {dryRunResult.valid
@@ -434,7 +434,7 @@ export function WorkflowExportImport({
                     )}
 
                     {dryRunResult.errors && dryRunResult.errors.length > 0 && (
-                      <ul className="mt-2 text-sm text-status-error dark:text-status-error-dark list-disc list-inside">
+                      <ul className="mt-2 text-sm text-status-error list-disc list-inside">
                         {dryRunResult.errors.map((err: string) => (
                           <li key={err}>{err}</li>
                         ))}
@@ -460,10 +460,10 @@ export function WorkflowExportImport({
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-(--aw-status-success) shrink-0" />
                   <div className="min-w-0">
-                    <p className="font-medium text-status-success dark:text-status-success-dark">
+                    <p className="font-medium text-status-success">
                       Import successful!
                     </p>
-                    <p className="text-sm text-status-success dark:text-status-success-dark mt-1">
+                    <p className="text-sm text-status-success mt-1">
                       Workflow ID: {importResult.workflowId}
                     </p>
                     {importResult.secretReferences &&
@@ -483,7 +483,7 @@ export function WorkflowExportImport({
             )}
 
             {error && (
-              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error">
                 {error}
               </div>
             )}

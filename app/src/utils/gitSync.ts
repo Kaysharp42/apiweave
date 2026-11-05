@@ -32,7 +32,7 @@ const LOCAL_HISTORY_EXPLANATION =
 
 /** The text colour each intent takes where no Button supplies one, as the design tokens spell it. */
 export const GIT_SYNC_INTENT_TEXT: Readonly<Record<GitSyncIntent, string>> = {
-  muted: "text-text-muted dark:text-text-muted-dark",
+  muted: "text-text-secondary dark:text-text-secondary-dark",
   success: "text-status-success dark:text-(--aw-status-success)",
   info: "text-status-info dark:text-(--aw-status-info)",
   warning: "text-status-warning dark:text-(--aw-status-warning)",

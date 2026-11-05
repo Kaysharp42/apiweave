@@ -30,7 +30,7 @@ export function WorkspaceEmptyState({
   onOpenWorkflow,
 }: WorkspaceEmptyStateProps) {
   return (
-    <div className="flex h-full select-none flex-col items-center justify-center gap-6 px-6 py-12 motion-reduce:animate-none">
+    <div className="flex h-full select-none flex-col items-center justify-center-safe gap-6 overflow-y-auto px-6 py-8 motion-reduce:animate-none">
       <img
         src="/apiweave.png"
         alt=""
@@ -140,7 +140,7 @@ export function WorkspaceEmptyState({
       </div>
 
       {/* Shortcuts */}
-      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-2xs text-text-muted dark:text-text-muted-dark">
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-2xs text-text-secondary dark:text-text-secondary-dark">
         {EMPTY_STATE_SHORTCUTS.map(([action, label]) => (
           <span
             key={action}

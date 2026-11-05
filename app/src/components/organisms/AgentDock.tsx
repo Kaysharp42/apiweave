@@ -278,7 +278,7 @@ function DockMeta({ session }: { readonly session: AgentSession | undefined }) {
         // ellipsing it away behind a drive letter every path here shares.
         <span
           dir="rtl"
-          className="min-w-0 truncate text-left font-mono text-2xs text-text-muted dark:text-text-muted-dark"
+          className="min-w-0 truncate text-left font-mono text-2xs text-text-secondary dark:text-text-secondary-dark"
           title={cwd}
         >
           {cwd}
@@ -308,7 +308,7 @@ function DockFooter({ resuming, agentKey, onResume }: DockFooterProps) {
       >
         {resuming ? "Resuming…" : "Resume this session"}
       </Button>
-      <p className="mt-1.5 text-center text-2xs text-text-muted dark:text-text-muted-dark">
+      <p className="mt-1.5 text-center text-2xs text-text-secondary dark:text-text-secondary-dark">
         Reopens the conversation in {agentKey ?? "the agent"} — starts a new run.
       </p>
     </footer>

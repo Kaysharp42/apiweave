@@ -105,7 +105,7 @@ export function MergeValueControl({
         </p>
       )}
       {!long && !textValue && (
-        <p className="text-2xs text-text-muted dark:text-text-muted-dark">
+        <p className="text-2xs text-text-secondary dark:text-text-secondary-dark">
           JSON: text in quotes; numbers, true, false and null as they are.
         </p>
       )}

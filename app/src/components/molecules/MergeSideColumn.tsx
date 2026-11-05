@@ -41,7 +41,7 @@ export function MergeSideColumn({
 }: MergeSideColumnProps) {
   return (
     <section className="min-w-0">
-      <p className="text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+      <p className="text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
         {side === "ours" ? "Yours" : "Remote"}
       </p>
       <div className="mt-1">

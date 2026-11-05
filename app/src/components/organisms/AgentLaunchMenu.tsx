@@ -85,7 +85,7 @@ export function AgentLaunchMenu({
       className="absolute top-9 right-0 z-50 min-w-[260px] max-w-[360px] overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
     >
       <div className="border-b border-border px-3 py-2 dark:border-border-dark">
-        <p className="text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+        <p className="text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
           {headerLabel}
         </p>
         <p

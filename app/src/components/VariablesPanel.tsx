@@ -329,7 +329,7 @@ export default function VariablesPanel() {
                   </div>
                 )}
 
-                <div className="min-w-0 text-2xs text-text-muted dark:text-text-muted-dark">
+                <div className="min-w-0 text-2xs text-text-secondary dark:text-text-secondary-dark">
                   <span className="break-all">
                     Use:{" "}
                     <code className="bg-surface dark:bg-surface-dark-raised px-1 rounded-sm break-all">{`{{variables.${varName}}}`}</code>

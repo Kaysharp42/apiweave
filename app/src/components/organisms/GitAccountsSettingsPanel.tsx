@@ -46,7 +46,7 @@ function GitHostCliCard({
           <p className="text-xs text-status-warning">{cli.problem}</p>
         )}
         {provider === "gitlab" && (
-          <p className="text-xs text-text-muted dark:text-text-muted-dark">
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
             glab keeps one account per host. Signing in to a host it already has
             replaces that account, so a second GitLab account needs a different
             host.
@@ -65,7 +65,7 @@ function GitHostCliCard({
                 <GitAccountRow
                   account={account}
                   detail={
-                    <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                    <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                       {names.length === 0
                         ? "No workspace uses this account."
                         : `Used by ${names.join(", ")}.`}

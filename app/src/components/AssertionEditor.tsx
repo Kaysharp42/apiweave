@@ -141,7 +141,7 @@ export default function AssertionEditor({
             )}
           </div>
         ) : (
-          <div className="text-sm text-text-muted dark:text-text-muted-dark flex items-center px-2">
+          <div className="text-sm text-text-secondary dark:text-text-secondary-dark flex items-center px-2">
             No value required
           </div>
         )}

@@ -36,7 +36,7 @@ export function NodePaletteSection({
       <div className="collapse-title text-sm font-medium py-2 min-h-0 flex items-center gap-2 text-text-primary dark:text-text-primary-dark">
         <Icon className="w-4 h-4 text-text-secondary dark:text-text-secondary-dark shrink-0" />
         <span>{section.title}</span>
-        <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-2xs font-mono text-text-muted dark:text-text-muted-dark">
+        <span className="ml-auto rounded-full border border-border dark:border-border-dark px-1.5 py-0.5 text-2xs font-mono text-text-secondary dark:text-text-secondary-dark">
           {section.nodes.length}
         </span>
       </div>
@@ -110,7 +110,7 @@ export function NodePaletteSection({
                   )}
                 </div>
                 {node.description && (
-                  <span className="text-xs text-text-muted dark:text-text-muted-dark truncate">
+                  <span className="text-xs text-text-secondary dark:text-text-secondary-dark truncate">
                     {node.description}
                   </span>
                 )}

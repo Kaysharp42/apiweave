@@ -242,7 +242,7 @@ export function EnvironmentForm({
                 </div>
                 {inheritedGroups.map(({ source, variables }) => (
                   <div key={source.environmentId} className="space-y-1">
-                    <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                    <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                       from {source.name}
                     </p>
                     {Object.entries(variables).map(([key, value]) => (
@@ -264,7 +264,7 @@ export function EnvironmentForm({
                           {value}
                         </span>
                         {Object.prototype.hasOwnProperty.call(form.variables, key) && (
-                          <span className="text-xs text-text-muted dark:text-text-muted-dark shrink-0">
+                          <span className="text-xs text-text-secondary dark:text-text-secondary-dark shrink-0">
                             overridden below
                           </span>
                         )}
@@ -419,7 +419,7 @@ export function EnvironmentForm({
                 </Button>
               </div>
 
-              <p className="text-xs text-text-muted dark:text-text-muted-dark mt-2">
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-2">
                 Use in workflows:{" "}
                 <code className="bg-surface-overlay dark:bg-surface-dark-overlay px-1 rounded-sm">
                   {"{{env.variableName}}"}
@@ -441,7 +441,7 @@ export function EnvironmentForm({
                     <Lock className="w-3 h-3 mr-1" /> Manage
                   </Button>
                 </div>
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                   Secrets are sensitive values (API keys, tokens) that users
                   provide when running workflows.
                 </p>
@@ -475,7 +475,7 @@ export function EnvironmentForm({
                     <span className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
                       {ws.name}
                     </span>
-                    <span className="ml-2 text-xs text-text-muted dark:text-text-muted-dark">
+                    <span className="ml-2 text-xs text-text-secondary dark:text-text-secondary-dark">
                       /{ws.slug}
                     </span>
                   </div>

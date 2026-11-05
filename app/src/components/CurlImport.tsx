@@ -357,7 +357,7 @@ curl -X POST "https://api.example.com/users" \\
               <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1 flex items-center gap-1">
                 {selectedWorkflowId ? (
                   <>
-                    <CheckCircle className="w-4 h-4 text-status-success dark:text-status-success-dark" />
+                    <CheckCircle className="w-4 h-4 text-status-success" />
                     <span>Will append to selected workflow</span>
                   </>
                 ) : (
@@ -387,8 +387,8 @@ curl -X POST "https://api.example.com/users" \\
         {error && (
           <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4">
             <div className="flex items-start">
-              <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 shrink-0 mt-0.5" />
-              <p className="text-sm text-status-error dark:text-status-error-dark">
+              <AlertCircle className="w-5 h-5 text-status-error mr-2 shrink-0 mt-0.5" />
+              <p className="text-sm text-status-error">
                 {error}
               </p>
             </div>

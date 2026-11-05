@@ -125,7 +125,7 @@ export function FileUploadDropzone({
         <div className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
           Click to upload or drag and drop
         </div>
-        <div className="text-xs text-text-muted dark:text-text-muted-dark">
+        <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
           {description}
         </div>
       </div>
@@ -536,8 +536,8 @@ export function ImportToNodesPanel({
           <div
             className={`mb-4 p-4 rounded-xs border flex gap-3 ${
               message.type === "success"
-                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark border-status-success/30"
-                : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-status-error dark:text-status-error-dark border-status-error/30"
+                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-status-success border-status-success/30"
+                : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-status-error border-status-error/30"
             }`}
           >
             {message.type === "success" ? (

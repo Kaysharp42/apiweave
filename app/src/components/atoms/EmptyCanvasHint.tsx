@@ -10,12 +10,12 @@
  */
 export function EmptyCanvasHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex select-none items-center justify-center">
+    <div className="pointer-events-none absolute inset-0 z-10 flex select-none items-end justify-center pb-24">
       <div className="max-w-sm px-6 text-center">
         <p className="text-sm font-medium text-text-secondary dark:text-text-secondary-dark">
           Nothing here yet
         </p>
-        <p className="mt-1.5 text-xs leading-relaxed text-text-muted dark:text-text-muted-dark">
+        <p className="mt-1.5 text-xs leading-relaxed text-text-secondary dark:text-text-secondary-dark">
           Drag a node in from{" "}
           <span className="font-medium text-text-secondary dark:text-text-secondary-dark">
             Add nodes

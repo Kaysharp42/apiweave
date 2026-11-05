@@ -133,7 +133,7 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
 
             {/* Waterfall */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between text-2xs text-text-muted dark:text-text-muted-dark font-mono px-1">
+              <div className="flex items-center justify-between text-2xs text-text-secondary dark:text-text-secondary-dark font-mono px-1">
                 <span>start</span>
                 <span>{formatTimelineDuration(timeline.totalMs)}</span>
               </div>
@@ -208,7 +208,7 @@ export function RunTimelinePanel({ isOpen, onClose, workspaceId, runId }: RunTim
                 )}
                 {selected.secretRefs.length > 0 && (
                   <div className="space-y-1.5">
-                    <div className="text-2xs font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+                    <div className="text-2xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
                       Secrets referenced
                     </div>
                     <SecretResolutionIndicator

@@ -39,7 +39,7 @@ function InfoRow({
 }) {
   return (
     <>
-      <dt className="text-text-muted dark:text-text-muted-dark">{label}</dt>
+      <dt className="text-text-secondary dark:text-text-secondary-dark">{label}</dt>
       <dd className="min-w-0 break-words font-mono text-xs text-text-primary dark:text-text-primary-dark">
         {children}
       </dd>
@@ -128,7 +128,7 @@ export function AboutDialog() {
             <p className="text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
               APIWeave
             </p>
-            <p className="text-xs text-text-muted dark:text-text-muted-dark">
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
               {info === null ? "…" : `v${info.version}`} · local-first API
               workflows
             </p>
@@ -140,7 +140,7 @@ export function AboutDialog() {
             {loadError}
           </p>
         ) : info === null ? (
-          <div className="flex items-center gap-2 text-text-muted dark:text-text-muted-dark">
+          <div className="flex items-center gap-2 text-text-secondary dark:text-text-secondary-dark">
             <Spinner size="sm" />
             <span>Reading app details…</span>
           </div>
@@ -155,7 +155,7 @@ export function AboutDialog() {
             </dl>
 
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+              <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
                 Data folder
               </p>
               <div className="mt-1 flex items-center gap-2">
@@ -193,7 +193,7 @@ export function AboutDialog() {
         )}
 
         <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
             Links
           </p>
           <div className="flex flex-wrap gap-4">
@@ -218,7 +218,7 @@ export function AboutDialog() {
           </div>
         </div>
 
-        <div className="border-t border-border pt-4 text-xs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        <div className="border-t border-border pt-4 text-xs text-text-secondary dark:border-border-dark dark:text-text-secondary-dark">
           <p className="font-semibold uppercase tracking-wide">
             Acknowledgements
           </p>

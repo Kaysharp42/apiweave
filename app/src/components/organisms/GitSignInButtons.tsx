@@ -47,13 +47,13 @@ export function GitSignInButtons({
         ))}
       </div>
       {noneInstalled && (
-        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
           Signing in needs the GitHub CLI (gh) and the GitLab CLI (glab): install them from{" "}
           <GitCliInstallLink provider="github" /> and <GitCliInstallLink provider="gitlab" />, then refresh.
         </p>
       )}
       {missing !== null && (
-        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
           Signing in to {GIT_PROVIDERS[missing].name} needs the {GIT_PROVIDERS[missing].cliName}: install it from{" "}
           <GitCliInstallLink provider={missing} />, then refresh. Until then, connect a remote by its URL.
         </p>

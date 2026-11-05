@@ -38,7 +38,10 @@ const FOREGROUNDS = [
   // The accent itself is body copy where it labels a link or a field.
   { what: "accent", token: "aw-primary", floor: 4.5 },
   { what: "success", token: "aw-status-success", floor: 3 },
-  { what: "error", token: "aw-status-error", floor: 3 },
+  // Error is the one status that regularly carries a sentence — a validation
+  // message, a destructive menu label — so it is held to the text floor, not
+  // the non-text one. The dark token is #f87171, which is why it clears this.
+  { what: "error", token: "aw-status-error", floor: 4.5 },
   { what: "warning", token: "aw-status-warning", floor: 3 },
   { what: "running", token: "aw-status-running", floor: 3 },
   { what: "info", token: "aw-status-info", floor: 3 },
@@ -95,6 +98,22 @@ describe("theme contrast", () => {
     expect(isDeclared("aw-primary-light", "dark")).toBe(true);
     expect(tokenColor("aw-primary-light", "dark")).not.toEqual(
       tokenColor("aw-primary-light", "light"),
+    );
+  });
+
+  it("resolves every status colour through the theme, not a static hex", () => {
+    // `dark:text-status-error-dark` never existed as a token, so those classes
+    // emitted no CSS and destructive items stayed light red (2.5:1) on dark.
+    // The utility now follows the theme directly; these mappings are what make
+    // that true, and a literal hex here is the regression.
+    for (const role of ["success", "error", "warning", "running", "info"]) {
+      expect(INDEX_CSS, `--color-status-${role} must alias --aw-status-${role}`).toMatch(
+        new RegExp(`--color-status-${role}:\\s*var\\(--aw-status-${role}\\)`),
+      );
+      expect(isDeclared(`aw-status-${role}`, "dark")).toBe(true);
+    }
+    expect(tokenColor("aw-status-error", "dark")).not.toEqual(
+      tokenColor("aw-status-error", "light"),
     );
   });
 });

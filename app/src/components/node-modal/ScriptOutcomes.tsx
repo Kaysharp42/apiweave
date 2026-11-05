@@ -26,16 +26,16 @@ export function ScriptOutcomes({ scripts }: ScriptOutcomesProps) {
               )}
             </div>
             {script.error !== undefined && (
-              <p className="font-mono text-xs text-status-error dark:text-status-error-dark">{script.error}</p>
+              <p className="font-mono text-xs text-status-error">{script.error}</p>
             )}
             {script.tests.length > 0 && (
               <ul className="space-y-0.5">
                 {script.tests.map((test, index) => (
                   <li key={`${test.name}-${index}`} className="flex items-start gap-1.5 text-xs">
                     {test.passed ? (
-                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-status-success dark:text-status-success-dark" aria-label="passed" />
+                      <Check className="mt-0.5 h-3 w-3 shrink-0 text-status-success" aria-label="passed" />
                     ) : (
-                      <X className="mt-0.5 h-3 w-3 shrink-0 text-status-error dark:text-status-error-dark" aria-label="failed" />
+                      <X className="mt-0.5 h-3 w-3 shrink-0 text-status-error" aria-label="failed" />
                     )}
                     <span className="text-text-primary dark:text-text-primary-dark">{test.name}</span>
                     {test.error !== undefined && (

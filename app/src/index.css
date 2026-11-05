@@ -23,6 +23,20 @@
 @source "./";
 
 /*
+  A region that scrolls without showing a bar. Used by the workspace tab strip
+  and the reusable PanelTabs: both must stay keyboard-reachable, and a visible
+  horizontal bar under a 20px tab row is pure chrome. The base stylesheet owns
+  the thin bar every other scroller gets.
+*/
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*
   The app toggles dark mode with the `.dark` class on <html>, so Tailwind's
   `dark:` variant must follow the class rather than the media query.
 */
@@ -190,11 +204,18 @@
   --color-text-muted: rgb(var(--aw-tint-rgb) / var(--aw-a-muted));
   --color-text-muted-dark: rgb(var(--aw-tint-rgb) / var(--aw-a-muted));
 
-  --color-status-success: #15803d;
-  --color-status-error: #b91c1c;
-  --color-status-warning: #b45309;
-  --color-status-running: #a16207;
-  --color-status-info: #1d4ed8;
+  /*
+    Status colours follow the theme through `--aw-status-*`, exactly like
+    `--color-primary-light`. A static light hex here made `text-status-error`
+    paint #b91c1c on a near-black surface (2.5:1); there is no
+    `--color-status-error-dark` to rescue it, so dark mode had no readable
+    token at all. The `*-dark` class names are gone with this change.
+  */
+  --color-status-success: var(--aw-status-success);
+  --color-status-error: var(--aw-status-error);
+  --color-status-warning: var(--aw-status-warning);
+  --color-status-running: var(--aw-status-running);
+  --color-status-info: var(--aw-status-info);
 
   --color-method-get: #15803d;
   --color-method-post: #1d4ed8;

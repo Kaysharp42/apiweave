@@ -9,7 +9,7 @@ import type { GitMergeValueProps } from "../../types";
 export function GitMergeValue({ value }: GitMergeValueProps) {
   if (value === undefined) {
     return (
-      <p className="text-xs italic text-text-muted dark:text-text-muted-dark">
+      <p className="text-xs italic text-text-secondary dark:text-text-secondary-dark">
         {NOT_PRESENT}
       </p>
     );

@@ -249,13 +249,13 @@ export function ProjectRunPanel({
                     key={`${item.workflowId}-${index}`}
                     className="flex items-center gap-3 rounded-xs border border-border px-3 py-2 dark:border-border-dark"
                   >
-                    <span className="w-5 text-xs text-text-muted dark:text-text-muted-dark">
+                    <span className="w-5 text-xs text-text-secondary dark:text-text-secondary-dark">
                       {index + 1}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm text-text-primary dark:text-text-primary-dark">
                       {item.workflowName}
                     </span>
-                    <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                    <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                       {formatDuration(item.durationMs) ?? ""}
                     </span>
                     <StatusBadge {...STATUS_BADGE[item.status]} />
@@ -309,7 +309,7 @@ export function ProjectRunPanel({
                           {formatTimestamp(run.startedAt)} ·{" "}
                           {environmentName(run.environmentId)}
                         </span>
-                        <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                        <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                           {passed}/{run.items.length} passed
                         </span>
                       </span>

@@ -4,11 +4,11 @@ import type { FooterRunPhase } from "../../types";
 
 /** The status token each run phase paints, as text colour; the dot follows it. */
 const STATUS_COLOR: Readonly<Record<FooterRunPhase, string>> = {
-  running: "text-status-info dark:text-status-info-dark",
-  completed: "text-status-success dark:text-status-success-dark",
-  failed: "text-status-error dark:text-status-error-dark",
-  cancelled: "text-status-warning dark:text-status-warning-dark",
-  interrupted: "text-status-warning dark:text-status-warning-dark",
+  running: "text-status-info",
+  completed: "text-status-success",
+  failed: "text-status-error",
+  cancelled: "text-status-warning",
+  interrupted: "text-status-warning",
 };
 
 export function MainFooter() {
@@ -24,7 +24,7 @@ export function MainFooter() {
           type="button"
           onClick={openAbout}
           aria-label="About APIWeave"
-          className="cursor-pointer rounded-full border border-border bg-surface-overlay px-2 py-0.5 text-2xs text-text-secondary transition-colors hover:border-(--aw-primary) hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark dark:hover:border-(--aw-primary) dark:hover:text-text-primary-dark"
+          className="cursor-pointer rounded-xs border border-border bg-surface-overlay px-2 py-0.5 text-2xs text-text-secondary transition-colors hover:border-(--aw-primary) hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark dark:hover:border-(--aw-primary) dark:hover:text-text-primary-dark"
         >
           v{appVersion}
         </button>

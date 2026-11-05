@@ -124,7 +124,7 @@ export function SaveVariablePopover({
       style={{ top: position.top, left: position.left, width: POPOVER_WIDTH }}
       className="fixed z-60 rounded-xs border border-border bg-surface-raised p-3 shadow-(--aw-shadow-popover) dark:border-border-dark dark:bg-surface-dark-raised"
     >
-      <p className="mb-2 truncate font-mono text-2xs text-status-info dark:text-status-info-dark">
+      <p className="mb-2 truncate font-mono text-2xs text-status-info">
         {path}
       </p>
       <Input
@@ -146,7 +146,7 @@ export function SaveVariablePopover({
           ? { helperText: `Replaces the existing "${trimmedName}".` }
           : {})}
       />
-      <p className="mt-2 truncate font-mono text-2xs text-text-muted dark:text-text-muted-dark">
+      <p className="mt-2 truncate font-mono text-2xs text-text-secondary dark:text-text-secondary-dark">
         Value {valuePreview}
       </p>
       <div className="mt-3 flex justify-end gap-2">

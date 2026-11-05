@@ -103,7 +103,7 @@ function CommitLines({
 }) {
   if (detailsFailed) {
     return (
-      <p className="text-2xs italic text-text-muted dark:text-text-muted-dark">
+      <p className="text-2xs italic text-text-secondary dark:text-text-secondary-dark">
         Commit details unavailable
       </p>
     );
@@ -128,7 +128,7 @@ function CommitLine({
   const subject = mergeCommitSubject(commit);
   return (
     <div className="min-w-0 space-y-0.5">
-      <p className="truncate text-2xs text-text-muted dark:text-text-muted-dark">
+      <p className="truncate text-2xs text-text-secondary dark:text-text-secondary-dark">
         {heading} · {describeMergeCommit(commit)}
       </p>
       {subject !== null && (

@@ -186,7 +186,7 @@ export function HttpRequestOutputPanel({
         </div>
         {secretRefs.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-2xs font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+            <span className="text-2xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
               Secrets
             </span>
             <SecretResolutionIndicator
@@ -205,7 +205,7 @@ export function HttpRequestOutputPanel({
 
       <div className="min-h-0 flex-1 overflow-hidden bg-surface p-4 dark:bg-surface-dark">
         {errorText && (
-          <div className="mb-3 rounded-xs border border-status-error bg-(--aw-status-error)/5 p-3 text-sm text-status-error dark:text-status-error-dark">
+          <div className="mb-3 rounded-xs border border-status-error bg-(--aw-status-error)/5 p-3 text-sm text-status-error">
             <span className="font-semibold">Error:</span> {errorText}
           </div>
         )}
@@ -216,7 +216,7 @@ export function HttpRequestOutputPanel({
           >
             {schemaErrors.map((violation, index) => (
               <li key={index} className="text-text-primary dark:text-text-primary-dark">
-                <span className="text-status-error dark:text-status-error-dark">
+                <span className="text-status-error">
                   {violation.path === "" ? "(root)" : violation.path}
                 </span>{" "}
                 {violation.message}

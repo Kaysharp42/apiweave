@@ -229,7 +229,7 @@ export default function DynamicFunctionsHelper() {
                 Dynamic Functions
               </h2>
             </div>
-            <p className="text-2xs text-text-muted dark:text-text-muted-dark mt-1">
+            <p className="text-2xs text-text-secondary dark:text-text-secondary-dark mt-1">
               Generate random data, dates, IDs on every run
             </p>
           </div>
@@ -324,19 +324,19 @@ export default function DynamicFunctionsHelper() {
                         </Button>
                       </div>
 
-                      <p className="text-2xs text-text-muted dark:text-text-muted-dark mb-1.5">
+                      <p className="text-2xs text-text-secondary dark:text-text-secondary-dark mb-1.5">
                         {func.description}
                       </p>
 
                       <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-1.5 rounded-sm mb-1.5 text-2xs space-y-0.5 border border-border/50 dark:border-border-dark/50 min-w-0">
                         <div className="min-w-0">
-                          <span className="text-text-muted">Example: </span>
+                          <span className="text-text-secondary dark:text-text-secondary-dark">Example: </span>
                           <code className="text-text-primary dark:text-text-primary-dark font-mono break-all">
                             {`{{${func.example}}}`}
                           </code>
                         </div>
                         <div className="min-w-0">
-                          <span className="text-text-muted">Result: </span>
+                          <span className="text-text-secondary dark:text-text-secondary-dark">Result: </span>
                           <code className="text-status-success dark:text-(--aw-status-success) font-mono break-all">
                             {func.result}
                           </code>
@@ -344,7 +344,7 @@ export default function DynamicFunctionsHelper() {
                       </div>
 
                       {func.default !== "N/A" && (
-                        <div className="text-2xs text-text-muted dark:text-text-muted-dark flex items-start gap-1 min-w-0">
+                        <div className="text-2xs text-text-secondary dark:text-text-secondary-dark flex items-start gap-1 min-w-0">
                           <Info
                             className="w-3 h-3 shrink-0 mt-0.5"
                             aria-hidden="true"

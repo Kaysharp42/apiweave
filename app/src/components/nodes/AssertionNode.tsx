@@ -482,7 +482,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                                 setEditingIndex(index);
                                 setEditDraft({ ...assertion });
                               }}
-                              className="px-1.5 py-0.5 text-status-warning dark:text-status-warning-dark bg-(--aw-status-warning)/10 border border-status-warning/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
+                              className="px-1.5 py-0.5 text-status-warning bg-(--aw-status-warning)/10 border border-status-warning/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                               title="Edit assertion"
                             >
                               <Pencil className="w-3 h-3" />
@@ -490,7 +490,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
                             <button
                               type="button"
                               onClick={() => handleDeleteAssertion(index)}
-                              className="px-1.5 py-0.5 text-status-error dark:text-status-error-dark bg-(--aw-status-error)/10 border border-status-error/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
+                              className="px-1.5 py-0.5 text-status-error bg-(--aw-status-error)/10 border border-status-error/30 text-xs rounded-node-ctl nodrag transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) motion-reduce:transition-none"
                               title="Delete assertion"
                             >
                               <Trash2 className="w-3 h-3" />

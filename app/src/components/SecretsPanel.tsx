@@ -103,7 +103,7 @@ export default function SecretsPanel({
                     <p className="font-mono text-sm text-text-primary dark:text-text-primary-dark break-all">
                       {key}
                     </p>
-                    <p className="text-xs text-text-muted dark:text-text-muted-dark mt-0.5">
+                    <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-0.5">
                       Value is encrypted
                     </p>
                   </div>

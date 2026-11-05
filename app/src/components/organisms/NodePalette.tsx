@@ -83,7 +83,7 @@ export function NodePalette({
       <div className="border-b border-border p-3 dark:border-border-dark">
         <h3 className="mb-2 text-sm font-semibold tracking-[-0.01em] text-text-primary dark:text-text-primary-dark">
           Add Nodes
-          <span className="ml-1 text-xs font-normal text-text-muted dark:text-text-muted-dark">
+          <span className="ml-1 text-xs font-normal text-text-secondary dark:text-text-secondary-dark">
             — click or drag
           </span>
         </h3>
@@ -127,7 +127,7 @@ export function NodePalette({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {filteredSections.length === 0 ? (
-          <div className="p-4 text-center text-sm text-text-muted dark:text-text-muted-dark">
+          <div className="p-4 text-center text-sm text-text-secondary dark:text-text-secondary-dark">
             No nodes match &quot;{searchQuery}&quot;
           </div>
         ) : (

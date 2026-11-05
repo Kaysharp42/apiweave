@@ -157,7 +157,7 @@ function PolicyFieldset({
         // check runs on every platform regardless, and is the gate that runs
         // before a download can install. Approval stays the default so a
         // person still chooses when new code runs.
-        <p className="mt-2 px-2 text-xs text-text-muted dark:text-text-muted-dark">
+        <p className="mt-2 px-2 text-xs text-text-secondary dark:text-text-secondary-dark">
           Every update is verified against the signing key built into this app.
           &ldquo;Notify me&rdquo; stays the default so you approve each version
           before it runs.
@@ -255,7 +255,7 @@ interface MetaRowProps {
 
 function MetaRow({ lastChecked, canShowLog, onShowLog }: MetaRowProps) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted dark:text-text-muted-dark">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary dark:text-text-secondary-dark">
       {lastChecked !== null && <span>{lastChecked}</span>}
       {lastChecked !== null && canShowLog && <span aria-hidden="true">·</span>}
       {/* The one thing that makes "my update is stuck" answerable. Reveals the
