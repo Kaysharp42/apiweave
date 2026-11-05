@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { BookOpen, Check, Copy, FolderOpen } from "lucide-react";
 import type { AppInfo } from "@shared/types/AppInfo";
 import { Modal } from "../molecules/Modal";
 import { Button } from "../atoms/Button";
 import { Spinner } from "../atoms/Spinner";
 import { apiweave } from "../../utils/apiweaveClient";
+import { useAppInfo } from "../../hooks/useAppInfo";
 import { diagnosticsText, platformLabel } from "../../utils/aboutInfo";
 import {
   ABOUT_DOCS_URL,
@@ -14,6 +16,12 @@ import {
 import useAboutStore from "../../stores/AboutStore";
 
 type Copied = "diagnostics" | "path" | null;
+
+const LINK_CLASS =
+  "inline-flex items-center gap-1.5 text-primary hover:underline dark:text-primary-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--aw-primary)";
+
+const SECTION_LABEL_CLASS =
+  "text-xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark";
 
 /** lucide dropped brand marks; this is the GitHub logo at the links' icon size. */
 function GithubMark() {
@@ -35,15 +43,167 @@ function InfoRow({
   children,
 }: {
   readonly label: string;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex gap-4">
+      <dt className="w-30 shrink-0 text-text-secondary dark:text-text-secondary-dark">
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 break-words font-mono text-xs text-text-primary dark:text-text-primary-dark">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function AboutHeader({ version }: { readonly version: string | null }) {
+  return (
+    <div className="flex items-center gap-4">
+      <img
+        src="/apiweave.png"
+        alt=""
+        className="h-12 w-12 rounded-sm object-cover"
+      />
+      <div className="min-w-0">
+        <p className="text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
+          APIWeave
+        </p>
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+          {version === null ? "…" : `v${version}`} · local-first API workflows
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The version rows and the data folder with its two actions. The path is read
+ * from `info`, so this only ever mounts once the read has succeeded.
+ */
+function AboutDetails({
+  info,
+  copied,
+  onCopy,
+}: {
+  readonly info: AppInfo;
+  readonly copied: Copied;
+  readonly onCopy: (text: string, kind: Exclude<Copied, null>) => void;
 }) {
   return (
     <>
-      <dt className="text-text-secondary dark:text-text-secondary-dark">{label}</dt>
-      <dd className="min-w-0 break-words font-mono text-xs text-text-primary dark:text-text-primary-dark">
-        {children}
-      </dd>
+      <dl className="space-y-1.5">
+        <InfoRow label="Electron">{info.electron}</InfoRow>
+        <InfoRow label="Chromium">{info.chromium}</InfoRow>
+        <InfoRow label="Node">{info.node}</InfoRow>
+        <InfoRow label="Platform">{platformLabel(info)}</InfoRow>
+        <InfoRow label="Licence">{ABOUT_LICENCE}</InfoRow>
+      </dl>
+
+      <div>
+        <p className={SECTION_LABEL_CLASS}>Data folder</p>
+        <div className="mt-1 flex items-center gap-2">
+          <code className="min-w-0 flex-1 truncate rounded-xs border border-border bg-surface-overlay px-2 py-1 font-mono text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+            {info.dataFolder}
+          </code>
+          <Button
+            variant="outline"
+            size="xs"
+            icon={<FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />}
+            onClick={() => {
+              void apiweave.app.revealDataFolder().catch(() => undefined);
+            }}
+          >
+            Reveal
+          </Button>
+          <Button
+            variant="outline"
+            size="xs"
+            icon={
+              copied === "path" ? (
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+              )
+            }
+            aria-label="Copy data folder path"
+            onClick={() => onCopy(info.dataFolder, "path")}
+          >
+            {copied === "path" ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      </div>
     </>
+  );
+}
+
+/** What the body shows while the details are loading, failed, or ready. */
+function AboutBody({
+  info,
+  loadError,
+  copied,
+  onCopy,
+}: {
+  readonly info: AppInfo | null;
+  readonly loadError: string | null;
+  readonly copied: Copied;
+  readonly onCopy: (text: string, kind: Exclude<Copied, null>) => void;
+}) {
+  if (loadError !== null) {
+    return (
+      <p role="alert" className="text-status-error dark:text-(--aw-status-error)">
+        {loadError}
+      </p>
+    );
+  }
+  if (info === null) {
+    return (
+      <div className="flex items-center gap-2 text-text-secondary dark:text-text-secondary-dark">
+        <Spinner size="sm" />
+        <span>Reading app details…</span>
+      </div>
+    );
+  }
+  return <AboutDetails info={info} copied={copied} onCopy={onCopy} />;
+}
+
+function AboutLinks() {
+  return (
+    <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
+      <p className={SECTION_LABEL_CLASS}>Links</p>
+      <div className="flex flex-wrap gap-4">
+        <a
+          href={ABOUT_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={LINK_CLASS}
+        >
+          <GithubMark />
+          GitHub repository
+        </a>
+        <a
+          href={ABOUT_DOCS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={LINK_CLASS}
+        >
+          <BookOpen className="h-4 w-4" aria-hidden="true" />
+          Documentation
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function AboutCredits() {
+  return (
+    <div className="border-t border-border pt-4 text-xs text-text-secondary dark:border-border-dark dark:text-text-secondary-dark">
+      <p className="font-semibold uppercase tracking-wide">Acknowledgements</p>
+      <p className="mt-1">
+        Built with Electron, React and React Flow. React Flow is © its
+        contributors and used under the MIT licence.
+      </p>
+    </div>
   );
 }
 
@@ -51,39 +211,17 @@ function InfoRow({
  * About APIWeave — the one place the app describes itself: versions, platform,
  * data folder and where its source and docs live. Opened by the footer's
  * version pill or the command palette, mounted once by the shell.
- *
- * Everything it reports comes from main over the `app` IPC domain; the dialog
- * never guesses an Electron or Node version from the bundle it is running in.
  */
 export function AboutDialog() {
-  const isOpen = useAboutStore((state) => state.isOpen);
-  const close = useAboutStore((state) => state.close);
-  const [info, setInfo] = useState<AppInfo | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { isOpen, close } = useAboutStore(
+    useShallow((state) => ({ isOpen: state.isOpen, close: state.close })),
+  );
+  const { info, loadError } = useAppInfo(isOpen);
   const [copied, setCopied] = useState<Copied>(null);
 
+  // A reopened dialog starts with no stale tick on either copy button.
   useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-    setInfo(null);
-    setLoadError(null);
-    setCopied(null);
-    apiweave.app
-      .info()
-      .then((loaded) => {
-        if (!cancelled) setInfo(loaded);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setLoadError(
-          error instanceof Error
-            ? error.message
-            : "The app details could not be read.",
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (isOpen) setCopied(null);
   }, [isOpen]);
 
   const copy = (text: string, kind: Exclude<Copied, null>) => {
@@ -118,115 +256,15 @@ export function AboutDialog() {
       }
     >
       <div className="space-y-5 p-5 text-sm text-text-secondary dark:text-text-secondary-dark">
-        <div className="flex items-center gap-4">
-          <img
-            src="/apiweave.png"
-            alt=""
-            className="h-12 w-12 rounded-sm object-cover"
-          />
-          <div className="min-w-0">
-            <p className="text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark">
-              APIWeave
-            </p>
-            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
-              {info === null ? "…" : `v${info.version}`} · local-first API
-              workflows
-            </p>
-          </div>
-        </div>
-
-        {loadError !== null ? (
-          <p role="alert" className="text-status-error dark:text-(--aw-status-error)">
-            {loadError}
-          </p>
-        ) : info === null ? (
-          <div className="flex items-center gap-2 text-text-secondary dark:text-text-secondary-dark">
-            <Spinner size="sm" />
-            <span>Reading app details…</span>
-          </div>
-        ) : (
-          <>
-            <dl className="grid grid-cols-[7.5rem_1fr] gap-x-4 gap-y-1.5">
-              <InfoRow label="Electron">{info.electron}</InfoRow>
-              <InfoRow label="Chromium">{info.chromium}</InfoRow>
-              <InfoRow label="Node">{info.node}</InfoRow>
-              <InfoRow label="Platform">{platformLabel(info)}</InfoRow>
-              <InfoRow label="Licence">{ABOUT_LICENCE}</InfoRow>
-            </dl>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
-                Data folder
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-xs border border-border bg-surface-overlay px-2 py-1 font-mono text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-primary-dark">
-                  {info.dataFolder}
-                </code>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  icon={<FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />}
-                  onClick={() => {
-                    void apiweave.app.revealDataFolder().catch(() => undefined);
-                  }}
-                >
-                  Reveal
-                </Button>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  icon={
-                    copied === "path" ? (
-                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                    )
-                  }
-                  aria-label="Copy data folder path"
-                  onClick={() => copy(info.dataFolder, "path")}
-                >
-                  {copied === "path" ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-
-        <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
-          <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
-            Links
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <a
-              href={ABOUT_REPO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-primary hover:underline dark:text-primary-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--aw-primary)"
-            >
-              <GithubMark />
-              GitHub repository
-            </a>
-            <a
-              href={ABOUT_DOCS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-primary hover:underline dark:text-primary-light focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--aw-primary)"
-            >
-              <BookOpen className="h-4 w-4" aria-hidden="true" />
-              Documentation
-            </a>
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4 text-xs text-text-secondary dark:border-border-dark dark:text-text-secondary-dark">
-          <p className="font-semibold uppercase tracking-wide">
-            Acknowledgements
-          </p>
-          <p className="mt-1">
-            Built with Electron, React and React Flow. React Flow is © its
-            contributors and used under the MIT licence.
-          </p>
-        </div>
+        <AboutHeader version={info?.version ?? null} />
+        <AboutBody
+          info={info}
+          loadError={loadError}
+          copied={copied}
+          onCopy={copy}
+        />
+        <AboutLinks />
+        <AboutCredits />
       </div>
     </Modal>
   );

@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
+import { nextMenuFocusIndex } from "../../utils/menuFocus";
 import { Kbd } from "../atoms/Kbd";
 import type { ContextMenuProps } from "../../types";
 
@@ -61,29 +62,19 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
-    const actionable = items.flatMap((item, itemIndex) =>
-      item.disabled === true ? [] : [itemIndex],
-    );
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
       return;
     }
-    if (actionable.length === 0) return;
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const actionable = items.flatMap((item, itemIndex) =>
+      item.disabled === true ? [] : [itemIndex],
+    );
+    const current = Math.max(0, actionable.indexOf(index));
+    const next = nextMenuFocusIndex(event.key, current, actionable.length);
+    if (next === null) return;
 
     event.preventDefault();
-    const current = Math.max(0, actionable.indexOf(index));
-    let next: number;
-    if (event.key === "ArrowDown") {
-      next = (current + 1) % actionable.length;
-    } else if (event.key === "ArrowUp") {
-      next = (current - 1 + actionable.length) % actionable.length;
-    } else if (event.key === "Home") {
-      next = 0;
-    } else {
-      next = actionable.length - 1;
-    }
     itemRefs.current[actionable[next] ?? 0]?.focus();
   };
 

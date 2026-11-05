@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Input } from "../atoms/Input";
+import { nextMenuFocusIndex } from "../../utils/menuFocus";
 import type { AgentLaunchMenuItem } from "../../types";
 
 interface AgentLaunchMenuProps {
@@ -56,25 +57,15 @@ export function AgentLaunchMenu({
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      let next: number;
-      if (event.key === "ArrowDown") {
-        next = (index + 1) % items.length;
-      } else if (event.key === "ArrowUp") {
-        next = (index - 1 + items.length) % items.length;
-      } else if (event.key === "Home") {
-        next = 0;
-      } else {
-        next = items.length - 1;
-      }
-      focusItem(next);
-      return;
-    }
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+      return;
     }
+    const next = nextMenuFocusIndex(event.key, index, items.length);
+    if (next === null) return;
+    event.preventDefault();
+    focusItem(next);
   };
 
   return (
