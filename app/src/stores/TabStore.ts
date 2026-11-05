@@ -50,219 +50,294 @@ interface TabStoreState {
 const tabsIn = (tabs: readonly WorkspaceTab[], workspaceId: string): WorkspaceTab[] =>
   tabs.filter((t) => t.workspaceId === workspaceId);
 
-const useTabStore = create<TabStoreState>()((set, get) => ({
-  tabs: [],
-  activeTabIdByWorkspace: {},
+/** One tab, its workspace's sibling list, and its position in that list. */
+function locateTab(
+  tabs: readonly WorkspaceTab[],
+  id: string,
+): { tab: WorkspaceTab; siblings: WorkspaceTab[]; index: number } | null {
+  const tab = tabs.find((t) => t.id === id);
+  if (!tab) return null;
+  const siblings = tabsIn(tabs, tab.workspaceId);
+  return { tab, siblings, index: siblings.findIndex((t) => t.id === id) };
+}
 
-  openTab: (workflow: Workflow) => {
-    const { tabs } = get();
-    const existing = tabs.find((t) => t.workflowId === workflow.workflowId);
+/** Apply `patch` to the one tab with this id; every other row is untouched. */
+function patchTabs(
+  tabs: readonly WorkspaceTab[],
+  id: string,
+  patch: (tab: WorkspaceTab) => WorkspaceTab,
+): WorkspaceTab[] {
+  return tabs.map((t) => (t.id === id ? patch(t) : t));
+}
 
-    if (existing) {
+/** The active-id map with one workspace pointing at `tabId`. */
+function withActiveTab(
+  activeTabIdByWorkspace: Record<string, string | null>,
+  workspaceId: string,
+  tabId: string | null,
+): Record<string, string | null> {
+  return { ...activeTabIdByWorkspace, [workspaceId]: tabId };
+}
+
+/** Keep the tabs `keep` accepts, and leave `workspaceId` on `nextActive`. */
+function closeTabs(
+  tabs: readonly WorkspaceTab[],
+  keep: (tab: WorkspaceTab) => boolean,
+  activeTabIdByWorkspace: Record<string, string | null>,
+  workspaceId: string,
+  nextActive: string | null,
+): {
+  tabs: WorkspaceTab[];
+  activeTabIdByWorkspace: Record<string, string | null>;
+} {
+  return {
+    tabs: tabs.filter(keep),
+    activeTabIdByWorkspace: withActiveTab(
+      activeTabIdByWorkspace,
+      workspaceId,
+      nextActive,
+    ),
+  };
+}
+
+/**
+ * The state change that patches one tab, or the state untouched when the tab
+ * is gone or `skip` says the patch would change nothing.
+ */
+function patchOne(
+  state: TabStoreState,
+  id: string,
+  skip: (tab: WorkspaceTab) => boolean,
+  patch: (tab: WorkspaceTab) => WorkspaceTab,
+): TabStoreState | { tabs: WorkspaceTab[] } {
+  const target = state.tabs.find((t) => t.id === id);
+  if (!target || skip(target)) return state;
+  return { tabs: patchTabs(state.tabs, id, patch) };
+}
+
+const useTabStore = create<TabStoreState>()((set, get) => {
+  /** The current snapshot plus the tab this action targets, or null. */
+  const tabContext = (id: string) => {
+    const { tabs, activeTabIdByWorkspace } = get();
+    const located = locateTab(tabs, id);
+    return located ? { ...located, tabs, activeTabIdByWorkspace } : null;
+  };
+
+  /** Move a workspace's active tab `offset` places around its sibling list. */
+  const activateByOffset = (workspaceId: string, offset: number): void => {
+    const { tabs, activeTabIdByWorkspace } = get();
+    const scoped = tabsIn(tabs, workspaceId);
+    if (scoped.length <= 1) return;
+    const index = scoped.findIndex(
+      (t) => t.id === activeTabIdByWorkspace[workspaceId],
+    );
+    const nextTab =
+      scoped[(Math.max(index, 0) + offset + scoped.length) % scoped.length];
+    if (!nextTab) return;
+    set({
+      activeTabIdByWorkspace: withActiveTab(
+        activeTabIdByWorkspace,
+        workspaceId,
+        nextTab.id,
+      ),
+    });
+  };
+
+  return {
+    tabs: [],
+    activeTabIdByWorkspace: {},
+
+    openTab: (workflow: Workflow) => {
+      const { tabs } = get();
+      const existing = tabs.find((t) => t.workflowId === workflow.workflowId);
+
+      if (existing) {
+        set((s) => ({
+          activeTabIdByWorkspace: withActiveTab(
+            s.activeTabIdByWorkspace,
+            workflow.workspaceId,
+            existing.id,
+          ),
+          tabs: s.tabs.map((t) =>
+            t.workflowId === workflow.workflowId
+              ? {
+                  ...t,
+                  name: workflow.name || t.name,
+                  workspaceId: workflow.workspaceId,
+                  workflow,
+                }
+              : t,
+          ),
+        }));
+        return;
+      }
+
+      const newTab: WorkspaceTab = {
+        id: workflow.workflowId,
+        workflowId: workflow.workflowId,
+        workspaceId: workflow.workspaceId,
+        name: workflow.name || "Untitled",
+        workflow,
+        isDirty: false,
+      };
+
       set((s) => ({
-        activeTabIdByWorkspace: {
-          ...s.activeTabIdByWorkspace,
-          [workflow.workspaceId]: existing.id,
-        },
-        tabs: s.tabs.map((t) =>
-          t.workflowId === workflow.workflowId
-            ? {
-                ...t,
-                name: workflow.name || t.name,
-                workspaceId: workflow.workspaceId,
-                workflow,
-              }
-            : t,
+        tabs: [...s.tabs, newTab],
+        activeTabIdByWorkspace: withActiveTab(
+          s.activeTabIdByWorkspace,
+          newTab.workspaceId,
+          newTab.id,
         ),
       }));
-      return;
-    }
+    },
 
-    const newTab: WorkspaceTab = {
-      id: workflow.workflowId,
-      workflowId: workflow.workflowId,
-      workspaceId: workflow.workspaceId,
-      name: workflow.name || "Untitled",
-      workflow,
-      isDirty: false,
-    };
-
-    set((s) => ({
-      tabs: [...s.tabs, newTab],
-      activeTabIdByWorkspace: {
-        ...s.activeTabIdByWorkspace,
-        [newTab.workspaceId]: newTab.id,
-      },
-    }));
-  },
-
-  setActive: (id: string) =>
-    set((s) => {
-      const target = s.tabs.find((t) => t.id === id);
-      if (!target) return s;
-      return {
-        activeTabIdByWorkspace: {
-          ...s.activeTabIdByWorkspace,
-          [target.workspaceId]: id,
-        },
-      };
-    }),
-
-  closeTab: (id: string) => {
-    const { tabs, activeTabIdByWorkspace } = get();
-    const target = tabs.find((t) => t.id === id);
-    if (!target) return;
-
-    const workspaceId = target.workspaceId;
-    const siblings = tabsIn(tabs, workspaceId);
-    const idx = siblings.findIndex((t) => t.id === id);
-    const remaining = siblings.filter((t) => t.id !== id);
-
-    let nextActive: string | null = activeTabIdByWorkspace[workspaceId] ?? null;
-    if (nextActive === id) {
-      const successor = idx < remaining.length ? remaining[idx] : remaining[remaining.length - 1];
-      nextActive = successor?.id ?? null;
-    }
-
-    set({
-      tabs: tabs.filter((t) => t.id !== id),
-      activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: nextActive },
-    });
-  },
-
-  closeOthers: (id: string) => {
-    const { tabs, activeTabIdByWorkspace } = get();
-    const target = tabs.find((t) => t.id === id);
-    if (!target) return;
-    set({
-      tabs: tabs.filter((t) => t.workspaceId !== target.workspaceId || t.id === id),
-      activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [target.workspaceId]: id },
-    });
-  },
-
-  closeToRight: (id: string) => {
-    const { tabs, activeTabIdByWorkspace } = get();
-    const target = tabs.find((t) => t.id === id);
-    if (!target) return;
-
-    const siblings = tabsIn(tabs, target.workspaceId);
-    const idx = siblings.findIndex((t) => t.id === id);
-    if (idx === -1) return;
-
-    const closing = new Set(siblings.slice(idx + 1).map((t) => t.id));
-    if (closing.size === 0) return;
-
-    const active = activeTabIdByWorkspace[target.workspaceId] ?? null;
-    set({
-      tabs: tabs.filter((t) => !closing.has(t.id)),
-      activeTabIdByWorkspace: {
-        ...activeTabIdByWorkspace,
-        [target.workspaceId]:
-          active !== null && closing.has(active) ? id : active,
-      },
-    });
-  },
-
-  closeAll: (workspaceId?: string) =>
-    set((s) => {
-      if (workspaceId === undefined) {
-        return { tabs: [], activeTabIdByWorkspace: {} };
-      }
-      const activeTabIdByWorkspace = { ...s.activeTabIdByWorkspace };
-      delete activeTabIdByWorkspace[workspaceId];
-      return {
-        tabs: s.tabs.filter((t) => t.workspaceId !== workspaceId),
-        activeTabIdByWorkspace,
-      };
-    }),
-
-  markDirty: (id: string) =>
-    set((s) => {
-      const target = s.tabs.find((t) => t.id === id);
-      if (!target || target.isDirty) return s;
-      return {
-        tabs: s.tabs.map((t) => (t.id === id ? { ...t, isDirty: true } : t)),
-      };
-    }),
-
-  markClean: (id: string) =>
-    set((s) => {
-      const target = s.tabs.find((t) => t.id === id);
-      if (!target || (!target.isDirty && !target.draft)) return s;
-      return {
-        tabs: s.tabs.map((t) => {
-          if (t.id !== id) return t;
-          const clean: WorkspaceTab = { ...t, isDirty: false };
-          delete clean.draft;
-          return clean;
-        }),
-      };
-    }),
-
-  stashDraft: (id: string, draft: Workflow | null) => {
-    if (draft === null) {
-      get().markClean(id);
-      return;
-    }
-    set((s) => ({
-      tabs: s.tabs.map((t) =>
-        t.id === id ? { ...t, draft, isDirty: true } : t,
-      ),
-    }));
-  },
-
-  renameTab: (id: string, name: string) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) => (t.id === id ? { ...t, name } : t)),
-    })),
-
-  setTabViewport: (id: string, viewport: Viewport) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) => (t.id === id ? { ...t, viewport } : t)),
-    })),
-
-  updateTabWorkflow: (workflowId: string, workflow: Workflow | null) =>
-    set((s) => ({
-      tabs: s.tabs.map((t) => {
-        if (t.workflowId !== workflowId) return t;
-        const updated: WorkspaceTab = {
-          ...t,
-          name: workflow?.name ?? t.name,
+    setActive: (id: string) =>
+      set((s) => {
+        const located = locateTab(s.tabs, id);
+        if (!located) return s;
+        return {
+          activeTabIdByWorkspace: withActiveTab(
+            s.activeTabIdByWorkspace,
+            located.tab.workspaceId,
+            id,
+          ),
         };
-        if (workflow) {
-          updated.workflow = workflow;
-        } else {
-          delete updated.workflow;
-        }
-        return updated;
       }),
-    })),
 
-  activateNextTab: (workspaceId: string) => {
-    const { tabs, activeTabIdByWorkspace } = get();
-    const scoped = tabsIn(tabs, workspaceId);
-    if (scoped.length <= 1) return;
-    const idx = scoped.findIndex((t) => t.id === activeTabIdByWorkspace[workspaceId]);
-    const nextTab = scoped[(Math.max(idx, 0) + 1) % scoped.length];
-    if (nextTab) {
-      set({
-        activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: nextTab.id },
-      });
-    }
-  },
+    closeTab: (id: string) => {
+      const context = tabContext(id);
+      if (!context) return;
+      const { tabs, tab, siblings, index, activeTabIdByWorkspace } = context;
+      const remaining = siblings.filter((t) => t.id !== id);
 
-  activatePrevTab: (workspaceId: string) => {
-    const { tabs, activeTabIdByWorkspace } = get();
-    const scoped = tabsIn(tabs, workspaceId);
-    if (scoped.length <= 1) return;
-    const idx = scoped.findIndex((t) => t.id === activeTabIdByWorkspace[workspaceId]);
-    const prevTab = scoped[(Math.max(idx, 0) - 1 + scoped.length) % scoped.length];
-    if (prevTab) {
-      set({
-        activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [workspaceId]: prevTab.id },
-      });
-    }
-  },
-}));
+      let nextActive = activeTabIdByWorkspace[tab.workspaceId] ?? null;
+      if (nextActive === id) {
+        const successor =
+          index < remaining.length ? remaining[index] : remaining[remaining.length - 1];
+        nextActive = successor?.id ?? null;
+      }
+
+      set(
+        closeTabs(
+          tabs,
+          (t) => t.id !== id,
+          activeTabIdByWorkspace,
+          tab.workspaceId,
+          nextActive,
+        ),
+      );
+    },
+
+    closeOthers: (id: string) => {
+      const context = tabContext(id);
+      if (!context) return;
+      const { tabs, tab, activeTabIdByWorkspace } = context;
+      set(
+        closeTabs(
+          tabs,
+          (t) => t.workspaceId !== tab.workspaceId || t.id === id,
+          activeTabIdByWorkspace,
+          tab.workspaceId,
+          id,
+        ),
+      );
+    },
+
+    closeToRight: (id: string) => {
+      const context = tabContext(id);
+      if (!context) return;
+      const { tabs, tab, siblings, index, activeTabIdByWorkspace } = context;
+      if (index === -1) return;
+
+      const closing = new Set(siblings.slice(index + 1).map((t) => t.id));
+      if (closing.size === 0) return;
+
+      const active = activeTabIdByWorkspace[tab.workspaceId] ?? null;
+      set(
+        closeTabs(
+          tabs,
+          (t) => !closing.has(t.id),
+          activeTabIdByWorkspace,
+          tab.workspaceId,
+          active !== null && closing.has(active) ? id : active,
+        ),
+      );
+    },
+
+    closeAll: (workspaceId?: string) =>
+      set((s) => {
+        if (workspaceId === undefined) {
+          return { tabs: [], activeTabIdByWorkspace: {} };
+        }
+        const activeTabIdByWorkspace = { ...s.activeTabIdByWorkspace };
+        delete activeTabIdByWorkspace[workspaceId];
+        return {
+          tabs: s.tabs.filter((t) => t.workspaceId !== workspaceId),
+          activeTabIdByWorkspace,
+        };
+      }),
+
+    markDirty: (id: string) =>
+      set((s) =>
+        patchOne(
+          s,
+          id,
+          (t) => t.isDirty,
+          (t) => ({ ...t, isDirty: true }),
+        ),
+      ),
+
+    markClean: (id: string) =>
+      set((s) =>
+        patchOne(
+          s,
+          id,
+          (t) => !t.isDirty && !t.draft,
+          (t) => {
+            const clean: WorkspaceTab = { ...t, isDirty: false };
+            delete clean.draft;
+            return clean;
+          },
+        ),
+      ),
+
+    stashDraft: (id: string, draft: Workflow | null) => {
+      if (draft === null) {
+        get().markClean(id);
+        return;
+      }
+      set((s) => ({
+        tabs: patchTabs(s.tabs, id, (t) => ({ ...t, draft, isDirty: true })),
+      }));
+    },
+
+    renameTab: (id: string, name: string) =>
+      set((s) => ({ tabs: patchTabs(s.tabs, id, (t) => ({ ...t, name })) })),
+
+    setTabViewport: (id: string, viewport: Viewport) =>
+      set((s) => ({ tabs: patchTabs(s.tabs, id, (t) => ({ ...t, viewport })) })),
+
+    updateTabWorkflow: (workflowId: string, workflow: Workflow | null) =>
+      set((s) => ({
+        tabs: s.tabs.map((t) => {
+          if (t.workflowId !== workflowId) return t;
+          const updated: WorkspaceTab = {
+            ...t,
+            name: workflow?.name ?? t.name,
+          };
+          if (workflow) {
+            updated.workflow = workflow;
+          } else {
+            delete updated.workflow;
+          }
+          return updated;
+        }),
+      })),
+
+    activateNextTab: (workspaceId: string) => activateByOffset(workspaceId, 1),
+
+    activatePrevTab: (workspaceId: string) => activateByOffset(workspaceId, -1),
+  };
+});
 
 export default useTabStore;

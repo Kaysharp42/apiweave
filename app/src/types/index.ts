@@ -495,3 +495,4 @@ export type { ParsedValue } from "./ParsedValue";
 export type { AppSettingsSectionMeta } from "./AppSettingsSectionMeta";
 export type { WorkspaceCanvasPaneProps } from "./WorkspaceCanvasPaneProps";
 export type { WorkspaceDialogsProps } from "./WorkspaceDialogsProps";
+export type { DisclosureState } from "./DisclosureState";
