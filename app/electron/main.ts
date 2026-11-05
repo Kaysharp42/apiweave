@@ -26,6 +26,7 @@ import {
 } from "../core/repositories"
 import type { GitSyncService } from "../core/git/git_sync_service"
 import { HostCliService } from "../core/git/accounts/host_cli_service"
+import { importTaggedWorkspaces } from "../core/git/tagged_workspace_import"
 import { cancelSignInWhenDocumentGoes, createGitSync, registerGitHandlers, type GitSignIns } from "./git_sync"
 import { KeyfileLocked, KeyfileMissing, openKeyfile, type Keyfile } from "../core/secrets/keyfile"
 import { osKeyProtector } from "./key_protector"
@@ -971,7 +972,7 @@ if (!hasSingleInstanceLock) {
 
     // Version history. Off the router like network:* — see registerGitHandlers.
     const hostCli = new HostCliService()
-    gitSync = createGitSync(
+    const sync = createGitSync(
       app.getPath("userData"),
       {
         workspaces,
@@ -989,7 +990,8 @@ if (!hasSingleInstanceLock) {
       },
       publishDataRefresh,
     )
-    gitSignIns = registerGitHandlers(ipcMain, requireTrustedSender, gitSync, hostCli, {
+    gitSync = sync
+    gitSignIns = registerGitHandlers(ipcMain, requireTrustedSender, sync, hostCli, {
       // Only ever a page gh or glab printed for the host being signed in to.
       openExternal: (url) => shell.openExternal(url),
       showPrompt: (prompt) => {
@@ -1001,8 +1003,27 @@ if (!hasSingleInstanceLock) {
       focus: () => {
         if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.focus()
       },
+      // A sign-in is how a new machine gets the workspaces the account keeps
+      // in its apiweave-workspace repositories. The dialog is done with its
+      // part, so the import runs behind it and each workspace appears in the
+      // switcher as it opens.
+      signedIn: (account) => {
+        void importTaggedWorkspaces(account, {
+          hostCli,
+          gitSync: sync,
+          onOpened: (workspace) =>
+            publishDataRefresh({ domain: "workspaces", action: "gitImport", workspaceId: workspace.workspaceId }),
+        })
+          .then((result) => {
+            if (result.opened.length > 0) {
+              bootstrapLog.info(`imported ${result.opened.length} tagged workspace(s) from ${account.host} as ${account.login}`)
+            }
+            for (const problem of result.problems) bootstrapLog.warn(`tagged workspace import: ${problem}`)
+          })
+          .catch((error: unknown) => bootstrapLog.warn(`could not import ${account.login}'s tagged workspaces from ${account.host}`, error))
+      },
     })
-    gitSync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
+    sync.start().catch((error: unknown) => bootstrapLog.warn("version history sync could not start", error))
 
     // Coding agents. Off the router for the same reason as mcp:* and updates:*
     // above, and more sharply: the router is the MCP bridge's handler list, so

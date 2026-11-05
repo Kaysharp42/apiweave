@@ -13,7 +13,12 @@ type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
  * The git handlers on a fake `ipcMain`, behind a guard that lets every sender
  * through, over a sync service that only records the call.
  */
-const NO_PORTS: GitSignInPorts = { openExternal: async () => undefined, showPrompt: () => undefined, focus: () => undefined }
+const NO_PORTS: GitSignInPorts = {
+  openExternal: async () => undefined,
+  showPrompt: () => undefined,
+  focus: () => undefined,
+  signedIn: () => undefined,
+}
 
 function handlersOf(gitSync: GitSyncService, hostCli = {} as HostCliService, ports = NO_PORTS): Map<string, Handler> {
   const handlers = new Map<string, Handler>()
@@ -129,7 +134,7 @@ describe("signing in", () => {
           given.signal?.addEventListener("abort", () => reject(new Error("Sign-in was cancelled.")))
         }),
     )
-    const ports = { openExternal: vi.fn(async () => undefined), showPrompt: vi.fn(), focus: vi.fn() }
+    const ports = { openExternal: vi.fn(async () => undefined), showPrompt: vi.fn(), focus: vi.fn(), signedIn: vi.fn() }
     const signIns = new GitSignIns({ signIn } as unknown as HostCliService, ports)
     return {
       signIns,
@@ -155,8 +160,22 @@ describe("signing in", () => {
     run.finish()
     await expect(signedIn).resolves.toEqual(ACCOUNT)
     expect(run.ports.focus).toHaveBeenCalledOnce()
+    expect(run.ports.signedIn).toHaveBeenCalledWith(ACCOUNT)
     run.signIns.openPage()
     expect(run.ports.openExternal).toHaveBeenCalledTimes(2)
+  })
+
+  it("still resolves the sign-in when the workspace import cannot start", async () => {
+    const signIn = vi.fn(async () => ACCOUNT)
+    const ports = {
+      ...NO_PORTS,
+      signedIn: vi.fn(() => {
+        throw new Error("the import could not start")
+      }),
+    }
+    const signIns = new GitSignIns({ signIn } as unknown as HostCliService, ports)
+
+    await expect(signIns.signIn("github", "github.com")).resolves.toEqual(ACCOUNT)
   })
 
   it("cancels by aborting the tool, and resolves the cancel once the tool has gone", async () => {
@@ -170,6 +189,7 @@ describe("signing in", () => {
     await expect(first).rejects.toThrow("cancelled")
     await expect(cancelled).resolves.toBeUndefined()
     expect(run.ports.focus).not.toHaveBeenCalled()
+    expect(run.ports.signedIn).not.toHaveBeenCalled()
   })
 
   it("lets a new sign-in replace one still waiting — a reloaded window's — rather than lock it out", async () => {

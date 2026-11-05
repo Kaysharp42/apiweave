@@ -11,6 +11,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A sign-in opens the account's tagged workspaces.** When `gh` or `glab`
+  finishes signing in, APIWeave reads the repositories the account has tagged
+  `apiweave-workspace` and opens each one that holds a workspace, in the
+  background and one at a time. Repositories already connected here, and empty
+  ones, are skipped; a repository that cannot be opened is logged and the rest
+  continue.
+
 ### Changed
 
 - **Project bundles use the `.aweproject` extension.** The export filename, the
