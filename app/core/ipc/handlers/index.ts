@@ -1,6 +1,7 @@
 import type { IpcRouter } from "../router"
 import type { HandlerDeps } from "./common"
 import { registerWorkspaceHandlers } from "./workspaces"
+import { registerAppHandlers } from "./app"
 import { registerWorkflowHandlers } from "./workflows"
 import { registerEnvironmentHandlers } from "./environments"
 import { registerNodePresetHandlers } from "./node-presets"
@@ -20,6 +21,9 @@ export type { HandlerDeps } from "./common"
  * (acceptance criterion); adding a service method means adding one `register` call.
  */
 export function registerAllHandlers(router: IpcRouter, deps: HandlerDeps): void {
+  // Only where there is an Electron app to describe: no test router and no MCP
+  // catalogue supplies one, and About is not a surface an agent uses.
+  if (deps.app !== undefined) registerAppHandlers(router, deps.app)
   registerWorkspaceHandlers(router, deps)
   registerWorkflowHandlers(router, deps)
   registerAssertionHandlers(router, deps)

@@ -35,7 +35,7 @@ export const APP_SETTINGS_SECTIONS: Readonly<
   canvas: {
     icon: MousePointer2,
     title: "Canvas",
-    subtitle: "Drag, zoom and snap behaviour",
+    subtitle: "Auto-save, drag, zoom and snap behaviour",
     width: "max-w-2xl",
   },
   "git-accounts": {

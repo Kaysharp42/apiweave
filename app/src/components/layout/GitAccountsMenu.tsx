@@ -8,7 +8,6 @@ import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import { Button } from "../atoms/Button";
 import { GitAccountRow } from "../molecules/GitAccountRow";
 import { GitAccountsNotice } from "../molecules/GitAccountsNotice";
-import { GitSyncKindIcon } from "../molecules/GitSyncKindIcon";
 import { GitSignInDialog } from "../organisms/GitSignInDialog";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitAccounts } from "../../hooks/useGitAccounts";
@@ -19,12 +18,10 @@ import {
   groupGitAccountsByHost,
   sameGitAccount,
 } from "../../utils/gitAccounts";
-import { GIT_SYNC_INTENT_TEXT, describeGitSync } from "../../utils/gitSync";
-import { noDragStyle } from "./WindowControls";
+import { noDragStyle } from "../../utils/windowDragStyles";
 import type {
   GitAccountsMenuPanelProps,
   GitAccountsMenuProps,
-  GitSyncView,
 } from "../../types";
 
 /**
@@ -56,7 +53,7 @@ function GitAccountsMenuPanel({
             key={`${group.provider}|${group.host}`}
             aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}
           >
-            <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+            <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
               {group.host}
             </h3>
             <ul className="space-y-2">
@@ -141,28 +138,18 @@ function GitAccountsMenuPanel({
   );
 }
 
-/** The workspace's sync state for the trigger's badge; null when it has none to show. */
-function syncBadge(status: WorkspaceGitStatus | null): GitSyncView | null {
-  const view = status === null ? null : describeGitSync(status);
-  return view !== null && view.icon !== null ? view : null;
-}
-
 /** Untracked, or tracked with no remote: the menu is where someone looking for sync starts. */
 function needsSyncSetup(status: WorkspaceGitStatus | null): boolean {
   return status !== null && (!status.tracked || status.remoteUrl === null);
 }
 
-/** The trigger's name: the menu, the workspace's account, and its sync state, whichever there are. */
-function triggerLabel(
-  account: GitAccountRef | null,
-  synced: GitSyncView | null,
-): string {
+/** The trigger's name: the menu and the workspace's account, when it has one. */
+function triggerLabel(account: GitAccountRef | null): string {
   return [
     "Git accounts",
     account === null
       ? null
       : `this workspace uses ${account.login} on ${account.host}`,
-    synced === null ? null : synced.label,
   ]
     .filter((part): part is string => part !== null)
     .join(" — ");
@@ -171,10 +158,10 @@ function triggerLabel(
 /**
  * The header's accounts menu, where the Cloud account menu used to be: the
  * initials of the account the current workspace syncs as (a neutral person
- * when it has none), with the workspace's sync icon as a corner badge. The
- * panel lists every `gh`/`glab` account by host, marks the one this
- * workspace uses, and signs in to another. Absent with no bridge to ask (the
- * browser build).
+ * when it has none). The panel lists every `gh`/`glab` account by host, marks
+ * the one this workspace uses, and signs in to another. Sync state is not
+ * repeated here — the header's sync control is the one place that says it.
+ * Absent with no bridge to ask (the browser build).
  */
 export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
   const navigate = useNavigate();
@@ -184,10 +171,9 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
   if (!git.isAvailable()) return null;
 
   const account = status?.account ?? null;
-  const synced = syncBadge(status);
   const settingsBase = `/${currentOrg?.slug ?? "personal"}/${currentWorkspace?.slug ?? "personal"}/settings`;
   const unsynced = currentWorkspace !== null && needsSyncSetup(status);
-  const label = triggerLabel(account, synced);
+  const label = triggerLabel(account);
 
   return (
     <div style={noDragStyle} className="flex items-center">
@@ -196,9 +182,10 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
           <>
             <PopoverButton
               as={Button}
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 rounded-full! border border-border bg-surface-raised p-0! hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-raised dark:hover:bg-surface-dark-overlay"
+              variant="outline"
+              intent="muted"
+              size="md"
+              className="h-9 w-9 rounded-xs! p-0!"
               aria-label={label}
               title={label}
             >
@@ -216,15 +203,9 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
                 </span>
               )}
             </PopoverButton>
-            {/* Outside the round trigger, so its edge does not clip the badge. */}
-            {synced !== null && (
-              <span
-                aria-hidden="true"
-                className={`pointer-events-none absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-surface-raised ring-1 ring-border dark:bg-surface-dark-raised dark:ring-border-dark ${GIT_SYNC_INTENT_TEXT[synced.intent]}`}
-              >
-                <GitSyncKindIcon indicator={synced} className="h-3 w-3" />
-              </span>
-            )}
+            {/* A plain square trigger, matching the header's other 36px
+                IconButtons: sync state lives in the sync control, not as a
+                second badge on the avatar. */}
             <PopoverPanel
               anchor={{ to: "bottom end", gap: 6, padding: 8 }}
               // A plain div, not a dialog: a group named by its own title, which is what it is.

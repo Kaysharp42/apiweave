@@ -88,7 +88,7 @@ const SCENARIOS: readonly StateScenario[] = [
   {
     name: "pending",
     status: { ...SETTLED, uncommitted: true, outgoing: 1 },
-    label: "Pending",
+    label: "Unpushed changes",
     explanation: /You have edits that aren't committed yet/,
   },
   {
@@ -280,7 +280,7 @@ test.describe("git sync status", () => {
     await installGitBridge(page, { ...SETTLED, mode: "manual", uncommitted: true });
     await navigateDesktop(page, "/personal/personal/workflows");
 
-    await page.getByRole("button", { name: "Version history: Pending" }).click();
+    await page.getByRole("button", { name: "Version history: Uncommitted changes" }).click();
     await page.getByRole("button", { name: "Sync now" }).click();
 
     const dialog = page.getByRole("dialog");
@@ -328,7 +328,7 @@ test.describe("git sync status", () => {
     await captureEvidence(page, "git-sync-switcher-row.png");
   });
 
-  test("shows the workspace's account in the header's accounts menu, with its sync state as a badge", async ({ page }) => {
+  test("shows the workspace's account in the header's accounts menu", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, {
       ...SETTLED,
@@ -336,7 +336,7 @@ test.describe("git sync status", () => {
     });
     await navigateDesktop(page, "/personal/personal/workflows");
 
-    const trigger = page.getByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com — Synced" });
+    const trigger = page.getByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com" });
     await expect(trigger).toHaveText("OW");
     await trigger.click();
 

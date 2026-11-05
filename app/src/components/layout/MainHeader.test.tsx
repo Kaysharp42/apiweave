@@ -17,12 +17,6 @@ vi.mock("../../stores/WindowChromeStore", () => ({
   useOwnWindowChrome: () => false,
 }));
 
-vi.mock("./WindowControls", () => ({
-  WindowControls: () => null,
-  dragStyle: {},
-  noDragStyle: {},
-}));
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -77,6 +71,13 @@ describe("MainHeader tutorial entry", () => {
       "/personal/personal/tutorials",
     );
   });
+
+  it("leaves auto-save to App Settings rather than a second Save button", () => {
+    renderHeader();
+    expect(
+      screen.queryByRole("button", { name: /auto-save/i }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("MainHeader sync status", () => {
@@ -85,7 +86,9 @@ describe("MainHeader sync status", () => {
     renderHeader();
 
     expect(
-      await screen.findByRole("button", { name: "Version history: Pending" }),
+      await screen.findByRole("button", {
+        name: "Version history: Uncommitted changes",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -102,8 +105,8 @@ describe("MainHeader sync status", () => {
     renderHeader();
 
     await screen.findByRole("button", { name: "Version history: Synced" });
-    // The accounts menu's sync badge reads the same feed, not a second one.
-    expect(screen.getByRole("button", { name: "Git accounts — Synced" })).toBeInTheDocument();
+    // The accounts menu reads the same feed, but does not repeat the sync state.
+    expect(screen.getByRole("button", { name: "Git accounts" })).toBeInTheDocument();
     expect(bridge.status).toHaveBeenCalledTimes(1);
     expect(subscriptions()).toBe(1);
   });

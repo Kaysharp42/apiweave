@@ -6,7 +6,7 @@ import { GitSyncStatusCard } from "../organisms/GitSyncStatusCard";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { describeGitSync } from "../../utils/gitSync";
-import { noDragStyle } from "./WindowControls";
+import { noDragStyle } from "../../utils/windowDragStyles";
 import type { GitSyncControlProps, TrackedGitSyncControlProps } from "../../types";
 
 function TrackedGitSyncControl({

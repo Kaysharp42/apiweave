@@ -31,6 +31,7 @@ import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
+import { AboutDialog } from "../organisms/AboutDialog";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
@@ -177,7 +178,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Skip to main content link */}
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-primary focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark dark:focus:outline-primary-light"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-(--aw-primary) focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark"
         >
           Skip to main content
         </a>
@@ -204,6 +205,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         <footer>
           <MainFooter />
         </footer>
+
+        {/* App-wide, opened from the footer's version pill or the command
+            palette; renders nothing while closed. */}
+        <AboutDialog />
       </CanvasSurfaceContext.Provider>
     </AgentSessionsProvider>
   );

@@ -675,7 +675,7 @@ describe("VersionHistoryPanel", () => {
       await screen.findByText("https://github.com/acme/tests.git"),
     ).toBeInTheDocument();
     expect(screen.getByText("trunk")).toBeInTheDocument();
-    expect(screen.getByText("Pending (2 to push)")).toBeInTheDocument();
+    expect(screen.getByText("2 to push")).toBeInTheDocument();
     expect(
       screen.getByText(/2 commits haven't been pushed to the remote yet/),
     ).toBeInTheDocument();

@@ -328,7 +328,7 @@ export const versionHistoryChapter: TutorialChapter = {
           instruction:
             "The header shows the workspace's state as an icon and a word. Click it for an explanation, when the workspace last synced, its last commit, and a link to Version history settings.",
           detail:
-            "With a remote it reads Synced, Pending, Pending (N to push) when only commits are waiting, Syncing, Incoming (N) when the remote has new commits in manual mode, Merge needed, Diverged, Read-only or Sync error. With no remote it reads Local history, Local history · uncommitted, Committing or Commit error. Commit now is offered only while edits are waiting, so a settled local history has nothing to commit and offers no action, and Commit error offers Retry.",
+            "With a remote it reads Synced, Uncommitted changes, N to push when only commits are waiting, Unpushed changes when both are, Syncing, Incoming (N) when the remote has new commits in manual mode, Merge needed, Diverged, Read-only or Sync error. With no remote it reads Local history, Local history · uncommitted, Committing or Commit error. Commit now is offered only while edits are waiting, so a settled local history has nothing to commit and offers no action, and Commit error offers Retry.",
         },
         {
           title: "Handle a refused push",

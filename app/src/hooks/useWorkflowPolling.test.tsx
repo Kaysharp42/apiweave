@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "@xyflow/react";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import useWorkflowPolling from "./useWorkflowPolling";
+import useRunStatusStore from "../stores/RunStatusStore";
 
 const onRunStartedMock = vi.hoisted(() => vi.fn());
 const onRunProgressMock = vi.hoisted(() => vi.fn());
@@ -81,6 +82,7 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
     onRunProgressMock.mockReturnValue(() => undefined);
     getLatestMock.mockReset();
     getLatestMock.mockResolvedValue(undefined);
+    useRunStatusStore.setState({ byWorkflow: {} });
   });
 
   it("streams and follows a run started elsewhere for the open workflow", async () => {
@@ -113,6 +115,35 @@ describe("useWorkflowPolling — adopting a run it did not start", () => {
 
     expect(onRunProgressMock).not.toHaveBeenCalled();
     expect(result.current.currentRunId).toBeNull();
+  });
+
+  it("publishes its run to the footer's status store", async () => {
+    const listener = captureRunStarted();
+    const { result } = setup();
+
+    await act(async () => {
+      listener()({ runId: "run-footer", workspaceId: "ws1", workflowId: "wf1", iteration: null });
+    });
+
+    expect(useRunStatusStore.getState().byWorkflow["wf1"]).toMatchObject({
+      runId: "run-footer",
+      phase: "running",
+    });
+
+    const progress = onRunProgressMock.mock.calls[0]![1] as (event: {
+      kind: string;
+      runId: string;
+      status: string;
+    }) => void;
+    await act(async () => {
+      progress({ kind: "run.finished", runId: "run-footer", status: "failed" });
+    });
+
+    await waitFor(() => expect(result.current.isRunning).toBe(false));
+    expect(useRunStatusStore.getState().byWorkflow["wf1"]).toMatchObject({
+      runId: "run-footer",
+      phase: "failed",
+    });
   });
 
   it("does not hijack a run it is already streaming", async () => {

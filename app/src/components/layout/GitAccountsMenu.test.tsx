@@ -15,9 +15,7 @@ vi.mock("../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
-vi.mock("./WindowControls", () => ({
-  WindowControls: () => null,
-  dragStyle: {},
+vi.mock("../../utils/windowDragStyles", () => ({
   noDragStyle: {},
 }));
 
@@ -72,11 +70,11 @@ describe("GitAccountsMenu", () => {
     expect(screen.queryByRole("button", { name: /Git accounts/ })).toBeNull();
   });
 
-  it("shows the workspace's account initials and its sync state, and a neutral trigger for a workspace with none", async () => {
+  it("shows the workspace's account initials, and a neutral trigger for a workspace with none", async () => {
     installGitBridge(trackedStatus({ account: WORK }));
     renderMenu();
 
-    const trigger = await screen.findByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com — Synced" });
+    const trigger = await screen.findByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com" });
     expect(trigger).toHaveTextContent("OW");
     vi.unstubAllGlobals();
 

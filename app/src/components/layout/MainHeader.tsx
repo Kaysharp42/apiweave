@@ -1,7 +1,7 @@
 import { useContext, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AppContext } from "../../App";
-import { BookOpen, Moon, Sun, Save, Menu } from "lucide-react";
+import { BookOpen, Moon, Sun, Menu } from "lucide-react";
 import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
 import type { AppContextType } from "../../types/AppContextType";
@@ -11,10 +11,14 @@ import { useWorkspaceGitStatus } from "../../hooks/useWorkspaceGitStatus";
 import { useOwnWindowChrome } from "../../stores/WindowChromeStore";
 import { GitAccountsMenu } from "./GitAccountsMenu";
 import { GitSyncControl } from "./GitSyncControl";
-import { WindowControls, dragStyle, noDragStyle } from "./WindowControls";
+import {
+  dragStyle,
+  noDragStyle,
+  WINDOW_CONTROLS_INSET,
+} from "../../utils/windowDragStyles";
 
-/** A tooltip-and-icon toggle button in the drag-region header. Shared by the
- * auto-save and dark-mode toggles, which differ only in copy, styling and icon. */
+/** A tooltip-and-icon toggle button in the drag-region header, used by the
+ * dark-mode toggle. */
 function HeaderToggleButton({
   enabled,
   onToggle,
@@ -61,25 +65,30 @@ function useTutorialsPath() {
 }
 
 export function MainHeader() {
-  const { darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled } =
-    useContext(AppContext) as AppContextType;
+  const { darkMode, setDarkMode } = useContext(AppContext) as AppContextType;
   const toggleMobileSidebar = useNavigationStore(
     (state) => state.toggleMobileSidebar,
   );
-  // On desktop this header *is* the window chrome: it carries the drag region
-  // and the min/max/close buttons, and TitleBar stands down. One bar, not two.
+  // On desktop this header *is* the window chrome: it carries the drag region,
+  // and the native window controls are drawn over its top-right corner, so it
+  // reserves that corner instead of putting its own buttons there.
   const ownsChrome = useOwnWindowChrome();
 
   const navigate = useNavigate();
   const tutorialsPath = useTutorialsPath();
-  // One feed for the header: the sync control and the accounts menu's badge show the same status.
+  // One feed for the header: the sync control says where the workspace stands,
+  // and the accounts menu knows whose account it syncs as.
   const { currentWorkspace } = useWorkspace();
   const gitStatus = useWorkspaceGitStatus(currentWorkspace?.workspaceId ?? null);
 
   return (
     <header
-      style={ownsChrome ? dragStyle : undefined}
-      className={`navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised pl-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark ${
+      style={
+        ownsChrome
+          ? { ...dragStyle, paddingRight: WINDOW_CONTROLS_INSET }
+          : undefined
+      }
+      className={`aw-window-chrome navbar h-header min-h-0 w-full gap-3 border-b border-border bg-surface-raised pl-4 text-text-primary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark ${
         ownsChrome ? "select-none pr-0" : "pr-4"
       }`}
     >
@@ -133,21 +142,6 @@ export function MainHeader() {
         </div>
 
         <HeaderToggleButton
-          enabled={autoSaveEnabled}
-          onToggle={() => setAutoSaveEnabled(!autoSaveEnabled)}
-          enabledTooltip="Auto-save enabled"
-          disabledTooltip="Auto-save disabled"
-          enabledAriaLabel="Disable auto-save"
-          disabledAriaLabel="Enable auto-save"
-          className={`inline-flex items-center justify-center w-9 h-9 rounded-xs border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 ${
-            autoSaveEnabled
-              ? "border-status-success/40 bg-status-success/10 text-status-success hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
-              : "border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay"
-          }`}
-          icon={<Save className="w-4 h-4" />}
-        />
-
-        <HeaderToggleButton
           enabled={darkMode}
           onToggle={() => setDarkMode(!darkMode)}
           enabledTooltip="Switch to Light mode"
@@ -160,14 +154,6 @@ export function MainHeader() {
 
         <GitAccountsMenu status={gitStatus.status} />
       </div>
-
-      {/* Flush to the window's top-right corner (the header drops its right
-          padding for this), the way native window buttons sit. */}
-      {ownsChrome && (
-        <div className="ml-2 self-stretch">
-          <WindowControls />
-        </div>
-      )}
     </header>
   );
 }

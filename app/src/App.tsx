@@ -18,7 +18,8 @@ import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
-import { apiweave } from "./utils/apiweaveClient";
+import { useWindowTitle } from "./hooks/useWindowTitle";
+import { apiweave, desktop } from "./utils/apiweaveClient";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
 import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
@@ -194,6 +195,8 @@ function AppShellRoutes() {
   // Same reasoning, for everything an agent writes that is not a run: the
   // sidebar, environments and presets have to refetch wherever the user is.
   useAgentDataUpdates();
+  // The window's title names the tab being edited, wherever the user is.
+  useWindowTitle();
 
   return (
     <div className="relative flex h-screen flex-col bg-surface font-sans text-text-primary dark:bg-surface-dark dark:text-text-primary-dark">
@@ -304,7 +307,21 @@ function App() {
     } catch {
       // ignore
     }
+    // The window background and native window-control overlay are painted by
+    // main, which cannot read this preference; tell it so a theme flip repaints
+    // them together with the page rather than at the next launch.
+    void desktop.applyTheme(darkMode).catch(() => undefined);
   }, [darkMode]);
+
+  // Traffic lights sit inside the top-left of the header on macOS; the stylesheet
+  // pads the chrome clear of them. Set once — the platform cannot change while
+  // the window is open.
+  useEffect(() => {
+    const platform = desktop.platform();
+    if (platform !== null) {
+      document.documentElement.dataset.platform = platform;
+    }
+  }, []);
 
   useEffect(() => {
     try {

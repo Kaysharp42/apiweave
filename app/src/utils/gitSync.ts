@@ -180,9 +180,11 @@ function pendingView(status: WorkspaceGitStatus): GitSyncView {
   const label =
     remoteUrl === null
       ? "Local history · uncommitted"
-      : !uncommitted && outgoing > 0
-        ? `Pending (${outgoing} to push)`
-        : "Pending";
+      : uncommitted && outgoing > 0
+        ? "Unpushed changes"
+        : outgoing > 0
+          ? `${outgoing} to push`
+          : "Uncommitted changes";
   // A workspace with no remote keeps a local shape: its edits go into this
   // device's history, not a cloud. Upload says there is work to write down, so
   // a settled local history and one with edits waiting differ by shape too.

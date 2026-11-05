@@ -7,6 +7,7 @@ import { HighlightedText } from "../atoms/HighlightedText";
 import { apiweave } from "../../utils/apiweaveClient";
 import useCanvasStore from "../../stores/CanvasStore";
 import useTabStore from "../../stores/TabStore";
+import { openAbout } from "../../stores/AboutStore";
 import type {
   CanvasCommand,
   CommandPaletteItem,
@@ -18,6 +19,20 @@ const SEARCH_MIN_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 200;
 const WORKFLOW_RESULT_LIMIT = 5;
 const NODE_RESULT_LIMIT = 10;
+
+/**
+ * The one app-wide command. The rest describe what the active canvas can do;
+ * About belongs to the app rather than to a workflow, so it lives here instead
+ * of in the canvas command registry.
+ */
+const ABOUT_COMMAND: CanvasCommand = {
+  id: "app.about",
+  title: "About APIWeave",
+  group: "Application",
+  keywords: ["about", "version", "licence", "license", "credits"],
+  when: () => true,
+  run: openAbout,
+};
 
 function matchesQuery(command: CanvasCommand, query: string): boolean {
   const haystack = [command.title, command.group, ...command.keywords]
@@ -61,7 +76,7 @@ export function CommandPalette({
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const availableCommands = useMemo(
-    () => commands.filter((command) => command.when()),
+    () => [...commands.filter((command) => command.when()), ABOUT_COMMAND],
     [commands],
   );
   const filteredCommands = useMemo(
