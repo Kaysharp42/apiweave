@@ -25,5 +25,10 @@ export function handleTablistKeyDown(event: KeyboardEvent<HTMLElement>): void {
   const count = tabs.length;
   const next = tabs[(step(current, count) + count) % count];
   next?.focus();
+  // A roving tabindex moves focus to a tab that may be scrolled out of a
+  // horizontally overflowing tablist; focusing alone would leave the user
+  // typing on a control they cannot see. jsdom implements no layout and no
+  // scrollIntoView, hence the optional call.
+  next?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   next?.click();
 }

@@ -35,7 +35,7 @@ async function openCanvas(
     // fixture and undo the edit this test just made.
     storage: {
       "apiweave:v1:autoSaveEnabled": "false",
-      ...(dark ? { "apiweave:v1:darkMode": "true" } : {}),
+      ...(dark ? { "apiweave:v1:themePreference": "dark" } : {}),
     },
   });
 

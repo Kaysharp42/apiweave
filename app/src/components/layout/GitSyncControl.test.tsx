@@ -380,7 +380,10 @@ describe("GitSyncControl", () => {
     installGitBridge(trackedStatus(local));
     renderControl();
 
-    // The plan's vocabulary says muted for `local`; the Button is what has to carry it.
-    expect((await trigger("Local history")).className).toContain("text-text-muted");
+    // The plan's vocabulary says muted for `local`; the neutral pill carries
+    // the label and the dot is the one thing painted in the state colour.
+    const button = await trigger("Local history");
+    expect(button.className).toContain("text-text-secondary");
+    expect(button.querySelector(".bg-text-muted")).not.toBeNull();
   });
 });

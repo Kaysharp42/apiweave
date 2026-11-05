@@ -31,7 +31,8 @@ function renderHeader() {
     <AppContext.Provider
       value={{
         darkMode: false,
-        setDarkMode: vi.fn(),
+        themePreference: "system",
+        setThemePreference: vi.fn(),
         autoSaveEnabled: true,
         setAutoSaveEnabled: vi.fn(),
       }}
@@ -77,6 +78,15 @@ describe("MainHeader tutorial entry", () => {
     expect(
       screen.queryByRole("button", { name: /auto-save/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("names the current theme and the override in the theme toggle", () => {
+    renderHeader();
+    expect(
+      screen.getByRole("button", {
+        name: "Theme: Light (system) — switch to Dark",
+      }),
+    ).toBeInTheDocument();
   });
 });
 

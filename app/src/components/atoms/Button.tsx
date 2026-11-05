@@ -85,6 +85,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         return intentMap[intent];
       }
 
+      if (variant === "neutral") {
+        // Chrome that states something rather than inviting a click: the
+        // surface and hairline of a panel, a secondary label, and a hover
+        // that acknowledges the pointer without turning into an action.
+        return "bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark";
+      }
+
       if (variant === "outline") {
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:

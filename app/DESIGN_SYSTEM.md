@@ -134,8 +134,8 @@ smallest size allowed anywhere in the app.**
 | ----------------- | ----- | ------------------------- |
 | `header-height`   | 48px  | Main header               |
 | `footer-height`   | 32px  | Main footer               |
-| `nav-collapsed`   | 56px  | AppNavBar collapsed width |
-| `nav-expanded`    | 180px | AppNavBar expanded width  |
+| `nav-collapsed`   | 44px  | AppNavBar collapsed width |
+| `nav-expanded`    | 146px | AppNavBar expanded width  |
 | `sidebar-default` | 380px | Default sidebar width     |
 | `sidebar-max`     | 600px | Max sidebar width         |
 | `node-compact`    | 200px | Compact node width        |

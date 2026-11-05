@@ -11,11 +11,13 @@ beforeEach(() => {
 
 function renderPanel(autoSaveEnabled: boolean) {
   const setAutoSaveEnabled = vi.fn();
+  const setThemePreference = vi.fn();
   render(
     <AppContext.Provider
       value={{
         darkMode: false,
-        setDarkMode: vi.fn(),
+        themePreference: "system",
+        setThemePreference,
         autoSaveEnabled,
         setAutoSaveEnabled,
       }}
@@ -23,7 +25,7 @@ function renderPanel(autoSaveEnabled: boolean) {
       <CanvasSettingsPanel />
     </AppContext.Provider>,
   );
-  return { setAutoSaveEnabled };
+  return { setAutoSaveEnabled, setThemePreference };
 }
 
 describe("CanvasSettingsPanel auto-save", () => {
@@ -64,5 +66,17 @@ describe("CanvasSettingsPanel auto-save", () => {
     await user.click(toggle);
 
     expect(useCanvasPrefsStore.getState().minimapVisible).toBe(true);
+  });
+
+  it("offers System, Light and Dark and defaults to System", async () => {
+    const user = userEvent.setup();
+    const { setThemePreference } = renderPanel(true);
+
+    expect(screen.getByRole("button", { name: "Follow system" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Follow system" }));
+    await user.click(screen.getByRole("option", { name: "Dark" }));
+
+    expect(setThemePreference).toHaveBeenCalledWith("dark");
   });
 });

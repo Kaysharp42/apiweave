@@ -41,8 +41,8 @@ const WORKFLOW = {
 async function openNodeModal(page: Page): Promise<void> {
   await installDesktopIpc(page);
   await page.addInitScript(() => {
-    localStorage.setItem("apiweave:v1:darkMode", "true");
-    localStorage.setItem("darkMode", "true");
+    localStorage.setItem("apiweave:v1:themePreference", "dark");
+    localStorage.setItem("themePreference", "dark");
   });
   await page.addInitScript((workflow) => {
     const bridge = window.__APIWEAVE_IPC__;

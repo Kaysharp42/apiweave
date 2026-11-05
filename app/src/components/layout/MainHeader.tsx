@@ -18,33 +18,27 @@ import {
 } from "../../utils/windowDragStyles";
 
 /** A tooltip-and-icon toggle button in the drag-region header, used by the
- * dark-mode toggle. */
+ * theme override. */
 function HeaderToggleButton({
-  enabled,
   onToggle,
-  enabledTooltip,
-  disabledTooltip,
-  enabledAriaLabel,
-  disabledAriaLabel,
+  tooltip,
+  ariaLabel,
   className,
   icon,
 }: {
-  enabled: boolean;
   onToggle: () => void;
-  enabledTooltip: string;
-  disabledTooltip: string;
-  enabledAriaLabel: string;
-  disabledAriaLabel: string;
+  tooltip: string;
+  ariaLabel: string;
   className: string;
   icon: ReactNode;
 }) {
   return (
-    <Tooltip delay={0} content={enabled ? enabledTooltip : disabledTooltip} placement="bottom">
+    <Tooltip delay={0} content={tooltip} placement="bottom">
       <button
         type="button"
         onClick={onToggle}
         style={noDragStyle}
-        aria-label={enabled ? enabledAriaLabel : disabledAriaLabel}
+        aria-label={ariaLabel}
         className={className}
       >
         {icon}
@@ -65,7 +59,13 @@ function useTutorialsPath() {
 }
 
 export function MainHeader() {
-  const { darkMode, setDarkMode } = useContext(AppContext) as AppContextType;
+  const { darkMode, themePreference, setThemePreference } = useContext(
+    AppContext,
+  ) as AppContextType;
+  const nextTheme = darkMode ? "Light" : "Dark";
+  const effectiveMode = darkMode ? "Dark" : "Light";
+  const preferenceSuffix = themePreference === "system" ? " (system)" : "";
+  const themeActionLabel = `Theme: ${effectiveMode}${preferenceSuffix} — switch to ${nextTheme}`;
   const toggleMobileSidebar = useNavigationStore(
     (state) => state.toggleMobileSidebar,
   );
@@ -111,7 +111,8 @@ export function MainHeader() {
 
         <img
           src="/apiweave.png"
-          alt="APIWeave Logo"
+          alt=""
+          aria-hidden="true"
           className="h-7 w-7 rounded-sm object-cover"
         />
         <h1 className="hidden font-sans text-lg font-extrabold tracking-tight text-text-primary dark:text-text-primary-dark sm:block">
@@ -142,12 +143,9 @@ export function MainHeader() {
         </div>
 
         <HeaderToggleButton
-          enabled={darkMode}
-          onToggle={() => setDarkMode(!darkMode)}
-          enabledTooltip="Switch to Light mode"
-          disabledTooltip="Switch to Dark mode"
-          enabledAriaLabel="Switch to light mode"
-          disabledAriaLabel="Switch to dark mode"
+          onToggle={() => setThemePreference(darkMode ? "light" : "dark")}
+          tooltip={themeActionLabel}
+          ariaLabel={themeActionLabel}
           className="inline-flex items-center justify-center w-9 h-9 rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
           icon={darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
         />

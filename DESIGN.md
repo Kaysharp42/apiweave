@@ -108,8 +108,8 @@ components:
     padding: "0 0.75rem"
     height: "2.5rem"
   nav-rail:
-    backgroundColor: "{colors.surface-dark}"
-    width: "56px"
+    backgroundColor: "{colors.surface-raised}"
+    width: "44px collapsed / 146px expanded"
   sidebar:
     backgroundColor: "{colors.surface}"
     width: "380px"
@@ -310,7 +310,7 @@ The node layer adds two tokens the chrome does not use:
 
 ### Navigation
 
-- **AppNavBar (left rail):** Fixed 56px width. Dark background (zinc-950). Icon-only navigation with Lucide icons. Active state uses ink-teal icon color; inactive uses mocca-mist text color. Hover expands a brief tooltip (the `Tooltip` atom). Collapses to 56px always (no expandable mode).
+- **AppNavBar (left rail):** 44px collapsed / 146px expanded. Surface-raised background with a hairline right border, the same chrome as the rest of the app. Icons plus labels; the labels appear when expanded, and a collapse/expand control sits at the bottom of the rail. Collapsed, each item shows a brief tooltip (the `Tooltip` atom). Below `md` the rail is always 44px and icon-only.
 - **Sidebar:** 380px default width (max 600px). Zinc-50 background in light mode (slightly dimmer than the page). Contains searchable workflow/project list. Uses Allotment split-pane for resizable boundaries.
 - **MainHeader:** 48px height. Contains logo/branding, environment selector, theme toggle. Spans full width above workspace.
 - **MainFooter:** 32px height. Status bar with execution state, connection status. Minimal.

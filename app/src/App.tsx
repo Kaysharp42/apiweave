@@ -25,6 +25,8 @@ import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
 import type { AppContextType } from "./types/AppContextType";
+import { useThemePreference } from "./hooks/useThemePreference";
+import { getStoredValue, setStoredValue } from "./utils/storedValue";
 
 // The settings and tutorial screens are their own chunks: the canvas is the
 // app's steady state, and a session that never opens Settings should not parse
@@ -56,21 +58,10 @@ const AppSettingsPage = lazy(() =>
 );
 const TutorialPage = lazy(() => import("./pages/TutorialPage"));
 
-const STORAGE_PREFIX = "apiweave:v1:";
-
-const getStoredValue = (key: string): string | null => {
-  const versionedKey = `${STORAGE_PREFIX}${key}`;
-  return localStorage.getItem(versionedKey) ?? localStorage.getItem(key);
-};
-
-const setStoredValue = (key: string, value: string): void => {
-  localStorage.setItem(`${STORAGE_PREFIX}${key}`, value);
-  localStorage.setItem(key, value);
-};
-
 export const AppContext = createContext<AppContextType>({
   darkMode: false,
-  setDarkMode: () => {},
+  themePreference: "system",
+  setThemePreference: () => {},
   autoSaveEnabled: true,
   setAutoSaveEnabled: () => {},
 });
@@ -271,18 +262,8 @@ function WorkspacePageRoute({
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [darkMode, setDarkMode] = useState(() => {
-    try {
-      const stored = getStoredValue("darkMode");
-      if (stored !== null) return stored === "true";
-      return (
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-      );
-    } catch {
-      return false;
-    }
-  });
+  const { darkMode, themePreference, setThemePreference } =
+    useThemePreference();
 
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
@@ -303,13 +284,14 @@ function App() {
         document.documentElement.classList.remove("dark");
         document.documentElement.setAttribute("data-theme", "apiweave");
       }
-      setStoredValue("darkMode", darkMode ? "true" : "false");
     } catch {
       // ignore
     }
     // The window background and native window-control overlay are painted by
     // main, which cannot read this preference; tell it so a theme flip repaints
-    // them together with the page rather than at the next launch.
+    // them together with the page rather than at the next launch. `darkMode` is
+    // the resolved theme, so this also fires when the OS setting flips under a
+    // `system` preference.
     void desktop.applyTheme(darkMode).catch(() => undefined);
   }, [darkMode]);
 
@@ -332,8 +314,14 @@ function App() {
   }, [autoSaveEnabled]);
 
   const appContextValue = useMemo(
-    () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
-    [darkMode, autoSaveEnabled],
+    () => ({
+      darkMode,
+      themePreference,
+      setThemePreference,
+      autoSaveEnabled,
+      setAutoSaveEnabled,
+    }),
+    [darkMode, themePreference, setThemePreference, autoSaveEnabled],
   );
 
   return (

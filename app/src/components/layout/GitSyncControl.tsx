@@ -7,7 +7,20 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import { useGitSyncActions } from "../../hooks/useGitSyncActions";
 import { describeGitSync } from "../../utils/gitSync";
 import { noDragStyle } from "../../utils/windowDragStyles";
-import type { GitSyncControlProps, TrackedGitSyncControlProps } from "../../types";
+import type {
+  GitSyncControlProps,
+  GitSyncIntent,
+  TrackedGitSyncControlProps,
+} from "../../types";
+
+/** The dot is the only saturated thing on the control; it carries the state. */
+const INTENT_DOT: Readonly<Record<GitSyncIntent, string>> = {
+  muted: "bg-text-muted dark:bg-text-muted-dark",
+  success: "bg-status-success dark:bg-(--aw-status-success)",
+  info: "bg-status-info dark:bg-(--aw-status-info)",
+  warning: "bg-status-warning dark:bg-(--aw-status-warning)",
+  error: "bg-status-error dark:bg-(--aw-status-error)",
+};
 
 function TrackedGitSyncControl({
   status,
@@ -24,12 +37,19 @@ function TrackedGitSyncControl({
           <>
             <PopoverButton
               as={Button}
-              variant="outline"
-              intent={view.intent}
+              variant="neutral"
               size="sm"
               className="h-9"
               aria-label={`Version history: ${view.label}`}
-              icon={<GitSyncKindIcon indicator={view} />}
+              icon={
+                <>
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${INTENT_DOT[view.intent]}`}
+                  />
+                  <GitSyncKindIcon indicator={view} />
+                </>
+              }
             >
               <span className="hidden sm:inline">{view.label}</span>
             </PopoverButton>

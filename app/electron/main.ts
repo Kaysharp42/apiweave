@@ -337,15 +337,15 @@ async function createWindow(show = true): Promise<boolean> {
     show,
     width: 1280,
     height: 800,
-    // Deliberately below the ~1024px the canvas toolbar was sized against.
-    // A tiling compositor gives the window the tile it decided on and ignores
-    // this hint, but Chromium still keeps the *viewport* at the minimum — so a
-    // 1024 floor in a 956px half-screen tile put the last 68px of every row
-    // (window controls, footer, banner actions) permanently off-screen, with
-    // nothing the page could do about it. Half of a 1080p screen, gaps
-    // included, fits under this.
-    minWidth: 900,
-    minHeight: 700,
+    // Below the ~1024px the canvas toolbar was sized against, and low enough
+    // for 1366×768 at 125% scaling (~1093×614 logical) to open at its real
+    // size rather than being clipped. A tiling compositor gives the window the
+    // tile it decided on and ignores this hint, but Chromium still keeps the
+    // *viewport* at the minimum — so the floor is kept at the smallest desktop
+    // shell that still lays out: the 768px compact breakpoint plus room for
+    // the rail, and a header, content and footer that still fit vertically.
+    minWidth: 800,
+    minHeight: 560,
     backgroundColor: colors.background,
     ...(process.platform === "darwin"
       ? { titleBarStyle: "hiddenInset" as const }

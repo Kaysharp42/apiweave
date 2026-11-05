@@ -127,8 +127,8 @@ async function installRunnableIpc(
 ): Promise<void> {
   await page.addInitScript(
     ({ workflow, workspace, dark }) => {
-      localStorage.setItem("apiweave:v1:darkMode", String(dark));
-      localStorage.setItem("darkMode", String(dark));
+      localStorage.setItem("apiweave:v1:themePreference", dark ? "dark" : "light");
+      localStorage.setItem("themePreference", dark ? "dark" : "light");
 
       const listeners: ((event: unknown) => void)[] = [];
       const ok = (data: unknown) => ({ ok: true as const, data });
