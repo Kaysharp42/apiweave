@@ -15,6 +15,7 @@
   },
   "scripts": {
     "setup": "npm install",
+    "postinstall": "node scripts/fix-node-pty-permissions.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:renderer": "vite --host 127.0.0.1",
     "start": "electron .",
