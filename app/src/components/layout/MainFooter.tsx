@@ -19,11 +19,12 @@ export function MainFooter() {
     <footer className="flex h-footer min-h-0 items-center justify-between border-t border-border bg-surface-raised px-4 font-mono text-xs text-text-secondary transition-colors dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark">
       <div className="flex items-center gap-2">
         {/* The version is the way into About: it is the one piece of
-            self-description the bar already carries. */}
+            self-description the bar already carries. The name leads with the
+            visible text so speech input can target what is on screen. */}
         <button
           type="button"
           onClick={openAbout}
-          aria-label="About APIWeave"
+          aria-label={`v${appVersion}, About APIWeave`}
           className="cursor-pointer rounded-xs border border-border bg-surface-overlay px-2 py-0.5 text-2xs text-text-secondary transition-colors hover:border-(--aw-primary) hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark dark:hover:border-(--aw-primary) dark:hover:text-text-primary-dark"
         >
           v{appVersion}

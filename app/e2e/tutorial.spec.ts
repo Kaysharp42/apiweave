@@ -113,7 +113,9 @@ test.describe("tutorial library", () => {
   }) => {
     await openWorkflowTab(page);
 
-    await page.getByRole("button", { name: "Open command palette" }).click();
+    // The shortcut, not the toolbar button: the button moves into the overflow
+    // menu when the toolbar is narrow, and the palette is what is under test.
+    await page.keyboard.press("ControlOrMeta+k");
     await page.getByRole("combobox", { name: "Search commands" }).fill("tour");
     await page.getByText("Open tutorials").click();
 
@@ -254,9 +256,9 @@ test.describe("tutorial compact and dark presentations", () => {
   test("renders the dark presentation", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await navigateDesktop(page, LIBRARY_PATH);
-    await page.getByRole("button", { name: "Switch to dark mode" }).click();
+    await page.getByRole("button", { name: /switch to Dark$/ }).click();
     await expect(
-      page.getByRole("button", { name: "Switch to light mode" }),
+      page.getByRole("button", { name: /switch to Light$/ }),
     ).toBeVisible();
     await captureEvidence(page, "tutorial-library-dark.png");
 

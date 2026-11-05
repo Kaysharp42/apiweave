@@ -6,6 +6,7 @@ import {
   DESKTOP_WORKSPACE,
   installDesktopIpc,
   navigateDesktop,
+  sidebarWorkflowButton,
 } from "./fixtures/desktop";
 
 /**
@@ -86,9 +87,7 @@ async function openWorkflow(page: Page): Promise<void> {
   await installDesktopIpc(page, { workflow: WORKFLOW });
   await navigateDesktop(page, `/${DESKTOP_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`);
 
-  const workflowButton = page.getByRole("button", {
-    name: new RegExp(WORKFLOW.name),
-  });
+  const workflowButton = sidebarWorkflowButton(page, WORKFLOW.name);
   if (!(await workflowButton.isVisible())) {
     await page.getByRole("button", { name: "Toggle sidebar" }).click();
   }

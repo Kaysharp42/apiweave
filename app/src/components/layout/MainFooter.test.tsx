@@ -52,7 +52,9 @@ describe("MainFooter", () => {
       screen.queryByRole("link", { name: "View on GitHub" }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "About APIWeave" }));
+    await user.click(
+      screen.getByRole("button", { name: /^v\d.*, About APIWeave$/ }),
+    );
 
     expect(useAboutStore.getState().isOpen).toBe(true);
   });

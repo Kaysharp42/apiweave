@@ -5,6 +5,7 @@ import {
   captureEvidence,
   installDesktopIpc,
   navigateDesktop,
+  sidebarWorkflowButton,
 } from "./fixtures/desktop";
 
 const WORKFLOW_ID = "wf-node-modal";
@@ -64,9 +65,7 @@ async function openNodeModal(page: Page): Promise<void> {
 
   await navigateDesktop(page, `/${DESKTOP_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`);
 
-  const workflowButton = page.getByRole("button", {
-    name: /Node modal visual QA/,
-  });
+  const workflowButton = sidebarWorkflowButton(page, "Node modal visual QA");
   const toggleSidebar = page.getByRole("button", { name: "Toggle sidebar" });
   let openedSidebar = false;
   // The shell and its workflow list are asynchronous, and at a width where the

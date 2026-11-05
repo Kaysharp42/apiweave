@@ -3,6 +3,7 @@ import {
   DESKTOP_WORKFLOW,
   installDesktopIpc,
   navigateDesktop,
+  sidebarWorkflowButton,
 } from "./fixtures/desktop";
 
 test.describe("desktop renderer smoke", () => {
@@ -17,16 +18,14 @@ test.describe("desktop renderer smoke", () => {
 
     await expect(page).toHaveURL(/#\/personal\/workflows$/);
     await expect(
-      page.getByRole("button", { name: new RegExp(DESKTOP_WORKFLOW.name) }),
+      sidebarWorkflowButton(page, DESKTOP_WORKFLOW.name),
     ).toBeVisible();
   });
 
   test("opens a canonical workflow on the ReactFlow canvas", async ({ page }) => {
     await navigateDesktop(page, "/personal/workflows");
 
-    await page
-      .getByRole("button", { name: new RegExp(DESKTOP_WORKFLOW.name) })
-      .click();
+    await sidebarWorkflowButton(page, DESKTOP_WORKFLOW.name).click();
 
     const canvas = page.getByRole("main", { name: "Workflow canvas" });
     await expect(canvas.locator(".react-flow__node")).toHaveCount(2);
