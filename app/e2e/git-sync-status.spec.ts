@@ -16,6 +16,15 @@ import {
  * where its explanation and actions are.
  */
 
+async function openVersionHistory(page: Page): Promise<void> {
+  await navigateDesktop(page, "/personal/personal/settings/version-history");
+  // The settings page is a lazy route; wait for it to commit before addressing
+  // the controls it owns.
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Version history (git)" }),
+  ).toBeVisible({ timeout: 20_000 });
+}
+
 interface FakeStatus {
   readonly workspaceId: string;
   readonly tracked: boolean;
@@ -79,7 +88,7 @@ const SCENARIOS: readonly StateScenario[] = [
   {
     name: "pending",
     status: { ...SETTLED, uncommitted: true, outgoing: 1 },
-    label: "Pending",
+    label: "Unpushed changes",
     explanation: /You have edits that aren't committed yet/,
   },
   {
@@ -271,7 +280,7 @@ test.describe("git sync status", () => {
     await installGitBridge(page, { ...SETTLED, mode: "manual", uncommitted: true });
     await navigateDesktop(page, "/personal/personal/workflows");
 
-    await page.getByRole("button", { name: "Version history: Pending" }).click();
+    await page.getByRole("button", { name: "Version history: Uncommitted changes" }).click();
     await page.getByRole("button", { name: "Sync now" }).click();
 
     const dialog = page.getByRole("dialog");
@@ -319,7 +328,7 @@ test.describe("git sync status", () => {
     await captureEvidence(page, "git-sync-switcher-row.png");
   });
 
-  test("shows the workspace's account in the header's accounts menu, with its sync state as a badge", async ({ page }) => {
+  test("shows the workspace's account in the header's accounts menu", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, {
       ...SETTLED,
@@ -327,7 +336,7 @@ test.describe("git sync status", () => {
     });
     await navigateDesktop(page, "/personal/personal/workflows");
 
-    const trigger = page.getByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com — Synced" });
+    const trigger = page.getByRole("button", { name: "Git accounts — this workspace uses octo-work on github.com" });
     await expect(trigger).toHaveText("OW");
     await trigger.click();
 
@@ -346,7 +355,7 @@ test.describe("git sync status", () => {
   test("creates a repository from Version history and connects to it as the account", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
-    await navigateDesktop(page, "/personal/personal/settings/version-history");
+    await openVersionHistory(page);
 
     // Create repository… sits above the account's repository list, and is primary while the list is empty of options.
     await expect(page.getByRole("option", { name: "acme/api-tests (private)" })).toBeAttached();
@@ -371,7 +380,7 @@ test.describe("git sync status", () => {
   test("connects to one of the account's apiweave-workspace repositories, picked from its list", async ({ page }) => {
     await installDesktopIpc(page);
     await installGitBridge(page, { ...SETTLED, remoteUrl: null, lastSyncedAt: null });
-    await navigateDesktop(page, "/personal/personal/settings/version-history");
+    await openVersionHistory(page);
 
     await page.getByRole("combobox", { name: "Repository" }).selectOption({ label: "acme/api-tests (private)" });
     await captureEvidence(page, "git-repository-picker-connect.png");

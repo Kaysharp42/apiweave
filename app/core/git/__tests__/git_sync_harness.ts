@@ -5,6 +5,7 @@ import { initDatabase, type InitializedDatabase } from "../../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   WorkflowRepository,
   WorkspaceGitRepository,
   WorkspaceRepository,
@@ -60,6 +61,7 @@ export function openHarness(options: HarnessOptions = {}): Harness {
     collections: new CollectionRepository(db.kvStore, note),
     workflows: new WorkflowRepository(db.kvStore, (event) => sync?.workflowChanged(event)),
     environments: new EnvironmentRepository(db.kvStore, note),
+    presets: new NodePresetRepository(db.kvStore),
     workspaceGit: new WorkspaceGitRepository(db.kvStore),
   }
   const workspaceId = repositories.workspaces.create({ name: "Acme QA", slug: "acme-qa" }).workspaceId
@@ -108,6 +110,9 @@ export function passthrough(git: GitService): GitSyncGit {
     countAheadBehind: git.countAheadBehind.bind(git),
     countCommits: git.countCommits.bind(git),
     firstRemoteRef: git.firstRemoteRef.bind(git),
+    listRemoteHeads: git.listRemoteHeads.bind(git),
+    remoteBranches: git.remoteBranches.bind(git),
+    checkout: git.checkout.bind(git),
   }
 }
 

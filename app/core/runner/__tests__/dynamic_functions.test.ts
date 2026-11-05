@@ -2,8 +2,20 @@ import { describe, expect, it } from "vitest"
 import { DynamicFunctions } from "../dynamic_functions"
 import { FixedClockProvider, SeededRandomProvider, WallClockProvider, CryptoRandomProvider } from "../harness/providers"
 
+const CLOCK_ISO = "2026-01-01T00:00:00Z"
+
+/** The date functions read the local calendar, so expectations must too. */
+function localDate(date: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function plusDays(days: number): Date {
+  return new Date(new Date(CLOCK_ISO).getTime() + days * 86_400_000)
+}
+
 describe("DynamicFunctions (seeded)", () => {
-  const clock = new FixedClockProvider("2026-01-01T00:00:00Z")
+  const clock = new FixedClockProvider(CLOCK_ISO)
   const rng = new SeededRandomProvider("0xDEADBEEF")
   const fn = new DynamicFunctions(clock, rng)
 
@@ -24,16 +36,20 @@ describe("DynamicFunctions (seeded)", () => {
   })
 
   it("date() defaults to %Y-%m-%d rooted at the clock", () => {
-    expect(fn.date()).toBe("2026-01-01")
+    expect(fn.date()).toBe(localDate(new Date(CLOCK_ISO)))
   })
 
   it("futureDate(7) advances the clock by 7 days", () => {
-    expect(fn.futureDate(7)).toBe("2026-01-08")
-    expect(fn.futureDate(7, "%d/%m/%Y")).toBe("08/01/2026")
+    const target = plusDays(7)
+    const pad = (value: number): string => String(value).padStart(2, "0")
+    expect(fn.futureDate(7)).toBe(localDate(target))
+    expect(fn.futureDate(7, "%d/%m/%Y")).toBe(
+      `${pad(target.getDate())}/${pad(target.getMonth() + 1)}/${target.getFullYear()}`,
+    )
   })
 
   it("pastDate(7) steps the clock back 7 days", () => {
-    expect(fn.pastDate(7)).toBe("2025-12-25")
+    expect(fn.pastDate(7)).toBe(localDate(plusDays(-7)))
   })
 
   it("distinct seeds produce distinct uuid outputs", () => {

@@ -129,7 +129,7 @@ export function McpSetupPanel() {
 
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
                 Client config
               </span>
               <Button
@@ -151,7 +151,7 @@ export function McpSetupPanel() {
           </div>
 
           <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
               Stdio-only client?
             </span>
             <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -195,7 +195,7 @@ export function McpSetupPanel() {
 
       {approvals.length > 0 && (
         <div>
-          <span className="text-xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+          <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
             Remembered approvals
           </span>
           <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">

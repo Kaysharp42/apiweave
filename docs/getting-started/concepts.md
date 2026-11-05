@@ -47,7 +47,7 @@ An edge is the connection between two nodes that defines the order of execution.
 
 ## Project
 
-A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Projects replace the older collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.awecollection` bundles, which carry references only (no secret values, no private keys). **Run project** on the project page runs every enabled workflow in that order against one environment, stopping at a failed workflow whose `continueOnFail` is false.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. Projects replace the older collection concept. Each project carries a `workflowOrder`, a per-row `continueOnFail` flag, and a color tag for the sidebar. Projects export as `.aweproject` bundles, which carry references only (no secret values, no private keys). **Run project** on the project page runs every enabled workflow in that order against one environment, stopping at a failed workflow whose `continueOnFail` is false.
 
 ```text
 Project: "Checkout API"

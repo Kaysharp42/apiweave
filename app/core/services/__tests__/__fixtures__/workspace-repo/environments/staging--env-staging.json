@@ -3,6 +3,7 @@
   "name": "Staging",
   "description": null,
   "swaggerDocUrl": null,
+  "baseEnvironmentId": "env-base",
   "isDefault": true,
   "variables": {
     "apiKey": "<SECRET>",

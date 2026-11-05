@@ -3,7 +3,9 @@ import { formatTimestamp } from "./formatTimestamp";
 
 describe("formatTimestamp", () => {
   it("formats an ISO timestamp without milliseconds", () => {
-    const formatted = formatTimestamp("2026-01-01T00:00:00.000Z");
+    // Local noon, so the formatter's local-date rendering is 2026 in every
+    // timezone. A UTC-midnight fixture renders 2025 west of Greenwich.
+    const formatted = formatTimestamp(new Date(2026, 0, 1, 12).toISOString());
     expect(formatted).not.toContain("T");
     expect(formatted).not.toContain(".000Z");
     expect(formatted).toMatch(/2026/);

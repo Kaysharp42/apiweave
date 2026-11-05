@@ -3,6 +3,7 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import checker from "vite-plugin-checker";
+import { chunkForModule } from "./shared/bundling/renderer_chunks.ts";
 
 const pkg = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf-8"),
@@ -29,6 +30,13 @@ export default defineConfig(({ command, mode }) => ({
   build: {
     outDir: "dist/renderer",
     ...(mode === "development" ? { minify: false, sourcemap: true } : {}),
+    rolldownOptions: {
+      output: {
+        // Which module goes in which vendor file is the ordered table in
+        // shared/bundling/renderer_chunks.ts (and its test); this is the wiring.
+        manualChunks: chunkForModule,
+      },
+    },
   },
   server: {
     port: 3000,

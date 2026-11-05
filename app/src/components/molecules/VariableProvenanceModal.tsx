@@ -36,7 +36,7 @@ export function VariableProvenanceModal({
                 Produced by
               </div>
               {producers.length === 0 ? (
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                   No extractor on the canvas defines this variable (manual variable).
                 </p>
               ) : (
@@ -64,7 +64,7 @@ export function VariableProvenanceModal({
                 Consumed by
               </div>
               {consumers.length === 0 ? (
-                <p className="text-xs text-text-muted dark:text-text-muted-dark">
+                <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
                   No node on the canvas references this variable yet.
                 </p>
               ) : (
@@ -77,7 +77,7 @@ export function VariableProvenanceModal({
                       <Badge variant="secondary" size="sm" title={c.nodeId}>
                         {c.nodeLabel}
                       </Badge>
-                      <span className="text-[10px] text-text-muted dark:text-text-muted-dark">in</span>
+                      <span className="text-2xs text-text-muted dark:text-text-muted-dark">in</span>
                       {c.fields.map((f) => (
                         <Badge key={f} variant="outline" size="xs">
                           <code className="font-mono">{f}</code>

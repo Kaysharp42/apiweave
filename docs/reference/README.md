@@ -1,6 +1,6 @@
 # Reference
 
-*Lookup pages for the moving parts of APIWeave: architecture, placeholder syntax, dynamic functions, environment variables, and the typed IPC surface. Use these docs to find a name, a default, or a channel, not to learn a workflow.*
+*Lookup pages for the moving parts of APIWeave: architecture, placeholder syntax, dynamic functions, environment variables, releases, compatibility, known limitations, and the typed IPC surface. Use these docs to find a name, a default, or a channel, not to learn a workflow.*
 
 ## Prerequisites
 
@@ -22,6 +22,14 @@ None. Reference docs assume you already know what you are looking for. If you ar
 ## Releasing
 
 - [Releases and the Update Channel](release-and-updates.md): how a published release reaches installed clients, how to rehearse the update path before users run it, and the two levers for pulling a bad release back.
+
+## Compatibility
+
+- [Compatibility and Deprecation Policy](compatibility.md): what 1.x keeps stable for MCP tools, workspace repositories, `.aweproject` bundles and the CLI, and how deprecations work.
+
+## Limitations
+
+- [Known Limitations](known-limitations.md): the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
 
 ## IPC Surface
 

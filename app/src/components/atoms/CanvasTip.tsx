@@ -13,7 +13,7 @@ export function CanvasTip({ tip, shortcut, onDismiss }: CanvasTipProps) {
       >
         <span>{tip.text}</span>
         {shortcut && (
-          <kbd className="rounded-xs border border-border bg-surface px-1 py-0.5 font-mono text-[10px] text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+          <kbd className="rounded-xs border border-border bg-surface px-1 py-0.5 font-mono text-2xs text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
             {shortcut}
           </kbd>
         )}

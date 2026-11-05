@@ -64,7 +64,7 @@ async function openCreateWorkspace(
   user: ReturnType<typeof userEvent.setup>,
 ): Promise<HTMLElement> {
   await user.click(
-    await screen.findByRole("button", { name: "Switch workspace" }),
+    await screen.findByRole("button", { name: /^Switch workspace/ }),
   );
   await user.click(screen.getByRole("button", { name: "New workspace" }));
   return screen.findByRole("dialog", { name: "Create workspace" });

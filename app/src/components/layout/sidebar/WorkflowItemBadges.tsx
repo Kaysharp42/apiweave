@@ -1,11 +1,6 @@
 import { Globe } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
-import type { WorkflowRowLabels } from "../../../types/WorkflowRowLabels";
-
-interface WorkflowItemBadgesProps {
-  readonly nodeCount: number;
-  readonly labels: WorkflowRowLabels;
-}
+import type { WorkflowItemBadgesProps } from "../../../types";
 
 /**
  * The node-count / project / environment badges under a workflow row's name.
@@ -17,21 +12,23 @@ interface WorkflowItemBadgesProps {
 export function WorkflowItemBadges({
   nodeCount,
   labels,
+  hideProject = false,
 }: WorkflowItemBadgesProps) {
   return (
-    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-xxs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
-      <Badge variant="ghost" size="xs">
+    // One line, always: wrapping made some cards taller than their neighbours.
+    <div className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-2xs text-text-secondary dark:text-text-secondary-dark">
+      <Badge variant="ghost" size="xs" className="shrink-0">
         {nodeCount} nodes
       </Badge>
 
-      {labels.collection && (
+      {!hideProject && labels.collection && (
         <Badge
-          variant="info"
+          variant="ghost"
           size="xs"
           className="max-w-30 min-w-0 truncate"
-          title={labels.collection.fullLabel}
+          title={labels.collection}
         >
-          {labels.collection.label}
+          <span className="truncate">{labels.collection}</span>
         </Badge>
       )}
 
@@ -40,10 +37,10 @@ export function WorkflowItemBadges({
           variant="secondary"
           size="xs"
           className="max-w-30 min-w-0 truncate"
-          title={labels.environment.fullLabel}
+          title={labels.environment}
         >
-          <Globe className="w-2.5 h-2.5 mr-0.5 shrink-0" />
-          {labels.environment.label}
+          <Globe className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">{labels.environment}</span>
         </Badge>
       )}
     </div>

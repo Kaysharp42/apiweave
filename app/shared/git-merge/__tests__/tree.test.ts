@@ -101,6 +101,43 @@ describe("files added, deleted and changed", () => {
     expect(result.files.has(recordPath("workflows", "wf_new", "Invoice"))).toBe(true)
   })
 
+  it("takes a preset one copy added, and a change to another copy's preset", () => {
+    const added = treeOf(edited(base, (draft) => {
+      draft.presets.push({ presetId: "ps_2", name: "Wait", nodeType: "delay", config: { duration: 25 } })
+    }))
+    const renamed = treeOf(edited(base, (draft) => {
+      draft.presets.find((preset) => preset.presetId === "ps_1")!.name = "Polling delay"
+    }))
+
+    const result = merge(added, renamed)
+
+    expect(result.conflicts).toEqual([])
+    expect(recordIn(result.files, "presets", "ps_2")).toEqual({
+      presetId: "ps_2",
+      name: "Wait",
+      nodeType: "delay",
+      config: { duration: 25 },
+    })
+    expect(recordIn(result.files, "presets", "ps_1")?.["name"]).toBe("Polling delay")
+  })
+
+  it("writes a version-1 ancestor's environments as extending none, and the current format out", () => {
+    const ancestor = new Map(ourFiles)
+    ancestor.set(FORMAT_FILE, fileText({ format: WORKSPACE_FORMAT, version: 1 }))
+    for (const [path, text] of ancestor) {
+      if (!path.startsWith("environments/")) continue
+      const environment = JSON.parse(text) as Record<string, unknown>
+      delete environment["baseEnvironmentId"]
+      ancestor.set(path, JSON.stringify(environment))
+    }
+
+    const result = mergeTree(ancestor, ourFiles, ourFiles)
+
+    expect(result.conflicts).toEqual([])
+    expect(result.files.get(FORMAT_FILE)).toBe(fileText({ format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION }))
+    expect(recordIn(result.files, "environments", "env_prod")?.["baseEnvironmentId"]).toBe("env_dev")
+  })
+
   it("renames the file of a record renamed on one side, without touching the record's id", () => {
     const renamed = ourTree((draft) => {
       workflowIn(draft, "wf_free").name = "Notes"
@@ -263,7 +300,7 @@ describe("a tree the merge cannot read", () => {
   })
 
   it("refuses a format the app does not know: a newer version is never merged over", () => {
-    const newer = broken(FORMAT_FILE, fileText({ format: WORKSPACE_FORMAT, version: 2 }))
+    const newer = broken(FORMAT_FILE, fileText({ format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION + 1 }))
 
     expect(() => merge(newer, ourFiles)).toThrow(/newer APIWeave/)
   })

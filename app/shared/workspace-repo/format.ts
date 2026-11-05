@@ -3,18 +3,21 @@ import { slugify } from "../text/slugify"
 import type { JsonValue } from "../types/JsonValue"
 import type { Workspace } from "../types/Workspace"
 import { JsonValueSchema } from "../zod-schemas/JsonValueSchema"
+import { NodePresetNodeTypeSchema } from "../zod-schemas/NodePresetNodeTypeSchema"
+import { nodePresetConfigSchemaFor } from "../zod-schemas/NodePresetSchema"
 import { WorkflowEdgeSchema } from "../zod-schemas/WorkflowEdgeSchema"
 import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
 
 /**
  * A workspace as a tree of JSON files, the repository git sync commits:
  *
- *   .apiweave/format.json            {"format": "apiweave-workspace", "version": 1}
+ *   .apiweave/format.json            {"format": "apiweave-workspace", "version": 2}
  *   .gitattributes                   * text eol=lf
  *   workspace.json                   id, name, description
  *   projects/<slug>--<id>.json       name, description, color, workflow order
  *   workflows/<slug>--<id>.json      one file per workflow, in a project or not
- *   environments/<slug>--<id>.json   workspace-scoped environments: variables
+ *   environments/<slug>--<id>.json   workspace-scoped environments: base, variables
+ *   presets/<slug>--<id>.json        node presets: node type and config
  *
  * Written so a change diffs small and merges cleanly: objects with sorted keys
  * (top-level fields in a fixed order), nodes sorted by id (a group frame before
@@ -46,6 +49,13 @@ import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
  * tree the serializer produced, so the flag round-trips as written. Resolving a
  * tree whose defaults are absent, duplicated or stale is the importer's job.
  *
+ * An environment may extend one other environment in the same workspace
+ * (`baseEnvironmentId`). Version 2 writes the id; version 1 holds no such field
+ * and every environment extends none. A tree must not name a base it does not
+ * hold, extend itself, or form a chain deeper than
+ * `MAX_BASE_ENVIRONMENT_CHAIN_DEPTH`. Node presets travel too: their stable id,
+ * name, node type and sanitized config, with no revision or timestamps.
+ *
  * This module is the format's pure half: the schema of every file, and how a
  * record becomes its path and its text. Everything that writes a file goes
  * through it, so the same record always comes out as the same bytes — the
@@ -55,14 +65,21 @@ import { WorkflowNodeSchema } from "../zod-schemas/WorkflowNodeSchema"
  */
 
 export const WORKSPACE_FORMAT = "apiweave-workspace"
-export const WORKSPACE_FORMAT_VERSION = 1
+/**
+ * The format this build writes. Version 2 added `baseEnvironmentId` to an
+ * environment file; version 1 is still read, with every environment extending
+ * none. A version above this one was written by a newer APIWeave and is refused
+ * rather than guessed at.
+ */
+export const WORKSPACE_FORMAT_VERSION = 2
+const READABLE_FORMAT_VERSIONS: readonly number[] = [1, WORKSPACE_FORMAT_VERSION]
 export const FORMAT_FILE = ".apiweave/format.json"
 export const ATTRIBUTES_FILE = ".gitattributes"
 /** What `.gitattributes` always holds: every file is text with LF endings, whatever a checkout's settings say. */
 export const ATTRIBUTES_TEXT = "* text eol=lf\n"
 export const WORKSPACE_FILE = "workspace.json"
 /** The folder each kind of record file sits in, directly. */
-export const RECORD_FOLDER = { project: "projects", workflow: "workflows", environment: "environments" } as const
+export const RECORD_FOLDER = { project: "projects", workflow: "workflows", environment: "environments", preset: "presets" } as const
 /** The longest slug a record file's name (and a workspace's slug) may carry. */
 export const MAX_SLUG_LENGTH = 60
 const MAX_NAME_LENGTH = 200
@@ -101,8 +118,8 @@ function conforming(schema: z.ZodType) {
 export const FormatFileSchema = z
   .object({
     format: z.literal(WORKSPACE_FORMAT, { message: "this is not an APIWeave workspace repository" }),
-    version: z.literal(WORKSPACE_FORMAT_VERSION, {
-      message: `this repository was written by a newer APIWeave (only format version ${WORKSPACE_FORMAT_VERSION} is supported); update APIWeave to open it`,
+    version: z.number().int().refine((version) => READABLE_FORMAT_VERSIONS.includes(version), {
+      message: `this repository was written by a newer APIWeave (only format versions ${READABLE_FORMAT_VERSIONS.join(" and ")} are supported); update APIWeave to open it`,
     }),
   })
   .strict()
@@ -167,10 +184,46 @@ export const EnvironmentFileSchema = z
     environmentId: RecordIdSchema,
     ...titled,
     swaggerDocUrl: z.string().nullable(),
+    baseEnvironmentId: RecordIdSchema.nullable(),
     isDefault: z.boolean(),
     variables: VariablesSchema,
   })
   .strict()
+
+/**
+ * A version-1 environment file: the same without `baseEnvironmentId`, which
+ * version 1 did not write. Read as an environment extending none.
+ */
+export const EnvironmentFileV1Schema = z
+  .object({
+    environmentId: RecordIdSchema,
+    ...titled,
+    swaggerDocUrl: z.string().nullable(),
+    isDefault: z.boolean(),
+    variables: VariablesSchema,
+  })
+  .strict()
+
+/**
+ * A node preset: the stable id it keeps across machines, the name the library
+ * lists it under, the node type its config belongs to, and that config. No
+ * workspace id, revision or timestamp: the workspace is the repository's, and
+ * the rest is local bookkeeping. The config is the same sanitized node config
+ * a workflow's node writes, so `{{secrets.NAME}}` references stay references.
+ */
+export const PresetFileSchema = z
+  .object({
+    presetId: RecordIdSchema,
+    name: NameSchema,
+    nodeType: NodePresetNodeTypeSchema,
+    config: VariablesSchema,
+  })
+  .strict()
+  .superRefine((preset, context) => {
+    const checked = nodePresetConfigSchemaFor(preset.nodeType).safeParse(preset.config)
+    if (checked.success) return
+    for (const issue of checked.error.issues) context.addIssue({ code: "custom", path: ["config", ...issue.path], message: issue.message })
+  })
 
 /** What a project file holds. */
 export interface ProjectContent {
@@ -200,7 +253,17 @@ export interface EnvironmentContent {
   readonly name: string
   readonly description?: string | null | undefined
   readonly swaggerDocUrl?: string | null | undefined
+  /** The environment in the same workspace this one extends; null for a root. */
+  readonly baseEnvironmentId?: string | null | undefined
   readonly variables: Readonly<Record<string, unknown>>
+}
+
+/** What a preset file holds. */
+export interface PresetContent {
+  readonly presetId: string
+  readonly name: string
+  readonly nodeType: string
+  readonly config: Readonly<Record<string, JsonValue>>
 }
 
 /** JSON with every object's keys sorted, so equal values print equal. */
@@ -283,15 +346,26 @@ export function workflowDocument(workflow: WorkflowFileContent, head: Readonly<R
   }
 }
 
-/** The shared environment fields, with `extra` (a workspace repository's `isDefault`) between the URL and the variables. */
+/** The shared environment fields, with `extra` (a workspace repository's `isDefault`) between the base and the variables. */
 export function environmentDocument(environment: EnvironmentContent, extra: Readonly<Record<string, JsonValue>> = {}): Record<string, JsonValue> {
   return {
     environmentId: environment.environmentId,
     name: environment.name,
     description: environment.description ?? null,
     swaggerDocUrl: environment.swaggerDocUrl ?? null,
+    baseEnvironmentId: environment.baseEnvironmentId ?? null,
     ...extra,
     variables: toPlain(environment.variables),
+  }
+}
+
+/** A preset as its file holds it: the stable id, the name, the node type and the sanitized config. */
+export function presetDocument(preset: PresetContent): Record<string, JsonValue> {
+  return {
+    presetId: preset.presetId,
+    name: preset.name,
+    nodeType: preset.nodeType,
+    config: toPlain(preset.config),
   }
 }
 

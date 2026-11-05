@@ -26,11 +26,11 @@ Download the installer for your OS from the [latest release](https://github.com/
 
 ### Windows
 
-Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. The installer and binaries are not code-signed, so SmartScreen may warn on first launch — choose **More info → Run anyway**.
+Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published for managed, per-machine deployment. Release installers are code-signed when the project's certificate is configured; a build without a signature may make SmartScreen warn on first launch — choose **More info → Run anyway**.
 
 ### macOS
 
-Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. The build is unsigned/un-notarized, so the first launch is blocked by Gatekeeper: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. Release builds are signed and notarized when the project's Apple Developer certificate and notarization secrets are configured, and a signed build updates itself in place. If you downloaded an unsigned build (a local build, or a release made before signing was configured), Gatekeeper blocks the first launch: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
 
 ### Linux
 
@@ -46,32 +46,36 @@ Four artifacts are published; pick what fits your distro:
 - The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>-linux-x86_64.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
 - If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
 
-The Linux binaries are built on Ubuntu (older glibc), so they run on Arch's newer glibc without issue.
+The Linux binaries are built on Ubuntu 22.04 and require glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Fedora 35+). They run on Arch's newer glibc without issue.
 
 ## Features
 
 The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight node types, toolbar actions, expected-status negative tests.
+- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight executable node types plus note and group annotations, toolbar actions, expected-status negative tests.
 - [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
+- [Scripting](docs/features/scripting.md): sandboxed pre-request and post-response JavaScript for signing, transforming values and custom checks.
+- [Data-Driven Runs](docs/features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
 - [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
 - [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
-- [Projects](docs/features/projects.md): ordered groups of workflows and `.awecollection` v2 export and import (references only).
+- [Projects](docs/features/projects.md): ordered groups of workflows and `.aweproject` v2 export and import (references only).
 - [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
 - [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
+- [Network](docs/features/network.md): proxy, private certificate authorities and client certificates for every request.
 - [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
 - [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
-- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.awecollection` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
+- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.aweproject` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
+- [Migrate from Postman](docs/guides/migrating-from-postman.md): import a Postman Collection v2.1 and its environment as a project, and what each part becomes.
 
 ## Documentation
 
 The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths, the first-workflow tutorial, and the central FAQ.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md).
+There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.aweproject` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
 
 ## Tech Stack
 
-- Frontend (renderer): React 18, React Flow 12 (`@xyflow/react`), Vite 5, Tailwind CSS 3, Zustand 5, TypeScript strict.
+- Frontend (renderer): React 19, React Flow 12 (`@xyflow/react`), Vite 8, Tailwind CSS 4, Zustand 5, TypeScript strict.
 - Desktop shell: Electron 44, esbuild, electron-builder, electron-updater.
 - Local store: better-sqlite3 (embedded SQLite, single file).
 - IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.

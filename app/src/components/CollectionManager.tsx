@@ -511,7 +511,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   Execution Order (drag to reorder)
                 </h3>
                 {workflowOrder.length === 0 ? (
-                  <div className="text-center py-8 text-text-muted dark:text-text-muted-dark text-sm">
+                  <div className="text-center py-8 text-text-secondary dark:text-text-secondary-dark text-sm">
                     No workflows in this project yet
                   </div>
                 ) : (
@@ -539,7 +539,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                           <div className="font-medium text-text-primary dark:text-text-primary-dark truncate">
                             {wo.workflow?.name || wo.workflowId}
                           </div>
-                          <div className="text-xs text-text-muted dark:text-text-muted-dark">
+                          <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
                             {wo.workflow?.nodes?.length || 0} nodes
                           </div>
                         </div>
@@ -599,7 +599,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   </h3>
                   <select
                     onChange={handleSelectChange}
-                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                   >
                     <option value="">Select a workflow to add…</option>
                     <option value="__new__">+ Create New Workflow</option>
@@ -702,7 +702,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
           ) : (
             <div className="space-y-2">
               {projects.length === 0 ? (
-                <div className="text-center py-8 text-text-muted dark:text-text-muted-dark">
+                <div className="text-center py-8 text-text-secondary dark:text-text-secondary-dark">
                   <p>No projects yet</p>
                   <p className="text-sm mt-2">
                     Create one to organize your workflows
@@ -731,7 +731,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                               {project.description}
                             </div>
                           )}
-                          <div className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
+                          <div className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1">
                             {project.workflowCount} workflow
                             {project.workflowCount !== 1 ? "s" : ""}
                           </div>

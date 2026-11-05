@@ -3,8 +3,9 @@
  * after a restart instead of always falling back to the personal workspace.
  *
  * Follows the same `apiweave:v1:` versioned-prefix convention used by the
- * other localStorage-backed preferences (e.g. darkMode). The unversioned key
- * is mirrored so a future version bump can still read the old value.
+ * other localStorage-backed preferences (e.g. themePreference). The
+ * unversioned key is mirrored so a future version bump can still read the old
+ * value.
  */
 
 const STORAGE_PREFIX = "apiweave:v1:";

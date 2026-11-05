@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 export const DESKTOP_WORKSPACE = {
   workspaceId: "workspace-personal",
@@ -152,6 +152,16 @@ export async function installDesktopIpc(
 export async function navigateDesktop(page: Page, path: string): Promise<void> {
   await page.goto(`/#${path}`);
   await page.waitForLoadState("domcontentloaded");
+}
+
+/**
+ * A workflow's row in the sidebar. Scoped to the sidebar landmark because the
+ * welcome screen's Recent list carries a button with the same name.
+ */
+export function sidebarWorkflowButton(page: Page, name: string): Locator {
+  return page
+    .getByRole("complementary", { name: "Sidebar" })
+    .getByRole("button", { name: new RegExp(name) });
 }
 
 export async function captureEvidence(

@@ -45,7 +45,6 @@ export function NodeHandle({
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-label={`${type} handle`}
       {...rest}
     >
       <span

@@ -284,7 +284,7 @@ function ExtractedValueNode({
           type="button"
           title={`Remove {{variables.${variableName}}}`}
           onClick={() => componentProps?.onRemove?.(variableName)}
-          className="rounded-xs border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-[10px] leading-4 text-primary transition-colors duration-(--aw-transition-fast) hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-(--aw-status-error) dark:hover:text-(--aw-status-error)"
+          className="rounded-xs border border-primary/40 bg-primary/10 px-1.5 py-px font-mono text-2xs leading-4 text-primary transition-colors duration-(--aw-transition-fast) hover:border-status-error hover:text-status-error dark:border-primary-light/40 dark:bg-primary-light/10 dark:text-primary-light dark:hover:border-(--aw-status-error) dark:hover:text-(--aw-status-error)"
         >
           {`{{${variableName}}}`}
         </button>
@@ -768,7 +768,7 @@ export function ResponseInspector({
                       </Badge>
                     ))}
                     {cookieRow.attributes.length === 0 && (
-                      <span className="text-xs text-text-muted dark:text-text-muted-dark">
+                      <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                         None
                       </span>
                     )}
@@ -936,7 +936,7 @@ export function ResponseInspector({
             {...(onAddExtractor
               ? {
                   headerActions: (
-                    <span className="flex items-center gap-1.5 text-[11px] text-text-muted dark:text-text-muted-dark">
+                    <span className="flex items-center gap-1.5 text-2xs text-text-secondary dark:text-text-secondary-dark">
                       <Variable
                         className="h-3.5 w-3.5 text-primary dark:text-primary-light"
                         aria-hidden="true"

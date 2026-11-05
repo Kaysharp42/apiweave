@@ -22,13 +22,13 @@ export function MergeResultCell({
   const kind = fieldEditorKind(conflict, current);
   return (
     <section className="min-w-0">
-      <p className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+      <p className="text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
         Result
       </p>
       <div className="mt-1">
         {sidesOnly ? (
           resolution === undefined && current === undefined ? (
-            <p className="text-xs italic text-text-muted dark:text-text-muted-dark">
+            <p className="text-xs italic text-text-secondary dark:text-text-secondary-dark">
               Unresolved. The remote copy stands in until you choose one.
             </p>
           ) : (

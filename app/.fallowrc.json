@@ -21,7 +21,8 @@
     "unused-types": "warn",
     "unresolved-imports": "error",
     "unused-dependencies": "warn",
-    "circular-dependencies": "warn"
+    "circular-dependencies": "warn",
+    "dev-dependencies-in-production": "off"
   },
   "duplicates": {
     "minTokens": 50,

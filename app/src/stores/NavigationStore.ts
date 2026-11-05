@@ -6,10 +6,13 @@ import type { NavSection } from "../types/NavSection";
 interface NavigationState {
   selectedNavVal: NavSection;
   collapseNavBar: boolean;
+  /** Whether the workflow/project list beside the icon rail is showing. */
+  sidebarVisible: boolean;
   mobileSidebarOpen: boolean;
   setNavState: (navVal: NavSection) => void;
   toggleNavBarCollapse: () => void;
   setNavBarCollapsed: (collapsed: boolean) => void;
+  toggleSidebar: () => void;
   setMobileSidebarOpen: (open: boolean) => void;
   toggleMobileSidebar: () => void;
 }
@@ -23,6 +26,7 @@ const useNavigationStore = create<NavigationState>()(
     (set) => ({
       selectedNavVal: AppNavBarItems.workflows!.value as NavSection,
       collapseNavBar: false,
+      sidebarVisible: true,
       mobileSidebarOpen: false,
 
       setNavState: (navVal: NavSection) => set({ selectedNavVal: navVal }),
@@ -30,6 +34,8 @@ const useNavigationStore = create<NavigationState>()(
         set((state) => ({ collapseNavBar: !state.collapseNavBar })),
       setNavBarCollapsed: (collapsed: boolean) =>
         set({ collapseNavBar: collapsed }),
+      toggleSidebar: () =>
+        set((state) => ({ sidebarVisible: !state.sidebarVisible })),
       setMobileSidebarOpen: (open: boolean) => set({ mobileSidebarOpen: open }),
       toggleMobileSidebar: () =>
         set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),

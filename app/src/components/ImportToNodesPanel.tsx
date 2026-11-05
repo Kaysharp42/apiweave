@@ -79,7 +79,6 @@ const IMPORT_TABS: TabItem[] = [
   { key: "har", icon: Upload, label: "HAR" },
   { key: "curl", icon: Terminal, label: "Curl" },
 ];
-type ImportMode = "linear" | "grouped";
 
 interface FileUploadDropzoneProps {
   accept: string;
@@ -126,7 +125,7 @@ export function FileUploadDropzone({
         <div className="text-sm font-medium text-text-primary dark:text-text-primary-dark">
           Click to upload or drag and drop
         </div>
-        <div className="text-xs text-text-muted dark:text-text-muted-dark">
+        <div className="text-xs text-text-secondary dark:text-text-secondary-dark">
           {description}
         </div>
       </div>
@@ -219,7 +218,6 @@ export function ImportToNodesPanel({
   const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [pastedText, setPastedText] = useState<string>("");
   const [sanitize, setSanitize] = useState<boolean>(true);
-  const [importMode, setImportMode] = useState<ImportMode>("linear");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -402,7 +400,6 @@ export function ImportToNodesPanel({
       const result = (await apiweave.workflows.importHar({
         workspaceId: workspaceId || "",
         data: JSON.parse(fileContent) as Record<string, unknown>,
-        importMode,
         sanitize,
       })) as { nodes?: Node[] };
 
@@ -539,8 +536,8 @@ export function ImportToNodesPanel({
           <div
             className={`mb-4 p-4 rounded-xs border flex gap-3 ${
               message.type === "success"
-                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark border-status-success/30"
-                : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-status-error dark:text-status-error-dark border-status-error/30"
+                ? "bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 text-status-success border-status-success/30"
+                : "bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 text-status-error border-status-error/30"
             }`}
           >
             {message.type === "success" ? (
@@ -630,23 +627,6 @@ export function ImportToNodesPanel({
             />
 
             <div className="space-y-3">
-              <div>
-                <label
-                  htmlFor="import-to-nodes-import-mode"
-                  className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
-                >
-                  Import mode
-                </label>
-                <select
-                  id="import-to-nodes-import-mode"
-                  value={importMode}
-                  onChange={(e) => setImportMode(e.target.value as ImportMode)}
-                  className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-xs bg-surface-raised dark:bg-surface-dark text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary"
-                >
-                  <option value="linear">Linear (sequential)</option>
-                  <option value="grouped">Parallel</option>
-                </select>
-              </div>
               <SanitizeCheckbox checked={sanitize} onChange={setSanitize} />
             </div>
 

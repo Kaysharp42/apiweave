@@ -5,6 +5,7 @@ import {
   captureEvidence,
   installDesktopIpc,
   navigateDesktop,
+  sidebarWorkflowButton,
 } from "./fixtures/desktop";
 
 const WORKFLOW_ID = "wf-node-modal";
@@ -41,8 +42,8 @@ const WORKFLOW = {
 async function openNodeModal(page: Page): Promise<void> {
   await installDesktopIpc(page);
   await page.addInitScript(() => {
-    localStorage.setItem("apiweave:v1:darkMode", "true");
-    localStorage.setItem("darkMode", "true");
+    localStorage.setItem("apiweave:v1:themePreference", "dark");
+    localStorage.setItem("themePreference", "dark");
   });
   await page.addInitScript((workflow) => {
     const bridge = window.__APIWEAVE_IPC__;
@@ -64,14 +65,18 @@ async function openNodeModal(page: Page): Promise<void> {
 
   await navigateDesktop(page, `/${DESKTOP_WORKSPACE.slug}/workflows/${WORKFLOW_ID}`);
 
-  const workflowButton = page.getByRole("button", {
-    name: /Node modal visual QA/,
-  });
+  const workflowButton = sidebarWorkflowButton(page, "Node modal visual QA");
+  const toggleSidebar = page.getByRole("button", { name: "Toggle sidebar" });
   let openedSidebar = false;
+  // The shell and its workflow list are asynchronous, and at a width where the
+  // sidebar is a drawer the workflow button only exists after the drawer opens.
+  // Wait for whichever control this viewport offers before deciding.
+  await workflowButton.or(toggleSidebar).first().waitFor({ state: "visible" });
   if (!(await workflowButton.isVisible())) {
-    await page.getByRole("button", { name: "Toggle sidebar" }).click();
+    await toggleSidebar.click();
     openedSidebar = true;
   }
+  await workflowButton.waitFor({ state: "visible" });
   await workflowButton.click();
   if (openedSidebar) {
     await page.locator("[aria-hidden='true'].fixed.inset-0.z-40").click({

@@ -61,7 +61,7 @@ export function StatusBadge({
       icon: MinusCircle,
       text: "Skipped",
       badgeClass:
-        "border-border bg-surface-raised text-text-muted dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-muted-dark",
+        "border-border bg-surface-raised text-text-secondary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-secondary-dark",
       iconClass: "text-text-muted dark:text-text-muted-dark",
     },
     info: {
@@ -83,7 +83,7 @@ export function StatusBadge({
     size === "sm"
       ? "px-2 py-0.5 text-xs"
       : size === "xs"
-        ? "px-1.5 py-0.5 text-[10px]"
+        ? "px-1.5 py-0.5 text-2xs"
         : "px-2.5 py-1 text-sm";
   const iconSize =
     size === "xs" ? "w-3 h-3" : size === "sm" ? "w-3 h-3" : "w-4 h-4";

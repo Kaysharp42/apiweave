@@ -42,6 +42,11 @@ export default defineConfig({
             "electron/**/*.test.ts",
             "shared/**/*.test.ts",
           ],
+          // These tests open real SQLite databases, HTTP fixtures and worker
+          // threads. The 5s default is fine in isolation but races the file
+          // scheduler on a loaded machine; the assertions still catch a hang.
+          testTimeout: 20_000,
+          hookTimeout: 30_000,
         },
       },
     ],

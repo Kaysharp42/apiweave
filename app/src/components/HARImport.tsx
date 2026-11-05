@@ -1,8 +1,9 @@
 import { useState, type ChangeEvent, type DragEvent } from "react";
-import { Upload, FileText, AlertCircle, List, GitBranch } from "lucide-react";
+import { Upload, FileText, AlertCircle } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
+import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
@@ -35,8 +36,6 @@ interface HARImportProps {
   onImportSuccess?: (result: HARImportDryRunResult) => void;
 }
 
-type ImportMode = "linear" | "grouped";
-
 function getMethodBadgeClasses(method: string): string {
   switch (method) {
     case "GET":
@@ -56,7 +55,6 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
   const { workspaceId } = useScopeContext();
   const [harFile, setHarFile] = useState<File | null>(null);
   const [harJson, setHarJson] = useState<Record<string, unknown> | null>(null);
-  const [importMode, setImportMode] = useState<ImportMode>("linear");
   const [sanitize, setSanitize] = useState(true);
   const [dryRunResult, setDryRunResult] =
     useState<HARImportDryRunResult | null>(null);
@@ -116,7 +114,6 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
       const result = (await apiweave.workflows.importHar({
         workspaceId: workspaceId || "",
         data: harJson,
-        importMode,
         sanitize,
         dryRun: true,
       })) as HARImportDryRunResult;
@@ -212,7 +209,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                 Select File
               </label>
               {harFile && (
-                <p className="mt-3 text-sm text-status-success dark:text-status-success-dark">
+                <p className="mt-3 text-sm text-status-success">
                   ✓ {harFile.name}
                 </p>
               )}
@@ -222,58 +219,11 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           {/* Import Options */}
           {harJson && (
             <div className="space-y-4">
-              <div>
-                <div className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                  Import Mode
-                </div>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      value="linear"
-                      checked={importMode === "linear"}
-                      onChange={(e) =>
-                        setImportMode(e.target.value as ImportMode)
-                      }
-                      aria-label="Linear import mode"
-                      className="w-4 h-4 text-primary border-border focus:ring-primary"
-                    />
-                    <List className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
-                    <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Linear (Sequential)
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 opacity-50 cursor-not-allowed">
-                    <input
-                      type="radio"
-                      value="grouped"
-                      checked={importMode === "grouped"}
-                      onChange={(e) =>
-                        setImportMode(e.target.value as ImportMode)
-                      }
-                      disabled
-                      aria-label="Grouped import mode"
-                      className="w-4 h-4 text-primary border-border focus:ring-primary"
-                    />
-                    <GitBranch className="w-4 h-4 text-text-muted dark:text-text-muted-dark" />
-                    <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                      Grouped (Parallel) - Coming Soon
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-primary border-border rounded-sm focus:ring-primary"
-                />
-                <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers (Authorization, API keys, etc.)
-                </span>
-              </label>
+              <CheckboxOption
+                label="Sanitize sensitive headers (Authorization, API keys, etc.)"
+                checked={sanitize}
+                onChange={setSanitize}
+              />
             </div>
           )}
 
@@ -297,7 +247,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                     </p>
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-status-success dark:text-status-success-dark">
+                    <p className="text-2xl font-bold text-status-success">
                       {dryRunResult.stats?.nodes || 0}
                     </p>
                     <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
@@ -334,7 +284,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                           <span className="flex-1 text-text-secondary dark:text-text-secondary-dark truncate">
                             {entry.url}
                           </span>
-                          <span className="text-text-muted dark:text-text-muted-dark">
+                          <span className="text-text-secondary dark:text-text-secondary-dark">
                             {entry.time}ms
                           </span>
                         </div>
@@ -363,7 +313,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           {error && (
             <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4">
               <div className="flex items-start">
-                <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2" />
+                <AlertCircle className="w-5 h-5 text-status-error mr-2" />
                 <p className="text-sm text-(--aw-status-error) dark:text-(--aw-status-error)">
                   {error}
                 </p>

@@ -101,7 +101,7 @@ export function GitRepositoryField({
         />
       )}
       {account.gitProtocol === "ssh" && (
-        <p className="text-xs text-text-muted dark:text-text-muted-dark">
+        <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
           {account.login} uses SSH: the repository is reached by its SSH URL,
           signed in with your SSH key.
         </p>

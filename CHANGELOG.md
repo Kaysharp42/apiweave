@@ -13,9 +13,105 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Project bundles use the `.aweproject` extension.** The export filename, the
+  import picker and detection, the bundle's `type` identifier, the headless CLI
+  and the guides now name the format by its new extension. The JSON shape is
+  unchanged.
+
+## [1.0.0] — 2026-11-04
+
+APIWeave 1.0 is the first release of the local-first desktop app as a supported
+product. It brings the surface together: a visual canvas for building and
+running API test workflows, git sync for a workspace's projects, workflows,
+environments and node presets, a headless CI runner and standalone CLI package,
+a loopback MCP bridge with embedded coding agents, signed and notarized desktop
+builds that can update in place, and an accessibility-gated UI. It is the first
+release covered by the 1.x compatibility policy.
+
+### Added
+
+- **Signed and notarized desktop releases.** When the release secrets are
+  configured, the workflow signs macOS with a Developer ID certificate and
+  notarizes it with Apple, and signs the Windows installer. A signed macOS
+  build now updates itself in place: both architectures are packaged in one
+  job, so a single `latest-mac.yml` covers the x64 and arm64 zips. Update
+  signatures gained a per-file map so the arm64 download is verified against
+  its own bytes. A release without the certificate secrets still builds,
+  installs and is clearly labelled unsigned.
+- **Base environments sync with a workspace's git repository.** An environment's
+  base environment is written as its id in the environment file, validated on
+  read (same workspace, no cycle, at most eight environments in a chain), and
+  imported in two passes so a child may name a base that appears later in the
+  snapshot. An environment whose base leaves the repository is cleared. The
+  workspace format is now version 2; version 1 is still read, with every
+  environment extending none, and a newer version is refused with an update
+  message.
+- **Node presets sync too.** A workspace's repository now holds
+  `presets/<slug>--<id>.json` with the preset's stable id, name, node type and
+  config. The config is sanitized like a node's (`{{secrets.NAME}}` references
+  stay references), and no revision or timestamps are written. Deleting a preset
+  file removes the preset locally; a preset only in the repository is created
+  locally.
+- **Choose the branch to track, and switch it later.** Connecting a remote and
+  opening a workspace from git each offer the remote's branches with **Choose
+  branch…**, and Version history has **Switch branch…**. A switch is refused
+  while the current branch has commits the remote does not, while a merge waits,
+  or when the target branch already exists locally with unpushed commits, so
+  nothing is silently discarded; a successful switch imports the target branch's
+  tree in one transaction.
+- **A standalone CLI package.** Every release now attaches `apiweave-cli.tgz`,
+  so a CI pipeline can install the headless runner with
+  `npm install -g ./apiweave-cli.tgz` instead of cloning this repository and
+  building it. The package is named `@apiweave/cli` and needs Node.js 22.12 or
+  newer.
+- **A 1.x compatibility policy.** The [compatibility
+  reference](docs/reference/compatibility.md) states what stays stable for MCP
+  tool names and arguments, the workspace repository format, the
+  `.aweproject` schema and CLI flags and exit codes, and how deprecations
+  work.
+
+### Changed
+
+- **The release pipeline builds both macOS architectures in one job.** That is
+  what lets electron-builder write one `latest-mac.yml` covering both zips
+  instead of two contradictory half-manifests, and it removes the finalize
+  step that used to delete the manifest.
+- **The renderer starts from a much smaller shell.** The canvas, the settings
+  screens, the node editor and its export/import dialogs, and the embedded
+  terminal are now loaded when they are first opened, and the Monaco editor
+  registers only the editing features the app uses instead of its full feature
+  set. The launch bundle drops from about 2.5 MB to under 500 KB (about 700 KB
+  to 130 KB gzipped), and every JavaScript chunk is now under the 500 KB
+  warning threshold; the editor core is split into on-demand chunks.
 - **Connect to remote lists the repositories tagged `apiweave-workspace`**,
   including ones with commits, instead of only empty ones. A repository made
   before the topic existed appears once it is tagged, without being recreated.
+- **Fonts are bundled.** The app no longer requests Inter or JetBrains Mono
+  from Google Fonts at launch, so it loads no third-party font and works fully
+  offline.
+- **The platform floor is explicit.** The download requirements now state
+  macOS 13 Ventura, glibc 2.34 on Linux, and Node.js 22.12 for source builds.
+- **The unimplemented Parallel HAR import option is gone.** The import dialog
+  only offers the linear mode it actually performs.
+- **The embedded agent terminal runs on node-pty 1.1.0**, the current stable
+  release, instead of a 1.2 beta. The PTY host still owns every agent session
+  in its own process, and the packaged-app smoke test starts a real terminal.
+
+### Fixed
+
+- **Accessibility is gated in the UI suite.** The Playwright checks now scan
+  the canvas shell, the workspace and app settings pages, and the node editor
+  dialog against WCAG 2.1 A/AA, and fail on serious or critical findings.
+  Fixing what the scan found: connection handles no longer carry ARIA labels
+  that are illegal on a bare element; the workflow tab strip has one close
+  control beside the tabs instead of a button inside each tab; the workspace
+  switcher's accessible name includes the workspace it shows; muted text used
+  for real labels and hints was raised to the secondary contrast; and the
+  template suggestion fields expose the combobox role their ARIA attributes
+  require.
+- **Canvas edges stay attached after the shell resizes.** Turning the
+  off-screen render optimisation off while the canvas is idle stops React Flow
+  pruning edges during a sidebar or navigation collapse (issue #106).
 
 ## [0.22.0] — 2026-11-02
 

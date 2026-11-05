@@ -1,19 +1,15 @@
 import {
+  lazy,
+  Suspense,
   useState,
   useEffect,
   useLayoutEffect,
   useContext,
-  createContext,
   useMemo,
 } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router";
-import { WorkspaceSecretsPage } from "./pages/WorkspaceSecretsPage";
-import { WorkspaceVersionHistoryPage } from "./pages/WorkspaceVersionHistoryPage";
-import WorkspaceEnvironmentsPage from "./pages/WorkspaceEnvironmentsPage";
-import { WorkspaceProjectPage } from "./pages/WorkspaceProjectPage";
-import { AppSettingsPage } from "./pages/AppSettingsPage";
-import TutorialPage from "./pages/TutorialPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { Spinner } from "./components/atoms/Spinner";
 import { PaletteProvider } from "./contexts/PaletteContext";
 import { WorkspaceProvider } from "./contexts/WorkspaceContext";
 import { Toast } from "./components/atoms/Toast";
@@ -21,31 +17,42 @@ import MainLayout from "./components/layout/MainLayout";
 import useNavigationStore from "./stores/NavigationStore";
 import { useAgentRunNotice } from "./hooks/useAgentRunNotice";
 import { useAgentDataUpdates } from "./hooks/useAgentDataUpdates";
-import { apiweave } from "./utils/apiweaveClient";
+import { useWindowTitle } from "./hooks/useWindowTitle";
+import { apiweave, desktop } from "./utils/apiweaveClient";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
 import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
+import { AppContext } from "./contexts/AppContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
-import type { AppContextType } from "./types/AppContextType";
+import { useThemePreference } from "./hooks/useThemePreference";
+import { getStoredValue, setStoredValue } from "./utils/storedValue";
+import { lazyNamed } from "./utils/lazyNamed";
 
-const STORAGE_PREFIX = "apiweave:v1:";
-
-const getStoredValue = (key: string): string | null => {
-  const versionedKey = `${STORAGE_PREFIX}${key}`;
-  return localStorage.getItem(versionedKey) ?? localStorage.getItem(key);
-};
-
-const setStoredValue = (key: string, value: string): void => {
-  localStorage.setItem(`${STORAGE_PREFIX}${key}`, value);
-  localStorage.setItem(key, value);
-};
-
-export const AppContext = createContext<AppContextType>({
-  darkMode: false,
-  setDarkMode: () => {},
-  autoSaveEnabled: true,
-  setAutoSaveEnabled: () => {},
-});
+// The settings and tutorial screens are their own chunks: the canvas is the
+// app's steady state, and a session that never opens Settings should not parse
+// the agents, MCP, network and update panels (or the tutorial curriculum) on
+// the way in. One lazy boundary per route keeps the shell and the canvas out of
+// the reload.
+const WorkspaceSecretsPage = lazyNamed(
+  () => import("./pages/WorkspaceSecretsPage"),
+  "WorkspaceSecretsPage",
+);
+const WorkspaceVersionHistoryPage = lazyNamed(
+  () => import("./pages/WorkspaceVersionHistoryPage"),
+  "WorkspaceVersionHistoryPage",
+);
+const WorkspaceEnvironmentsPage = lazy(() =>
+  import("./pages/WorkspaceEnvironmentsPage"),
+);
+const WorkspaceProjectPage = lazyNamed(
+  () => import("./pages/WorkspaceProjectPage"),
+  "WorkspaceProjectPage",
+);
+const AppSettingsPage = lazyNamed(
+  () => import("./pages/AppSettingsPage"),
+  "AppSettingsPage",
+);
+const TutorialPage = lazy(() => import("./pages/TutorialPage"));
 
 // Reopen the workspace the user last had selected, as long as it still
 // exists. Falls back to the personal workspace (then the first available)
@@ -62,6 +69,30 @@ function pickDefaultWorkspace(
   );
 }
 
+/**
+ * Where a bare `/app` visit should land: the remembered workspace, or a freshly
+ * created personal one. `null` means the attempt was abandoned because the
+ * component unmounted before it could create anything.
+ */
+async function resolveDefaultWorkspacePath(
+  isCancelled: () => boolean,
+): Promise<string | null> {
+  const workspaces = await apiweave.workspaces.list();
+  if (isCancelled()) return null;
+
+  const workspace = pickDefaultWorkspace(workspaces, getLastWorkspaceSlug());
+  if (!workspace) {
+    await apiweave.workspaces.create({
+      name: "Personal",
+      slug: "personal",
+      isPersonal: true,
+    });
+    return "/personal/workflows";
+  }
+
+  return `/${workspace.slug}/workflows`;
+}
+
 function DefaultWorkspaceRedirect() {
   const [targetPath, setTargetPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,36 +100,19 @@ function DefaultWorkspaceRedirect() {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
-      try {
-        const workspaces = await apiweave.workspaces.list();
+    resolveDefaultWorkspacePath(() => cancelled).then(
+      (path) => {
+        if (!cancelled && path !== null) setTargetPath(path);
+      },
+      (err: unknown) => {
         if (cancelled) return;
-
-        const workspace = pickDefaultWorkspace(
-          workspaces,
-          getLastWorkspaceSlug(),
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load workspaces. Please restart the app.",
         );
-        if (!workspace) {
-          await apiweave.workspaces.create({
-            name: "Personal",
-            slug: "personal",
-            isPersonal: true,
-          });
-          setTargetPath("/personal/workflows");
-          return;
-        }
-
-        setTargetPath(`/${workspace.slug}/workflows`);
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load workspaces. Please restart the app.",
-          );
-        }
-      }
-    })();
+      },
+    );
 
     return () => {
       cancelled = true;
@@ -167,6 +181,8 @@ function AppShellRoutes() {
   // Same reasoning, for everything an agent writes that is not a run: the
   // sidebar, environments and presets have to refetch wherever the user is.
   useAgentDataUpdates();
+  // The window's title names the tab being edited, wherever the user is.
+  useWindowTitle();
 
   return (
     <div className="relative flex h-screen flex-col bg-surface font-sans text-text-primary dark:bg-surface-dark dark:text-text-primary-dark">
@@ -223,7 +239,15 @@ function WorkspacePageRoute({
 
   return (
     <div className="absolute inset-0 z-10 overflow-hidden bg-surface dark:bg-surface-dark">
-      {children}
+      <Suspense
+        fallback={
+          <div className="flex h-full items-center justify-center">
+            <Spinner size="lg" />
+          </div>
+        }
+      >
+        {children}
+      </Suspense>
     </div>
   );
 }
@@ -233,18 +257,8 @@ function WorkspacePageRoute({
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [darkMode, setDarkMode] = useState(() => {
-    try {
-      const stored = getStoredValue("darkMode");
-      if (stored !== null) return stored === "true";
-      return (
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-      );
-    } catch {
-      return false;
-    }
-  });
+  const { darkMode, themePreference, setThemePreference } =
+    useThemePreference();
 
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
     try {
@@ -265,11 +279,26 @@ function App() {
         document.documentElement.classList.remove("dark");
         document.documentElement.setAttribute("data-theme", "apiweave");
       }
-      setStoredValue("darkMode", darkMode ? "true" : "false");
     } catch {
       // ignore
     }
+    // The window background and native window-control overlay are painted by
+    // main, which cannot read this preference; tell it so a theme flip repaints
+    // them together with the page rather than at the next launch. `darkMode` is
+    // the resolved theme, so this also fires when the OS setting flips under a
+    // `system` preference.
+    void desktop.applyTheme(darkMode).catch(() => undefined);
   }, [darkMode]);
+
+  // Traffic lights sit inside the top-left of the header on macOS; the stylesheet
+  // pads the chrome clear of them. Set once — the platform cannot change while
+  // the window is open.
+  useEffect(() => {
+    const platform = desktop.platform();
+    if (platform !== null) {
+      document.documentElement.dataset.platform = platform;
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -280,8 +309,14 @@ function App() {
   }, [autoSaveEnabled]);
 
   const appContextValue = useMemo(
-    () => ({ darkMode, setDarkMode, autoSaveEnabled, setAutoSaveEnabled }),
-    [darkMode, autoSaveEnabled],
+    () => ({
+      darkMode,
+      themePreference,
+      setThemePreference,
+      autoSaveEnabled,
+      setAutoSaveEnabled,
+    }),
+    [darkMode, themePreference, setThemePreference, autoSaveEnabled],
   );
 
   return (

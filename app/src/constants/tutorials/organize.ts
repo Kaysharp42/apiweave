@@ -2,7 +2,7 @@ import type { TutorialChapter } from "../../types";
 
 /**
  * Chapter 5 — Organize and reuse. Presets, projects, workflow JSON and
- * collection export/import, and the two import surfaces.
+ * project export/import, and the two import surfaces.
  */
 export const organizeChapter: TutorialChapter = {
   id: "organize",
@@ -114,7 +114,7 @@ export const organizeChapter: TutorialChapter = {
         "You can group related workflows into an ordered project with colours and per-row failure intent.",
       keywords: [
         "project",
-        "collection",
+        "bundle",
         "order",
         "reorder",
         "enabled",
@@ -201,16 +201,16 @@ export const organizeChapter: TutorialChapter = {
     {
       id: "import-export",
       chapterId: "organize",
-      title: "Workflow JSON and collection export/import",
+      title: "Workflow JSON and project export/import",
       summary:
-        "The raw JSON editor, workflow export/import, .awecollection bundles, references-only secrets, and dry-run validation.",
+        "The raw JSON editor, workflow export/import, .aweproject bundles, references-only secrets, and dry-run validation.",
       outcome:
         "You can edit a workflow as JSON and move a whole project to another machine without leaking secrets.",
       keywords: [
         "json editor",
         "export",
         "import",
-        "awecollection",
+        "aweproject",
         "bundle",
         "dry run",
         "validate",
@@ -238,16 +238,16 @@ export const organizeChapter: TutorialChapter = {
             "Use the workflow's row menu to export it as a JSON bundle, and import one from the same surface to bring a workflow back.",
         },
         {
-          title: "Export a project as .awecollection",
+          title: "Export a project as .aweproject",
           instruction:
-            "In the sidebar's project list, use the Download action on the project row (Export project), or the Export… item in its right-click menu. Save the .awecollection file.",
+            "In the sidebar's project list, use the Download action on the project row (Export project), or the Export… item in its right-click menu. Save the .aweproject file.",
           detail:
             "The bundle carries project metadata and workflow order, every attached workflow with its nodes, edges, variables and settings, and environment references with their plain variables plus the secret references to re-create.",
         },
         {
           title: "Import a project",
           instruction:
-            "With the Projects section selected, use Import → Collection in the sidebar header, then pick or paste the .awecollection file. Click Validate for the dry-run report, then Import Project to commit.",
+            "With the Projects section selected, use Import → Project (.aweproject) in the sidebar header, then pick or paste the .aweproject file. Click Validate for the dry-run report, then Import Project to commit.",
         },
         {
           title: "Read the dry-run report",
@@ -267,7 +267,7 @@ export const organizeChapter: TutorialChapter = {
       example: {
         caption: "The secret side of a bundle (trimmed to the relevant fields)",
         language: "json",
-        code: "{\n  \"schemaVersion\": \"2.0\",\n  \"type\": \"awecollection\",\n  \"secretReferences\": [\n    { \"name\": \"API_KEY\", \"scopeType\": \"workspace\", \"scopeId\": \"ws_123\" }\n  ]\n}",
+        code: "{\n  \"schemaVersion\": \"2.0\",\n  \"type\": \"aweproject\",\n  \"secretReferences\": [\n    { \"name\": \"API_KEY\", \"scopeType\": \"workspace\", \"scopeId\": \"ws_123\" }\n  ]\n}",
       },
       expectedResult:
         "The JSON editor round-trips a valid workflow, and an exported project imports on another machine with its structure intact and a clear list of secrets to re-enter.",

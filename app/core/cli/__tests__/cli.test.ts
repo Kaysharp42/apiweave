@@ -25,7 +25,7 @@ import {
   type TestServer,
 } from "../../runner/__tests__/network_test_servers"
 
-const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.awecollection")
+const FIXTURE = path.join(__dirname, "..", "__fixtures__", "smoke.aweproject")
 const REPOSITORY = path.join(__dirname, "..", "__fixtures__", "workspace-repo")
 const TOKEN = "s3cr3t-fixture-token"
 
@@ -150,7 +150,7 @@ describe("apiweave run", () => {
     const result = await run(["run", "other.json"])
 
     expect(result.code).toBe(EXIT_USAGE)
-    expect(result.stderr).toContain("is not an APIWeave workspace repository, workflow export, .awecollection project bundle or Postman collection")
+    expect(result.stderr).toContain("is not an APIWeave workspace repository, workflow export, .aweproject project bundle or Postman collection")
   })
 
   it("masks a secret in a node label before escaping, so the JUnit and HTML stay well-formed", async () => {
@@ -305,9 +305,9 @@ describe("apiweave run", () => {
   ])("runs the next workflow after a failure unless --bail: %j", async (flags, requests) => {
     const project = JSON.parse(fs.readFileSync(FIXTURE, "utf8")) as { workflows: { workflowId: string; name: string }[] }
     project.workflows.push({ ...project.workflows[0]!, workflowId: "wf_second", name: "Second" })
-    fs.writeFileSync(path.join(dir, "two.awecollection"), JSON.stringify(project))
+    fs.writeFileSync(path.join(dir, "two.aweproject"), JSON.stringify(project))
 
-    const result = await run(["run", "two.awecollection", "--var", `baseUrl=${baseUrl}/down`, ...flags], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+    const result = await run(["run", "two.aweproject", "--var", `baseUrl=${baseUrl}/down`, ...flags], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
 
     expect(result.code).toBe(EXIT_FAILED)
     expect(received).toHaveLength(requests)
@@ -332,10 +332,10 @@ describe("apiweave run", () => {
       tags: [],
       selectedEnvironmentId: "env_ci",
     })
-    fs.writeFileSync(path.join(dir, "calls.awecollection"), JSON.stringify(project))
+    fs.writeFileSync(path.join(dir, "calls.aweproject"), JSON.stringify(project))
 
     const result = await run(
-      ["run", "calls.awecollection", "--workflow", "Caller", "--var", `baseUrl=${baseUrl}`],
+      ["run", "calls.aweproject", "--workflow", "Caller", "--var", `baseUrl=${baseUrl}`],
       { APIWEAVE_SECRET_API_TOKEN: TOKEN },
     )
 
@@ -433,7 +433,7 @@ describe("apiweave run", () => {
   })
 
   it("also stops for a missing secret written with spaces, which the runner resolves the same", async () => {
-    const spaced = path.join(dir, "spaced.awecollection")
+    const spaced = path.join(dir, "spaced.aweproject")
     fs.writeFileSync(spaced, fs.readFileSync(FIXTURE, "utf8").replace("{{secrets.API_TOKEN}}", "{{ secrets.API_TOKEN }}"))
     const result = await run(["run", spaced, "--env", "CI", "--var", `baseUrl=${baseUrl}`])
 
@@ -483,7 +483,7 @@ describe("apiweave run", () => {
   it.each([
     [["run", FIXTURE, "--env", "Prod"], "environment 'Prod' is not in the file (environments: CI)"],
     [["run", FIXTURE, "--workflow", "Nope"], "workflow 'Nope' is not in the project"],
-    [["run", "missing.awecollection"], "cannot read"],
+    [["run", "missing.aweproject"], "cannot read"],
     [["run", FIXTURE, "--reporter", "xml"], "unknown reporter 'xml'"],
     [["run", FIXTURE, "--secret", TOKEN], "--secret expects KEY=value"],
     [["test", FIXTURE], "unknown command 'test'"],
@@ -512,14 +512,14 @@ describe("apiweave run", () => {
       const request = project.workflows[0]!.nodes.find((node) => node.nodeId === "get-health")!
       request.config!.url = "{{env.baseUrl}}/{{data.file}}"
       request.config!.headers!.push({ key: "X-User", value: "{{data.user}}" })
-      fs.writeFileSync(path.join(dir, "data.awecollection"), JSON.stringify(project))
+      fs.writeFileSync(path.join(dir, "data.aweproject"), JSON.stringify(project))
     }
 
     it("runs once per CSV row, each with its own values", async () => {
       writeDataProject()
       fs.writeFileSync(path.join(dir, "rows.csv"), 'file,user\r\nhealth.json,ann\r\nhealth.json,"bob, jr"\r\nhealth.json,cy\r\n')
 
-      const result = await run(["run", "data.awecollection", "-d", "rows.csv", "--var", `baseUrl=${baseUrl}`, "-r", "cli,junit"], {
+      const result = await run(["run", "data.aweproject", "-d", "rows.csv", "--var", `baseUrl=${baseUrl}`, "-r", "cli,junit"], {
         APIWEAVE_SECRET_API_TOKEN: TOKEN,
       })
 
@@ -541,7 +541,7 @@ describe("apiweave run", () => {
         { file: "health.json", user: "cy" },
       ]))
 
-      const result = await run(["run", "data.awecollection", "--iteration-data", "rows.json", "--var", `baseUrl=${baseUrl}`, "-r", "junit"], {
+      const result = await run(["run", "data.aweproject", "--iteration-data", "rows.json", "--var", `baseUrl=${baseUrl}`, "-r", "junit"], {
         APIWEAVE_SECRET_API_TOKEN: TOKEN,
       })
 
@@ -556,7 +556,7 @@ describe("apiweave run", () => {
       writeDataProject()
       fs.writeFileSync(path.join(dir, "rows.csv"), "file,user\nhealth.json,ann\ndown,bob\nhealth.json,cy\n")
 
-      const result = await run(["run", "data.awecollection", "-d", "rows.csv", "--bail", "--var", `baseUrl=${baseUrl}`], {
+      const result = await run(["run", "data.aweproject", "-d", "rows.csv", "--bail", "--var", `baseUrl=${baseUrl}`], {
         APIWEAVE_SECRET_API_TOKEN: TOKEN,
       })
 
@@ -573,7 +573,7 @@ describe("apiweave run", () => {
       requests = []
       writeDataProject()
       fs.writeFileSync(path.join(dir, "rows.csv"), "file,user\nhealth.json,ann\nhealth.json,bob\nhealth.json,cy\n")
-      const cut = await run(["run", "data.awecollection", "-d", "rows.csv", "-n", "2", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
+      const cut = await run(["run", "data.aweproject", "-d", "rows.csv", "-n", "2", "--var", `baseUrl=${baseUrl}`], { APIWEAVE_SECRET_API_TOKEN: TOKEN })
       expect(cut.code).toBe(EXIT_PASSED)
       expect(requests).toEqual(["/health.json ann", "/health.json bob"])
     })

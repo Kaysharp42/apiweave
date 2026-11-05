@@ -5,7 +5,7 @@ import type { Workflow } from "../types/Workflow";
 import type { WorkflowRowLabels } from "../types/WorkflowRowLabels";
 
 /**
- * The three truncated labels a sidebar workflow row shows.
+ * The three labels a sidebar workflow row shows.
  *
  * Pulled out of `WorkflowItem` because resolving them is five chained
  * "present or not" decisions that say nothing about how the row renders, and
@@ -33,12 +33,12 @@ export function workflowRowLabels(
     : undefined;
 
   return {
-    name: getSidebarItemLabel(workflow.name, 32, "Untitled workflow"),
+    name: getSidebarItemLabel(workflow.name, "Untitled workflow"),
     collection: collectionName
-      ? getSidebarItemLabel(collectionName, 18, "Collection")
+      ? getSidebarItemLabel(collectionName, "Project")
       : null,
     environment: environmentName
-      ? getSidebarItemLabel(environmentName, 16, "Environment")
+      ? getSidebarItemLabel(environmentName, "Environment")
       : null,
   };
 }

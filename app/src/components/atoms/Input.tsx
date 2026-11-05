@@ -66,7 +66,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
         {!error && helperText && (
           <label className="label px-0 py-1" id={`${id}-helper`}>
-            <span className="text-xs text-text-muted dark:text-text-muted-dark">
+            <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
               {helperText}
             </span>
           </label>

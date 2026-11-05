@@ -59,7 +59,7 @@ export function ScopedEnvironmentList({
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-text-primary dark:text-text-primary-dark">
           {sectionTitle}
-          <span className="ml-2 text-xs font-normal text-text-muted dark:text-text-muted-dark">
+          <span className="ml-2 text-xs font-normal text-text-secondary dark:text-text-secondary-dark">
             ({environments.length})
           </span>
         </h3>

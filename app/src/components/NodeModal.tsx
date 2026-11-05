@@ -414,7 +414,7 @@ export function NodeModal({
 
     if (NO_CONFIG_TYPES.includes(node.type)) {
       return (
-        <div className="rounded-xs border border-dashed border-border bg-surface-overlay p-6 text-sm text-text-muted dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-muted-dark">
+        <div className="rounded-xs border border-dashed border-border bg-surface-overlay p-6 text-sm text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
           No configuration needed for {node.type} nodes.
         </div>
       );

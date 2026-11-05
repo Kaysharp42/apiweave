@@ -2,15 +2,19 @@ import type { z } from "zod"
 import type { Collection } from "@shared/types/Collection"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { NodePreset } from "@shared/types/NodePreset"
 import type { Workflow } from "@shared/types/Workflow"
 import type { Workspace } from "@shared/types/Workspace"
 import type { WorkspacePendingChangeKind } from "@shared/types/WorkspacePendingChangeKind"
+import { baseEnvironmentProblem } from "@shared/environments/environment_chain"
 import {
   ATTRIBUTES_FILE,
   ATTRIBUTES_TEXT,
   EnvironmentFileSchema,
+  EnvironmentFileV1Schema,
   FORMAT_FILE,
   FormatFileSchema,
+  PresetFileSchema,
   ProjectFileSchema,
   RecordIdSchema,
   WORKSPACE_FILE,
@@ -23,12 +27,14 @@ import {
   fileText,
   isTreePath,
   issueText,
+  presetDocument,
   projectDocument,
   recordPath,
   toPlain,
   workflowDocument,
   workspaceDocument,
   type EnvironmentContent,
+  type PresetContent,
   type ProjectContent,
 } from "@shared/workspace-repo/format"
 import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
@@ -42,15 +48,20 @@ import { sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
  * `shared/workspace-repo/format.ts`.
  *
  * Never written: user-scoped environments, secret values or ciphertext, the
- * names of the secrets stored on this machine, runs, node presets, agents,
- * workflow revisions, an environment's base environment. The stored secret
- * names are local state rather than shared state: a machine that has no value
- * for a name cannot carry "this name exists" (the store holds sealed values
- * only), so writing the local list would have every machine erase the other's
- * names in an endless exchange of commits. The names that matter are in the
- * content anyway, as `{{secrets.NAME}}` wherever they are used. Literal
- * credentials are withheld exactly as an export withholds them (`<SECRET>`);
- * `{{secrets.NAME}}` references stay as written.
+ * names of the secrets stored on this machine, runs, agents, and workflow
+ * revisions. The stored secret names are local state rather than shared state:
+ * a machine that has no value for a name cannot carry "this name exists" (the
+ * store holds sealed values only), so writing the local list would have every
+ * machine erase the other's names in an endless exchange of commits. The names
+ * that matter are in the content anyway, as `{{secrets.NAME}}` wherever they
+ * are used. Literal credentials are withheld exactly as an export withholds
+ * them (`<SECRET>`); `{{secrets.NAME}}` references stay as written.
+ *
+ * An environment's `baseEnvironmentId` is written only when its base is one of
+ * the workspace-scoped environments in the same snapshot: a user-scoped base is
+ * never in the tree, so pointing at it would make the file unreadable. Node
+ * presets travel with their stable id, name, node type and sanitized config;
+ * their revision and timestamps are local bookkeeping.
  *
  * Everything here is pure: the caller reads the rows and the files.
  *
@@ -77,6 +88,7 @@ export interface WorkspaceSnapshot {
   readonly projects: readonly z.infer<typeof ProjectFileSchema>[]
   readonly workflows: readonly z.infer<typeof WorkflowFileSchema>[]
   readonly environments: readonly z.infer<typeof EnvironmentFileSchema>[]
+  readonly presets: readonly z.infer<typeof PresetFileSchema>[]
 }
 
 /** One workspace's rows, as its repositories return them: what a snapshot is built from. */
@@ -86,6 +98,7 @@ export interface WorkspaceRecords {
   readonly workflows: readonly Workflow[]
   /** Every environment of the workspace; user-scoped ones are left out of the snapshot here. */
   readonly environments: readonly Environment[]
+  readonly presets: readonly NodePreset[]
 }
 
 /** The parts of a workflow every export writes, whether it comes from a row or from a file. */
@@ -110,11 +123,13 @@ interface TreeFile {
 /** The snapshot of a workspace's rows: what the repository would hold, withheld credentials included. */
 export function workspaceSnapshot(records: WorkspaceRecords): WorkspaceSnapshot {
   const environments = records.environments.filter((environment) => environment.scopeType === "workspace")
+  const environmentIds = new Set(environments.map((environment) => environment.environmentId))
   return {
     workspace: checked(`workspace ${records.workspace.workspaceId}`, WorkspaceFileSchema, workspaceDocument(records.workspace)),
     projects: byId(records.projects.map(snapshotProject), (project) => project.projectId),
     workflows: byId(records.workflows.map(snapshotWorkflow), (workflow) => workflow.workflowId),
-    environments: byId(environments.map(snapshotEnvironment), (environment) => environment.environmentId),
+    environments: byId(environments.map((environment) => snapshotEnvironment(environment, environmentIds)), (environment) => environment.environmentId),
+    presets: byId(records.presets.map(snapshotPreset), (preset) => preset.presetId),
   }
 }
 
@@ -125,6 +140,7 @@ export function workspaceSnapshot(records: WorkspaceRecords): WorkspaceSnapshot 
  * before anything is returned.
  */
 export function serializeWorkspace(snapshot: WorkspaceSnapshot): Map<string, string> {
+  assertBaseEnvironmentChain(snapshot.environments)
   const tree: TreeFile[] = [
     { path: FORMAT_FILE, schema: FormatFileSchema, document: { format: WORKSPACE_FORMAT, version: WORKSPACE_FORMAT_VERSION } },
     { path: WORKSPACE_FILE, schema: WorkspaceFileSchema, document: workspaceDocument(snapshot.workspace) },
@@ -132,6 +148,8 @@ export function serializeWorkspace(snapshot: WorkspaceSnapshot): Map<string, str
     ...snapshot.workflows.map((workflow) => recordFile("workflows", workflow.workflowId, workflow.name, WorkflowFileSchema, repoWorkflowDocument(workflow))),
     ...snapshot.environments.map((environment) =>
       recordFile("environments", environment.environmentId, environment.name, EnvironmentFileSchema, repoEnvironmentDocument(environment))),
+    ...snapshot.presets.map((preset) =>
+      recordFile("presets", preset.presetId, preset.name, PresetFileSchema, repoPresetDocument(preset))),
   ]
   assertNoSecretValues(Object.fromEntries(tree.map((file) => [file.path, file.document])))
   const files = new Map<string, string>([[ATTRIBUTES_FILE, ATTRIBUTES_TEXT]])
@@ -153,13 +171,22 @@ export function serializeWorkspace(snapshot: WorkspaceSnapshot): Map<string, str
  */
 export function parseWorkspace(files: ReadonlyMap<string, string>): WorkspaceSnapshot {
   checkTree(files)
-  readFile(files, FORMAT_FILE, FormatFileSchema)
-  return {
+  const format = readFile(files, FORMAT_FILE, FormatFileSchema)
+  const environments = readRecords(
+    files,
+    "environments",
+    format.version === 1 ? EnvironmentFileV1Schema : EnvironmentFileSchema,
+    (environment) => environment.environmentId,
+  ).map(withBaseEnvironment)
+  const snapshot: WorkspaceSnapshot = {
     workspace: readFile(files, WORKSPACE_FILE, WorkspaceFileSchema),
     projects: readRecords(files, "projects", ProjectFileSchema, (project) => project.projectId),
     workflows: readRecords(files, "workflows", WorkflowFileSchema, (workflow) => workflow.workflowId),
-    environments: readRecords(files, "environments", EnvironmentFileSchema, (environment) => environment.environmentId),
+    environments,
+    presets: readRecords(files, "presets", PresetFileSchema, (preset) => preset.presetId),
   }
+  assertBaseEnvironmentChain(snapshot.environments)
+  return snapshot
 }
 
 /** What one repository file holds: which kind of record, its id and its name. */
@@ -167,6 +194,22 @@ export interface RecordFileSummary {
   readonly kind: WorkspacePendingChangeKind
   readonly id: string
   readonly name: string
+}
+
+/** A record file's summary: its kind, its name and the id it holds. */
+function fileSummary(kind: WorkspacePendingChangeKind, name: string, id: string): RecordFileSummary {
+  return { kind, id, name }
+}
+
+/**
+ * The kind and the file reader of each record folder: one entry per folder
+ * `describeRecordFile` understands, so a new record kind is one line here.
+ */
+const RECORD_SUMMARIES: Readonly<Record<string, (path: string, text: string) => RecordFileSummary>> = {
+  projects: (path, text) => { const { projectId, name } = decode(path, text, ProjectFileSchema); return fileSummary("project", name, projectId) },
+  workflows: (path, text) => { const { workflowId, name } = decode(path, text, WorkflowFileSchema); return fileSummary("workflow", name, workflowId) },
+  environments: (path, text) => { const { environmentId, name } = decodeEnvironmentFile(path, text); return fileSummary("environment", name, environmentId) },
+  presets: (path, text) => { const { presetId, name } = decode(path, text, PresetFileSchema); return fileSummary("preset", name, presetId) },
 }
 
 /**
@@ -182,19 +225,8 @@ export function describeRecordFile(path: string, text: string): RecordFileSummar
   }
   const [folder, file, ...rest] = path.split("/")
   if (file === undefined || rest.length > 0 || !file.endsWith(".json")) return undefined
-  if (folder === "projects") {
-    const project = decode(path, text, ProjectFileSchema)
-    return { kind: "project", id: project.projectId, name: project.name }
-  }
-  if (folder === "workflows") {
-    const workflow = decode(path, text, WorkflowFileSchema)
-    return { kind: "workflow", id: workflow.workflowId, name: workflow.name }
-  }
-  if (folder === "environments") {
-    const environment = decode(path, text, EnvironmentFileSchema)
-    return { kind: "environment", id: environment.environmentId, name: environment.name }
-  }
-  return undefined
+  const summary = folder === undefined ? undefined : RECORD_SUMMARIES[folder]
+  return summary?.(path, text)
 }
 
 /** A workflow as it leaves the app (a bundle, a workspace repository): credentials withheld, ids kept. */
@@ -240,8 +272,15 @@ function snapshotWorkflow(workflow: Workflow) {
   return checked(`workflow ${workflow.workflowId}`, WorkflowFileSchema, repoWorkflowDocument({ ...workflow, projectId: workflow.collectionId ?? null }))
 }
 
-function snapshotEnvironment(environment: Environment) {
-  return checked(`environment ${environment.environmentId}`, EnvironmentFileSchema, repoEnvironmentDocument(environment))
+function snapshotEnvironment(environment: Environment, syncedEnvironmentIds: ReadonlySet<string>) {
+  const baseEnvironmentId = typeof environment.baseEnvironmentId === "string" && syncedEnvironmentIds.has(environment.baseEnvironmentId)
+    ? environment.baseEnvironmentId
+    : null
+  return checked(`environment ${environment.environmentId}`, EnvironmentFileSchema, repoEnvironmentDocument({ ...environment, baseEnvironmentId }))
+}
+
+function snapshotPreset(preset: NodePreset) {
+  return checked(`preset ${preset.presetId}`, PresetFileSchema, repoPresetDocument(preset))
 }
 
 function projectContent(collection: Collection): ProjectContent {
@@ -265,6 +304,37 @@ function repoEnvironmentDocument(environment: EnvironmentContent & { readonly is
     { ...environment, variables: sanitizeVariablesForExport(asRecord(toPlain(environment.variables))) },
     { isDefault: environment.isDefault },
   )
+}
+
+/** A preset's config is sanitized exactly as a node's config is, so a literal credential never reaches a file. */
+function repoPresetDocument(preset: PresetContent): Record<string, JsonValue> {
+  return presetDocument({ ...preset, config: asRecord(sanitizeExportValue(toPlain(preset.config))) })
+}
+
+/** An environment file of either version: a version-1 file holds no base, so it extends none. */
+function decodeEnvironmentFile(path: string, text: string): z.infer<typeof EnvironmentFileSchema> {
+  const value = parseJsonText(path, text)
+  try {
+    assertNoSecretValues(value as JsonValue)
+  } catch (error) {
+    throw new ValidationError(`${path}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const current = EnvironmentFileSchema.safeParse(value)
+  if (current.success) return current.data
+  const legacy = EnvironmentFileV1Schema.safeParse(value)
+  if (legacy.success) return { ...legacy.data, baseEnvironmentId: null }
+  throw new ValidationError(`${path}: ${issueText(current.error)}`)
+}
+
+/** A version-1 environment as the current one reads it: it extends none. */
+function withBaseEnvironment(environment: z.infer<typeof EnvironmentFileV1Schema> | z.infer<typeof EnvironmentFileSchema>): z.infer<typeof EnvironmentFileSchema> {
+  return "baseEnvironmentId" in environment ? environment : { ...environment, baseEnvironmentId: null }
+}
+
+/** A repository's base-environment links must name environments in the same tree, and must not form a cycle. */
+function assertBaseEnvironmentChain(environments: readonly z.infer<typeof EnvironmentFileSchema>[]): void {
+  const problem = baseEnvironmentProblem(environments)
+  if (problem !== undefined) throw new ValidationError(`environments/: ${problem}`)
 }
 
 function recordFile(directory: string, id: string, name: string, schema: z.ZodType, document: Record<string, JsonValue>): TreeFile {

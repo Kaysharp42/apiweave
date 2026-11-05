@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { Input } from "../atoms/Input";
+import { nextMenuFocusIndex } from "../../utils/menuFocus";
 import type { AgentLaunchMenuItem } from "../../types";
 
 interface AgentLaunchMenuProps {
@@ -56,25 +57,15 @@ export function AgentLaunchMenu({
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      let next: number;
-      if (event.key === "ArrowDown") {
-        next = (index + 1) % items.length;
-      } else if (event.key === "ArrowUp") {
-        next = (index - 1 + items.length) % items.length;
-      } else if (event.key === "Home") {
-        next = 0;
-      } else {
-        next = items.length - 1;
-      }
-      focusItem(next);
-      return;
-    }
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+      return;
     }
+    const next = nextMenuFocusIndex(event.key, index, items.length);
+    if (next === null) return;
+    event.preventDefault();
+    focusItem(next);
   };
 
   return (
@@ -85,7 +76,7 @@ export function AgentLaunchMenu({
       className="absolute top-9 right-0 z-50 min-w-[260px] max-w-[360px] overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
     >
       <div className="border-b border-border px-3 py-2 dark:border-border-dark">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+        <p className="text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
           {headerLabel}
         </p>
         <p

@@ -80,7 +80,7 @@ const ExportedEnvironmentSchema = z
 const ProjectBundleSchema = z
   .object({
     schemaVersion: z.string(),
-    type: z.literal("awecollection"),
+    type: z.literal("aweproject"),
     project: z
       .object({
         projectId: z.string(),

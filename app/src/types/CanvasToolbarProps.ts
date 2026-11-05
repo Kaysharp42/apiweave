@@ -32,6 +32,8 @@ export interface CanvasToolbarProps {
   onEnvironmentChange: (value: string) => void;
   onRefreshSwagger?: () => void;
   isSwaggerRefreshing?: boolean;
+  /** True when the selected environment names an OpenAPI/Swagger document. */
+  hasOpenApiSource?: boolean;
   workflowId?: string;
   resumeOptions?: Array<{ nodeId: string; label: string }>;
   isResumeLoading?: boolean;

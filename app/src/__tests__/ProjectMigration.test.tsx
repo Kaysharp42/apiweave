@@ -76,7 +76,7 @@ describe("project migration UI", () => {
     });
   });
 
-  it("exports a project and preserves the awecollection extension", async () => {
+  it("exports a project and preserves the aweproject extension", async () => {
     const user = userEvent.setup();
     const createdUrls: string[] = [];
     const appendedDownloads: string[] = [];
@@ -124,7 +124,7 @@ describe("project migration UI", () => {
         projectId: "proj-1",
         includeEnvironments: true,
       });
-      expect(appendedDownloads).toContain("Smoke_Project.awecollection");
+      expect(appendedDownloads).toContain("Smoke_Project.aweproject");
       expect(createdUrls).toContain("application/json");
     });
   });
@@ -133,7 +133,7 @@ describe("project migration UI", () => {
     const user = userEvent.setup();
     const bundle = {
       schemaVersion: "2.0",
-      type: "awecollection",
+      type: "aweproject",
       project: { projectId: "source", name: "Imported Project", description: "", color: "#123456" },
       workflows: [{
         workflowId: "workflow-1",
@@ -186,7 +186,7 @@ describe("project migration UI", () => {
 
     await user.upload(
       screen.getByLabelText(/project bundle file upload/i),
-      new File([JSON.stringify(bundle)], "Imported_Project.awecollection", {
+      new File([JSON.stringify(bundle)], "Imported_Project.aweproject", {
         type: "application/json",
       }),
     );

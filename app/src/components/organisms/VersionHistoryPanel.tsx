@@ -15,8 +15,10 @@ import { GitAuthorForm } from "./GitAuthorForm";
 import { Panel } from "../molecules/Panel";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { CreateRepositoryDialog } from "./CreateRepositoryDialog";
+import { GitBranchDialog } from "./GitBranchDialog";
 import { MergeView } from "./MergeView";
 import { GitRemotePicker } from "./GitRemotePicker";
+import { RemoteBranchChooser } from "./RemoteBranchChooser";
 import { GitSignInButtons } from "./GitSignInButtons";
 import { GitSyncDialogs } from "./GitSyncDialogs";
 import { GitSyncStatusCard } from "./GitSyncStatusCard";
@@ -38,6 +40,8 @@ import type {
   PanelMessage,
   RemoteAccountProps,
   RemoteSectionProps,
+  VersionHistoryDialogsProps,
+  VersionHistoryPanelBodyProps,
 } from "../../types";
 
 interface UntrackedProps {
@@ -122,6 +126,13 @@ function RemoteSection(props: RemoteSectionProps) {
   const [selection, setSelection] = useState<GitRemoteSelection | null>(
     prefill,
   );
+  const [connectBranch, setConnectBranch] = useState("");
+
+  const chooseRemote = (next: GitRemoteSelection | null): void => {
+    setSelection(next);
+    setConnectBranch("");
+  };
+
   return (
     <div className="space-y-2 border-t border-border pt-4 dark:border-border-dark">
       <DetailField label="Remote" mono={remoteUrl !== null} breakAll>
@@ -130,23 +141,45 @@ function RemoteSection(props: RemoteSectionProps) {
       <DetailField label="Branch" mono>
         {branch}
       </DetailField>
+      {remoteUrl !== null && props.onSwitchBranch !== undefined && (
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={props.onSwitchBranch}
+        >
+          Switch branch…
+        </Button>
+      )}
       {remoteUrl === null ? (
         <form
           className="space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (selection !== null)
-              props.onConnect(selection.url, selection.account);
+              props.onConnect(
+                selection.url,
+                selection.account,
+                connectBranch === "" ? undefined : connectBranch,
+              );
           }}
         >
           <GitRemotePicker
             mode="connect"
             initial={prefill}
             accounts={props.accounts}
-            onChange={setSelection}
+            onChange={chooseRemote}
             onCreateRepository={props.onCreateRepository}
             disabled={busy}
           />
+          {selection !== null && (
+            <RemoteBranchChooser
+              selection={selection}
+              branch={connectBranch}
+              hint="The branch this workspace tracks; leave it on the default unless the workspace lives on another one."
+              disabled={busy}
+              onBranchChange={setConnectBranch}
+            />
+          )}
           <Button
             type="submit"
             variant="primary"
@@ -230,6 +263,116 @@ function Tracked({
   );
 }
 
+/** The mode the auto-commit toggle switches to. */
+function nextMode(mode: WorkspaceGitStatus["mode"]): "auto" | "manual" {
+  return mode === "auto" ? "manual" : "auto";
+}
+
+/** The tracked section: its sync card, actions, remote and branch, bound to the panel's `run`. */
+function TrackedView(
+  props: VersionHistoryPanelBodyProps & { readonly status: WorkspaceGitStatus },
+) {
+  const status = props.status;
+  return (
+    <Tracked
+      key={status.workspaceId}
+      status={status}
+      busy={props.busy}
+      apply={props.apply}
+      onToggleMode={() =>
+        void props.run(() =>
+          git.setMode(props.workspaceId, nextMode(status.mode)),
+        )
+      }
+      onAuthor={async (request) =>
+        (await props.run(() => git.syncNow(props.workspaceId, request)))
+          ?.lastError === null
+      }
+      remote={
+        <RemoteSection
+          // A repository created but not connected to starts the form over, filled in with it.
+          key={props.prefill === null ? "" : props.prefill.url}
+          remoteUrl={status.remoteUrl}
+          branch={status.branch}
+          account={status.account}
+          busy={props.busy}
+          prefill={props.prefill}
+          onConnect={props.connectTo}
+          onCreateRepository={props.onCreateRepository}
+          onChangeAccount={(account) =>
+            void props.run(() => git.setAccount(props.workspaceId, account))
+          }
+          onDisconnect={props.onDisconnect}
+          onSwitchBranch={props.onSwitchBranch}
+          accounts={props.accounts}
+        />
+      }
+      onUntrack={props.onUntrack}
+    />
+  );
+}
+
+/**
+ * What the panel shows under its title: version history unavailable, the status
+ * still loading, a workspace not yet tracked, or the tracked section with its
+ * remote.
+ */
+function PanelBody(props: VersionHistoryPanelBodyProps) {
+  if (!props.available) {
+    return (
+      <p className="text-xs text-status-warning">
+        Version history is only available in the desktop app.
+      </p>
+    );
+  }
+  if (props.status === null) {
+    return props.shownError === null ? <Spinner size="sm" /> : null;
+  }
+  if (props.status.tracked) {
+    return <TrackedView {...props} status={props.status} />;
+  }
+  return (
+    <Untracked
+      busy={props.busy}
+      onTrack={() => void props.run(() => git.track(props.workspaceId))}
+    />
+  );
+}
+
+/** The dialogs the panel raises over itself: create a repository, resolve a merge, switch branch. */
+function VersionHistoryDialogs(props: VersionHistoryDialogsProps) {
+  const creation = props.creation;
+  return (
+    <>
+      {creation.step === "dialog" && (
+        <CreateRepositoryDialog
+          onClose={props.onCloseCreation}
+          defaultName={props.workspaceSlug}
+          defaultAccount={creation.account}
+          accounts={props.accounts}
+          {...(props.handedOn === null ? {} : { initialDraft: props.handedOn })}
+          onCreated={props.onCreated}
+        />
+      )}
+      {props.merge !== null && (
+        <MergeView
+          status={props.merge}
+          onClose={props.onCloseMerge}
+          onStatus={props.onSwitched}
+        />
+      )}
+      {props.switchingBranch && props.currentBranch !== null && (
+        <GitBranchDialog
+          workspaceId={props.workspaceId}
+          currentBranch={props.currentBranch}
+          onClose={props.onCloseBranch}
+          onSwitched={props.onSwitched}
+        />
+      )}
+    </>
+  );
+}
+
 /**
  * Settings for a workspace's version history (git): track, auto or manual
  * commits, the sync state and what to do about it, the remote and its branch.
@@ -265,6 +408,7 @@ export function VersionHistoryPanel({
   const [confirming, setConfirming] = useState<"untrack" | "disconnect" | null>(
     null,
   );
+  const [switchingBranch, setSwitchingBranch] = useState(false);
   // A merge a connect started, shown over the panel: the repository holds this
   // same workspace with no commit in common, so the copies merge two ways.
   const [merge, setMerge] = useState<WorkspaceGitStatus | null>(null);
@@ -301,8 +445,11 @@ export function VersionHistoryPanel({
   const connectTo = async (
     url: string,
     account: GitAccountRef | null,
+    branch?: string,
   ): Promise<void> => {
-    const next = await run(() => git.connectRemote(workspaceId, url, account));
+    const next = await run(() =>
+      git.connectRemote(workspaceId, url, account, branch),
+    );
     if (next?.state === "merging") setMerge(next);
   };
 
@@ -330,72 +477,29 @@ export function VersionHistoryPanel({
   };
 
   const shownError = message?.tone === "error" ? message.text : loadError;
-
-  const body = (() => {
-    if (!available) {
-      return (
-        <p className="text-xs text-status-warning">
-          Version history is only available in the desktop app.
-        </p>
-      );
-    }
-    if (status === null)
-      return shownError === null ? <Spinner size="sm" /> : null;
-    if (!status.tracked) {
-      return (
-        <Untracked
-          busy={busy}
-          onTrack={() => void run(() => git.track(workspaceId))}
-        />
-      );
-    }
-    return (
-      <Tracked
-        key={status.workspaceId}
-        status={status}
-        busy={busy}
-        apply={apply}
-        onToggleMode={() =>
-          void run(() =>
-            git.setMode(
-              workspaceId,
-              status.mode === "auto" ? "manual" : "auto",
-            ),
-          )
-        }
-        onAuthor={async (request) =>
-          (await run(() => git.syncNow(workspaceId, request)))?.lastError ===
-          null
-        }
-        remote={
-          <RemoteSection
-            // A repository created but not connected to starts the form over, filled in with it.
-            key={prefill?.url ?? ""}
-            remoteUrl={status.remoteUrl}
-            branch={status.branch}
-            account={status.account}
-            busy={busy}
-            prefill={prefill}
-            onConnect={(url, account) => void connectTo(url, account)}
-            onCreateRepository={(account) =>
-              setCreation({ step: "dialog", account })
-            }
-            onChangeAccount={(account) =>
-              void run(() => git.setAccount(workspaceId, account))
-            }
-            onDisconnect={() => setConfirming("disconnect")}
-            accounts={accounts}
-          />
-        }
-        onUntrack={() => setConfirming("untrack")}
-      />
-    );
-  })();
+  const currentBranch = status === null ? null : status.branch;
 
   return (
     <Panel title="Version history (git)" icon={GitBranch}>
       <div className="space-y-4 p-4">
-        {body}
+        <PanelBody
+          available={available}
+          status={status}
+          shownError={shownError}
+          busy={busy}
+          workspaceId={workspaceId}
+          prefill={prefill}
+          accounts={accounts}
+          apply={apply}
+          run={run}
+          connectTo={connectTo}
+          onCreateRepository={(account) =>
+            setCreation({ step: "dialog", account })
+          }
+          onDisconnect={() => setConfirming("disconnect")}
+          onSwitchBranch={() => setSwitchingBranch(true)}
+          onUntrack={() => setConfirming("untrack")}
+        />
         {shownError !== null && (
           <p
             role="alert"
@@ -410,25 +514,21 @@ export function VersionHistoryPanel({
           </p>
         )}
       </div>
-      {creation.step === "dialog" && (
-        <CreateRepositoryDialog
-          onClose={() => setCreation({ step: "idle" })}
-          defaultName={workspaceSlug}
-          defaultAccount={creation.account}
-          accounts={accounts}
-          {...(handedOn === null ? {} : { initialDraft: handedOn })}
-          onCreated={(created, account) =>
-            void connectCreated(created, account)
-          }
-        />
-      )}
-      {merge !== null && (
-        <MergeView
-          status={merge}
-          onClose={() => setMerge(null)}
-          onStatus={apply}
-        />
-      )}
+      <VersionHistoryDialogs
+        workspaceId={workspaceId}
+        workspaceSlug={workspaceSlug}
+        handedOn={handedOn}
+        accounts={accounts}
+        creation={creation}
+        onCloseCreation={() => setCreation({ step: "idle" })}
+        onCreated={(created, account) => void connectCreated(created, account)}
+        merge={merge}
+        onCloseMerge={() => setMerge(null)}
+        switchingBranch={switchingBranch}
+        currentBranch={currentBranch}
+        onCloseBranch={() => setSwitchingBranch(false)}
+        onSwitched={apply}
+      />
       <ConfirmDialog
         open={confirming === "disconnect"}
         onClose={() => setConfirming(null)}

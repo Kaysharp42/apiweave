@@ -2,13 +2,13 @@
 
 ## Supported Versions
 
-APIWeave is pre-1.0 and ships from a single release line. Only the latest
-release gets security fixes; the in-app updater moves installs to it.
+APIWeave 1.x ships from a single release line. Only the latest release gets
+security fixes; the in-app updater moves installs to it.
 
 | Version | Supported |
 | ------- | --------- |
-| Latest release | Yes |
-| Anything older | No — update first |
+| 1.x (latest release) | Yes |
+| 0.x and anything older | No — update first |
 
 ## Reporting a Vulnerability
 

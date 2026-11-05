@@ -83,7 +83,7 @@ export function NodePalette({
       <div className="border-b border-border p-3 dark:border-border-dark">
         <h3 className="mb-2 text-sm font-semibold tracking-[-0.01em] text-text-primary dark:text-text-primary-dark">
           Add Nodes
-          <span className="ml-1 text-xs font-normal text-text-muted dark:text-text-muted-dark">
+          <span className="ml-1 text-xs font-normal text-text-secondary dark:text-text-secondary-dark">
             — click or drag
           </span>
         </h3>
@@ -103,7 +103,7 @@ export function NodePalette({
               }
             }}
             placeholder="Filter nodes…"
-            className="w-full rounded-xs border border-border bg-surface py-1.5 pl-8 pr-8 text-sm text-text-primary placeholder:text-text-muted focus:outline-hidden focus:ring-2 focus:ring-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
+            className="w-full rounded-xs border border-border bg-surface py-1.5 pl-8 pr-8 text-sm text-text-primary placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
           />
           {searchQuery && (
             <button
@@ -116,7 +116,7 @@ export function NodePalette({
                   }),
                 )
               }
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xs p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xs p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) dark:text-text-muted-dark dark:hover:bg-surface-dark-overlay dark:hover:text-text-primary-dark"
               aria-label="Clear node filter"
               title="Clear filter"
             >
@@ -127,7 +127,7 @@ export function NodePalette({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {filteredSections.length === 0 ? (
-          <div className="p-4 text-center text-sm text-text-muted dark:text-text-muted-dark">
+          <div className="p-4 text-center text-sm text-text-secondary dark:text-text-secondary-dark">
             No nodes match &quot;{searchQuery}&quot;
           </div>
         ) : (

@@ -189,6 +189,17 @@ function callsOf(page: Page, domain: string, action: string) {
 }
 
 /**
+ * The welcome screen's "Recent workflows" list also renders a button per
+ * workflow, so a bare name regex matches two rows. Every row query stays inside
+ * the sidebar.
+ */
+function sidebarRow(page: Page, name: RegExp) {
+  return page
+    .getByRole("complementary", { name: "Sidebar" })
+    .getByRole("button", { name });
+}
+
+/**
  * The projects list is a nav-section switch, not a route — `MainLayout` refetches
  * projects when the section changes, so clicking the rail is the only way in.
  */
@@ -208,7 +219,7 @@ test.describe("sidebar row right-click actions", () => {
   test("a workflow row offers rename and both moves", async ({ page }) => {
     await navigateDesktop(page, "/personal/workflows");
 
-    const row = page.getByRole("button", { name: /Log in/ });
+    const row = sidebarRow(page, /Log in/);
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -221,7 +232,13 @@ test.describe("sidebar row right-click actions", () => {
     await expect(
       menu.getByRole("menuitem", { name: "Move to workspace…" }),
     ).toBeVisible();
-    await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+    await expect(
+      menu.getByRole("menuitem", { name: "Delete workflow…" }),
+    ).toBeVisible();
+    // Delete is the last, separated item — the only place it is offered.
+    await expect(menu.getByRole("menuitem").last()).toHaveText(
+      "Delete workflow…",
+    );
 
     // Escape must dismiss it — a context menu with no keyboard exit traps focus.
     await page.keyboard.press("Escape");
@@ -233,7 +250,7 @@ test.describe("sidebar row right-click actions", () => {
   }) => {
     await navigateDesktop(page, "/personal/workflows");
 
-    await page.getByRole("button", { name: /Log in/ }).click({ button: "right" });
+    await sidebarRow(page, /Log in/).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Rename…" }).click();
 
     const input = page.getByRole("textbox", { name: "Rename Workflow" });
@@ -259,7 +276,7 @@ test.describe("sidebar row right-click actions", () => {
   }) => {
     await navigateDesktop(page, "/personal/workflows");
 
-    await page.getByRole("button", { name: /Log in/ }).click({ button: "right" });
+    await sidebarRow(page, /Log in/).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to project…" }).click();
 
     const select = page.getByRole("combobox", { name: "Target project" });
@@ -291,9 +308,7 @@ test.describe("sidebar row right-click actions", () => {
 
     // The attached workflow is the interesting one: it has a project, a selected
     // environment and a Call Workflow target, so all three warnings are due.
-    await page
-      .getByRole("button", { name: /Place order/ })
-      .click({ button: "right" });
+    await sidebarRow(page, /Place order/).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to workspace…" }).click();
 
     const destination = page.getByRole("combobox", {
@@ -327,7 +342,7 @@ test.describe("sidebar row right-click actions", () => {
   test("a project row offers rename and a workspace move", async ({ page }) => {
     await openProjectsSection(page);
 
-    const row = page.getByRole("button", { name: /Checkout/ });
+    const row = sidebarRow(page, /Checkout/);
     await expect(row).toBeVisible();
     await row.click({ button: "right" });
 
@@ -340,6 +355,12 @@ test.describe("sidebar row right-click actions", () => {
     await expect(
       menu.getByRole("menuitem", { name: "Move to project…" }),
     ).toHaveCount(0);
+    await expect(
+      menu.getByRole("menuitem", { name: "Delete project…" }),
+    ).toBeVisible();
+    await expect(menu.getByRole("menuitem").last()).toHaveText(
+      "Delete project…",
+    );
 
     await menu.getByRole("menuitem", { name: "Rename…" }).click();
     const input = page.getByRole("textbox", { name: "Rename Project" });
@@ -365,7 +386,7 @@ test.describe("sidebar row right-click actions", () => {
   }) => {
     await openProjectsSection(page);
 
-    await page.getByRole("button", { name: /Checkout/ }).click({ button: "right" });
+    await sidebarRow(page, /Checkout/).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Move to workspace…" }).click();
 
     const dialog = page.getByRole("dialog");
@@ -393,6 +414,75 @@ test.describe("sidebar row right-click actions", () => {
   });
 });
 
+test.describe("sidebar row quick actions", () => {
+  test.beforeEach(async ({ page }) => {
+    await installBridge(page);
+  });
+
+  test("a workflow's hover strip offers export but not delete", async ({
+    page,
+  }) => {
+    await navigateDesktop(page, "/personal/workflows");
+
+    const row = sidebarRow(page, /Log in/);
+    await row.hover();
+
+    await expect(
+      row.locator("..").getByRole("button", { name: "Export workflow" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Delete workflow permanently" }),
+    ).toHaveCount(0);
+  });
+
+  test("a project's hover strip offers export but not delete", async ({
+    page,
+  }) => {
+    await openProjectsSection(page);
+
+    const row = sidebarRow(page, /Checkout/);
+    await row.hover();
+
+    await expect(
+      row.locator("..").getByRole("button", { name: "Export project" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Delete project permanently" }),
+    ).toHaveCount(0);
+  });
+
+  test("Shift+F10 opens a workflow row's menu from the keyboard", async ({
+    page,
+  }) => {
+    await navigateDesktop(page, "/personal/workflows");
+
+    await sidebarRow(page, /Log in/).focus();
+    await page.keyboard.press("Shift+F10");
+
+    const menu = page.getByRole("menu", { name: 'Workflow "Log in"' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem").last()).toHaveText(
+      "Delete workflow…",
+    );
+
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+  });
+
+  test("the ContextMenu key opens a project row's menu", async ({ page }) => {
+    await openProjectsSection(page);
+
+    await sidebarRow(page, /Checkout/).focus();
+    await page.keyboard.press("ContextMenu");
+
+    const menu = page.getByRole("menu", { name: 'Project "Checkout"' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem").last()).toHaveText(
+      "Delete project…",
+    );
+  });
+});
+
 test.describe("sidebar row action visuals", () => {
   test.beforeEach(async ({ page }) => {
     await installBridge(page);
@@ -404,9 +494,7 @@ test.describe("sidebar row action visuals", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await navigateDesktop(page, "/personal/workflows");
 
-    await page
-      .getByRole("button", { name: /Place order/ })
-      .click({ button: "right" });
+    await sidebarRow(page, /Place order/).click({ button: "right" });
     await expect(page.getByRole("menu")).toBeVisible();
     await page.screenshot({ path: ".omo/evidence/workflow-context-menu.png" });
 

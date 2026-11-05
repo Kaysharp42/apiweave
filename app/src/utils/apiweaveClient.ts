@@ -5,6 +5,7 @@ import type {
   ContractResult,
 } from "@shared/contract/errors";
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent";
+import type { AppInfo } from "@shared/types/AppInfo";
 import type { RunHistoryPage } from "@shared/types/RunHistoryPage";
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent";
 import type { RunIteration } from "@shared/types/RunIteration";
@@ -42,6 +43,7 @@ import type { NetworkBridge } from "@shared/types/NetworkBridge";
 import type { NetworkSettingsState } from "@shared/types/NetworkSettingsState";
 import type { NetworkSettingsUpdate } from "@shared/types/NetworkSettingsUpdate";
 import type { GitAccountList } from "@shared/types/GitAccountList";
+import type { GitBranchList } from "@shared/types/GitBranchList";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitCreatedRepository } from "@shared/types/GitCreatedRepository";
 import type { GitCreateRepositoryRequest } from "@shared/types/GitCreateRepositoryRequest";
@@ -59,10 +61,6 @@ import type { WorkspaceGitCommitRequest } from "@shared/types/WorkspaceGitCommit
 import type { WorkspaceGitMode } from "@shared/types/WorkspaceGitMode";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
 import type { WorkspacePendingChange } from "@shared/types/WorkspacePendingChange";
-import type { MCPTool } from "@shared/types/MCPTool";
-import type { MCPPrompt } from "@shared/types/MCPPrompt";
-import type { MCPResource } from "@shared/types/MCPResource";
-import type { McpTestResult } from "@shared/types/McpTestResult";
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings";
 import type {
   UpdatePolicy,
@@ -126,12 +124,8 @@ type IpcBridge = {
 };
 
 type DesktopBridge = {
-  readonly minimize: () => void;
-  readonly toggleMaximize: () => void;
-  readonly close: () => void;
-  readonly onMaximizeChange: (
-    callback: (isMaximized: boolean) => void,
-  ) => () => void;
+  readonly platform?: string;
+  readonly applyTheme?: (dark: boolean) => Promise<void>;
   readonly onCloseRequested: (handler: () => Promise<boolean>) => () => void;
   readonly screenReader?: boolean;
   readonly getBackground?: () => Promise<BackgroundSettings>;
@@ -148,10 +142,6 @@ type McpBridge = {
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>;
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>;
   readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>;
-  readonly listTools: () => Promise<readonly MCPTool[]>;
-  readonly listPrompts: () => Promise<readonly MCPPrompt[]>;
-  readonly listResources: () => Promise<readonly MCPResource[]>;
-  readonly testConnection: () => Promise<McpTestResult>;
 };
 
 declare global {
@@ -295,6 +285,11 @@ export async function invoke<T>(
 }
 
 export const apiweave = {
+  /** Facts About reports, and opening the folder they name. */
+  app: {
+    info: () => invoke<AppInfo>("app", "info", {}),
+    revealDataFolder: () => invoke<null>("app", "revealDataFolder", {}),
+  },
   workspaces: {
     list: () => invoke<readonly Workspace[]>("workspaces", "list", {}),
     create: (
@@ -919,11 +914,14 @@ function getDesktopBridge(): DesktopBridge | undefined {
 }
 
 export const desktop = {
-  minimize: () => getDesktopBridge()?.minimize(),
-  toggleMaximize: () => getDesktopBridge()?.toggleMaximize(),
-  close: () => getDesktopBridge()?.close(),
-  onMaximizeChange: (callback: (isMaximized: boolean) => void) =>
-    getDesktopBridge()?.onMaximizeChange(callback) ?? (() => undefined),
+  /** `process.platform` in the desktop shell; null in the browser build. */
+  platform: (): string | null => getDesktopBridge()?.platform ?? null,
+  /**
+   * Repaint the window background and native controls for a theme. Resolves
+   * immediately outside Electron, where there is no window to repaint.
+   */
+  applyTheme: (dark: boolean): Promise<void> =>
+    getDesktopBridge()?.applyTheme?.(dark) ?? Promise.resolve(),
   /** Main's quit handshake: the handler resolves whether the window may close. */
   onCloseRequested: (handler: () => Promise<boolean>) =>
     getDesktopBridge()?.onCloseRequested(handler) ?? (() => undefined),
@@ -970,15 +968,6 @@ export const mcp = {
   setAutoApproveAgentRuns: (enabled: boolean): Promise<McpStatus> =>
     getMcpBridge()?.setAutoApproveAgentRuns(enabled) ??
     Promise.resolve(MCP_UNAVAILABLE),
-  listTools: (): Promise<readonly MCPTool[]> =>
-    getMcpBridge()?.listTools() ?? Promise.resolve([]),
-  listPrompts: (): Promise<readonly MCPPrompt[]> =>
-    getMcpBridge()?.listPrompts() ?? Promise.resolve([]),
-  listResources: (): Promise<readonly MCPResource[]> =>
-    getMcpBridge()?.listResources() ?? Promise.resolve([]),
-  testConnection: (): Promise<McpTestResult> =>
-    getMcpBridge()?.testConnection() ??
-    Promise.resolve({ ok: false, status: null }),
 } as const;
 
 function getUpdatesBridge(): UpdatesBridge | undefined {
@@ -1302,9 +1291,15 @@ export const git = {
     workspaceId: string,
     url: string,
     account: GitAccountRef | null = null,
-  ): Promise<WorkspaceGitStatus> =>
-    getGitBridge()?.connectRemote(workspaceId, url, account).catch(unwrapRemoteError) ??
-    gitDesktopOnly(),
+    branch?: string,
+  ): Promise<WorkspaceGitStatus> => {
+    const bridge = getGitBridge();
+    if (bridge === undefined) return gitDesktopOnly();
+    return (branch === undefined
+      ? bridge.connectRemote(workspaceId, url, account)
+      : bridge.connectRemote(workspaceId, url, account, branch)
+    ).catch(unwrapRemoteError);
+  },
   setAccount: (
     workspaceId: string,
     account: GitAccountRef | null,
@@ -1320,8 +1315,29 @@ export const git = {
   openFromGit: (
     url: string,
     account: GitAccountRef | null = null,
-  ): Promise<OpenWorkspaceFromGitResult> =>
-    getGitBridge()?.openFromGit(url, account).catch(unwrapRemoteError) ??
+    branch?: string,
+  ): Promise<OpenWorkspaceFromGitResult> => {
+    const bridge = getGitBridge();
+    if (bridge === undefined) return gitDesktopOnly();
+    return (branch === undefined
+      ? bridge.openFromGit(url, account)
+      : bridge.openFromGit(url, account, branch)
+    ).catch(unwrapRemoteError);
+  },
+  listRemoteBranches: (
+    url: string,
+    account: GitAccountRef | null = null,
+  ): Promise<GitBranchList> =>
+    getGitBridge()?.listRemoteBranches(url, account).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  listBranches: (workspaceId: string): Promise<GitBranchList> =>
+    getGitBridge()?.listBranches(workspaceId).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  switchBranch: (
+    workspaceId: string,
+    branch: string,
+  ): Promise<WorkspaceGitStatus> =>
+    getGitBridge()?.switchBranch(workspaceId, branch).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   listAccounts: (): Promise<GitAccountList> =>
     getGitBridge()?.listAccounts().catch(unwrapRemoteError) ??

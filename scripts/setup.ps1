@@ -12,7 +12,15 @@ Write-Host "========================================"
 Write-Host
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Error "Node.js not found. Install Node.js 20+ from https://nodejs.org"
+    Write-Error "Node.js not found. Install Node.js 22.12 or newer from https://nodejs.org"
+    exit 1
+}
+$nodeVersion = (node -v) -replace '^v', ''
+$nodeParts = $nodeVersion.Split('.')
+$nodeMajor = [int]$nodeParts[0]
+$nodeMinor = [int]$nodeParts[1]
+if ($nodeMajor -lt 22 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 12)) {
+    Write-Error "Node.js 22.12 or newer is required (found $(node -v)). Download it from https://nodejs.org"
     exit 1
 }
 Write-Host "Node.js $(node -v) detected"

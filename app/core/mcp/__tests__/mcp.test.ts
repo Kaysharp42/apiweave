@@ -247,6 +247,10 @@ describe("MCP whitelist — derived from the IPC registry, drops the right surfa
       "workflows.update",
       // server_info already lists the guides; guides_get reads one.
       "guides.list",
+      // About describes the machine and opens its data folder. A local agent
+      // has no business reading the user's paths or popping a file manager.
+      "app.info",
+      "app.revealDataFolder",
     ]) {
       expect(names.has(excluded), excluded).toBe(false)
     }

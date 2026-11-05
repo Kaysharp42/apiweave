@@ -129,7 +129,7 @@ export function UpdateBanner() {
         <button
           type="button"
           onClick={() => void openReleasePage()}
-          className="shrink-0 cursor-pointer text-xs text-text-secondary underline underline-offset-2 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-text-primary-dark dark:focus-visible:outline-primary-light"
+          className="shrink-0 cursor-pointer text-xs text-text-secondary underline underline-offset-2 hover:text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-text-primary-dark"
         >
           What's new
         </button>

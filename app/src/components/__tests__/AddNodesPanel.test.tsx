@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AddNodesPanel from "../AddNodesPanel";
 import { PaletteProvider } from "../../contexts/PaletteContext";
@@ -62,6 +62,26 @@ function renderPanel(workspaceId = "ws-1") {
     </PaletteProvider>,
   );
 }
+
+describe("AddNodesPanel — canvas actions", () => {
+  it("labels the add-node button with a tooltip on focus", async () => {
+    renderPanel();
+
+    fireEvent.focus(screen.getByLabelText("Add nodes"));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Add node");
+  });
+
+  it("labels the side-panel button with a tooltip", async () => {
+    renderPanel();
+
+    fireEvent.focus(screen.getByLabelText("Show panel"));
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Show Side Panel (Variables, Functions, Settings)",
+    );
+  });
+});
 
 describe("AddNodesPanel — saved presets section", () => {
   beforeEach(() => {

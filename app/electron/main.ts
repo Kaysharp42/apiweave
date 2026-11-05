@@ -1,7 +1,8 @@
 // fallow-ignore-file code-duplication -- the agents registry table is the typed routing surface of this process: every row names a channel and forwards to its service method, so any channel gained clones every other by construction (same reasoning as `src/utils/apiweaveClient.ts`); fallow 2.104 has no range form, so file-level is the only single-justification form available
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session, shell } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, session, shell } from "electron"
 import type { MenuItemConstructorOptions, Tray } from "electron"
 import path from "node:path"
+import os from "node:os"
 import { renameSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { IpcRouter, attachIpcRouter } from "../core/ipc/index"
@@ -50,9 +51,6 @@ import {
 import { RunScheduler, RunEventBroker, SafeHttp, DynamicFunctions, ProjectRunner } from "../core/runner"
 import { WallClockProvider, CryptoRandomProvider } from "../core/runner/harness/providers"
 import { McpHost } from "../core/mcp"
-import { MCP_SERVER_INFO_TOOL, MCP_TOOLS, toolName } from "../core/mcp/tools"
-import { MCP_PROMPTS } from "../core/mcp/prompts"
-import { MCP_RESOURCES } from "../core/mcp/resources"
 import { AgentEventBroker } from "../core/agents/agent_event_broker"
 import { hydratePathFromLoginShell } from "../core/agents/login_path"
 import { AgentProcessManager } from "./agent_process_manager"
@@ -60,10 +58,6 @@ import type { AgentDefinition } from "@shared/types/AgentDefinition"
 import type { AgentScope } from "@shared/types/AgentScope"
 import type { AgentEmbeddedLaunchRequest, AgentLaunchRequest } from "@shared/types/AgentsBridge"
 import type { McpStatus } from "@shared/types/McpStatus"
-import type { MCPTool } from "@shared/types/MCPTool"
-import type { MCPPrompt } from "@shared/types/MCPPrompt"
-import type { MCPResource } from "@shared/types/MCPResource"
-import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { WorkflowChangedEvent } from "@shared/types/WorkflowChangedEvent"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import type { RunStartedEvent } from "@shared/types/RunStartedEvent"
@@ -103,6 +97,7 @@ import { createTray, getOpenAtLogin, launchedHidden, setOpenAtLogin } from "./ba
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
+import type { AppInfo } from "@shared/types/AppInfo"
 
 const bootstrapLog = getLogger("bootstrap")
 const isSmokeTest = app.commandLine.hasSwitch(SMOKE_TEST_SWITCH)
@@ -293,23 +288,75 @@ function installApplicationMenu(): void {
   Menu.setApplicationMenu(template.length > 0 ? Menu.buildFromTemplate(template) : null)
 }
 
+/**
+ * The window's own colours, mirrored from the renderer's surface tokens: the
+ * page background (`--aw-surface`) and the header the native window controls
+ * sit in (`--aw-surface-raised` / `--aw-text-primary`). Kept as literals because
+ * main cannot read a CSS variable, and a mismatch is visible as a flash of the
+ * wrong colour while the window paints.
+ */
+const WINDOW_COLORS = {
+  dark: { background: "#09090b", titleBar: "#18181b", symbols: "#fafafa" },
+  light: { background: "#fbf8f3", titleBar: "#fdfbf7", symbols: "#3a3026" },
+} as const
+
+/** `h-header` in index.css — the native overlay is exactly as tall as the bar it covers. */
+const TITLE_BAR_HEIGHT = 48
+
+function windowColors(dark: boolean): (typeof WINDOW_COLORS)[keyof typeof WINDOW_COLORS] {
+  return dark ? WINDOW_COLORS.dark : WINDOW_COLORS.light
+}
+
+/**
+ * Paint the window to match the theme the renderer just switched to. The
+ * overlay is Windows/Linux only: macOS shows its traffic lights, which the OS
+ * colours itself.
+ */
+function applyWindowTheme(win: BrowserWindow, dark: boolean): void {
+  if (win.isDestroyed()) return
+  const colors = windowColors(dark)
+  win.setBackgroundColor(colors.background)
+  if (process.platform !== "darwin") {
+    win.setTitleBarOverlay({
+      color: colors.titleBar,
+      symbolColor: colors.symbols,
+      height: TITLE_BAR_HEIGHT,
+    })
+  }
+}
+
 /** Resolves whether the window loaded app://local/. */
 async function createWindow(show = true): Promise<boolean> {
+  // Native controls are drawn over the header rather than by us: Windows and
+  // Linux get titleBarOverlay, which is also what gives Windows 11 its snap
+  // layouts on hover, and macOS keeps its traffic lights with hiddenInset.
+  // Before the renderer has painted, the OS theme is the best guess at what it
+  // will paint; the renderer corrects it as soon as its saved choice loads.
+  const colors = windowColors(nativeTheme.shouldUseDarkColors)
   const win = new BrowserWindow({
     show,
     width: 1280,
     height: 800,
-    // Deliberately below the ~1024px the canvas toolbar was sized against.
-    // A tiling compositor gives the window the tile it decided on and ignores
-    // this hint, but Chromium still keeps the *viewport* at the minimum — so a
-    // 1024 floor in a 956px half-screen tile put the last 68px of every row
-    // (window controls, footer, banner actions) permanently off-screen, with
-    // nothing the page could do about it. Half of a 1080p screen, gaps
-    // included, fits under this.
-    minWidth: 900,
-    minHeight: 700,
-    frame: false,
-    backgroundColor: "#0b0b0f",
+    // Below the ~1024px the canvas toolbar was sized against, and low enough
+    // for 1366×768 at 125% scaling (~1093×614 logical) to open at its real
+    // size rather than being clipped. A tiling compositor gives the window the
+    // tile it decided on and ignores this hint, but Chromium still keeps the
+    // *viewport* at the minimum — so the floor is kept at the smallest desktop
+    // shell that still lays out: the 768px compact breakpoint plus room for
+    // the rail, and a header, content and footer that still fit vertically.
+    minWidth: 800,
+    minHeight: 560,
+    backgroundColor: colors.background,
+    ...(process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: {
+            color: colors.titleBar,
+            symbolColor: colors.symbols,
+            height: TITLE_BAR_HEIGHT,
+          },
+        }),
     // Packaged Windows/macOS builds get the taskbar/dock icon from the exe's
     // embedded resource (electron-builder's build.win/mac.icon), but this is
     // still needed for dev (`npm start`) and for Linux, where windows are
@@ -325,16 +372,6 @@ async function createWindow(show = true): Promise<boolean> {
 
   mainWindow = win
 
-  ipcMain.on("window:minimize", () => win.minimize())
-  ipcMain.on("window:toggleMaximize", () => {
-    if (win.isMaximized()) {
-      win.unmaximize()
-      return
-    }
-
-    win.maximize()
-  })
-  ipcMain.on("window:close", () => win.close())
   win.on("close", (event) => {
     if (closeToTray && !isQuitting && !installingUpdate) {
       event.preventDefault()
@@ -344,8 +381,6 @@ async function createWindow(show = true): Promise<boolean> {
     if (!mayQuit()) event.preventDefault()
   })
 
-  win.on("maximize", () => win.webContents.send("window:maximizeChanged", true))
-  win.on("unmaximize", () => win.webContents.send("window:maximizeChanged", false))
   win.on("closed", () => {
     mainWindow = null
   })
@@ -642,6 +677,22 @@ if (!hasSingleInstanceLock) {
     const workflowService = new WorkflowService(workflows, scopeResolver, collections, environments)
     const runService = new RunService(runs, scopeResolver, scheduler, runEvents)
     const deps: HandlerDeps = {
+      // About describes this process; none of it is configurable from there.
+      app: {
+        info: {
+          version: app.getVersion(),
+          electron: process.versions.electron ?? "unknown",
+          chromium: process.versions.chrome ?? "unknown",
+          node: process.versions.node,
+          platform: process.platform,
+          arch: process.arch,
+          osVersion: os.release(),
+          dataFolder: app.getPath("userData"),
+        } satisfies AppInfo,
+        revealDataFolder: () => {
+          void shell.openPath(app.getPath("userData"))
+        },
+      },
       workspaces: new WorkspaceService(workspaces, workflows, scopeResolver),
       collections: new CollectionService(collections, workflows, scopeResolver),
       workflows: workflowService,
@@ -696,6 +747,18 @@ if (!hasSingleInstanceLock) {
         return handler(...args)
       }
     }
+    // The renderer's theme lives in localStorage, which main cannot read. Its
+    // dark-mode effect calls this instead, so a theme flip repaints the native
+    // controls with the page rather than at the next launch. Registered once
+    // here, not per window: `ipcMain.handle` throws on a second registration,
+    // and a window hidden to the tray can be recreated after it was closed.
+    ipcMain.handle(
+      "window:applyTheme",
+      requireTrustedSender((dark: unknown): void => {
+        if (typeof dark !== "boolean" || mainWindow === null) return
+        applyWindowTheme(mainWindow, dark)
+      }),
+    )
     ipcMain.handle("mcp:getStatus", requireTrustedSender(() => mcpStatus()))
     ipcMain.handle(
       "mcp:enable",
@@ -747,71 +810,6 @@ if (!hasSingleInstanceLock) {
         return mcpStatus()
       }),
     )
-    ipcMain.handle(
-      "mcp:listTools",
-      requireTrustedSender(
-        (): readonly MCPTool[] => [
-          { name: MCP_SERVER_INFO_TOOL.name, description: MCP_SERVER_INFO_TOOL.description },
-          ...MCP_TOOLS.map((spec) => ({ name: toolName(spec), description: spec.description })),
-        ],
-      ),
-    )
-    ipcMain.handle(
-      "mcp:listPrompts",
-      requireTrustedSender(
-        (): readonly MCPPrompt[] =>
-          MCP_PROMPTS.map((spec) => ({ name: spec.name, description: spec.description })),
-      ),
-    )
-    ipcMain.handle(
-      "mcp:listResources",
-      requireTrustedSender((): readonly MCPResource[] => MCP_RESOURCES.map((spec) => ({ ...spec }))),
-    )
-    // Probe the endpoint from the trusted main process: a renderer fetch sends an
-    // app-scheme Origin that the host's DNS-rebinding guard rejects, so it can
-    // only ever report failure. Main sends no Origin and is accepted.
-    ipcMain.handle(
-      "mcp:testConnection",
-      requireTrustedSender(async (): Promise<McpTestResult> => {
-        const config = mcpHost?.getConfig()
-        if (!mcpHost?.isRunning() || config === null || config === undefined) {
-          return { ok: false, status: null }
-        }
-        const authHeaders = { Authorization: `Bearer ${config.token}` }
-        try {
-          const response = await fetch(config.url, {
-            method: "POST",
-            headers: {
-              ...authHeaders,
-              "Content-Type": "application/json",
-              Accept: "application/json, text/event-stream",
-            },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              method: "initialize",
-              params: {
-                protocolVersion: "2025-06-18",
-                capabilities: {},
-                clientInfo: { name: "apiweave-ui", version: app.getVersion() },
-              },
-            }),
-          })
-          // initialize opens a retained session; DELETE it so a probe never leaks.
-          const session = response.headers.get("mcp-session-id")
-          if (session !== null) {
-            await fetch(config.url, {
-              method: "DELETE",
-              headers: { ...authHeaders, "mcp-session-id": session },
-            }).catch(() => undefined)
-          }
-          return { ok: response.ok, status: response.status }
-        } catch {
-          return { ok: false, status: null }
-        }
-      }),
-    )
-
     // Restore the user's persisted MCP choice on launch.
     if (readMcpEnabled()) {
       mcpHost = new McpHost({
@@ -980,6 +978,7 @@ if (!hasSingleInstanceLock) {
         collections,
         workflows,
         environments,
+        presets: nodePresets,
         workspaceGit: new WorkspaceGitRepository(database.kvStore),
       },
       hostCli,

@@ -31,7 +31,7 @@
 
 Every workflow can live inside a project on your local machine. A workflow belongs to at most one project at a time, or can be left outside any project. The sidebar lists every project and every workflow in the project. Workflows open as tabs, so you can switch between several open workflows on the canvas with `Ctrl+Tab`.
 
-Workflows are members of a project. A workflow can be inside one project at a time, and the project list records the order you intend to run them in. See [Projects](projects.md) for the grouping flow and the `.awecollection` export.
+Workflows are members of a project. A workflow can be inside one project at a time, and the project list records the order you intend to run them in. See [Projects](projects.md) for the grouping flow and the `.aweproject` export.
 
 ## Building a Workflow
 
@@ -427,7 +427,7 @@ The top toolbar exposes the actions that operate on the whole workflow.
 
 ### Unsaved changes
 
-A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes and quitting ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close or the quit. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
+A pending auto-save is never dropped: switching or closing a tab, and quitting the app, send it immediately. If the workflow still has unsaved changes after that — auto-save is turned off in **Settings → Canvas → Auto-save**, or the save failed — switching to another tab keeps them as a draft on the tab, marked with the unsaved dot, and they are back on the canvas when you return. Closing a tab with unsaved changes and quitting ask whether to **Save**, **Discard**, or **Cancel**, once per such tab; **Cancel** stops the close or the quit. A tab closed because its workflow was deleted closes without asking: there is nothing left to save to.
 
 Every save is checked against the revision the canvas loaded. If the workflow changed elsewhere in the meantime — an agent over MCP or another window — the save is refused instead of overwriting that change, your edits stay on the canvas unsaved, and a notice offers **Load latest** (discard your edits and show the newer version) or **Overwrite** (save yours over it).
 

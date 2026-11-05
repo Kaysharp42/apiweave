@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import useCanvasStore from "../stores/CanvasStore";
 import { Button } from "./atoms/Button";
+import { Select } from "./atoms/Select";
 import { TextArea } from "./atoms/TextArea";
+import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Modal } from "./molecules/Modal";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -336,12 +338,11 @@ curl -X POST "https://api.example.com/users" \\
               >
                 Destination Workflow
               </label>
-              <select
+              <Select
                 id="curl-destination-workflow"
                 value={selectedWorkflowId}
                 onChange={(e) => setSelectedWorkflowId(e.target.value)}
                 disabled={loadingWorkflows}
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {loadingWorkflows
@@ -353,11 +354,11 @@ curl -X POST "https://api.example.com/users" \\
                     {wf.name} ({wf.nodes?.length || 0} nodes)
                   </option>
                 ))}
-              </select>
+              </Select>
               <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1 flex items-center gap-1">
                 {selectedWorkflowId ? (
                   <>
-                    <CheckCircle className="w-4 h-4 text-status-success dark:text-status-success-dark" />
+                    <CheckCircle className="w-4 h-4 text-status-success" />
                     <span>Will append to selected workflow</span>
                   </>
                 ) : (
@@ -369,17 +370,11 @@ curl -X POST "https://api.example.com/users" \\
             </div>
 
             {/* Sanitize Option */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sanitize}
-                onChange={(e) => setSanitize(e.target.checked)}
-                className="w-4 h-4 text-(--aw-primary) border-border dark:border-border-dark rounded-sm focus:ring-(--aw-primary)"
-              />
-              <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                Sanitize sensitive headers (API keys, tokens, etc.)
-              </span>
-            </label>
+            <CheckboxOption
+              label="Sanitize sensitive headers (API keys, tokens, etc.)"
+              checked={sanitize}
+              onChange={setSanitize}
+            />
           </div>
         )}
 
@@ -387,8 +382,8 @@ curl -X POST "https://api.example.com/users" \\
         {error && (
           <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4">
             <div className="flex items-start">
-              <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark mr-2 shrink-0 mt-0.5" />
-              <p className="text-sm text-status-error dark:text-status-error-dark">
+              <AlertCircle className="w-5 h-5 text-status-error mr-2 shrink-0 mt-0.5" />
+              <p className="text-sm text-status-error">
                 {error}
               </p>
             </div>

@@ -52,10 +52,10 @@ export interface ExportedEnvironment {
   readonly swaggerDocUrl: string | null
 }
 
-/** A full v2 `.awecollection` bundle with additive project execution metadata. */
+/** A full v2 `.aweproject` bundle with additive project execution metadata. */
 export interface ProjectBundle {
   readonly schemaVersion: string
-  readonly type: "awecollection"
+  readonly type: "aweproject"
   readonly project: {
     readonly projectId: string
     readonly name: string
@@ -116,7 +116,7 @@ function exportEnvironment(environment: Environment, workspaceId: string): Expor
 }
 
 /**
- * Project (collection) export/import for the v2 `.awecollection` format. Ported
+ * Project (collection) export/import for the v2 `.aweproject` format. Ported
  * from Python `project_export_service`. Secret *references* only — ciphertext,
  * private keys, and plaintext NEVER enter a bundle (`assertNoSecretValues` fails
  * closed if a forbidden storage key ever reaches the export layer).
@@ -179,7 +179,7 @@ export class ProjectExportService {
 
     const bundle: ProjectBundle = {
       schemaVersion: SCHEMA_VERSION,
-      type: "awecollection",
+      type: "aweproject",
       project: {
         projectId: project.projectId ?? project.collectionId,
         name: project.name,
@@ -386,8 +386,8 @@ function validateBundle(bundle: ProjectBundle): string[] {
   if (typeof bundle !== "object" || bundle === null) {
     return ["Bundle must be a JSON object"]
   }
-  if (bundle.type !== "awecollection") {
-    errors.push("Invalid bundle: type must be 'awecollection'")
+  if (bundle.type !== "aweproject") {
+    errors.push("Invalid bundle: type must be 'aweproject'")
   }
   if (typeof bundle.schemaVersion !== "string" || bundle.schemaVersion.length === 0) {
     errors.push("Invalid bundle: missing 'schemaVersion'")

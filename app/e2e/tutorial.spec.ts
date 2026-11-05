@@ -113,7 +113,9 @@ test.describe("tutorial library", () => {
   }) => {
     await openWorkflowTab(page);
 
-    await page.getByRole("button", { name: "Open command palette" }).click();
+    // The shortcut, not the toolbar button: the button moves into the overflow
+    // menu when the toolbar is narrow, and the palette is what is under test.
+    await page.keyboard.press("ControlOrMeta+k");
     await page.getByRole("combobox", { name: "Search commands" }).fill("tour");
     await page.getByText("Open tutorials").click();
 
@@ -178,6 +180,12 @@ test.describe("tutorial follow-along", () => {
 
     await page.getByRole("button", { name: "Tutorials" }).click();
     await expect(page).toHaveURL(new RegExp(`${LIBRARY_PATH}$`));
+    // The library is a lazy route. Wait for the page to commit before using the
+    // nav rail, so the click sees the tutorial route in the nav's closure
+    // rather than the workflow route it is navigating away from.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Tutorials" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Back to workspace" }).click();
     await expect(page).toHaveURL(new RegExp(`${WORKSPACE_PATH}$`));
@@ -190,6 +198,9 @@ test.describe("tutorial follow-along", () => {
     // and clicking Workflows must reveal the same canvas, not a fresh one.
     await page.getByRole("button", { name: "Tutorials" }).click();
     await expect(page).toHaveURL(new RegExp(`${LIBRARY_PATH}$`));
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Tutorials" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Workflows", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${WORKSPACE_PATH}$`));
@@ -245,9 +256,9 @@ test.describe("tutorial compact and dark presentations", () => {
   test("renders the dark presentation", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await navigateDesktop(page, LIBRARY_PATH);
-    await page.getByRole("button", { name: "Switch to dark mode" }).click();
+    await page.getByRole("button", { name: /switch to Dark$/ }).click();
     await expect(
-      page.getByRole("button", { name: "Switch to light mode" }),
+      page.getByRole("button", { name: /switch to Light$/ }),
     ).toBeVisible();
     await captureEvidence(page, "tutorial-library-dark.png");
 

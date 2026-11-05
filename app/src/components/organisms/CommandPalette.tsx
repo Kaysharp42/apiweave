@@ -4,9 +4,13 @@ import { Command, Search, Waypoints, Workflow as WorkflowIcon } from "lucide-rea
 import { toast } from "sonner";
 import { Input } from "../atoms/Input";
 import { HighlightedText } from "../atoms/HighlightedText";
+import { Kbd } from "../atoms/Kbd";
 import { apiweave } from "../../utils/apiweaveClient";
 import useCanvasStore from "../../stores/CanvasStore";
 import useTabStore from "../../stores/TabStore";
+import { openAbout } from "../../stores/AboutStore";
+import { openShortcutsHelp } from "../../stores/ShortcutsHelpStore";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import type {
   CanvasCommand,
   CommandPaletteItem,
@@ -18,6 +22,30 @@ const SEARCH_MIN_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 200;
 const WORKFLOW_RESULT_LIMIT = 5;
 const NODE_RESULT_LIMIT = 10;
+
+/**
+ * The one app-wide command. The rest describe what the active canvas can do;
+ * About belongs to the app rather than to a workflow, so it lives here instead
+ * of in the canvas command registry.
+ */
+const ABOUT_COMMAND: CanvasCommand = {
+  id: "app.about",
+  title: "About APIWeave",
+  group: "Application",
+  keywords: ["about", "version", "licence", "license", "credits"],
+  when: () => true,
+  run: openAbout,
+};
+
+const SHORTCUTS_COMMAND: CanvasCommand = {
+  id: "app.keyboard-shortcuts",
+  title: "Keyboard shortcuts",
+  group: "Application",
+  keywords: ["shortcuts", "keys", "chords", "help"],
+  shortcut: shortcutLabel("showShortcutsHelp"),
+  when: () => true,
+  run: openShortcutsHelp,
+};
 
 function matchesQuery(command: CanvasCommand, query: string): boolean {
   const haystack = [command.title, command.group, ...command.keywords]
@@ -48,7 +76,7 @@ const optionClass =
 const iconClass =
   "h-4 w-4 shrink-0 text-primary dark:text-primary-light";
 const asideClass =
-  "max-w-[45%] shrink-0 truncate text-xs text-text-muted dark:text-text-muted-dark";
+  "max-w-[45%] shrink-0 truncate text-xs text-text-secondary dark:text-text-secondary-dark";
 
 export function CommandPalette({
   open,
@@ -61,7 +89,11 @@ export function CommandPalette({
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const availableCommands = useMemo(
-    () => commands.filter((command) => command.when()),
+    () => [
+      ...commands.filter((command) => command.when()),
+      SHORTCUTS_COMMAND,
+      ABOUT_COMMAND,
+    ],
     [commands],
   );
   const filteredCommands = useMemo(
@@ -189,9 +221,13 @@ export function CommandPalette({
                       <span className="min-w-0 flex-1 truncate">
                         {item.command.title}
                       </span>
-                      <span className={asideClass}>
-                        {item.command.shortcut ?? item.command.group}
-                      </span>
+                      {item.command.shortcut !== undefined ? (
+                        <Kbd className="max-w-[45%] shrink-0 truncate">
+                          {item.command.shortcut}
+                        </Kbd>
+                      ) : (
+                        <span className={asideClass}>{item.command.group}</span>
+                      )}
                     </>
                   )}
                   {item.kind === "workflow" && (
@@ -214,7 +250,7 @@ export function CommandPalette({
                           />
                         </span>
                         {item.node.urlPath !== undefined && (
-                          <span className="block truncate font-mono text-xs text-text-muted dark:text-text-muted-dark">
+                          <span className="block truncate font-mono text-xs text-text-secondary dark:text-text-secondary-dark">
                             {item.node.method !== undefined && (
                               <>
                                 <HighlightedText text={item.node.method} query={term} />{" "}
@@ -233,7 +269,7 @@ export function CommandPalette({
             {items.length === 0 && (
               <p
                 role="status"
-                className="px-5 py-8 text-center text-sm text-text-muted dark:text-text-muted-dark"
+                className="px-5 py-8 text-center text-sm text-text-secondary dark:text-text-secondary-dark"
               >
                 {searching ? "Searching..." : `Nothing matches “${query}”.`}
               </p>

@@ -40,10 +40,10 @@ export function KeyValueEditor({
   return (
     <div className={["w-full", className].filter(Boolean).join(" ")}>
       <div className="grid grid-cols-[1fr_1fr_auto] gap-1 mb-1">
-        <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
+        <span className="truncate px-2 py-1 font-mono text-2xs font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Name
         </span>
-        <span className="truncate px-2 py-1 font-mono text-[10px] font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
+        <span className="truncate px-2 py-1 font-mono text-2xs font-medium uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Value
         </span>
         <span className="w-8" />

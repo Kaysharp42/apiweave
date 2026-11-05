@@ -10,13 +10,21 @@
 /** Inset from the canvas edges, shared by every corner fixture. */
 export const CanvasCornerGutter = 12;
 
-export const MiniMapSize = { width: 220, height: 150 } as const;
+export const MiniMapSize = { width: 160, height: 100 } as const;
 
 /**
- * Bottom offset for the action stack — one gutter above the minimap, which in
- * turn sits one gutter above the canvas floor.
+ * Bottom offset for the action stack — one gutter above the minimap when it is
+ * showing, and one gutter above the canvas floor when it is not.
+ *
+ * Taking the preference rather than assuming the map is there is what keeps the
+ * stack from floating in the empty space where a hidden minimap used to be.
  */
-export const CanvasActionsBottom = CanvasCornerGutter * 2 + MiniMapSize.height;
+export function canvasActionsBottom(minimapVisible: boolean): number {
+  return (
+    CanvasCornerGutter +
+    (minimapVisible ? MiniMapSize.height + CanvasCornerGutter : 0)
+  );
+}
 
 /**
  * Height of the band the floating toolbar covers at the top of the canvas: its

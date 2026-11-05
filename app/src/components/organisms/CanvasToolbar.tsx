@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import {
   Save,
   History,
+  ListChecks,
   Play,
   Square,
   Code,
@@ -18,26 +19,38 @@ import {
   Frame,
   Ungroup,
   FileSpreadsheet,
-  FileClock,
+  Globe,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Menu, MenuButton, MenuItem, MenuItems, MenuSeparator } from "@headlessui/react";
 import { Badge } from "../atoms/Badge";
 import { Button } from "../atoms/Button";
+import { Divider } from "../atoms/Divider";
 import { IconButton } from "../atoms/IconButton";
+import { Kbd } from "../atoms/Kbd";
+import { Tooltip } from "../atoms/Tooltip";
 import ButtonSelect from "../ButtonSelect";
 import { AgentLaunchButton } from "./AgentLaunchButton";
 import { useOpenAgentSession } from "../../hooks/useAgentDockControls";
-import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
 import { useElementWidth } from "../../hooks/useElementWidth";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import useCanvasPrefsStore from "../../stores/CanvasPrefsStore";
 import type { CanvasToolbarProps } from "../../types/CanvasToolbarProps";
 import type { ToolbarButtonProps } from "../../types/ToolbarButtonProps";
 import type { ToolbarDensity } from "../../types";
-import { buildEnvironmentOptions, nextToolbarDensity } from "./canvasToolbarUtils";
+import { buildEnvironmentOptions, nextToolbarDensity, toolbarSlots } from "./canvasToolbarUtils";
 
 const EMPTY_ENVIRONMENTS: Array<{ environmentId: string; name: string }> = [];
 const EMPTY_RESUME_OPTIONS: NonNullable<CanvasToolbarProps["resumeOptions"]> =
   [];
+
+/** The environment picker with its name showing. */
+const ENVIRONMENT_TRIGGER_CLASS =
+  "flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap";
+
+/** The same picker at the last density step: a globe, named by its tooltip. */
+const ENVIRONMENT_ICON_TRIGGER_CLASS =
+  "flex h-8 w-8 items-center justify-center rounded-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none";
 
 export function CanvasToolbar({
   onSave,
@@ -66,15 +79,12 @@ export function CanvasToolbar({
   onEnvironmentChange,
   onRefreshSwagger,
   isSwaggerRefreshing = false,
+  hasOpenApiSource = false,
   workflowId,
   resumeOptions = EMPTY_RESUME_OPTIONS,
   isResumeLoading = false,
 }: CanvasToolbarProps) {
-  const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
-  const [isOverflowOpen, setIsOverflowOpen] = useState(false);
-  const runMenuRef = useRef<HTMLDivElement>(null);
   const dataFileRef = useRef<HTMLInputElement>(null);
-  const overflowRef = useRef<HTMLDivElement>(null);
   const openAgentSession = useOpenAgentSession();
   // Straight from the store rather than down a prop chain: the lock is one
   // boolean the canvas reads from the same place, and threading it through
@@ -107,23 +117,27 @@ export function CanvasToolbar({
   //
   // No dependency array on purpose — the bar's natural width also moves with
   // its content (an agent name, a "Running…" label), not just with the canvas.
-  // It terminates because `nextToolbarDensity("overflow")` is `"overflow"`, and
+  // It terminates because `nextToolbarDensity("compact")` is `"compact"`, and
   // React bails out of a re-render when the state does not change.
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (bar === null) return;
     // +1: subpixel layout widths report a half-pixel overflow that is not one.
-    if (bar.scrollWidth > bar.clientWidth + 1) setDensity(nextToolbarDensity);
+    if (bar.scrollWidth > bar.clientWidth + 1) {
+      // A concrete next tier, not an updater: the effect already knows the tier
+      // it measured, and an updater can be handed the state from before the
+      // previous step (which left the bar stuck one tier short).
+      setDensity(nextToolbarDensity(density));
+    }
   });
   const showLabels = density === "labels";
-  const useOverflow = density === "overflow";
-
-  useCloseOnOutsideOrEscape(isRunMenuOpen, () => setIsRunMenuOpen(false), runMenuRef);
-  useCloseOnOutsideOrEscape(
-    isOverflowOpen,
-    () => setIsOverflowOpen(false),
-    overflowRef,
-  );
+  const {
+    showSecondaryInline,
+    showHistoryInline,
+    showStructureInline,
+    showEnvironmentLabel,
+    showOverflow,
+  } = toolbarSlots(density);
 
   return (
     // Two elements, because this bar has to know how much room it was given.
@@ -149,6 +163,7 @@ export function CanvasToolbar({
         className="pointer-events-auto flex max-w-full min-w-0 flex-nowrap items-center gap-1.5 px-2 py-1.5 rounded-xs bg-surface-raised dark:bg-surface-dark-raised border border-border dark:border-border-dark shadow-node"
         role="toolbar"
         aria-label="Workflow actions"
+        data-density={density}
       >
         <div className="flex shrink-0 items-center">
           <ToolbarButton
@@ -158,71 +173,94 @@ export function CanvasToolbar({
             tooltip="Save workflow (Ctrl+S)"
             showLabel={showLabels}
           />
-          <IconButton
-            onClick={onCommandPalette}
-            tooltip="Command palette (Ctrl+K)"
-            aria-label="Open command palette"
-            variant="ghost"
-            size="sm"
-          >
-            <Command className="w-4 h-4" />
-          </IconButton>
-          {/* Icon-only at every density, like the camera lock: undo is a
-              reflex, and a reflex two clicks deep in an overflow menu is not
-              one. The disabled state is the only affordance telling you
-              whether there is anything left to undo. */}
-          <IconButton
-            onClick={onUndo}
-            disabled={!canUndo}
-            tooltip="Undo (Ctrl+Z)"
-            aria-label="Undo"
-            variant="ghost"
-            size="sm"
-          >
-            <Undo2 className="w-4 h-4" />
-          </IconButton>
-          <IconButton
-            onClick={onRedo}
-            disabled={!canRedo}
-            tooltip="Redo (Ctrl+Shift+Z)"
-            aria-label="Redo"
-            variant="ghost"
-            size="sm"
-          >
-            <Redo2 className="w-4 h-4" />
-          </IconButton>
-          <IconButton
-            onClick={onGroup}
-            disabled={!canGroup}
-            tooltip={
-              canGroup
-                ? "Frame selection (Ctrl+G)"
-                : "Select two ungrouped nodes to frame"
-            }
-            aria-label="Frame selection"
-            variant="ghost"
-            size="sm"
-          >
-            <Frame className="w-4 h-4" />
-          </IconButton>
-          <IconButton
-            onClick={onUngroup}
-            disabled={!canUngroup}
-            tooltip={
-              canUngroup
-                ? "Ungroup selection (Ctrl+Shift+G)"
-                : "Select a frame or framed node to ungroup"
-            }
-            aria-label="Ungroup selection"
-            variant="ghost"
-            size="sm"
-          >
-            <Ungroup className="w-4 h-4" />
-          </IconButton>
-          {!useOverflow && (
+        </div>
+
+        <ToolbarDivider />
+
+        {showStructureInline && (
+          <>
+            <div className="flex shrink-0 items-center">
+              {/* Icon-only at every density, like the camera lock: undo is a
+                  reflex, and a reflex two clicks deep in an overflow menu is not
+                  one. The disabled state is the only affordance telling you
+                  whether there is anything left to undo. At the last tier the
+                  bar has run out of room for that argument — the buttons move
+                  into the menu so Run keeps its place. */}
+              <IconButton
+                onClick={onUndo}
+                disabled={!canUndo}
+                tooltip="Undo (Ctrl+Z)"
+                aria-label="Undo"
+                variant="ghost"
+                size="sm"
+              >
+                <Undo2 className="w-4 h-4" />
+              </IconButton>
+              <IconButton
+                onClick={onRedo}
+                disabled={!canRedo}
+                tooltip="Redo (Ctrl+Shift+Z)"
+                aria-label="Redo"
+                variant="ghost"
+                size="sm"
+              >
+                <Redo2 className="w-4 h-4" />
+              </IconButton>
+            </div>
+
+            <ToolbarDivider />
+
+            <div className="flex shrink-0 items-center">
+              <IconButton
+                onClick={onGroup}
+                disabled={!canGroup}
+                tooltip={
+                  canGroup
+                    ? "Frame selection (Ctrl+G)"
+                    : "Select two ungrouped nodes to frame"
+                }
+                aria-label="Frame selection"
+                variant="ghost"
+                size="sm"
+              >
+                <Frame className="w-4 h-4" />
+              </IconButton>
+              <IconButton
+                onClick={onUngroup}
+                disabled={!canUngroup}
+                tooltip={
+                  canUngroup
+                    ? "Ungroup selection (Ctrl+Shift+G)"
+                    : "Select a frame or framed node to ungroup"
+                }
+                aria-label="Ungroup selection"
+                variant="ghost"
+                size="sm"
+              >
+                <Ungroup className="w-4 h-4" />
+              </IconButton>
+            </div>
+
+            <ToolbarDivider />
+          </>
+        )}
+
+        <div className="flex shrink-0 items-center">
+          {showSecondaryInline && (
+            <IconButton
+              onClick={onCommandPalette}
+              tooltip="Command palette (Ctrl+K)"
+              aria-label="Open command palette"
+              variant="ghost"
+              size="sm"
+            >
+              <Command className="w-4 h-4" />
+            </IconButton>
+          )}
+          {showHistoryInline && (
             <ToolbarButton
-              icon={History}
-              label="History"
+              icon={ListChecks}
+              label="Run history"
               onClick={onHistory}
               tooltip="Run history"
               showLabel={showLabels}
@@ -237,23 +275,105 @@ export function CanvasToolbar({
             variant="ghost"
             size="sm"
           >
-            <FileClock className="w-4 h-4" />
+            <History className="w-4 h-4" />
           </IconButton>
-          <ToolbarButton
-            icon={Code}
-            label="JSON"
-            onClick={onJsonEditor}
-            tooltip="JSON editor (Ctrl+J)"
-            showLabel={showLabels}
-          />
-          {!useOverflow && (
-            <ToolbarButton
-              icon={Upload}
-              label="Import"
-              onClick={onImport}
-              tooltip="Import nodes"
-              showLabel={showLabels}
-            />
+          {showSecondaryInline && (
+            <>
+              <ToolbarButton
+                icon={Code}
+                label="JSON"
+                onClick={onJsonEditor}
+                tooltip="JSON editor (Ctrl+J)"
+                showLabel={showLabels}
+              />
+              <ToolbarButton
+                icon={Upload}
+                label="Import"
+                onClick={onImport}
+                tooltip="Import nodes"
+                showLabel={showLabels}
+              />
+            </>
+          )}
+          {showOverflow && (
+            <Menu>
+              {/* `p-0!` rather than `p-0`: Button's size class sets
+                  `padding-inline` after `padding`, so a plain `p-0` leaves the
+                  32px box with 8px of content and squeezes the glyph. */}
+              <MenuButton
+                as={Button}
+                variant="ghost"
+                size="sm"
+                aria-label="More actions"
+                className="h-8 w-8 shrink-0 p-0!"
+              >
+                <MoreHorizontal className="h-4 w-4 shrink-0" />
+              </MenuButton>
+
+              <MenuItems
+                anchor="bottom start"
+                aria-label="More actions"
+                className="z-50 min-w-[180px] overflow-hidden rounded-xs border border-border bg-surface-raised py-1 shadow-node focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
+              >
+                {!showStructureInline && (
+                  <>
+                    <OverflowItem
+                      icon={Undo2}
+                      label="Undo"
+                      shortcut={shortcutLabel("undo")}
+                      disabled={!canUndo}
+                      onSelect={onUndo}
+                    />
+                    <OverflowItem
+                      icon={Redo2}
+                      label="Redo"
+                      shortcut={shortcutLabel("redo")}
+                      disabled={!canRedo}
+                      onSelect={onRedo}
+                    />
+                    <OverflowItem
+                      icon={Frame}
+                      label="Frame selection"
+                      shortcut={shortcutLabel("group")}
+                      disabled={!canGroup}
+                      onSelect={onGroup}
+                    />
+                    <OverflowItem
+                      icon={Ungroup}
+                      label="Ungroup selection"
+                      shortcut={shortcutLabel("ungroup")}
+                      disabled={!canUngroup}
+                      onSelect={onUngroup}
+                    />
+                    <MenuSeparator className="h-px bg-border dark:bg-border-dark" />
+                  </>
+                )}
+                <OverflowItem
+                  icon={Command}
+                  label="Command palette"
+                  shortcut={shortcutLabel("openCommandPalette")}
+                  onSelect={onCommandPalette}
+                />
+                {!showHistoryInline && (
+                  <OverflowItem
+                    icon={ListChecks}
+                    label="Run history"
+                    onSelect={onHistory}
+                  />
+                )}
+                <OverflowItem
+                  icon={Code}
+                  label="JSON editor"
+                  shortcut={shortcutLabel("toggleJsonEditor")}
+                  onSelect={onJsonEditor}
+                />
+                <OverflowItem
+                  icon={Upload}
+                  label="Import nodes"
+                  onSelect={onImport}
+                />
+              </MenuItems>
+            </Menu>
           )}
           {/* Icon-only at every density, and never in the overflow menu: this
               is reached mid-drag, when the map has just slid out from under
@@ -274,56 +394,13 @@ export function CanvasToolbar({
           </IconButton>
         </div>
 
-        {useOverflow && (
-          <div className="relative flex shrink-0" ref={overflowRef}>
-            <IconButton
-              onClick={() => setIsOverflowOpen((open) => !open)}
-              tooltip="More actions"
-              aria-haspopup="menu"
-              aria-expanded={isOverflowOpen}
-              variant="ghost"
-              size="sm"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </IconButton>
-
-            {isOverflowOpen && (
-              <div
-                role="menu"
-                aria-label="More actions"
-                className="absolute top-9 left-0 z-50 min-w-[180px] overflow-hidden rounded-xs border border-border bg-surface-raised shadow-node dark:border-border-dark dark:bg-surface-dark-raised"
-              >
-                <OverflowItem
-                  icon={History}
-                  label="Run history"
-                  onSelect={() => {
-                    setIsOverflowOpen(false);
-                    onHistory();
-                  }}
-                />
-                <OverflowItem
-                  icon={Upload}
-                  label="Import nodes"
-                  onSelect={() => {
-                    setIsOverflowOpen(false);
-                    onImport();
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        <div
-          className="w-px h-6 shrink-0 bg-border dark:bg-border-dark mx-0.5"
-          aria-hidden="true"
-        />
+        <ToolbarDivider />
 
         {/*
-          The one control allowed to give ground. Everything else in this bar is
-          `shrink-0`, so when the canvas gets narrower than even the icon
-          row wants, the environment name truncates instead of the Run button
-          being pushed off the edge.
+          The first control allowed to give ground. Everything else in this bar
+          is `shrink-0`; at the labelled and icon tiers the environment name
+          truncates instead of the Run button being pushed off the edge, and at
+          the last tier the name goes entirely and the picker becomes a globe.
         */}
         <ButtonSelect
           key={`env-select-${workflowId ?? ""}`}
@@ -331,28 +408,47 @@ export function CanvasToolbar({
           value={selectedEnvironment || ""}
           onChange={onEnvironmentChange}
           placeholder="No Environment"
-          containerClass="min-w-24 max-w-56"
-          buttonClass="flex w-full min-w-0 items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium rounded-xs bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors motion-reduce:transition-none h-8 whitespace-nowrap"
+          iconOnly={!showEnvironmentLabel}
+          icon={<Globe className="w-4 h-4" />}
+          containerClass={showEnvironmentLabel ? "min-w-24 max-w-56" : "shrink-0"}
+          buttonClass={
+            showEnvironmentLabel
+              ? ENVIRONMENT_TRIGGER_CLASS
+              : ENVIRONMENT_ICON_TRIGGER_CLASS
+          }
         />
 
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRefreshSwagger}
-          disabled={!onRefreshSwagger || isSwaggerRefreshing}
-          className="h-8 shrink-0 whitespace-nowrap"
-          icon={
-            <RefreshCw
-              className={`w-4 h-4 shrink-0 ${isSwaggerRefreshing ? "animate-spin" : ""}`}
-            />
-          }
-          title={isSwaggerRefreshing ? "Refreshing Swagger" : "Refresh Swagger"}
-          aria-label="Refresh Swagger"
-        >
-          {showLabels && (
-            <span>{isSwaggerRefreshing ? "Refreshing" : "Refresh"}</span>
-          )}
-        </Button>
+        {hasOpenApiSource && (
+          <Tooltip
+            content={
+              isSwaggerRefreshing
+                ? "Refreshing from OpenAPI spec"
+                : "Refresh from OpenAPI spec"
+            }
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefreshSwagger}
+              disabled={!onRefreshSwagger || isSwaggerRefreshing}
+              className="h-8 shrink-0 whitespace-nowrap"
+              icon={
+                <RefreshCw
+                  className={`w-4 h-4 shrink-0 ${isSwaggerRefreshing ? "animate-spin motion-reduce:animate-none" : ""}`}
+                />
+              }
+              aria-label="Refresh from OpenAPI spec"
+            >
+              {showLabels && (
+                <span>
+                  {isSwaggerRefreshing
+                    ? "Refreshing from OpenAPI spec"
+                    : "Refresh from OpenAPI spec"}
+                </span>
+              )}
+            </Button>
+          </Tooltip>
+        )}
 
         {workflowId !== undefined && workflowId !== "" && (
           <AgentLaunchButton
@@ -367,10 +463,7 @@ export function CanvasToolbar({
           />
         )}
 
-        <div
-          className="w-px h-6 shrink-0 bg-border dark:bg-border-dark mx-0.5"
-          aria-hidden="true"
-        />
+        <ToolbarDivider />
 
         {isRunning && iteration !== null && (
           <Badge
@@ -411,20 +504,20 @@ export function CanvasToolbar({
           </>
         )}
 
-        <div className="relative flex shrink-0" ref={runMenuRef}>
+        <div className="flex shrink-0">
           <Button
             variant="primary"
             intent={isRunning ? "warning" : "default"}
             size="sm"
             onClick={isRunning && onCancel ? onCancel : onRun}
             disabled={isRunning && !onCancel}
-            className="rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
+            className="rounded-l-xs rounded-r-none h-8 whitespace-nowrap font-semibold border-r border-surface-raised/30 dark:border-surface-dark-raised/30"
             icon={
               isRunning ? (
                 onCancel ? (
                   <Square className="w-4 h-4" />
                 ) : (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" />
                 )
               ) : (
                 <Play className="w-4 h-4" />
@@ -434,72 +527,78 @@ export function CanvasToolbar({
             {isRunning ? (onCancel ? "Cancel" : "Running…") : "Run"}
           </Button>
 
-          <IconButton
-            onClick={() => setIsRunMenuOpen((prev) => !prev)}
-            disabled={isRunning}
-            tooltip="Run options"
-            variant={isRunning ? "warning" : "primary"}
-            size="sm"
-            className={[
-              "h-8 rounded-l-none rounded-r-sm transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30",
-              isRunning ? "cursor-wait" : "hover:brightness-110",
-            ].join(" ")}
-          >
-            <ChevronDown
-              className={`w-4 h-4 transition-transform ${isRunMenuOpen ? "rotate-180" : ""}`}
-            />
-          </IconButton>
+          <Menu>
+            {({ open }) => (
+              <>
+                <MenuButton
+                  as={Button}
+                  disabled={isRunning}
+                  aria-label="Run options"
+                  intent={isRunning ? "warning" : "default"}
+                  size="sm"
+                  className={[
+                    "h-8 rounded-l-none rounded-r-xs px-2 transition-colors border-l border-surface-raised/30 dark:border-surface-dark-raised/30",
+                    isRunning ? "cursor-wait" : "hover:brightness-110",
+                  ].join(" ")}
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
+                  />
+                </MenuButton>
 
-          {isRunMenuOpen && (
-            <div className="absolute top-9 right-0 min-w-[280px] max-w-[360px] rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node overflow-hidden z-50">
-              <Button
-                onClick={() => {
-                  onRerunFailed?.();
-                  setIsRunMenuOpen(false);
-                }}
-                disabled={isRunning || !hasResumeOptions || isResumeLoading}
-                variant="ghost"
-                className="w-full rounded-none justify-start px-3 py-2 text-sm"
-              >
-                Rerun failed branches
-              </Button>
+                <MenuItems
+                  anchor="bottom end"
+                  aria-label="Run options"
+                  className="z-50 min-w-[280px] max-w-[360px] overflow-hidden rounded-xs border border-border bg-surface-raised py-1 shadow-node focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
+                >
+                  <ToolbarMenuItem
+                    icon={RefreshCw}
+                    label="Rerun failed branches"
+                    disabled={isRunning || !hasResumeOptions || isResumeLoading}
+                    hint={
+                      isResumeLoading
+                        ? "Loading failed nodes…"
+                        : !hasResumeOptions
+                          ? "No failed run to rerun."
+                          : undefined
+                    }
+                    onSelect={() => onRerunFailed?.()}
+                  />
 
-              <div className="w-full h-px bg-border dark:bg-border-dark" />
-
-              {isResumeLoading && (
-                <div className="px-3 py-2 text-xs text-text-muted dark:text-text-muted-dark">
-                  Loading failed nodes…
-                </div>
-              )}
-
-              {!isResumeLoading && !hasResumeOptions && (
-                <div className="px-3 py-2 text-xs text-text-muted dark:text-text-muted-dark">
-                  No failed run available.
-                </div>
-              )}
-
-              {!isResumeLoading &&
-                hasResumeOptions &&
-                safeResumeOptions.map((opt) => (
-                  <Button
-                    key={opt.nodeId}
-                    onClick={() => {
-                      onRunFromFailedNode?.(opt.nodeId);
-                      setIsRunMenuOpen(false);
-                    }}
-                    disabled={isRunning}
-                    variant="ghost"
-                    className="w-full rounded-none justify-start px-3 py-2 text-sm"
-                    title={opt.nodeId}
-                  >
-                    Run from {opt.label}
-                  </Button>
-                ))}
-            </div>
-          )}
+                  {!isResumeLoading && hasResumeOptions && (
+                    <>
+                      <MenuSeparator className="h-px bg-border dark:bg-border-dark" />
+                      {safeResumeOptions.map((opt) => (
+                        <ToolbarMenuItem
+                          key={opt.nodeId}
+                          icon={Play}
+                          label={`Run from ${opt.label}`}
+                          title={opt.nodeId}
+                          disabled={isRunning}
+                          onSelect={() => onRunFromFailedNode?.(opt.nodeId)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </MenuItems>
+              </>
+            )}
+          </Menu>
         </div>
       </div>
     </div>
+  );
+}
+
+function ToolbarDivider() {
+  return (
+    <Divider
+      direction="vertical"
+      role="separator"
+      aria-orientation="vertical"
+      data-testid="toolbar-divider"
+      className="mx-1 self-stretch"
+    />
   );
 }
 
@@ -511,38 +610,90 @@ function ToolbarButton({
   showLabel = true,
 }: ToolbarButtonProps) {
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={onClick}
-      className="h-8 whitespace-nowrap text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
-      title={tooltip || label}
-      aria-label={label}
-      icon={<Icon className="w-4 h-4 shrink-0" />}
+    <Tooltip content={tooltip || label}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onClick}
+        className="h-8 whitespace-nowrap text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
+        aria-label={label}
+        icon={<Icon className="w-4 h-4 shrink-0" />}
+      >
+        {showLabel && <span>{label}</span>}
+      </Button>
+    </Tooltip>
+  );
+}
+
+/** One row shared by the toolbar's menus: icon, label, optional chord hint. */
+function ToolbarMenuItem({
+  icon: Icon,
+  label,
+  shortcut,
+  hint,
+  title,
+  onSelect,
+  disabled = false,
+}: {
+  readonly icon: LucideIcon;
+  readonly label: string;
+  readonly shortcut?: string | undefined;
+  readonly hint?: string | undefined;
+  readonly title?: string | undefined;
+  readonly onSelect: () => void;
+  readonly disabled?: boolean;
+}) {
+  return (
+    <MenuItem
+      as="button"
+      type="button"
+      onClick={onSelect}
+      disabled={disabled}
+      title={title}
+      className={[
+        "flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors duration-150 motion-reduce:transition-none",
+        "text-text-primary dark:text-text-primary-dark",
+        "data-focus:bg-surface-overlay dark:data-focus:bg-surface-dark-overlay",
+        "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2",
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+      ].join(" ")}
     >
-      {showLabel && <span>{label}</span>}
-    </Button>
+      <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {hint !== undefined && (
+          <span className="block text-xs text-text-secondary dark:text-text-secondary-dark">
+            {hint}
+          </span>
+        )}
+      </span>
+      {shortcut !== undefined && (
+        <Kbd className="shrink-0 pl-4">{shortcut}</Kbd>
+      )}
+    </MenuItem>
   );
 }
 
 function OverflowItem({
   icon: Icon,
   label,
+  shortcut,
   onSelect,
+  disabled = false,
 }: {
   readonly icon: LucideIcon;
   readonly label: string;
+  readonly shortcut?: string;
   readonly onSelect: () => void;
+  readonly disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay"
-    >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-text-muted dark:text-text-muted-dark" />
-      {label}
-    </button>
+    <ToolbarMenuItem
+      icon={Icon}
+      label={label}
+      shortcut={shortcut}
+      onSelect={onSelect}
+      disabled={disabled}
+    />
   );
 }

@@ -5,6 +5,8 @@ import type { ScopedEnvironment } from "./ScopedEnvironment";
 export interface WorkflowItemProps {
   workflow: Workflow;
   isActive: boolean;
+  /** The row is listed under its own project, so the project badge is redundant. */
+  hideProject?: boolean;
   collections: Project[];
   environments: ScopedEnvironment[];
   onWorkflowClick: (workflow: Workflow) => void;

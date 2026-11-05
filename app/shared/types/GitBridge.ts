@@ -1,6 +1,7 @@
 // fallow-ignore-file code-duplication -- a bridge interface is a list of parallel one-line method signatures; the run is the interface's shape, not shared behaviour to extract.
 import type { GitAccountList } from "./GitAccountList"
 import type { GitAccountRef } from "./GitAccountRef"
+import type { GitBranchList } from "./GitBranchList"
 import type { GitCreatedRepository } from "./GitCreatedRepository"
 import type { GitCreateRepositoryRequest } from "./GitCreateRepositoryRequest"
 import type { GitProvider } from "./GitProvider"
@@ -21,7 +22,9 @@ import type { WorkspacePendingChange } from "./WorkspacePendingChange"
  * The `window.__APIWEAVE_GIT__` contract: a workspace's version history.
  * Off the IPC router, so no local agent can reach it over MCP — git writes
  * files and, once a remote is connected, decides where the workspace is pushed.
- * Every call but `openFromGit` resolves to the workspace's status after it.
+ * Every call that changes a workspace resolves to its status after it; the
+ * read-only `statusAll`, `pendingChanges`, `mergeState`, `listRemoteBranches`
+ * and `listBranches` return what they read.
  */
 export interface GitBridge {
   readonly status: (workspaceId: string) => Promise<WorkspaceGitStatus>
@@ -105,8 +108,11 @@ export interface GitBridge {
    * `account` is the `gh`/`glab` account to reach it as, from `listAccounts`;
    * null or absent, the user's own credential helper or SSH key. An account
    * on another host than the remote's is refused.
+   * `branch` names the remote branch to track; absent, the branch the
+   * workspace's history is on. Choosing another puts the local history on a
+   * branch of that name, so an empty repository receives it there.
    */
-  readonly connectRemote: (workspaceId: string, url: string, account?: GitAccountRef | null) => Promise<WorkspaceGitStatus>
+  readonly connectRemote: (workspaceId: string, url: string, account?: GitAccountRef | null, branch?: string) => Promise<WorkspaceGitStatus>
   /**
    * Reach the connected remote as another account, or with null as the user's
    * own credentials. Nothing is fetched: the next sync is the first call made
@@ -124,16 +130,37 @@ export interface GitBridge {
    */
   readonly discardLocalChanges: (workspaceId: string) => Promise<WorkspaceGitStatus>
   /**
-   * Clone the repository at `url` and open the workspace it holds, tracked in
-   * auto mode and bound to that remote. Resolves `duplicate`, creating
-   * nothing, when the repository's workspace is already in this app; `opened`
-   * carries the import's warnings for the caller to show before switching.
-   * Rejects, and leaves nothing behind, when the URL is not an accepted form,
-   * the repository cannot be reached, or it is not an APIWeave workspace.
+   * Clone the repository at `url`, on `branch` when one is named (else its
+   * default), and open the workspace it holds, tracked in auto mode and bound
+   * to that remote and branch. Resolves `duplicate`, creating nothing, when the
+   * repository's workspace is already in this app; `opened` carries the
+   * import's warnings for the caller to show before switching. Rejects, and
+   * leaves nothing behind, when the URL is not an accepted form, the repository
+   * cannot be reached or has no such branch, or it is not an APIWeave workspace.
    * `account`, as for `connectRemote`, is what the clone and every later sync
    * reach the remote as.
    */
-  readonly openFromGit: (url: string, account?: GitAccountRef | null) => Promise<OpenWorkspaceFromGitResult>
+  readonly openFromGit: (url: string, account?: GitAccountRef | null, branch?: string) => Promise<OpenWorkspaceFromGitResult>
+  /**
+   * The branches the repository at `url` has, and the one its HEAD names, asked
+   * of the remote before any clone. `account` reaches it as that account; null
+   * or absent, the user's own credential helper or SSH key.
+   */
+  readonly listRemoteBranches: (url: string, account?: GitAccountRef | null) => Promise<GitBranchList>
+  /**
+   * The branches this tracked, connected workspace can switch to, refreshed
+   * from the remote. Rejects for an untracked workspace or one with no remote.
+   * Read-only: nothing is committed or switched.
+   */
+  readonly listBranches: (workspaceId: string) => Promise<GitBranchList>
+  /**
+   * Move the workspace onto another branch of its remote, importing that
+   * branch's tree. Refuses rather than losing anything: when the current
+   * branch has commits the remote does not, when a merge waits, or when the
+   * target branch holds another workspace. A failed import puts the clone back
+   * on the branch it was on. Resolves to the status after the switch.
+   */
+  readonly switchBranch: (workspaceId: string, branch: string) => Promise<WorkspaceGitStatus>
   /**
    * Every account `gh` and `glab` are signed in to, and whether each tool is
    * installed. A missing tool lists no accounts rather than rejecting. No

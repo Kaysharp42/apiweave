@@ -1,10 +1,4 @@
-import {
-  useState,
-  useRef,
-  useEffect,
-  type DragEvent,
-  type ChangeEvent,
-} from "react";
+import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import useSidebarStore from "../stores/SidebarStore";
 import {
   Download,
@@ -22,21 +16,23 @@ import {
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
 import { PanelTabs } from "./molecules/PanelTabs";
-import type { TabItem } from "../types";
+import { CheckboxOption } from "./molecules/CheckboxOption";
+import { FileDropZone } from "./molecules/FileDropZone";
+import { PasteJsonField } from "./molecules/PasteJsonField";
+import { ProjectFileImportTab } from "./molecules/ProjectFileImportTab";
+import { ProjectImportTargetSelect } from "./molecules/ProjectImportTargetSelect";
+import type { ProjectFileImportKind, TabItem } from "../types";
 import { Input } from "./atoms/Input";
 import { TextArea } from "./atoms/TextArea";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
 import { downloadTextFile } from "../utils/downloadFile";
 import { PostmanImportPanel } from "./PostmanImportPanel";
-import type { Project } from "../types/Project";
 import type { Workflow } from "../types/Workflow";
 import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResult";
 
 const errorText = (error: unknown, fallback: string): string =>
   error instanceof Error && error.message ? error.message : fallback;
-
-type ProjectWithWorkflowCount = Project;
 
 interface MessageState {
   type: "success" | "warning" | "error";
@@ -87,6 +83,13 @@ const TABS: TabItem[] = [
   { key: "import-postman", icon: Upload, label: "Postman" },
 ];
 
+/** The three tabs whose body is the shared project file import panel. */
+const FILE_IMPORT_KINDS: Partial<Record<TabId, ProjectFileImportKind>> = {
+  "import-workflows": "workflow",
+  "import-har": "har",
+  "import-openapi": "openapi",
+};
+
 const TAB_TITLES: Record<TabId, (projectName: string | undefined) => string> = {
   export: (projectName) => `Export Project: ${projectName ?? ""}`,
   "import-collection": () => "Import Project",
@@ -114,7 +117,6 @@ export function CollectionExportImport({
   const [validation, setValidation] =
     useState<ProjectImportDryRunResult | null>(null);
   const [includeEnvironments, setIncludeEnvironments] = useState<boolean>(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const [createNewProject, setCreateNewProject] = useState<boolean>(true);
   const [newProjectName, setNewProjectName] = useState<string>("");
@@ -129,6 +131,7 @@ export function CollectionExportImport({
   const [sanitize, setSanitize] = useState<boolean>(true);
 
   const activeTab = selectedTab ?? mode;
+  const fileImportKind = FILE_IMPORT_KINDS[activeTab];
 
   // Refresh the shared project list whenever the modal opens, via the store's
   // activeWorkspaceId-scoped fetch — the same path that loads the sidebar.
@@ -159,7 +162,7 @@ export function CollectionExportImport({
       );
 
       downloadTextFile(
-        `${(projectName ?? "project").replace(/\s+/g, "_")}.awecollection`,
+        `${(projectName ?? "project").replace(/\s+/g, "_")}.aweproject`,
         JSON.stringify(bundle, null, 2),
         "application/json",
       );
@@ -399,7 +402,6 @@ export function CollectionExportImport({
           : await apiweave.workflows.importHar({
               workspaceId,
               data: bundleData,
-              importMode: "linear",
               sanitize,
             })
       ) as { nodes?: Workflow["nodeTemplates"] };
@@ -536,34 +538,6 @@ export function CollectionExportImport({
     }
   };
 
-  const handleDragOver = (e: DragEvent<HTMLButtonElement>): void => {
-    e.preventDefault();
-    e.currentTarget.classList.add(
-      "border-(--aw-primary)",
-      "bg-(--aw-primary)/5",
-    );
-  };
-
-  const handleDragLeave = (e: DragEvent<HTMLButtonElement>): void => {
-    e.currentTarget.classList.remove(
-      "border-(--aw-primary)",
-      "bg-(--aw-primary)/5",
-    );
-  };
-
-  const handleDrop = (e: DragEvent<HTMLButtonElement>): void => {
-    e.preventDefault();
-    e.currentTarget.classList.remove(
-      "border-(--aw-primary)",
-      "bg-(--aw-primary)/5",
-    );
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      handleFileSelect(files[0] as File);
-    }
-  };
-
   const handleFileSelect = (file: File): void => {
     const reader = new FileReader();
     reader.onload = (e: ProgressEvent<FileReader>) => {
@@ -578,13 +552,6 @@ export function CollectionExportImport({
       }
     };
     reader.readAsText(file);
-  };
-
-  const handleFileInputChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
-    }
   };
 
   if (!isOpen) {
@@ -645,19 +612,12 @@ export function CollectionExportImport({
             </div>
 
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeEnvironments}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setIncludeEnvironments(e.target.checked)
-                  }
-                  className="w-4 h-4 rounded-sm"
-                />
-                <span className="text-text-primary dark:text-text-primary-dark">
-                  Include Environments
-                </span>
-              </label>
+              <CheckboxOption
+                label="Include Environments"
+                checked={includeEnvironments}
+                onChange={setIncludeEnvironments}
+                variant="plain"
+              />
             </div>
 
             <Button
@@ -674,62 +634,36 @@ export function CollectionExportImport({
         {activeTab === "import-collection" && (
           <div className="space-y-4">
             {/* Upload */}
-            <button
-              type="button"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload
-                size={32}
-                className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
-              />
-              <p className="font-medium text-text-primary dark:text-text-primary-dark">
-                Drag & drop project bundle
-              </p>
-              <p className="text-sm text-text-muted dark:text-text-muted-dark">
-                or click to browse
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".awecollection,.json"
-                onChange={handleFileInputChange}
-                aria-label="Project bundle file upload"
-                className="hidden"
-              />
-            </button>
+            <FileDropZone
+              title="Drag & drop project bundle"
+              hint="or click to browse"
+              hintClassName="text-sm text-text-secondary dark:text-text-secondary-dark"
+              accept=".aweproject,.json"
+              inputAriaLabel="Project bundle file upload"
+              onFileSelect={handleFileSelect}
+            />
 
             {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
+              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success">
                 <CheckCircle size={18} />
                 <span className="text-sm">File loaded successfully</span>
               </div>
             )}
 
             {/* Paste JSON */}
-            <div>
-              <label
-                htmlFor="collection-export-paste-json"
-                className="block text-sm font-medium mb-2 text-text-primary dark:text-text-primary-dark"
-              >
-                Or paste JSON:
-              </label>
-              <TextArea
-                id="collection-export-paste-json"
-                value={pastedJson}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-                  setPastedJson(e.target.value);
-                  setUploadedFile(null);
-                  setValidation(null);
-                }}
-                placeholder="Paste project JSON here..."
-                className="w-full h-32 resize-none"
-                rows={6}
-              />
-            </div>
+            <PasteJsonField
+              id="collection-export-paste-json"
+              label="Or paste JSON:"
+              value={pastedJson}
+              placeholder="Paste project JSON here..."
+              className="w-full h-32 resize-none"
+              rows={6}
+              onChange={(value) => {
+                setPastedJson(value);
+                setUploadedFile(null);
+                setValidation(null);
+              }}
+            />
 
             {/* Validation */}
             {validation && (
@@ -738,7 +672,7 @@ export function CollectionExportImport({
                   Validation Results
                 </h4>
                 {validation.valid ? (
-                  <p className="text-status-success dark:text-status-success-dark text-sm flex items-center gap-2">
+                  <p className="text-status-success text-sm flex items-center gap-2">
                     <CheckCircle size={16} /> Valid project bundle
                   </p>
                 ) : (
@@ -746,7 +680,7 @@ export function CollectionExportImport({
                     {validation.errors.map((err: string) => (
                       <p
                         key={err}
-                        className="text-status-error dark:text-status-error-dark text-sm flex items-center gap-2"
+                        className="text-status-error text-sm flex items-center gap-2"
                       >
                         <AlertCircle size={14} /> {err}
                       </p>
@@ -793,6 +727,7 @@ export function CollectionExportImport({
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="radio"
+                  name="collection-import-target"
                   checked={createNewProject}
                   onChange={() => setCreateNewProject(true)}
                   className="w-4 h-4"
@@ -817,6 +752,7 @@ export function CollectionExportImport({
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="radio"
+                  name="collection-import-target"
                   checked={!createNewProject}
                   onChange={() => setCreateNewProject(false)}
                   className="w-4 h-4"
@@ -835,7 +771,7 @@ export function CollectionExportImport({
                   className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
                 >
                   <option value="">Select project…</option>
-                  {projects.map((project: ProjectWithWorkflowCount) => (
+                  {projects.map((project) => (
                     <option
                       key={project.projectId ?? project.collectionId}
                       value={project.projectId ?? project.collectionId}
@@ -874,334 +810,19 @@ export function CollectionExportImport({
           </div>
         )}
 
-        {/* Import Workflows Tab */}
-        {activeTab === "import-workflows" && (
-          <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
-                Import individual workflows, HAR files, or OpenAPI specs to this
-                project
-              </p>
-            </div>
-
-            {/* Collection Selector */}
-            <div className="space-y-2">
-              <label
-                htmlFor="collection-import-select"
-                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark"
-              >
-                Select Project
-              </label>
-              <select
-                id="collection-import-select"
-                value={selectedTargetProject || ""}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                  setSelectedTargetProject(e.target.value || null)
-                }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
-              >
-                <option value="">-- Choose a project --</option>
-                {projects.map((project: ProjectWithWorkflowCount) => (
-                  <option
-                    key={project.projectId ?? project.collectionId}
-                    value={project.projectId ?? project.collectionId}
-                  >
-                    {project.name} ({project.workflowCount} workflows)
-                  </option>
-                ))}
-              </select>
-              {projects.length === 0 && (
-                <p className="text-xs text-(--aw-status-warning)">
-                  No projects available. Create a project first.
-                </p>
-              )}
-            </div>
-
-            {/* Upload */}
-            <button
-              type="button"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload
-                size={32}
-                className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
-              />
-              <p className="font-medium text-text-primary dark:text-text-primary-dark">
-                Drag & drop file or click to browse
-              </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                Supports: .json (workflow/OpenAPI), .har (HAR files)
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,.har"
-                onChange={handleFileInputChange}
-                aria-label="Project workflow or HAR file upload"
-                className="hidden"
-              />
-            </button>
-
-            {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
-                <CheckCircle size={18} />
-                <span className="text-sm">File loaded successfully</span>
-              </div>
-            )}
-
-            {/* Options */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setSanitize(e.target.checked)
-                  }
-                  className="w-4 h-4 rounded-sm"
-                />
-                <span className="text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers
-                </span>
-              </label>
-            </div>
-
-            {/* Action button */}
-            <Button
-              onClick={handleImportWorkflowToCollection}
-              disabled={isLoading || !uploadedFile || !selectedTargetProject}
-              fullWidth
-              variant="primary"
-              icon={<Upload size={18} />}
-              title={!selectedTargetProject ? "Please select a project" : ""}
-            >
-              {isLoading ? "Importing..." : "Import to Project"}
-            </Button>
-          </div>
-        )}
-
-        {/* Import HAR Tab */}
-        {activeTab === "import-har" && (
-          <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
-                Import individual workflows, HAR files, or OpenAPI specs to this
-                project
-              </p>
-            </div>
-
-            {/* Collection Selector */}
-            <div className="space-y-2">
-              <label
-                htmlFor="collection-har-select"
-                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark"
-              >
-                Select Project
-              </label>
-              <select
-                id="collection-har-select"
-                value={selectedTargetProject || ""}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                  setSelectedTargetProject(e.target.value || null)
-                }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
-              >
-                <option value="">-- Choose a project --</option>
-                {projects.map((project: ProjectWithWorkflowCount) => (
-                  <option
-                    key={project.projectId ?? project.collectionId}
-                    value={project.projectId ?? project.collectionId}
-                  >
-                    {project.name} ({project.workflowCount} workflows)
-                  </option>
-                ))}
-              </select>
-              {projects.length === 0 && (
-                <p className="text-xs text-(--aw-status-warning)">
-                  No projects available. Create a project first.
-                </p>
-              )}
-            </div>
-
-            {/* Upload */}
-            <button
-              type="button"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload
-                size={32}
-                className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
-              />
-              <p className="font-medium text-text-primary dark:text-text-primary-dark">
-                Drag & drop file or click to browse
-              </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                Supports: .json (workflow/OpenAPI), .har (HAR files)
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,.har"
-                onChange={handleFileInputChange}
-                aria-label="Project workflow or HAR file upload"
-                className="hidden"
-              />
-            </button>
-
-            {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
-                <CheckCircle size={18} />
-                <span className="text-sm">File loaded successfully</span>
-              </div>
-            )}
-
-            {/* Options */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setSanitize(e.target.checked)
-                  }
-                  className="w-4 h-4 rounded-sm"
-                />
-                <span className="text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers
-                </span>
-              </label>
-            </div>
-
-            {/* Action button */}
-            <Button
-              onClick={handleImportWorkflowToCollection}
-              disabled={isLoading || !uploadedFile || !selectedTargetProject}
-              fullWidth
-              variant="primary"
-              icon={<Upload size={18} />}
-              title={!selectedTargetProject ? "Please select a project" : ""}
-            >
-              {isLoading ? "Importing..." : "Import to Project"}
-            </Button>
-          </div>
-        )}
-
-        {/* Import OpenAPI Tab */}
-        {activeTab === "import-openapi" && (
-          <div className="space-y-4">
-            <div className="bg-surface-overlay dark:bg-surface-dark-overlay p-4 rounded-sm border border-border dark:border-border-dark">
-              <p className="text-sm font-medium text-(--aw-primary) dark:text-(--aw-primary-light)">
-                Import individual workflows, HAR files, or OpenAPI specs to this
-                project
-              </p>
-            </div>
-
-            {/* Collection Selector */}
-            <div className="space-y-2">
-              <label
-                htmlFor="collection-openapi-select"
-                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark"
-              >
-                Select Project
-              </label>
-              <select
-                id="collection-openapi-select"
-                value={selectedTargetProject || ""}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                  setSelectedTargetProject(e.target.value || null)
-                }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
-              >
-                <option value="">-- Choose a project --</option>
-                {projects.map((project: ProjectWithWorkflowCount) => (
-                  <option
-                    key={project.projectId ?? project.collectionId}
-                    value={project.projectId ?? project.collectionId}
-                  >
-                    {project.name} ({project.workflowCount} workflows)
-                  </option>
-                ))}
-              </select>
-              {projects.length === 0 && (
-                <p className="text-xs text-(--aw-status-warning)">
-                  No projects available. Create a project first.
-                </p>
-              )}
-            </div>
-
-            {/* Upload */}
-            <button
-              type="button"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className="border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center hover:bg-surface dark:hover:bg-surface-dark transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload
-                size={32}
-                className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
-              />
-              <p className="font-medium text-text-primary dark:text-text-primary-dark">
-                Drag & drop file or click to browse
-              </p>
-              <p className="text-xs text-text-muted dark:text-text-muted-dark">
-                Supports: .json (workflow/OpenAPI), .har (HAR files)
-              </p>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,.har"
-                onChange={handleFileInputChange}
-                aria-label="Project OpenAPI file upload"
-                className="hidden"
-              />
-            </button>
-
-            {uploadedFile && (
-              <div className="bg-(--aw-status-success)/5 dark:bg-(--aw-status-success)/10 p-3 rounded-sm border border-(--aw-status-success)/20 flex items-center gap-2 text-status-success dark:text-status-success-dark">
-                <CheckCircle size={18} />
-                <span className="text-sm">File loaded successfully</span>
-              </div>
-            )}
-
-            {/* Options */}
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setSanitize(e.target.checked)
-                  }
-                  className="w-4 h-4 rounded-sm"
-                />
-                <span className="text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers
-                </span>
-              </label>
-            </div>
-
-            {/* Action button */}
-            <Button
-              onClick={handleImportWorkflowToCollection}
-              disabled={isLoading || !uploadedFile || !selectedTargetProject}
-              fullWidth
-              variant="primary"
-              icon={<Upload size={18} />}
-              title={!selectedTargetProject ? "Please select a project" : ""}
-            >
-              {isLoading ? "Importing..." : "Import to Project"}
-            </Button>
-          </div>
+        {fileImportKind && (
+          <ProjectFileImportTab
+            kind={fileImportKind}
+            projects={projects}
+            selectedProjectId={selectedTargetProject}
+            onSelectProject={setSelectedTargetProject}
+            sanitize={sanitize}
+            onSanitizeChange={setSanitize}
+            hasFile={!!uploadedFile}
+            isLoading={isLoading}
+            onFileSelect={handleFileSelect}
+            onImport={handleImportWorkflowToCollection}
+          />
         )}
 
         {activeTab === "import-postman" && (
@@ -1220,38 +841,12 @@ export function CollectionExportImport({
               </p>
             </div>
 
-            {/* Collection Selector */}
-            <div className="space-y-2">
-              <label
-                htmlFor="collection-curl-select"
-                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark"
-              >
-                Select Project
-              </label>
-              <select
-                id="collection-curl-select"
-                value={selectedTargetProject || ""}
-                onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                  setSelectedTargetProject(e.target.value || null)
-                }
-                className="w-full px-4 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-(--aw-primary) focus:border-transparent"
-              >
-                <option value="">-- Choose a project --</option>
-                {projects.map((project: ProjectWithWorkflowCount) => (
-                  <option
-                    key={project.projectId ?? project.collectionId}
-                    value={project.projectId ?? project.collectionId}
-                  >
-                    {project.name} ({project.workflowCount} workflows)
-                  </option>
-                ))}
-              </select>
-              {projects.length === 0 && (
-                <p className="text-xs text-(--aw-status-warning)">
-                  No projects available. Create a project first.
-                </p>
-              )}
-            </div>
+            <ProjectImportTargetSelect
+              id="collection-curl-select"
+              value={selectedTargetProject}
+              onChange={setSelectedTargetProject}
+              projects={projects}
+            />
 
             {/* cURL Input */}
             <div className="space-y-2">
@@ -1275,19 +870,12 @@ export function CollectionExportImport({
 
             {/* Options */}
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setSanitize(e.target.checked)
-                  }
-                  className="w-4 h-4 rounded-sm"
-                />
-                <span className="text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers
-                </span>
-              </label>
+              <CheckboxOption
+                label="Sanitize sensitive headers"
+                checked={sanitize}
+                onChange={setSanitize}
+                variant="plain"
+              />
             </div>
 
             {/* Action button */}

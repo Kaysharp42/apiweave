@@ -110,7 +110,7 @@ interface PolicyFieldsetProps {
   readonly options: readonly PolicyOption[];
   readonly policy: UpdatePolicy;
   readonly disabled: boolean;
-  readonly showUnsignedNote: boolean;
+  readonly showVerificationNote: boolean;
   readonly onSelect: (policy: UpdatePolicy) => void;
 }
 
@@ -118,7 +118,7 @@ function PolicyFieldset({
   options,
   policy,
   disabled,
-  showUnsignedNote,
+  showVerificationNote,
   onSelect,
 }: PolicyFieldsetProps) {
   return (
@@ -152,14 +152,15 @@ function PolicyFieldset({
           </label>
         ))}
       </div>
-      {showUnsignedNote && (
-        // The user is the verification step until the installer is signed:
-        // with no Authenticode publisher in app-update.yml, electron-updater
-        // skips its publisher check and trusts a SHA512 that arrives over
-        // the same channel as the download it vouches for.
-        <p className="mt-2 px-2 text-xs text-text-muted dark:text-text-muted-dark">
-          This build isn&apos;t code-signed yet, so &ldquo;Notify me&rdquo; is
-          the default — approving each version is the only check there is.
+      {showVerificationNote && (
+        // OS code signing depends on release secrets; the Ed25519 signature
+        // check runs on every platform regardless, and is the gate that runs
+        // before a download can install. Approval stays the default so a
+        // person still chooses when new code runs.
+        <p className="mt-2 px-2 text-xs text-text-secondary dark:text-text-secondary-dark">
+          Every update is verified against the signing key built into this app.
+          &ldquo;Notify me&rdquo; stays the default so you approve each version
+          before it runs.
         </p>
       )}
     </fieldset>
@@ -254,7 +255,7 @@ interface MetaRowProps {
 
 function MetaRow({ lastChecked, canShowLog, onShowLog }: MetaRowProps) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted dark:text-text-muted-dark">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary dark:text-text-secondary-dark">
       {lastChecked !== null && <span>{lastChecked}</span>}
       {lastChecked !== null && canShowLog && <span aria-hidden="true">·</span>}
       {/* The one thing that makes "my update is stuck" answerable. Reveals the
@@ -340,7 +341,7 @@ export function UpdateSettingsPanel() {
         options={policyOptions}
         policy={policy}
         disabled={!isAvailable}
-        showUnsignedNote={supportsAutoInstall}
+        showVerificationNote={supportsAutoInstall}
         onSelect={(next) => void setPolicy(next)}
       />
 

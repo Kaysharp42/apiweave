@@ -9,17 +9,21 @@
 // Both read the Ed25519 private key (PEM) from UPDATE_SIGNING_PRIVATE_KEY and
 // fail loudly without it: a release is never published unsigned.
 //
-// Signing hashes the installer the manifest's `path` names (resolved beside the
-// manifest) and appends `apiweaveSignature: <base64>`, replacing any earlier
-// one, so a re-run is safe. The signed bytes must stay identical to
-// signedPayload() in electron/update_signature.ts; update_signature.test.ts
-// runs this script against that verifier.
+// Signing hashes every installer the manifest's `files:` list names (resolved
+// beside the manifest) and appends `apiweaveSignature: <base64>` for the
+// primary `path` plus an `apiweaveSignatures` map keyed by filename, replacing
+// any earlier values, so a re-run is safe. A single-installer manifest gets
+// one entry in the map; the macOS manifest gets one per architecture. The
+// signed bytes must stay identical to signedPayload() in
+// electron/update_signature.ts; update_signature.test.ts runs this script
+// against that verifier.
 import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto"
 import { createReadStream, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const SIGNATURE_FIELD = "apiweaveSignature"
+const FILE_SIGNATURES_FIELD = "apiweaveSignatures"
 const KEY_FILE = fileURLToPath(new URL("../electron/update_signing_key.ts", import.meta.url))
 
 function fail(message) {
@@ -63,29 +67,97 @@ function topScalar(text, name) {
   return new RegExp(`^${name}:[ \\t]*['"]?([^'"\\n]*?)['"]?[ \\t]*$`, "m").exec(text)?.[1]
 }
 
+/** Every installer a manifest's `files:` list names. electron-builder writes
+ * flat `- url: ...` entries at two-space indent; the sha512 on the following
+ * line is deliberately ignored because this script hashes the actual file. */
+function fileUrls(text) {
+  const urls = []
+  for (const match of text.matchAll(/^[ \t]+-[ \t]+url:[ \t]*['"]?([^'"\n]+?)['"]?[ \t]*$/gm)) {
+    const url = match[1].trim()
+    if (url !== "" && !urls.includes(url)) urls.push(url)
+  }
+  return urls
+}
+
+/** A line the per-file signature map owns: blank, or indented under its key. */
+function signatureMapLine(line) {
+  return line.trim() === "" || /^[ \t]/.test(line)
+}
+
+/** Whether `line` keeps the map going: a map line while the map is open. */
+function mapContinues(inMap, line) {
+  return inMap && signatureMapLine(line)
+}
+
+/** The lines without the per-file signature map: its key and every line the
+ * map owns, up to the next top-level key. */
+function withoutSignatureMap(lines) {
+  const kept = []
+  let inMap = false
+  for (const line of lines) {
+    if (line.startsWith(`${FILE_SIGNATURES_FIELD}:`)) {
+      inMap = true
+      continue
+    }
+    inMap = mapContinues(inMap, line)
+    if (!inMap) kept.push(line)
+  }
+  return kept
+}
+
+/** Removes this script's previous fields, so a retried job replaces them
+ * instead of stacking a second copy (or leaving a stale arch behind). */
+function stripSignatures(text) {
+  const withoutPrimary = text.split("\n").filter((line) => !line.startsWith(`${SIGNATURE_FIELD}:`))
+  return withoutSignatureMap(withoutPrimary).join("\n").replace(/\n*$/, "\n")
+}
+
 async function sha512Base64(file) {
   const hash = createHash("sha512")
   for await (const chunk of createReadStream(file)) hash.update(chunk)
   return hash.digest("base64")
 }
 
-async function signManifest(manifest, key) {
+async function signatureFor(manifest, key, version, installer) {
+  const digest = await sha512Base64(path.join(path.dirname(manifest), installer))
+  return sign(null, Buffer.from(`apiweave-update/1\n${version}\n${digest}\n`, "utf8"), key).toString("base64")
+}
+
+/** The manifest's text and the two fields a signature needs, taken from its top level. */
+function manifestFields(manifest) {
   const text = readFileSync(manifest, "utf8")
   const version = topScalar(text, "version")
   const installer = topScalar(text, "path")
   if (!version || !installer) fail(`${manifest} has no top-level version or path`)
+  return { text, version, installer }
+}
 
-  const digest = await sha512Base64(path.join(path.dirname(manifest), installer))
-  const payload = Buffer.from(`apiweave-update/1\n${version}\n${digest}\n`, "utf8")
-  const signature = sign(null, payload, key).toString("base64")
+/** Every installer to sign: those the manifest's `files:` list names, and the
+ * primary `path` even when the list leaves it out. */
+function installersToSign(text, installer) {
+  const urls = fileUrls(text)
+  if (!urls.includes(installer)) urls.unshift(installer)
+  return urls
+}
 
-  const kept = text
-    .split("\n")
-    .filter((line) => !line.startsWith(`${SIGNATURE_FIELD}:`))
-    .join("\n")
-    .replace(/\n*$/, "\n")
-  writeFileSync(manifest, `${kept}${SIGNATURE_FIELD}: ${signature}\n`)
-  console.log(`${manifest}: signed ${installer} (v${version})`)
+/** The manifest's text with this script's signature fields appended. */
+function signedText(text, installer, signatures) {
+  let output = stripSignatures(text)
+  output += `${SIGNATURE_FIELD}: ${signatures.get(installer)}\n`
+  output += `${FILE_SIGNATURES_FIELD}:\n`
+  for (const [url, signature] of signatures) output += `  ${JSON.stringify(url)}: ${signature}\n`
+  return output
+}
+
+async function signManifest(manifest, key) {
+  const { text, version, installer } = manifestFields(manifest)
+  const urls = installersToSign(text, installer)
+
+  const signatures = new Map()
+  for (const url of urls) signatures.set(url, await signatureFor(manifest, key, version, url))
+
+  writeFileSync(manifest, signedText(text, installer, signatures))
+  console.log(`${manifest}: signed ${urls.length} file(s) for v${version}: ${urls.join(", ")}`)
 }
 
 const args = process.argv.slice(2)

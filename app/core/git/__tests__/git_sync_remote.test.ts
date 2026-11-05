@@ -102,6 +102,21 @@ describe("GitSyncService.connectRemote", () => {
     expect(status.lastCommit?.sha).toBe(head)
   })
 
+  it("pushes the history to the branch chosen when connecting, not the one it was on", async () => {
+    const harness = await trackedHarness()
+    const remote = makeBareRemote(harness.sandbox)
+
+    const status = await harness.sync.connectRemote(harness.workspaceId, remote.url, null, "release")
+
+    expect(status).toMatchObject({ tracked: true, remoteUrl: remote.url, branch: "release", state: "idle", lastError: null })
+    expect(binding(harness)).toMatchObject({ remoteUrl: remote.url, branch: "release" })
+    expect((await harness.git.status(harness.dir)).branch).toBe("release")
+    const head = headOf(harness, harness.dir)
+    expect(headOf(harness, harness.dir, "origin/release")).toBe(head)
+    expect(headOf(harness, remote.dir, "release")).toBe(head)
+    expect((await harness.git.status(harness.dir)).upstream).toBe("origin/release")
+  })
+
   it("announces the status it leaves behind, on connect and on disconnect", async () => {
     const announced: Array<string | null> = []
     const harness = await trackedHarness({ onStatusChanged: (status) => announced.push(status.remoteUrl) })

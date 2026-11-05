@@ -1,22 +1,26 @@
-// fallow-ignore-file code-duplication -- the export/delete SidebarAction pair here already matches WorkflowItem's; it predates this file's changes and is only re-flagged because AgentLaunchButton's insertion shifted its line numbers
-import { useState } from "react";
+import {
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuItems,
+} from "@headlessui/react";
 import {
   ChevronDown,
   ChevronRight,
   FolderKanban,
-  Download,
-  Trash2,
   Plus,
   FilePlus,
 } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
 import { IconButton } from "../../atoms/IconButton";
 import { AgentLaunchButton } from "../../organisms/AgentLaunchButton";
-import { SidebarAction } from "./SidebarAction";
+import { SidebarContextMenu } from "./SidebarContextMenu";
+import { SidebarExportAction } from "./SidebarExportAction";
+import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItem } from "./WorkflowItem";
-import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
-import { projectRowMenuItems } from "./rowContextMenus";
+import { contextMenuKeyPoint, projectRowMenuItems } from "./rowContextMenus";
+import { rowSurface } from "./rowStyles";
 import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
 import type { ProjectItemProps } from "../../../types";
 import type { Project } from "../../../types/Project";
@@ -42,7 +46,6 @@ export function ProjectItem({
   onAddWorkflowToProject,
   onAssignWorkflowToProject,
 }: ProjectItemProps) {
-  const [showAssignDropdown, setShowAssignDropdown] = useState(false);
   const contextMenu = useContextMenu();
   const projectId = project.projectId ?? project.collectionId;
   const projectWorkflows = Array.isArray(workflows)
@@ -53,26 +56,34 @@ export function ProjectItem({
         (wf) => !wf.collectionId || wf.collectionId !== projectId,
       )
     : [];
-  const projectLabel = getSidebarItemLabel(
-    project.name,
-    40,
-    "Untitled project",
-  );
+  const projectLabel = getSidebarItemLabel(project.name, "Untitled project");
+
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    // Shift+F10 and the dedicated ContextMenu key are the keyboard equivalent
+    // of a right-click. Anchor the menu to the focused row button: there is no
+    // pointer position to use.
+    const point = contextMenuKeyPoint(event);
+    if (point !== null) contextMenu.openAt(point);
+  };
 
   return (
     <li>
       <div
         onContextMenu={contextMenu.openAt}
-        className="group flex items-center gap-2 rounded-sm border border-transparent px-2.5 py-2 transition-colors duration-150 hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay motion-reduce:transition-none"
+        className={[
+          "group relative flex items-center gap-2 rounded-sm border px-2.5 py-2 transition-colors duration-150 motion-reduce:transition-none",
+          rowSurface(false, contextMenu.isOpen),
+        ].join(" ")}
       >
         <button
           type="button"
           className={[
             "flex min-w-0 flex-1 items-center gap-2 text-left",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
             "cursor-pointer rounded-sm",
           ].join(" ")}
           onClick={() => onToggle(projectId)}
+          onKeyDown={handleRowKeyDown}
           aria-expanded={isExpanded}
         >
           {isExpanded ? (
@@ -83,25 +94,28 @@ export function ProjectItem({
           <FolderKanban className="w-4 h-4 shrink-0 text-primary dark:text-primary-light" />
           <span
             className="font-medium text-text-primary dark:text-text-primary-dark truncate"
-            title={projectLabel.fullLabel}
+            title={projectLabel}
           >
-            {projectLabel.label}
+            {projectLabel}
           </span>
-          <Badge variant="ghost" size="xs">
+          <Badge variant="ghost" size="xs" className="shrink-0">
             {projectWorkflows.length}
           </Badge>
         </button>
 
-        <div className="ml-1 flex w-[92px] shrink-0 items-center justify-end gap-1">
+        {/* Overlaid rather than inline so the project name gets the full row
+            width; the gradient keeps long names legible underneath. */}
+        <SidebarRowActions>
           {/*
             Where the Agents section says agents are launched from. It renders
             nothing outside the desktop app, and `collectionId` rather than the
             `projectId` alias because the local-path table keys on the DB
             primary key — the same id `CollectionManager` passes.
 
-            Compact: the list panel is 236px wide and clips, so this is the
-            launch on its own. Choosing another agent or repointing the folder
-            stays in the Projects dialog and the canvas toolbar.
+            Compact: the row has room for one icon and the name needs the rest,
+            so this is the launch on its own. Choosing another agent or
+            repointing the folder stays in the Projects dialog and the canvas
+            toolbar.
 
             ponytail: one path resolution per row on mount (the roster fetch
             beside it is already cached in the service for 30s). Lift it to a
@@ -113,36 +127,19 @@ export function ProjectItem({
             scopeId={project.collectionId}
             showLabel={false}
             compact
-            className="opacity-40 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none"
           />
 
-          <SidebarAction
-            icon={Download}
+          <SidebarExportAction
             label="Export project"
-            onClick={(event) => {
-              event.stopPropagation();
-              onExportProject(project);
-            }}
+            onExport={() => onExportProject(project)}
           />
-
-          <SidebarAction
-            icon={Trash2}
-            label="Delete project permanently"
-            destructive
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeleteProject(projectId, project.name);
-            }}
-          />
-        </div>
+        </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (
-        <ContextMenu
-          x={contextMenu.origin.x}
-          y={contextMenu.origin.y}
+        <SidebarContextMenu
+          menu={contextMenu}
           label={`Project "${project.name}"`}
-          onClose={contextMenu.close}
           items={projectRowMenuItems(project, projectId, {
             onRenameProject,
             onMoveProjectToWorkspace,
@@ -154,20 +151,13 @@ export function ProjectItem({
       )}
 
       {isExpanded && (
-        <ul className="relative ml-3 mt-0.5 space-y-1 pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border dark:before:bg-border-dark">
-          {projectWorkflows.length === 0 && (
-            <li className="py-2 text-center">
-              <span className="text-xs text-text-muted dark:text-text-muted-dark block mb-2">
-                No workflows in this project
-              </span>
-            </li>
-          )}
-
+        <ul className="relative ml-3 mt-0.5 space-y-1 overflow-x-hidden pl-3 before:absolute before:bottom-0 before:left-0 before:top-0 before:w-px before:bg-border dark:before:bg-border-dark">
           {projectWorkflows.map((workflow) => (
             <WorkflowItem
               key={workflow.workflowId}
               workflow={workflow}
               isActive={selectedWorkflowId === workflow.workflowId}
+              hideProject
               collections={
                 projects.map((p) => ({
                   collectionId: p.projectId ?? p.collectionId,
@@ -184,60 +174,72 @@ export function ProjectItem({
             />
           ))}
 
-          <li className="flex items-center gap-1 py-1">
-            <IconButton
-              variant="ghost"
-              size="xs"
-              tooltip="Create a new workflow in this project"
-              onClick={() => onAddWorkflowToProject(projectId)}
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </IconButton>
+          {/* One row whether or not the project has workflows: an empty-project
+              message above a separate Add row said the same thing twice. */}
+          <li className="flex min-w-0 items-center gap-1 py-1">
+            {projectWorkflows.length === 0 && (
+              <>
+                <span className="min-w-0 truncate text-xs text-text-secondary dark:text-text-secondary-dark">
+                  No workflows yet
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="shrink-0 text-xs text-text-secondary dark:text-text-secondary-dark"
+                >
+                  ·
+                </span>
+              </>
+            )}
+
+            {projectWorkflows.length > 0 && (
+              <IconButton
+                variant="ghost"
+                size="xs"
+                tooltip="Create a new workflow in this project"
+                onClick={() => onAddWorkflowToProject(projectId)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </IconButton>
+            )}
+
             <button
               type="button"
-              className="cursor-pointer rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light dark:focus-visible:outline-primary-light"
+              className="shrink-0 cursor-pointer whitespace-nowrap rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light"
               onClick={() => onAddWorkflowToProject(projectId)}
             >
               Add workflow
             </button>
 
             {unassignedWorkflows.length > 0 && (
-              <button
-                type="button"
-                className="ml-auto flex cursor-pointer items-center gap-0.5 rounded-sm text-xs text-text-muted transition-colors hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:text-text-muted-dark dark:hover:text-text-secondary-dark dark:focus-visible:outline-primary-light"
-                onClick={() => setShowAssignDropdown(!showAssignDropdown)}
-              >
-                <FilePlus className="w-3 h-3" />
-                Assign
-                <ChevronDown
-                  className={`w-2.5 h-2.5 transition-transform ${showAssignDropdown ? "rotate-180" : ""}`}
-                />
-              </button>
+              <Menu as="div" className="relative ml-auto">
+                <MenuButton className="flex shrink-0 cursor-pointer items-center gap-0.5 whitespace-nowrap rounded-sm text-xs text-text-secondary transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:text-text-secondary-dark dark:hover:text-primary-light">
+                  <FilePlus className="w-3 h-3" />
+                  Assign
+                  <ChevronDown className="w-2.5 h-2.5" />
+                </MenuButton>
+
+                <MenuItems
+                  anchor={{ to: "bottom end", gap: 4, padding: 8 }}
+                  className="z-50 w-56 overflow-y-auto rounded-sm border border-border bg-surface-raised py-1 shadow-overlay [--anchor-max-height:10rem] focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
+                >
+                  {unassignedWorkflows.map((wf) => (
+                    <MenuItem key={wf.workflowId}>
+                      <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs text-text-primary transition-colors data-focus:bg-surface-overlay dark:text-text-primary-dark dark:data-focus:bg-surface-dark-overlay"
+                        onClick={() =>
+                          onAssignWorkflowToProject(projectId, wf.workflowId)
+                        }
+                      >
+                        <FilePlus className="w-3 h-3 shrink-0 text-text-muted dark:text-text-muted-dark" />
+                        <span className="truncate">{wf.name}</span>
+                      </button>
+                    </MenuItem>
+                  ))}
+                </MenuItems>
+              </Menu>
             )}
           </li>
-
-          {showAssignDropdown && unassignedWorkflows.length > 0 && (
-            <li className="py-1">
-              <div className="max-h-40 overflow-y-auto rounded-sm border border-border bg-surface-raised dark:border-border-dark dark:bg-surface-dark-raised">
-                {unassignedWorkflows.map((wf) => (
-                  <button
-                    key={wf.workflowId}
-                    type="button"
-                    className="flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-surface-overlay focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 dark:hover:bg-surface-dark-overlay dark:focus-visible:outline-primary-light"
-                    onClick={() => {
-                      onAssignWorkflowToProject(projectId, wf.workflowId);
-                      setShowAssignDropdown(false);
-                    }}
-                  >
-                    <FilePlus className="w-3 h-3 shrink-0 text-text-muted dark:text-text-muted-dark" />
-                    <span className="truncate text-text-primary dark:text-text-primary-dark">
-                      {wf.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </li>
-          )}
         </ul>
       )}
     </li>

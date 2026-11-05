@@ -9,7 +9,7 @@ import type { GitMergeValueProps } from "../../types";
 export function GitMergeValue({ value }: GitMergeValueProps) {
   if (value === undefined) {
     return (
-      <p className="text-xs italic text-text-muted dark:text-text-muted-dark">
+      <p className="text-xs italic text-text-secondary dark:text-text-secondary-dark">
         {NOT_PRESENT}
       </p>
     );
@@ -22,7 +22,7 @@ export function GitMergeValue({ value }: GitMergeValueProps) {
     );
   }
   return (
-    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-xxs text-text-primary dark:bg-surface-dark-overlay dark:text-text-primary-dark">
+    <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-2xs text-text-primary dark:bg-surface-dark-overlay dark:text-text-primary-dark">
       {JSON.stringify(value, null, 2)}
     </pre>
   );

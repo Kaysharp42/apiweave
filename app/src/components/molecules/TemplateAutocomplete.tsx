@@ -165,6 +165,10 @@ export function useTemplateAutocomplete<
       onSelect: (event: SyntheticEvent<E>) => syncToken(event.currentTarget),
       onBlur: () => setToken(null),
       onKeyDown,
+      // The suggestion list makes this a combobox. aria-expanded and
+      // aria-activedescendant are only valid on that role; without it the
+      // browser exposes a plain textbox and ARIA rejects the attributes.
+      role: "combobox",
       "aria-autocomplete": "list",
       "aria-expanded": isOpen,
       "aria-controls": isOpen ? listId : undefined,
@@ -309,7 +313,7 @@ function SuggestionList({
             }`}
           >
             <span
-              className={`w-10 shrink-0 font-mono text-[10px] uppercase ${KIND_CLASS[suggestion.kind]}`}
+              className={`w-10 shrink-0 font-mono text-2xs uppercase ${KIND_CLASS[suggestion.kind]}`}
             >
               {KIND_LABEL[suggestion.kind]}
             </span>
@@ -317,7 +321,7 @@ function SuggestionList({
               {suggestion.insert}
             </span>
             {suggestion.detail && (
-              <span className="truncate text-text-muted dark:text-text-muted-dark">
+              <span className="truncate text-text-secondary dark:text-text-secondary-dark">
                 {suggestion.detail}
               </span>
             )}

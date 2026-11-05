@@ -17,9 +17,7 @@ vi.mock("../../contexts/WorkspaceContext", () => ({
   }),
 }));
 
-vi.mock("./WindowControls", () => ({
-  WindowControls: () => null,
-  dragStyle: {},
+vi.mock("../../utils/windowDragStyles", () => ({
   noDragStyle: {},
 }));
 
@@ -56,8 +54,8 @@ interface StateCase {
 
 const STATES: readonly StateCase[] = [
   { name: "synced", status: trackedStatus(), label: "Synced" },
-  { name: "pending (uncommitted edits)", status: trackedStatus({ uncommitted: true }), label: "Pending" },
-  { name: "pending (unpushed versions)", status: trackedStatus({ outgoing: 2 }), label: "Pending (2 to push)" },
+  { name: "pending (uncommitted edits)", status: trackedStatus({ uncommitted: true }), label: "Uncommitted changes" },
+  { name: "pending (unpushed versions)", status: trackedStatus({ outgoing: 2 }), label: "2 to push" },
   { name: "syncing", status: trackedStatus({ state: "syncing" }), label: "Syncing" },
   { name: "incoming", status: trackedStatus({ mode: "manual", incoming: 3 }), label: "Incoming (3)" },
   { name: "diverged", status: trackedStatus({ state: "diverged", incoming: 1, outgoing: 1 }), label: "Diverged" },
@@ -127,7 +125,7 @@ describe("GitSyncControl", () => {
     });
     renderControl();
 
-    await user.click(await trigger("Pending"));
+    await user.click(await trigger("Uncommitted changes"));
     await user.click(await screen.findByRole("button", { name: "Sync now" }));
 
     expect(bridge.syncNow).toHaveBeenCalledWith("ws-1", undefined);
@@ -146,7 +144,7 @@ describe("GitSyncControl", () => {
     });
     renderControl();
 
-    await user.click(await trigger("Pending"));
+    await user.click(await trigger("Uncommitted changes"));
     await user.click(await screen.findByRole("button", { name: "Sync now" }));
 
     const dialog = await screen.findByRole("dialog");
@@ -284,7 +282,7 @@ describe("GitSyncControl", () => {
       ),
     });
     const view = renderControl();
-    await user.click(await trigger("Pending"));
+    await user.click(await trigger("Uncommitted changes"));
     await user.click(await screen.findByRole("button", { name: "Sync now" }));
     expect(bridge.syncNow).toHaveBeenCalledWith("ws-1", undefined);
 
@@ -348,7 +346,7 @@ describe("GitSyncControl", () => {
     });
     renderControl();
 
-    await user.click(await trigger("Pending"));
+    await user.click(await trigger("Uncommitted changes"));
     await user.click(await screen.findByRole("button", { name: "Sync now" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("workspace is not tracked");
@@ -382,7 +380,10 @@ describe("GitSyncControl", () => {
     installGitBridge(trackedStatus(local));
     renderControl();
 
-    // The plan's vocabulary says muted for `local`; the Button is what has to carry it.
-    expect((await trigger("Local history")).className).toContain("text-text-muted");
+    // The plan's vocabulary says muted for `local`; the neutral pill carries
+    // the label and the dot is the one thing painted in the state colour.
+    const button = await trigger("Local history");
+    expect(button.className).toContain("text-text-secondary");
+    expect(button.querySelector(".bg-text-muted")).not.toBeNull();
   });
 });

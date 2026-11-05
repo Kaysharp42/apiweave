@@ -117,6 +117,32 @@ test("updateTabWorkflow replaces stored workflow snapshot", () => {
   assert.deepEqual(tab.workflow!.variables, updated.variables);
 });
 
+test("setTabViewport remembers where one tab's canvas was left", () => {
+  resetStore();
+
+  const make = (workflowId: string) =>
+    ({
+      workflowId,
+      workspaceId: "ws-1",
+      name: workflowId,
+      nodes: [],
+      edges: [],
+      variables: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    }) as unknown as Workflow;
+
+  useTabStore.getState().openTab(make("wf-1"));
+  useTabStore.getState().openTab(make("wf-2"));
+
+  const viewport = { x: 48, y: 370, zoom: 0.6 };
+  useTabStore.getState().setTabViewport("wf-1", viewport);
+
+  const [first, second] = useTabStore.getState().tabs;
+  assert.deepEqual(first!.viewport, viewport);
+  assert.equal(second!.viewport, undefined);
+});
+
 test("tabs stay scoped to the workspace their workflow lives in", () => {
   resetStore();
 
@@ -166,6 +192,46 @@ test("tabs stay scoped to the workspace their workflow lives in", () => {
   useTabStore.getState().closeAll();
   assert.equal(useTabStore.getState().tabs.length, 0);
   assert.deepEqual(useTabStore.getState().activeTabIdByWorkspace, {});
+});
+
+test("closeToRight closes only the tabs opened after the target in its workspace", () => {
+  resetStore();
+
+  const make = (workflowId: string, workspaceId: string) =>
+    ({
+      workflowId,
+      workspaceId,
+      name: workflowId,
+      nodes: [],
+      edges: [],
+      variables: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    }) as unknown as Workflow;
+
+  const tabs = useTabStore.getState();
+  tabs.openTab(make("wf-a", "ws-1"));
+  tabs.openTab(make("wf-b", "ws-1"));
+  tabs.openTab(make("wf-other", "ws-2"));
+  tabs.openTab(make("wf-c", "ws-1"));
+  tabs.openTab(make("wf-d", "ws-1"));
+
+  // The active tab is one of the closed ones, so the target takes over.
+  useTabStore.getState().setActive("wf-d");
+  useTabStore.getState().closeToRight("wf-b");
+
+  const after = useTabStore.getState();
+  assert.deepEqual(
+    after.tabs.map((tab) => tab.workflowId),
+    ["wf-a", "wf-b", "wf-other"],
+  );
+  assert.equal(after.activeTabIdByWorkspace["ws-1"], "wf-b");
+  assert.equal(after.activeTabIdByWorkspace["ws-2"], "wf-other");
+
+  // A tab with nothing to its right is a no-op, and never reaches across into
+  // another workspace's tabs.
+  useTabStore.getState().closeToRight("wf-other");
+  assert.equal(useTabStore.getState().tabs.length, 3);
 });
 
 test("tab cycling stays inside the current workspace", () => {

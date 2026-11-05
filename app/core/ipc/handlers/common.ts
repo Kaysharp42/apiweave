@@ -12,6 +12,7 @@ import type { ImportService } from "../../services/import_service"
 import type { WorkflowAnalysisService } from "../../services/workflow_analysis_service"
 import type { AssertionAuthoringService } from "../../services/assertion_authoring_service"
 import { NotFoundError } from "../errors"
+import type { AppHandlerDeps } from "./app"
 
 /**
  * The service bundle every handler module registers against. Constructed once at
@@ -33,6 +34,12 @@ export interface HandlerDeps {
   readonly imports: ImportService
   /** Absent where nothing executes runs (a test router without a scheduler). */
   readonly projectRuns?: ProjectRunService
+  /**
+   * The running app's versions, platform and data folder, and the file-manager
+   * action About offers. Absent where there is no Electron app to describe — a
+   * test router, the MCP tool catalogue.
+   */
+  readonly app?: AppHandlerDeps
 }
 
 /** A method taking no payload — the renderer sends `undefined`, so accept it. */

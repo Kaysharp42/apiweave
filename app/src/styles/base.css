@@ -56,10 +56,21 @@
   --aw-border: rgb(var(--aw-tint-rgb) / var(--aw-a-border));
   --aw-border-focus: #0d5c6e;
 
+  /* Scrollbars — the border tint at a weight that reads as a moving thumb.
+     The 10% hairline alpha disappears here, so these are their own token
+     rather than `--aw-border` itself. */
+  --aw-scrollbar-thumb: rgb(var(--aw-tint-rgb) / 0.22);
+  --aw-scrollbar-thumb-hover: rgb(var(--aw-tint-rgb) / 0.38);
+
   /* Brand / Primary — single ink-teal accent */
   --aw-primary: #0d5c6e;
   --aw-primary-light: #0f766e;
   --aw-primary-hover: #0b4a59;
+  /* The foreground that sits on a primary fill: button labels, icon glyphs,
+     toggle thumbs. White on ink-teal reads 7.7:1; the dark theme's luminous
+     teal needs deep ink instead, so this is a per-theme value rather than a
+     `text-white` utility repeated at every call site. */
+  --aw-on-primary: #ffffff;
 
   /* Status colors — desaturated, used sparingly.
      Running is amber because it is the one state whose outcome is not known
@@ -210,8 +221,13 @@
   --aw-border-focus: #2dd4bf;
 
   --aw-primary: #2dd4bf;
-  --aw-primary-light: #0d5c6e;
+  /* The dark accent is already the luminous teal, so the "light" emphasis role
+     is that same value rather than a dimmer twin: #0d5c6e read at 2.3:1 on
+     zinc-900, which is why every `dark:text-primary-light` (secondary button
+     labels, active nav items, links, focus outlines) failed AA. */
+  --aw-primary-light: #2dd4bf;
   --aw-primary-hover: #5eead4;
+  --aw-on-primary: #0b3d49;
 
   --aw-status-success: #4ade80;
   --aw-status-error: #f87171;
@@ -330,23 +346,41 @@ pre,
   transition-duration: 0ms; /* default off — enable per-element */
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling — one system for the whole app.
+ *
+ * daisyUI's base sets `scrollbar-color` on :root, and in Chromium 121+ the
+ * presence of that property disables every ::-webkit-scrollbar rule. That is
+ * why Windows kept drawing its native arrow-button scrollbars over this track.
+ * The doubled :root outranks daisyUI's rule regardless of layer order, and
+ * `auto` hands scrollbar painting back to the webkit rules below — deliberately
+ * no `scrollbar-width`/`scrollbar-color` here, because either would disable
+ * them again in this Chromium.
+ */
+:root:root {
+  scrollbar-color: auto;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--aw-surface);
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--aw-text-muted);
-  border-radius: 4px;
+  background-color: var(--aw-scrollbar-thumb);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--aw-text-secondary);
+  background-color: var(--aw-scrollbar-thumb-hover);
 }
 
 /* Focus ring utility — consistent focus styles */

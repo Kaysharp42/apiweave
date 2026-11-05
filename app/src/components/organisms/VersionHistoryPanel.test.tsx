@@ -675,7 +675,7 @@ describe("VersionHistoryPanel", () => {
       await screen.findByText("https://github.com/acme/tests.git"),
     ).toBeInTheDocument();
     expect(screen.getByText("trunk")).toBeInTheDocument();
-    expect(screen.getByText("Pending (2 to push)")).toBeInTheDocument();
+    expect(screen.getByText("2 to push")).toBeInTheDocument();
     expect(
       screen.getByText(/2 commits haven't been pushed to the remote yet/),
     ).toBeInTheDocument();
@@ -1049,5 +1049,81 @@ describe("Create repository", () => {
         within(dialog).getByRole("button", { name: "Create and connect" }),
       ).toBeEnabled();
     });
+  });
+
+  it("chooses a branch when connecting, and passes it to the connect", async () => {
+    const user = userEvent.setup();
+    const listRemoteBranches = vi.fn(async () => ({
+      branches: ["main", "release"],
+      defaultBranch: "main",
+    }));
+    const connectRemote = vi.fn(async (_workspaceId, url, account, branch) =>
+      trackedStatus({
+        remoteUrl: url,
+        account: account ?? null,
+        branch: branch ?? "main",
+      }),
+    );
+    const { bridge } = installGitBridge(local(), {
+      listRemoteBranches,
+      connectRemote,
+    });
+    render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
+
+    await user.type(
+      await screen.findByRole("textbox", { name: "Repository URL" }),
+      "git@github.com:acme/tests.git",
+    );
+    await user.click(screen.getByRole("button", { name: "Choose branch…" }));
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "Branch" }),
+      "release",
+    );
+    await user.click(screen.getByRole("button", { name: /connect to remote/i }));
+
+    expect(listRemoteBranches).toHaveBeenCalledWith(
+      "git@github.com:acme/tests.git",
+      null,
+    );
+    expect(bridge.connectRemote).toHaveBeenCalledWith(
+      "ws-1",
+      "git@github.com:acme/tests.git",
+      null,
+      "release",
+    );
+  });
+
+  it("opens the branch picker from Version history and switches to the branch chosen", async () => {
+    const user = userEvent.setup();
+    const switched = trackedStatus({ branch: "release" });
+    const { bridge } = installGitBridge(trackedStatus(), {
+      listBranches: vi.fn(async () => ({
+        branches: ["main", "release"],
+        defaultBranch: null,
+      })),
+      switchBranch: vi.fn(async () => switched),
+    });
+    render(<VersionHistoryPanel workspaceId="ws-1" workspaceSlug="shop-api" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: "Switch branch…" }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Switch branch" });
+    await user.selectOptions(
+      within(dialog).getByRole("combobox", { name: "Branch" }),
+      "release",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Switch branch" }),
+    );
+
+    await waitFor(() =>
+      expect(bridge.switchBranch).toHaveBeenCalledWith("ws-1", "release"),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Switch branch" }),
+      ).not.toBeInTheDocument(),
+    );
   });
 });

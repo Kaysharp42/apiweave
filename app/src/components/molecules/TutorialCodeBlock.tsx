@@ -55,7 +55,10 @@ export function TutorialCodeBlock({
           )}
         </IconButton>
       </figcaption>
-      <pre className="max-w-full overflow-x-auto rounded-xs border border-border bg-surface-overlay p-3 text-xs leading-relaxed dark:border-border-dark dark:bg-surface-dark-overlay">
+      <pre
+        tabIndex={0}
+        className="max-w-full overflow-x-auto rounded-xs border border-border bg-surface-overlay p-3 text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+      >
         <code className="font-mono text-text-primary dark:text-text-primary-dark">
           {example.code}
         </code>
@@ -64,7 +67,7 @@ export function TutorialCodeBlock({
         role="status"
         aria-live="polite"
         className={[
-          "mt-1 block text-[11px]",
+          "mt-1 block text-2xs",
           state === "error"
             ? "text-status-error dark:text-(--aw-status-error)"
             : "sr-only",

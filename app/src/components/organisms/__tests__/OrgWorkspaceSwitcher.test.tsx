@@ -88,7 +88,7 @@ describe("OrgWorkspaceSwitcher", () => {
       currentWorkspace: personalWs,
     });
     renderSwitcher();
-    expect(screen.getByLabelText("Switch workspace")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Switch workspace/)).toBeInTheDocument();
     expect(screen.getByText("Personal")).toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     await waitFor(() => {
       expect(screen.getByRole("listbox")).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     await waitFor(() => {
       expect(screen.getByRole("listbox")).toBeInTheDocument();
@@ -160,7 +160,7 @@ describe("OrgWorkspaceSwitcher", () => {
 
     renderSwitcher();
     expect(screen.getByText("On this device")).toBeInTheDocument();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
     expect(screen.getAllByText("On this device").length).toBeGreaterThanOrEqual(1);
   });
 
@@ -173,7 +173,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     await waitFor(() => {
       expect(screen.getByRole("listbox")).toBeInTheDocument();
@@ -191,7 +191,7 @@ describe("OrgWorkspaceSwitcher", () => {
     setContext({ availableWorkspaces: [] });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     await waitFor(() => {
       expect(screen.getByText("No workspaces available")).toBeInTheDocument();
@@ -207,7 +207,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     await waitFor(() => {
       const options = screen.getAllByRole("option");
@@ -225,7 +225,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     expect(
       screen.getByRole("button", { name: "New workspace" }),
@@ -259,7 +259,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     const personal = await screen.findByRole("option", { name: /Personal/ });
     const synced = within(personal).getByRole("img", { name: "Synced" });
@@ -289,7 +289,7 @@ describe("OrgWorkspaceSwitcher", () => {
     });
 
     renderSwitcher();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
 
     const personal = await screen.findByRole("option", { name: /Personal/ });
     await waitFor(() => expect(within(personal).getByRole("img", { name: "Synced" })).toBeInTheDocument());
@@ -316,7 +316,7 @@ describe("OrgWorkspaceSwitcher", () => {
     expect(
       screen.queryByRole("dialog", { name: "Open workspace from git" }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByLabelText("Switch workspace"));
+    await user.click(screen.getByLabelText(/Switch workspace/));
     await user.click(screen.getByRole("button", { name: "Open from git…" }));
 
     expect(

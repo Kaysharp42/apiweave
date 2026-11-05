@@ -27,6 +27,7 @@ import type { WorkflowGraphInput } from "@shared/types/WorkflowGraphInput";
 import type { WorkflowEdge } from "@shared/types/WorkflowEdge";
 import type { WorkflowNode } from "@shared/types/WorkflowNode";
 import useRunChoreography from "./useRunChoreography";
+import useRunStatusStore from "../stores/RunStatusStore";
 import type { PacedEvent } from "../utils/runChoreography";
 import type { RunCameraHandle } from "../types/RunCameraHandle";
 import type { RunResult } from "../types/RunResult";
@@ -40,6 +41,19 @@ function canvasStatus(status: string): string {
   if (status === "passed") return "success";
   if (status === "failed") return "error";
   return status;
+}
+
+/** Wall-clock duration from the run's two timestamps, for the status bar. */
+function runDurationMs(
+  startedAt: string | null | undefined,
+  completedAt: string | null | undefined,
+): number | null {
+  if (!startedAt || !completedAt) return null;
+  const start = Date.parse(startedAt);
+  const end = Date.parse(completedAt);
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start
+    ? end - start
+    : null;
 }
 
 interface NodeStatusUpdate {
@@ -412,6 +426,15 @@ export default function useWorkflowPolling({
         // click Run again inside it. Landing these results on the next run's
         // canvas would repaint it with the previous run's answers.
         if (currentRunIdRef.current !== runId) return;
+        if (workflowId) {
+          useRunStatusStore
+            .getState()
+            .setDuration(
+              workflowId,
+              runId,
+              runDurationMs(run.startedAt, run.completedAt),
+            );
+        }
         const resolvedSecrets = run.resolvedSecrets;
         const statuses: NodeStatuses = {};
         applyRunNodeStatuses(statuses, run.nodeStatuses);
@@ -421,7 +444,7 @@ export default function useWorkflowPolling({
         // ignore — the canvas keeps the streamed statuses
       }
     },
-    [workspaceId, setNodes],
+    [workspaceId, workflowId, setNodes],
   );
 
   /** One node repaint, on the playback's schedule rather than the runner's. */
@@ -494,6 +517,9 @@ export default function useWorkflowPolling({
       const runId = event.runId;
       choreography.whenSettled(() => {
         setIsRunning(false);
+        if (workflowId) {
+          useRunStatusStore.getState().finish(workflowId, runId, event.status);
+        }
         // Released before the hydration, which repaints every node at once: the
         // camera has nothing left to follow, and a retarget racing that repaint
         // would be aiming at whatever landed first.
@@ -502,7 +528,7 @@ export default function useWorkflowPolling({
       });
       void refreshLatestFailedRun();
     },
-    [choreography, stopStream, hydrateRunResults, refreshLatestFailedRun],
+    [choreography, stopStream, hydrateRunResults, refreshLatestFailedRun, workflowId],
   );
 
   /**
@@ -555,6 +581,9 @@ export default function useWorkflowPolling({
       setCurrentIteration(iteration);
       currentIterationRef.current = iteration;
       setIsRunning(true);
+      if (workflowId) {
+        useRunStatusStore.getState().begin(workflowId, runId);
+      }
       unsubscribeRef.current = onRunProgress(runId, handleEvent);
 
       // The entry point's result is the one event this subscription can never
@@ -580,7 +609,7 @@ export default function useWorkflowPolling({
         choreography.enqueue({ nodeId, status: "success" });
       }
     },
-    [handleEvent, choreography],
+    [handleEvent, choreography, workflowId],
   );
 
   const executeWorkflow = useCallback(
@@ -923,7 +952,21 @@ export default function useWorkflowPolling({
     void refreshLatestFailedRun();
   }, [refreshLatestFailedRun]);
 
-  useEffect(() => () => stopStream(), [stopStream]);
+  useEffect(
+    () => () => {
+      stopStream();
+      // A run this canvas was narrating cannot be finished by it once it is
+      // gone: leaving the status bar saying "Running…" for a workflow whose
+      // canvas no longer exists is a lie the next mount would keep repeating.
+      if (workflowId) {
+        const state = useRunStatusStore.getState();
+        if (state.byWorkflow[workflowId]?.phase === "running") {
+          state.forget(workflowId);
+        }
+      }
+    },
+    [stopStream, workflowId],
+  );
 
   return {
     isRunning,

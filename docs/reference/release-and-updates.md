@@ -11,8 +11,9 @@ Two paths, depending on whether the app can install its own update.
 | Platform | Path | Reads | Can self-install |
 | --- | --- | --- | --- |
 | Windows (NSIS) | electron-updater | `latest.yml` | Yes |
+| macOS, signed and notarized | electron-updater | `latest-mac.yml` | Yes |
+| macOS, unsigned | notice only | `version.json` | No — Squirrel.Mac requires a signed bundle |
 | Linux AppImage | electron-updater | `latest-linux.yml` | Yes |
-| macOS | notice only | `version.json` | No — Gatekeeper blocks an unsigned self-update |
 | Linux deb/rpm/pacman | notice only | `version.json` | No — the OS package manager owns the install |
 
 Every one of those files is fetched through the same documented GitHub permalink:
@@ -29,13 +30,16 @@ Nothing reads `api.github.com` (60 requests/hour per IP, unauthenticated — a c
 
 Push a SemVer tag. `.github/workflows/desktop-release.yml` does the rest:
 
-1. **validate** — checks the tag shape, that `app/package.json` and `app/package-lock.json` agree with it, and that the tag is on `main`. Checks that the `UPDATE_SIGNING_PRIVATE_KEY` secret exists and matches the public key the commit embeds ([Update signatures](#update-signatures)) — a missing secret or a commit still carrying the placeholder fails here, before anything is built. Creates the draft release, so the four build jobs can only ever *find* it rather than race to create it.
-2. **build** (×4) — each job packages and publishes its own installers straight to the draft. Publishing is what makes electron-builder write `latest.yml` / `latest-linux.yml` and the differential blockmaps; `--publish never` produces none of them. The Windows job additionally uploads a `.zip` wrapping its installer — the download a person takes — while the bare `.exe` stays in the release because `latest.yml` names it and electron-updater cannot consume an archive. Each job then launches the unpacked app it just packaged with `--smoke-test` in a throwaway profile (`app/scripts/smoke-packaged.mjs`); the app exits 0 only once its database has opened, its window has loaded `app://local/` and its PTY host has started a process. A failure fails the job, so the draft is never made public. The same check runs on every pull request that touches `app/`, on all three OSes (`.github/workflows/desktop-smoke.yml`).
-3. **publish** — verifies the full asset set landed, verifies the manifests are internally true (below), signs them, writes `version.json`, checksums everything, then flips the release live.
+1. **validate** — checks the tag shape, that `app/package.json` and `app/package-lock.json` agree with it, and that the tag is on `main`. Checks that the `UPDATE_SIGNING_PRIVATE_KEY` secret exists and matches the public key the commit embeds ([Update signatures](#update-signatures)) — a missing secret or a commit still carrying the placeholder fails here, before anything is built. Creates the draft release, so the three build jobs can only ever *find* it rather than race to create it.
+2. **build** (×3) — each job packages and publishes its own installers straight to the draft. Publishing is what makes electron-builder write `latest.yml` / `latest-linux.yml` / `latest-mac.yml` and the differential blockmaps; `--publish never` produces none of them. The Windows job additionally uploads a `.zip` wrapping its installer — the download a person takes — while the bare `.exe` stays in the release because `latest.yml` names it and electron-updater cannot consume an archive. The single macOS job builds both x64 and arm64 in one invocation (`--x64 --arm64`), so electron-builder writes one `latest-mac.yml` listing both zip architectures instead of one half-manifest per runner. Each job then launches the unpacked app it just packaged with `--smoke-test` in a throwaway profile (`app/scripts/smoke-packaged.mjs`); the app exits 0 only once its database has opened, its window has loaded `app://local/` and its PTY host has started a process. A failure fails the job, so the draft is never made public. The same check runs on every pull request that touches `app/`, on all three OSes (`.github/workflows/desktop-smoke.yml`).
+3. **cli** — builds the headless package once and uploads both `apiweave-cli-<version>.tgz` and the stable `apiweave-cli.tgz` alias to the draft. See [Run Tests in CI](../guides/ci.md#install-the-cli).
+4. **publish** — verifies the full asset set landed, verifies the manifests are internally true (below), signs them, writes `version.json`, checksums everything, then flips the release live. The job runs in the `release` environment; put a required reviewer on that environment and it waits there, with the complete draft available, until someone approves. That is the release-candidate gate: test the draft installers and the upgrade path, then approve. Without protection rules the job runs immediately.
+
+> Tag only once the release commit is on `main` and the manual checks in [the 1.0 checklist](../plans/1.0-release-checklist.md) are ready to run against the draft. The draft is not public and `/releases/latest` does not see it until the publish job is approved and finishes.
 
 ### What CI actually guarantees
 
-The **Verify update manifests** step asserts, for both `latest.yml` and `latest-linux.yml`:
+The **Verify update manifests** step asserts, for `latest.yml`, `latest-linux.yml` and `latest-mac.yml`:
 
 - the `version` in the manifest equals the tag
 - the file named in `path` exists in the release
@@ -49,15 +53,21 @@ That is the check that a manifest is *true*, as distinct from merely *present*. 
 
 > **CI does not prove the updater works.** It proves the assets are coherent. Those are different claims, and only [Rehearsing the update path](#rehearsing-the-update-path-before-users-run-it) closes the gap.
 
+The manual checks CI cannot perform — clean-machine installs, the 0.22.0 to 1.0.0 upgrade, and the first signed/notarized build — are listed in the [1.0 release checklist](../plans/1.0-release-checklist.md). That checklist is an internal operator aid, not a public contract.
+
 ## Update signatures
 
-The builds are not OS code-signed, so on its own the sha512 in `latest.yml` only proves the download matches a manifest published in the same release. Anyone who can write a release asset — a compromised GitHub account or CI token — could otherwise ship code to every install.
+OS code signing protects the first download and the app bundle a platform will
+trust; it does not by itself prove that a manifest published in the same release
+as its installer is honest. Anyone who can write a release asset — a compromised
+GitHub account or CI token — could otherwise ship code to every install, even
+where the OS certificate is valid.
 
 So every update is also signed with an **Ed25519 key** that lives only in a GitHub Actions secret:
 
-- `app/scripts/sign-update-manifest.mjs` (the **Sign update manifests** step) hashes the installer each manifest names and signs `version` + that sha512, appending `apiweaveSignature: <base64>` to `latest.yml` and `latest-linux.yml`.
+- `app/scripts/sign-update-manifest.mjs` (the **Sign update manifests** step) hashes every installer each manifest's `files:` list names and signs `version` + that sha512, appending `apiweaveSignature: <base64>` for the primary `path` and an `apiweaveSignatures` map keyed by filename to `latest.yml`, `latest-linux.yml` and `latest-mac.yml`. The map is what covers both macOS architectures: a client on arm64 verifies the arm64 zip rather than inheriting a signature for the x64 file.
 - `app/electron/update_signing_key.ts` holds the public half, compiled into the app.
-- `app/electron/update_signature.ts` checks the signature against the bytes actually downloaded, before the update can reach "downloaded". An update that fails is never installed — not by **Restart now**, not on quit (`UpdateManager` owns install-on-quit; electron-updater's own is off because it would run the download regardless) — and the Updates panel shows why. The log gets a `refusing update` line.
+- `app/electron/update_signature.ts` selects the signature for the file it actually downloaded (the per-file entry when the manifest has the map, otherwise the legacy top-level field) and checks it against the bytes on disk, before the update can reach "downloaded". An update that fails is never installed — not by **Restart now**, not on quit (`UpdateManager` owns install-on-quit; electron-updater's own is off because it would run the download regardless) — and the Updates panel shows why. The log gets a `refusing update` line.
 
 The signature binds the version, so an old signed installer relabelled as a newer version fails too. It does not cover `stagingPercentage`, so the rollout workflow still works without the key.
 
@@ -75,7 +85,9 @@ git commit -m "chore(release): embed the update signing key"
 
 The script writes the public key into `electron/update_signing_key.ts` and prints the private key to stdout only — piped as above, it never touches the disk. Without `gh`, run the script alone, paste the printed PEM (including the `BEGIN`/`END` lines) into **Settings → Secrets and variables → Actions → New repository secret** as `UPDATE_SIGNING_PRIVATE_KEY`, then clear your terminal scrollback. **Keep an offline backup of the private key** (a password manager is fine): losing it means installs in the field can no longer be updated in place.
 
-Recommended hardening: move the secret into a GitHub **environment** (for example `release`) with a deployment rule that admits only `v*` tags, and add `environment: release` to the `validate` and `publish` jobs. A repository secret is readable by any workflow someone with write access pushes; an environment secret is not.
+Recommended hardening: the `publish` job runs in a GitHub **environment** named `release`, with a required reviewer and a deployment rule that admits only `v*` tags. That is the manual gate: a complete draft is built and tested, then someone approves publication. Without protection rules the job runs immediately.
+
+The update signing key is read by `validate` before anything is built (so a missing or mismatched key fails in seconds) and by `publish` to sign the manifests. Keeping it a repository secret is the simple configuration; moving it into the `release` environment also moves the key check behind the reviewer and before the build, which gives up the draft-first test cycle. The reviewer gate protects publication either way, but a repository secret is readable by any workflow someone with write access pushes.
 
 ### Losing or rotating the key
 
@@ -86,9 +98,9 @@ An install trusts only the key it was built with. There is no in-band rotation:
 
 `generate-update-signing-key.mjs` refuses to replace a real key without `--force` for exactly this reason.
 
-## OS code signing (optional)
+## OS code signing
 
-The release workflow turns OS code signing on for a platform when its secrets exist and leaves it off otherwise, so a release never waits on a certificate. Add these as repository secrets:
+The release workflow turns OS code signing on for a platform when its secrets exist and leaves it off otherwise, so a release never waits on a certificate. It logs which mode it is in, and a build job with a configured certificate verifies the result (`codesign` plus `stapler` on macOS, `Get-AuthenticodeSignature` on Windows) before the draft can be finalized — so a release note never claims a signature the artifact does not carry. Add these as repository secrets:
 
 | Secret | Platform | What it is |
 | --- | --- | --- |
@@ -98,12 +110,14 @@ The release workflow turns OS code signing on for a platform when its secrets ex
 | `WIN_CSC_LINK` | Windows | Base64 of a code-signing certificate exported as `.pfx` |
 | `WIN_CSC_KEY_PASSWORD` | Windows | The `.pfx` password |
 
+macOS signing needs `CSC_LINK` and `CSC_KEY_PASSWORD`; notarization additionally needs all three `APPLE_*` secrets. With the certificate but without the notarization secrets, the build is signed but not notarized, and the workflow says so. With no `CSC_LINK`, the build is unsigned and electron-builder's keychain auto-discovery is turned off so it cannot accidentally sign with an unrelated identity.
+
 What to buy:
 
-- **macOS:** an [Apple Developer Program](https://developer.apple.com/programs/) membership (USD 99/year) gives you the Developer ID certificate and notarization. Signed and notarized builds open without the Gatekeeper workaround. Self-update on macOS additionally needs a `zip` mac target and both arches built in one job — not done yet, so macOS stays notice-only.
+- **macOS:** an [Apple Developer Program](https://developer.apple.com/programs/) membership (USD 99/year) gives you the Developer ID certificate and notarization. `app/package.json` sets `mac.hardenedRuntime` and `mac.notarize`, and electron-builder activates notarization from the `APPLE_*` environment variables. Signed and notarized builds open without the Gatekeeper workaround. The macOS job builds both architectures in one invocation and the `zip` target beside the `dmg`; that is what produces one `latest-mac.yml` and lets a signed macOS build self-update. An unsigned macOS build stays on the notice-only path, because Squirrel.Mac refuses to install an update into an unsigned bundle.
 - **Windows:** a code-signing certificate from a public CA. Since June 2023 new OV/EV certificates are issued only on hardware tokens or cloud HSMs, so most can no longer be exported to a `.pfx` for `WIN_CSC_LINK`. The practical options are [Azure Trusted Signing](https://learn.microsoft.com/azure/trusted-signing/) (about USD 10/month; electron-builder supports it through `win.azureSignOptions` plus `AZURE_*` secrets, which needs a small `package.json` change once you have an account) or SignPath's free tier for open-source projects. A signed installer sets `publisherName` in `app-update.yml`, and electron-updater then also checks the Authenticode publisher of every downloaded update.
 
-Neither path has been exercised in CI yet: expect to iterate on the first signed release (for example macOS entitlements for notarization), and run it on the throwaway repo first.
+The signed path has not been exercised in CI yet: expect to iterate on the first signed release (for example macOS entitlements for notarization), and run it on the throwaway repo first.
 
 ## Packaged-build hardening
 
@@ -133,7 +147,7 @@ Then open **Settings → Updates** and use **Check for updates**. Watch the day'
 Two things to know before you read the result:
 
 - **The dev app reports `package.json`'s version.** Against the real repo it will say you are up to date. To see an update offered, temporarily lower `version` in `app/package.json` — don't commit that.
-- **Restarting really installs.** `quitAndInstall` runs the downloaded NSIS installer, which installs to the normal per-user location. That is the point of the test, but it is not a no-op on your machine.
+- **Restarting really installs.** On Windows `quitAndInstall` runs the downloaded NSIS installer, which installs to the normal per-user location; on macOS Squirrel replaces the app bundle. That is the point of the test, but it is not a no-op on your machine.
 
 ### The throwaway-repo loop
 
@@ -163,7 +177,7 @@ electron-updater compares a hash of a GUID it persists per install against `stag
 - Buckets are **stable per install**. Raising 10 → 50 only ever adds installs; it never revokes one.
 - Anyone who already updated stays updated. Staging gates *new* updates; it is not a rollback.
 
-This only governs Windows and AppImage, the platforms that read the manifests. macOS and deb/rpm/pacman read `version.json`, which carries no staging — a bad release costs those users a notice they have not acted on, not a broken install.
+This only governs the platforms that read the manifests: Windows, AppImage, and a signed macOS build. An unsigned macOS build and deb/rpm/pacman read `version.json`, which carries no staging — a bad release costs those users a notice they have not acted on, not a broken install.
 
 Use the same workflow to stage a release deliberately: publish, set `10`, wait, then `100`.
 
@@ -201,9 +215,9 @@ Background checks — the one at launch and the recurring one — log their fail
 
 ## Known gaps
 
-- **Nothing is OS code-signed yet.** Updates are protected by the [update signature](#update-signatures), but first installs are not: SmartScreen and Gatekeeper still warn, and a tampered installer downloaded by hand is caught only by `SHA256SUMS.txt`, which lives in the same release. See [OS code signing](#os-code-signing-optional) for what turns that on. The default policy stays **Notify me** until it is.
+- **OS code signing is opt-in.** A release built without the certificate secrets is unsigned: SmartScreen and Gatekeeper still warn, first installs rely on `SHA256SUMS.txt` (published in the same release) for manual verification, and self-update is not offered on macOS. See [OS code signing](#os-code-signing) for what turns it on. The default policy stays **Notify me** regardless, so a person still approves every new version.
 - **`version.json` is not signed.** It only drives a notice that links to the release page, never an install.
-- **`version.json` exists because macOS ships as two single-arch jobs.** Each writes a `latest-mac.yml` describing only its own arch, so the finalize job deletes both rather than publish a manifest that is wrong by construction. Collapsing to one shared manifest means building both arches in one job, which is blocked on cross-arch `better-sqlite3` rebuilds.
+- **macOS self-update needs a Developer ID signature.** The app checks its own signature at startup and falls back to the notice-only `version.json` path when it is unsigned or ad-hoc signed. A self-built unsigned `.dmg` therefore does not update in place.
 - **No channel split.** Prereleases are excluded from `/releases/latest`, so they are invisible to the updater rather than routed to a beta channel. `autoUpdater.channel` is the hook if betas should ever absorb release risk.
 
 ## Related

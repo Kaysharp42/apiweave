@@ -1,21 +1,25 @@
-import { FileText, Download, Trash2 } from "lucide-react";
-import { SidebarAction } from "./SidebarAction";
+import { FileText } from "lucide-react";
+import { SidebarContextMenu } from "./SidebarContextMenu";
+import { SidebarExportAction } from "./SidebarExportAction";
+import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItemBadges } from "./WorkflowItemBadges";
-import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
-import { workflowRowMenuItems } from "./rowContextMenus";
+import { contextMenuKeyPoint, workflowRowMenuItems } from "./rowContextMenus";
+import { rowIconColor, rowNameColor, rowSurface } from "./rowStyles";
 import { workflowRowLabels } from "../../../utils/workflowRowLabels";
 import type { WorkflowItemProps } from "../../../types";
 
 /**
  * Renders a single workflow item in the sidebar list.
- * Shows workflow name, node count, collection badge, environment badge,
- * action buttons (export, delete) visible on hover/focus, and a right-click
- * menu carrying the actions that need a name or a target picked (rename, move).
+ * Shows workflow name, node count, collection badge, environment badge, an
+ * export button visible on hover/focus, and a right-click menu carrying the
+ * actions that need a name or a target picked (rename, move) plus the
+ * destructive delete, which is deliberately not one click away.
  */
 export function WorkflowItem({
   workflow,
   isActive,
+  hideProject = false,
   collections,
   environments,
   onWorkflowClick,
@@ -30,11 +34,17 @@ export function WorkflowItem({
 
   const handleActivate = () => onWorkflowClick(workflow);
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleActivate();
+      return;
     }
+    // Shift+F10 and the dedicated ContextMenu key are the keyboard equivalent
+    // of a right-click. Anchor the menu to the focused row button: there is no
+    // pointer position to use.
+    const point = contextMenuKeyPoint(event);
+    if (point !== null) contextMenu.openAt(point);
   };
 
   return (
@@ -42,10 +52,8 @@ export function WorkflowItem({
       <div
         onContextMenu={contextMenu.openAt}
         className={[
-          "group relative flex w-full items-start gap-2 rounded-sm border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
-          isActive
-            ? "border-y-border border-r-border border-l-primary bg-primary/10 dark:border-y-border-dark dark:border-r-border-dark dark:border-l-primary-light dark:bg-primary-light/10"
-            : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
+          "group relative flex w-full items-start gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
+          rowSurface(isActive, contextMenu.isOpen),
         ].join(" ")}
       >
         <button
@@ -55,76 +63,49 @@ export function WorkflowItem({
           onKeyDown={handleKeyDown}
           className={[
             "flex min-w-0 flex-1 items-start gap-2 text-left",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
             "cursor-pointer rounded-sm",
           ].join(" ")}
         >
           <FileText
             className={[
               "mt-0.5 h-3.5 w-3.5 shrink-0",
-              isActive
-                ? "text-primary dark:text-primary-light"
-                : "text-text-muted dark:text-text-muted-dark",
+              rowIconColor(isActive),
             ].join(" ")}
           />
 
           <div className="min-w-0 flex-1 text-left overflow-hidden">
             <div
-              className={[
-                "truncate font-medium",
-                isActive
-                  ? "text-primary dark:text-primary-light"
-                  : "text-text-primary dark:text-text-primary-dark",
-              ].join(" ")}
-              title={labels.name.fullLabel}
+              className={["truncate font-medium", rowNameColor(isActive)].join(
+                " ",
+              )}
+              title={labels.name}
             >
-              {labels.name.label}
+              {labels.name}
             </div>
 
             <WorkflowItemBadges
               nodeCount={workflow.nodes?.length ?? 0}
               labels={labels}
+              hideProject={hideProject}
             />
           </div>
         </button>
 
         {/* Overlaid rather than inline so the workflow name gets the full row
             width; the gradient keeps long names legible underneath. */}
-        <div
-          className={[
-            "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-sm pl-6",
-            "bg-linear-to-l from-surface-overlay from-70% to-transparent dark:from-surface-dark-overlay",
-            "opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
-            "group-hover:opacity-100 group-focus-within:opacity-100",
-          ].join(" ")}
-        >
-          <SidebarAction
-            icon={Download}
+        <SidebarRowActions active={isActive}>
+          <SidebarExportAction
             label="Export workflow"
-            onClick={(event) => {
-              event.stopPropagation();
-              onExportWorkflow(workflow);
-            }}
+            onExport={() => onExportWorkflow(workflow)}
           />
-
-          <SidebarAction
-            icon={Trash2}
-            label="Delete workflow permanently"
-            destructive
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeleteWorkflow(workflow.workflowId, workflow.name);
-            }}
-          />
-        </div>
+        </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (
-        <ContextMenu
-          x={contextMenu.origin.x}
-          y={contextMenu.origin.y}
+        <SidebarContextMenu
+          menu={contextMenu}
           label={`Workflow "${workflow.name}"`}
-          onClose={contextMenu.close}
           items={workflowRowMenuItems(workflow, {
             onRenameWorkflow,
             onMoveWorkflowToProject,

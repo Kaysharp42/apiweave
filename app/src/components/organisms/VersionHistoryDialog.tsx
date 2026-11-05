@@ -79,7 +79,7 @@ export function VersionHistoryDialog({
       title="Version history"
       footer={
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-text-muted dark:text-text-muted-dark" aria-live="polite">
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark" aria-live="polite">
             {diff === null
               ? "Pick a version to see what restoring it changes."
               : `Restoring it: ${diff.added} node${diff.added === 1 ? "" : "s"} added, ${diff.removed} removed, ${diff.changed} changed.`}
@@ -97,7 +97,7 @@ export function VersionHistoryDialog({
         </div>
       }
     >
-      <p className="px-5 pt-3 text-xs text-text-muted dark:text-text-muted-dark">
+      <p className="px-5 pt-3 text-xs text-text-secondary dark:text-text-secondary-dark">
         Each version is this workflow as it was just before a change replaced it. Versions stay on
         this computer and are never synced.
       </p>
@@ -107,14 +107,14 @@ export function VersionHistoryDialog({
         </p>
       )}
       {revisions === null ? (
-        <p className="px-5 py-8 text-center text-sm text-text-muted dark:text-text-muted-dark">
+        <p className="px-5 py-8 text-center text-sm text-text-secondary dark:text-text-secondary-dark">
           Loading versions…
         </p>
       ) : revisions.length === 0 ? (
         <div className="flex flex-col items-center px-6 py-10 text-center">
           <FileClock className="mb-3 h-10 w-10 text-text-muted dark:text-text-muted-dark" aria-hidden="true" />
           <p className="text-sm text-text-secondary dark:text-text-secondary-dark">No earlier versions yet</p>
-          <p className="text-xs text-text-muted dark:text-text-muted-dark">
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
             A version is kept every few minutes while you edit, and before any agent, import or sync change.
           </p>
         </div>
@@ -136,11 +136,11 @@ export function VersionHistoryDialog({
             >
               <span className="min-w-0 truncate text-sm">
                 Before {revisionSourceLabel(revision.source)}
-                <span className="ml-2 text-xs text-text-muted dark:text-text-muted-dark">
+                <span className="ml-2 text-xs text-text-secondary dark:text-text-secondary-dark">
                   {new Date(revision.createdAt).toLocaleString()}
                 </span>
               </span>
-              <span className="shrink-0 text-xs text-text-muted dark:text-text-muted-dark">
+              <span className="shrink-0 text-xs text-text-secondary dark:text-text-secondary-dark">
                 {revision.nodeCount} nodes · {revision.edgeCount} edges
               </span>
             </Button>

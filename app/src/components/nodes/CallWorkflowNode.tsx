@@ -113,7 +113,7 @@ const MappingChip = ({ inputCount, outputCount }: MappingChipProps) => {
 
   return (
     <span
-      className="shrink-0 flex items-center gap-1 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-info)_12%,transparent)] text-(--aw-status-info)"
+      className="shrink-0 flex items-center gap-1 text-2xs font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-info)_12%,transparent)] text-(--aw-status-info)"
       title={`${plural(inputCount, "input")}, ${plural(outputCount, "output")}`}
     >
       <ArrowRightLeft className="w-2.5 h-2.5" aria-hidden="true" />

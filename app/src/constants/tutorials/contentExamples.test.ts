@@ -35,7 +35,7 @@ describe("tutorial structured examples", () => {
       secretReferences?: unknown;
     };
 
-    expect(parsed.type).toBe("awecollection");
+    expect(parsed.type).toBe("aweproject");
     expect(typeof parsed.schemaVersion).toBe("string");
     expect(Array.isArray(parsed.secretReferences)).toBe(true);
 

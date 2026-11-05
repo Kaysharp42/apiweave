@@ -739,10 +739,10 @@ export function WorkflowJsonEditor({
     <Transition key={initialValue} show={open} as={Fragment}>
       <Dialog onClose={requestClose} className="relative z-50">
         <TransitionChild
-          enter="ease-out duration-200"
+          enter="ease-out duration-200 motion-reduce:transition-none"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="ease-in duration-150"
+          leave="ease-in duration-150 motion-reduce:transition-none"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -750,10 +750,10 @@ export function WorkflowJsonEditor({
         </TransitionChild>
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <TransitionChild
-            enter="ease-out duration-200"
+            enter="ease-out duration-200 motion-reduce:transition-none"
             enterFrom="opacity-0 scale-95"
             enterTo="opacity-100 scale-100"
-            leave="ease-in duration-150"
+            leave="ease-in duration-150 motion-reduce:transition-none"
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >
@@ -782,7 +782,7 @@ export function WorkflowJsonEditor({
                       className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                         viewMode === "json"
                           ? "bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark border border-border dark:border-border-dark"
-                          : "text-text-muted dark:text-text-muted-dark hover:text-text-primary dark:hover:text-text-primary-dark"
+                          : "text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
                       }`}
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -797,7 +797,7 @@ export function WorkflowJsonEditor({
                       className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-sm transition-colors ${
                         viewMode === "ai-prompt"
                           ? "bg-surface dark:bg-surface-dark text-primary border border-border dark:border-border-dark"
-                          : "text-text-muted dark:text-text-muted-dark hover:text-primary"
+                          : "text-text-secondary dark:text-text-secondary-dark hover:text-primary"
                       }`}
                     >
                       <Sparkles className="w-3.5 h-3.5" />
@@ -816,7 +816,7 @@ export function WorkflowJsonEditor({
                     }
                   >
                     {copied ? (
-                      <Check className="w-3.5 h-3.5 text-status-success dark:text-status-success-dark" />
+                      <Check className="w-3.5 h-3.5 text-status-success" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
@@ -875,7 +875,7 @@ export function WorkflowJsonEditor({
                         Include current workflow JSON (for updating)
                       </span>
                     </label>
-                    <span className="text-[10px] text-text-muted dark:text-text-muted-dark">
+                    <span className="text-2xs text-text-secondary dark:text-text-secondary-dark">
                       {includeWorkflow
                         ? "AI will see and modify existing nodes"
                         : "AI will create from scratch"}
@@ -895,7 +895,7 @@ export function WorkflowJsonEditor({
                       {Array.from({ length: lineCount }, (_, i) => (
                         <div
                           key={i}
-                          className="text-[11px] leading-[1.6] text-text-muted dark:text-text-muted-dark font-mono pr-1"
+                          className="text-2xs leading-[1.6] text-text-secondary dark:text-text-secondary-dark font-mono pr-1"
                         >
                           {i + 1}
                         </div>
@@ -908,21 +908,21 @@ export function WorkflowJsonEditor({
                       onChange={handleWorkflowJsonChange}
                       spellCheck={false}
                       aria-label="Workflow JSON editor"
-                      className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-[12px] leading-[1.6] resize-none outline-hidden border-none"
+                      className="flex-1 p-3 bg-surface dark:bg-surface-dark text-text-primary dark:text-text-primary-dark font-mono text-xs leading-[1.6] resize-none outline-hidden border-none"
                       style={{ tabSize: 2 }}
                     />
                   </div>
                 </div>
               ) : (
                 <div className="flex-1 overflow-auto" ref={promptRef}>
-                  <pre className="p-5 text-[12px] leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap wrap-break-word">
+                  <pre className="p-5 text-xs leading-relaxed font-mono text-text-primary dark:text-text-primary-dark whitespace-pre-wrap wrap-break-word">
                     {buildAIPrompt(workflowJson, includeWorkflow)}
                   </pre>
                 </div>
               )}
 
               {/* Footer / hint */}
-              <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-[10px] text-text-muted dark:text-text-muted-dark">
+              <div className="flex items-center justify-between px-5 py-2 border-t border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-2xs text-text-secondary dark:text-text-secondary-dark">
                 {viewMode === "json" ? (
                   <div className="flex items-center gap-3 w-full">
                     <span>{lineCount} lines</span>

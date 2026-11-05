@@ -66,7 +66,7 @@ The settings can only be changed from the Settings page. They are not reachable 
 `apiweave run` takes the same options as flags (see [Running in CI](../guides/ci.md#network-proxy-and-certificates)):
 
 ```bash
-apiweave run api.awecollection \
+apiweave run api.aweproject \
   --proxy http://proxy.corp:3128 \
   --ca-cert corp-root.pem \
   --client-cert "api.example.com=client.pem,client.key"

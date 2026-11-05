@@ -1,9 +1,10 @@
 import type { JsonValue } from "@shared/types/JsonValue"
+import type { NodePreset } from "@shared/types/NodePreset"
 import type { Workflow } from "@shared/types/Workflow"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import { stableJson } from "@shared/workspace-repo/format"
 import { exportNode, exportWorkflow } from "./workspace_repo_format"
-import { findRedactedPlaceholders, SECRET_PLACEHOLDER, sanitizeVariablesForExport } from "./secret_utils"
+import { findRedactedPlaceholders, SECRET_PLACEHOLDER, sanitizeExportValue, sanitizeVariablesForExport } from "./secret_utils"
 
 /** A withheld variable keeps its local literal only while the incoming value still matches its export. */
 export function keepWithheldVariables(stored: Record<string, JsonValue>, incoming: Record<string, JsonValue>): Record<string, JsonValue> {
@@ -29,6 +30,20 @@ export function keepWithheldNodeTemplates(stored: Workflow | undefined, incoming
   return stored !== undefined && stableJson(exportWorkflow(stored).nodeTemplates ?? []) === stableJson(incoming)
     ? [...stored.nodeTemplates]
     : [...incoming]
+}
+
+/**
+ * A preset whose incoming config still matches its export keeps the stored,
+ * unredacted config. A changed node type is a different config, so the incoming
+ * one is taken as it is.
+ */
+export function keepWithheldPresetConfig(
+  stored: NodePreset | undefined,
+  nodeType: string,
+  incoming: Record<string, JsonValue>,
+): Record<string, JsonValue> {
+  if (stored === undefined || stored.nodeType !== nodeType) return incoming
+  return stableJson(sanitizeExportValue(toPlain(stored.config))) === stableJson(incoming) ? stored.config : incoming
 }
 
 /** What a workspace-repository import says about a workflow that still holds a withheld placeholder. */

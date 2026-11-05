@@ -10,6 +10,9 @@ vi.mock("../../components/organisms/AgentsSettingsPanel", () => ({
 vi.mock("../../components/organisms/BackgroundSettingsPanel", () => ({
   BackgroundSettingsPanel: () => <div>background panel</div>,
 }));
+vi.mock("../../components/organisms/CanvasSettingsPanel", () => ({
+  CanvasSettingsPanel: () => <div>canvas panel</div>,
+}));
 vi.mock("../../components/organisms/GitAccountsSettingsPanel", () => ({
   GitAccountsSettingsPanel: () => <div>git accounts panel</div>,
 }));
@@ -44,15 +47,16 @@ describe("AppSettingsPage", () => {
   it.each([
     ["agents", "Agents", "agents panel"],
     ["background", "Background", "background panel"],
+    ["canvas", "Canvas", "canvas panel"],
     ["git-accounts", "Git accounts", "git accounts panel"],
     ["mcp-server", "MCP Server", "mcp panel"],
     ["network", "Network", "network panel"],
     ["updates", "Updates", "updates panel"],
-  ])("renders %s as a page", (section, heading, panel) => {
+  ])("renders %s as a page", async (section, heading, panel) => {
     renderAt(`/personal/personal/settings/${section}`);
 
     expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
-    expect(screen.getByText(panel)).toBeInTheDocument();
+    expect(await screen.findByText(panel)).toBeInTheDocument();
   });
 
   it.each(["nope", "private-networks"])(

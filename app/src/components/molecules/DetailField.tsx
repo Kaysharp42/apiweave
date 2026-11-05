@@ -13,7 +13,7 @@ interface DetailFieldProps {
 export function DetailField({ label, children, mono, breakAll }: DetailFieldProps) {
   return (
     <div>
-      <span className="text-xs text-text-muted dark:text-text-muted-dark">
+      <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
         {label}
       </span>
       <p

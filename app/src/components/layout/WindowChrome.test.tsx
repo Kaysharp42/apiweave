@@ -18,10 +18,7 @@ function enterDesktopShell() {
   const w = window as unknown as DesktopWindow;
   w.__APIWEAVE_IPC__ = stubbedIpc ?? {};
   w.__APIWEAVE_DESKTOP__ = {
-    minimize: () => undefined,
-    toggleMaximize: () => undefined,
-    close: () => undefined,
-    onMaximizeChange: () => () => undefined,
+    applyTheme: () => Promise.resolve(),
   };
 }
 
@@ -46,15 +43,18 @@ describe("TitleBar", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("draws the brand and the window buttons in the desktop shell", () => {
+  it("draws the brand and leaves window controls to the OS", () => {
     enterDesktopShell();
 
     const { container } = render(<TitleBar />);
 
     expect(screen.getByText("APIWeave")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Minimize" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Maximize" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Minimize" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Close" }),
+    ).not.toBeInTheDocument();
     // Same height token as MainHeader, so boot/setup/404 wear matching chrome.
     expect(container.firstElementChild).toHaveClass("h-header");
   });

@@ -20,7 +20,7 @@ export function Divider({
         {...rest}
       >
         {text && (
-          <span className="px-1 font-mono text-[10px] uppercase tracking-wide">
+          <span className="px-1 font-mono text-2xs uppercase tracking-wide">
             {text}
           </span>
         )}
@@ -42,7 +42,7 @@ export function Divider({
       {text && (
         <>
           <span className="h-px flex-1 bg-border dark:bg-border-dark" />
-          <span className="font-mono text-[10px] uppercase tracking-wide">
+          <span className="font-mono text-2xs uppercase tracking-wide">
             {text}
           </span>
           <span className="h-px flex-1 bg-border dark:bg-border-dark" />

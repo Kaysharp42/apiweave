@@ -35,12 +35,13 @@
 
 ### Brand / Primary
 
-| Token           | Light                | Dark                 | Usage                          |
-| --------------- | -------------------- | -------------------- | ------------------------------ |
-| `primary`       | `#164e63` (cyan-900) | `#22d3ee` (cyan-400) | Primary actions, active states |
-| `primary-light` | `#0e7490` (cyan-700) | `#06b6d4` (cyan-500) | Hover, secondary emphasis      |
-| `primary-hover` | `#155e75` (cyan-800) | `#67e8f9` (cyan-300) | Hover state                    |
-| `primary-dark`  | `#083344` (cyan-950) | —                    | Deep emphasis                  |
+| Token           | Light                | Dark      | Usage                                  |
+| --------------- | -------------------- | --------- | -------------------------------------- |
+| `primary`       | `#0d5c6e` (ink-teal) | `#2dd4bf` | Primary actions, active states         |
+| `primary-light` | `#0f766e`            | `#2dd4bf` | Secondary emphasis, accent text, focus |
+| `primary-hover` | `#0b4a59`            | `#5eead4` | Hover state                            |
+| `primary-dark`  | `#0b3d49`            | —         | Deep emphasis                          |
+| `on-primary`    | `#ffffff`            | `#0b3d49` | Labels and glyphs on a primary fill    |
 
 ### Surfaces
 
@@ -91,11 +92,33 @@
 
 ## Typography
 
-| Role        | Font Family    | Weights                 | Usage                              |
-| ----------- | -------------- | ----------------------- | ---------------------------------- |
-| **Body**    | Open Sans      | 300, 400, 500, 600, 700 | All body text, labels, inputs      |
-| **Display** | Montserrat     | 500, 600, 700, 800      | Headings, logo, branding           |
-| **Code**    | JetBrains Mono | 400, 500, 600           | Code blocks, JSON, URLs, monospace |
+One proportional family (Inter) plus JetBrains Mono for code — see DESIGN.md §3.
+
+| Role     | Font Family    | Weights       | Usage                                   |
+| -------- | -------------- | ------------- | --------------------------------------- |
+| **UI**   | Inter          | 400, 500, 600 | Body, headings, labels, buttons, inputs |
+| **Code** | JetBrains Mono | 400, 500, 600 | Code blocks, JSON, URLs, monospace      |
+
+### Size Scale
+
+The proportional scale is four steps, and it has a floor: **11px is the
+smallest size allowed anywhere in the app.**
+
+| Step  | Size    | Line height | Tailwind            | Usage                                                       |
+| ----- | ------- | ----------- | ------------------- | ----------------------------------------------------------- |
+| Micro | 11px    | 15px        | `text-2xs`          | Floor — keyboard hints, chips, node metrics, eyebrows       |
+| Label | 12px    | 16px        | `text-xs`           | Labels, badges, tabs, table headers, compact chrome         |
+| Body  | 14px    | 21px        | `text-sm`           | Body text, inputs, node content                             |
+| Title | 16px    | 22px        | `text-base`         | Panel headers, card titles, dialog headings, node title     |
+| Mono  | 12–14px | 1.5         | `text-xs`/`text-sm` | Code, JSON, URLs — JetBrains Mono only                      |
+
+- **No arbitrary font sizes.** `text-[13px]` is an ESLint error (`no-restricted-syntax`
+  in `eslint.config.cjs`); the step does not exist.
+- **Retired sizes:** 9px and 10px → `text-2xs` (11px); 13px → `text-xs`;
+  the 15px node header → `text-base` (Title 600). The old `text-xxs` utility
+  (10px) was deleted, not aliased.
+- **Fluid sizes** (`clamp()`) are reserved for Display/Headline, which are
+  viewport-relative by definition.
 
 ### Tailwind Classes
 
@@ -111,8 +134,8 @@
 | ----------------- | ----- | ------------------------- |
 | `header-height`   | 48px  | Main header               |
 | `footer-height`   | 32px  | Main footer               |
-| `nav-collapsed`   | 56px  | AppNavBar collapsed width |
-| `nav-expanded`    | 180px | AppNavBar expanded width  |
+| `nav-collapsed`   | 44px  | AppNavBar collapsed width |
+| `nav-expanded`    | 146px | AppNavBar expanded width  |
 | `sidebar-default` | 380px | Default sidebar width     |
 | `sidebar-max`     | 600px | Max sidebar width         |
 | `node-compact`    | 200px | Compact node width        |
@@ -257,7 +280,7 @@ Glow tokens are `color-mix`ed from the `--aw-status-*` tokens they name, so the 
 | `ConfirmDialog`       | `molecules/ConfirmDialog.tsx`       | Confirmation dialog with `title`, `message`, `confirmLabel`, `intent`.                                                      |
 | `PromptDialog`        | `molecules/PromptDialog.tsx`        | Text input prompt dialog with `title`, `message`, `placeholder`, `submitLabel`.                                             |
 | `EmptyState`          | `molecules/EmptyState.tsx`          | Reusable empty state with `icon`, `title`, `description`, `action`.                                                         |
-| `WorkspaceEmptyState` | `molecules/WorkspaceEmptyState.tsx` | Workspace-level empty state with CTA to create workflow.                                                                    |
+| `WorkspaceEmptyState` | `molecules/WorkspaceEmptyState.tsx` | Workspace launch screen: logo, recent workflows, and one primary CTA plus equal-width secondary actions.                    |
 | `SearchInput`         | `molecules/SearchInput.tsx`         | Search input with icon and clear button.                                                                                    |
 | `KeyValueEditor`      | `molecules/KeyValueEditor.tsx`      | Key-value pair editor for headers, query params, etc.                                                                       |
 | `StatusBadge`         | `molecules/StatusBadge.tsx`         | Unified status indicator for runs, nodes, etc.                                                                              |

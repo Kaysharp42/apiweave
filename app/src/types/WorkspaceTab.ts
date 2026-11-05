@@ -1,3 +1,4 @@
+import type { Viewport } from "@xyflow/react";
 import type { Workflow } from "./Workflow";
 
 export interface WorkspaceTab {
@@ -21,4 +22,11 @@ export interface WorkspaceTab {
    */
   draft?: Workflow;
   isDirty: boolean;
+  /**
+   * Where the canvas was left when this tab was last shown. A tab switch
+   * unmounts the canvas (it is keyed by tab), so without this every tab would
+   * reopen at the computed opening view instead of where the user was reading.
+   * In memory only: a relaunch has no viewport to restore.
+   */
+  viewport?: Viewport;
 }

@@ -50,11 +50,11 @@ function LessonRow({
           <span className="block text-sm font-medium leading-snug text-text-primary dark:text-text-primary-dark">
             {lesson.title}
           </span>
-          <span className="mt-0.5 block text-[11px] text-text-secondary dark:text-text-secondary-dark">
+          <span className="mt-0.5 block text-2xs text-text-secondary dark:text-text-secondary-dark">
             {summary ?? `${status} · ${lesson.durationMinutes} min`}
           </span>
           {context !== undefined && (
-            <span className="mt-0.5 block text-[11px] text-text-secondary dark:text-text-secondary-dark">
+            <span className="mt-0.5 block text-2xs text-text-secondary dark:text-text-secondary-dark">
               {context}
             </span>
           )}
@@ -81,7 +81,7 @@ function ChapterOutline({
     <nav aria-label="Lessons">
       {chapters.map((chapter) => (
         <div key={chapter.id} className="mb-4">
-          <h2 className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
+          <h2 className="px-2.5 pb-1 text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
             {chapter.title}
           </h2>
           <ul className="space-y-0.5">
@@ -343,7 +343,7 @@ export function TutorialLibrary({
           lastLessonId={lastLessonId}
         />
 
-        <p className="mt-4 inline-flex items-center gap-1.5 px-2.5 text-[11px] text-text-secondary dark:text-text-secondary-dark">
+        <p className="mt-4 inline-flex items-center gap-1.5 px-2.5 text-2xs text-text-secondary dark:text-text-secondary-dark">
           <BookOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Lessons are bundled and readable offline.
         </p>

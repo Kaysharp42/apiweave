@@ -375,7 +375,7 @@ const ResponsePreview = ({ result, status }: ResponsePreviewProps) => {
       )}
 
       {result.error && (
-        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-(--aw-status-error)/5 text-status-error dark:text-status-error-dark">
+        <div className="text-xs mt-1 p-1.5 rounded-node-ctl bg-(--aw-status-error)/5 text-status-error">
           <span className="font-semibold">Error:</span> {result.error}
         </div>
       )}
@@ -415,7 +415,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         )}
         {data.branchCount && data.branchCount > 1 && (
           <span
-            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
+            className="text-2xs px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
             title={`${data.branchCount} parallel branches`}
           >
             <Snowflake className="w-3 h-3" /> {data.branchCount}x
@@ -423,7 +423,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
         )}
         {attemptCount !== undefined && attemptCount > 1 && (
           <span
-            className="text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
+            className="text-2xs px-1.5 py-0.5 rounded-node-chip font-mono bg-surface-overlay dark:bg-surface-dark-overlay text-text-secondary dark:text-text-secondary-dark flex shrink-0 items-center gap-0.5"
             title={`Sent ${attemptCount} times`}
           >
             <Repeat className="w-3 h-3" /> {attemptCount}
@@ -517,7 +517,7 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
             />
           </div>
 
-          <div className="flex gap-1.5 text-[11px] flex-wrap text-(--aw-node-text-muted)">
+          <div className="flex gap-1.5 text-2xs flex-wrap text-(--aw-node-text-muted)">
             {headerCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-node-chip bg-surface-overlay dark:bg-surface-dark-overlay">
                 {headerCount} header{headerCount > 1 ? "s" : ""}
@@ -615,13 +615,13 @@ const HTTPRequestNode = ({ id, data, selected }: HTTPRequestNodeProps) => {
                             key={varName}
                             className="flex gap-1 items-center text-xs"
                           >
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-success)/10 text-status-success dark:text-status-success-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-success)/10 text-status-success">
                               {varName}
                             </code>
                             <span className="text-(--aw-node-text-muted)">
                               &larr;
                             </span>
-                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-info)/10 text-status-info dark:text-status-info-dark">
+                            <code className="px-1.5 py-0.5 rounded-node-chip flex-1 truncate bg-(--aw-status-info)/10 text-status-info">
                               {displayPath}
                             </code>
                             <button

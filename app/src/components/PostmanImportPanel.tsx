@@ -190,7 +190,7 @@ function PostmanPreview({ preview }: { readonly preview: PostmanImportPreview })
           {preview.workflows.map((workflow) => (
             <li key={workflow.name} className="flex justify-between gap-2">
               <span className="truncate">{workflow.name}</span>
-              <span className="text-text-muted dark:text-text-muted-dark">
+              <span className="text-text-secondary dark:text-text-secondary-dark">
                 {workflow.requestCount} request(s)
               </span>
             </li>
@@ -215,7 +215,7 @@ function PostmanPreview({ preview }: { readonly preview: PostmanImportPreview })
                 <code className="font-mono text-text-primary dark:text-text-primary-dark">
                   {secret.name}
                 </code>{" "}
-                <span className="text-text-muted dark:text-text-muted-dark">
+                <span className="text-text-secondary dark:text-text-secondary-dark">
                   — {secret.usedBy}
                 </span>
               </li>

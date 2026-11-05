@@ -63,7 +63,8 @@ The desktop app exposes one MCP transport:
 | Streamable HTTP | `http://127.0.0.1:<port>/mcp` | `Authorization: Bearer <token>` |
 
 The bridge prefers port `47271`. If another process owns that port, APIWeave
-selects a free loopback port and shows the live URL in the MCP panel. There is
+selects a free loopback port and shows the live URL on the **MCP Server**
+settings page. There is
 no Python server, bundled stdio server, remote endpoint, webhook, or public
 trigger.
 
@@ -82,7 +83,7 @@ The bridge speaks MCP protocol version `2025-06-18` (negotiated by the SDK).
 ## Enable The Bridge
 
 1. Start the APIWeave desktop app.
-2. Open **Settings** or the **MCP** panel.
+2. Open **Settings → MCP Server**.
 3. Enable the local MCP server.
 4. Copy the live loopback URL and access token shown by the app.
 5. Add them to the MCP client configuration.
@@ -566,7 +567,8 @@ cannot apply invalid or stale rules.
 
 ## Client Configuration
 
-Always replace the example URL if the MCP panel shows a fallback port. Replace
+Always replace the example URL if the **MCP Server** settings page shows a
+fallback port. Replace
 `YOUR_MCP_TOKEN` locally and never commit the populated config.
 
 ### Claude Desktop
@@ -727,7 +729,8 @@ sentence in the `start-here` guide telling it to query `graphify-out/` with
 ## Troubleshooting
 
 - **Connection refused:** APIWeave must be running and the MCP bridge must be
-  enabled. Copy the current URL from the MCP panel instead of assuming `47271`.
+  enabled. Copy the current URL from **Settings → MCP Server** instead of
+  assuming `47271`.
 - **401 Unauthorized:** The bearer token is missing or does not match the token
   shown by the app. Update the client configuration and reconnect.
 - **403 Forbidden Origin:** A browser or proxy supplied a non-loopback Origin.

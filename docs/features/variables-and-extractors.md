@@ -157,7 +157,7 @@ The Variables panel is also where to confirm the exact placeholder syntax for a 
 - **If a placeholder comes back as plain text in the request or response**, the namespace is misspelled or the key does not exist. The most common typo is `{{variable.token}}` (singular) instead of `{{variables.token}}` (plural). Open the Variables panel or the environment editor and confirm the key exists with the exact name.
 - **If an extractor did not set a value**, the path does not match the real response shape. Inspect the node's response body for the actual field name (including case) and update the path. Arrays use zero-based indices, so `response.body.items[0].id` reads the first element only.
 - **If a `prev.*` reference is empty after a Merge node**, the index does not match a branch. Branch indices start at 0 and follow the canvas order. Check the run results to confirm how many branches completed and which index each one received.
-- **If `{{secrets.NAME}}` is not resolved at run time**, no scope in the chain declares the key. Open **Secrets** for the selected environment or the workspace, and add the key through the Libsodium write flow. The plaintext never appears in the canvas, run history, or `.awecollection` bundle.
+- **If `{{secrets.NAME}}` is not resolved at run time**, no scope in the chain declares the key. Open **Secrets** for the selected environment or the workspace, and add the key through the Libsodium write flow. The plaintext never appears in the canvas, run history, or `.aweproject` bundle.
 
 ## Related
 

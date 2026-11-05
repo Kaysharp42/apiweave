@@ -27,15 +27,15 @@ describe("describeGitSync", () => {
     });
   });
 
-  it("is pending for uncommitted edits or unpushed commits, counting only the commits it knows", () => {
+  it("is pending for uncommitted edits or unpushed commits, naming what is waiting", () => {
     expect(describeGitSync(trackedStatus({ uncommitted: true }))).toMatchObject({
       kind: "pending",
-      label: "Pending",
+      label: "Uncommitted changes",
       intent: "info",
       icon: CloudUpload,
     });
-    expect(describeGitSync(trackedStatus({ outgoing: 3 }))).toMatchObject({ kind: "pending", label: "Pending (3 to push)" });
-    expect(describeGitSync(trackedStatus({ outgoing: 3, uncommitted: true })).label).toBe("Pending");
+    expect(describeGitSync(trackedStatus({ outgoing: 3 }))).toMatchObject({ kind: "pending", label: "3 to push" });
+    expect(describeGitSync(trackedStatus({ outgoing: 3, uncommitted: true })).label).toBe("Unpushed changes");
   });
 
   it("tells auto and manual mode apart in what happens to waiting edits", () => {
@@ -44,7 +44,7 @@ describe("describeGitSync", () => {
     expect(describeGitSync(trackedStatus({ uncommitted: true, mode: "manual", remoteUrl: null })).explanation).toMatch(/Commit now commits them/);
   });
 
-  it("says committed, not saved, so it never collides with the header's Save and auto-save", () => {
+  it("says committed, not saved, so it never collides with the Save button and auto-save", () => {
     for (const status of [
       trackedStatus({ uncommitted: true }),
       trackedStatus({ uncommitted: true, outgoing: 2 }),

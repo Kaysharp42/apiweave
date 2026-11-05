@@ -47,7 +47,7 @@ export function WorkspaceGroupSection({
           </Badge>
         )}
         {summaryEnd && (
-          <span className="ml-auto text-xs text-text-muted dark:text-text-muted-dark">
+          <span className="ml-auto text-xs text-text-secondary dark:text-text-secondary-dark">
             {summaryEnd}
           </span>
         )}

@@ -1,16 +1,17 @@
 import { app, shell } from "electron"
 import { z } from "zod"
+import { spawnSync } from "node:child_process"
 import { autoUpdater } from "electron-updater"
 import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from "electron-updater"
 // Not re-exported from the package root, and the events map is what makes
 // track() below type-safe. Type-only, so nothing is imported at runtime, and
-// electron-updater is pinned to ~6.3.9 (see package.json) — a deep path is safe
-// against a range it cannot cross.
+// electron-updater is pinned to the 6.8.x line (see package.json) — a deep path
+// is safe against a range it cannot cross.
 import type { AppUpdaterEvents } from "electron-updater/out/AppUpdater"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { DEFAULT_UPDATE_POLICY } from "@shared/types/UpdateStatus"
 import { updaterLog } from "./logging"
-import { UPDATE_SIGNATURE_FIELD, verifyUpdateFile } from "./update_signature"
+import { UPDATE_FILE_SIGNATURES_FIELD, UPDATE_SIGNATURE_FIELD, verifyUpdateFile } from "./update_signature"
 
 // ---------------------------------------------------------------------------
 // The update channel
@@ -29,7 +30,7 @@ import { UPDATE_SIGNATURE_FIELD, verifyUpdateFile } from "./update_signature"
 //     specify several publishers)" — builder-util-runtime's own docs on
 //     `publishAutoUpdate`. So `app-update.yml` is written from the generic
 //     entry, and the updater fetches `<url>/latest.yml` (`latest-linux.yml` on
-//     Linux) rather than resolving versions itself.
+//     Linux, `latest-mac.yml` on macOS) rather than resolving versions itself.
 //   - `github` stays second purely as the uploader. `scheduleUpload` returns
 //     early for `provider === "generic"`, so nothing tries to publish to it.
 //
@@ -107,20 +108,42 @@ function devUpdatesEnabled(): boolean {
 }
 
 /**
+ * True when the running app bundle carries a Developer ID signature. Squirrel
+ * applies a macOS update only to a bundle signed by the same authority, so an
+ * unsigned or ad-hoc-signed build stays on the notice-only path rather than
+ * offering an install that Gatekeeper (or Squirrel) will refuse. codesign
+ * prints the signing authority on stderr; an unsigned bundle has no
+ * `Authority=` line and an ad-hoc one reports `Signature=adhoc`.
+ */
+function macBuildIsSigned(): boolean {
+  // A dev run is never the distributed bundle; do not shell out for it.
+  if (!app.isPackaged) return false
+  const result = spawnSync("/usr/bin/codesign", ["-dv", "--verbose=2", app.getPath("exe")], {
+    encoding: "utf8",
+    timeout: 5_000,
+  })
+  const output = `${typeof result.stdout === "string" ? result.stdout : ""}\n${typeof result.stderr === "string" ? result.stderr : ""}`
+  return result.status === 0 && /^Authority=Developer ID Application:/m.test(output)
+}
+
+/**
  * NSIS (Windows) and AppImage (Linux) can download and apply an update without
- * the binary being code-signed. macOS enforces Gatekeeper on self-update
- * (Squirrel.Mac requires a signed app, which this build isn't yet) and
- * deb/rpm/pacman installs are owned by the OS package manager, not the app —
- * both fall back to a manual "new version available" notice with a link to the
- * GitHub release instead of an in-app install.
+ * the binary being code-signed. macOS can too, but only when the bundle is
+ * signed: Squirrel.Mac requires the running app and the update to share a
+ * Developer ID. That is why a signed macOS build reads `latest-mac.yml` while
+ * an unsigned one falls back to the notice-only `version.json` path.
+ * deb/rpm/pacman installs are owned by the OS package manager, not the app.
  *
  * electron-updater is deliberately kept out of the esbuild bundle (see
- * esbuild.config.cjs) and pinned to the 6.3.x line, so it shares the one
- * builder-util-runtime that electron-builder 25 used to write latest.yml.
+ * esbuild.config.cjs) and pinned to the 6.8.x line, so it shares the one
+ * builder-util-runtime that electron-builder 26 uses to write latest.yml.
  */
 export function platformSupportsAutoInstall(): boolean {
   if (process.platform === "win32") return true
   if (process.platform === "linux") return typeof process.env["APPIMAGE"] === "string"
+  // The dev override exists to exercise the real download path; a dev build is
+  // never signed, and refusing it here would make that impossible on macOS.
+  if (process.platform === "darwin") return devUpdatesEnabled() || macBuildIsSigned()
   return false
 }
 
@@ -207,18 +230,16 @@ const versionManifestSchema = z.object({
  * permalink base the generic provider uses for `latest.yml`.
  *
  * This exists rather than reusing `latest.yml` because the platforms on this
- * path have no manifest of their own to read. The release workflow deletes
- * `latest-mac.yml` on purpose — the two macOS jobs each publish a single-arch
- * manifest, so whichever lands last describes half the release — and reaching
- * for the *Windows* manifest just to learn a version number would couple macOS
- * updates to the win target's existence. `version.json` is platform-neutral by
+ * path have no manifest of their own to read. An unsigned macOS build cannot
+ * self-install, so it still needs a version number without a `latest-mac.yml`
+ * that it could act on; deb/rpm/pacman installs are owned by the package
+ * manager and never had one. `version.json` is platform-neutral by
  * construction, and the payload is ours: the thing most likely to change is the
  * file format, and we publish the file.
  *
- * Deleting this in favour of one shared manifest means building both macOS
- * arches in a single job so electron-builder emits a correct `latest-mac.yml`.
- * That is blocked on cross-arch native rebuilds (better-sqlite3), which is why
- * the jobs are split in the first place.
+ * A signed macOS build does not come through here: it takes the
+ * electron-updater path and reads the one `latest-mac.yml` the combined x64 +
+ * arm64 build publishes. See platformSupportsAutoInstall.
  */
 export async function fetchLatestReleaseVersion(): Promise<string | null> {
   const response = await fetch(`https://github.com/${REPO}/releases/latest/download/version.json`, {
@@ -410,7 +431,8 @@ export class UpdateManager {
    */
   private async verifyDownloaded(event: UpdateDownloadedEvent): Promise<void> {
     const signature: unknown = Reflect.get(event, UPDATE_SIGNATURE_FIELD)
-    const failure = await verifyUpdateFile(event.downloadedFile, event.version, signature)
+    const fileSignatures: unknown = Reflect.get(event, UPDATE_FILE_SIGNATURES_FIELD)
+    const failure = await verifyUpdateFile(event.downloadedFile, event.version, signature, fileSignatures)
     if (failure !== null) {
       updaterLog.error(`refusing update ${event.version} (${event.downloadedFile}): ${failure}`)
       this.patch({ state: "error", error: failure, downloadProgressPercent: null })

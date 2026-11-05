@@ -10,8 +10,9 @@ import {
 import { resolveWorkflowExportImportInitialTab } from "../utils/workflowExportImportTabs";
 import { Button } from "./atoms/Button";
 import { Input } from "./atoms/Input";
-import { TextArea } from "./atoms/TextArea";
+import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Modal } from "./molecules/Modal";
+import { PasteJsonField } from "./molecules/PasteJsonField";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave, IpcError } from "../utils/apiweaveClient";
 import { downloadTextFile } from "../utils/downloadFile";
@@ -281,23 +282,15 @@ export function WorkflowExportImport({
             </div>
 
             <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={includeEnvironment}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setIncludeEnvironment(e.target.checked)
-                  }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
-                />
-                <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                  Include referenced environment (if any)
-                </span>
-              </label>
+              <CheckboxOption
+                label="Include referenced environment (if any)"
+                checked={includeEnvironment}
+                onChange={setIncludeEnvironment}
+              />
             </div>
 
             {error && (
-              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error">
                 {error}
               </div>
             )}
@@ -338,7 +331,7 @@ export function WorkflowExportImport({
                   type="file"
                   accept=".json"
                   onChange={handleFileSelect}
-                  className="block w-full text-sm text-text-muted dark:text-text-muted-dark
+                  className="block w-full text-sm text-text-secondary dark:text-text-secondary-dark
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-sm file:border-0
                     file:text-sm file:font-medium
@@ -351,41 +344,25 @@ export function WorkflowExportImport({
             </div>
 
             {/* Or paste JSON */}
-            <div>
-              <label
-                htmlFor="workflow-bundle-json"
-                className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
-              >
-                Or Paste JSON
-              </label>
-              <TextArea
-                id="workflow-bundle-json"
-                value={importJson}
-                onChange={(e: ChangeEvent<HTMLTextAreaElement>) => {
-                  setImportJson(e.target.value);
-                  setError(null);
-                  setDryRunResult(null);
-                }}
-                placeholder='{"workflow": {...}, "environments": [...], ...}'
-                className="w-full h-32"
-              />
-            </div>
+            <PasteJsonField
+              id="workflow-bundle-json"
+              label="Or Paste JSON"
+              value={importJson}
+              placeholder='{"workflow": {...}, "environments": [...], ...}'
+              onChange={(value) => {
+                setImportJson(value);
+                setError(null);
+                setDryRunResult(null);
+              }}
+            />
 
             {/* Options */}
             <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={createMissingEnvs}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    setCreateMissingEnvs(e.target.checked)
-                  }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
-                />
-                <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                  Create missing environments from bundle
-                </span>
-              </label>
+              <CheckboxOption
+                label="Create missing environments from bundle"
+                checked={createMissingEnvs}
+                onChange={setCreateMissingEnvs}
+              />
             </div>
 
             {/* Dry run result */}
@@ -407,8 +384,8 @@ export function WorkflowExportImport({
                     <p
                       className={`font-medium ${
                         dryRunResult.valid
-                          ? "text-status-success dark:text-status-success-dark"
-                          : "text-status-error dark:text-status-error-dark"
+                          ? "text-status-success"
+                          : "text-status-error"
                       }`}
                     >
                       {dryRunResult.valid
@@ -434,7 +411,7 @@ export function WorkflowExportImport({
                     )}
 
                     {dryRunResult.errors && dryRunResult.errors.length > 0 && (
-                      <ul className="mt-2 text-sm text-status-error dark:text-status-error-dark list-disc list-inside">
+                      <ul className="mt-2 text-sm text-status-error list-disc list-inside">
                         {dryRunResult.errors.map((err: string) => (
                           <li key={err}>{err}</li>
                         ))}
@@ -460,10 +437,10 @@ export function WorkflowExportImport({
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-(--aw-status-success) shrink-0" />
                   <div className="min-w-0">
-                    <p className="font-medium text-status-success dark:text-status-success-dark">
+                    <p className="font-medium text-status-success">
                       Import successful!
                     </p>
-                    <p className="text-sm text-status-success dark:text-status-success-dark mt-1">
+                    <p className="text-sm text-status-success mt-1">
                       Workflow ID: {importResult.workflowId}
                     </p>
                     {importResult.secretReferences &&
@@ -483,7 +460,7 @@ export function WorkflowExportImport({
             )}
 
             {error && (
-              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error dark:text-status-error-dark">
+              <div className="bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm p-4 text-sm text-status-error">
                 {error}
               </div>
             )}

@@ -29,7 +29,7 @@ function BrowserStep({ code, url }: { readonly code: string | null; readonly url
           Finish signing in in your browser, on the page that opened, then
           come back here.
         </p>
-        <p className="break-all font-mono text-xs text-text-muted dark:text-text-muted-dark">{url}</p>
+        <p className="break-all font-mono text-xs text-text-secondary dark:text-text-secondary-dark">{url}</p>
       </div>
     );
   }
@@ -40,7 +40,7 @@ function BrowserStep({ code, url }: { readonly code: string | null; readonly url
         here.
       </p>
       <div>
-        <span id={codeLabel} className="text-xs text-text-muted dark:text-text-muted-dark">
+        <span id={codeLabel} className="text-xs text-text-secondary dark:text-text-secondary-dark">
           One-time code
         </span>
         <div className="flex items-center gap-2">
@@ -59,7 +59,7 @@ function BrowserStep({ code, url }: { readonly code: string | null; readonly url
           </IconButton>
         </div>
       </div>
-      <p className="break-all font-mono text-xs text-text-muted dark:text-text-muted-dark">{url}</p>
+      <p className="break-all font-mono text-xs text-text-secondary dark:text-text-secondary-dark">{url}</p>
     </div>
   );
 }
@@ -232,7 +232,7 @@ export function GitSignInDialog({
       <div className="space-y-4 p-5">
         <div aria-live="polite">{body}</div>
         {(phase.kind === "ready" || running) && (
-          <p className="text-xs text-text-muted dark:text-text-muted-dark">
+          <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
             {sideEffects(provider, host.trim() || defaultHost)}
           </p>
         )}

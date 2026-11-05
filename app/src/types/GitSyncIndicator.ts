@@ -9,7 +9,7 @@ import type { GitSyncKind } from "./GitSyncKind";
  */
 export interface GitSyncIndicator {
   readonly kind: GitSyncKind;
-  /** The short text beside the icon, e.g. "Local history" or "Pending (2 to push)". */
+  /** The short text beside the icon, e.g. "Local history" or "3 to push". */
   readonly label: string;
   readonly intent: GitSyncIntent;
   /** The lucide icon for the kind; null for a workspace with no history to report. */

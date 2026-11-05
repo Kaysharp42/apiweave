@@ -29,7 +29,7 @@ These pages cover the per-environment values a workflow reads at run time, the p
 
 - [Environments and Secrets](environments-and-secrets.md): local environments, environment inheritance for shared variables, the encrypted secret store, and the metadata-only display.
 - [Network](network.md): Settings > Network — a proxy, trusted certificate authorities (including the operating system's store) and client certificates for mutual TLS, for every request.
-- [Projects](projects.md): ordered groups of workflows. Covers project lifecycle, `.awecollection` export and import, and the references-only behavior of the bundle.
+- [Projects](projects.md): ordered groups of workflows. Covers project lifecycle, `.aweproject` export and import, and the references-only behavior of the bundle.
 
 ## Integration
 

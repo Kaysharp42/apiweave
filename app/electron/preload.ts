@@ -3,10 +3,6 @@ import { contextBridge, ipcRenderer } from "electron"
 import type { ContractResult } from "@shared/contract/errors"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { McpStatus } from "@shared/types/McpStatus"
-import type { MCPTool } from "@shared/types/MCPTool"
-import type { MCPPrompt } from "@shared/types/MCPPrompt"
-import type { MCPResource } from "@shared/types/MCPResource"
-import type { McpTestResult } from "@shared/types/McpTestResult"
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
 import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
@@ -107,12 +103,12 @@ const ipcBridge: IpcBridge = {
 contextBridge.exposeInMainWorld("__APIWEAVE_IPC__", ipcBridge)
 
 type DesktopBridge = {
-  readonly minimize: () => void
-  readonly toggleMaximize: () => void
-  readonly close: () => void
+  /** `process.platform` — the renderer uses it to sit clear of macOS traffic lights. */
+  readonly platform: string
+  /** Repaint the window background and native title-bar controls for a theme. */
+  readonly applyTheme: (dark: boolean) => Promise<void>
   /** True when main detected assistive technology — see `screenReaderArgs` there. */
   readonly screenReader: boolean
-  readonly onMaximizeChange: (callback: (isMaximized: boolean) => void) => () => void
   /**
    * Main asks before the window closes or the app quits. The handler resolves
    * whether that may go ahead; until it does, main waits.
@@ -124,18 +120,9 @@ type DesktopBridge = {
 }
 
 const desktopBridge: DesktopBridge = {
-  minimize: () => ipcRenderer.send("window:minimize"),
-  toggleMaximize: () => ipcRenderer.send("window:toggleMaximize"),
-  close: () => ipcRenderer.send("window:close"),
+  platform: process.platform,
+  applyTheme: (dark) => ipcRenderer.invoke("window:applyTheme", dark) as Promise<void>,
   screenReader: process.argv.includes(SCREEN_READER_ARG),
-  onMaximizeChange: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, value: boolean): void => {
-      callback(value)
-    }
-
-    ipcRenderer.on("window:maximizeChanged", handler)
-    return () => ipcRenderer.removeListener("window:maximizeChanged", handler)
-  },
   onCloseRequested: (handler) => {
     const listener = (): void => {
       ipcRenderer.send(WINDOW_CLOSE_ACK_CHANNEL)
@@ -163,10 +150,6 @@ type McpBridge = {
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>
   readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>
-  readonly listTools: () => Promise<readonly MCPTool[]>
-  readonly listPrompts: () => Promise<readonly MCPPrompt[]>
-  readonly listResources: () => Promise<readonly MCPResource[]>
-  readonly testConnection: () => Promise<McpTestResult>
 }
 
 const mcpBridge: McpBridge = {
@@ -179,10 +162,6 @@ const mcpBridge: McpBridge = {
     ipcRenderer.invoke("mcp:revokeAgentApproval", approvalId) as Promise<boolean>,
   setAutoApproveAgentRuns: (enabled) =>
     ipcRenderer.invoke("mcp:setAutoApproveAgentRuns", enabled) as Promise<McpStatus>,
-  listTools: call<readonly MCPTool[]>("mcp:listTools"),
-  listPrompts: call<readonly MCPPrompt[]>("mcp:listPrompts"),
-  listResources: call<readonly MCPResource[]>("mcp:listResources"),
-  testConnection: call<McpTestResult>("mcp:testConnection"),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)
@@ -273,6 +252,9 @@ const gitBridge: GitBridge = {
   disconnectRemote: invokeBridge(GIT_CHANNELS.disconnectRemote),
   discardLocalChanges: invokeBridge(GIT_CHANNELS.discardLocalChanges),
   openFromGit: invokeBridge(GIT_CHANNELS.openFromGit),
+  listRemoteBranches: invokeBridge(GIT_CHANNELS.listRemoteBranches),
+  listBranches: invokeBridge(GIT_CHANNELS.listBranches),
+  switchBranch: invokeBridge(GIT_CHANNELS.switchBranch),
   listAccounts: invokeBridge(GIT_CHANNELS.listAccounts),
   setAccount: invokeBridge(GIT_CHANNELS.setAccount),
   signIn: invokeBridge(GIT_CHANNELS.signIn),

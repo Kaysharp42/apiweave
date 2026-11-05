@@ -2,7 +2,7 @@
 
 *How a workspace is written as a git repository: the layout of its files, why they diff and merge well, what never reaches them, and how to run one in CI. For teams that want their API tests next to the code they test.*
 
-> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Sync now**, **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, merges the two field by field when both moved, and pushes your commits. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote and sync with it. The header shows [where the workspace stands](#the-sync-status-in-the-header) — synced, pending, syncing, incoming, merge needed, diverged, read-only or an error — in words and an icon, never colour alone. Sign in to a [GitHub or GitLab account](#git-accounts) from the header and a workspace can sync as that account, while APIWeave [creates the repository](#create-the-repository-from-apiweave) for you. When both sides changed, non-overlapping edits survive as a real merge commit; a field both sides changed differently waits for a decision, and nothing is overwritten. When the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
+> **In this release.** APIWeave tracks a workspace in a local git repository and commits to it: **Settings → Workspace → Version history (git)** has **Track this workspace**, a **Commit automatically** switch, **Sync now**, **Connect to remote** and **Stop tracking**. That repository lives on your machine, in the app's data folder. Connect a remote and the workspace keeps itself in step with it: after each commit the app fetches the remote's branch, fast-forwards and imports it when the remote moved alone, merges the two field by field when both moved, and pushes your commits. The remote branch it tracks is chosen when you connect, and **Switch branch…** in Version history moves the workspace to another one without leaving unpushed commits behind. A second computer can [open the same workspace](#open-a-workspace-from-git) against the same remote, on the branch you choose, and sync with it. The header shows [where the workspace stands](#the-sync-status-in-the-header) — synced, pending, syncing, incoming, merge needed, diverged, read-only or an error — in words and an icon, never colour alone. Sign in to a [GitHub or GitLab account](#git-accounts) from the header and a workspace can sync as that account, while APIWeave [creates the repository](#create-the-repository-from-apiweave) for you. When both sides changed, non-overlapping edits survive as a real merge commit; a field both sides changed differently waits for a decision, and nothing is overwritten. When the host refuses your push, the workspace becomes read-only and keeps committing locally. `apiweave run` runs a repository's files in CI, so a checkout of the connected repository is all a pipeline needs.
 
 ## Prerequisites
 
@@ -19,15 +19,17 @@ A repository is also a format other tools can read: `apiweave run` takes a folde
 ## Repository layout
 
 ```text
-.apiweave/format.json              {"format": "apiweave-workspace", "version": 1}
+.apiweave/format.json              {"format": "apiweave-workspace", "version": 2}
 .gitattributes                     * text eol=lf
 workspace.json                     workspace id, name, description
 projects/<slug>--<id>.json         name, description, color, workflow order (workflowId, enabled, continueOnFail)
 workflows/<slug>--<id>.json        one file per workflow, including workflows in no project
-environments/<slug>--<id>.json     workspace-scoped environments: name, description, swaggerDocUrl, isDefault, variables
+environments/<slug>--<id>.json     workspace-scoped environments: name, description, swaggerDocUrl, baseEnvironmentId, isDefault, variables
+presets/<slug>--<id>.json          node presets: name, nodeType, sanitized config
 ```
 
 - A folder holding `.apiweave/format.json` is a workspace repository; `apiweave run` detects one that way.
+- **Version 2 adds the base environment and node presets.** Version 1 is still read, with every environment extending none and no presets. A repository written by a newer APIWeave is refused with a message to update the app.
 - **The folders are flat.** Moving a workflow between projects edits two JSON fields (the workflow's `projectId` and the projects' `workflowOrder`) and moves no file.
 - A file is named `<slug>--<id>.json`. The slug is the name in lowercase (`Orders / list` → `orders-list`) and is only cosmetic: the id inside the file is the identity, and the name must end in it. Renaming a workflow renames its file; git's rename detection and the id keep that a clean change.
 - Only the files above belong to APIWeave. A `README.md`, CI configuration or any other file you keep in the repository is left alone.
@@ -50,9 +52,11 @@ The id is part of every file name, so two people creating "Get user" at the same
 Secret values never reach a repository:
 
 - `{{secrets.NAME}}` references stay as written, so the repository says which secrets a workflow uses and CI supplies each as `APIWEAVE_SECRET_<NAME>`.
-- A credential typed straight into a request or a variable is withheld, the way an `.awecollection` export withholds it: it becomes `<SECRET>`, or a secret-named header is left out.
+- A credential typed straight into a request or a variable is withheld, the way an `.aweproject` export withholds it: it becomes `<SECRET>`, or a secret-named header is left out.
 - Secret values, their ciphertext and keys, and the list of secret names stored on this machine are never written.
-- Never written either: user-scoped environments, run history, node presets, agents, workflow revisions and an environment's base environment.
+- Never written either: user-scoped environments, run history, agents, and workflow revisions.
+- An environment's base environment is written as its id, and is validated when the repository is read: it must be another workspace-scoped environment in the same repository, and the chain may not form a cycle or run deeper than eight environments.
+- Node presets are written with their config sanitized the same way a node's is: a literal credential becomes `<SECRET>`, and `{{secrets.NAME}}` references stay as references. Their local revision and timestamps are not written.
 
 A request that sends `<SECRET>` comes from a withheld credential. Replace it with a `{{secrets.NAME}}` reference in the app; the next commit writes the reference.
 
@@ -72,7 +76,8 @@ A tracked workspace can be connected to one remote repository on a git host, so 
 
 1. In **Version history (git)**, choose the **Account** to connect as. The first signed-in account is chosen to begin with; see [Git accounts](#git-accounts).
 2. Choose the **Repository** from the account's list, which holds its repositories tagged `apiweave-workspace` — the topic APIWeave gives the repositories it creates — from the account itself and each of its GitHub organizations or GitLab groups. A repository made elsewhere appears once it carries the topic, whether or not it has commits. **Create repository…** under the list makes a new empty, tagged one on the host for you; see [Create the repository from APIWeave](#create-the-repository-from-apiweave).
-3. Click **Connect to remote**.
+3. Optionally choose a **Branch** with **Choose branch…**, which lists the branches the remote has. Leave it on the default to track the branch the workspace's history is on. The branch is where the workspace's commits are pushed and where the remote's changes are read from; see [Choose and switch branches](#choose-and-switch-branches).
+4. Click **Connect to remote**.
 
 The list is read when the form opens, kept per account for as long as the form is open, so switching back to one already listed costs nothing; the refresh button beside **Repository** (tooltip **Refresh repositories**) reads it again. A tagged repository with commits is listed too; connecting it follows the same rules below — joined when it shares this workspace's history, a two-way merge when it holds this workspace without a shared commit, and refused when it holds another workspace. The list holds at most 100 repositories per GitHub owner, and 100 on GitLab; when an owner could not be listed (an organization that requires single sign-on, say) or a list stops at 100, a line under it says so.
 
@@ -104,11 +109,11 @@ Plain `http://` and `git://` are refused, and so is a bare path such as `C:\repo
 
 What happens next depends on what the repository holds:
 
-- **No branches at all:** the workspace's history is pushed to the `main` branch, and the connection becomes the workspace's sync target. It must be a bare repository (as every host creates), not a working copy somebody uses: git cannot push to a working copy's checked-out branch, and the connection is refused saying so.
+- **No branches at all:** the workspace's history is pushed to the branch chosen (the `main` branch unless another was picked), and the connection becomes the workspace's sync target. It must be a bare repository (as every host creates), not a working copy somebody uses: git cannot push to a working copy's checked-out branch, and the connection is refused saying so.
 - **Already holding this workspace's history** (a shared commit, a copy of the app's repository, for instance): it is joined as it is, and the app syncs both ways from then on.
 - **Holding this same workspace with no shared commit** (tracking was stopped and started again, or this device's history folder was recreated): the remote is connected and a **two-way merge** starts at once — the workspace becomes **merging**, and the merge view opens. Identical files are taken as they are, a record or file only one copy has is kept, and a place both copies hold with different values is a conflict. Nothing is pushed until every conflict is settled; see [Reconnecting a workspace whose history was restarted](#reconnecting-a-workspace-whose-history-was-restarted).
 - **Holding another workspace's history:** the connection is refused with `That repository holds a different workspace (<name>). Open it from git to work on that one, or connect a repository that belongs to this workspace.` If the repository's workspace id differs from this one only in letter case, the message says so and says to rename the workspace in the repository's `workspace.json`, because both would use one folder on Windows and macOS.
-- **Holding history this workspace did not come from:** the connection is refused with `That repository already has history this workspace did not come from.` That covers a branch with no readable `workspace.json`, a workspace only on another branch such as `master` (only a repository with no branches at all counts as empty), and another project's history. A repository written by a newer APIWeave says so and asks you to update the app. To work on a repository that already holds a workspace, [open it from git](#open-a-workspace-from-git) instead.
+- **Holding history this workspace did not come from:** the connection is refused with `That repository already has history this workspace did not come from.` That covers a branch with no readable `workspace.json`, a workspace only on another branch such as `master` (only a repository with no branches at all counts as empty), and another project's history. Choose the branch that holds the workspace with **Choose branch…**, or [open it from git](#open-a-workspace-from-git). A repository written by a newer APIWeave says so and asks you to update the app.
 - **Unreachable, or refusing you:** the connection is refused with git's own message, and the workspace stays unconnected.
 
 A refused connection leaves the workspace unconnected and its history untouched. The workspace's own repository is left with no remote, whatever it had. Git runs with its prompts off and uses your own configuration, so the host's credentials must already be available to it (an SSH key, or a credential helper that has signed in). Credentials never go in the URL: the URL is stored in plain text, in the app's database, in the repository's configuration and in the panel, so one that carries a user name or password (`https://user:token@host/…`) is refused. Use an SSH URL, or sign in through git's credential helper. The `git@` of an SSH URL is an account name, not a credential, and is accepted.
@@ -117,7 +122,7 @@ A workspace has one remote. **Disconnect** removes it after you confirm: every l
 
 Two things to know about the history that is pushed:
 
-- The push creates `main`, but a new empty bare repository's own `HEAD` may name `master`. Someone cloning it then gets no checkout and must ask for the branch: `git clone --branch main <url>`.
+- The push creates the tracked branch (`main` unless another was chosen), but a new empty bare repository's own `HEAD` may name `master`. Someone cloning it then gets no checkout and must ask for the branch: `git clone --branch main <url>`.
 - **Stop tracking** deletes the app's repository, and tracking again starts a new history. A remote that holds the old one has nothing in common with the new one; connecting it starts a two-way merge rather than being refused. Connect a fresh empty repository instead if you want to start without the old copy.
 
 ## Reconnecting a workspace whose history was restarted
@@ -139,15 +144,28 @@ The refusals that remain:
 
 - A repository holding **another workspace** is refused by name: `That repository holds a different workspace (<name>). …`; open it from git to work on that one. If the ids differ only in letter case, the message says to rename the workspace in the repository's `workspace.json`, because both would share one folder on Windows and macOS.
 - A repository whose `.apiweave/format.json` names a format this build does not read says it was written by a newer APIWeave; update the app.
-- A repository with commits but no readable `workspace.json` on the branch being synced — including one whose workspace is only on another branch — is refused as history this workspace did not come from. Open it from git, or put the workspace on the connected branch.
+- A repository with commits but no readable `workspace.json` on the branch being synced — including one whose workspace is only on another branch — is refused as history this workspace did not come from. Switch to the branch that holds it in Version history, or open it from git.
 
 A sync can reach the same two-way merge without a connect: if this device's history folder was deleted and recreated, or the remote's branch was replaced by another copy of this workspace, the next cycle finds no common commit and stops for you the same way. A branch holding a *different* workspace is the refusal above instead, with the sync-time wording.
+
+## Choose and switch branches
+
+A workspace tracks one branch of its remote. The branch is chosen when the workspace is connected (step 3 under [Connect a remote](#connect-a-remote)) and when a repository is [opened from git](#open-a-workspace-from-git); leaving it on **Default branch** uses the remote's default. The chosen branch is what every cycle fetches, merges and pushes.
+
+**Switch branch…** under **Version history (git) → Remote** lists the remote's branches and moves the workspace to another one:
+
+- The list is read from the remote when the dialog opens, so a branch created on another machine appears without reconnecting.
+- Local edits are committed on the branch being left first. The switch is refused, and everything stays as it was, when that branch has commits the remote does not — push or discard them first — when a merge is waiting, when the target already exists on this device with commits of its own, or when the target holds another workspace.
+- With none of those, the clone checks out the target branch, its tree is imported in one transaction, and **Branch** shows the new name. The old branch stays in the repository, at the commit it was on.
+- A checkout that cannot be imported puts the clone back on the branch and commit it was on, so the next sync cannot push one branch's tree onto another.
+
+The workspace's local git history is never rewritten by a switch: a commit that was not pushed is either kept on the branch it belongs to or the switch does not happen. `apiweave run` reads whichever branch was checked out, so a CI checkout needs `--branch` for any branch other than the repository's default.
 
 ## Git accounts
 
 APIWeave signs in to GitHub and GitLab with their own command-line tools, [`gh`](https://cli.github.com) and [`glab`](https://gitlab.com/gitlab-org/cli), which keep the tokens in your system keychain; APIWeave stores none. A workspace connected over `https://` can sync as one of their accounts instead of whatever your credential helper answers with, which is how two accounts on one host each push to their own repositories.
 
-- **The accounts menu** is the round button at the right end of the header, after the theme toggle. It shows the initials of the account the current workspace syncs as (a plain person icon when it has none), with the workspace's sync icon as a small badge. Open it to see every account by host, which one this workspace uses, **Add GitHub account** and **Add GitLab account**, and a link to the settings page. For a workspace that is not tracked yet, or has no remote, it also offers **Set up sync for this workspace…**, which opens its Version history. The accounts are read from `gh` and `glab` each time the menu opens.
+- **The accounts menu** is the round button at the right end of the header, after the theme toggle. It shows the initials of the account the current workspace syncs as (a plain person icon when it has none). Open it to see every account by host, which one this workspace uses, **Add GitHub account** and **Add GitLab account**, and a link to the settings page. For a workspace that is not tracked yet, or has no remote, it also offers **Set up sync for this workspace…**, which opens its Version history. The accounts are read from `gh` and `glab` each time the menu opens.
 - **Settings → App → Git accounts** says whether each tool is installed and which version, or where to get it when it is not, and any problem a tool reported (an expired sign-in, a tool that did not answer). It lists each account with the workspaces that sync as it, and **Sign in…** opens the same dialog as the menu. **Refresh** asks the tools again, after a sign-in made in a terminal for instance.
 - **Signing in.** Choose **Add GitHub account**, **Add GitLab account** or **Sign in…**. Keep the **Host** at `github.com` or `gitlab.com`, or name another instance, then click **Sign in in the browser**. APIWeave runs the tool's own browser sign-in: the dialog shows the one-time code (with a copy button) and opens the page to enter it on, and waits while you finish there. **Open browser again** reopens the page, and **Cancel** stops the tool, as does closing the dialog. When it is done the dialog says *Signed in to `<host>` as `<login>`*. A GitHub Enterprise Server without a device flow shows no code: the page alone finishes the sign-in.
 - **What signing in changes outside APIWeave.** On GitHub, the account becomes `gh`'s active account on that host, exactly as `gh auth login` does in a terminal: `gh` commands there, and repositories that use `gh`'s credential helper, act as that account. On GitLab, the sign-in replaces the account `glab` had for that host, sets that host's protocol to HTTPS, and may make it `glab`'s default host. Neither tool changes your git configuration.
@@ -178,7 +196,7 @@ A tracked workspace shows its state at the right of the header, as an icon and a
 | State | Shown when | What the popover offers |
 | --- | --- | --- |
 | **Synced** | Nothing is waiting either way. | **Sync now** |
-| **Pending** | This device has work the remote does not: edits not yet committed, or commits not yet pushed. The label adds `(N to push)` when only commits are waiting. | **Sync now** |
+| **Uncommitted changes** / **N to push** | This device has work the remote does not: edits not yet committed, or commits not yet pushed. The label counts what is known — `2 to push` when only commits wait, **Unpushed changes** when both do. | **Sync now** |
 | **Syncing** | A cycle is running. | — |
 | **Incoming (N)** | Manual mode, and the remote has `N` new commits this device has not brought in. | **Sync now** brings them in |
 | **Merge needed** | Both this device and the remote changed, and some fields were changed differently on each side — or the two copies share no history. Nothing is pushed or imported until each conflict is settled. | **Review merge** opens the merge view; **Discard local changes** loads the remote's version instead |
@@ -190,7 +208,7 @@ A tracked workspace shows its state at the right of the header, as an icon and a
 
 A workspace with no remote says **Local history** (or **Local history · uncommitted** while edits are waiting), **Committing** or **Commit error**, and offers **Commit now** only when there is something to commit: there is nothing to push.
 
-**Pending is a flag with a count only where the count is known.** Whether the database holds edits the last commit does not is known cheaply and stays right across restarts, so **Pending** always shows. How many records changed means serializing the whole workspace and comparing it with the last commit, which is too much to repeat on every status, so it is not shown in the header: **Pending (N to push)** counts commits waiting for the remote, and the exact list of changed workflows, projects and environments is what [the commit dialog](#manual-mode-the-commit-dialog) shows.
+**The pending label is a flag with a count only where the count is known.** Whether the database holds edits the last commit does not is known cheaply and stays right across restarts, so **Uncommitted changes** always shows. How many records changed means serializing the whole workspace and comparing it with the last commit, which is too much to repeat on every status, so it is not shown in the header: **N to push** counts commits waiting for the remote, **Unpushed changes** says both kinds of work are waiting, and the exact list of changed workflows, projects and environments is what [the commit dialog](#manual-mode-the-commit-dialog) shows.
 
 **Discard local changes** always asks first: it throws away every local commit and every change not yet committed, and loads the remote's version of the workspace in its place — a record you added here and never committed is gone too. It cannot be undone. It is offered from the header for a merging, diverged or read-only workspace, and always from the settings panel while a remote is connected.
 
@@ -235,14 +253,14 @@ The host in the message is the one in the remote's URL (`github.com` for `https:
 
 ### Where the settings are
 
-**Settings → Workspace → Version history (git)** holds the same state and actions as the header's popover, plus the **Commit automatically** switch, the **Remote** and its **Branch**, **Connect to remote** or **Disconnect**, and **Stop tracking**. The branch is shown, not chosen; see [Not covered](#not-covered-in-this-release).
+**Settings → Workspace → Version history (git)** holds the same state and actions as the header's popover, plus the **Commit automatically** switch, the **Remote** and its **Branch** with **Switch branch…**, **Connect to remote** or **Disconnect**, and **Stop tracking**.
 
 ## Open a workspace from git
 
 A repository that holds a workspace (one a teammate pushed with [Connect a remote](#connect-a-remote), for example) can be opened here as a new workspace.
 
 1. Open the workspace switcher at the top of the sidebar and choose **Open from git…**. When no workflow is open, the empty state has the same **Open from git…** button.
-2. Choose the **Account** and the **Repository** from its list, and click **Open workspace**. The clone, and every later sync, reach the repository as that account (an SSH account by the SSH URL, with your SSH key).
+2. Choose the **Account** and the **Repository** from its list. Optionally choose a **Branch** with **Choose branch…**, which lists the branches the remote has; **Default branch** opens the repository's default. Click **Open workspace**. The clone, and every later sync, reach the repository as that account (an SSH account by the SSH URL, with your SSH key).
 
 The list holds the account's repositories tagged with the topic `apiweave-workspace`, which every repository APIWeave creates gets. APIWeave cannot tell a workspace repository by its content without cloning it, so the topic is what marks one; add it on the host to a repository made elsewhere to list it here. **Show all repositories** lists the account's other repositories too. As for connecting, **Use a URL instead** takes any URL in the [accepted forms](#connect-a-remote), and **Your own git sign-in (credential manager or SSH key) — another host** is for other hosts and for when no account is signed in.
 
@@ -250,13 +268,13 @@ What happens:
 
 - The repository is cloned into a scratch folder first, and nothing is created in the app until it checks out. `.apiweave/format.json` must be there at a format version this APIWeave knows, and every file the format reads must be valid. Otherwise the open is refused, the message names the file and the problem, and nothing is left behind.
 - The workspace is created with the id its `workspace.json` holds, and its projects, workflows and environments are imported. It is a workspace like one you made yourself, never your personal one. If another workspace already has its name's slug, the new one gets `-2` (then `-3`, and so on).
-- The clone is moved to `<userData>/git/<workspace id>/`, and the workspace is tracked in **auto** mode, connected to that URL on the branch the clone is on. The app switches to it.
-- Only the repository's **default branch** is opened. If it has branches but its default one has nothing to check out (a bare repository whose `HEAD` names `master` while the workspace is on `main`), the open is refused saying so; set the repository's default branch to the one that holds the workspace.
+- The clone is moved to `<userData>/git/<workspace id>/`, and the workspace is tracked in **auto** mode, connected to that URL on the branch you chose (or the repository's default). The app switches to it.
+- A branch that does not exist is refused with git's own message, and nothing is created. To open a branch the repository's `HEAD` does not name, choose it in the branch list; setting the repository's default branch on the host is only needed if you want **Default branch** to open it.
 - Secret values are not in a repository, so the workspace starts with none: set the secrets its `{{secrets.NAME}}` references use, and replace any credential withheld as `<SECRET>`. When the import has something to report — a withheld credential, or a default environment it had to pick — the dialog lists it before switching; with nothing to report it switches straight away. The workspace is already in your list by then: **Open workspace** switches to it, and **Close** leaves you where you are. See [Secrets](#secrets).
 
 **A workspace that is already here.** Workspaces are identified by the id in `workspace.json`, not by their name or URL. If the repository's workspace is already in the app (the one you pushed from this machine, for instance), the repository is cloned into a scratch folder, checked, and removed again: nothing in the app changes. The dialog says **This workspace is already in APIWeave** and names it, and **Open it** takes you to that workspace; **Back** returns to the URL.
 
-**It syncs from then on.** The open imports the repository once, and the workspace is tracked in **auto** mode and connected to that URL on the branch the clone is on, so later cycles push your commits and bring in other people's exactly as for any connected workspace; see [Sync with the remote](#sync-with-the-remote).
+**It syncs from then on.** The open imports the repository once, and the workspace is tracked in **auto** mode and connected to that URL on the branch you chose (or the repository's default), so later cycles push your commits and bring in other people's exactly as for any connected workspace; see [Sync with the remote](#sync-with-the-remote).
 
 ## Get a repository into CI
 
@@ -288,12 +306,11 @@ apiweave run ./tests --workflow "Login" --env Staging    # one workflow
 - Exit code `0` when everything passed, `1` when a test failed, `2` for a usage or configuration error, such as a missing secret or an invalid file (the message names the file).
 - `--bail` also stops the sequence at the first project that did not complete.
 
-A `.awecollection` bundle, a single workflow export and a Postman collection still run with the same command. Every option, the reports and a GitHub Actions job are in [Run Tests in CI](ci.md).
+A `.aweproject` bundle, a single workflow export and a Postman collection still run with the same command. Every option, the reports and a GitHub Actions job are in [Run Tests in CI](ci.md).
 
 ## Not covered in this release
 
-- **The branch is fixed.** A workspace syncs the branch its repository is on — `main` for one this app created, or the repository's default branch for one opened from git — and there is no branch picker.
-- **Environment inheritance is not carried.** An environment's base environment is not written; put the variables a run needs in the environment itself.
+- **Creating branches or opening pull requests is not done from the app.** Choose an existing branch to track; create one with your usual git tool and refresh the branch list.
 - **Local history stays separate.** A workflow's [version history](../features/workflows-and-nodes.md#version-history) in the app is not the git history.
 
 ## Troubleshooting
@@ -304,14 +321,15 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 - **If signing in with `gh` or `glab` fails**, the dialog shows the tool's last words. A one-time code that expired makes the tool give up waiting; start the sign-in again. GitLab sign-in needs GitLab 17.9 or later and a `glab` whose `auth status --output json` APIWeave can read; a missing tool is said where it is installed from.
 - **If the Repository list says `No repository tagged apiweave-workspace`**, the account has no repository carrying that topic: add the topic on the host to the repository you want to connect, create one with **Create repository…**, or use **Use a URL instead**.
 - **If connecting says `Commit the workspace once before connecting a remote.`**, the workspace has no commit yet, because git did not know who you are when tracking started. Enter a name and email when the panel asks, then connect.
-- **If connecting fails with `That repository already has history…`**, the branch holds something that is not this workspace: no readable `workspace.json`, a workspace only on another branch, or another project's history. The workspace was left unconnected; connect the branch that holds this workspace, or create an empty repository and connect to that. A repository holding this same workspace with no shared commit is not this case — it merges two ways (see [Reconnecting a workspace whose history was restarted](#reconnecting-a-workspace-whose-history-was-restarted)).
+- **If connecting fails with `That repository already has history…`**, the branch holds something that is not this workspace: no readable `workspace.json`, or another project's history. The workspace was left unconnected; choose the branch that holds this workspace with **Choose branch…**, or create an empty repository and connect to that. A repository holding this same workspace with no shared commit is not this case — it merges two ways (see [Reconnecting a workspace whose history was restarted](#reconnecting-a-workspace-whose-history-was-restarted)).
 - **If connecting says `That repository holds a different workspace (…)`**, the repository belongs to another workspace. Open it from git to work on that one, or connect a repository that belongs to this workspace. If the message says the ids differ only in letter case, rename the workspace in the repository's `workspace.json` and connect again.
 - **If a sync says `The remote's branch holds history this workspace did not come from…`**, the remote's branch now holds another workspace, or a tree that is not this workspace. Nothing was pushed; **Discard local changes** loads the remote's version and disconnecting keeps this device's. A branch holding this same workspace with no shared commit is merged two ways instead and stops for you.
 - **If a sync names a file as `a symbolic link` or `a submodule`**, the remote added or changed a link or a submodule (another repository) at that path. A merge carries links and submodules as they are, never as files: one both sides hold alike, or one the remote left as it was, stays as this device has it, and one the remote removed is removed here too. It never takes a new or changed one from the remote, because that would mean writing it into this device's copy, so it refuses the merge before writing anything, and nothing is pushed. Remove the entry on the remote, or put it back as it was, with your usual git tool, then sync again; or **Discard local changes** to take the remote's version as it is.
 - **If a sync names a path as `not a path a repository may hold`**, a commit on one side holds a path into git's own `.git` folder. The merge refuses that commit before writing anything, and nothing is pushed. Remove the entry from the repository with your usual git tool, then sync again.
 - **If the header says Merge needed**, both sides changed the same field differently, or the copies share no history. **Review merge** opens the merge view: settle each conflict with a copy or with a value you type, then **Finish merge**. The rest of both sides' changes are already combined, and settling the last conflict commits, imports and pushes the merge. If you would rather decide later, leave it — the merge survives restarts, and closing saves the choices you made — or **Abandon merge**: every local commit stays, **Sync now** offers the merge again, and **Discard local changes** is still the way to match the remote.
 - **If the header says Read-only (a push was refused)**, the host does not accept pushes from your account to that repository, or the branch is protected. The workspace stays read-only — local commits continue, and the remote's changes still come in, merged and committed locally — and read-only clears on the next push that sends commits and succeeds. Check that your account can write to the repository and that the branch is not protected. A fetch the host refuses is not this: it shows as an error, and the workspace is not marked read-only.
-- **If opening says `.apiweave/format.json is missing: this is not an APIWeave workspace repository`**, the repository is empty or holds something other than a workspace. Check the URL, and that the workspace is on the repository's default branch.
+- **If switching says `This branch has N commits that … on the remote does not`**, the branch being left has local commits the remote has not received, so switching would strand them. **Sync now** pushes them (or **Discard local changes** drops them), then switch again. The same message names a target branch that already exists on this device with commits of its own.
+- **If opening says `.apiweave/format.json is missing: this is not an APIWeave workspace repository`**, the branch is empty or holds something other than a workspace. Check the URL, and choose the branch that holds the workspace with **Choose branch…**.
 - **If opening says `written by a newer APIWeave`**, the repository uses a format version this build does not read. Update APIWeave.
 - **If opening names a file as invalid**, the file was edited by hand or has an unresolved merge conflict. Fix that file in the repository; the message names it and the problem.
 - **If opening fails with `git clone failed`**, git's own message follows it: an unreachable host, a repository that does not exist, or a sign-in git could not complete without asking. Sign in once with your usual git tool, then try again.
@@ -326,6 +344,6 @@ A `.awecollection` bundle, a single workflow export and a Postman collection sti
 ## Related
 
 - [Run Tests in CI](ci.md): every `apiweave run` option and a GitHub Actions job.
-- [Projects](../features/projects.md): project runs and `.awecollection` bundles.
+- [Projects](../features/projects.md): project runs and `.aweproject` bundles.
 - [Environments and Secrets](../features/environments-and-secrets.md): secrets and how references resolve.
 - [Workflows and Nodes: Version history](../features/workflows-and-nodes.md#version-history): a workflow's own saved versions.

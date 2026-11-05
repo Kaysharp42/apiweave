@@ -1,10 +1,21 @@
 import { useRef, useState, useEffect } from "react";
-import { X, ChevronLeft, ChevronRight, Circle } from "lucide-react";
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  CircleX,
+  ChevronsRight,
+  SquareX,
+} from "lucide-react";
 import { IconButton } from "../atoms/IconButton";
+import { ContextMenu } from "../molecules/ContextMenu";
 import useTabStore from "../../stores/TabStore";
 import { confirmCloseTabs } from "../../stores/PendingEditsStore";
 import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import type { WorkspaceTab } from "../../types/WorkspaceTab";
+import type { ContextMenuItem } from "../../types/ContextMenuItem";
 import type { ContextMenuState } from "../../types/ContextMenuState";
 import { handleTablistKeyDown } from "../../utils/tablistKeyboard";
 
@@ -17,12 +28,24 @@ export function TabBar() {
   // Only this workspace's tabs: the store also holds the ones left open in the
   // workspaces the user switched away from.
   const { workspaceId, tabs, activeTabId } = useWorkspaceTabs();
-  const { setActive, closeTab, closeOthers, closeAll } = useTabStore();
+  const { setActive, closeTab, closeOthers, closeToRight, closeAll } =
+    useTabStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const checkOverflowRef = useRef<() => void>(() => {});
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // Keep the active tab in view. Selecting a tab with the keyboard can move the
+  // selection to one partially or wholly past the scroll edge, and a tab you
+  // cannot see is not a tab you can confirm you selected.
+  useEffect(() => {
+    if (activeTabId === null) return;
+    const active = document.getElementById(workspaceTabId(activeTabId));
+    // jsdom does not implement scrollIntoView; the guard keeps the tab logic
+    // testable without stubbing a browser API this component does not own.
+    active?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [activeTabId, tabs.length]);
 
   useEffect(() => {
     checkOverflowRef.current = () => {
@@ -63,12 +86,27 @@ export function TabBar() {
     setContextMenu({ x: e.clientX, y: e.clientY, tabId });
   };
 
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [contextMenu]);
+  // A keyboard-opened menu is anchored to the tab's bottom-left corner rather
+  // than to a pointer that does not exist. The shared menu keeps itself inside
+  // the viewport from there.
+  const openTabMenuFromKeyboard = (
+    element: HTMLButtonElement,
+    tabId: string,
+  ) => {
+    const rect = element.getBoundingClientRect();
+    setContextMenu({ x: rect.left, y: rect.bottom, tabId });
+  };
+
+  const closeContextMenu = () => {
+    const tabId = contextMenu?.tabId;
+    setContextMenu(null);
+    if (tabId === undefined) return;
+    // Escape or choosing an item destroys the focused row. Put focus back on the
+    // tab the menu belonged to, unless closing it removed the tab.
+    requestAnimationFrame(() => {
+      document.getElementById(workspaceTabId(tabId))?.focus();
+    });
+  };
 
   const handleMouseDown = (e: React.MouseEvent, tabId: string) => {
     if (e.button === 1) {
@@ -76,6 +114,68 @@ export function TabBar() {
       requestClose([tabId], () => closeTab(tabId));
     }
   };
+
+  const handleTabKeyDown = (
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    tabId: string,
+  ) => {
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      e.preventDefault();
+      openTabMenuFromKeyboard(e.currentTarget, tabId);
+      return;
+    }
+    if (e.key !== "Delete") return;
+    requestClose([tabId], () => closeTab(tabId));
+  };
+
+  const contextMenuItems: readonly ContextMenuItem[] = (() => {
+    if (contextMenu === null) return [];
+    const { tabId } = contextMenu;
+    const index = tabs.findIndex((tab) => tab.id === tabId);
+    const toTheRight =
+      index === -1 ? [] : tabs.slice(index + 1).map((tab) => tab.id);
+    const others = tabs.filter((tab) => tab.id !== tabId).map((tab) => tab.id);
+
+    return [
+      {
+        key: "close",
+        icon: X,
+        label: "Close",
+        shortcut: shortcutLabel("closeTab"),
+        onSelect: () => requestClose([tabId], () => closeTab(tabId)),
+      },
+      {
+        key: "close-others",
+        icon: CircleX,
+        label: "Close Others",
+        disabled: others.length === 0,
+        onSelect: () => requestClose(others, () => closeOthers(tabId)),
+      },
+      {
+        key: "close-right",
+        icon: ChevronsRight,
+        label: "Close to the Right",
+        disabled: toTheRight.length === 0,
+        onSelect: () => requestClose(toTheRight, () => closeToRight(tabId)),
+      },
+      {
+        key: "close-all",
+        icon: SquareX,
+        label: "Close All",
+        separated: true,
+        onSelect: () => {
+          // Scoped: "Close All" closes this workspace's tabs, and leaves the
+          // ones waiting in the other workspaces alone.
+          if (workspaceId !== null) {
+            requestClose(
+              tabs.map((tab) => tab.id),
+              () => closeAll(workspaceId),
+            );
+          }
+        },
+      },
+    ];
+  })();
 
   if (tabs.length === 0) return null;
 
@@ -104,7 +204,7 @@ export function TabBar() {
           return (
             <div
               key={tab.id}
-              className="group relative flex items-stretch min-w-0 max-w-[220px] border-r border-border dark:border-border-dark"
+              className="group relative flex min-w-24 max-w-[220px] items-stretch border-r border-border dark:border-border-dark"
             >
               <button
                 type="button"
@@ -112,16 +212,20 @@ export function TabBar() {
                 id={workspaceTabId(tab.id)}
                 aria-selected={isActive}
                 aria-controls={WORKSPACE_TABPANEL_ID}
+                aria-keyshortcuts="Delete"
                 tabIndex={isActive ? 0 : -1}
                 onClick={() => setActive(tab.id)}
                 onMouseDown={(e) => handleMouseDown(e, tab.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
                 onContextMenu={(e) => handleContextMenu(e, tab.id)}
                 className={[
                   "relative flex items-center gap-1.5 px-3 h-full text-sm whitespace-nowrap transition-colors min-w-0 flex-1 cursor-pointer",
                   "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
                   isActive
                     ? "bg-surface-raised dark:bg-surface-dark-raised text-primary dark:text-primary-light font-medium"
-                    : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
+                    : contextMenu?.tabId === tab.id
+                      ? "bg-surface-overlay text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark"
+                      : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -140,29 +244,35 @@ export function TabBar() {
                 <span className="min-w-0 truncate">{tab.name}</span>
               </button>
 
+              {/* Pointer-only: `aria-hidden` keeps it out of the accessibility
+                  tree, so a tablist that may own tabs and nothing else stays
+                  valid. Keyboard users close the focused tab with Delete,
+                  Ctrl+W, or the context menu. */}
               <button
                 type="button"
+                tabIndex={-1}
+                aria-hidden="true"
+                title={`Close ${tab.name}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   requestClose([tab.id], () => closeTab(tab.id));
                 }}
-                // Only the active tab's close button is in the tab order; the
-                // others stay reachable through Ctrl+W after arrowing to a tab.
-                tabIndex={isActive ? 0 : -1}
                 className={[
-                  "px-1.5 rounded-sm transition-colors self-center cursor-pointer shrink-0",
-                  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
-                  isActive ? "" : "opacity-0 group-hover:opacity-100",
-                  "hover:bg-(--aw-status-error)/20 hover:text-(--aw-status-error)",
+                  "flex h-5 w-5 items-center justify-center self-center mr-1 shrink-0 rounded-sm transition-colors cursor-pointer",
+                  "text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-primary dark:hover:text-primary-light",
+                  isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
                 ].join(" ")}
-                aria-label={`Close ${tab.name}`}
               >
-                <X className="w-3 h-3" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           );
         })}
       </div>
+
+      {/* No separate close button outside the tablist: ARIA lets a tablist own
+          tabs and nothing else, which is the violation axe reports as
+          aria-required-children. Each tab carries its own instead. */}
 
       {canScrollRight && (
         <IconButton
@@ -176,54 +286,13 @@ export function TabBar() {
       )}
 
       {contextMenu && (
-        <div
-          className="fixed z-50 min-w-[160px] rounded-xs border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised shadow-node py-1 text-sm"
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-        >
-          <button
-            type="button"
-            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
-            onClick={() => {
-              const { tabId } = contextMenu;
-              requestClose([tabId], () => closeTab(tabId));
-              setContextMenu(null);
-            }}
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            className="w-full px-3 py-1.5 text-left text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
-            onClick={() => {
-              const { tabId } = contextMenu;
-              requestClose(
-                tabs.filter((t) => t.id !== tabId).map((t) => t.id),
-                () => closeOthers(tabId),
-              );
-              setContextMenu(null);
-            }}
-          >
-            Close Others
-          </button>
-          <div className="my-1 border-t border-border dark:border-border-dark" />
-          <button
-            type="button"
-            className="w-full px-3 py-1.5 text-left hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay transition-colors text-(--aw-status-error) cursor-pointer focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
-            onClick={() => {
-              // Scoped: "Close All" closes this workspace's tabs, and leaves
-              // the ones waiting in the other workspaces alone.
-              if (workspaceId !== null) {
-                requestClose(
-                  tabs.map((t) => t.id),
-                  () => closeAll(workspaceId),
-                );
-              }
-              setContextMenu(null);
-            }}
-          >
-            Close All
-          </button>
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          label="Tab actions"
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
       )}
     </div>
   );

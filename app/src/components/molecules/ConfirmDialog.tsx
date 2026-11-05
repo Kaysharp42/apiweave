@@ -55,10 +55,10 @@ export function ConfirmDialog({
       >
         <Transition.Child
           as={Fragment}
-          enter="ease-out duration-200"
+          enter="ease-out duration-200 motion-reduce:transition-none"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="ease-in duration-150"
+          leave="ease-in duration-150 motion-reduce:transition-none"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -71,10 +71,10 @@ export function ConfirmDialog({
         <div className="fixed inset-0 flex items-center justify-center p-4">
           <Transition.Child
             as={Fragment}
-            enter="ease-out duration-200"
+            enter="ease-out duration-200 motion-reduce:transition-none"
             enterFrom="opacity-0 scale-95"
             enterTo="opacity-100 scale-100"
-            leave="ease-in duration-150"
+            leave="ease-in duration-150 motion-reduce:transition-none"
             leaveFrom="opacity-100 scale-100"
             leaveTo="opacity-0 scale-95"
           >

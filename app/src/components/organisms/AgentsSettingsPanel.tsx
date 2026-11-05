@@ -516,7 +516,7 @@ function AgentRow({
             {entry.definition.name}
           </span>
           {entry.isDefault && (
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-primary dark:text-primary-light">
+            <span className="text-2xs font-semibold uppercase tracking-wider text-primary dark:text-primary-light">
               Default
             </span>
           )}

@@ -13,15 +13,24 @@ import type { ContextMenuController, ContextMenuOrigin } from "../types";
 export function useContextMenu(): ContextMenuController {
   const [origin, setOrigin] = useState<ContextMenuOrigin | null>(null);
 
-  const openAt = useCallback((event: React.MouseEvent): void => {
-    // Suppress the OS menu, and keep the right-click off any parent row that is
-    // also listening — a workflow nested under a project has two.
-    event.preventDefault();
-    event.stopPropagation();
-    setOrigin({ x: event.clientX, y: event.clientY });
-  }, []);
+  const openAt = useCallback(
+    (anchor: React.MouseEvent | ContextMenuOrigin): void => {
+      if ("preventDefault" in anchor) {
+        // Suppress the OS menu, and keep the right-click off any parent row that
+        // is also listening — a workflow nested under a project has two.
+        anchor.preventDefault();
+        anchor.stopPropagation();
+        setOrigin({ x: anchor.clientX, y: anchor.clientY });
+        return;
+      }
+      // A keyboard open (Shift+F10 / the ContextMenu key) has no pointer
+      // position, so the caller passes the focused row's viewport rectangle.
+      setOrigin(anchor);
+    },
+    [],
+  );
 
   const close = useCallback((): void => setOrigin(null), []);
 
-  return { origin, openAt, close };
+  return { origin, isOpen: origin !== null, openAt, close };
 }

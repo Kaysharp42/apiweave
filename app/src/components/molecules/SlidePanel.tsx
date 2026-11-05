@@ -26,10 +26,10 @@ export function SlidePanel({
     <Transition show={open}>
       <Dialog onClose={onClose} className="relative z-50">
         <TransitionChild
-          enter="transition-opacity duration-200 ease-out"
+          enter="transition-opacity duration-200 ease-out motion-reduce:transition-none"
           enterFrom="opacity-0"
           enterTo="opacity-100"
-          leave="transition-opacity duration-150 ease-in"
+          leave="transition-opacity duration-150 ease-in motion-reduce:transition-none"
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
@@ -43,10 +43,10 @@ export function SlidePanel({
             }`}
           >
             <TransitionChild
-              enter="transition-transform duration-250 ease-out"
+              enter="transition-transform duration-250 ease-out motion-reduce:transition-none"
               enterFrom={isRight ? "translate-x-full" : "-translate-x-full"}
               enterTo="translate-x-0"
-              leave="transition-transform duration-200 ease-in"
+              leave="transition-transform duration-200 ease-in motion-reduce:transition-none"
               leaveFrom="translate-x-0"
               leaveTo={isRight ? "translate-x-full" : "-translate-x-full"}
             >

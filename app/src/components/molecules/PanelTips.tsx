@@ -28,7 +28,7 @@ export function PanelTipsButton({
       aria-label={label}
       title={label}
       className={[
-        "inline-flex shrink-0 items-center gap-1 rounded-xs border px-1.5 py-1 text-[10px] font-medium cursor-pointer",
+        "inline-flex shrink-0 items-center gap-1 rounded-xs border px-1.5 py-1 text-2xs font-medium cursor-pointer",
         "transition-colors duration-150 ease-in-out motion-reduce:transition-none",
         "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)",
         isOpen
@@ -104,7 +104,7 @@ export function PanelTipsSheet({
         </IconButton>
       </div>
 
-      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3 text-[11px] text-text-secondary dark:text-text-secondary-dark">
+      <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-3 text-2xs text-text-secondary dark:text-text-secondary-dark">
         {children}
       </div>
     </div>
@@ -123,7 +123,7 @@ export function PanelTipsSection({
         {Icon && (
           <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
         )}
-        <h4 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide">
+        <h4 className="min-w-0 truncate text-2xs font-semibold uppercase tracking-wide">
           {title}
         </h4>
       </div>
@@ -135,7 +135,7 @@ export function PanelTipsSection({
 /** PanelTipsCode — inline code chip sized for the tips sheet. */
 export function PanelTipsCode({ children }: { children: React.ReactNode }) {
   return (
-    <code className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-[10px] break-all text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
+    <code className="rounded-sm border border-border bg-surface px-1 py-0.5 font-mono text-2xs break-all text-text-primary dark:border-border-dark dark:bg-surface-dark dark:text-text-primary-dark">
       {children}
     </code>
   );

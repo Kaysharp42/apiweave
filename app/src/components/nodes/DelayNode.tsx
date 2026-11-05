@@ -16,7 +16,7 @@ const DelayNode = ({ id, data, selected }: DelayNodeProps) => {
 
   const typeChip = useMemo(
     () => (
-      <span className="shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-warning)_12%,transparent)] text-(--aw-status-warning)">
+      <span className="shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded-node-chip bg-[color-mix(in_srgb,var(--aw-status-warning)_12%,transparent)] text-(--aw-status-warning)">
         {humanLabel}
       </span>
     ),

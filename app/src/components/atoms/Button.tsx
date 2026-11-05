@@ -37,7 +37,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       if (variant === "primary") {
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
-            "bg-(--aw-primary) text-white dark:text-primary-dark border border-(--aw-primary) hover:bg-(--aw-primary-hover) shadow-raised hover:shadow-overlay",
+            "bg-(--aw-primary) text-on-primary border border-(--aw-primary) hover:bg-(--aw-primary-hover) shadow-raised hover:shadow-overlay",
           muted:
             "bg-text-muted dark:bg-text-muted-dark text-surface-raised dark:text-surface-dark border border-text-muted dark:border-text-muted-dark hover:bg-text-secondary dark:hover:bg-text-secondary-dark",
           success:
@@ -83,6 +83,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           info: "text-status-info dark:text-(--aw-status-info) hover:bg-status-info/5 dark:hover:bg-(--aw-status-info)/10",
         };
         return intentMap[intent];
+      }
+
+      if (variant === "neutral") {
+        // Chrome that states something rather than inviting a click: the
+        // surface and hairline of a panel, a secondary label, and a hover
+        // that acknowledges the pointer without turning into an action.
+        return "bg-surface-raised dark:bg-surface-dark-raised text-text-secondary dark:text-text-secondary-dark border border-border dark:border-border-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark";
       }
 
       if (variant === "outline") {

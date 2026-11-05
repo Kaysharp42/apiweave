@@ -274,7 +274,7 @@ export function OpenAPIImport({
             Choose File
           </label>
           {openapiFile && (
-            <p className="mt-2 text-sm text-status-success dark:text-status-success-dark flex items-center gap-1 justify-center">
+            <p className="mt-2 text-sm text-status-success flex items-center gap-1 justify-center">
               <CheckCircle className="w-4 h-4" />
               <span>{openapiFile.name}</span>
             </p>
@@ -351,7 +351,7 @@ export function OpenAPIImport({
                   ))}
                 </div>
                 {selectedTags.length === 0 && (
-                  <p className="text-xs text-text-muted dark:text-text-muted-dark mt-1">
+                  <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1">
                     No tags selected - all endpoints will be imported
                   </p>
                 )}
@@ -403,7 +403,7 @@ export function OpenAPIImport({
         {/* Error Display */}
         {error && (
           <div className="flex items-start gap-2 p-3 bg-(--aw-status-error)/5 dark:bg-(--aw-status-error)/10 border border-(--aw-status-error)/20 dark:border-(--aw-status-error)/30 rounded-sm">
-            <AlertCircle className="w-5 h-5 text-status-error dark:text-status-error-dark shrink-0 mt-0.5" />
+            <AlertCircle className="w-5 h-5 text-status-error shrink-0 mt-0.5" />
             <p className="text-sm text-(--aw-status-error) dark:text-(--aw-status-error)">
               {error}
             </p>
@@ -414,7 +414,7 @@ export function OpenAPIImport({
         {preview && (
           <div className="border border-border dark:border-border-dark rounded-sm p-4 bg-surface dark:bg-surface-dark">
             <div className="flex items-center gap-2 mb-3">
-              <CheckCircle className="w-5 h-5 text-status-success dark:text-status-success-dark" />
+              <CheckCircle className="w-5 h-5 text-status-success" />
               <h3 className="font-semibold text-text-primary dark:text-text-primary-dark">
                 Preview
               </h3>

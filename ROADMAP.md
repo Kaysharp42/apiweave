@@ -7,41 +7,45 @@ feedback.
 
 ## Shipped
 
-The local-first desktop rewrite. Single Electron process: ReactFlow canvas,
-eight node types, workflow variables and extractors, projects with `.awecollection`
-export (references only), explicit per-run environment selection, the encrypted
-local secret store with `environment > workspace` scope chain, in-process runner,
-the opt-in local MCP bridge, OpenAPI/Swagger/HAR/cURL import, and auto-update
-through the GitHub release channel. See the [Changelog](CHANGELOG.md) for the
-full current surface.
+**The 1.0 surface.** Single Electron process: ReactFlow canvas, eight executable
+node types plus note and group annotations, workflow variables and extractors,
+projects with `.aweproject` v2 export (references only), explicit per-run
+environment selection, the encrypted local secret store with the
+`environment > workspace` scope chain, the in-process runner, OpenAPI, Swagger,
+HAR and cURL import, and auto-update through the GitHub release channel.
 
-Git sync (v0.20.0): a workspace is tracked by a local git repository and every
-change becomes a commit, `apiweave run` reads the repository, and a workspace
-connected to a remote you own is kept in step from the header's sync status.
-Two sides that both changed merge by record, node and field, with a per-field
-picker for real clashes.
+**Reuse primitives (v0.6.0):** a **Call Workflow** node that runs another
+workflow inline as one step, **environment inheritance** from a base environment
+for plain variables, and a workspace-scoped **node preset** library. Presets
+remain desktop-local and never sync.
 
-Reuse primitives (v0.6.0): a **Call Workflow** node that runs another workflow
-inline as one step, **environment inheritance** from a base environment for
-plain variables, and a workspace-scoped **node preset** library. All three are
-desktop-local for now — a preset never syncs.
+**Testing and observability (v0.7.x):** **expected status** on HTTP Request
+nodes for negative tests, the **visualization and debugging** surface (run
+timeline, variable provenance, secret resolution confidence), and the **run
+camera** that follows the active branch during runs.
 
-Testing and observability (v0.7.x): **expected status** on HTTP Request nodes
-for negative tests, the **visualization and debugging** surface (run timeline,
-variable provenance, secret resolution confidence), and the **run camera** that
-follows the active branch during runs.
+**Rerun and undo (v0.12.0):** **run from a node** and **rerun failed branches**,
+reusing the upstream results and variables of an earlier run, and **version
+history** for every workflow, restoring an earlier version after a bad save,
+agent edit or import.
 
-Rerun and undo (1.0): **run from a node** and **rerun failed branches**, reusing
-the upstream results and variables of an earlier run, and **version history**
-for every workflow, restoring an earlier version after a bad save, agent edit
-or import.
+**Teams and CI (v0.12.0):** **one-click project runs** with live progress, the
+headless **`apiweave run`** CLI with JUnit and HTML reports, **data-driven runs**
+from CSV or JSON, **Postman import**, OAuth 2.0, Digest, AWS Signature V4 and JWT
+auth, GraphQL bodies, sandboxed pre-request and post-response scripts, schema
+and contract assertions, retry and polling, a per-run cookie jar, and proxy,
+private CA and client-certificate support.
 
-Teams and CI (1.0): **one-click project runs** with live progress, the headless
-**`apiweave run`** CLI with JUnit and HTML reports, **data-driven runs** from CSV
-or JSON, **Postman import**, OAuth 2.0, Digest,
-AWS Signature V4 and JWT auth, GraphQL bodies, sandboxed pre-request and
-post-response scripts, schema and contract assertions, retry and polling, a
-per-run cookie jar, and proxy, private CA and client-certificate support.
+**Git sync (v0.20.0):** a workspace is tracked by a local git repository and
+every change becomes a commit; `apiweave run` reads the repository, and a
+workspace connected to a remote you own is kept in step from the header's sync
+status. Two sides that both changed merge by record, node and field, with a
+per-field picker for real clashes.
+
+**Agents and local automation (v0.21–v0.22):** sign in to GitHub or GitLab from
+the header, create the workspace repository from the app, launch a coding agent
+beside the canvas, keep the app in the tray so the MCP bridge and git sync stay
+reachable, and give agents an outline-first, paged MCP surface.
 
 ## Next
 

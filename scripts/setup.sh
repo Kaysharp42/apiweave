@@ -13,13 +13,35 @@ echo "========================================"
 echo
 
 if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js not found. Install Node.js 20+ from https://nodejs.org"
+  echo "ERROR: Node.js not found. Install Node.js 22.12 or newer from https://nodejs.org"
+  exit 1
+fi
+NODE_VERSION="$(node -v | sed 's/^v//')"
+NODE_MAJOR="${NODE_VERSION%%.*}"
+NODE_REST="${NODE_VERSION#*.}"
+NODE_MINOR="${NODE_REST%%.*}"
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; }; then
+  echo "ERROR: Node.js 22.12 or newer is required (found $(node -v)). Download it from https://nodejs.org"
   exit 1
 fi
 echo "Node.js $(node -v) detected"
-echo
 
-cd "$APP_DIR"
+# node-pty 1.1.0 ships prebuilds for macOS and Windows, but not Linux, so the
+# install script compiles it here. Fail with a useful message instead of a
+# node-gyp stack trace.
+if [ "$(uname -s)" = "Linux" ]; then
+  for tool in make python3; do
+    if ! command -v "$tool" &>/dev/null; then
+      echo "ERROR: building on Linux needs $tool (install build-essential)." >&2
+      exit 1
+    fi
+  done
+  if ! command -v g++ &>/dev/null && ! command -v clang++ &>/dev/null; then
+    echo "ERROR: building on Linux needs a C++ compiler (g++ or clang++)." >&2
+    exit 1
+  fi
+fi
+echo
 echo "Installing app dependencies..."
 npm install
 

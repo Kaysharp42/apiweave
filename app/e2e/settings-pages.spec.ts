@@ -15,7 +15,7 @@ import {
 
 /**
  * Rows are addressed by their description, not their title: the nav rail has
- * its own "Agents" and "MCP" buttons, and a title-only match hits those first.
+ * its own "Agents" button, and a title-only match hits that first.
  */
 const ROWS = [
   ["Launch a coding agent", "Agents"],

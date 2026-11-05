@@ -37,10 +37,6 @@ function installBridge(approvals: readonly AgentRunApproval[]): void {
     listAgentApprovals: () => Promise.resolve(approvals),
     revokeAgentApproval,
     setAutoApproveAgentRuns,
-    listTools: () => Promise.resolve([]),
-    listPrompts: () => Promise.resolve([]),
-    listResources: () => Promise.resolve([]),
-    testConnection: () => Promise.resolve({ ok: true, status: 200 }),
   };
 }
 

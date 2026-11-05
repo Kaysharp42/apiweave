@@ -3,6 +3,7 @@
   "name": "Base",
   "description": null,
   "swaggerDocUrl": null,
+  "baseEnvironmentId": null,
   "isDefault": false,
   "variables": {
     "region": "eu"

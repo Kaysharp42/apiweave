@@ -5,7 +5,13 @@ import type { ContextMenuOrigin } from "./ContextMenuOrigin";
 export interface ContextMenuController {
   /** Null while closed — render the menu only when this is set. */
   readonly origin: ContextMenuOrigin | null;
-  /** Attach to `onContextMenu`; suppresses the native menu. */
-  readonly openAt: (event: React.MouseEvent) => void;
+  /** True while this row's menu is open, so the row can stay highlighted. */
+  readonly isOpen: boolean;
+  /**
+   * Attach to `onContextMenu`; suppresses the native menu. A keyboard open
+   * (Shift+F10 / the ContextMenu key) passes the focused row's rectangle
+   * instead.
+   */
+  readonly openAt: (anchor: React.MouseEvent | ContextMenuOrigin) => void;
   readonly close: () => void;
 }

@@ -83,11 +83,11 @@ export function GitSyncStatusCard({
         {view.explanation}
       </p>
       {view.detail !== null && (
-        <p className="max-h-20 overflow-y-auto wrap-break-word font-mono text-xxs text-text-muted dark:text-text-muted-dark">
+        <p className="max-h-20 overflow-y-auto wrap-break-word font-mono text-2xs text-text-secondary dark:text-text-secondary-dark">
           {view.detail}
         </p>
       )}
-      <ul className="space-y-0.5 text-xs text-text-muted dark:text-text-muted-dark">
+      <ul className="space-y-0.5 text-xs text-text-secondary dark:text-text-secondary-dark">
         {lastSyncLines(status).map((line) => (
           <li key={line} className="wrap-break-word">
             {line}

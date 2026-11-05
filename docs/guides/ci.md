@@ -4,9 +4,9 @@
 
 ## Prerequisites
 
-- Something to run: a workspace repository (a folder holding `.apiweave/format.json`, see [Keep Tests in a Git Repository](git-workflows.md)), a workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.awecollection`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
-- Node.js 22 or later on the machine that runs the tests.
-- A checkout of the APIWeave repository to build the CLI from. It is not published to npm yet.
+- Something to run: a workspace repository (a folder holding `.apiweave/format.json`, see [Keep Tests in a Git Repository](git-workflows.md)), a workflow export (`.json`, from **Export** on the canvas) or a project bundle (`.aweproject`, from the project page). See [Projects](../features/projects.md) for exporting a bundle. A Postman Collection v2.1 runs too, converted on the fly; see [Migrate from Postman](migrating-from-postman.md).
+- Node.js 22.12 or later on the machine that runs the tests.
+- The released CLI tarball (see [Install the CLI](#install-the-cli)), or a checkout of this repository if you are [building the CLI from source](#build-the-cli-from-source).
 
 ## How it works
 
@@ -24,24 +24,51 @@ A project bundle runs as a project run: its enabled workflows, one after another
 
 A workspace repository runs every one of its projects the same way, one after another, as one report named after the workspace (see [Run a workspace repository](#run-a-workspace-repository)). Git is never involved: the CLI reads the files of a checkout and does not need git installed.
 
-## Build the CLI
+## Install the CLI
+
+Every release attaches a small, npm-compatible CLI package. It contains the
+headless runner, its worker and the migrations; it does not contain Electron.
+
+```bash
+curl -fsSL -o apiweave-cli.tgz \
+  https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+npm install -g ./apiweave-cli.tgz
+apiweave run ./tests --env Staging
+```
+
+For a repeatable pipeline, replace `latest` with the release tag you want to
+pin:
+
+```bash
+curl -fsSL -o apiweave-cli.tgz \
+  https://github.com/Kaysharp42/apiweave/releases/download/v1.0.0/apiweave-cli.tgz
+```
+
+The package is named `@apiweave/cli`; it is distributed as the release tarball
+for now, not from the npm registry. The command it installs is `apiweave`, and
+it needs Node.js 22.12 or newer.
+
+## Build the CLI from source
 
 From the repository's `app/` folder:
 
 ```bash
 npm ci --ignore-scripts   # --ignore-scripts skips the Electron download the CLI does not need
 npm run build:cli         # writes dist/cli/apiweave.cjs
-node dist/cli/apiweave.cjs run ../tests/api.awecollection --env Staging
+node dist/cli/apiweave.cjs run ../tests/api.aweproject --env Staging
 ```
 
-During development, `npm run cli -- run <file> ...` builds and runs in one step. `npm link` inside `app/` puts an `apiweave` command on your `PATH`.
+To build the installable package locally, run `npm run build:cli:package`; the
+tarball lands in `dist/`. During development, `npm run cli -- run <file> ...`
+builds and runs in one step. `npm link` inside `app/` puts an `apiweave`
+command on your `PATH`.
 
 ## Run a file
 
 ```bash
 apiweave run ./tests --env Staging
-apiweave run api.awecollection --env Staging
-apiweave run api.awecollection --workflow "Create order" --env Staging
+apiweave run api.aweproject --env Staging
+apiweave run api.aweproject --workflow "Create order" --env Staging
 apiweave run login.json --var baseUrl=http://localhost:8080
 ```
 
@@ -76,7 +103,7 @@ The console report lists each workflow, a line per step with its time, and the f
 `--iteration-data` runs the file once per row of a data file, the way `newman run -d` does:
 
 ```bash
-apiweave run api.awecollection --env Staging --iteration-data users.csv --reporter cli,junit
+apiweave run api.aweproject --env Staging --iteration-data users.csv --reporter cli,junit
 ```
 
 A CSV file's header row names the columns; a JSON file is an array of objects. Iterations run one after another, each reading its row as `{{data.<column>}}`; a project bundle runs the whole project per row. A workspace repository runs one project per row, so with more than one project to run, pick it with `--project` (without it the CLI exits `2` and names the flag). The exit code is `1` if any iteration failed, and `--bail` stops at the first one that does. The console report adds an **Iterations** row to its summary, and the JUnit report has one `<testsuite>` per workflow per iteration, named `Health check [iteration 2]`.
@@ -93,7 +120,7 @@ Repositories and bundles carry secret names only, never values, so CI supplies t
 
 ```bash
 export APIWEAVE_SECRET_API_TOKEN="$TOKEN"
-apiweave run api.awecollection --env Staging
+apiweave run api.aweproject --env Staging
 ```
 
 Before anything is sent, the CLI checks every secret the workflows that will run reference, Call Workflow targets included. If one is missing it exits `2` and names it:
@@ -143,7 +170,7 @@ The CLI has the flags for what the app's [Settings > Network](../features/networ
 export HTTPS_PROXY=http://user:password@proxy.corp:3128
 export NO_PROXY=localhost,.internal
 export APIWEAVE_SECRET_CLIENT_PFX_PASSPHRASE="$PFX_PASSPHRASE"
-apiweave run api.awecollection --env Staging \
+apiweave run api.aweproject --env Staging \
   --ca-cert corp-root.pem \
   --client-cert "api.example.com=client.pem,client.key" \
   --client-cert "*.partner.example=partner.pfx,CLIENT_PFX_PASSPHRASE"
@@ -176,7 +203,7 @@ A literal credential the repository withheld (`<SECRET>`) cannot authenticate a 
 
 ## GitHub Actions
 
-Check out the repository the workspace is connected to (or a `.awecollection` bundle), store each secret as a repository secret, and add a job. The app pushes every commit to the connected remote, so the pipeline checks out the same repository you connected in [Connect a remote](git-workflows.md#connect-a-remote) — see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how that repository is kept up to date:
+Check out the repository the workspace is connected to (or a `.aweproject` bundle), store each secret as a repository secret, and add a job. The app pushes every commit to the connected remote, so the pipeline checks out the same repository you connected in [Connect a remote](git-workflows.md#connect-a-remote) — see [Get a repository into CI](git-workflows.md#get-a-repository-into-ci) for how that repository is kept up to date:
 
 ```yaml
 name: API tests
@@ -187,22 +214,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: Kaysharp42/apiweave
-          ref: main # pin a release tag or commit for repeatable builds
-          path: .apiweave-cli
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Build the APIWeave CLI
-        working-directory: .apiweave-cli/app
-        run: npm ci --ignore-scripts && npm run build:cli
+      - name: Install the APIWeave CLI
+        run: |
+          curl -fsSL -o apiweave-cli.tgz \
+            https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+          npm install -g ./apiweave-cli.tgz
       - name: Run API tests
         env:
           APIWEAVE_SECRET_API_TOKEN: ${{ secrets.API_TOKEN }}
         run: >
-          node .apiweave-cli/app/dist/cli/apiweave.cjs run .
+          apiweave run .
           --env Staging
           --reporter cli,junit,html
           --reporter-junit-export reports/apiweave.xml
@@ -229,7 +253,7 @@ The run step fails the job on exit code `1` or `2`. `if: always()` keeps the rep
 
 ## Related
 
-- [Projects](../features/projects.md): project runs and `.awecollection` export.
+- [Projects](../features/projects.md): project runs and `.aweproject` export.
 - [Keep Tests in a Git Repository](git-workflows.md): the workspace repository layout and what this release does with it.
 - [Data-Driven Runs](../features/data-driven-runs.md): CSV and JSON data files and `{{data.<column>}}`.
 - [Environments and Secrets](../features/environments-and-secrets.md): environments, secrets and how references resolve.

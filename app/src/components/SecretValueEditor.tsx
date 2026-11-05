@@ -117,8 +117,8 @@ export default function SecretValueEditor({
         </div>
 
         {fetchingKey && (
-          <div className="flex items-center gap-2 text-sm text-text-muted dark:text-text-muted-dark">
-            <Loader2 className="w-4 h-4 animate-spin" />
+          <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-text-secondary-dark">
+            <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" />
             Fetching encryption key...
           </div>
         )}

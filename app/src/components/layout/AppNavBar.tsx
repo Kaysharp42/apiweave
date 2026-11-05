@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   ChevronLeft,
   ChevronRight,
-  Server,
 } from "lucide-react";
 import { Transition } from "@headlessui/react";
 import { Tooltip } from "../atoms/Tooltip";
@@ -26,7 +25,6 @@ interface NavItemConfig {
   id: string;
   label: string;
   icon: LucideIcon;
-  disabled?: boolean;
 }
 
 const navItems: NavItemConfig[] = [
@@ -49,15 +47,9 @@ const navItems: NavItemConfig[] = [
     icon: Bot,
   },
   {
-    id: "mcp",
-    label: "MCP",
-    icon: Server,
-  },
-  {
     id: AppNavBarItems.settings!.value,
     label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
-    disabled: false,
   },
 ];
 
@@ -91,7 +83,7 @@ export function AppNavBar() {
   return (
     <nav
       className={[
-        "relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none",
+        "relative flex h-full flex-col transition-opacity duration-300 ease-in-out motion-reduce:transition-none",
         "bg-surface-raised dark:bg-surface-dark-raised",
         "border-r border-border dark:border-border-dark",
         "w-nav-collapsed md:w-auto",
@@ -102,24 +94,21 @@ export function AppNavBar() {
       aria-label="Main navigation"
     >
       <div className="flex-1 space-y-0.5 p-1">
-        {navItems.map(({ id, label, icon: Icon, disabled }) => {
+        {navItems.map(({ id, label, icon: Icon }) => {
           const isSelected = navigationSelectedValue === id;
           const showUpdateDot = id === "settings" && updatePending;
-          const accessibleLabel = disabled
-            ? `${label} (coming soon)`
-            : showUpdateDot
-              ? `${label} (update available)`
-              : label;
+          const accessibleLabel = showUpdateDot
+            ? `${label} (update available)`
+            : label;
 
           const content = (
             <button
               type="button"
               key={id}
               className={[
-                "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+                "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-0",
               ].join(" ")}
               onClick={() => {
-                if (disabled) return;
                 // Clicking a nav icon only switches section — it never changes
                 // the collapse state. The Collapse/Expand button owns that.
                 setNavState(id as NavSection);
@@ -129,7 +118,6 @@ export function AppNavBar() {
                   navigate(shellPath);
                 }
               }}
-              disabled={disabled}
               aria-current={isSelected ? "page" : undefined}
               aria-label={accessibleLabel}
             >
@@ -144,34 +132,29 @@ export function AppNavBar() {
               )}
               <div
                 className={[
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 transition-colors duration-200 motion-reduce:transition-none",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 overflow-hidden transition-colors duration-200 motion-reduce:transition-none",
                   "justify-center",
                   !isNavBarCollapsed && "md:justify-start",
                   isSelected
                     ? "bg-primary/10 text-primary dark:bg-primary-light/10 dark:text-primary-light"
                     : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
-                  disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+                  "cursor-pointer",
                 ].join(" ")}
               >
                 <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <Transition
                   show={!isNavBarCollapsed}
-                  enter="transition-all ease-in-out duration-300 delay-100"
-                  enterFrom="opacity-0 -translate-x-2 w-0"
-                  enterTo="opacity-100 translate-x-0 w-auto"
-                  leave="transition-all ease-in-out duration-200"
+                  enter="transition-opacity ease-in-out duration-300 delay-100 motion-reduce:transition-none"
+                  enterFrom="opacity-0"
+                  enterTo="opacity-100"
+                  leave="transition-opacity ease-in-out duration-200 motion-reduce:transition-none"
                   leaveFrom="opacity-100"
-                  leaveTo="opacity-0 -translate-x-2 w-0"
+                  leaveTo="opacity-0"
                 >
                   <span className="hidden md:inline text-xs font-medium whitespace-nowrap overflow-hidden">
                     {label}
                   </span>
                 </Transition>
-                {disabled && !isNavBarCollapsed && (
-                  <span className="ml-auto rounded-full border border-border px-1.5 py-0.5 font-mono text-xxs text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-                    Soon
-                  </span>
-                )}
               </div>
             </button>
           );
@@ -200,7 +183,7 @@ export function AppNavBar() {
           onClick={toggleNavBarCollapse}
           className={[
             "h-7 w-full rounded-none border-t border-border dark:border-border-dark",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-0",
             isNavBarCollapsed ? "justify-center" : "justify-start px-2",
           ].join(" ")}
         >
@@ -211,10 +194,10 @@ export function AppNavBar() {
               <ChevronLeft className="w-4 h-4" />
               <Transition
                 show={!isNavBarCollapsed}
-                enter="transition-opacity duration-300 delay-100"
+                enter="transition-opacity duration-300 delay-100 motion-reduce:transition-none"
                 enterFrom="opacity-0"
                 enterTo="opacity-100"
-                leave="transition-opacity duration-200"
+                leave="transition-opacity duration-200 motion-reduce:transition-none"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
               >

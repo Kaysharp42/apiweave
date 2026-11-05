@@ -1,6 +1,7 @@
 import type { KVStore, SqliteRow } from "../db"
 import type { Environment } from "@shared/types/Environment"
 import type { JsonValue } from "@shared/types/JsonValue"
+import { MAX_BASE_ENVIRONMENT_CHAIN_DEPTH } from "@shared/environments/environment_chain"
 import { slugify } from "@shared/text/slugify"
 import { generateId } from "../id"
 import { deleteFromWorkspace, moveToWorkspace, mustExist, parseJson, toJson } from "./helpers"
@@ -153,7 +154,7 @@ export class EnvironmentRepository {
    * resolution. Depth-bounded so a cycle that slipped past write-time
    * validation can't hang or stack-overflow a run.
    */
-  public resolveEffectiveVariables(environmentId: string, maxDepth = 8): Record<string, JsonValue> {
+  public resolveEffectiveVariables(environmentId: string, maxDepth = MAX_BASE_ENVIRONMENT_CHAIN_DEPTH): Record<string, JsonValue> {
     const chain: Environment[] = []
     const seen = new Set<string>()
     let current = this.getById(environmentId)

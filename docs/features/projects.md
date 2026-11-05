@@ -16,7 +16,7 @@
 - [Reordering Workflows](#reordering-workflows)
 - [continueOnFail per Workflow](#continueonfail-per-workflow)
 - [Project Run Behavior](#project-run-behavior)
-- [Export and Import (.awecollection)](#export-and-import-awecollection)
+- [Export and Import (.aweproject)](#export-and-import-aweproject)
 - [Dry-Run Validation](#dry-run-validation)
 - [References Only (No Secrets in Bundles)](#references-only-no-secrets-in-bundles)
 - [Troubleshooting](#troubleshooting)
@@ -24,7 +24,7 @@
 
 ## What is a Project
 
-A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. A project can hold any number of workflows. Projects are the unit of export and import: the `.awecollection` file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or private keys.
+A project is a named, ordered list of workflows plus a per-workflow `continueOnFail` flag. A project can hold any number of workflows. Projects are the unit of export and import: the `.aweproject` file bundles every workflow in the project, plus the project metadata and environment references, in one portable archive. The bundle carries references only, never secret values, ciphertext, or private keys.
 
 ```text
 Project: "Checkout API"
@@ -141,13 +141,13 @@ The card also lists the project's earlier runs; click one to see its workflows. 
 
 Variable and secret state does not pass between workflows: each workflow starts from its own variables and the chosen environment, as it would from the canvas. If a downstream workflow needs a value produced by an earlier one, extract it into a workflow variable, promote it to an environment variable, or duplicate the value into a static variable.
 
-A CI pipeline can run an exported `.awecollection` the same way, without the app: `apiweave run project.awecollection --env Staging`. See [Run Tests in CI](../guides/ci.md).
+A CI pipeline can run an exported `.aweproject` the same way, without the app: `apiweave run project.aweproject --env Staging`. See [Run Tests in CI](../guides/ci.md).
 
 An agent connected over MCP can start a project run with `projects_run` and follow it with `projects_getRun`. A workflow in an agent's project run that would send stored secrets waits for your approval first, as any agent-started run does. See [MCP Integration](mcp-integration.md).
 
-## Export and Import (.awecollection)
+## Export and Import (.aweproject)
 
-Projects travel as `.awecollection` files. The file is a JSON archive with three sections:
+Projects travel as `.aweproject` files. The file is a JSON archive with three sections:
 
 - **Project metadata**: name, description, color, and workflow order.
 - **Workflows**: every workflow attached to the project, in order, with nodes, edges, variables, and per-workflow settings.
@@ -157,18 +157,18 @@ To export:
 
 1. Open the project in the project settings page.
 2. Click **Export**.
-3. Save the `.awecollection` file somewhere safe.
+3. Save the `.aweproject` file somewhere safe.
 
 To import:
 
 1. Open the projects list from the sidebar.
-2. Click **Import project** and pick or paste the `.awecollection` file.
+2. Click **Import project** and pick or paste the `.aweproject` file.
 3. Click **Validate** for the dry-run report (see below).
 4. Click **Import** to commit.
 
 Imports always create new workflow records; existing workflows are not overwritten. Every environment referenced by the bundle is created fresh on the destination, carrying the bundle's plain variables — an existing environment with the same name is not re-used or merged.
 
-A `.awecollection` file is the way to hand someone a copy of one project. To keep a whole workspace under version control instead, it can be tracked in a local git repository (one JSON file per project, workflow and environment) that `apiweave run` also reads. See [Keep Tests in a Git Repository](../guides/git-workflows.md).
+A `.aweproject` file is the way to hand someone a copy of one project. To keep a whole workspace under version control instead, it can be tracked in a local git repository (one JSON file per project, workflow and environment) that `apiweave run` also reads. See [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
 A Postman collection imports into a new project from the same menu (**Import → Postman**); see [Migrate from Postman](../guides/migrating-from-postman.md).
 
@@ -181,7 +181,7 @@ Before committing an import, run the validation pass. It reports what the import
 Typical dry-run output:
 
 ```text
-Import plan for "Checkout API.awecollection":
+Import plan for "Checkout API.aweproject":
   + Create workflow: Auth        (new)
   + Create workflow: Add to cart (new)
   + Create workflow: Pay         (new)
@@ -193,7 +193,7 @@ If the dry-run shows only `+` lines, the import is clean and you can proceed. If
 
 ## References Only (No Secrets in Bundles)
 
-The `.awecollection` schema exports references only. The bundle does not carry:
+The `.aweproject` schema exports references only. The bundle does not carry:
 
 - Secret values, in any form.
 - Sealed-box ciphertext, because the destination instance has its own install keypair.
@@ -204,7 +204,7 @@ Concretely, the bundle looks like this for the secret side:
 ```json
 {
   "schemaVersion": "2.0",
-  "type": "awecollection",
+  "type": "aweproject",
   "secretReferences": [
     {
       "name": "API_KEY",
@@ -222,7 +222,7 @@ This is intentional. Each instance has its own Libsodium keypair and its own enc
 
 - **If a workflow row in the project will not go away**, click **Remove** on the row, or open the workflow's Settings panel and set **Project** to `None`. Save. The workflow detaches and the project row disappears.
 - **If the project runs in the wrong order after a drag-and-drop edit**, click **Save order** in the project settings. Drag-and-drop updates the list in memory but does not persist until you save. Reload the page to confirm the new order.
-- **If secrets are missing after import**, open **Secrets** for the destination environment or workspace and add each referenced key through the Libsodium write flow. The `.awecollection` bundle references the secret names and scopes but never the values.
+- **If secrets are missing after import**, open **Secrets** for the destination environment or workspace and add each referenced key through the Libsodium write flow. The `.aweproject` bundle references the secret names and scopes but never the values.
 - **If a Call Workflow node fails with `no target workflow configured` after an import**, its target was neither in the bundle nor in the destination workspace, so the import cleared it. Import the target too, or pick another target.
 
 ## Related

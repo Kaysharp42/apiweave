@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Allotment, LayoutPriority } from "allotment";
 import "allotment/dist/style.css";
 import { useLocation } from "react-router";
@@ -15,6 +23,7 @@ import {
   useMobileSidebarControls,
   useNavigationSelection,
   useNavBarCollapse,
+  useSidebarVisibility,
 } from "../../hooks/useNavigationControls";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
@@ -23,10 +32,19 @@ import { AppNavBarStyles } from "../../constants/AppNavBar";
 import { HorizontalDivider } from "../atoms/HorizontalDivider";
 import { AgentDock } from "../organisms/AgentDock";
 import { UpdateBanner } from "../organisms/UpdateBanner";
-import { TutorialCompanionHost } from "../TutorialCompanionHost";
+import { AboutDialog } from "../organisms/AboutDialog";
 import { ErrorBoundary } from "../molecules/ErrorBoundary";
 import type { MainLayoutProps } from "../../types/MainLayoutProps";
 import { isSettingsRoute } from "../../utils/isSettingsRoute";
+
+// The tutorial companion carries the whole lesson curriculum. It is mounted for
+// every session but paints only during a lesson, so the curriculum belongs in
+// its own chunk rather than in the canvas entry.
+const TutorialCompanionHost = lazy(() =>
+  import("../TutorialCompanionHost").then((module) => ({
+    default: module.TutorialCompanionHost,
+  })),
+);
 
 /**
  * Below Tailwind's `md`, where the layout drops to a single content column.
@@ -35,7 +53,7 @@ import { isSettingsRoute } from "../../utils/isSettingsRoute";
  *
  * This now *chooses* a branch rather than hiding one: crossing it swaps
  * `CompactShell` for `DesktopSplit`, which remounts the content. The desktop
- * shell clamps its window to `minWidth: 900`, so only the browser build can
+ * shell clamps its window to `minWidth: 800`, so only the browser build can
  * cross it, and only by a deliberate resize.
  */
 const COMPACT_LAYOUT_QUERY = "(max-width: 767.98px)";
@@ -144,7 +162,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         </ErrorBoundary>
       </div>
 
-      <TutorialCompanionHost contentRef={contentRegionRef} />
+      <Suspense fallback={null}>
+        <TutorialCompanionHost contentRef={contentRegionRef} />
+      </Suspense>
     </main>
   );
 
@@ -159,7 +179,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Skip to main content link */}
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-primary focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark dark:focus:outline-primary-light"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-surface-raised focus:px-4 focus:py-2 focus:text-text-primary focus:outline-2 focus:outline-(--aw-primary) focus:outline-offset-2 dark:focus:border-border-dark dark:focus:bg-surface-dark-raised dark:focus:text-text-primary-dark"
         >
           Skip to main content
         </a>
@@ -186,6 +206,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         <footer>
           <MainFooter />
         </footer>
+
+        {/* App-wide, opened from the footer's version pill or the command
+            palette; renders nothing while closed. */}
+        <AboutDialog />
       </CanvasSurfaceContext.Provider>
     </AgentSessionsProvider>
   );
@@ -284,32 +308,34 @@ export function DesktopSplit({
   readonly children: ReactNode;
 }) {
   const { isNavBarCollapsed } = useNavBarCollapse();
+  const { isSidebarVisible } = useSidebarVisibility();
   const openSessionId = useOpenAgentSessionId();
 
-  // "Collapse" only shrinks the icon rail (labels hidden); the list panel stays
-  // visible either way. Pane width = rail width + list width.
+  // "Collapse" only shrinks the icon rail (labels hidden). Ctrl+B hides the list
+  // panel alone; the rail stays, because it is the way back to the list. Pane
+  // width = rail width + list width while the list is showing.
   const railCollapsed = AppNavBarStyles.collapsedNavBarWidth!.absolute;
   const railExpanded = AppNavBarStyles.expandedNavBarWidth!.absolute;
+  const railWidth = isNavBarCollapsed ? railCollapsed : railExpanded;
   const listWidth = 236;
-  const expandedPreferred = railExpanded + listWidth;
-  const collapsedPreferred = railCollapsed + listWidth;
-  const paneMin = collapsedPreferred;
-  const paneMax = 480;
+  const panePreferred = isSidebarVisible ? railWidth + listWidth : railWidth;
+  const paneMin = isSidebarVisible ? railCollapsed + listWidth : railWidth;
+  const paneMax = isSidebarVisible ? 480 : railWidth;
 
   return (
-    /* key forces re-layout on collapse toggle — Allotment only reads
-       preferredSize on mount, so without this the pane keeps its old width.
-       proportionalLayout={false} keeps the sidebar and agent panes at fixed
-       widths when the window resizes; the canvas pane absorbs the whole
-       delta. */
+    /* key forces re-layout when the rail collapses or the list is toggled —
+       Allotment only reads preferredSize on mount, so without this the pane
+       keeps its old width. proportionalLayout={false} keeps the sidebar and
+       agent panes at fixed widths when the window resizes; the canvas pane
+       absorbs the whole delta. */
     <Allotment
-      key={isNavBarCollapsed ? "collapsed" : "expanded"}
+      key={`${isNavBarCollapsed ? "collapsed" : "expanded"}-${
+        isSidebarVisible ? "list" : "rail"
+      }`}
       proportionalLayout={false}
     >
       <Allotment.Pane
-        preferredSize={
-          isNavBarCollapsed ? collapsedPreferred : expandedPreferred
-        }
+        preferredSize={panePreferred}
         minSize={paneMin}
         maxSize={paneMax}
         snap={false}
@@ -319,10 +345,14 @@ export function DesktopSplit({
           {/* Unwrapped for the same reason as the compact branch: the rail is
               already a labelled <nav>. */}
           <AppNavBar />
-          {/* Sizing only — the landmark is `Sidebar`'s own <aside>. */}
-          <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
-            <Sidebar />
-          </div>
+          {/* Sizing only — the landmark is `Sidebar`'s own <aside>. The pane
+              itself stays visible so hiding the list cannot take the rail with
+              it; only this wrapper comes and goes. */}
+          {isSidebarVisible && (
+            <div className="flex-1 h-full w-full overflow-hidden bg-surface-raised dark:bg-surface-dark-raised">
+              <Sidebar />
+            </div>
+          )}
         </div>
       </Allotment.Pane>
 

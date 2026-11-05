@@ -14,7 +14,7 @@ import { handleTablistKeyDown } from "../../utils/tablistKeyboard";
 export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
   return (
     <div
-      className="flex items-center gap-0 overflow-x-auto overflow-y-hidden border-b border-border bg-surface-overlay px-2 dark:border-border-dark dark:bg-surface-dark-overlay"
+      className="flex items-center gap-0 overflow-x-auto overflow-y-hidden scrollbar-none border-b border-border bg-surface-overlay px-2 dark:border-border-dark dark:bg-surface-dark-overlay"
       role="tablist"
       aria-label="Panel tabs"
       onKeyDown={handleTablistKeyDown}
@@ -39,7 +39,6 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
             ].join(" ")}
             role="tab"
             aria-selected={isActive}
-            aria-controls={`panel-tab-${tab.key}`}
             tabIndex={isActive ? 0 : -1}
           >
             {Icon && (
@@ -49,7 +48,7 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
             {tab.badge !== undefined && tab.badge > 0 && (
               <span
                 className={[
-                  "shrink-0 rounded-xs px-1 font-mono text-[10px] leading-4",
+                  "shrink-0 rounded-xs px-1 font-mono text-2xs leading-4",
                   isActive
                     ? "bg-primary/15 text-primary dark:bg-primary-light/20 dark:text-primary-light"
                     : "bg-surface-raised text-text-secondary dark:bg-surface-dark-raised dark:text-text-secondary-dark",

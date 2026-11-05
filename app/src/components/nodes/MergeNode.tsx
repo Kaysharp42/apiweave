@@ -76,7 +76,7 @@ const MergeNode = ({ id, data, selected = false }: MergeNodeProps) => {
 
     return (
       <span
-        className="shrink-0 text-[11px] px-1.5 py-0.5 rounded-node-chip font-mono bg-[color-mix(in_srgb,var(--aw-branch-edge)_12%,transparent)] text-(--aw-branch-edge)"
+        className="shrink-0 text-2xs px-1.5 py-0.5 rounded-node-chip font-mono bg-[color-mix(in_srgb,var(--aw-branch-edge)_12%,transparent)] text-(--aw-branch-edge)"
         title={`Merging ${data.incomingBranchCount} branches`}
       >
         &larr; {data.incomingBranchCount}x

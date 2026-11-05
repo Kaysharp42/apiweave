@@ -249,6 +249,19 @@ describe("EnvironmentService — base environment inheritance", () => {
       token: "t",
     })
   })
+
+  it("caps the base chain at eight environments, the depth a run resolves", async () => {
+    const ws = seedWorkspace("a")
+    const service = new EnvironmentService(environments, scopeResolver)
+    let base = await service.create(ws, { name: "env 1" })
+    for (let depth = 2; depth <= 8; depth += 1) {
+      base = await service.create(ws, { name: `env ${depth}`, baseEnvironmentId: base.environmentId })
+    }
+
+    await expect(
+      service.create(ws, { name: "env 9", baseEnvironmentId: base.environmentId }),
+    ).rejects.toMatchObject({ code: "validation", message: expect.stringContaining("at most 8 environments") })
+  })
 })
 
 describe("NodePresetService — workspace-scoped preset library", () => {
@@ -320,7 +333,7 @@ describe("NodePresetService — workspace-scoped preset library", () => {
   })
 })
 
-describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awecollection-roundtrip)", () => {
+describe("ProjectExportService — v2 .aweproject round-trip (QA: task-12-aweproject-roundtrip)", () => {
   const clock = () => "2026-01-01T00:00:00.000Z"
 
   function exportService(): ProjectExportService {
@@ -368,7 +381,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
 
     // Format + sanitization invariants.
     expect(bundle.schemaVersion).toBe("2.0")
-    expect(bundle.type).toBe("awecollection")
+    expect(bundle.type).toBe("aweproject")
     expect(bundle.project).not.toHaveProperty("continueOnFail")
     expect(bundle.project.workflowOrder).toEqual([
       { workflowId: workflow.workflowId, order: 0, enabled: false, continueOnFail: false },
@@ -583,7 +596,7 @@ describe("ProjectExportService — v2 .awecollection round-trip (QA: task-12-awe
     const ws = seedWorkspace("a")
     const bundle = {
       schemaVersion: "1.5",
-      type: "awecollection" as const,
+      type: "aweproject" as const,
       project: { projectId: "p", name: "P", description: "", color: "#000000" },
       workflows: [{ workflowId: "w", name: "W", description: "", nodes: [{}], edges: [], variables: {}, tags: [], selectedEnvironmentId: null }],
       environments: [],

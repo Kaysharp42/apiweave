@@ -221,9 +221,9 @@ describe("GitSyncService", () => {
     await writeWorkspaceTree(harness.dir, serializeWorkspace(changed))
     await harness.git.add(harness.dir, ["."])
     await harness.git.commit(harness.dir, "Edit on another device")
-    const { workspaces, collections, workflows, environments } = harness.repositories
+    const { workspaces, collections, workflows, environments, presets } = harness.repositories
 
-    new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(harness.workspaceId, changed)
+    new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets).apply(harness.workspaceId, changed)
 
     expect(workflows.getById("wf-remote")?.name).toBe("Remote flow")
     await elapse(harness, AUTO_COMMIT_DELAY_MS)

@@ -10,6 +10,7 @@ import { initDatabase } from "../db"
 import {
   CollectionRepository,
   EnvironmentRepository,
+  NodePresetRepository,
   ProjectRunRepository,
   RunRepository,
   WorkflowRepository,
@@ -40,7 +41,7 @@ import { CryptoRandomProvider, WallClockProvider } from "../runner/harness/provi
  *
  * CI has no APIWeave database, so the run starts from files: a workspace
  * repository (a folder holding `.apiweave/format.json`, the tree the app's
- * version history commits), a workflow export, a `.awecollection` project
+ * version history commits), a workflow export, a `.aweproject` project
  * bundle, or a Postman Collection v2.1, converted the way the app's Postman
  * import does. They are imported through the app's own import services into
  * an in-memory SQLite database that disappears with the process, then run by
@@ -75,7 +76,7 @@ export const USAGE = `Usage: apiweave run <path> [options]
 
 Runs a workspace repository (a folder holding .apiweave/format.json: every
 project, or the one picked with --project), a workflow export (.json), a
-project bundle (.awecollection) or a Postman Collection v2.1
+project bundle (.aweproject) or a Postman Collection v2.1
 (.postman_collection.json) and exits 0 when every run passes, 1 when a test
 fails, 2 on a usage or config error.
 
@@ -316,6 +317,7 @@ interface CliRepositories {
   readonly runs: RunRepository
   readonly environments: EnvironmentRepository
   readonly collections: CollectionRepository
+  readonly presets: NodePresetRepository
   readonly projectRuns: ProjectRunRepository
 }
 
@@ -347,6 +349,7 @@ async function execute(options: CliOptions, secrets: ReadonlyMap<string, string>
       runs: new RunRepository(database.kvStore),
       environments: new EnvironmentRepository(database.kvStore),
       collections: new CollectionRepository(database.kvStore),
+      presets: new NodePresetRepository(database.kvStore),
       projectRuns: new ProjectRunRepository(database.kvStore),
     }
     const where = repository === undefined ? "the file" : "the repository"
@@ -462,7 +465,7 @@ async function importFile(
     workspaceExists: (id) => workspaces.getById(id) !== undefined,
     environmentExists: (id) => environments.getById(id) !== undefined,
   })
-  if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "awecollection")) {
+  if (isPostmanCollection(bundle) || (isRecord(bundle) && bundle["type"] === "aweproject")) {
     const projectBundle = isPostmanCollection(bundle)
       ? convertPostmanCollection(bundle, { workspaceId, environment: postmanEnvironment }).bundle
       : bundle as unknown as ProjectBundle
@@ -480,7 +483,7 @@ async function importFile(
       .importWorkflow(workspaceId, WorkflowBundleSchema.parse(bundle), true, false)
     return { notes: [], targets: [{ kind: "workflow", workflowId }] }
   }
-  throw new UsageError(`${options.file} is not an APIWeave workspace repository, workflow export, .awecollection project bundle or Postman collection`)
+  throw new UsageError(`${options.file} is not an APIWeave workspace repository, workflow export, .aweproject project bundle or Postman collection`)
 }
 
 /**
@@ -495,9 +498,9 @@ function importRepository(
   options: CliOptions,
   iterating: boolean,
   workspaceId: string,
-  { workspaces, workflows, environments, collections }: CliRepositories,
+  { workspaces, workflows, environments, collections, presets }: CliRepositories,
 ): CliImport {
-  const warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments).apply(workspaceId, snapshot)
+  const warnings = new WorkspaceRepoImporter(workspaces, collections, workflows, environments, presets).apply(workspaceId, snapshot)
   const notes = warnings.map((warning) => `warning: ${warning}`)
   const project = options.project === undefined
     ? undefined

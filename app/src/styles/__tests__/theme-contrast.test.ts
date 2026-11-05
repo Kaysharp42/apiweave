@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { contrast, isDeclared, tokenColor } from "./themeTokens";
 
 /**
@@ -11,12 +13,14 @@ import { contrast, isDeclared, tokenColor } from "./themeTokens";
  * `components/__tests__/node-layer-contrast.test.ts`.
  *
  * Floors, per DESIGN.md §2:
- *   - primary and secondary text: 4.5:1. Both carry content.
+ *   - primary, secondary and primary-light text: 4.5:1. All carry content.
  *   - muted text:                 3.0:1. Placeholders, hints, disabled copy —
  *                                 never content (the node layer uses
  *                                 --aw-node-text-muted for that).
- *   - accent and status:          3.0:1. Non-text UI and short labels.
+ *   - status:                     3.0:1. Non-text UI and short labels.
  */
+
+const INDEX_CSS = readFileSync(join("src", "index.css"), "utf-8");
 
 const SURFACES = [
   { what: "page", token: "aw-surface" },
@@ -28,9 +32,16 @@ const FOREGROUNDS = [
   { what: "primary text", token: "aw-text-primary", floor: 4.5 },
   { what: "secondary text", token: "aw-text-secondary", floor: 4.5 },
   { what: "muted text", token: "aw-text-muted", floor: 3 },
-  { what: "accent", token: "aw-primary", floor: 3 },
+  // `dark:text-primary-light` writes secondary button labels, active nav items,
+  // links and focus outlines, so the token is content in dark, not decoration.
+  { what: "primary-light text", token: "aw-primary-light", floor: 4.5 },
+  // The accent itself is body copy where it labels a link or a field.
+  { what: "accent", token: "aw-primary", floor: 4.5 },
   { what: "success", token: "aw-status-success", floor: 3 },
-  { what: "error", token: "aw-status-error", floor: 3 },
+  // Error is the one status that regularly carries a sentence — a validation
+  // message, a destructive menu label — so it is held to the text floor, not
+  // the non-text one. The dark token is #f87171, which is why it clears this.
+  { what: "error", token: "aw-status-error", floor: 4.5 },
   { what: "warning", token: "aw-status-warning", floor: 3 },
   { what: "running", token: "aw-status-running", floor: 3 },
   { what: "info", token: "aw-status-info", floor: 3 },
@@ -76,4 +87,54 @@ describe("theme contrast", () => {
     expect(border.a).toBeLessThan(1);
     expect(overlay.a).toBe(1);
   });
+
+  it("resolves primary-light through the theme, not a static light-only hex", () => {
+    // Every `dark:text-primary-light` / `dark:outline-primary-light` compiles
+    // from --color-primary-light. While that was a literal #0f766e it could
+    // not follow the theme, and the dark accent fell to 2.3:1 on zinc-900.
+    expect(INDEX_CSS).toMatch(
+      /--color-primary-light:\s*var\(--aw-primary-light\)/,
+    );
+    expect(isDeclared("aw-primary-light", "dark")).toBe(true);
+    expect(tokenColor("aw-primary-light", "dark")).not.toEqual(
+      tokenColor("aw-primary-light", "light"),
+    );
+  });
+
+  it("resolves every status colour through the theme, not a static hex", () => {
+    // `dark:text-status-error-dark` never existed as a token, so those classes
+    // emitted no CSS and destructive items stayed light red (2.5:1) on dark.
+    // The utility now follows the theme directly; these mappings are what make
+    // that true, and a literal hex here is the regression.
+    for (const role of ["success", "error", "warning", "running", "info"]) {
+      expect(INDEX_CSS, `--color-status-${role} must alias --aw-status-${role}`).toMatch(
+        new RegExp(`--color-status-${role}:\\s*var\\(--aw-status-${role}\\)`),
+      );
+      expect(isDeclared(`aw-status-${role}`, "dark")).toBe(true);
+    }
+    expect(tokenColor("aw-status-error", "dark")).not.toEqual(
+      tokenColor("aw-status-error", "light"),
+    );
+  });
+});
+
+describe("primary fill", () => {
+  // Button and IconButton `primary` share one pair: --aw-primary fill with
+  // --aw-on-primary foreground, and --aw-primary-hover for the hover fill.
+  for (const theme of ["light", "dark"] as const) {
+    describe(theme, () => {
+      for (const fill of ["aw-primary", "aw-primary-hover"] as const) {
+        it(`on-primary reads on the ${fill} fill`, () => {
+          const ratio = contrast(
+            tokenColor("aw-on-primary", theme),
+            tokenColor(fill, theme),
+          );
+          expect(
+            ratio,
+            `--aw-on-primary on --${fill} is ${ratio.toFixed(2)}:1`,
+          ).toBeGreaterThanOrEqual(4.5);
+        });
+      }
+    });
+  }
 });

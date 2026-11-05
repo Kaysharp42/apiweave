@@ -23,7 +23,8 @@ export function isAppUrl(url: string): boolean {
  *   'wasm-unsafe-eval' lets libsodium's wasm build instantiate without
  *   granting eval.
  * - Styles need 'unsafe-inline': Monaco, xterm and the motion library inject
- *   <style> elements at runtime. The UI fonts come from Google Fonts.
+ *   <style> elements at runtime. Fonts are bundled and served from app://local,
+ *   so no third-party host is needed.
  * - Images take data:/blob: for response and upload previews and https: for
  *   account avatars.
  * - connect-src has no remote hosts: the renderer makes no network requests
@@ -34,8 +35,8 @@ export const CONTENT_SECURITY_POLICY = [
   "default-src 'self' app:",
   "script-src 'self' app: 'wasm-unsafe-eval'",
   "worker-src 'self' app: blob:",
-  "style-src 'self' app: 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' app: data: https://fonts.gstatic.com",
+  "style-src 'self' app: 'unsafe-inline'",
+  "font-src 'self' app: data:",
   "img-src 'self' app: data: blob: https:",
   "connect-src 'self' app: data: blob:",
   "object-src 'none'",

@@ -21,7 +21,7 @@ export function TutorialStepList({
           {ordered ? (
             <span
               aria-hidden="true"
-              className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-overlay font-mono text-[10px] font-semibold text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark"
+              className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-surface-overlay font-mono text-2xs font-semibold text-text-secondary dark:border-border-dark dark:bg-surface-dark-overlay dark:text-text-secondary-dark"
             >
               {index + 1}
             </span>

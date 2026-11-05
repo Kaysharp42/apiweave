@@ -96,7 +96,7 @@ export function NodeRunStrip({
 
       {hasMetrics && (
         <div
-          className="flex items-center gap-1.5 text-[11px] leading-none text-(--aw-node-text-muted) tabular-nums"
+          className="flex items-center gap-1.5 text-2xs leading-none text-(--aw-node-text-muted) tabular-nums"
           role="group"
           aria-label="Node metrics"
         >

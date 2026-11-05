@@ -212,7 +212,7 @@ export function EnvironmentVariablesImportDialog({
                       <span className="block truncate font-mono text-sm text-text-primary dark:text-text-primary-dark">
                         {row.key}
                       </span>
-                      <span className="block truncate font-mono text-xs text-text-muted dark:text-text-muted-dark">
+                      <span className="block truncate font-mono text-xs text-text-secondary dark:text-text-secondary-dark">
                         {row.asSecret ? "•••••••• (stored as a secret)" : row.value || "(empty)"}
                       </span>
                     </span>
@@ -229,7 +229,7 @@ export function EnvironmentVariablesImportDialog({
                 );
               })}
             </ul>
-            <p className="text-xs text-text-muted dark:text-text-muted-dark">
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
               Secrets are sealed into this environment's secret store as{" "}
               <code>{"{{secrets.NAME}}"}</code> and never shown again. Plain
               variables are added to the form; save the environment to keep

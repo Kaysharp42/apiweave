@@ -35,7 +35,7 @@ async function openCanvas(
     // fixture and undo the edit this test just made.
     storage: {
       "apiweave:v1:autoSaveEnabled": "false",
-      ...(dark ? { "apiweave:v1:darkMode": "true" } : {}),
+      ...(dark ? { "apiweave:v1:themePreference": "dark" } : {}),
     },
   });
 
@@ -49,10 +49,8 @@ async function openCanvas(
 
   // The graph starts under the sidebar; give the canvas the window so a click
   // lands on a node rather than on the workflow list.
-  for (const label of ["Collapse sidebar", "Collapse Navigation"]) {
-    const button = page.getByRole("button", { name: label }).first();
-    if (await button.count()) await button.click().catch(() => undefined);
-  }
+  const button = page.getByRole("button", { name: "Collapse Navigation" }).first();
+  if (await button.count()) await button.click().catch(() => undefined);
   const fit = page.locator(".react-flow__controls-fitview").first();
   if (await fit.count()) await fit.click({ force: true });
   await page.waitForTimeout(600);

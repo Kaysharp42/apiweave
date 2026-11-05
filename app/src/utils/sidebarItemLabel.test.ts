@@ -2,32 +2,18 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import { getSidebarItemLabel } from "./sidebarItemLabel.ts";
 
-test("getSidebarItemLabel keeps short labels unchanged", () => {
-  const result = getSidebarItemLabel("Checkout API");
+test("getSidebarItemLabel keeps a name whole, however long", () => {
+  const name = "A very long workflow name that the row's CSS truncates";
 
-  assert.equal(result.label, "Checkout API");
-  assert.equal(result.fullLabel, "Checkout API");
-  assert.equal(result.truncated, false);
+  assert.equal(getSidebarItemLabel(name), name);
 });
 
-test("getSidebarItemLabel truncates long labels with a stable suffix", () => {
-  const result = getSidebarItemLabel(
-    "A very long workflow name that should be shortened",
-    18,
-  );
-
-  assert.equal(result.label, "A very long workf...");
-  assert.equal(
-    result.fullLabel,
-    "A very long workflow name that should be shortened",
-  );
-  assert.equal(result.truncated, true);
+test("getSidebarItemLabel trims surrounding whitespace", () => {
+  assert.equal(getSidebarItemLabel("  Checkout API  "), "Checkout API");
 });
 
-test("getSidebarItemLabel falls back for blank values", () => {
-  const result = getSidebarItemLabel("   ", 20, "Untitled workflow");
-
-  assert.equal(result.label, "Untitled workflow");
-  assert.equal(result.fullLabel, "Untitled workflow");
-  assert.equal(result.truncated, false);
+test("getSidebarItemLabel falls back for blank and non-string values", () => {
+  assert.equal(getSidebarItemLabel("   ", "Untitled workflow"), "Untitled workflow");
+  assert.equal(getSidebarItemLabel(null, "Untitled workflow"), "Untitled workflow");
+  assert.equal(getSidebarItemLabel(undefined), "Untitled");
 });

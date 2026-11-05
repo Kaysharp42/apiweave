@@ -10,11 +10,13 @@ import {
   compare,
   environmentDocument,
   fileText,
+  presetDocument,
   projectDocument,
   recordPath,
   workflowDocument,
   workspaceDocument,
   type EnvironmentFileSchema,
+  type PresetFileSchema,
   type ProjectFileSchema,
   type WorkflowFileSchema,
   type WorkspaceFileSchema,
@@ -25,6 +27,7 @@ export type WorkspaceFile = z.infer<typeof WorkspaceFileSchema>
 export type ProjectFile = z.infer<typeof ProjectFileSchema>
 export type WorkflowFile = z.infer<typeof WorkflowFileSchema>
 export type EnvironmentFile = z.infer<typeof EnvironmentFileSchema>
+export type PresetFile = z.infer<typeof PresetFileSchema>
 
 /** A workspace as one copy of its repository holds it. */
 export interface Tree {
@@ -32,6 +35,7 @@ export interface Tree {
   projects: ProjectFile[]
   workflows: WorkflowFile[]
   environments: EnvironmentFile[]
+  presets: PresetFile[]
   /** Files the format does not own, by path. */
   others: Record<string, string>
 }
@@ -49,6 +53,10 @@ export function treeOf(tree: Tree): Map<string, string> {
     ...tree.environments.map((item): [string, string] => [
       recordPath("environments", item.environmentId, item.name),
       fileText(environmentDocument(item, { isDefault: item.isDefault })),
+    ]),
+    ...tree.presets.map((item): [string, string] => [
+      recordPath("presets", item.presetId, item.name),
+      fileText(presetDocument(item)),
     ]),
     ...Object.entries(tree.others),
   ]
@@ -83,7 +91,11 @@ export function project(projectId: string, fields: Partial<ProjectFile> = {}): P
 }
 
 export function environment(environmentId: string, fields: Partial<EnvironmentFile> = {}): EnvironmentFile {
-  return { environmentId, name: `Env ${environmentId}`, description: null, swaggerDocUrl: null, isDefault: false, variables: {}, ...fields }
+  return { environmentId, name: `Env ${environmentId}`, description: null, swaggerDocUrl: null, baseEnvironmentId: null, isDefault: false, variables: {}, ...fields }
+}
+
+export function preset(presetId: string, fields: Partial<PresetFile> = {}): PresetFile {
+  return { presetId, name: `Preset ${presetId}`, nodeType: "delay", config: { duration: 100 }, ...fields }
 }
 
 /** A delay node: the one type whose config any merge of two of its configs keeps valid. */
@@ -122,8 +134,9 @@ export function sampleTree(): Tree {
     ],
     environments: [
       environment("env_dev", { name: "Dev", isDefault: true, variables: { baseUrl: "https://dev.example.test" } }),
-      environment("env_prod", { name: "Prod", variables: { baseUrl: "https://example.test" } }),
+      environment("env_prod", { name: "Prod", baseEnvironmentId: "env_dev", variables: { baseUrl: "https://example.test" } }),
     ],
+    presets: [preset("ps_1", { name: "Polling delay", nodeType: "delay", config: { duration: 250 } })],
     others: { "README.md": "# Acme API tests\n" },
   }
 }
