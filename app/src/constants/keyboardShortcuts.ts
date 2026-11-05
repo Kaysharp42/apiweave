@@ -58,7 +58,7 @@ export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
   {
     action: "toggleSidebar",
     group: "Panels",
-    description: "Toggle sidebar",
+    description: "Toggle sidebar panel",
     chords: [{ key: "b", modifier: "mod" }],
   },
   {

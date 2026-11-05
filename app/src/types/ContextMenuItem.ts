@@ -9,5 +9,9 @@ export interface ContextMenuItem {
   readonly separated?: boolean;
   /** Red text and hover, for a delete. */
   readonly destructive?: boolean;
+  /** Keyboard chord, right-aligned as a hint. Only paired with shortcuts that work. */
+  readonly shortcut?: string;
+  /** Rendered but not actionable. */
+  readonly disabled?: boolean;
   readonly onSelect: () => void;
 }

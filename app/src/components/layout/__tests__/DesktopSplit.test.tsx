@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ReactNode } from "react";
 import { DesktopSplit } from "../MainLayout";
 import useAgentDockStore from "../../../stores/AgentDockStore";
+import useNavigationStore from "../../../stores/NavigationStore";
 
 interface AllotmentPaneProps {
   readonly children?: ReactNode;
@@ -41,8 +42,12 @@ vi.mock("allotment", () => {
 // DesktopSplit lives in MainLayout, whose module imports pull in the canvas
 // tree; none of it renders here, so the siblings are stubbed out.
 vi.mock("../Workspace", () => ({ Workspace: () => null }));
-vi.mock("../AppNavBar", () => ({ AppNavBar: () => null }));
-vi.mock("../Sidebar", () => ({ Sidebar: () => null }));
+vi.mock("../AppNavBar", () => ({
+  AppNavBar: () => <div data-testid="nav-rail" />,
+}));
+vi.mock("../Sidebar", () => ({
+  Sidebar: () => <div data-testid="sidebar-list" />,
+}));
 vi.mock("../MainHeader", () => ({ MainHeader: () => null }));
 vi.mock("../MainFooter", () => ({ MainFooter: () => null }));
 vi.mock("../../organisms/UpdateBanner", () => ({
@@ -77,7 +82,26 @@ const AGENT_PANE_INDEX = 1;
 describe("DesktopSplit", () => {
   beforeEach(() => {
     mounts = 0;
-    act(() => useAgentDockStore.getState().close());
+    act(() => {
+      useAgentDockStore.getState().close();
+      useNavigationStore.setState({ sidebarVisible: true });
+    });
+  });
+
+  it("hides the list panel while keeping the nav rail", () => {
+    render(
+      <DesktopSplit>
+        <div>canvas</div>
+      </DesktopSplit>,
+    );
+
+    expect(screen.getByTestId("sidebar-list")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-rail")).toBeInTheDocument();
+
+    act(() => useNavigationStore.getState().toggleSidebar());
+
+    expect(screen.queryByTestId("sidebar-list")).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-rail")).toBeInTheDocument();
   });
 
   it("keeps its children mounted across open and close", () => {

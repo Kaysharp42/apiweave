@@ -2038,8 +2038,12 @@ export function WorkflowCanvas({
           onZoomOut={suspendFollow}
           onFitView={suspendFollow}
         >
-          <ControlButton onClick={handleAutoLayout} title="Auto-layout">
-            <Wand2 />
+          <ControlButton
+            onClick={handleAutoLayout}
+            title="Auto-layout"
+            aria-label="Auto-layout"
+          >
+            <Wand2 aria-hidden="true" />
           </ControlButton>
         </Controls>
 
@@ -2166,6 +2170,7 @@ export function WorkflowCanvas({
               key: "duplicate",
               icon: Files,
               label: "Duplicate",
+              shortcut: shortcutLabel("duplicate"),
               separated: true,
               onSelect: () => useCanvasStore.getState().duplicateNode(stepMenu.nodeId),
             },
@@ -2173,6 +2178,7 @@ export function WorkflowCanvas({
               key: "copy",
               icon: Copy,
               label: "Copy",
+              shortcut: shortcutLabel("copy"),
               onSelect: () => useCanvasStore.getState().copyNode(stepMenu.nodeId),
             },
           ]}

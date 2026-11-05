@@ -53,3 +53,16 @@ export function useNavBarCollapse() {
     })),
   );
 }
+
+/**
+ * Whether the list panel beside the icon rail is showing. Ctrl+B hides the list
+ * and leaves the rail in place; `DesktopSplit` reads this to size the first
+ * Allotment pane down to the rail.
+ */
+export function useSidebarVisibility() {
+  return useNavigationStore(
+    useShallow((state) => ({
+      isSidebarVisible: state.sidebarVisible,
+    })),
+  );
+}

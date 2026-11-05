@@ -56,6 +56,28 @@ describe("useKeyboardShortcuts", () => {
     expect(onCloseTab).toHaveBeenCalledTimes(1);
   });
 
+  it("fires onToggleSidebar for ctrl+b, but not while typing", () => {
+    const onToggleSidebar = vi.fn();
+    renderHook(() => useKeyboardShortcuts({ onToggleSidebar }));
+
+    press({ key: "b", ctrlKey: true });
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "b",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(onToggleSidebar).toHaveBeenCalledTimes(1);
+    input.remove();
+  });
+
   it("fires onNextTab / onPrevTab for ctrl+tab and ctrl+shift+tab", () => {
     const onNextTab = vi.fn();
     const onPrevTab = vi.fn();

@@ -194,6 +194,46 @@ test("tabs stay scoped to the workspace their workflow lives in", () => {
   assert.deepEqual(useTabStore.getState().activeTabIdByWorkspace, {});
 });
 
+test("closeToRight closes only the tabs opened after the target in its workspace", () => {
+  resetStore();
+
+  const make = (workflowId: string, workspaceId: string) =>
+    ({
+      workflowId,
+      workspaceId,
+      name: workflowId,
+      nodes: [],
+      edges: [],
+      variables: {},
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    }) as unknown as Workflow;
+
+  const tabs = useTabStore.getState();
+  tabs.openTab(make("wf-a", "ws-1"));
+  tabs.openTab(make("wf-b", "ws-1"));
+  tabs.openTab(make("wf-other", "ws-2"));
+  tabs.openTab(make("wf-c", "ws-1"));
+  tabs.openTab(make("wf-d", "ws-1"));
+
+  // The active tab is one of the closed ones, so the target takes over.
+  useTabStore.getState().setActive("wf-d");
+  useTabStore.getState().closeToRight("wf-b");
+
+  const after = useTabStore.getState();
+  assert.deepEqual(
+    after.tabs.map((tab) => tab.workflowId),
+    ["wf-a", "wf-b", "wf-other"],
+  );
+  assert.equal(after.activeTabIdByWorkspace["ws-1"], "wf-b");
+  assert.equal(after.activeTabIdByWorkspace["ws-2"], "wf-other");
+
+  // A tab with nothing to its right is a no-op, and never reaches across into
+  // another workspace's tabs.
+  useTabStore.getState().closeToRight("wf-other");
+  assert.equal(useTabStore.getState().tabs.length, 3);
+});
+
 test("tab cycling stays inside the current workspace", () => {
   resetStore();
 

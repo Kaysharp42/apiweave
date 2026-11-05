@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 // The unsaved-changes guard would open a modal; every close here is allowed.
@@ -115,6 +121,100 @@ describe("TabBar", () => {
     expect(confirmCloseTabsMock).toHaveBeenCalledWith(["a"]);
     await waitFor(() => expect(closeTab).toHaveBeenCalledWith("a"));
     expect(closeTab).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the tab menu with Shift+F10 and shows the close shortcut", async () => {
+    const user = userEvent.setup();
+    render(<TabBar />);
+
+    const beta = screen.getByRole("tab", { name: "Beta" });
+    beta.focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+
+    const menu = await screen.findByRole("menu", { name: "Tab actions" });
+    expect(menu).toBeInTheDocument();
+    const close = screen.getByText("Close").closest('[role="menuitem"]');
+    expect(close).toHaveTextContent(/W$/);
+  });
+
+  it("opens the tab menu from the ContextMenu key", async () => {
+    render(<TabBar />);
+    const gamma = screen.getByRole("tab", { name: "Gamma" });
+
+    fireEvent.keyDown(gamma, { key: "ContextMenu" });
+
+    expect(
+      await screen.findByRole("menu", { name: "Tab actions" }),
+    ).toBeInTheDocument();
+  });
+
+  it("closes only the tabs to the right, scoped to the workspace", async () => {
+    const user = userEvent.setup();
+    render(<TabBar />);
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "Beta" }));
+    await user.click(
+      screen.getByRole("menuitem", { name: "Close to the Right" }),
+    );
+
+    expect(confirmCloseTabsMock).toHaveBeenCalledWith(["c"]);
+    await waitFor(() =>
+      expect(useTabStore.getState().tabs.map((tab) => tab.id)).toEqual([
+        "a",
+        "b",
+      ]),
+    );
+  });
+
+  it("keeps each tab at least 96px wide so the strip overflows instead of collapsing", () => {
+    render(<TabBar />);
+
+    expect(
+      screen.getByRole("tab", { name: "Alpha" }).parentElement,
+    ).toHaveClass("min-w-24");
+  });
+
+  it("scrolls the newly activated tab into view", async () => {
+    const proto = Element.prototype as Element & {
+      scrollIntoView?: (options?: ScrollIntoViewOptions) => void;
+    };
+    const original = proto.scrollIntoView;
+    const seen: Element[] = [];
+    proto.scrollIntoView = function (this: Element) {
+      seen.push(this);
+    };
+
+    try {
+      const user = userEvent.setup();
+      render(<TabBar />);
+
+      await user.click(screen.getByRole("tab", { name: "Beta" }));
+
+      expect(seen.at(-1)).toBe(screen.getByRole("tab", { name: "Beta" }));
+    } finally {
+      if (original) proto.scrollIntoView = original;
+      else Reflect.deleteProperty(proto, "scrollIntoView");
+    }
+  });
+
+  it("highlights the tab whose context menu is open", async () => {
+    render(<TabBar />);
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "Beta" }));
+
+    await screen.findByRole("menu", { name: "Tab actions" });
+    const beta = screen.getByRole("tab", { name: "Beta" });
+    expect(beta).toHaveClass("bg-surface-overlay");
+    expect(beta).toHaveClass("dark:bg-surface-dark-overlay");
+  });
+
+  it("keeps Close All neutral rather than destructive", async () => {
+    render(<TabBar />);
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "Alpha" }));
+
+    const closeAll = await screen.findByRole("menuitem", { name: "Close All" });
+    expect(closeAll).not.toHaveClass("text-status-error");
   });
 
   it("keeps every close button inside a tab wrapper, none outside the tablist", () => {

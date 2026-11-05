@@ -146,7 +146,7 @@ export function CanvasNodeContextMenu({
 
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
         {rows.length === 0 ? (
-          <p className="px-3 py-4 text-center text-xs text-text-muted dark:text-text-muted-dark">
+          <p className="px-3 py-4 text-center text-xs text-text-secondary dark:text-text-secondary-dark">
             No nodes match &ldquo;{query}&rdquo;
           </p>
         ) : (
@@ -154,7 +154,7 @@ export function CanvasNodeContextMenu({
             const Icon = section.icon;
             return (
               <section key={section.key}>
-                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-widest text-text-muted backdrop-blur-xs dark:bg-surface-dark-raised/95 dark:text-text-muted-dark">
+                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-widest text-text-secondary backdrop-blur-xs dark:bg-surface-dark-raised/95 dark:text-text-secondary-dark">
                   <Icon className="h-3 w-3" aria-hidden="true" />
                   {section.title}
                 </div>

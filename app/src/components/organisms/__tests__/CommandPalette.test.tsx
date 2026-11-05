@@ -5,6 +5,7 @@ import { CommandPalette } from "../CommandPalette";
 import useCanvasStore from "../../../stores/CanvasStore";
 import useTabStore from "../../../stores/TabStore";
 import useAboutStore from "../../../stores/AboutStore";
+import useShortcutsHelpStore from "../../../stores/ShortcutsHelpStore";
 import { apiweave } from "../../../utils/apiweaveClient";
 import type { CanvasCommand } from "../../../types/CanvasCommand";
 import type { Workflow } from "../../../types/Workflow";
@@ -211,6 +212,19 @@ describe("CommandPalette", () => {
     await user.click(screen.getByText("About APIWeave"));
 
     expect(useAboutStore.getState().isOpen).toBe(true);
+  });
+
+  it("opens the keyboard shortcuts help from the palette", async () => {
+    const user = userEvent.setup();
+    useShortcutsHelpStore.setState({ isOpen: false });
+    render(
+      <CommandPalette open commands={[]} workspaceId="ws-1" onClose={vi.fn()} />,
+    );
+
+    await user.type(screen.getByRole("combobox"), "shortcuts");
+    await user.click(screen.getByText("Keyboard shortcuts"));
+
+    expect(useShortcutsHelpStore.getState().isOpen).toBe(true);
   });
 
   it("does not search a single character", async () => {

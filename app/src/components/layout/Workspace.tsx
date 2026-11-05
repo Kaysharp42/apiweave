@@ -27,6 +27,7 @@ import { confirmCloseTabs } from "../../stores/PendingEditsStore";
 import { useWorkspaceTabs } from "../../hooks/useWorkspaceTabs";
 import useSidebarStore from "../../stores/SidebarStore";
 import useNavigationStore from "../../stores/NavigationStore";
+import useShortcutsHelpStore from "../../stores/ShortcutsHelpStore";
 import useKeyboardShortcuts from "../../hooks/useKeyboardShortcuts";
 import { useScopeContext } from "../../hooks/useScopeContext";
 import { useWorkspace } from "../../contexts/WorkspaceContext";
@@ -132,7 +133,6 @@ export function Workspace({ active = true }: WorkspaceProps) {
   type WorkspaceState = {
     showVariablesPanel: boolean;
     activePanelTab: string;
-    showShortcutsHelp: boolean;
     showNewWorkflowPrompt: boolean;
     showOpenFromGit: boolean;
   };
@@ -140,7 +140,6 @@ export function Workspace({ active = true }: WorkspaceProps) {
   type WorkspaceAction =
     | { type: "set-show-variables-panel"; value: boolean }
     | { type: "set-active-panel-tab"; value: string }
-    | { type: "set-show-shortcuts-help"; value: boolean }
     | { type: "set-show-new-workflow-prompt"; value: boolean }
     | { type: "set-show-open-from-git"; value: boolean };
 
@@ -151,8 +150,6 @@ export function Workspace({ active = true }: WorkspaceProps) {
           return { ...current, showVariablesPanel: action.value };
         case "set-active-panel-tab":
           return { ...current, activePanelTab: action.value };
-        case "set-show-shortcuts-help":
-          return { ...current, showShortcutsHelp: action.value };
         case "set-show-new-workflow-prompt":
           return { ...current, showNewWorkflowPrompt: action.value };
         case "set-show-open-from-git":
@@ -164,11 +161,13 @@ export function Workspace({ active = true }: WorkspaceProps) {
     {
       showVariablesPanel: false,
       activePanelTab: "variables",
-      showShortcutsHelp: false,
       showNewWorkflowPrompt: false,
       showOpenFromGit: false,
     },
   );
+
+  const shortcutsHelpOpen = useShortcutsHelpStore((state) => state.isOpen);
+  const closeShortcutsHelp = useShortcutsHelpStore((state) => state.close);
 
   const handleNewWorkflow = useCallback(() => {
     dispatch({ type: "set-show-new-workflow-prompt", value: true });
@@ -259,9 +258,8 @@ export function Workspace({ active = true }: WorkspaceProps) {
     onPrevTab: () => {
       if (workspaceId) activatePrevTab(workspaceId);
     },
-    onToggleSidebar: () => useNavigationStore.getState().toggleNavBarCollapse(),
-    onShowShortcutsHelp: () =>
-      dispatch({ type: "set-show-shortcuts-help", value: true }),
+    onToggleSidebar: () => useNavigationStore.getState().toggleSidebar(),
+    onShowShortcutsHelp: () => useShortcutsHelpStore.getState().open(),
   });
 
   return (
@@ -383,14 +381,9 @@ export function Workspace({ active = true }: WorkspaceProps) {
         )}
       </div>
 
-      {state.showShortcutsHelp && (
+      {shortcutsHelpOpen && (
         <Suspense fallback={null}>
-          <KeyboardShortcutsHelp
-            open
-            onClose={() =>
-              dispatch({ type: "set-show-shortcuts-help", value: false })
-            }
-          />
+          <KeyboardShortcutsHelp open onClose={closeShortcutsHelp} />
         </Suspense>
       )}
 

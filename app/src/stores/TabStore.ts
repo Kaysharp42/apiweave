@@ -17,6 +17,8 @@ interface TabStoreState {
   setActive: (id: string) => void;
   closeTab: (id: string) => void;
   closeOthers: (id: string) => void;
+  /** Closes the tabs opened after this one, scoped to its workspace. */
+  closeToRight: (id: string) => void;
   /** Scoped to one workspace, or every workspace when the id is omitted. */
   closeAll: (workspaceId?: string) => void;
   markDirty: (id: string) => void;
@@ -135,6 +137,29 @@ const useTabStore = create<TabStoreState>()((set, get) => ({
     set({
       tabs: tabs.filter((t) => t.workspaceId !== target.workspaceId || t.id === id),
       activeTabIdByWorkspace: { ...activeTabIdByWorkspace, [target.workspaceId]: id },
+    });
+  },
+
+  closeToRight: (id: string) => {
+    const { tabs, activeTabIdByWorkspace } = get();
+    const target = tabs.find((t) => t.id === id);
+    if (!target) return;
+
+    const siblings = tabsIn(tabs, target.workspaceId);
+    const idx = siblings.findIndex((t) => t.id === id);
+    if (idx === -1) return;
+
+    const closing = new Set(siblings.slice(idx + 1).map((t) => t.id));
+    if (closing.size === 0) return;
+
+    const active = activeTabIdByWorkspace[target.workspaceId] ?? null;
+    set({
+      tabs: tabs.filter((t) => !closing.has(t.id)),
+      activeTabIdByWorkspace: {
+        ...activeTabIdByWorkspace,
+        [target.workspaceId]:
+          active !== null && closing.has(active) ? id : active,
+      },
     });
   },
 

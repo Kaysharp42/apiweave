@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCloseOnOutsideOrEscape } from "../../hooks/useCloseOnOutsideOrEscape";
+import { Kbd } from "../atoms/Kbd";
 import type { ContextMenuProps } from "../../types";
 
 /** Gap kept between the menu and the viewport edge when it has to flip. */
@@ -46,9 +47,13 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
     setPosition({ left, top });
   }, [x, y]);
 
-  // Focus the first item so the next keypress is an arrow, not a Tab hunt.
+  // Focus the first actionable item so the next keypress is an arrow, not a Tab
+  // hunt. A fully disabled menu still takes focus, on the first row.
   useEffect(() => {
-    const frame = requestAnimationFrame(() => itemRefs.current[0]?.focus());
+    const frame = requestAnimationFrame(() => {
+      const firstEnabled = items.findIndex((item) => item.disabled !== true);
+      itemRefs.current[Math.max(0, firstEnabled)]?.focus();
+    });
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -56,25 +61,30 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
-    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      let next: number;
-      if (event.key === "ArrowDown") {
-        next = (index + 1) % items.length;
-      } else if (event.key === "ArrowUp") {
-        next = (index - 1 + items.length) % items.length;
-      } else if (event.key === "Home") {
-        next = 0;
-      } else {
-        next = items.length - 1;
-      }
-      itemRefs.current[Math.max(0, Math.min(next, items.length - 1))]?.focus();
-      return;
-    }
+    const actionable = items.flatMap((item, itemIndex) =>
+      item.disabled === true ? [] : [itemIndex],
+    );
     if (event.key === "Escape") {
       event.preventDefault();
       onClose();
+      return;
     }
+    if (actionable.length === 0) return;
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+
+    event.preventDefault();
+    const current = Math.max(0, actionable.indexOf(index));
+    let next: number;
+    if (event.key === "ArrowDown") {
+      next = (current + 1) % actionable.length;
+    } else if (event.key === "ArrowUp") {
+      next = (current - 1 + actionable.length) % actionable.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else {
+      next = actionable.length - 1;
+    }
+    itemRefs.current[actionable[next] ?? 0]?.focus();
   };
 
   return createPortal(
@@ -93,19 +103,22 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
           }}
           type="button"
           role="menuitem"
+          disabled={item.disabled === true}
+          aria-disabled={item.disabled === true ? true : undefined}
           onClick={() => {
+            if (item.disabled === true) return;
             item.onSelect();
             onClose();
           }}
           onKeyDown={(event) => handleItemKeyDown(event, index)}
           className={[
             "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-150 motion-reduce:transition-none",
-            "cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2",
+            "cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
             item.separated === true
               ? "mt-1 border-t border-border pt-2 dark:border-border-dark"
               : "",
             item.destructive === true
-              ? "text-status-error hover:bg-status-error/10 dark:text-status-error-dark dark:hover:bg-status-error-dark/10"
+              ? "text-status-error hover:bg-status-error/10"
               : "text-text-primary hover:bg-surface-overlay dark:text-text-primary-dark dark:hover:bg-surface-dark-overlay",
           ]
             .filter(Boolean)
@@ -121,7 +134,10 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
               .filter(Boolean)
               .join(" ")}
           />
-          <span className="truncate">{item.label}</span>
+          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+          {item.shortcut !== undefined && (
+            <Kbd className="shrink-0 pl-3">{item.shortcut}</Kbd>
+          )}
         </button>
       ))}
     </div>,
