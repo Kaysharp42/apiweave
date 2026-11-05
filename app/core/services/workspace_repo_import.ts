@@ -183,18 +183,27 @@ export class WorkspaceRepoImporter {
     previousEnvironments: ReturnType<EnvironmentRepository["listByWorkspace"]>["items"],
     previousPresets: ReturnType<NodePresetRepository["listByWorkspace"]>["items"],
   ): void {
-    const workflowIds = new Set(snapshot.workflows.map((workflow) => workflow.workflowId))
-    for (const workflow of previousWorkflows) if (!workflowIds.has(workflow.workflowId)) this.workflows.delete(workflow.workflowId)
-    const projectIds = new Set(snapshot.projects.map((project) => project.projectId))
-    for (const project of previousProjects) if (!projectIds.has(project.collectionId)) this.collections.delete(project.collectionId)
-    const environmentIds = new Set(snapshot.environments.map((environment) => environment.environmentId))
-    for (const environment of previousEnvironments) {
-      if (environment.scopeType !== "workspace" || environmentIds.has(environment.environmentId)) continue
-      this.detachEnvironmentReferences(snapshot.workspace.workspaceId, environment.environmentId)
-      this.environments.delete(environment.environmentId)
+    this.deleteAbsent(snapshot.workflows.map((workflow) => workflow.workflowId), previousWorkflows, (workflow) => workflow.workflowId, (id) => this.workflows.delete(id))
+    this.deleteAbsent(snapshot.projects.map((project) => project.projectId), previousProjects, (project) => project.collectionId, (id) => this.collections.delete(id))
+    this.deleteAbsent(
+      snapshot.environments.map((environment) => environment.environmentId),
+      previousEnvironments.filter((environment) => environment.scopeType === "workspace"),
+      (environment) => environment.environmentId,
+      (id) => {
+        this.detachEnvironmentReferences(snapshot.workspace.workspaceId, id)
+        this.environments.delete(id)
+      },
+    )
+    this.deleteAbsent(snapshot.presets.map((preset) => preset.presetId), previousPresets, (preset) => preset.presetId, (id) => this.presets.delete(id))
+  }
+
+  /** Deletes every stored record whose id the snapshot no longer holds, through `remove`. */
+  private deleteAbsent<T>(keptIds: readonly string[], stored: readonly T[], idOf: (item: T) => string, remove: (id: string) => void): void {
+    const kept = new Set(keptIds)
+    for (const item of stored) {
+      const id = idOf(item)
+      if (!kept.has(id)) remove(id)
     }
-    const presetIds = new Set(snapshot.presets.map((preset) => preset.presetId))
-    for (const preset of previousPresets) if (!presetIds.has(preset.presetId)) this.presets.delete(preset.presetId)
   }
 
   private detachEnvironmentReferences(workspaceId: string, environmentId: string): void {
@@ -220,17 +229,18 @@ export class WorkspaceRepoImporter {
   }
 
   private assertIdsBelongHere(snapshot: WorkspaceSnapshot, workspaceId: string): void {
-    const conflicts: string[] = []
-    for (const project of snapshot.projects) if (this.projectIsElsewhere(project.projectId, workspaceId)) conflicts.push(`project ${project.projectId}`)
-    for (const workflow of snapshot.workflows) if (this.workflowIsElsewhere(workflow.workflowId, workspaceId)) conflicts.push(`workflow ${workflow.workflowId}`)
-    for (const environment of snapshot.environments) {
-      if (this.environmentIsElsewhere(environment.environmentId, workspaceId)) conflicts.push(`environment ${environment.environmentId}`)
-    }
-    for (const preset of snapshot.presets) {
-      const stored = this.presets.getById(preset.presetId)
-      if (stored !== undefined && stored.workspaceId !== workspaceId) conflicts.push(`preset ${preset.presetId}`)
-    }
+    const conflicts = [
+      ...this.foreignIds(snapshot.projects.map((project) => project.projectId), "project", (id) => this.projectIsElsewhere(id, workspaceId)),
+      ...this.foreignIds(snapshot.workflows.map((workflow) => workflow.workflowId), "workflow", (id) => this.workflowIsElsewhere(id, workspaceId)),
+      ...this.foreignIds(snapshot.environments.map((environment) => environment.environmentId), "environment", (id) => this.environmentIsElsewhere(id, workspaceId)),
+      ...this.foreignIds(snapshot.presets.map((preset) => preset.presetId), "preset", (id) => this.presetIsElsewhere(id, workspaceId)),
+    ]
     if (conflicts.length > 0) throw new ValidationError(`snapshot ${conflicts.join(", ")} already belong outside workspace ${workspaceId}`)
+  }
+
+  /** `<kind> <id>` for every id of `ids` that another workspace already owns. */
+  private foreignIds(ids: readonly string[], kind: string, isElsewhere: (id: string) => boolean): string[] {
+    return ids.filter(isElsewhere).map((id) => `${kind} ${id}`)
   }
 
   private assertBaseEnvironmentChain(environments: WorkspaceSnapshot["environments"]): void {
@@ -260,6 +270,11 @@ export class WorkspaceRepoImporter {
   private environmentIsElsewhere(environmentId: string, workspaceId: string): boolean {
     const stored = this.environments.getById(environmentId)
     return stored !== undefined && (stored.workspaceId !== workspaceId || stored.scopeType !== "workspace")
+  }
+
+  private presetIsElsewhere(presetId: string, workspaceId: string): boolean {
+    const stored = this.presets.getById(presetId)
+    return stored !== undefined && stored.workspaceId !== workspaceId
   }
 }
 

@@ -196,6 +196,22 @@ export interface RecordFileSummary {
   readonly name: string
 }
 
+/** A record file's summary: its kind, its name and the id it holds. */
+function fileSummary(kind: WorkspacePendingChangeKind, name: string, id: string): RecordFileSummary {
+  return { kind, id, name }
+}
+
+/**
+ * The kind and the file reader of each record folder: one entry per folder
+ * `describeRecordFile` understands, so a new record kind is one line here.
+ */
+const RECORD_SUMMARIES: Readonly<Record<string, (path: string, text: string) => RecordFileSummary>> = {
+  projects: (path, text) => { const { projectId, name } = decode(path, text, ProjectFileSchema); return fileSummary("project", name, projectId) },
+  workflows: (path, text) => { const { workflowId, name } = decode(path, text, WorkflowFileSchema); return fileSummary("workflow", name, workflowId) },
+  environments: (path, text) => { const { environmentId, name } = decodeEnvironmentFile(path, text); return fileSummary("environment", name, environmentId) },
+  presets: (path, text) => { const { presetId, name } = decode(path, text, PresetFileSchema); return fileSummary("preset", name, presetId) },
+}
+
 /**
  * The record a single file holds, or undefined for a path that is not a
  * record's (`.apiweave/format.json`, `.gitattributes`, a README). Throws a
@@ -209,23 +225,8 @@ export function describeRecordFile(path: string, text: string): RecordFileSummar
   }
   const [folder, file, ...rest] = path.split("/")
   if (file === undefined || rest.length > 0 || !file.endsWith(".json")) return undefined
-  if (folder === "projects") {
-    const project = decode(path, text, ProjectFileSchema)
-    return { kind: "project", id: project.projectId, name: project.name }
-  }
-  if (folder === "workflows") {
-    const workflow = decode(path, text, WorkflowFileSchema)
-    return { kind: "workflow", id: workflow.workflowId, name: workflow.name }
-  }
-  if (folder === "environments") {
-    const environment = decodeEnvironmentFile(path, text)
-    return { kind: "environment", id: environment.environmentId, name: environment.name }
-  }
-  if (folder === "presets") {
-    const preset = decode(path, text, PresetFileSchema)
-    return { kind: "preset", id: preset.presetId, name: preset.name }
-  }
-  return undefined
+  const summary = folder === undefined ? undefined : RECORD_SUMMARIES[folder]
+  return summary?.(path, text)
 }
 
 /** A workflow as it leaves the app (a bundle, a workspace repository): credentials withheld, ids kept. */
