@@ -1,4 +1,4 @@
-import { FileText, Download, Trash2 } from "lucide-react";
+import { FileText, Download } from "lucide-react";
 import { SidebarAction } from "./SidebarAction";
 import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItemBadges } from "./WorkflowItemBadges";
@@ -10,9 +10,10 @@ import type { WorkflowItemProps } from "../../../types";
 
 /**
  * Renders a single workflow item in the sidebar list.
- * Shows workflow name, node count, collection badge, environment badge,
- * action buttons (export, delete) visible on hover/focus, and a right-click
- * menu carrying the actions that need a name or a target picked (rename, move).
+ * Shows workflow name, node count, collection badge, environment badge, an
+ * export button visible on hover/focus, and a right-click menu carrying the
+ * actions that need a name or a target picked (rename, move) plus the
+ * destructive delete, which is deliberately not one click away.
  */
 export function WorkflowItem({
   workflow,
@@ -32,10 +33,19 @@ export function WorkflowItem({
 
   const handleActivate = () => onWorkflowClick(workflow);
 
-  const handleKeyDown = (event: React.KeyboardEvent) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleActivate();
+      return;
+    }
+    // Shift+F10 and the dedicated ContextMenu key are the keyboard equivalent
+    // of a right-click. Anchor the menu to the focused row button: there is no
+    // pointer position to use.
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      event.preventDefault();
+      const rect = event.currentTarget.getBoundingClientRect();
+      contextMenu.openAt({ x: rect.left, y: rect.bottom });
     }
   };
 
@@ -44,10 +54,12 @@ export function WorkflowItem({
       <div
         onContextMenu={contextMenu.openAt}
         className={[
-          "group relative flex w-full items-start gap-2 rounded-sm border border-l-2 px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
+          "group relative flex w-full items-start gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
           isActive
-            ? "border-y-border border-r-border border-l-primary bg-primary/10 dark:border-y-border-dark dark:border-r-border-dark dark:border-l-primary-light dark:bg-primary-light/10"
-            : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
+            ? "border-border bg-primary/10 dark:border-border-dark dark:bg-primary-light/10"
+            : contextMenu.isOpen
+              ? "border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
+              : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
         ].join(" ")}
       >
         <button
@@ -100,16 +112,6 @@ export function WorkflowItem({
             onClick={(event) => {
               event.stopPropagation();
               onExportWorkflow(workflow);
-            }}
-          />
-
-          <SidebarAction
-            icon={Trash2}
-            label="Delete workflow permanently"
-            destructive
-            onClick={(event) => {
-              event.stopPropagation();
-              onDeleteWorkflow(workflow.workflowId, workflow.name);
             }}
           />
         </SidebarRowActions>

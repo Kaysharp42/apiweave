@@ -23,8 +23,10 @@ import type {
  *
  * Rename and the two moves lead because they are the actions that need
  * something typed or picked, which is exactly what a hover button cannot offer.
- * Export and delete repeat the hover buttons on purpose — a user who has found
- * the menu should not have to leave it again to finish.
+ * Export repeats the hover button so a user who has found the menu need not
+ * leave it to finish. Delete is menu-only: the one-click hover strip keeps to
+ * non-destructive actions, so the destructive one is separated at the end and
+ * reached deliberately.
  */
 
 type WorkflowActions = Pick<
@@ -78,7 +80,8 @@ export function workflowRowMenuItems(
     {
       key: "delete",
       icon: Trash2,
-      label: "Delete",
+      label: "Delete workflow…",
+      separated: true,
       destructive: true,
       onSelect: () => actions.onDeleteWorkflow(workflow.workflowId, workflow.name),
     },
@@ -119,7 +122,8 @@ export function projectRowMenuItems(
     {
       key: "delete",
       icon: Trash2,
-      label: "Delete",
+      label: "Delete project…",
+      separated: true,
       destructive: true,
       onSelect: () => actions.onDeleteProject(projectId, project.name),
     },

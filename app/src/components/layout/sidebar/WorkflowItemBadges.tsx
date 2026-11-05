@@ -15,19 +15,20 @@ export function WorkflowItemBadges({
   hideProject = false,
 }: WorkflowItemBadgesProps) {
   return (
-    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-2xs text-text-secondary dark:text-text-secondary-dark overflow-hidden">
-      <Badge variant="ghost" size="xs">
+    // One line, always: wrapping made some cards taller than their neighbours.
+    <div className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap text-2xs text-text-secondary dark:text-text-secondary-dark">
+      <Badge variant="ghost" size="xs" className="shrink-0">
         {nodeCount} nodes
       </Badge>
 
       {!hideProject && labels.collection && (
         <Badge
-          variant="info"
+          variant="ghost"
           size="xs"
           className="max-w-30 min-w-0 truncate"
           title={labels.collection}
         >
-          {labels.collection}
+          <span className="truncate">{labels.collection}</span>
         </Badge>
       )}
 
@@ -38,8 +39,8 @@ export function WorkflowItemBadges({
           className="max-w-30 min-w-0 truncate"
           title={labels.environment}
         >
-          <Globe className="w-2.5 h-2.5 mr-0.5 shrink-0" />
-          {labels.environment}
+          <Globe className="w-2.5 h-2.5 shrink-0" />
+          <span className="truncate">{labels.environment}</span>
         </Badge>
       )}
     </div>

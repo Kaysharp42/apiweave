@@ -19,8 +19,8 @@ export function SidebarAction({
   ].join(" ");
 
   const variantClasses = destructive
-    ? "text-status-error hover:bg-status-error/10 hover:text-status-error dark:text-status-error-dark dark:hover:bg-status-error-dark/10 dark:hover:text-status-error-dark"
-    : "text-text-muted dark:text-text-muted-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark";
+    ? "text-status-error hover:bg-status-error/10"
+    : "text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark";
 
   return (
     <Tooltip content={label}>
