@@ -5,7 +5,6 @@ import {
   useEffect,
   useLayoutEffect,
   useContext,
-  createContext,
   useMemo,
 } from "react";
 import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router";
@@ -23,48 +22,37 @@ import { apiweave, desktop } from "./utils/apiweaveClient";
 import { getLastWorkspaceSlug } from "./utils/workspacePreference";
 import type { Workspace } from "./types/Workspace";
 import { CanvasSurfaceContext } from "./contexts/CanvasSurfaceContext";
+import { AppContext } from "./contexts/AppContext";
 import type { WorkspacePageRouteProps } from "./types/WorkspacePageRouteProps";
-import type { AppContextType } from "./types/AppContextType";
 import { useThemePreference } from "./hooks/useThemePreference";
 import { getStoredValue, setStoredValue } from "./utils/storedValue";
+import { lazyNamed } from "./utils/lazyNamed";
 
 // The settings and tutorial screens are their own chunks: the canvas is the
 // app's steady state, and a session that never opens Settings should not parse
 // the agents, MCP, network and update panels (or the tutorial curriculum) on
 // the way in. One lazy boundary per route keeps the shell and the canvas out of
 // the reload.
-const WorkspaceSecretsPage = lazy(() =>
-  import("./pages/WorkspaceSecretsPage").then((module) => ({
-    default: module.WorkspaceSecretsPage,
-  })),
+const WorkspaceSecretsPage = lazyNamed(
+  () => import("./pages/WorkspaceSecretsPage"),
+  "WorkspaceSecretsPage",
 );
-const WorkspaceVersionHistoryPage = lazy(() =>
-  import("./pages/WorkspaceVersionHistoryPage").then((module) => ({
-    default: module.WorkspaceVersionHistoryPage,
-  })),
+const WorkspaceVersionHistoryPage = lazyNamed(
+  () => import("./pages/WorkspaceVersionHistoryPage"),
+  "WorkspaceVersionHistoryPage",
 );
 const WorkspaceEnvironmentsPage = lazy(() =>
   import("./pages/WorkspaceEnvironmentsPage"),
 );
-const WorkspaceProjectPage = lazy(() =>
-  import("./pages/WorkspaceProjectPage").then((module) => ({
-    default: module.WorkspaceProjectPage,
-  })),
+const WorkspaceProjectPage = lazyNamed(
+  () => import("./pages/WorkspaceProjectPage"),
+  "WorkspaceProjectPage",
 );
-const AppSettingsPage = lazy(() =>
-  import("./pages/AppSettingsPage").then((module) => ({
-    default: module.AppSettingsPage,
-  })),
+const AppSettingsPage = lazyNamed(
+  () => import("./pages/AppSettingsPage"),
+  "AppSettingsPage",
 );
 const TutorialPage = lazy(() => import("./pages/TutorialPage"));
-
-export const AppContext = createContext<AppContextType>({
-  darkMode: false,
-  themePreference: "system",
-  setThemePreference: () => {},
-  autoSaveEnabled: true,
-  setAutoSaveEnabled: () => {},
-});
 
 // Reopen the workspace the user last had selected, as long as it still
 // exists. Falls back to the personal workspace (then the first available)
@@ -81,6 +69,30 @@ function pickDefaultWorkspace(
   );
 }
 
+/**
+ * Where a bare `/app` visit should land: the remembered workspace, or a freshly
+ * created personal one. `null` means the attempt was abandoned because the
+ * component unmounted before it could create anything.
+ */
+async function resolveDefaultWorkspacePath(
+  isCancelled: () => boolean,
+): Promise<string | null> {
+  const workspaces = await apiweave.workspaces.list();
+  if (isCancelled()) return null;
+
+  const workspace = pickDefaultWorkspace(workspaces, getLastWorkspaceSlug());
+  if (!workspace) {
+    await apiweave.workspaces.create({
+      name: "Personal",
+      slug: "personal",
+      isPersonal: true,
+    });
+    return "/personal/workflows";
+  }
+
+  return `/${workspace.slug}/workflows`;
+}
+
 function DefaultWorkspaceRedirect() {
   const [targetPath, setTargetPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,36 +100,19 @@ function DefaultWorkspaceRedirect() {
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
-      try {
-        const workspaces = await apiweave.workspaces.list();
+    resolveDefaultWorkspacePath(() => cancelled).then(
+      (path) => {
+        if (!cancelled && path !== null) setTargetPath(path);
+      },
+      (err: unknown) => {
         if (cancelled) return;
-
-        const workspace = pickDefaultWorkspace(
-          workspaces,
-          getLastWorkspaceSlug(),
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load workspaces. Please restart the app.",
         );
-        if (!workspace) {
-          await apiweave.workspaces.create({
-            name: "Personal",
-            slug: "personal",
-            isPersonal: true,
-          });
-          setTargetPath("/personal/workflows");
-          return;
-        }
-
-        setTargetPath(`/${workspace.slug}/workflows`);
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load workspaces. Please restart the app.",
-          );
-        }
-      }
-    })();
+      },
+    );
 
     return () => {
       cancelled = true;

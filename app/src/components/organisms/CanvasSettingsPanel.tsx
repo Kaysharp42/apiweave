@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { AppContext } from "../../App";
+import { AppContext } from "../../contexts/AppContext";
 import { ToggleSetting } from "../molecules/ToggleSetting";
 import { Input } from "../atoms/Input";
 import ButtonSelect from "../ButtonSelect";

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { AppContext } from "../../App";
+import { AppContext } from "../../contexts/AppContext";
 import { Toast } from "./Toast";
 
 const captured = vi.hoisted(() => ({

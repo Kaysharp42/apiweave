@@ -1,6 +1,6 @@
 import { useContext, type CSSProperties } from "react";
 import { Toaster } from "sonner";
-import { AppContext } from "../../App";
+import { AppContext } from "../../contexts/AppContext";
 import type { AppContextType } from "../../types/AppContextType";
 import { CanvasCornerGutter } from "../../constants/CanvasChrome";
 

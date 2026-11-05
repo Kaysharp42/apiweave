@@ -1,8 +1,9 @@
-import { lazy, Suspense, type ComponentType } from "react";
+import { Suspense, type ComponentType } from "react";
 import { Navigate, useParams } from "react-router";
 import { APP_SETTINGS_SECTIONS } from "../constants/appSettingsSections";
 import { Spinner } from "../components/atoms/Spinner";
 import type { AppSettingsSectionMeta } from "../types";
+import { lazyNamed } from "../utils/lazyNamed";
 
 /**
  * The app-scoped settings, keyed by the last URL segment. These used to be
@@ -14,40 +15,33 @@ import type { AppSettingsSectionMeta } from "../types";
  * all of them in the route chunk, which is the thing the route split is for.
  */
 const APP_SETTING_PANELS: Readonly<Record<string, ComponentType>> = {
-  agents: lazy(() =>
-    import("../components/organisms/AgentsSettingsPanel").then((module) => ({
-      default: module.AgentsSettingsPanel,
-    })),
+  agents: lazyNamed(
+    () => import("../components/organisms/AgentsSettingsPanel"),
+    "AgentsSettingsPanel",
   ),
-  background: lazy(() =>
-    import("../components/organisms/BackgroundSettingsPanel").then((module) => ({
-      default: module.BackgroundSettingsPanel,
-    })),
+  background: lazyNamed(
+    () => import("../components/organisms/BackgroundSettingsPanel"),
+    "BackgroundSettingsPanel",
   ),
-  canvas: lazy(() =>
-    import("../components/organisms/CanvasSettingsPanel").then((module) => ({
-      default: module.CanvasSettingsPanel,
-    })),
+  canvas: lazyNamed(
+    () => import("../components/organisms/CanvasSettingsPanel"),
+    "CanvasSettingsPanel",
   ),
-  "git-accounts": lazy(() =>
-    import("../components/organisms/GitAccountsSettingsPanel").then(
-      (module) => ({ default: module.GitAccountsSettingsPanel }),
-    ),
+  "git-accounts": lazyNamed(
+    () => import("../components/organisms/GitAccountsSettingsPanel"),
+    "GitAccountsSettingsPanel",
   ),
-  "mcp-server": lazy(() =>
-    import("../components/organisms/McpSetupPanel").then((module) => ({
-      default: module.McpSetupPanel,
-    })),
+  "mcp-server": lazyNamed(
+    () => import("../components/organisms/McpSetupPanel"),
+    "McpSetupPanel",
   ),
-  network: lazy(() =>
-    import("../components/organisms/NetworkSettingsPanel").then((module) => ({
-      default: module.NetworkSettingsPanel,
-    })),
+  network: lazyNamed(
+    () => import("../components/organisms/NetworkSettingsPanel"),
+    "NetworkSettingsPanel",
   ),
-  updates: lazy(() =>
-    import("../components/organisms/UpdateSettingsPanel").then((module) => ({
-      default: module.UpdateSettingsPanel,
-    })),
+  updates: lazyNamed(
+    () => import("../components/organisms/UpdateSettingsPanel"),
+    "UpdateSettingsPanel",
   ),
 };
 

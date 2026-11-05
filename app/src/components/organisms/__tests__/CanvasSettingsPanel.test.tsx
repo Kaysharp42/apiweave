@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AppContext } from "../../../App";
+import { AppContext } from "../../../contexts/AppContext";
 import { CanvasSettingsPanel } from "../CanvasSettingsPanel";
 import useCanvasPrefsStore from "../../../stores/CanvasPrefsStore";
 

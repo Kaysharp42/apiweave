@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MainHeader } from "./MainHeader";
-import { AppContext } from "../../App";
+import { AppContext } from "../../contexts/AppContext";
 import { installGitBridge, trackedStatus, untrackedStatus } from "../../__tests__/gitFixtures";
 
 vi.mock("../../contexts/WorkspaceContext", () => ({

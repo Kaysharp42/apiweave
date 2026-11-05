@@ -53,7 +53,7 @@ import AddNodesPanel from "./AddNodesPanel";
 import { PromptDialog } from "./molecules/PromptDialog";
 import { ContextMenu } from "./molecules/ContextMenu";
 import { RunFollowPill } from "./molecules/RunFollowPill";
-import { AppContext } from "../App";
+import { AppContext } from "../contexts/AppContext";
 import { useWorkflow } from "../contexts/WorkflowContext";
 import { toast } from "sonner";
 import { CanvasToolbar } from "./organisms/CanvasToolbar";

@@ -1,6 +1,6 @@
 import { useContext, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
-import { AppContext } from "../../App";
+import { AppContext } from "../../contexts/AppContext";
 import { BookOpen, Moon, Sun, Menu } from "lucide-react";
 import { Tooltip } from "../atoms/Tooltip";
 import { IconButton } from "../atoms/IconButton";
