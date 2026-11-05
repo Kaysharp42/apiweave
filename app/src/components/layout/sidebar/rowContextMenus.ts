@@ -6,8 +6,10 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import type React from "react";
 import type {
   ContextMenuItem,
+  ContextMenuOrigin,
   Project,
   ProjectItemProps,
   Workflow,
@@ -47,44 +49,55 @@ type ProjectActions = Pick<
   | "onDeleteProject"
 >;
 
+function renameItem(onSelect: () => void): ContextMenuItem {
+  return { key: "rename", icon: Pencil, label: "Rename…", onSelect };
+}
+
+function moveToWorkspaceItem(onSelect: () => void): ContextMenuItem {
+  return {
+    key: "move-workspace",
+    icon: Building2,
+    label: "Move to workspace…",
+    onSelect,
+  };
+}
+
+function exportItem(
+  onSelect: () => void,
+  separated: boolean,
+): ContextMenuItem {
+  return { key: "export", icon: Download, label: "Export…", separated, onSelect };
+}
+
+/** Delete is menu-only and always separated at the end: never one click from the row. */
+function deleteItem(label: string, onSelect: () => void): ContextMenuItem {
+  return {
+    key: "delete",
+    icon: Trash2,
+    label,
+    separated: true,
+    destructive: true,
+    onSelect,
+  };
+}
+
 export function workflowRowMenuItems(
   workflow: Workflow,
   actions: WorkflowActions,
 ): ContextMenuItem[] {
   return [
-    {
-      key: "rename",
-      icon: Pencil,
-      label: "Rename…",
-      onSelect: () => actions.onRenameWorkflow(workflow),
-    },
+    renameItem(() => actions.onRenameWorkflow(workflow)),
     {
       key: "move-project",
       icon: FolderInput,
       label: "Move to project…",
       onSelect: () => actions.onMoveWorkflowToProject(workflow),
     },
-    {
-      key: "move-workspace",
-      icon: Building2,
-      label: "Move to workspace…",
-      onSelect: () => actions.onMoveWorkflowToWorkspace(workflow),
-    },
-    {
-      key: "export",
-      icon: Download,
-      label: "Export…",
-      separated: true,
-      onSelect: () => actions.onExportWorkflow(workflow),
-    },
-    {
-      key: "delete",
-      icon: Trash2,
-      label: "Delete workflow…",
-      separated: true,
-      destructive: true,
-      onSelect: () => actions.onDeleteWorkflow(workflow.workflowId, workflow.name),
-    },
+    moveToWorkspaceItem(() => actions.onMoveWorkflowToWorkspace(workflow)),
+    exportItem(() => actions.onExportWorkflow(workflow), true),
+    deleteItem("Delete workflow…", () =>
+      actions.onDeleteWorkflow(workflow.workflowId, workflow.name),
+    ),
   ];
 }
 
@@ -94,18 +107,8 @@ export function projectRowMenuItems(
   actions: ProjectActions,
 ): ContextMenuItem[] {
   return [
-    {
-      key: "rename",
-      icon: Pencil,
-      label: "Rename…",
-      onSelect: () => actions.onRenameProject(project),
-    },
-    {
-      key: "move-workspace",
-      icon: Building2,
-      label: "Move to workspace…",
-      onSelect: () => actions.onMoveProjectToWorkspace(project),
-    },
+    renameItem(() => actions.onRenameProject(project)),
+    moveToWorkspaceItem(() => actions.onMoveProjectToWorkspace(project)),
     {
       key: "add-workflow",
       icon: Plus,
@@ -113,19 +116,26 @@ export function projectRowMenuItems(
       separated: true,
       onSelect: () => actions.onAddWorkflowToProject(projectId),
     },
-    {
-      key: "export",
-      icon: Download,
-      label: "Export…",
-      onSelect: () => actions.onExportProject(project),
-    },
-    {
-      key: "delete",
-      icon: Trash2,
-      label: "Delete project…",
-      separated: true,
-      destructive: true,
-      onSelect: () => actions.onDeleteProject(projectId, project.name),
-    },
+    exportItem(() => actions.onExportProject(project), false),
+    deleteItem("Delete project…", () =>
+      actions.onDeleteProject(projectId, project.name),
+    ),
   ];
+}
+
+/**
+ * The point a keyboard context-menu request (Shift+F10, or the dedicated
+ * ContextMenu key) anchors to — the bottom-left of the row that has focus — or
+ * null for any other key. Suppresses the browser's own menu on the two that
+ * open ours.
+ */
+export function contextMenuKeyPoint(
+  event: React.KeyboardEvent<HTMLElement>,
+): ContextMenuOrigin | null {
+  if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) {
+    return null;
+  }
+  event.preventDefault();
+  const rect = event.currentTarget.getBoundingClientRect();
+  return { x: rect.left, y: rect.bottom };
 }

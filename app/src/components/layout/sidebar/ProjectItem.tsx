@@ -1,4 +1,3 @@
-// fallow-ignore-file code-duplication -- the export SidebarAction here still mirrors WorkflowItem's; it predates this file's changes and is only re-flagged because AgentLaunchButton's insertion shifted its line numbers
 import {
   Menu,
   MenuButton,
@@ -9,19 +8,19 @@ import {
   ChevronDown,
   ChevronRight,
   FolderKanban,
-  Download,
   Plus,
   FilePlus,
 } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
 import { IconButton } from "../../atoms/IconButton";
 import { AgentLaunchButton } from "../../organisms/AgentLaunchButton";
-import { SidebarAction } from "./SidebarAction";
+import { SidebarContextMenu } from "./SidebarContextMenu";
+import { SidebarExportAction } from "./SidebarExportAction";
 import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItem } from "./WorkflowItem";
-import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
-import { projectRowMenuItems } from "./rowContextMenus";
+import { contextMenuKeyPoint, projectRowMenuItems } from "./rowContextMenus";
+import { rowSurface } from "./rowStyles";
 import { getSidebarItemLabel } from "../../../utils/sidebarItemLabel";
 import type { ProjectItemProps } from "../../../types";
 import type { Project } from "../../../types/Project";
@@ -63,15 +62,8 @@ export function ProjectItem({
     // Shift+F10 and the dedicated ContextMenu key are the keyboard equivalent
     // of a right-click. Anchor the menu to the focused row button: there is no
     // pointer position to use.
-    if (
-      event.key !== "ContextMenu" &&
-      !(event.shiftKey && event.key === "F10")
-    ) {
-      return;
-    }
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    contextMenu.openAt({ x: rect.left, y: rect.bottom });
+    const point = contextMenuKeyPoint(event);
+    if (point !== null) contextMenu.openAt(point);
   };
 
   return (
@@ -80,9 +72,7 @@ export function ProjectItem({
         onContextMenu={contextMenu.openAt}
         className={[
           "group relative flex items-center gap-2 rounded-sm border px-2.5 py-2 transition-colors duration-150 motion-reduce:transition-none",
-          contextMenu.isOpen
-            ? "border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
-            : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
+          rowSurface(false, contextMenu.isOpen),
         ].join(" ")}
       >
         <button
@@ -139,23 +129,17 @@ export function ProjectItem({
             compact
           />
 
-          <SidebarAction
-            icon={Download}
+          <SidebarExportAction
             label="Export project"
-            onClick={(event) => {
-              event.stopPropagation();
-              onExportProject(project);
-            }}
+            onExport={() => onExportProject(project)}
           />
         </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (
-        <ContextMenu
-          x={contextMenu.origin.x}
-          y={contextMenu.origin.y}
+        <SidebarContextMenu
+          menu={contextMenu}
           label={`Project "${project.name}"`}
-          onClose={contextMenu.close}
           items={projectRowMenuItems(project, projectId, {
             onRenameProject,
             onMoveProjectToWorkspace,

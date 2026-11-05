@@ -12,6 +12,7 @@ import CollectionExportImport from "../CollectionExportImport";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { PromptDialog } from "../molecules/PromptDialog";
 import { SidebarRowDialogs } from "./sidebar/SidebarRowDialogs";
+import { SidebarScrollPanel } from "./sidebar/SidebarScrollPanel";
 import useSidebarStore from "../../stores/SidebarStore";
 import useEnvironmentStore from "../../stores/EnvironmentStore";
 import useTabStore from "../../stores/TabStore";
@@ -382,13 +383,9 @@ export function Sidebar() {
           {/* One scroll region per panel: the workflow list is the only
               element that scrolls, and it owns the stable gutter. No second
               scroll container sits beside it on the sidebar's right edge. */}
-          <div
-            className={[
-              "h-full overflow-y-auto overflow-x-hidden transition-opacity duration-300",
-              isRefreshing ? "opacity-50" : "opacity-100",
-              selectedNav === "workflows" ? "" : "hidden",
-            ].join(" ")}
-            style={{ scrollbarGutter: "stable" }}
+          <SidebarScrollPanel
+            hidden={selectedNav !== "workflows"}
+            isRefreshing={isRefreshing}
           >
             <WorkflowList
               workflows={filteredWorkflows}
@@ -407,45 +404,42 @@ export function Sidebar() {
               onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
               onCreateWorkflow={createNewWorkflow}
             />
-          </div>
-          <div
-            className={[
-              "h-full overflow-y-auto overflow-x-hidden p-2 transition-opacity duration-300 motion-reduce:transition-none",
-              isRefreshing ? "opacity-50" : "opacity-100",
-              selectedNav === "projects" ? "" : "hidden",
-            ].join(" ")}
-            style={{ scrollbarGutter: "stable" }}
+          </SidebarScrollPanel>
+          <SidebarScrollPanel
+            hidden={selectedNav !== "projects"}
+            isRefreshing={isRefreshing}
+            className="p-2 motion-reduce:transition-none"
           >
-              <ProjectList
-                projects={filteredProjects}
-                workflows={allWorkflows}
-                environments={environments}
-                selectedWorkflowId={selectedWorkflowId}
-                isRefreshing={isRefreshing}
-                searchQuery={searchQuery}
-                expandedProjects={expandedProjects}
-                onToggleProject={toggleProject}
-                onWorkflowClick={handleWorkflowClick}
-                onExportWorkflow={handleExportWorkflow}
-                onDeleteWorkflow={(workflowId: string, name: string) =>
-                  setDeleteWorkflowTarget({ workflowId, name })
-                }
-                onExportProject={handleExportProject}
-                onDeleteProject={(projectId: string, name: string) =>
-                  setDeleteProjectTarget({ projectId, name })
-                }
-                onRenameProject={rowActions.open.renameProject}
-                onMoveProjectToWorkspace={rowActions.open.moveProjectToWorkspace}
-                onRenameWorkflow={rowActions.open.renameWorkflow}
-                onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
-                onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
-                onCreateProject={() => setShowCollectionManager(true)}
-                onAddWorkflowToProject={(projectId: string) => {
-                  setAddWorkflowToProjectTarget(projectId);
-                }}
-                onAssignWorkflowToProject={handleAssignWorkflowToProject}
-              />
-            </div>
+            <ProjectList
+              projects={filteredProjects}
+              workflows={allWorkflows}
+              environments={environments}
+              selectedWorkflowId={selectedWorkflowId}
+              isRefreshing={isRefreshing}
+              searchQuery={searchQuery}
+              expandedProjects={expandedProjects}
+              onToggleProject={toggleProject}
+              onWorkflowClick={handleWorkflowClick}
+              onExportWorkflow={handleExportWorkflow}
+              onDeleteWorkflow={(workflowId: string, name: string) =>
+                setDeleteWorkflowTarget({ workflowId, name })
+              }
+              onExportProject={handleExportProject}
+              onDeleteProject={(projectId: string, name: string) =>
+                setDeleteProjectTarget({ projectId, name })
+              }
+              onRenameProject={rowActions.open.renameProject}
+              onMoveProjectToWorkspace={rowActions.open.moveProjectToWorkspace}
+              onRenameWorkflow={rowActions.open.renameWorkflow}
+              onMoveWorkflowToProject={rowActions.open.moveWorkflowToProject}
+              onMoveWorkflowToWorkspace={rowActions.open.moveWorkflowToWorkspace}
+              onCreateProject={() => setShowCollectionManager(true)}
+              onAddWorkflowToProject={(projectId: string) => {
+                setAddWorkflowToProjectTarget(projectId);
+              }}
+              onAssignWorkflowToProject={handleAssignWorkflowToProject}
+            />
+          </SidebarScrollPanel>
           {selectedNav === "agents" && <AgentsManager className="h-full" />}
           {selectedNav === "settings" && (
             <SettingsContent

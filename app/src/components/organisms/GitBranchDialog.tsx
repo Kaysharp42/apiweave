@@ -5,6 +5,7 @@ import { Select } from "../atoms/Select";
 import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
 import { Spinner } from "../atoms/Spinner";
+import { BranchOptions } from "./BranchOptions";
 import { git } from "../../utils/apiweaveClient";
 import { errorText } from "../../utils/gitRemote";
 import type { GitBranchDialogProps } from "../../types";
@@ -114,11 +115,7 @@ export function GitBranchDialog({
               onChange={(event) => setBranch(event.target.value)}
               disabled={switching || branches.length === 0}
             >
-              {branches.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
+              <BranchOptions names={branches} />
             </Select>
           </FormField>
         )}

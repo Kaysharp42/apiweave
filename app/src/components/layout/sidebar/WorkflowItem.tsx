@@ -1,10 +1,11 @@
-import { FileText, Download } from "lucide-react";
-import { SidebarAction } from "./SidebarAction";
+import { FileText } from "lucide-react";
+import { SidebarContextMenu } from "./SidebarContextMenu";
+import { SidebarExportAction } from "./SidebarExportAction";
 import { SidebarRowActions } from "./SidebarRowActions";
 import { WorkflowItemBadges } from "./WorkflowItemBadges";
-import { ContextMenu } from "../../molecules/ContextMenu";
 import { useContextMenu } from "../../../hooks/useContextMenu";
-import { workflowRowMenuItems } from "./rowContextMenus";
+import { contextMenuKeyPoint, workflowRowMenuItems } from "./rowContextMenus";
+import { rowIconColor, rowNameColor, rowSurface } from "./rowStyles";
 import { workflowRowLabels } from "../../../utils/workflowRowLabels";
 import type { WorkflowItemProps } from "../../../types";
 
@@ -42,11 +43,8 @@ export function WorkflowItem({
     // Shift+F10 and the dedicated ContextMenu key are the keyboard equivalent
     // of a right-click. Anchor the menu to the focused row button: there is no
     // pointer position to use.
-    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-      event.preventDefault();
-      const rect = event.currentTarget.getBoundingClientRect();
-      contextMenu.openAt({ x: rect.left, y: rect.bottom });
-    }
+    const point = contextMenuKeyPoint(event);
+    if (point !== null) contextMenu.openAt(point);
   };
 
   return (
@@ -55,11 +53,7 @@ export function WorkflowItem({
         onContextMenu={contextMenu.openAt}
         className={[
           "group relative flex w-full items-start gap-2 rounded-sm border px-2 py-1.5 text-xs transition-colors duration-150 motion-reduce:transition-none",
-          isActive
-            ? "border-border bg-primary/10 dark:border-border-dark dark:bg-primary-light/10"
-            : contextMenu.isOpen
-              ? "border-border bg-surface-overlay dark:border-border-dark dark:bg-surface-dark-overlay"
-              : "border-transparent hover:border-border hover:bg-surface-overlay dark:hover:border-border-dark dark:hover:bg-surface-dark-overlay",
+          rowSurface(isActive, contextMenu.isOpen),
         ].join(" ")}
       >
         <button
@@ -76,20 +70,15 @@ export function WorkflowItem({
           <FileText
             className={[
               "mt-0.5 h-3.5 w-3.5 shrink-0",
-              isActive
-                ? "text-primary dark:text-primary-light"
-                : "text-text-muted dark:text-text-muted-dark",
+              rowIconColor(isActive),
             ].join(" ")}
           />
 
           <div className="min-w-0 flex-1 text-left overflow-hidden">
             <div
-              className={[
-                "truncate font-medium",
-                isActive
-                  ? "text-primary dark:text-primary-light"
-                  : "text-text-primary dark:text-text-primary-dark",
-              ].join(" ")}
+              className={["truncate font-medium", rowNameColor(isActive)].join(
+                " ",
+              )}
               title={labels.name}
             >
               {labels.name}
@@ -106,23 +95,17 @@ export function WorkflowItem({
         {/* Overlaid rather than inline so the workflow name gets the full row
             width; the gradient keeps long names legible underneath. */}
         <SidebarRowActions active={isActive}>
-          <SidebarAction
-            icon={Download}
+          <SidebarExportAction
             label="Export workflow"
-            onClick={(event) => {
-              event.stopPropagation();
-              onExportWorkflow(workflow);
-            }}
+            onExport={() => onExportWorkflow(workflow)}
           />
         </SidebarRowActions>
       </div>
 
       {contextMenu.origin && (
-        <ContextMenu
-          x={contextMenu.origin.x}
-          y={contextMenu.origin.y}
+        <SidebarContextMenu
+          menu={contextMenu}
           label={`Workflow "${workflow.name}"`}
-          onClose={contextMenu.close}
           items={workflowRowMenuItems(workflow, {
             onRenameWorkflow,
             onMoveWorkflowToProject,

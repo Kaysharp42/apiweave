@@ -11,12 +11,16 @@ const IDLE_GRADIENT =
  * The same fade for a selected row. The selected row is tinted with
  * `bg-primary/10` over the sidebar surface, and that tint is translucent — so a
  * grey `surface-overlay` fade paints a dull block across it instead of blending.
- * Mixing the same primary into the raised surface produces the opaque colour
- * that tint composites to, which is why this reads as a continuation of the row
- * rather than a plate on top of it.
+ * Fading the raised surface first, then laying the row's own tint over it,
+ * produces the opaque colour that tint composites to, which is why this reads
+ * as a continuation of the row rather than a plate on top of it.
  */
-const ACTIVE_GRADIENT =
-  "bg-linear-to-l from-[color-mix(in_oklab,var(--aw-primary)_10%,var(--aw-surface-raised))] from-70% to-transparent dark:from-[color-mix(in_oklab,var(--aw-primary-light)_10%,var(--aw-surface-raised))]";
+const ACTIVE_SURFACE_GRADIENT =
+  "bg-linear-to-l from-surface-raised from-70% to-transparent dark:from-surface-dark-raised";
+
+/** The row's own tint, laid over the surface fade so the two meet at the same colour. */
+const ACTIVE_TINT_GRADIENT =
+  "bg-linear-to-l from-primary/10 from-70% to-transparent dark:from-primary-light/10";
 
 /**
  * The hover/focus action strip that floats over the right end of a sidebar row.
@@ -40,12 +44,21 @@ export function SidebarRowActions({
     <div
       className={[
         "pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-sm pl-6",
-        active ? ACTIVE_GRADIENT : IDLE_GRADIENT,
+        active ? ACTIVE_SURFACE_GRADIENT : IDLE_GRADIENT,
         "opacity-0 transition-opacity duration-150 motion-reduce:transition-none",
         "group-hover:opacity-100 group-focus-within:opacity-100",
       ].join(" ")}
     >
-      <div className="pointer-events-none flex items-center gap-0.5 group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+      {active && (
+        <span
+          aria-hidden="true"
+          className={[
+            "pointer-events-none absolute inset-0 rounded-sm",
+            ACTIVE_TINT_GRADIENT,
+          ].join(" ")}
+        />
+      )}
+      <div className="pointer-events-none relative flex items-center gap-0.5 group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
         {children}
       </div>
     </div>

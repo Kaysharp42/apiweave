@@ -34,8 +34,13 @@ describe("SidebarRowActions", () => {
       <SidebarRowActions active>actions</SidebarRowActions>,
     );
 
-    expect(container.firstElementChild).toHaveClass(
-      "from-[color-mix(in_oklab,var(--aw-primary)_10%,var(--aw-surface-raised))]",
-    );
+    const overlay = container.firstElementChild as HTMLElement;
+    const tint = overlay.querySelector('[aria-hidden="true"]') as HTMLElement;
+
+    // The opaque surface fade is the row's own background, and the tint laid
+    // over it is the row's `bg-primary/10`, so the two meet at the same colour.
+    expect(overlay).toHaveClass("from-surface-raised");
+    expect(tint).toHaveClass("from-primary/10");
+    expect(tint).toHaveClass("dark:from-primary-light/10");
   });
 });
