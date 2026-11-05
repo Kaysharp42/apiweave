@@ -613,55 +613,76 @@ export class GitSyncService {
    * the next cycle cannot push one branch's tree onto another.
    */
   public async switchBranch(workspaceId: string, branch: string): Promise<WorkspaceGitStatus> {
-    const directory = this.cloneDir(workspaceId)
-    this.cancelAutoCommit(workspaceId)
-    return this.exclusive(workspaceId, async () => {
-      const binding = this.trackedBinding(workspaceId)
-      if (binding.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
-      if (binding.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
-      if (branch === binding.branch) return this.announce(workspaceId)
-      // Commit local edits first: they belong to the branch being left, and the
-      // refusal below names them if they are not pushed yet.
-      await this.commitCycle(workspaceId, directory)
-      const current = this.trackedBinding(workspaceId)
-      if (current.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
-      if (current.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
-      await this.prepareClone(workspaceId, directory, current.branch, {})
-      await this.pointOriginAt(directory, current.remoteUrl)
-      await this.fetchOrigin(workspaceId, directory)
-      const branches = await this.git.remoteBranches(directory, ORIGIN)
-      if (!branches.includes(branch)) throw new ConflictError(NO_REMOTE_BRANCH_MESSAGE_SWITCH)
-      const target = `${ORIGIN}/${branch}`
-      const head = await this.git.revParse(directory, "HEAD")
-      if (head === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
-      const currentRemote = `${ORIGIN}/${current.branch}`
-      if ((await this.git.revParse(directory, currentRemote)) === undefined) {
-        throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(current.branch, await this.git.countCommits(directory, "HEAD")))
+    return this.exclusiveConnected(workspaceId, NOT_CONNECTED_BRANCH_MESSAGE, (binding, directory) =>
+      this.moveOntoBranch(workspaceId, directory, binding, branch),
+    )
+  }
+
+  /** {@link switchBranch} under the lock: the refusals, then the switch itself. */
+  private async moveOntoBranch(
+    workspaceId: string,
+    directory: string,
+    binding: WorkspaceGitBinding,
+    branch: string,
+  ): Promise<WorkspaceGitStatus> {
+    if (binding.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
+    if (branch === binding.branch) return this.announce(workspaceId)
+    // Commit local edits first: they belong to the branch being left, and the
+    // refusal below names them if they are not pushed yet.
+    await this.commitCycle(workspaceId, directory)
+    const current = this.trackedBinding(workspaceId)
+    if (current.state === "merging") throw new ConflictError(MERGE_BRANCH_MESSAGE)
+    if (current.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_BRANCH_MESSAGE)
+    await this.prepareClone(workspaceId, directory, current.branch, {})
+    await this.pointOriginAt(directory, current.remoteUrl)
+    await this.fetchOrigin(workspaceId, directory)
+    const branches = await this.git.remoteBranches(directory, ORIGIN)
+    if (!branches.includes(branch)) throw new ConflictError(NO_REMOTE_BRANCH_MESSAGE_SWITCH)
+    const { target, head } = await this.switchTarget(workspaceId, directory, current.branch, branch)
+    await this.switchCloneTo(workspaceId, directory, current.branch, branch, target, head)
+    this.settleIdle(workspaceId)
+    return this.announce(workspaceId)
+  }
+
+  /**
+   * The target ref, once this branch is proven to have nothing the remote
+   * lacks and the target to hold none of its own commits. Returns it with the
+   * commit the clone is at, which a failed switch rolls back to.
+   */
+  private async switchTarget(workspaceId: string, directory: string, from: string, to: string): Promise<{ target: string; head: string }> {
+    const target = `${ORIGIN}/${to}`
+    const head = await this.git.revParse(directory, "HEAD")
+    if (head === undefined) throw new ConflictError(NO_COMMIT_MESSAGE)
+    const fromRemote = `${ORIGIN}/${from}`
+    if ((await this.git.revParse(directory, fromRemote)) === undefined) {
+      throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(from, await this.git.countCommits(directory, "HEAD")))
+    }
+    const { ahead } = await this.git.countAheadBehind(directory, "HEAD", fromRemote)
+    if (ahead > 0) throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(from, ahead))
+    // A local branch of the target's name may hold commits of its own; never reset it over them.
+    const localTarget = await this.git.revParse(directory, `refs/heads/${to}`)
+    if (localTarget !== undefined) {
+      const targetAhead = await this.git.countAheadBehind(directory, localTarget, target)
+      if (targetAhead.ahead > 0) throw new ConflictError(UNPUSHED_LOCAL_BRANCH_MESSAGE(to, targetAhead.ahead))
+    }
+    await this.assertSameWorkspaceAt(workspaceId, directory, target)
+    return { target, head }
+  }
+
+  /** Checks the target out and imports its tree; a failure puts the clone back on the branch it was leaving. */
+  private async switchCloneTo(workspaceId: string, directory: string, from: string, to: string, target: string, head: string): Promise<void> {
+    this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
+    try {
+      await this.git.checkout(directory, to, target, { track: true })
+      if (!(await this.importRemoteTree(workspaceId, directory, false, to))) {
+        throw new ConflictError("The branch's tree changed while it was being imported. Try the switch again.")
       }
-      const { ahead } = await this.git.countAheadBehind(directory, "HEAD", currentRemote)
-      if (ahead > 0) throw new ConflictError(UNPUSHED_BRANCH_MESSAGE(current.branch, ahead))
-      // A local branch of the target's name may hold commits of its own; never reset it over them.
-      const localTarget = await this.git.revParse(directory, `refs/heads/${branch}`)
-      if (localTarget !== undefined) {
-        const targetAhead = await this.git.countAheadBehind(directory, localTarget, target)
-        if (targetAhead.ahead > 0) throw new ConflictError(UNPUSHED_LOCAL_BRANCH_MESSAGE(branch, targetAhead.ahead))
-      }
-      await this.assertSameWorkspaceAt(workspaceId, directory, target)
-      this.repositories.workspaceGit.setIntegratingFrom(workspaceId, head)
-      try {
-        await this.git.checkout(directory, branch, target, { track: true })
-        if (!(await this.importRemoteTree(workspaceId, directory, false, branch))) {
-          throw new ConflictError("The branch's tree changed while it was being imported. Try the switch again.")
-        }
-        const targetSha = await this.git.revParse(directory, "HEAD")
-        if (targetSha !== undefined) this.recordSynced(workspaceId, targetSha)
-      } catch (error) {
-        await this.rollBackBranch(workspaceId, directory, current.branch, head)
-        throw error
-      }
-      this.settleIdle(workspaceId)
-      return this.announce(workspaceId)
-    })
+      const targetSha = await this.git.revParse(directory, "HEAD")
+      if (targetSha !== undefined) this.recordSynced(workspaceId, targetSha)
+    } catch (error) {
+      await this.rollBackBranch(workspaceId, directory, from, head)
+      throw error
+    }
   }
 
   /** The clone and the binding back on the branch a failed switch was leaving; a failure here is logged, not thrown over it. */
@@ -802,11 +823,7 @@ export class GitSyncService {
    * workspace is then as it was.
    */
   public async discardLocalChanges(workspaceId: string): Promise<WorkspaceGitStatus> {
-    const directory = this.cloneDir(workspaceId)
-    this.cancelAutoCommit(workspaceId)
-    return this.exclusive(workspaceId, async () => {
-      const binding = this.trackedBinding(workspaceId)
-      if (binding.remoteUrl === null) throw new ConflictError(NOT_CONNECTED_MESSAGE)
+    return this.exclusiveConnected(workspaceId, NOT_CONNECTED_MESSAGE, async (binding, directory) => {
       // An earlier move that never imported: `head` below must be where the database is.
       // A waiting merge is cleared by the import below, in its own transaction: a discard
       // that fails before importing leaves the workspace exactly as the merge left it.
@@ -1364,6 +1381,30 @@ export class GitSyncService {
     }
   }
 
+  /**
+   * The clone directory, once nothing but an unfinished open of this workspace
+   * is there. A repository another history or an unclaimed workspace holds
+   * refuses before anything is touched.
+   */
+  private async prepareOpenDirectory(workspaceId: string, directory: string): Promise<void> {
+    if (this.repositories.workspaceGit.get(workspaceId) !== undefined) {
+      throw new ConflictError(`The database holds version history for workspace ${workspaceId} but not the workspace itself; refusing to replace its repository.`)
+    }
+    if (!(await exists(directory))) return
+    // No workspace row claims it, so unless it is marked it is not this open's
+    // to replace: it may be a database restored from a backup that predates the
+    // row, holding the only copy of that history. Refuse before touching it.
+    if (!(await exists(openMarker(directory)))) {
+      throw new ConflictError(
+        `A repository is already at ${directory} for workspace ${workspaceId}, and no workspace in this app claims it. ` +
+          "It may hold commits that are not on the remote, so it was left alone. " +
+          "Restore the workspace it belongs to, or move that folder away and try again.",
+      )
+    }
+    // An earlier open of this id that never finished: nothing in it but what was downloaded.
+    await removeDirectory(directory)
+  }
+
   private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string, branch: string | undefined): Promise<OpenWorkspaceFromGitResult> {
     const { workspaces, collections, workflows, environments, presets, workspaceGit } = this.repositories
     const credential = await this.credentialFor(account, async () => [await this.git.resolvedUrl(remoteUrl, this.options.cloneRoot)])
@@ -1381,24 +1422,7 @@ export class GitSyncService {
     const head = await this.git.revParse(scratch, "HEAD")
 
     const directory = this.cloneDir(workspaceId)
-    if (workspaceGit.get(workspaceId) !== undefined) {
-      throw new ConflictError(`The database holds version history for workspace ${workspaceId} but not the workspace itself; refusing to replace its repository.`)
-    }
-    if (await exists(directory)) {
-      // No workspace row claims it, so unless it is marked it is not this
-      // open's to replace: it may be a database restored from a backup that
-      // predates the row, holding the only copy of that history. Refuse
-      // before touching it.
-      if (!(await exists(openMarker(directory)))) {
-        throw new ConflictError(
-          `A repository is already at ${directory} for workspace ${workspaceId}, and no workspace in this app claims it. ` +
-            "It may hold commits that are not on the remote, so it was left alone. " +
-            "Restore the workspace it belongs to, or move that folder away and try again.",
-        )
-      }
-      // An earlier open of this id that never finished: nothing in it but what was downloaded.
-      await removeDirectory(directory)
-    }
+    await this.prepareOpenDirectory(workspaceId, directory)
     // Marked before it moves, so that from the moment it is at the id until its rows are committed it is recognisably an unfinished open.
     await writeFile(openMarker(scratch), "")
     let movedIntoPlace = false
@@ -2521,6 +2545,25 @@ export class GitSyncService {
   /** Run `work` after everything already queued for the workspace, and before anything queued after it. */
   private exclusive<T>(workspaceId: string, work: () => Promise<T>): Promise<T> {
     return enqueue(this.locks, workspaceId, work)
+  }
+
+  /**
+   * Runs `work` under the workspace's lock with its tracked binding, after
+   * stopping auto mode, for a call that rewrites the clone. A workspace with no
+   * remote is refused with `notConnected` before anything is touched.
+   */
+  private async exclusiveConnected<T>(
+    workspaceId: string,
+    notConnected: string,
+    work: (binding: WorkspaceGitBinding, directory: string) => Promise<T>,
+  ): Promise<T> {
+    const directory = this.cloneDir(workspaceId)
+    this.cancelAutoCommit(workspaceId)
+    return this.exclusive(workspaceId, async () => {
+      const binding = this.trackedBinding(workspaceId)
+      if (binding.remoteUrl === null) throw new ConflictError(notConnected)
+      return work(binding, directory)
+    })
   }
 
   /** The workspace's clone. The id becomes a path, so it must be an id and nothing path-like. */
