@@ -1,5 +1,4 @@
 export type { AgentAvailability, AgentAvailabilityState } from "./AgentAvailability"
-export type { AppInfo } from "./AppInfo"
 export type { AgentDefinition, AgentPromptMode, StoredAgentDefinition } from "./AgentDefinition"
 export { AGENT_OUTPUT_PORT_MESSAGE_KEY } from "./AgentOutputEvent"
 export type { AgentOutputEvent } from "./AgentOutputEvent"

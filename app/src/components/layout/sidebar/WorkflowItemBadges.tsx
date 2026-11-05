@@ -1,6 +1,6 @@
 import { Globe } from "lucide-react";
 import { Badge } from "../../atoms/Badge";
-import type { WorkflowItemBadgesProps } from "../../../types/WorkflowItemBadgesProps";
+import type { WorkflowItemBadgesProps } from "../../../types";
 
 /**
  * The node-count / project / environment badges under a workflow row's name.

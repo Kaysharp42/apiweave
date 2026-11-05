@@ -35,4 +35,3 @@ export function useFooterStatus(): FooterStatus | null {
   }, [run]);
 }
 
-export default useFooterStatus;

@@ -1,5 +1,5 @@
 import type { Viewport } from "@xyflow/react";
-import type { OpeningViewportInput } from "../types/OpeningViewportInput";
+import type { OpeningViewportInput } from "../types";
 
 /**
  * The lowest zoom the canvas may open at, and the highest.
