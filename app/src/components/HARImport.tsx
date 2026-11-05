@@ -3,6 +3,7 @@ import { Upload, FileText, AlertCircle } from "lucide-react";
 import { usePalette } from "../contexts/PaletteContext";
 import { Button } from "./atoms/Button";
 import { Modal } from "./molecules/Modal";
+import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Input } from "./atoms/Input";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave } from "../utils/apiweaveClient";
@@ -218,17 +219,11 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
           {/* Import Options */}
           {harJson && (
             <div className="space-y-4">
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={sanitize}
-                  onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-primary border-border rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
-                />
-                <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                  Sanitize sensitive headers (Authorization, API keys, etc.)
-                </span>
-              </label>
+              <CheckboxOption
+                label="Sanitize sensitive headers (Authorization, API keys, etc.)"
+                checked={sanitize}
+                onChange={setSanitize}
+              />
             </div>
           )}
 

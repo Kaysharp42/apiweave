@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 import useCanvasStore from "../stores/CanvasStore";
 import { Button } from "./atoms/Button";
+import { Select } from "./atoms/Select";
 import { TextArea } from "./atoms/TextArea";
+import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Modal } from "./molecules/Modal";
 import { apiweave } from "../utils/apiweaveClient";
 import { useScopeContext } from "../hooks/useScopeContext";
@@ -336,12 +338,11 @@ curl -X POST "https://api.example.com/users" \\
               >
                 Destination Workflow
               </label>
-              <select
+              <Select
                 id="curl-destination-workflow"
                 value={selectedWorkflowId}
                 onChange={(e) => setSelectedWorkflowId(e.target.value)}
                 disabled={loadingWorkflows}
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {loadingWorkflows
@@ -353,7 +354,7 @@ curl -X POST "https://api.example.com/users" \\
                     {wf.name} ({wf.nodes?.length || 0} nodes)
                   </option>
                 ))}
-              </select>
+              </Select>
               <p className="text-xs text-text-secondary dark:text-text-secondary-dark mt-1 flex items-center gap-1">
                 {selectedWorkflowId ? (
                   <>
@@ -369,17 +370,11 @@ curl -X POST "https://api.example.com/users" \\
             </div>
 
             {/* Sanitize Option */}
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sanitize}
-                onChange={(e) => setSanitize(e.target.checked)}
-                className="w-4 h-4 text-(--aw-primary) border-border dark:border-border-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
-              />
-              <span className="text-sm text-text-primary dark:text-text-primary-dark">
-                Sanitize sensitive headers (API keys, tokens, etc.)
-              </span>
-            </label>
+            <CheckboxOption
+              label="Sanitize sensitive headers (API keys, tokens, etc.)"
+              checked={sanitize}
+              onChange={setSanitize}
+            />
           </div>
         )}
 
