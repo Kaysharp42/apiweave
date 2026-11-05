@@ -288,7 +288,7 @@ export function WorkflowExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setIncludeEnvironment(e.target.checked)
                   }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 cursor-pointer"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Include referenced environment (if any)
@@ -380,7 +380,7 @@ export function WorkflowExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setCreateMissingEnvs(e.target.checked)
                   }
-                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus:ring-primary cursor-pointer"
+                  className="w-4 h-4 text-primary border-border dark:border-border-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2 cursor-pointer"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Create missing environments from bundle

@@ -186,7 +186,7 @@ export function HttpRequestOutputPanel({
         </div>
         {secretRefs.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
+            <span className="text-2xs font-semibold uppercase tracking-wide text-text-muted dark:text-text-muted-dark">
               Secrets
             </span>
             <SecretResolutionIndicator

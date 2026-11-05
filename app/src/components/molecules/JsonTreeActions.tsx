@@ -25,7 +25,7 @@ export function JsonTreeActionPill({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-[11px] font-medium leading-none tracking-normal whitespace-nowrap transition-colors ${
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-sans text-2xs font-medium leading-none tracking-normal whitespace-nowrap transition-colors ${
         muted
           ? "bg-surface-overlay text-text-secondary hover:bg-border/60 dark:bg-surface-dark-overlay dark:text-text-secondary-dark"
           : "bg-primary/10 text-primary hover:bg-primary/20 dark:bg-primary-light/15 dark:text-primary-light dark:hover:bg-primary-light/25"

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useReducer,
+  useState,
 } from "react";
 import { Allotment } from "allotment";
 import "allotment/dist/style.css";
@@ -32,6 +33,7 @@ import { useWorkspace } from "../../contexts/WorkspaceContext";
 import useTutorialStore from "../../stores/TutorialStore";
 import type { WorkspaceProps } from "../../types/WorkspaceProps";
 import type { TabItem } from "../../types/TabItem";
+import type { RecentWorkflow } from "../../types/RecentWorkflow";
 import { apiweave } from "../../utils/apiweaveClient";
 import { getLogger } from "../../utils/logger";
 import { toast } from "sonner";
@@ -91,6 +93,41 @@ export function Workspace({ active = true }: WorkspaceProps) {
   // workspace would pair that workspace's id with the previous workspace's
   // workflow in every scoped call the canvas and its toolbar make.
   const { activeTabId, activeTab } = useWorkspaceTabs();
+  const [recentWorkflows, setRecentWorkflows] = useState<RecentWorkflow[]>([]);
+
+  // The launch screen is the one place a workflow is opened without the sidebar
+  // mounted (or on a nav section that does not list every workflow), so it reads
+  // the workspace's full list once and keeps the five newest by `updatedAt`.
+  useEffect(() => {
+    if (activeTab || !isScopeReady || !workspaceId) return;
+
+    let cancelled = false;
+    const loadRecent = async (): Promise<void> => {
+      try {
+        const { items } = await apiweave.workflows.list(workspaceId, true);
+        if (cancelled) return;
+        setRecentWorkflows(
+          [...items]
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+            .slice(0, 5)
+            .map(({ workflowId, name, updatedAt }) => ({
+              workflowId,
+              name,
+              updatedAt,
+            })),
+        );
+      } catch (error) {
+        if (!cancelled) {
+          workspaceLog.error("Error fetching recent workflows:", error);
+        }
+      }
+    };
+
+    void loadRecent();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isScopeReady, workspaceId]);
 
   type WorkspaceState = {
     showVariablesPanel: boolean;
@@ -171,6 +208,25 @@ export function Workspace({ active = true }: WorkspaceProps) {
         useSidebarStore.getState().signalWorkflowsRefresh();
       } catch (error) {
         workspaceLog.error("Error creating workflow:", error);
+      }
+    },
+    [isScopeReady, openTab, workspaceId],
+  );
+
+  const handleOpenRecentWorkflow = useCallback(
+    async (recent: RecentWorkflow) => {
+      if (!isScopeReady || !workspaceId) {
+        toast.error("Select a workspace before opening workflows.");
+        return;
+      }
+
+      try {
+        openTab(
+          await apiweave.workflows.get(workspaceId, recent.workflowId),
+        );
+      } catch (error) {
+        toast.error("Unable to open workflow. Please retry.");
+        workspaceLog.error("Error fetching full workflow payload:", error);
       }
     },
     [isScopeReady, openTab, workspaceId],
@@ -321,6 +377,8 @@ export function Workspace({ active = true }: WorkspaceProps) {
             tutorialsLabel={
               hasTutorialProgress ? "Continue tutorial" : "Start tutorial"
             }
+            recentWorkflows={recentWorkflows}
+            onOpenWorkflow={handleOpenRecentWorkflow}
           />
         )}
       </div>

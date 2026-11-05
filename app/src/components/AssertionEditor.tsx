@@ -84,7 +84,7 @@ export default function AssertionEditor({
             className={`w-full px-2 py-1 text-sm border rounded-sm font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${errors.path ? "border-status-error dark:border-(--aw-status-error)" : "border-border dark:border-border-dark"}`}
           />
           {errors.path && (
-            <div className="text-[11px] text-status-error dark:text-(--aw-status-error) mt-1">
+            <div className="text-2xs text-status-error dark:text-(--aw-status-error) mt-1">
               {errors.path}
             </div>
           )}
@@ -135,7 +135,7 @@ export default function AssertionEditor({
               className={`w-full px-2 py-1 text-sm border rounded-sm font-mono bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${errors.expectedValue ? "border-status-error dark:border-(--aw-status-error)" : "border-border dark:border-border-dark"}`}
             />
             {errors.expectedValue && (
-              <div className="text-[11px] text-status-error dark:text-(--aw-status-error) mt-1">
+              <div className="text-2xs text-status-error dark:text-(--aw-status-error) mt-1">
                 {errors.expectedValue}
               </div>
             )}

@@ -48,7 +48,7 @@ export function PanelTabs({ tabs, activeTab, onTabChange }: PanelTabsProps) {
             {tab.badge !== undefined && tab.badge > 0 && (
               <span
                 className={[
-                  "shrink-0 rounded-xs px-1 font-mono text-[10px] leading-4",
+                  "shrink-0 rounded-xs px-1 font-mono text-2xs leading-4",
                   isActive
                     ? "bg-primary/15 text-primary dark:bg-primary-light/20 dark:text-primary-light"
                     : "bg-surface-raised text-text-secondary dark:bg-surface-dark-raised dark:text-text-secondary-dark",

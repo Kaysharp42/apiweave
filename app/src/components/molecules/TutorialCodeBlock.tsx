@@ -67,7 +67,7 @@ export function TutorialCodeBlock({
         role="status"
         aria-live="polite"
         className={[
-          "mt-1 block text-[11px]",
+          "mt-1 block text-2xs",
           state === "error"
             ? "text-status-error dark:text-(--aw-status-error)"
             : "sr-only",

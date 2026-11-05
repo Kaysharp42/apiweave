@@ -175,7 +175,7 @@ function TutorialCompanionBody({
       )}
 
       <div className="mt-3 rounded-xs border border-border bg-surface-overlay p-2 dark:border-border-dark dark:bg-surface-dark-overlay">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
+        <p className="text-2xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Lesson result
         </p>
         <p className="mt-0.5 text-xs leading-relaxed text-text-secondary dark:text-text-secondary-dark">

@@ -341,7 +341,7 @@ curl -X POST "https://api.example.com/users" \\
                 value={selectedWorkflowId}
                 onChange={(e) => setSelectedWorkflowId(e.target.value)}
                 disabled={loadingWorkflows}
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus:outline-hidden focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {loadingWorkflows
@@ -374,7 +374,7 @@ curl -X POST "https://api.example.com/users" \\
                 type="checkbox"
                 checked={sanitize}
                 onChange={(e) => setSanitize(e.target.checked)}
-                className="w-4 h-4 text-(--aw-primary) border-border dark:border-border-dark rounded-sm focus:ring-(--aw-primary)"
+                className="w-4 h-4 text-(--aw-primary) border-border dark:border-border-dark rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
               />
               <span className="text-sm text-text-primary dark:text-text-primary-dark">
                 Sanitize sensitive headers (API keys, tokens, etc.)

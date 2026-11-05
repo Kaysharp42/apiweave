@@ -46,7 +46,7 @@ export function ScriptOutcomes({ scripts }: ScriptOutcomesProps) {
               </ul>
             )}
             {script.logs.length > 0 && (
-              <pre className="whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-[11px] text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
+              <pre className="whitespace-pre-wrap break-all rounded-xs bg-surface-overlay p-2 font-mono text-2xs text-text-secondary dark:bg-surface-dark-overlay dark:text-text-secondary-dark">
                 {script.logs.join("\n")}
               </pre>
             )}

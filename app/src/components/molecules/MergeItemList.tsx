@@ -51,7 +51,7 @@ export function MergeItemList({
         if (listed.length === 0) return null;
         return (
           <section key={section.kind} className="mb-3">
-            <h3 className="px-2 py-1 text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+            <h3 className="px-2 py-1 text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
               {section.label}
             </h3>
             <ul className="space-y-1">
@@ -104,7 +104,7 @@ export function MergeItemList({
                               className="h-3 w-3 text-status-success dark:text-(--aw-status-success)"
                               aria-hidden="true"
                             />
-                            <span className="text-xxs text-text-secondary dark:text-text-secondary-dark">
+                            <span className="text-2xs text-text-secondary dark:text-text-secondary-dark">
                               Resolved
                             </span>
                           </>
@@ -114,7 +114,7 @@ export function MergeItemList({
                               className="h-3 w-3 text-status-warning dark:text-(--aw-status-warning)"
                               aria-hidden="true"
                             />
-                            <span className="text-xxs text-text-secondary dark:text-text-secondary-dark">
+                            <span className="text-2xs text-text-secondary dark:text-text-secondary-dark">
                               {group.conflicts.length - resolved} left
                             </span>
                           </>

@@ -2,7 +2,7 @@ import type { TutorialChapter } from "../../types";
 
 /**
  * Chapter 5 — Organize and reuse. Presets, projects, workflow JSON and
- * collection export/import, and the two import surfaces.
+ * project export/import, and the two import surfaces.
  */
 export const organizeChapter: TutorialChapter = {
   id: "organize",
@@ -114,7 +114,7 @@ export const organizeChapter: TutorialChapter = {
         "You can group related workflows into an ordered project with colours and per-row failure intent.",
       keywords: [
         "project",
-        "collection",
+        "bundle",
         "order",
         "reorder",
         "enabled",
@@ -201,7 +201,7 @@ export const organizeChapter: TutorialChapter = {
     {
       id: "import-export",
       chapterId: "organize",
-      title: "Workflow JSON and collection export/import",
+      title: "Workflow JSON and project export/import",
       summary:
         "The raw JSON editor, workflow export/import, .awecollection bundles, references-only secrets, and dry-run validation.",
       outcome:
@@ -247,7 +247,7 @@ export const organizeChapter: TutorialChapter = {
         {
           title: "Import a project",
           instruction:
-            "With the Projects section selected, use Import → Collection in the sidebar header, then pick or paste the .awecollection file. Click Validate for the dry-run report, then Import Project to commit.",
+            "With the Projects section selected, use Import → Project (.awecollection) in the sidebar header, then pick or paste the .awecollection file. Click Validate for the dry-run report, then Import Project to commit.",
         },
         {
           title: "Read the dry-run report",

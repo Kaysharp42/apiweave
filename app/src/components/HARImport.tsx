@@ -223,7 +223,7 @@ export function HARImport({ onClose, onImportSuccess }: HARImportProps) {
                   type="checkbox"
                   checked={sanitize}
                   onChange={(e) => setSanitize(e.target.checked)}
-                  className="w-4 h-4 text-primary border-border rounded-sm focus:ring-primary"
+                  className="w-4 h-4 text-primary border-border rounded-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2"
                 />
                 <span className="text-sm text-text-primary dark:text-text-primary-dark">
                   Sanitize sensitive headers (Authorization, API keys, etc.)

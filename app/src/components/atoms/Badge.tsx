@@ -26,7 +26,7 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
   };
 
   const sizeClass: Record<string, string> = {
-    xs: "text-[10px] px-1.5 py-0.5",
+    xs: "text-2xs px-1.5 py-0.5",
     sm: "text-xs px-2 py-0.5",
     md: "text-xs px-2.5 py-1",
     lg: "text-sm px-3 py-1",

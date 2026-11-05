@@ -335,7 +335,7 @@ export function BaseNode({
               )}
 
               <span
-                className="flex-1 truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] text-text-primary dark:text-text-primary-dark"
+                className="flex-1 truncate text-base font-semibold leading-tight tracking-[-0.01em] text-text-primary dark:text-text-primary-dark"
                 title={title}
               >
                 {title}

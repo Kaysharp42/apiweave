@@ -38,7 +38,7 @@
   MainHeader, `label` in the form atoms, `select` in AuditFilters and
   moveDialogClasses, `checkbox` in EnvironmentForm/WorkflowJsonEditor,
   `toggle` in the Toggle atom, `loading` in the Spinner atom, `collapse` in
-  NodePaletteSection and `divider` in MCPManager. The six base files are kept
+  NodePaletteSection. The six base files are kept
   whole so the reset, root colours, scrollbar gutter/lock and noise token stay
   identical to the unrestricted build — they are a handful of `:root` rules,
   not component CSS. `join`, `glass`, `radius` and `typography` are unused.
@@ -48,7 +48,7 @@
   logs: false;
   include:
     rootcolor, svg, rootscrollgutter, properties, scrollbar, rootscrolllock,
-    navbar, label, select, checkbox, toggle, loading, collapse, divider;
+    navbar, label, select, checkbox, toggle, loading, collapse;
 }
 
 /*
@@ -161,9 +161,10 @@
     drop the modified utility altogether, silently.
   */
   --color-primary: #0d5c6e;
-  --color-primary-light: #0f766e;
+  --color-primary-light: var(--aw-primary-light);
   --color-primary-dark: #0b3d49;
   --color-primary-hover: #0b4a59;
+  --color-on-primary: var(--aw-on-primary);
 
   --color-surface: rgb(var(--aw-surface-rgb));
   --color-surface-raised: rgb(var(--aw-surface-raised-rgb));
@@ -209,8 +210,14 @@
   --font-display: Inter, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
 
-  --text-xxs: 0.625rem;
-  --text-xxs--line-height: 0.875rem;
+  /*
+    Type scale. `2xs` is the floor: nothing in the app is smaller than 11px.
+    Above it are Tailwind's own `xs` (12px), `sm` (14px) and `base` (16px) —
+    together they are the whole documented scale (DESIGN.md §3). An arbitrary
+    `text-[Npx]` is a bug, not a decision; eslint-config enforces that.
+  */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-2xs--line-height: 0.9375rem; /* 15px */
 
   --radius-node: var(--aw-radius-node);
   --radius-node-tile: var(--aw-radius-node-tile);
@@ -289,6 +296,14 @@
   min-height: 100vh;
 }
 
+/* macOS draws its traffic lights inside the top-left of the hidden title bar
+   (titleBarStyle: "hiddenInset"), so the brand steps clear of them. Windows and
+   Linux instead reserve the controls' width on the right, inline, from
+   `WINDOW_CONTROLS_INSET` — see utils/windowDragStyles.ts. */
+[data-platform="darwin"] .aw-window-chrome {
+  padding-left: 5rem;
+}
+
 /* ──────────────────────────────────────────────
    React Flow — Token-Based Dark Mode Overrides
    ────────────────────────────────────────────── */
@@ -316,16 +331,27 @@
   z-index: 1001 !important;
 }
 
+/* React Flow's stylesheet is imported by WorkflowCanvas after index.css, so a
+   bare `.react-flow__x` selector here ties on specificity and loses. The
+   overrides that would tie are scoped under `.react-flow` (or
+   `.dark .react-flow`) to win on specificity rather than on stylesheet
+   injection order. Rules using `!important` or a higher-specificity selector
+   already win and are left as they were. */
+.react-flow {
+  /* The attribution's painted plate — see the attribution rule below. */
+  --xy-attribution-background-color: transparent;
+}
+
 /* ──────────────────────────────────────────────
    Edges — state comes from the source node (DESIGN.md §7).
    CustomEdge sets the stroke inline per state; these rules are the
    baseline for edges ReactFlow draws itself.
    ────────────────────────────────────────────── */
-.react-flow__edge-path {
+.react-flow .react-flow__edge-path {
   stroke: var(--aw-border);
 }
 
-.dark .react-flow__edge-path {
+.dark .react-flow .react-flow__edge-path {
   stroke: color-mix(in srgb, var(--aw-text-muted) 70%, transparent);
 }
 
@@ -336,7 +362,7 @@
   offset-distance: 0%;
 }
 
-.react-flow__edge-text {
+.react-flow .react-flow__edge-text {
   fill: var(--aw-text-primary);
 }
 
@@ -353,12 +379,12 @@
   stroke: color-mix(in srgb, var(--aw-border) 80%, transparent) !important;
 }
 
-.react-flow__edge-text {
+.react-flow .react-flow__edge-text {
   font-weight: 600;
 }
 
 /* Controls — token-based styling, both themes */
-.react-flow__controls {
+.react-flow .react-flow__controls {
   background-color: var(--aw-surface-raised);
   border: 1px solid var(--aw-border);
   border-radius: var(--aw-radius-sm);
@@ -366,7 +392,7 @@
   overflow: hidden;
 }
 
-.react-flow__controls button {
+.react-flow .react-flow__controls button {
   cursor: pointer;
   background-color: var(--aw-surface-raised);
   border-bottom: 1px solid var(--aw-border);
@@ -374,58 +400,60 @@
   transition: background-color var(--aw-transition-fast, 150ms);
 }
 
-.react-flow__controls button:hover {
+.react-flow .react-flow__controls button:hover {
   background-color: var(--aw-surface-overlay);
 }
 
-.react-flow__controls button:focus-visible {
+.react-flow .react-flow__controls button:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: var(--aw-focus-ring-offset);
   border-radius: var(--aw-radius-sm);
 }
 
-.react-flow__controls button svg {
+.react-flow .react-flow__controls button svg {
   fill: var(--aw-text-primary);
 }
 
 /* Minimap — token-based styling, both themes */
-.react-flow__minimap {
+.react-flow .react-flow__minimap {
   background-color: var(--aw-surface-raised);
   border: 1px solid var(--aw-border);
   border-radius: var(--aw-radius-sm);
 }
 
-.react-flow__minimap:focus-visible {
+.react-flow .react-flow__minimap:focus-visible {
   outline: var(--aw-focus-ring-width) solid var(--aw-primary);
   outline-offset: var(--aw-focus-ring-offset);
   border-radius: var(--aw-radius-sm);
 }
 
-.react-flow__minimap-mask {
+.react-flow .react-flow__minimap-mask {
   fill: color-mix(in srgb, var(--aw-text-primary) 5%, transparent);
 }
 
-.dark .react-flow__minimap-mask {
+.dark .react-flow .react-flow__minimap-mask {
   fill: color-mix(in srgb, var(--aw-surface) 64%, transparent);
 }
 
-/* Background & attribution */
-.react-flow__attribution {
-  background-color: color-mix(
-    in srgb,
-    var(--aw-surface-raised) 90%,
-    transparent
-  );
+/* Background & attribution — keep React Flow's credit, drop the painted plate.
+   The panel is placed bottom-left, clear of the zoom Controls column (which is
+   `CanvasControlsClearance` = 52px wide including its margin) and 11px tall at
+   the very floor, so it also clears the tutorial companion sitting at bottom
+   12px. Bottom-right is where React Flow puts it by default, and there it
+   collides with the minimap and the "+" action stack. */
+.react-flow .react-flow__attribution {
+  background: transparent;
+  border: none;
   color: var(--aw-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0;
+  margin: 0 0 0 52px;
 }
 
-.dark .react-flow__attribution {
-  background-color: color-mix(
-    in srgb,
-    var(--aw-surface-raised) 90%,
-    transparent
-  );
-  color: var(--aw-text-muted);
+.react-flow .react-flow__attribution a {
+  color: inherit;
+  text-decoration: none;
 }
 
 /* Selection box */
@@ -567,23 +595,47 @@
 }
 
 /* ──────────────────────────────────────────────
-   Allotment (Split Pane) — Dark Mode
+   Allotment (Split Pane) — both themes
+
+   Allotment's stock look paints the whole 8px drag strip in its focus colour,
+   which reads as a thick grey bar beside the sidebar rather than a divider.
+   Its own variables are the whole surface: `--sash-size` is the invisible hit
+   area, `--sash-hover-size` the band the stock hover paints, `--focus-border`
+   that band's colour, and `--separator-border` the separate 1px edge drawn on
+   each non-first pane (hidden here, so the hairline below is the only line).
    ────────────────────────────────────────────── */
-.dark .split-view-view {
+:root {
+  --sash-size: 8px;
+  --sash-hover-size: 1px;
+  --sash-hover-transition-duration: 140ms;
+  --separator-border: transparent;
+  --focus-border: var(--aw-primary);
+}
+
+.split-view-view {
   background-color: var(--aw-surface-raised);
 }
 
-.dark .sash {
-  background-color: var(--aw-border) !important;
+/* The drag area itself is transparent; only the centred hairline is painted. */
+.sash {
+  background-color: transparent !important;
 }
 
-.dark .sash:hover {
-  background-color: var(--aw-text-secondary) !important;
+.sash::before {
+  background-color: var(--aw-border) !important;
+  transition: background-color 140ms ease-out 70ms !important;
 }
 
-.dark .sash.vertical,
-.dark .sash.horizontal {
-  background-color: var(--aw-border) !important;
+.sash:hover::before,
+.sash.sash-hover::before,
+.sash.sash-active::before {
+  background-color: var(--aw-primary) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sash::before {
+    transition: none !important;
+  }
 }
 
 /* ──────────────────────────────────────────────

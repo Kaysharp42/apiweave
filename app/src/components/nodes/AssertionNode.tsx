@@ -282,7 +282,7 @@ const AssertionNode = ({ id, data, selected }: AssertionNodeProps) => {
 
     return (
       <span
-        className={`shrink-0 text-[11px] font-mono px-1.5 py-0.5 rounded-node-chip ${
+        className={`shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded-node-chip ${
           failed
             ? "bg-[color-mix(in_srgb,var(--aw-status-error)_12%,transparent)] text-(--aw-status-error)"
             : "bg-[color-mix(in_srgb,var(--aw-status-success)_12%,transparent)] text-(--aw-status-success)"

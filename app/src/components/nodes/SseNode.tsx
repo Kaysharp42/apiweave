@@ -9,7 +9,7 @@ function SseOutputHandle({ id, label, offsetY }: { id: "ready" | "complete"; lab
   return (
     <div className="group absolute" style={{ top: "50%", right: 0, transform: `translateY(${offsetY}px)` }}>
       <NodeHandle type="source" position="right" id={id} style={{ position: "relative" }} />
-      <span className="pointer-events-none absolute right-3 top-[-5px] whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-text-secondary opacity-0 transition-opacity group-hover:opacity-100 dark:text-text-secondary-dark">
+      <span className="pointer-events-none absolute right-3 top-[-5px] whitespace-nowrap text-2xs font-semibold uppercase tracking-wide text-text-secondary opacity-0 transition-opacity group-hover:opacity-100 dark:text-text-secondary-dark">
         {label}
       </span>
     </div>
@@ -38,7 +38,7 @@ function SseNode({ id, data, selected }: SseNodeProps) {
       handleRight={{ type: "source", id: "ready", style: { top: "calc(50% - 10px)" } }}
       extraHandles={<SseOutputHandle id="complete" label="complete" offsetY={10} />}
       collapsible={false}
-      typeChip={<span className="rounded-node-chip bg-status-info/10 px-1.5 py-0.5 font-mono text-[11px] text-status-info">SSE</span>}
+      typeChip={<span className="rounded-node-chip bg-status-info/10 px-1.5 py-0.5 font-mono text-2xs text-status-info">SSE</span>}
       restLine={{ operation: finishRuleCount > 0 ? "until match" : "collect", argument: finishRuleCount > 0 ? `${finishRuleCount} finish rule${finishRuleCount === 1 ? "" : "s"}` : `${maxEvents} event${maxEvents === 1 ? "" : "s"}` }}
       activityLine={{ operation: "listening", ...(eventType ? { argument: eventType } : {}) }}
       {...(eventCount === undefined ? {} : { resultSummary: { operation: "received", argument: `${eventCount} event${eventCount === 1 ? "" : "s"}` } })}

@@ -20,7 +20,7 @@ export function EmptyCanvasHint() {
           <span className="font-medium text-text-secondary dark:text-text-secondary-dark">
             Add nodes
           </span>
-          , or bring a whole collection across with{" "}
+          , or bring a whole project across with{" "}
           <span className="font-medium text-text-secondary dark:text-text-secondary-dark">
             Import
           </span>

@@ -45,7 +45,7 @@ function WorkspaceSwitcherLabel({
       <span className="flex items-center gap-1 text-xs font-medium text-text-primary dark:text-text-primary-dark">
         <span className="truncate">{label}</span>
       </span>{" "}
-      <span className="block truncate text-xxs text-text-secondary dark:text-text-secondary-dark">
+      <span className="block truncate text-2xs text-text-secondary dark:text-text-secondary-dark">
         {source}
       </span>
     </span>
@@ -119,8 +119,8 @@ export function OrgWorkspaceSwitcher() {
     <>
       {isLoading ? (
         <div className="flex w-full items-center gap-2 rounded-sm border border-border px-2 py-1.5 dark:border-border-dark">
-          <div className="h-6 w-6 shrink-0 animate-pulse rounded-sm bg-border/40 dark:bg-border-dark/40" />
-          <div className="h-3 w-24 animate-pulse rounded-sm bg-border/40 dark:bg-border-dark/40" />
+          <div className="h-6 w-6 shrink-0 animate-pulse motion-reduce:animate-none rounded-sm bg-border/40 dark:bg-border-dark/40" />
+          <div className="h-3 w-24 animate-pulse motion-reduce:animate-none rounded-sm bg-border/40 dark:bg-border-dark/40" />
         </div>
       ) : (
         <Popover>
@@ -130,7 +130,7 @@ export function OrgWorkspaceSwitcher() {
                 className={[
                   "group flex w-full items-center gap-2 rounded-sm border px-2 py-1.5 text-left",
                   "transition-colors duration-150 motion-reduce:transition-none cursor-pointer",
-                  "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2 dark:focus-visible:outline-primary-light",
+                  "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-2",
                   open
                     ? "border-primary/40 bg-primary/5 dark:border-primary-light/40 dark:bg-primary-light/5"
                     : "border-border bg-surface hover:border-border hover:bg-surface-overlay dark:border-border-dark dark:bg-surface-dark dark:hover:bg-surface-dark-overlay",
@@ -166,7 +166,7 @@ export function OrgWorkspaceSwitcher() {
                 className="z-50 w-64 min-w-(--button-width) overflow-hidden rounded-sm border border-border bg-surface-raised shadow-overlay focus:outline-hidden dark:border-border-dark dark:bg-surface-dark-raised"
               >
                 <div className="border-b border-border/80 px-3 py-2 dark:border-border-dark/80">
-                  <span className="text-xxs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
+                  <span className="text-2xs font-semibold uppercase tracking-wider text-text-muted dark:text-text-muted-dark">
                     Switch workspace
                   </span>
                 </div>

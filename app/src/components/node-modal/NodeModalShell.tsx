@@ -207,7 +207,7 @@ export function NodeModalShell({
                 >
                   <PanelRightOpen className="h-4 w-4" aria-hidden="true" />
                   <span
-                    className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em]"
+                    className="font-mono text-2xs font-semibold uppercase tracking-[0.18em]"
                     style={{ writingMode: "vertical-rl" }}
                   >
                     Response

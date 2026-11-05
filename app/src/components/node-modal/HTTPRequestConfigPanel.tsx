@@ -438,7 +438,7 @@ function ExtractorRow({
         </IconButton>
       </div>
       {resolution && (
-        <p className="mt-1 truncate font-mono text-[11px]">
+        <p className="mt-1 truncate font-mono text-2xs">
           {resolution.failureReason === null ? (
             <span className="text-status-success dark:text-status-success-dark">
               Last response:{" "}
@@ -771,7 +771,7 @@ export function HTTPRequestConfigPanel({
         />
       </FormField>
       <div className="mt-4 rounded-xs border border-border bg-surface-overlay p-3 dark:border-border-dark dark:bg-surface-dark-overlay">
-        <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
+        <p className="mb-1 font-mono text-2xs font-semibold uppercase tracking-wide text-text-secondary dark:text-text-secondary-dark">
           Full URL preview
         </p>
         <HighlightedTemplateText value={previewUrl} />

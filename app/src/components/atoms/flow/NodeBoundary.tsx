@@ -47,7 +47,7 @@ function NodeFailure({
           {nodeType} failed to render
         </span>
       </div>
-      <p className="wrap-break-word font-mono text-[11px] leading-snug text-text-secondary dark:text-text-secondary-dark">
+      <p className="wrap-break-word font-mono text-2xs leading-snug text-text-secondary dark:text-text-secondary-dark">
         {error.message}
       </p>
       <button

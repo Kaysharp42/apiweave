@@ -4,8 +4,11 @@ description: "Visual API Test Workflow Builder — product UI for a developer to
 colors:
   primary: "#0d5c6e"
   primary-light: "#0f766e"
+  primary-light-dark: "#2dd4bf"
   primary-hover: "#0b4a59"
   primary-dark: "#0b3d49"
+  on-primary: "#ffffff"
+  on-primary-dark: "#0b3d49"
   surface: "#fbf8f3"
   surface-raised: "#fdfbf7"
   surface-overlay: "#f3efe7"
@@ -144,6 +147,8 @@ The palette is intentionally restrained. One ink-teal accent on a neutral base �
 ### Primary
 
 - **Ink-Teal** (#0d5c6e / oklch(40% 0.045 195)): The sole accent color. Used for primary buttons, focus rings, active navigation items, and selected nodes. Never decorative. In dark mode, shifts to a luminous teal (#2dd4bf) for readability on the dark zinc surface.
+- **Primary-light** (#0f766e light / #2dd4bf dark): the lighter emphasis of the same accent — secondary button labels and borders, active nav labels, inline links, and focus outlines. In dark it is the same luminous teal as primary: the ink-teal at #0d5c6e reads 2.3:1 on zinc-900, below the 4.5:1 text floor.
+- **On-primary** (#ffffff light / #0b3d49 dark): the label and glyph colour on a primary fill. Never white on the dark accent — white on #2dd4bf is 1.7:1.
 
 ### Neutral
 
@@ -222,13 +227,34 @@ is already the darkest thing in the app.
 - **Title** (Semibold 600, 1rem, line-height 1.4): Panel headers, card titles, dialog headings. The most frequently used heading step.
 - **Body** (Regular 400, 0.875rem, line-height 1.5): All body text, table content, node content. Max line length 65–75ch where it flows as prose; data-dense layouts may exceed this.
 - **Label** (Medium 500, 0.75rem, line-height 1.4): Button labels, form field labels, badges, tabs, table headers. The compact workhorse step.
+- **Micro** (Medium 500, 0.6875rem / 11px, line-height 0.9375rem / 15px): The floor. Keyboard hints, node-layer chips and metrics, and tracked uppercase eyebrows. Nothing in the app is smaller than 11px.
 - **Mono** (Regular 400, 0.8125rem, line-height 1.5): Code blocks, JSON viewers, URLs, variable expressions, monospace contexts only.
+
+### Size scale
+
+The whole proportional scale is four steps plus the two fluid headings. There is
+no 13px step and no 10px step — a size between two of these is a bug, not a
+decision.
+
+| Step     | Size | Line height | Tailwind    |
+| -------- | ---- | ----------- | ----------- |
+| Micro    | 11px | 15px        | `text-2xs`  |
+| Label    | 12px | 16px        | `text-xs`   |
+| Body     | 14px | 21px        | `text-sm`   |
+| Title    | 16px | 22px        | `text-base` |
+
+Mono text is set in the same four steps; the documented 13px mono size exists
+only as a rendering target for code surfaces, never as a `text-[13px]` class.
+Fluid `clamp()` sizes belong on Display and Headline only (and on the 404
+hero), where the viewport is the point.
 
 ### Named Rules
 
 **The One-Family Rule.** Inter is the only proportional font. Display, headline, title, body, and label all use Inter at different weights and sizes. The absence of a display-face pairing is intentional — a developer tool should not shout.
 
 **The Tight Scale Rule.** The ratio between typographic steps is ≤1.2. No exaggerated display steps; the difference between "title" and "headline" is functional, not dramatic.
+
+**The Type Floor Rule.** 11px (`text-2xs`) is the smallest size in the app. Dense is not the same as illegible: a 9px or 10px caption reads as a stain at 100% zoom and disappears on a 1440px display. The old one-off sizes were folded onto documented steps — 9/10/11px → Micro, 12/13px → Label, 14px → Body, 15px → Title. An arbitrary `text-[Npx]` is an ESLint error (`no-restricted-syntax`, `app/eslint.config.cjs`), not a style preference.
 
 ## 4. Elevation
 
@@ -260,7 +286,7 @@ The node layer adds two tokens the chrome does not use:
 ### Buttons
 
 - **Shape:** Gently rounded corners (0.25rem / 4px radius). Compact internal padding — xs: 8px/4px, sm: 12px/6px, md: 16px/8px, lg: 24px/12px.
-- **Primary:** Ink-Teal background (#0d5c6e light / #2dd4bf dark) with white text. Inline-flex centered with 8px gap. Flat at rest, gains an overlay shadow on hover.
+- **Primary:** Ink-Teal background (#0d5c6e light / #2dd4bf dark) with the on-primary foreground (#ffffff light / #0b3d49 dark). Inline-flex centered with 8px gap. Flat at rest, gains an overlay shadow on hover.
 - **Secondary:** Transparent background with 1px ink-teal border and tinted 5% background. Same shape and padding. Used for secondary CTAs.
 - **Ghost:** No border, no background. Ink text only. Background appears only on hover (zinc-100 overlay). For tertiary/inline actions.
 - **States:** Focus-visible shows a 2px ink-teal outline at 2px offset. Disabled reduces opacity to 50%. Loading swaps text for a Spinner icon.

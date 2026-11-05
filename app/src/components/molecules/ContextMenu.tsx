@@ -100,7 +100,7 @@ export function ContextMenu({ x, y, label, items, onClose }: ContextMenuProps) {
           onKeyDown={(event) => handleItemKeyDown(event, index)}
           className={[
             "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors duration-150 motion-reduce:transition-none",
-            "cursor-pointer focus-visible:outline-2 focus-visible:outline-primary focus-visible:-outline-offset-2 dark:focus-visible:outline-primary-light",
+            "cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:-outline-offset-2",
             item.separated === true
               ? "mt-1 border-t border-border pt-2 dark:border-border-dark"
               : "",

@@ -313,7 +313,7 @@ function SuggestionList({
             }`}
           >
             <span
-              className={`w-10 shrink-0 font-mono text-[10px] uppercase ${KIND_CLASS[suggestion.kind]}`}
+              className={`w-10 shrink-0 font-mono text-2xs uppercase ${KIND_CLASS[suggestion.kind]}`}
             >
               {KIND_LABEL[suggestion.kind]}
             </span>

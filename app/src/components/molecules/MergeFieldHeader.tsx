@@ -9,7 +9,7 @@ export function MergeFieldHeader({ heading, resolved, invalid }: MergeFieldHeade
           {heading}
         </p>
         {!resolved && (
-          <p className="text-xxs text-status-warning dark:text-(--aw-status-warning)">
+          <p className="text-2xs text-status-warning dark:text-(--aw-status-warning)">
             Unresolved
           </p>
         )}
@@ -17,7 +17,7 @@ export function MergeFieldHeader({ heading, resolved, invalid }: MergeFieldHeade
       {invalid !== undefined && (
         <p
           role="note"
-          className="mt-1 text-xxs text-status-warning dark:text-(--aw-status-warning)"
+          className="mt-1 text-2xs text-status-warning dark:text-(--aw-status-warning)"
         >
           {invalid}. Keeping one whole copy is the way out.
         </p>

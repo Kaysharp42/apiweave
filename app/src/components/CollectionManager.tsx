@@ -599,7 +599,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   </h3>
                   <select
                     onChange={handleSelectChange}
-                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary"
+                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
                   >
                     <option value="">Select a workflow to add…</option>
                     <option value="__new__">+ Create New Workflow</option>

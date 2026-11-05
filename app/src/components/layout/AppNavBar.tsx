@@ -7,7 +7,6 @@ import {
   LayoutGrid,
   ChevronLeft,
   ChevronRight,
-  Server,
 } from "lucide-react";
 import { Transition } from "@headlessui/react";
 import { Tooltip } from "../atoms/Tooltip";
@@ -48,11 +47,6 @@ const navItems: NavItemConfig[] = [
     icon: Bot,
   },
   {
-    id: "mcp",
-    label: "MCP",
-    icon: Server,
-  },
-  {
     id: AppNavBarItems.settings!.value,
     label: AppNavBarItems.settings!.displayValue,
     icon: Settings,
@@ -89,7 +83,7 @@ export function AppNavBar() {
   return (
     <nav
       className={[
-        "relative flex h-full flex-col transition-all duration-300 ease-in-out motion-reduce:transition-none",
+        "relative flex h-full flex-col transition-opacity duration-300 ease-in-out motion-reduce:transition-none",
         "bg-surface-raised dark:bg-surface-dark-raised",
         "border-r border-border dark:border-border-dark",
         "w-nav-collapsed md:w-auto",
@@ -112,7 +106,7 @@ export function AppNavBar() {
               type="button"
               key={id}
               className={[
-                "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+                "relative w-full rounded-sm focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-0",
               ].join(" ")}
               onClick={() => {
                 // Clicking a nav icon only switches section — it never changes
@@ -138,7 +132,7 @@ export function AppNavBar() {
               )}
               <div
                 className={[
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 transition-colors duration-200 motion-reduce:transition-none",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 overflow-hidden transition-colors duration-200 motion-reduce:transition-none",
                   "justify-center",
                   !isNavBarCollapsed && "md:justify-start",
                   isSelected
@@ -150,12 +144,12 @@ export function AppNavBar() {
                 <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <Transition
                   show={!isNavBarCollapsed}
-                  enter="transition-all ease-in-out duration-300 delay-100"
-                  enterFrom="opacity-0 -translate-x-2 w-0"
-                  enterTo="opacity-100 translate-x-0 w-auto"
-                  leave="transition-all ease-in-out duration-200"
+                  enter="transition-opacity ease-in-out duration-300 delay-100 motion-reduce:transition-none"
+                  enterFrom="opacity-0"
+                  enterTo="opacity-100"
+                  leave="transition-opacity ease-in-out duration-200 motion-reduce:transition-none"
                   leaveFrom="opacity-100"
-                  leaveTo="opacity-0 -translate-x-2 w-0"
+                  leaveTo="opacity-0"
                 >
                   <span className="hidden md:inline text-xs font-medium whitespace-nowrap overflow-hidden">
                     {label}
@@ -189,7 +183,7 @@ export function AppNavBar() {
           onClick={toggleNavBarCollapse}
           className={[
             "h-7 w-full rounded-none border-t border-border dark:border-border-dark",
-            "focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-0 dark:focus-visible:outline-primary-light",
+            "focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-0",
             isNavBarCollapsed ? "justify-center" : "justify-start px-2",
           ].join(" ")}
         >
@@ -200,10 +194,10 @@ export function AppNavBar() {
               <ChevronLeft className="w-4 h-4" />
               <Transition
                 show={!isNavBarCollapsed}
-                enter="transition-opacity duration-300 delay-100"
+                enter="transition-opacity duration-300 delay-100 motion-reduce:transition-none"
                 enterFrom="opacity-0"
                 enterTo="opacity-100"
-                leave="transition-opacity duration-200"
+                leave="transition-opacity duration-200 motion-reduce:transition-none"
                 leaveFrom="opacity-100"
                 leaveTo="opacity-0"
               >

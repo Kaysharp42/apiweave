@@ -83,7 +83,7 @@ export function GitSyncStatusCard({
         {view.explanation}
       </p>
       {view.detail !== null && (
-        <p className="max-h-20 overflow-y-auto wrap-break-word font-mono text-xxs text-text-muted dark:text-text-muted-dark">
+        <p className="max-h-20 overflow-y-auto wrap-break-word font-mono text-2xs text-text-muted dark:text-text-muted-dark">
           {view.detail}
         </p>
       )}

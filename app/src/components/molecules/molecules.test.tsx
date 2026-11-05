@@ -21,6 +21,7 @@ import { SearchInput } from "./SearchInput";
 import { SlidePanel } from "./SlidePanel";
 import { StatusBadge } from "./StatusBadge";
 import { WorkspaceEmptyState } from "./WorkspaceEmptyState";
+import type { RecentWorkflow } from "../../types/RecentWorkflow";
 
 describe("Panel", () => {
   it("renders the title and children", () => {
@@ -641,11 +642,11 @@ describe("WorkspaceEmptyState", () => {
     expect(onImport).toHaveBeenCalledTimes(1);
   });
 
-  it("invokes onOpenCollection when the Open Collection button is clicked", async () => {
+  it("invokes onOpenCollection when the Open Project button is clicked", async () => {
     const onOpenCollection = vi.fn();
     const user = userEvent.setup();
     render(<WorkspaceEmptyState onOpenCollection={onOpenCollection} />);
-    await user.click(screen.getByRole("button", { name: /Open Collection/i }));
+    await user.click(screen.getByRole("button", { name: /Open Project/i }));
     expect(onOpenCollection).toHaveBeenCalledTimes(1);
   });
 
@@ -663,11 +664,48 @@ describe("WorkspaceEmptyState", () => {
       screen.queryByRole("button", { name: /Import Workflow/i }),
     ).toBeNull();
     expect(
-      screen.queryByRole("button", { name: /Open Collection/i }),
+      screen.queryByRole("button", { name: /Open Project/i }),
     ).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Open from git/i }),
     ).toBeNull();
+  });
+
+  const recentWorkflows: RecentWorkflow[] = [
+    {
+      workflowId: "wf-checkout",
+      name: "Checkout API",
+      updatedAt: "2026-11-03T10:00:00.000Z",
+    },
+    {
+      workflowId: "wf-orders",
+      name: "Orders",
+      updatedAt: "2026-11-02T10:00:00.000Z",
+    },
+  ];
+
+  it("lists recent workflows and opens the one clicked", async () => {
+    const onOpenWorkflow = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <WorkspaceEmptyState
+        recentWorkflows={recentWorkflows}
+        onOpenWorkflow={onOpenWorkflow}
+      />,
+    );
+
+    const list = screen.getByRole("list", { name: "Recent workflows" });
+    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+
+    await user.click(within(list).getByRole("button", { name: "Orders" }));
+    expect(onOpenWorkflow).toHaveBeenCalledWith(recentWorkflows[1]);
+  });
+
+  it("hides the recent list when the workspace has no workflows", () => {
+    render(<WorkspaceEmptyState />);
+    expect(
+      screen.queryByRole("list", { name: "Recent workflows" }),
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -139,7 +139,7 @@ export function CanvasNodeContextMenu({
           placeholder="Add node…"
           className="min-w-0 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-hidden dark:text-text-primary-dark dark:placeholder:text-text-muted-dark"
         />
-        <kbd className="rounded-sm border border-border px-1 font-mono text-[9px] leading-4 text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        <kbd className="rounded-sm border border-border px-1 font-mono text-2xs leading-4 text-text-muted dark:border-border-dark dark:text-text-muted-dark">
           esc
         </kbd>
       </div>
@@ -154,7 +154,7 @@ export function CanvasNodeContextMenu({
             const Icon = section.icon;
             return (
               <section key={section.key}>
-                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-[9px] font-semibold uppercase tracking-widest text-text-muted backdrop-blur-xs dark:bg-surface-dark-raised/95 dark:text-text-muted-dark">
+                <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-surface-raised/95 px-3 pb-1 pt-1.5 text-2xs font-semibold uppercase tracking-widest text-text-muted backdrop-blur-xs dark:bg-surface-dark-raised/95 dark:text-text-muted-dark">
                   <Icon className="h-3 w-3" aria-hidden="true" />
                   {section.title}
                 </div>
@@ -172,7 +172,7 @@ export function CanvasNodeContextMenu({
                       onMouseMove={() => setActiveIndex(index)}
                       onClick={() => choose(node)}
                       title={node.description}
-                      className={`relative flex w-full items-center gap-2 py-1.5 pl-3 pr-2 text-left text-[13px] transition-colors duration-75 motion-reduce:transition-none ${
+                      className={`relative flex w-full items-center gap-2 py-1.5 pl-3 pr-2 text-left text-xs transition-colors duration-75 motion-reduce:transition-none ${
                         isActive
                           ? "bg-primary/10 text-text-primary dark:bg-primary-light/10 dark:text-text-primary-dark"
                           : "text-text-secondary dark:text-text-secondary-dark"
@@ -186,7 +186,7 @@ export function CanvasNodeContextMenu({
                       />
                       {node.method ? (
                         <span
-                          className={`w-11 shrink-0 rounded-xs border px-1 py-px text-center font-mono text-[9px] font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary"}`}
+                          className={`w-11 shrink-0 rounded-xs border px-1 py-px text-center font-mono text-2xs font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary"}`}
                         >
                           {node.method}
                         </span>

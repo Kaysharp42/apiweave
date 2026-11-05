@@ -77,7 +77,7 @@ export function VariableProvenanceModal({
                       <Badge variant="secondary" size="sm" title={c.nodeId}>
                         {c.nodeLabel}
                       </Badge>
-                      <span className="text-[10px] text-text-muted dark:text-text-muted-dark">in</span>
+                      <span className="text-2xs text-text-muted dark:text-text-muted-dark">in</span>
                       {c.fields.map((f) => (
                         <Badge key={f} variant="outline" size="xs">
                           <code className="font-mono">{f}</code>

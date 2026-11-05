@@ -138,7 +138,7 @@ export default function HistoryModal({
       case "failed":
         return <XCircle {...iconProps} />;
       case "running":
-        return <RefreshCw {...iconProps} className="w-3 h-3 animate-spin" />;
+        return <RefreshCw {...iconProps} className="w-3 h-3 animate-spin motion-reduce:animate-none" />;
       case "pending":
         return <Clock {...iconProps} />;
       default:
@@ -218,7 +218,7 @@ export default function HistoryModal({
       {isLoading && runs.length === 0 ? (
         <div className="flex items-center justify-center py-12">
           <div className="flex flex-col items-center gap-3">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+            <div className="animate-spin motion-reduce:animate-none rounded-full h-10 w-10 border-b-2 border-primary"></div>
             <p className="text-sm text-text-muted dark:text-text-muted-dark">
               Loading history…
             </p>

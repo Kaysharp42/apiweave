@@ -155,9 +155,9 @@ After EVERY phase:
 | `status-error` | `#dc2626` | `#f87171` | Error state |
 
 ### Typography
-- **Body**: Open Sans (`font-sans`) — all body text, labels, inputs
-- **Display**: Montserrat (`font-display`) — headings, logo, branding
+- **UI**: Inter (`font-sans`) — all body text, labels, headings, inputs
 - **Code**: JetBrains Mono (`font-mono`) — code blocks, JSON, URLs
+- **Size floor**: 11px. `text-2xs` (11px) → `text-xs` (12px) → `text-sm` (14px) → `text-base` (16px). An arbitrary `text-[Npx]` fails lint. See DESIGN.md §3.
 
 ### Button System
 | Variant | Description | Usage |

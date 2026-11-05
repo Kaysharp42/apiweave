@@ -43,7 +43,7 @@ function NoteNode({ id, data, selected }: NodeProps<CanvasNode>) {
 
       <header className="flex items-center gap-2 border-b border-dashed border-[color-mix(in_srgb,var(--aw-status-warning)_42%,var(--aw-border))] px-4 py-3 pr-12">
         <StickyNote className="h-3.5 w-3.5 text-(--aw-status-warning)" />
-        <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-text-secondary dark:text-text-secondary-dark">
+        <span className="font-mono text-2xs font-bold uppercase tracking-[0.16em] text-text-secondary dark:text-text-secondary-dark">
           Annotation
         </span>
       </header>
