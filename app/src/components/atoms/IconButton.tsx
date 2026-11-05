@@ -22,7 +22,7 @@ export function IconButton({
     ghost:
       "border border-transparent text-text-secondary dark:text-text-secondary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay hover:text-text-primary dark:hover:text-text-primary-dark",
     primary:
-      "border border-primary dark:border-primary-light bg-primary dark:bg-primary-light text-white dark:text-primary-dark hover:brightness-95 dark:hover:brightness-105",
+      "border border-(--aw-primary) bg-(--aw-primary) text-on-primary hover:bg-(--aw-primary-hover)",
     secondary:
       "border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark hover:bg-surface-overlay dark:hover:bg-surface-dark-overlay",
     outline:

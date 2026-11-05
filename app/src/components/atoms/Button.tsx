@@ -37,7 +37,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       if (variant === "primary") {
         const intentMap: Record<NonNullable<ButtonProps["intent"]>, string> = {
           default:
-            "bg-(--aw-primary) text-white dark:text-primary-dark border border-(--aw-primary) hover:bg-(--aw-primary-hover) shadow-raised hover:shadow-overlay",
+            "bg-(--aw-primary) text-on-primary border border-(--aw-primary) hover:bg-(--aw-primary-hover) shadow-raised hover:shadow-overlay",
           muted:
             "bg-text-muted dark:bg-text-muted-dark text-surface-raised dark:text-surface-dark border border-text-muted dark:border-text-muted-dark hover:bg-text-secondary dark:hover:bg-text-secondary-dark",
           success:

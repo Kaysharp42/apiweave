@@ -17,7 +17,7 @@ export function Toggle({
 
   const variantClass: Record<string, string> = {
     primary:
-      "checked:bg-primary dark:checked:bg-primary-light checked:border-primary dark:checked:border-primary-light",
+      "checked:bg-primary dark:checked:bg-primary-light checked:border-primary dark:checked:border-primary-light checked:text-on-primary",
     secondary:
       "checked:bg-text-secondary dark:checked:bg-text-secondary-dark checked:border-text-secondary dark:checked:border-text-secondary-dark",
     success:
