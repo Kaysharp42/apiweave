@@ -286,18 +286,41 @@ function readRecordFile(tree: TreeCopy, copy: CopyName, kind: WorkspacePendingCh
   doubled.add(key)
 }
 
+/** The record a value holds, read as the repository version's rules say. */
+function readDocument(kind: WorkspacePendingChangeKind, value: JsonValue, version: 1 | 2) {
+  return kind === "environment" && version === 1 ? readLegacyEnvironment(value) : readRecord(kind, value)
+}
+
+/** The folder a kind's records live in; the workspace file has none. */
+function recordFolder(kind: WorkspacePendingChangeKind): string | undefined {
+  return kind === "workspace" ? undefined : `${RECORD_FOLDER[kind]}/`
+}
+
+/** Why a file is not a record file directly inside `folder`, or undefined when it is. */
+function folderRefusal(folder: string | undefined, path: string): string | undefined {
+  if (folder === undefined || /^[^/]+\.json$/.test(path.slice(folder.length))) return undefined
+  return `is not a <name>--<id>.json file directly inside ${folder}`
+}
+
+/** Why a file is not named after the id it holds, or undefined when it is. */
+function nameRefusal(folder: string | undefined, path: string, id: string): string | undefined {
+  if (folder === undefined || new RegExp(`^${folder}[a-z0-9-]+--${id}\\.json$`).test(path)) return undefined
+  return `is not named <name>--${id}.json, after the id it holds`
+}
+
 /** The record a file holds — directly in its folder, schema-valid, named `<slug>--<id>.json` after its id — or what is wrong with the file. */
 function recordInFile(kind: WorkspacePendingChangeKind, path: string, text: string, version: 1 | 2): RecordDocument | string {
-  const folder = kind === "workspace" ? undefined : `${RECORD_FOLDER[kind]}/`
-  if (folder !== undefined && !/^[^/]+\.json$/.test(path.slice(folder.length))) return `is not a <name>--<id>.json file directly inside ${folder}`
+  const folder = recordFolder(kind)
+  const misplaced = folderRefusal(folder, path)
+  if (misplaced !== undefined) return misplaced
   const value = parseJson(text)
   if (value === undefined) return NOT_JSON
   const secret = secretStorageIn(value)
   if (secret !== undefined) return secret
-  const read = kind === "environment" && version === 1 ? readLegacyEnvironment(value) : readRecord(kind, value)
+  const read = readDocument(kind, value, version)
   if (!("document" in read)) return `does not hold a valid ${kind}: ${read.invalid}`
-  const id = recordIdOf(kind, read.document)
-  if (folder !== undefined && !new RegExp(`^${folder}[a-z0-9-]+--${id}\\.json$`).test(path)) return `is not named <name>--${id}.json, after the id it holds`
+  const misnamed = nameRefusal(folder, path, recordIdOf(kind, read.document))
+  if (misnamed !== undefined) return misnamed
   return read.document
 }
 
