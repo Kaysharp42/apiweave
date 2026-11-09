@@ -9,25 +9,7 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Added
-
-- **A sign-in opens the account's tagged workspaces.** When `gh` or `glab`
-  finishes signing in, APIWeave reads the repositories the account has tagged
-  `apiweave-workspace` and opens each one that holds a workspace, in the
-  background and one at a time. Repositories already connected here, and empty
-  ones, are skipped; a repository that cannot be opened is logged and the rest
-  continue.
-
-### Changed
-
-- **Project bundles use the `.aweproject` extension.** The export filename, the
-  import picker and detection, the bundle's `type` identifier, the headless CLI
-  and the guides now name the format by its new extension. The JSON shape is
-  unchanged.
-
-## [1.0.0] — 2026-11-04
+## [1.0.0] — 2026-11-09
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported
 product. It brings the surface together: a visual canvas for building and
@@ -78,8 +60,24 @@ release covered by the 1.x compatibility policy.
   tool names and arguments, the workspace repository format, the
   `.aweproject` schema and CLI flags and exit codes, and how deprecations
   work.
+- **A sign-in opens the account's tagged workspaces.** When `gh` or `glab`
+  finishes signing in, APIWeave reads the repositories the account has tagged
+  `apiweave-workspace` and opens each one that holds a workspace, in the
+  background and one at a time. Repositories already connected here, and empty
+  ones, are skipped; a repository that cannot be opened is logged and the rest
+  continue.
+- **GitHub accounts show their profile pictures.** The header's accounts menu
+  and every GitHub account row load the picture from the host's public
+  `/<login>.png` address, with no token and no tool call, and keep the initials
+  while it loads and whenever it cannot (offline, or a private Enterprise host
+  that requires sign-in). GitLab accounts keep their initials.
 
 ### Changed
+
+- **Project bundles use the `.aweproject` extension.** The export filename, the
+  import picker and detection, the bundle's `type` identifier, the headless CLI
+  and the guides now name the format by its new extension. The JSON shape is
+  unchanged.
 
 - **The release pipeline builds both macOS architectures in one job.** That is
   what lets electron-builder write one `latest-mac.yml` covering both zips
