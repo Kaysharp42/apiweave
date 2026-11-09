@@ -4,6 +4,7 @@ import {
   cliProblemLine,
   gitAccountInitials,
   gitAccountRef,
+  gitAvatarUrl,
   groupGitAccountsByHost,
   sameGitAccount,
 } from "./gitAccounts";
@@ -26,6 +27,27 @@ describe("gitAccountInitials", () => {
     ["x", "X"],
   ])("reads %s as %s", (login, initials) => {
     expect(gitAccountInitials(login)).toBe(initials);
+  });
+});
+
+describe("gitAvatarUrl", () => {
+  it("points GitHub accounts at the host's login.png, sized with `size`", () => {
+    expect(gitAvatarUrl({ provider: "github", host: "github.com", login: "Kaysharp42" })).toBe(
+      "https://github.com/Kaysharp42.png?size=128",
+    );
+  });
+
+  it("sizes GitLab accounts with `width`, on the host's own address", () => {
+    expect(gitAvatarUrl({ provider: "gitlab", host: "git.example.com:8443", login: "tanuki" })).toBe(
+      "https://git.example.com:8443/tanuki.png?width=128",
+    );
+  });
+
+  it("encodes the login and refuses a host that is not one", () => {
+    expect(gitAvatarUrl({ provider: "github", host: "github.com", login: "a/b?c" })).toBe(
+      "https://github.com/a%2Fb%3Fc.png?size=128",
+    );
+    expect(gitAvatarUrl({ provider: "github", host: "bad host", login: "octo" })).toBeNull();
   });
 });
 
