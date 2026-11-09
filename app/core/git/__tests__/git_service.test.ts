@@ -24,6 +24,7 @@ import {
   makeSandbox,
   makeTempDir,
   rawGit,
+  SANDBOX_GIT_CONFIG,
   writeFile,
   type GitSandbox,
 } from "./git_test_utils"
@@ -196,7 +197,7 @@ describe("author", () => {
 
     expect((await service.log(dir))[0]).toMatchObject({ authorName: "-Ada Lovelace", authorEmail: "ada@example.invalid" })
     expect(rawGit(dir, sandbox.env, "config", "--local", "--get", "user.name").trim()).toBe("-Ada Lovelace")
-    expect(fs.readFileSync(path.join(sandbox.root, "global.gitconfig"), "utf8")).toBe("")
+    expect(fs.readFileSync(path.join(sandbox.root, "global.gitconfig"), "utf8")).toBe(SANDBOX_GIT_CONFIG)
   })
 
   it("refuses an author git would refuse, before git is started", async () => {

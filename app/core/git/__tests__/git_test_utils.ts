@@ -37,12 +37,19 @@ export function makeTempDir(prefix = "apiweave-git-"): string {
 }
 
 /**
+ * Git's housekeeping, off: after a commit, fetch or push git would otherwise
+ * spawn `git maintenance run --auto` (and the remote `gc --auto`) — one extra
+ * process for every few a test makes, in repositories deleted moments later.
+ */
+export const SANDBOX_GIT_CONFIG = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n[receive]\n\tautogc = false\n"
+
+/**
  * The machine's own git configuration must not leak into a test: no global
  * identity, credential helper (a GUI prompt on Windows) or proxy.
  */
 export function isolatedEnv(root: string): NodeJS.ProcessEnv {
   const globalConfig = path.join(root, "global.gitconfig")
-  fs.writeFileSync(globalConfig, "")
+  fs.writeFileSync(globalConfig, SANDBOX_GIT_CONFIG)
   const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: globalConfig, GIT_CONFIG_NOSYSTEM: "1" }
   for (const name of Object.keys(env)) {
     if (/^(?:https?|all|no)_proxy$/i.test(name)) {
