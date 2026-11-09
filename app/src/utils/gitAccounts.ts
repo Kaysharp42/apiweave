@@ -73,17 +73,19 @@ export function gitAccountInitials(login: string): string {
 }
 
 /**
- * Where an account's profile picture is served: both GitHub and GitLab answer
+ * Where a GitHub account's profile picture is served: GitHub answers
  * `https://<host>/<login>.png` with a redirect to the user's avatar, which
- * needs no token on the public hosts. Null when the host is not a valid one.
- * A host that wants a sign-in for it (a private instance) fails to load, and
- * the avatar falls back to the initials.
+ * needs no token on github.com. A host that wants a sign-in for it (a private
+ * Enterprise instance) fails to load, and the avatar falls back to the
+ * initials. Null for GitLab, whose `/<login>.png` redirects to its sign-in
+ * page, and for a host that is not a valid one.
  */
 export function gitAvatarUrl({ provider, host, login }: GitAccountRef): string | null {
+  if (provider !== "github") return null;
   const url = `https://${host}/${encodeURIComponent(login)}.png`;
   if (!URL.canParse(url)) return null;
   const parsed = new URL(url);
-  parsed.searchParams.set(provider === "github" ? "size" : "width", "128");
+  parsed.searchParams.set("size", "128");
   return parsed.toString();
 }
 

@@ -37,10 +37,14 @@ describe("gitAvatarUrl", () => {
     );
   });
 
-  it("sizes GitLab accounts with `width`, on the host's own address", () => {
-    expect(gitAvatarUrl({ provider: "gitlab", host: "git.example.com:8443", login: "tanuki" })).toBe(
-      "https://git.example.com:8443/tanuki.png?width=128",
+  it("uses an Enterprise host's own address", () => {
+    expect(gitAvatarUrl({ provider: "github", host: "ghe.example.com:8443", login: "corp" })).toBe(
+      "https://ghe.example.com:8443/corp.png?size=128",
     );
+  });
+
+  it("has no address for GitLab accounts, whose login.png redirects to sign-in", () => {
+    expect(gitAvatarUrl({ provider: "gitlab", host: "gitlab.com", login: "tanuki" })).toBeNull();
   });
 
   it("encodes the login and refuses a host that is not one", () => {
