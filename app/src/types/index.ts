@@ -442,6 +442,7 @@ export type { GitAuthorFormProps } from "./GitAuthorFormProps";
 export type { GitAccountPickerProps } from "./GitAccountPickerProps";
 export type { GitAccountHostGroup } from "./GitAccountHostGroup";
 export type { GitAccountRowProps } from "./GitAccountRowProps";
+export type { GitAvatarProps } from "./GitAvatarProps";
 export type { GitAccountsMenuPanelProps } from "./GitAccountsMenuPanelProps";
 export type { GitAccountsMenuProps } from "./GitAccountsMenuProps";
 export type { GitSyncControlProps } from "./GitSyncControlProps";
