@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { JsonValue } from "@shared/types/JsonValue"
 import type { WorkflowNode } from "@shared/types/WorkflowNode"
 import { WORKSPACE_FILE, fileText } from "@shared/workspace-repo/format"
+import { GitSyncDisposedError } from "../git_sync_service"
 import { readWorkspaceTree, writeWorkspaceTree } from "../workspace_tree"
 import { serializeWorkspace, workspaceSnapshot, type WorkspaceSnapshot } from "../../services/workspace_repo_format"
 import { openHarness, passthrough, type Harness } from "./git_sync_harness"
@@ -117,14 +118,27 @@ describe("GitSyncService.openFromGit", () => {
     expect(status.lastCommit?.sha).toBe(rawGit(source.dir, source.sandbox.env, "rev-parse", "HEAD").trim())
   })
 
-  it("answers duplicate without cloning when a workspace here is already bound to that repository", async () => {
+  it.each([
+    ["https://github.com/Acme/Tests.git", "git@github.com:acme/tests"],
+    ["https://github.com/Acme/Tests.git", "ssh://git@github.com:22/acme/tests.git"],
+    ["git@github.com:acme/tests.git", "https://github.com:443/ACME/tests/"],
+    ["ssh://git@GitHub.com/acme/tests", "git@github.com:acme/tests"],
+  ])("answers duplicate without cloning when a workspace here is bound to %s and %s is opened", async (bound, opened) => {
     const target = openHarness()
     target.repositories.workspaceGit.insert(target.workspaceId, "auto")
-    target.repositories.workspaceGit.setRemote(target.workspaceId, "https://github.com/Acme/Tests.git", "main", null)
+    target.repositories.workspaceGit.setRemote(target.workspaceId, bound, "main", null)
 
-    const result = await target.sync.openFromGit("git@github.com:acme/tests")
+    const result = await target.sync.openFromGit(opened)
 
     expect(result).toEqual({ kind: "duplicate", workspaceId: target.workspaceId, slug: "acme-qa", name: "Acme QA" })
+    expect(fs.existsSync(target.cloneRoot)).toBe(false)
+  })
+
+  it("refuses an open once the service is disposing, before anything is cloned", async () => {
+    const target = openHarness()
+    await target.sync.dispose()
+
+    await expect(target.sync.openFromGit("https://github.com/acme/tests.git")).rejects.toBeInstanceOf(GitSyncDisposedError)
     expect(fs.existsSync(target.cloneRoot)).toBe(false)
   })
 

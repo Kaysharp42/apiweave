@@ -1,6 +1,6 @@
 import type { GitAccountRef } from "@shared/types/GitAccountRef"
 import type { HostCliService } from "./accounts/host_cli_service"
-import type { GitSyncService } from "./git_sync_service"
+import { GitSyncDisposedError, type GitSyncService } from "./git_sync_service"
 
 /** A repository the sign-in imported as a workspace here. */
 export interface ImportedTaggedWorkspace {
@@ -37,7 +37,8 @@ export interface TaggedWorkspaceImportOptions {
  * to is finished by connecting to it from the workspace that made it.
  *
  * One repository failing does not stop the rest: its reason is a line in
- * `problems`, alongside any owner the host could not list.
+ * `problems`, alongside any owner the host could not list. The app quitting
+ * does: the repositories not yet reached are left for the next sign-in.
  */
 export async function importTaggedWorkspaces(
   account: GitAccountRef,
@@ -68,6 +69,8 @@ export async function importTaggedWorkspaces(
       opened.push(workspace)
       options.onOpened?.(workspace)
     } catch (error) {
+      // The app is quitting: every open after this one would be refused the same way.
+      if (error instanceof GitSyncDisposedError) break
       problems.push(`${repository.fullName}: ${error instanceof Error ? error.message : String(error)}`)
     }
   }

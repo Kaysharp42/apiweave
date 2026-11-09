@@ -4,7 +4,7 @@ import type { GitRepository } from "@shared/types/GitRepository"
 import type { GitRepositoryList } from "@shared/types/GitRepositoryList"
 import type { OpenWorkspaceFromGitResult } from "@shared/types/OpenWorkspaceFromGitResult"
 import type { HostCliService } from "../accounts/host_cli_service"
-import type { GitSyncService } from "../git_sync_service"
+import { GitSyncDisposedError, type GitSyncService } from "../git_sync_service"
 import { importTaggedWorkspaces, type ImportedTaggedWorkspace } from "../tagged_workspace_import"
 
 const ACCOUNT: GitAccountRef = { provider: "github", host: "github.com", login: "octo" }
@@ -81,6 +81,17 @@ describe("importTaggedWorkspaces", () => {
       "acme-org: 403 Forbidden",
       "acme/broken: This is not an APIWeave workspace repository.",
     ])
+  })
+
+  it("stops at the first open refused because the app is quitting", async () => {
+    const first = repository({ name: "first", fullName: "acme/first", httpsUrl: "https://github.com/acme/first.git" })
+    const second = repository({ name: "second", fullName: "acme/second", httpsUrl: "https://github.com/acme/second.git" })
+    const { openFromGit, options } = importer({ repositories: [first, second], problems: [] }, async () => {
+      throw new GitSyncDisposedError()
+    })
+
+    await expect(importTaggedWorkspaces(ACCOUNT, options)).resolves.toEqual({ opened: [], skipped: 0, problems: [] })
+    expect(openFromGit).toHaveBeenCalledTimes(1)
   })
 
   it("opens nothing when the account has no tagged repositories", async () => {
