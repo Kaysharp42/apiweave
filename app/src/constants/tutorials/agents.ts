@@ -171,16 +171,18 @@ export const agentsChapter: TutorialChapter = {
             "It prefers port 47271 and picks a free loopback port if that one is taken. Off by default; nothing listens until you enable it.",
         },
         {
-          title: "Copy the connection details",
+          title: "Connect your agents",
           instruction:
-            "Copy the live URL and token from the MCP Server settings page. It also offers a ready-made client config and an npx mcp-remote bridge command for stdio-only clients.",
+            "Under Connect your agents, click Connect for each client you use (Claude Code, Codex, OpenCode, Cursor, VS Code, Claude Desktop), then restart it. APIWeave adds its stdio launcher to that client's own user settings, changing only the apiweave entry. Needs Node.js 20 or newer. For any other client, copy the launcher config from the same page.",
+          detail:
+            "The launcher answers the client at once and starts APIWeave in the tray when it is not running, so the client never marks the server as disconnected. It holds no token. Without Node.js, copy the direct HTTP config instead, and start APIWeave before the client.",
         },
         {
-          title: "Add the client configuration",
+          title: "Or add the client configuration by hand",
           instruction:
-            "Paste the config into your MCP client, replacing the token with the real value, and restart or reconnect the client.",
+            "For a client that is not in the list, paste the config into it and restart or reconnect the client.",
           detail:
-            "The transport is Streamable HTTP at /mcp with an Authorization: Bearer <token> header. Checked-in templates live under mcp-configs/.",
+            "Behind the launcher the transport is Streamable HTTP at /mcp with an Authorization: Bearer <token> header, which the direct HTTP config uses itself. Checked-in templates live under mcp-configs/.",
         },
         {
           title: "Verify the connection",
@@ -224,15 +226,25 @@ export const agentsChapter: TutorialChapter = {
         },
       ],
       example: {
-        caption: "A minimal client configuration",
+        caption: "A launcher client configuration (needs Node.js 20+)",
         language: "json",
-        code: "{\n  \"mcpServers\": {\n    \"apiweave\": {\n      \"type\": \"http\",\n      \"url\": \"http://127.0.0.1:47271/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer YOUR_MCP_TOKEN\" }\n    }\n  }\n}",
+        code: "{\n  \"mcpServers\": {\n    \"apiweave\": {\n      \"command\": \"node\",\n      \"args\": [\"LAUNCHER_PATH\"]\n    }\n  }\n}",
       },
       expectedResult:
         "The client lists APIWeave's tools and can create a workflow, run it, and read its metadata, while every change shows up live in the desktop app.",
       troubleshooting: [
         {
-          title: "Connection refused",
+          title: "The server shows as failed or disconnected",
+          instruction:
+            "With the direct HTTP config, APIWeave must be running before the client starts. Switch to the launcher config, which starts APIWeave itself.",
+        },
+        {
+          title: "node is not found",
+          instruction:
+            "The launcher needs Node.js 20 or newer on the PATH the client runs with. If the client does not see it, put Node's full path in the config's command.",
+        },
+        {
+          title: "Connection refused (direct HTTP)",
           instruction:
             "APIWeave must be running and the bridge enabled. Copy the current URL from the MCP Server settings page instead of assuming 47271.",
         },
@@ -244,7 +256,7 @@ export const agentsChapter: TutorialChapter = {
         {
           title: "403 Forbidden Origin",
           instruction:
-            "A browser or proxy supplied a non-loopback Origin. Connect through a native MCP client or a local stdio-to-HTTP adapter.",
+            "A browser or proxy supplied a non-loopback Origin. Connect through a native MCP client or the stdio launcher.",
         },
         {
           title: "A config value comes back as <SECRET>",

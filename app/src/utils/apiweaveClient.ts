@@ -35,6 +35,7 @@ import type {
   AgentsBridge,
 } from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
+import type { AgentMcpConnections } from "@shared/types";
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 import type { OAuthBridge } from "@shared/types/OAuthBridge";
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";
@@ -145,6 +146,9 @@ type McpBridge = {
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>;
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>;
   readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>;
+  readonly listAgentConnections: () => Promise<AgentMcpConnections>;
+  readonly connectAgent: (clientId: string) => Promise<AgentMcpConnections>;
+  readonly disconnectAgent: (clientId: string) => Promise<AgentMcpConnections>;
 };
 
 declare global {
@@ -934,7 +938,14 @@ function getMcpBridge(): McpBridge | undefined {
 const MCP_UNAVAILABLE: McpStatus = {
   running: false,
   config: null,
+  launcherPath: null,
   autoApproveAgentRuns: false,
+};
+
+const NO_AGENT_CONNECTIONS: AgentMcpConnections = {
+  clients: [],
+  nodePath: null,
+  nodeProblem: null,
 };
 
 /** Controls for the opt-in loopback MCP server (Setup-MCP dialog). Returns null
@@ -962,6 +973,15 @@ export const mcp = {
   setAutoApproveAgentRuns: (enabled: boolean): Promise<McpStatus> =>
     getMcpBridge()?.setAutoApproveAgentRuns(enabled).catch(unwrapRemoteError) ??
     Promise.resolve(MCP_UNAVAILABLE),
+  listAgentConnections: (): Promise<AgentMcpConnections> =>
+    getMcpBridge()?.listAgentConnections().catch(unwrapRemoteError) ??
+    Promise.resolve(NO_AGENT_CONNECTIONS),
+  connectAgent: (clientId: string): Promise<AgentMcpConnections> =>
+    getMcpBridge()?.connectAgent(clientId).catch(unwrapRemoteError) ??
+    Promise.resolve(NO_AGENT_CONNECTIONS),
+  disconnectAgent: (clientId: string): Promise<AgentMcpConnections> =>
+    getMcpBridge()?.disconnectAgent(clientId).catch(unwrapRemoteError) ??
+    Promise.resolve(NO_AGENT_CONNECTIONS),
 } as const;
 
 function getUpdatesBridge(): UpdatesBridge | undefined {

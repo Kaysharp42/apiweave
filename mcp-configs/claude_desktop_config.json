@@ -1,14 +1,8 @@
 {
   "mcpServers": {
     "apiweave": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://127.0.0.1:47271/mcp",
-        "--header",
-        "Authorization: Bearer YOUR_MCP_TOKEN"
-      ]
+      "command": "node",
+      "args": ["LAUNCHER_PATH"]
     }
   }
 }

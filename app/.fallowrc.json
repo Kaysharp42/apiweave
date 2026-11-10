@@ -6,6 +6,7 @@
     "electron/preload.ts",
     "electron/pty_host.ts",
     "core/cli/bin.ts",
+    "core/mcp/launcher/bin.ts",
     "core/runner/script_worker.ts",
     "scripts/generate-update-signing-key.mjs",
     "scripts/sign-update-manifest.mjs",

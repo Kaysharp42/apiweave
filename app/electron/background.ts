@@ -13,9 +13,10 @@ import { app, Menu, nativeImage, Tray } from "electron"
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { HIDDEN_ARG } from "../core/mcp/launcher/contract"
 
-/** The argument a login launch carries, so the window stays in the tray. */
-export const HIDDEN_ARG = "--hidden"
+/** The argument a login launch — or the MCP launcher — carries, so the window stays in the tray. */
+export { HIDDEN_ARG }
 
 function autostartFile(): string {
   const config = process.env["XDG_CONFIG_HOME"] || path.join(os.homedir(), ".config")

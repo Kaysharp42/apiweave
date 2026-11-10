@@ -17,26 +17,25 @@ export function generateToken(): string {
 /** Read the saved token, or null if the file is missing/unreadable/corrupt. Never
  * throws — a broken file just means "generate a fresh token". */
 export function loadToken(filePath: string): string | null {
-  let raw: string
+  const parsed = readTokenFile(filePath)
+  return typeof parsed?.["token"] === "string" && parsed["token"].length > 0 ? parsed["token"] : null
+}
+
+/** The saved token and the port it was last served on, or null when either is missing. */
+export function loadTokenInfo(filePath: string): McpTokenInfo | null {
+  const token = loadToken(filePath)
+  const port = readTokenFile(filePath)?.["port"]
+  if (token === null || typeof port !== "number" || !Number.isInteger(port) || port <= 0) return null
+  return { token, port }
+}
+
+function readTokenFile(filePath: string): Record<string, unknown> | null {
   try {
-    raw = readFileSync(filePath, "utf8")
+    const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"))
+    return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null
   } catch {
     return null
   }
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as { token?: unknown }).token === "string" &&
-      (parsed as { token: string }).token.length > 0
-    ) {
-      return (parsed as { token: string }).token
-    }
-  } catch {
-    // fall through
-  }
-  return null
 }
 
 /** Persist `{ token, port }` (owner-only where the OS honours the mode). */

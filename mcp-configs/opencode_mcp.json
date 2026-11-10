@@ -1,11 +1,8 @@
 {
   "mcp": {
     "apiweave": {
-      "type": "http",
-      "url": "http://127.0.0.1:47271/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_TOKEN"
-      }
+      "type": "local",
+      "command": ["node", "LAUNCHER_PATH"]
     }
   }
 }
