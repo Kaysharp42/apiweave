@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Copy, KeyRound } from "lucide-react";
+import { Check, Copy, KeyRound } from "lucide-react";
 import type { GitProvider } from "@shared/types/GitProvider";
 import { GitHostSchema } from "@shared/zod-schemas/GitAccountRefSchema";
 import { Button } from "../atoms/Button";
@@ -8,6 +8,8 @@ import { Input } from "../atoms/Input";
 import { Spinner } from "../atoms/Spinner";
 import { FormField } from "../molecules/FormField";
 import { Modal } from "../molecules/Modal";
+import { TaggedWorkspacesStep } from "./TaggedWorkspacesStep";
+import { useTaggedWorkspaces } from "../../hooks/useTaggedWorkspaces";
 import { git } from "../../utils/apiweaveClient";
 import { GIT_PROVIDERS } from "../../utils/gitAccounts";
 import type { GitSignInDialogProps, GitSignInPhase } from "../../types";
@@ -22,6 +24,12 @@ function sideEffects(provider: GitProvider, host: string): string {
 /** The browser step: the one-time code to enter, when the host has one, and the page it goes on. */
 function BrowserStep({ code, url }: { readonly code: string | null; readonly url: string }) {
   const codeLabel = useId();
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (copy === "idle") return;
+    const timer = window.setTimeout(() => setCopy("idle"), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copy]);
   if (code === null) {
     return (
       <div className="space-y-2">
@@ -53,10 +61,22 @@ function BrowserStep({ code, url }: { readonly code: string | null; readonly url
           <IconButton
             size="sm"
             tooltip="Copy one-time code"
-            onClick={() => void navigator.clipboard.writeText(code).catch(() => undefined)}
+            onClick={() =>
+              void navigator.clipboard.writeText(code).then(
+                () => setCopy("copied"),
+                () => setCopy("failed"),
+              )
+            }
           >
-            <Copy className="h-4 w-4" aria-hidden="true" />
+            {copy === "copied" ? (
+              <Check className="h-4 w-4 text-status-success" aria-hidden="true" />
+            ) : (
+              <Copy className="h-4 w-4" aria-hidden="true" />
+            )}
           </IconButton>
+          <span role="status" className="text-xs text-text-secondary dark:text-text-secondary-dark">
+            {copy === "copied" ? "Copied" : copy === "failed" ? "Could not copy; select the code instead" : ""}
+          </span>
         </div>
       </div>
       <p className="break-all font-mono text-xs text-text-secondary dark:text-text-secondary-dark">{url}</p>
@@ -84,6 +104,7 @@ export function GitSignInDialog({
   const [phase, setPhase] = useState<GitSignInPhase>({ kind: "ready" });
   const cancelling = useRef(false);
   const running = phase.kind === "starting" || phase.kind === "browser";
+  const tagged = useTaggedWorkspaces(phase.kind === "done" ? phase.account : null);
   const hostValid = GitHostSchema.safeParse(host.trim()).success;
   const tool = GIT_PROVIDERS[provider];
 
@@ -157,15 +178,29 @@ export function GitSignInDialog({
         </>
       );
     }
-    return phase.kind === "failed" ? (
+    if (phase.kind === "failed") {
+      return (
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+          <Button onClick={() => void start()}>Try again</Button>
+        </>
+      );
+    }
+    const offering = !tagged.loading && tagged.repositories.length > 0 && !tagged.finished;
+    if (!offering) return <Button onClick={onClose}>Done</Button>;
+    const count = tagged.selected.size;
+    const opening = tagged.opening !== null;
+    return (
       <>
-        <Button variant="ghost" onClick={onClose}>
-          Close
+        <Button variant="ghost" disabled={opening} onClick={onClose}>
+          Not now
         </Button>
-        <Button onClick={() => void start()}>Try again</Button>
+        <Button disabled={count === 0} loading={opening} onClick={() => void tagged.openSelected()}>
+          {count === 1 ? "Open 1 workspace" : `Open ${count} workspaces`}
+        </Button>
       </>
-    ) : (
-      <Button onClick={onClose}>Done</Button>
     );
   };
 
@@ -197,12 +232,7 @@ export function GitSignInDialog({
       case "browser":
         return <BrowserStep code={phase.code} url={phase.url} />;
       case "done":
-        return (
-          <p className="text-sm text-text-primary dark:text-text-primary-dark">
-            Signed in to {phase.account.host} as{" "}
-            <strong className="font-semibold">{phase.account.login}</strong>.
-          </p>
-        );
+        return <TaggedWorkspacesStep account={phase.account} feed={tagged} />;
       case "failed":
         return (
           <div

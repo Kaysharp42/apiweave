@@ -79,6 +79,65 @@ describe("GitSignInDialog", () => {
     await user.click(screen.getByRole("button", { name: "Copy one-time code" }));
 
     expect(await navigator.clipboard.readText()).toBe("3F2A-9C1B");
+    expect(screen.getByRole("status")).toHaveTextContent("Copied");
+  });
+
+  it("offers the account's tagged workspaces once signed in, opens only the ticked ones, and reports each", async () => {
+    const user = userEvent.setup();
+    const repository = (name: string) => ({
+      owner: "acme",
+      name,
+      fullName: `acme/${name}`,
+      httpsUrl: `https://github.com/acme/${name}.git`,
+      sshUrl: `git@github.com:acme/${name}.git`,
+      private: true,
+      empty: false,
+      canPush: true,
+    });
+    const openFromGit = vi.fn(async (url: string) => {
+      if (url.endsWith("broken.git")) throw new Error("This is not an APIWeave workspace repository.");
+      return { kind: "opened" as const, workspaceId: "ws-fresh", slug: "fresh", name: "Fresh", warnings: [] };
+    });
+    const { bridge } = installGitBridge(untrackedStatus, {
+      signIn: vi.fn(async () => ACCOUNT),
+      listTaggedWorkspaces: vi.fn(async () => ({
+        repositories: [repository("fresh"), repository("removed"), repository("broken")],
+        problems: ["acme-org: only the first 100 repositories are listed."],
+      })),
+      openFromGit,
+    });
+    const { onClose } = renderDialog();
+
+    await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+
+    expect(await screen.findByRole("checkbox", { name: "acme/fresh" })).toBeChecked();
+    expect(bridge.listTaggedWorkspaces).toHaveBeenCalledWith(ACCOUNT);
+    expect(screen.getByText(/only the first 100 repositories/)).toBeInTheDocument();
+    // Nothing is cloned until asked.
+    expect(openFromGit).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("checkbox", { name: "acme/removed" }));
+    await user.click(screen.getByRole("button", { name: "Open 2 workspaces" }));
+
+    expect(await screen.findByText("Opened as Fresh")).toBeInTheDocument();
+    expect(screen.getByText(/Not opened: This is not an APIWeave workspace repository\./)).toBeInTheDocument();
+    expect(screen.getByText("(not opened)")).toBeInTheDocument();
+    expect(openFromGit.mock.calls).toEqual([
+      ["https://github.com/acme/fresh.git", ACCOUNT],
+      ["https://github.com/acme/broken.git", ACCOUNT],
+    ]);
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("says when the account has no workspace to open here, and is simply done", async () => {
+    const user = userEvent.setup();
+    installGitBridge(untrackedStatus, { signIn: vi.fn(async () => ACCOUNT) });
+    renderDialog();
+
+    await user.click(screen.getByRole("button", { name: /sign in in the browser/i }));
+
+    expect(await screen.findByText(/holds a workspace that is not already here/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
   });
 
   it("sends the user to the browser alone when the host has no device flow and so no code", async () => {

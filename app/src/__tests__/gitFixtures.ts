@@ -93,6 +93,7 @@ export function installGitBridge(
     openSignInPage: vi.fn(async () => undefined),
     listOwners: vi.fn(async (account) => ({ owners: [{ path: account.login, kind: "user" as const }], problem: null })),
     listRepositories: vi.fn(async () => ({ repositories: [], problems: [] })),
+    listTaggedWorkspaces: vi.fn(async () => ({ repositories: [], problems: [] })),
     createRepository: vi.fn(async (_account, request) => ({
       repository: {
         owner: request.owner,

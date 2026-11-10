@@ -87,11 +87,19 @@ function expectNothingCreated(harness: Harness): void {
 describe("GitSyncService.openFromGit", () => {
   it("opens a repository pushed by connectRemote as a tracked, non-personal workspace with an identical snapshot", async () => {
     const { source, url } = await publishedWorkspace()
-    const target = openHarness()
+    const opened: string[] = []
+    const imported: string[] = []
+    const target = openHarness({
+      onOpened: (workspaceId) => opened.push(workspaceId),
+      onImported: (workspaceId) => imported.push(workspaceId),
+    })
 
     const result = await target.sync.openFromGit(url)
 
     expect(result).toEqual({ kind: "opened", workspaceId: source.workspaceId, slug: "acme-qa-2", name: "Acme QA", warnings: [] })
+    // Announced as an open — so every window refetches the workspace list — and not as an import.
+    expect(opened).toEqual([source.workspaceId])
+    expect(imported).toEqual([])
     const clone = path.join(target.cloneRoot, source.workspaceId)
     expect(fs.existsSync(path.join(clone, ".git"))).toBe(true)
     expect(fs.existsSync(path.join(clone, ".git", OPEN_MARKER))).toBe(false)

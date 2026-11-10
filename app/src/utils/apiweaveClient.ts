@@ -80,6 +80,9 @@ import type { ProjectImportDryRunResult } from "../types/ProjectImportDryRunResu
 import type { ImportResult } from "../types/ImportResult";
 import type { Run } from "../types/Run";
 import type { ScopedEnvironment } from "../types/ScopedEnvironment";
+import type { SecretMetadata } from "../types/SecretMetadata";
+import type { SecretPublicKey } from "../types/SecretPublicKey";
+import type { SecretScopeType } from "../types/SecretScopeType";
 import type { Workflow } from "../types/Workflow";
 import type { Workspace } from "../types/Workspace";
 
@@ -208,17 +211,6 @@ type ProjectBundle = Record<
   string,
   JsonValue | readonly JsonValue[] | undefined
 >;
-type SecretScopeType = "environment" | "workspace";
-type SecretMetadata = {
-  readonly secretId: string;
-  readonly name: string;
-  readonly scopeType: SecretScopeType;
-  readonly scopeId: string;
-  readonly keyId: string;
-  readonly label?: string;
-  readonly createdAt: string;
-  readonly updatedAt: string;
-};
 type ResolvedSecret = {
   readonly metadata: SecretMetadata;
   readonly resolvedScope: SecretScopeType;
@@ -228,11 +220,6 @@ type SecretScopeTarget = {
   readonly scopeType: SecretScopeType;
   readonly scopeId: string;
   readonly name?: string;
-};
-type SecretPublicKey = {
-  readonly keyId: string;
-  readonly publicKey: string;
-  readonly algorithm: "libsodium-sealed-box";
 };
 
 export class IpcError extends Error {
@@ -921,7 +908,8 @@ export const desktop = {
    * immediately outside Electron, where there is no window to repaint.
    */
   applyTheme: (dark: boolean): Promise<void> =>
-    getDesktopBridge()?.applyTheme?.(dark) ?? Promise.resolve(),
+    getDesktopBridge()?.applyTheme?.(dark).catch(unwrapRemoteError) ??
+    Promise.resolve(),
   /** Main's quit handshake: the handler resolves whether the window may close. */
   onCloseRequested: (handler: () => Promise<boolean>) =>
     getDesktopBridge()?.onCloseRequested(handler) ?? (() => undefined),
@@ -933,9 +921,9 @@ export const desktop = {
   hasScreenReader: (): boolean => getDesktopBridge()?.screenReader === true,
   /** Undefined outside Electron: there is no tray or login item to manage. */
   getBackground: (): Promise<BackgroundSettings> | undefined =>
-    getDesktopBridge()?.getBackground?.(),
+    getDesktopBridge()?.getBackground?.().catch(unwrapRemoteError),
   setBackground: (settings: BackgroundSettings): Promise<BackgroundSettings> =>
-    getDesktopBridge()?.setBackground?.(settings) ??
+    getDesktopBridge()?.setBackground?.(settings).catch(unwrapRemoteError) ??
     Promise.reject(new Error("Background settings need the desktop app")),
 } as const;
 
@@ -954,19 +942,25 @@ const MCP_UNAVAILABLE: McpStatus = {
 export const mcp = {
   isAvailable: (): boolean => getMcpBridge() !== undefined,
   getStatus: (): Promise<McpStatus> =>
-    getMcpBridge()?.getStatus() ?? Promise.resolve(MCP_UNAVAILABLE),
+    getMcpBridge()?.getStatus().catch(unwrapRemoteError) ??
+    Promise.resolve(MCP_UNAVAILABLE),
   enable: (): Promise<McpStatus> =>
-    getMcpBridge()?.enable() ?? Promise.resolve(MCP_UNAVAILABLE),
+    getMcpBridge()?.enable().catch(unwrapRemoteError) ??
+    Promise.resolve(MCP_UNAVAILABLE),
   disable: (): Promise<McpStatus> =>
-    getMcpBridge()?.disable() ?? Promise.resolve(MCP_UNAVAILABLE),
+    getMcpBridge()?.disable().catch(unwrapRemoteError) ??
+    Promise.resolve(MCP_UNAVAILABLE),
   regenerateToken: (): Promise<McpStatus> =>
-    getMcpBridge()?.regenerateToken() ?? Promise.resolve(MCP_UNAVAILABLE),
+    getMcpBridge()?.regenerateToken().catch(unwrapRemoteError) ??
+    Promise.resolve(MCP_UNAVAILABLE),
   listAgentApprovals: (): Promise<readonly AgentRunApproval[]> =>
-    getMcpBridge()?.listAgentApprovals() ?? Promise.resolve([]),
+    getMcpBridge()?.listAgentApprovals().catch(unwrapRemoteError) ??
+    Promise.resolve([]),
   revokeAgentApproval: (approvalId: string): Promise<boolean> =>
-    getMcpBridge()?.revokeAgentApproval(approvalId) ?? Promise.resolve(false),
+    getMcpBridge()?.revokeAgentApproval(approvalId).catch(unwrapRemoteError) ??
+    Promise.resolve(false),
   setAutoApproveAgentRuns: (enabled: boolean): Promise<McpStatus> =>
-    getMcpBridge()?.setAutoApproveAgentRuns(enabled) ??
+    getMcpBridge()?.setAutoApproveAgentRuns(enabled).catch(unwrapRemoteError) ??
     Promise.resolve(MCP_UNAVAILABLE),
 } as const;
 
@@ -990,25 +984,30 @@ const idleUpdateStatus: UpdateStatus = {
 };
 
 /** Controls for the Settings > Updates panel. Resolves to an idle status
- * when the bridge is absent (e.g. web preview outside Electron). The
- * per-method `?.` on the newer calls keeps a renderer paired with an older
- * preload from throwing rather than degrading. */
+ * when the bridge is absent. */
 export const updates = {
   isAvailable: (): boolean => getUpdatesBridge() !== undefined,
   getStatus: (): Promise<UpdateStatus> =>
-    getUpdatesBridge()?.getStatus() ?? Promise.resolve(idleUpdateStatus),
+    getUpdatesBridge()?.getStatus().catch(unwrapRemoteError) ??
+    Promise.resolve(idleUpdateStatus),
   check: (): Promise<UpdateStatus> =>
-    getUpdatesBridge()?.check() ?? Promise.resolve(idleUpdateStatus),
+    getUpdatesBridge()?.check().catch(unwrapRemoteError) ??
+    Promise.resolve(idleUpdateStatus),
   download: (): Promise<UpdateStatus> =>
-    getUpdatesBridge()?.download?.() ?? Promise.resolve(idleUpdateStatus),
+    getUpdatesBridge()?.download().catch(unwrapRemoteError) ??
+    Promise.resolve(idleUpdateStatus),
   setPolicy: (policy: UpdatePolicy): Promise<UpdateStatus> =>
-    getUpdatesBridge()?.setPolicy?.(policy) ?? Promise.resolve(idleUpdateStatus),
+    getUpdatesBridge()?.setPolicy(policy).catch(unwrapRemoteError) ??
+    Promise.resolve(idleUpdateStatus),
   restartAndInstall: (): Promise<void> =>
-    getUpdatesBridge()?.restartAndInstall() ?? Promise.resolve(),
+    getUpdatesBridge()?.restartAndInstall().catch(unwrapRemoteError) ??
+    Promise.resolve(),
   openReleasePage: (): Promise<void> =>
-    getUpdatesBridge()?.openReleasePage() ?? Promise.resolve(),
+    getUpdatesBridge()?.openReleasePage().catch(unwrapRemoteError) ??
+    Promise.resolve(),
   openLogFile: (): Promise<void> =>
-    getUpdatesBridge()?.openLogFile?.() ?? Promise.resolve(),
+    getUpdatesBridge()?.openLogFile().catch(unwrapRemoteError) ??
+    Promise.resolve(),
   onStatusChanged: (callback: (status: UpdateStatus) => void): (() => void) =>
     getUpdatesBridge()?.onStatusChanged(callback) ?? (() => undefined),
 } as const;
@@ -1018,6 +1017,9 @@ function getAgentsBridge(): AgentsBridge | undefined {
     globalThis.window?.__APIWEAVE_AGENTS__ ?? globalApiweave.__APIWEAVE_AGENTS__
   );
 }
+
+const agentsDesktopOnly = (): Promise<never> =>
+  Promise.reject(new Error("Agents are only available in the desktop app"));
 
 /**
  * Coding-agent roster, project paths and launching.
@@ -1033,47 +1035,61 @@ function getAgentsBridge(): AgentsBridge | undefined {
 export const agents = {
   isAvailable: (): boolean => getAgentsBridge() !== undefined,
   listRoster: (workspaceId: string): Promise<readonly AgentRosterEntry[]> =>
-    getAgentsBridge()?.listRoster(workspaceId) ?? Promise.resolve([]),
+    getAgentsBridge()?.listRoster(workspaceId).catch(unwrapRemoteError) ??
+    Promise.resolve([]),
   refreshAvailability: (
     workspaceId: string,
   ): Promise<readonly AgentRosterEntry[]> =>
-    getAgentsBridge()?.refreshAvailability(workspaceId) ?? Promise.resolve([]),
+    getAgentsBridge()
+      ?.refreshAvailability(workspaceId)
+      .catch(unwrapRemoteError) ?? Promise.resolve([]),
   saveCustomAgent: (
     workspaceId: string,
     definition: AgentDefinition,
   ): Promise<AgentRosterEntry> =>
-    getAgentsBridge()?.saveCustomAgent(workspaceId, definition) ??
-    Promise.reject(new Error("Agents are only available in the desktop app")),
+    getAgentsBridge()
+      ?.saveCustomAgent(workspaceId, definition)
+      .catch(unwrapRemoteError) ?? agentsDesktopOnly(),
   deleteCustomAgent: (workspaceId: string, agentKey: string): Promise<void> =>
-    getAgentsBridge()?.deleteCustomAgent(workspaceId, agentKey) ??
-    Promise.resolve(),
+    getAgentsBridge()
+      ?.deleteCustomAgent(workspaceId, agentKey)
+      .catch(unwrapRemoteError) ?? Promise.resolve(),
   getDefaultAgentKey: (workspaceId: string): Promise<string> =>
-    getAgentsBridge()?.getDefaultAgentKey(workspaceId) ?? Promise.resolve(""),
+    getAgentsBridge()
+      ?.getDefaultAgentKey(workspaceId)
+      .catch(unwrapRemoteError) ?? Promise.resolve(""),
   setDefaultAgentKey: (workspaceId: string, agentKey: string): Promise<void> =>
-    getAgentsBridge()?.setDefaultAgentKey(workspaceId, agentKey) ??
-    Promise.resolve(),
+    getAgentsBridge()
+      ?.setDefaultAgentKey(workspaceId, agentKey)
+      .catch(unwrapRemoteError) ?? Promise.resolve(),
   resolveLocalPath: (
     workspaceId: string,
     scope: AgentScope,
   ): Promise<AgentPathResolution> =>
-    getAgentsBridge()?.resolveLocalPath(workspaceId, scope) ??
+    getAgentsBridge()
+      ?.resolveLocalPath(workspaceId, scope)
+      .catch(unwrapRemoteError) ??
     Promise.resolve({ localPath: null, source: "none" as const }),
   chooseLocalPath: (
     workspaceId: string,
     scope: AgentScope,
   ): Promise<string | null> =>
-    getAgentsBridge()?.chooseLocalPath(workspaceId, scope) ??
-    Promise.resolve(null),
+    getAgentsBridge()
+      ?.chooseLocalPath(workspaceId, scope)
+      .catch(unwrapRemoteError) ?? Promise.resolve(null),
   clearLocalPath: (workspaceId: string, scope: AgentScope): Promise<void> =>
-    getAgentsBridge()?.clearLocalPath(workspaceId, scope) ?? Promise.resolve(),
+    getAgentsBridge()
+      ?.clearLocalPath(workspaceId, scope)
+      .catch(unwrapRemoteError) ?? Promise.resolve(),
   listSessions: (workspaceId: string): Promise<readonly AgentSession[]> =>
-    getAgentsBridge()?.listSessions(workspaceId) ?? Promise.resolve([]),
+    getAgentsBridge()?.listSessions(workspaceId).catch(unwrapRemoteError) ??
+    Promise.resolve([]),
   launchExternal: (request: AgentLaunchRequest): Promise<AgentSession> =>
-    getAgentsBridge()?.launchExternal(request) ??
-    Promise.reject(new Error("Agents are only available in the desktop app")),
+    getAgentsBridge()?.launchExternal(request).catch(unwrapRemoteError) ??
+    agentsDesktopOnly(),
   launchEmbedded: (request: AgentEmbeddedLaunchRequest): Promise<AgentSession> =>
-    getAgentsBridge()?.launchEmbedded(request) ??
-    Promise.reject(new Error("Agents are only available in the desktop app")),
+    getAgentsBridge()?.launchEmbedded(request).catch(unwrapRemoteError) ??
+    agentsDesktopOnly(),
   /**
    * Reopen a finished session's conversation. Rejects rather than resolving
    * without a bridge, as the launches do: there is a button behind this, and it
@@ -1084,24 +1100,29 @@ export const agents = {
     cols: number,
     rows: number,
   ): Promise<AgentSession> =>
-    getAgentsBridge()?.resumeSession(sessionId, cols, rows) ??
-    Promise.reject(new Error("Agents are only available in the desktop app")),
+    getAgentsBridge()
+      ?.resumeSession(sessionId, cols, rows)
+      .catch(unwrapRemoteError) ?? agentsDesktopOnly(),
   write: (sessionId: string, data: string): Promise<void> =>
-    getAgentsBridge()?.write(sessionId, data) ?? Promise.resolve(),
+    getAgentsBridge()?.write(sessionId, data).catch(unwrapRemoteError) ??
+    Promise.resolve(),
   resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
-    getAgentsBridge()?.resize(sessionId, cols, rows) ?? Promise.resolve(),
+    getAgentsBridge()?.resize(sessionId, cols, rows).catch(unwrapRemoteError) ??
+    Promise.resolve(),
   setPaused: (sessionId: string, paused: boolean): Promise<void> =>
-    getAgentsBridge()?.setPaused(sessionId, paused) ?? Promise.resolve(),
+    getAgentsBridge()?.setPaused(sessionId, paused).catch(unwrapRemoteError) ??
+    Promise.resolve(),
   killSession: (sessionId: string): Promise<AgentSession> =>
-    getAgentsBridge()?.killSession(sessionId) ??
-    Promise.reject(new Error("Agents are only available in the desktop app")),
+    getAgentsBridge()?.killSession(sessionId).catch(unwrapRemoteError) ??
+    agentsDesktopOnly(),
   /**
    * Forget a finished session's record. Resolves rather than rejects without a
    * bridge, matching `deleteCustomAgent`: outside the desktop shell there is no
    * session table, so there is nothing left to remove and nothing to report.
    */
   deleteSession: (sessionId: string): Promise<void> =>
-    getAgentsBridge()?.deleteSession(sessionId) ?? Promise.resolve(),
+    getAgentsBridge()?.deleteSession(sessionId).catch(unwrapRemoteError) ??
+    Promise.resolve(),
   onSessionChanged: (
     callback: (event: AgentSessionEvent) => void,
   ): (() => void) =>
@@ -1149,7 +1170,9 @@ export const agents = {
     };
 
     try {
-      const attached = await bridge.attach(sessionId);
+      const attached = await bridge
+        .attach(sessionId)
+        .catch(unwrapRemoteError);
       if (!attached) {
         teardown();
         return null;
@@ -1177,11 +1200,14 @@ const oauthDesktopOnly = (): Promise<never> =>
  */
 export const oauth = {
   authorize: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
-    getOAuthBridge()?.authorize(request) ?? oauthDesktopOnly(),
+    getOAuthBridge()?.authorize(request).catch(unwrapRemoteError) ??
+    oauthDesktopOnly(),
   status: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
-    getOAuthBridge()?.status(request) ?? oauthDesktopOnly(),
+    getOAuthBridge()?.status(request).catch(unwrapRemoteError) ??
+    oauthDesktopOnly(),
   clear: (request: OAuthTokenRequest): Promise<OAuthTokenStatus> =>
-    getOAuthBridge()?.clear(request) ?? oauthDesktopOnly(),
+    getOAuthBridge()?.clear(request).catch(unwrapRemoteError) ??
+    oauthDesktopOnly(),
 } as const;
 
 function getNetworkBridge(): NetworkBridge | undefined {
@@ -1207,12 +1233,13 @@ function unwrapRemoteError(error: unknown): never {
 /** Settings > Network. A sibling of `oauth`, off the router facade: see `NetworkBridge`. */
 export const network = {
   get: (): Promise<NetworkSettingsState> =>
-    getNetworkBridge()?.get() ?? networkDesktopOnly(),
+    getNetworkBridge()?.get().catch(unwrapRemoteError) ?? networkDesktopOnly(),
   save: (update: NetworkSettingsUpdate): Promise<NetworkSettingsState> =>
     getNetworkBridge()?.save(update).catch(unwrapRemoteError) ??
     networkDesktopOnly(),
   chooseFile: (): Promise<string | null> =>
-    getNetworkBridge()?.chooseFile() ?? networkDesktopOnly(),
+    getNetworkBridge()?.chooseFile().catch(unwrapRemoteError) ??
+    networkDesktopOnly(),
 } as const;
 
 function getGitBridge(): GitBridge | undefined {
@@ -1369,6 +1396,9 @@ export const git = {
     request: GitRepositoryListRequest,
   ): Promise<GitRepositoryList> =>
     getGitBridge()?.listRepositories(account, request).catch(unwrapRemoteError) ??
+    gitDesktopOnly(),
+  listTaggedWorkspaces: (account: GitAccountRef): Promise<GitRepositoryList> =>
+    getGitBridge()?.listTaggedWorkspaces(account).catch(unwrapRemoteError) ??
     gitDesktopOnly(),
   onStatusChanged: (
     callback: (status: WorkspaceGitStatus) => void,

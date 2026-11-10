@@ -286,6 +286,12 @@ export interface GitSyncServiceOptions {
    */
   readonly onImported?: (workspaceId: string) => void
   /**
+   * Told when {@link GitSyncService.openFromGit} created a workspace: its row
+   * and records are new, so a renderer holding the workspace list must
+   * refetch it. Not an import — nothing existed to change.
+   */
+  readonly onOpened?: (workspaceId: string) => void
+  /**
    * A token for a bound account, asked for once per git call that reaches an
    * HTTPS remote (`HostCliService.token`). Rejects with a {@link GitError} —
    * `account_unavailable` — when there is none. Without it, a bound account
@@ -1401,7 +1407,7 @@ export class GitSyncService {
    * The workspace here whose remote is `remoteUrl`, if any, matched across the
    * https, ssh:// and user@host:path spellings of one repository.
    */
-  private workspaceOnRemote(remoteUrl: string): Workspace | undefined {
+  public workspaceOnRemote(remoteUrl: string): Workspace | undefined {
     const identity = remoteIdentity(remoteUrl)
     if (identity === undefined) return undefined
     for (const binding of this.repositories.workspaceGit.listAll()) {
@@ -1475,6 +1481,11 @@ export class GitSyncService {
       })
       // The import announced its writes; the clone already holds what they wrote.
       this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
+      try {
+        this.options.onOpened?.(workspaceId)
+      } catch (error) {
+        log.error("open observer failed for workspace", workspaceId, error)
+      }
       // The rows claim the clone now; a marker that will not go is removed by the next reconcile.
       await rm(openMarker(directory), { force: true }).catch((cleanupError: unknown) => {
         log.warn(`could not remove the open marker from the clone of workspace ${workspaceId}`, cleanupError)
@@ -2387,12 +2398,17 @@ export class GitSyncService {
     })
     this.committedWrites.set(workspaceId, this.writes.get(workspaceId) ?? 0)
     for (const warning of warnings) log.warn(`import of workspace ${workspaceId}: ${warning}`)
+    this.announceImported(workspaceId)
+    return true
+  }
+
+  /** Tell the import observer; one that throws is logged, never the import's failure. */
+  private announceImported(workspaceId: string): void {
     try {
       this.options.onImported?.(workspaceId)
     } catch (error) {
       log.error("import observer failed for workspace", workspaceId, error)
     }
-    return true
   }
 
   /**
@@ -2775,6 +2791,7 @@ function authorityOf(host: string): string {
  * spellings of one repository compare equal. Undefined for a URL that is not a
  * host remote (a `file://` one), which has no other spelling to match.
  */
+// fallow-ignore-next-line complexity -- every branch is one spelling of a remote URL; the CRAP estimate is a coverage artifact, and git_sync_open.test.ts's duplicate table covers https, ssh://, scp and case variants.
 function remoteIdentity(url: string): string | undefined {
   const trimmed = url.trim().replace(/\/+$/, "")
   if (trimmed === "") return undefined
