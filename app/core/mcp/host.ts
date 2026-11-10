@@ -7,6 +7,8 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js"
 import type { IpcRouter } from "../ipc/router"
 import type { RunEventBroker } from "../runner/run_event_broker"
 import type { McpClientConfig } from "@shared/types/McpClientConfig"
+import { buildMcpCatalog } from "./catalog"
+import { LOOPBACK_HOST, MCP_PATH, writeJsonFile } from "./launcher/contract"
 import { createMcpServer } from "./server"
 import { generateToken, loadToken, saveTokenInfo, type McpTokenInfo } from "./token-file"
 
@@ -28,13 +30,17 @@ interface Session {
 
 /** Fixed loopback port (decision #15). Falls back to an ephemeral port on collision. */
 export const DEFAULT_MCP_PORT = 47271
-export const MCP_PATH = "/mcp"
-/** Loopback only — never 0.0.0.0. The whole security model rests on this. */
-export const LOOPBACK_HOST = "127.0.0.1"
+export { LOOPBACK_HOST, MCP_PATH }
 
 export interface McpHostOptions {
   readonly router: IpcRouter
   readonly tokenFilePath: string
+  /**
+   * Where to write the catalog (`launcher/contract.ts`) on start, for the stdio launcher to
+   * answer an agent's handshake before the app is up. The desktop app always
+   * passes it; tests of the HTTP transport alone leave it out.
+   */
+  readonly catalogFilePath?: string
   readonly version: string
   readonly preferredPort?: number
   readonly maxBodyBytes?: number
@@ -61,6 +67,7 @@ export interface McpHostOptions {
 export class McpHost {
   private readonly router: IpcRouter
   private readonly tokenFilePath: string
+  private readonly catalogFilePath: string | undefined
   private readonly version: string
   private readonly preferredPort: number
   private readonly maxBodyBytes: number
@@ -81,6 +88,7 @@ export class McpHost {
   constructor(options: McpHostOptions) {
     this.router = options.router
     this.tokenFilePath = options.tokenFilePath
+    this.catalogFilePath = options.catalogFilePath
     this.version = options.version
     this.preferredPort = options.preferredPort ?? DEFAULT_MCP_PORT
     this.maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_MCP_BODY_BYTES
@@ -150,6 +158,10 @@ export class McpHost {
   private async startLocked(): Promise<McpTokenInfo> {
     if (this.info !== null) return this.info
 
+    // Before listening: a server that cannot describe itself must not start half-way.
+    if (this.catalogFilePath !== undefined) {
+      writeJsonFile(this.catalogFilePath, await buildMcpCatalog(createMcpServer(this.router, this.version, this.broker)))
+    }
     this.token = loadToken(this.tokenFilePath) ?? generateToken()
     const server = http.createServer((req, res) => {
       void this.handle(req, res)

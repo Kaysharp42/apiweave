@@ -11,6 +11,34 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Coding agents can reach APIWeave even when it is not running.** The MCP
+  Server settings page now offers a stdio launcher — a small script a client
+  runs with its own Node.js 20 or newer — in place of the direct HTTP URL. The
+  launcher answers the handshake and lists the available tools from a catalog
+  the app writes on every start, so an agent no longer sees the server as
+  disconnected before APIWeave is opened. A tool call starts APIWeave hidden in
+  the tray when the bridge is unreachable, then forwards the call over the
+  existing loopback bridge; a dropped call is retried only when the tool is
+  read-only, because a write may already have run. Node.js is the one
+  requirement, and the page says so when it is missing.
+- **Connect your agents.** One click per client writes the launcher into Claude
+  Code's, Codex's, OpenCode's, Cursor's, VS Code's or Claude Desktop's own
+  *user* settings, and **Disconnect** removes the `apiweave` entry again.
+  Nothing is written until the user clicks, and only that entry is changed:
+  JSON files are edited in place, so comments, formatting and other servers
+  survive, and a file that cannot be parsed is left alone with an error naming
+  it. Claude Code and Codex are written through their own `mcp add` commands.
+  A session APIWeave launches for Codex or OpenCode then relies on the user
+  entry instead of adding a second one it would merge into.
+- **`/apiweave:e2e`.** A new MCP prompt is the one command that puts an agent to
+  work testing with APIWeave: it finds the workspace, reads the service's code
+  for real routes and fields, reuses existing workflows and conventions, builds
+  journey-shaped workflows with extracted ids, assertions and negative cases,
+  clears the diagnosis before running, and reports API bugs with evidence
+  rather than weakening an assertion to make a run pass.
+
 ### Fixed
 
 - **Opening a workflow no longer flashes the graph in the wrong place.** The

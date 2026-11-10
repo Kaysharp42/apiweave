@@ -1812,6 +1812,8 @@ describe("AgentService — launcher config carrier", () => {
  * must be written in its own shape (Qwen).
  */
 describe("AgentService — MCP wiring carriers", () => {
+  let globallyConnected: ReadonlySet<string> = new Set()
+
   function carrierService(mcpOn: boolean): AgentService {
     return new AgentService(
       agentRepository,
@@ -1825,6 +1827,7 @@ describe("AgentService — MCP wiring carriers", () => {
         pickDirectory: pickDirectory as unknown as AgentEnvironment["pickDirectory"],
         getMcpConfig: () =>
           mcpOn ? { url: "http://127.0.0.1:47271/mcp", token: "secret-token", port: 47271 } : null,
+        hasGlobalMcpEntry: (agentKey) => globallyConnected.has(agentKey),
         agentFilesDir,
         pty,
       },
@@ -1881,6 +1884,29 @@ describe("AgentService — MCP wiring carriers", () => {
     expect(spawned?.args.join(" ")).not.toContain("secret-token")
     expect(spawned?.env["APIWEAVE_MCP_TOKEN"]).toBe("secret-token")
     expect(mcpConfigFiles()).toHaveLength(0)
+  })
+
+  /**
+   * Once Connect your agents has put the launcher in Codex's own config, a
+   * `-c mcp_servers.apiweave.url=…` override would be merged into that stdio
+   * entry, and Codex rejects `url` on a stdio server. So the session carries
+   * no MCP wiring and relies on the user entry.
+   */
+  it("adds no per-session MCP wiring when the agent's own config already runs the launcher", async () => {
+    globallyConnected = new Set(["codex-runner"])
+    try {
+      const { spawned } = await seedAndLaunch({
+        ...realExecutableAgent(),
+        agentKey: "codex-runner",
+        mcpConfigArgs: ["-c", "mcp_servers.apiweave.url={url}"],
+        mcpConfigEnv: { APIWEAVE_MCP_TOKEN: "{token}" },
+      })
+
+      expect(spawned?.args).toEqual(["--version"])
+      expect(spawned?.env["APIWEAVE_MCP_TOKEN"]).toBeUndefined()
+    } finally {
+      globallyConnected = new Set()
+    }
   })
 
   /**

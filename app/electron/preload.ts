@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import type { ContractResult } from "@shared/contract/errors"
 import type { RunProgressEvent } from "@shared/types/RunProgressEvent"
 import type { McpStatus } from "@shared/types/McpStatus"
+import type { AgentMcpConnections } from "@shared/types/AgentMcpConnections"
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval"
 import type { AgentsBridge } from "@shared/types/AgentsBridge"
 import type { AgentSessionEvent } from "@shared/types/AgentSessionEvent"
@@ -150,6 +151,10 @@ type McpBridge = {
   readonly listAgentApprovals: () => Promise<readonly AgentRunApproval[]>
   readonly revokeAgentApproval: (approvalId: string) => Promise<boolean>
   readonly setAutoApproveAgentRuns: (enabled: boolean) => Promise<McpStatus>
+  /** Connect your agents: writes other applications' config files, so privileged. */
+  readonly listAgentConnections: () => Promise<AgentMcpConnections>
+  readonly connectAgent: (clientId: string) => Promise<AgentMcpConnections>
+  readonly disconnectAgent: (clientId: string) => Promise<AgentMcpConnections>
 }
 
 const mcpBridge: McpBridge = {
@@ -162,6 +167,9 @@ const mcpBridge: McpBridge = {
     ipcRenderer.invoke("mcp:revokeAgentApproval", approvalId) as Promise<boolean>,
   setAutoApproveAgentRuns: (enabled) =>
     ipcRenderer.invoke("mcp:setAutoApproveAgentRuns", enabled) as Promise<McpStatus>,
+  listAgentConnections: call<AgentMcpConnections>("mcp:listAgentConnections"),
+  connectAgent: invokeBridge<[string], AgentMcpConnections>("mcp:connectAgent"),
+  disconnectAgent: invokeBridge<[string], AgentMcpConnections>("mcp:disconnectAgent"),
 }
 
 contextBridge.exposeInMainWorld("__APIWEAVE_MCP__", mcpBridge)

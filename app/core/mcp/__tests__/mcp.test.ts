@@ -34,7 +34,7 @@ import { IpcRouter } from "../../ipc/router"
 import type { AgentWriteEvent } from "@shared/types/AgentWriteEvent"
 import { registerAllHandlers, type HandlerDeps } from "../../ipc/handlers"
 import { MCP_TOOLS, toolName } from "../tools"
-import { MCP_PROMPTS, AUTHOR_ASSERTIONS_PROMPT } from "../prompts"
+import { MCP_PROMPTS, AUTHOR_ASSERTIONS_PROMPT, E2E_PROMPT } from "../prompts"
 import { MCP_GUIDES, guideUri } from "../guide"
 import { createMcpServer } from "../server"
 import { McpHost } from "../host"
@@ -2208,9 +2208,62 @@ describe("MCP bridge — reuse primitives reach agents (presets, sub-workflows, 
   })
 })
 
+describe("MCP prompts — /apiweave:e2e", () => {
+  const textOfPrompt = (task?: string): string =>
+    E2E_PROMPT.build(task === undefined ? {} : { task })
+      .messages.map((m) => (m.content.type === "text" ? m.content.text : ""))
+      .join("")
+
+  it("names only tools the bridge publishes", () => {
+    const published = new Set([...MCP_TOOLS.map(toolName), "server_info"])
+    const named = [...textOfPrompt("x y").matchAll(/`([a-z]+_[a-zA-Z]+)`/g)].map((match) => match[1])
+    expect(named.length).toBeGreaterThan(10)
+    for (const name of named) expect(published, name).toContain(name)
+  })
+
+  it("asks what to test when nothing was typed, and never invents a task", () => {
+    for (const blank of [undefined, "", "   "]) {
+      const text = textOfPrompt(blank)
+      expect(text).toContain("No task was typed")
+      expect(text).not.toContain("The user asked")
+    }
+  })
+
+  it("quotes a typed task, and flags a lone word as possibly cut short by the client", () => {
+    const sentence = textOfPrompt("invoice create and list")
+    expect(sentence).toContain("> invoice create and list")
+    expect(sentence).not.toContain("only its first word")
+
+    expect(textOfPrompt("invoice")).toContain("only its first word")
+    // OpenCode 1.x sends `$1` and substitutes the full text into the output itself.
+    expect(textOfPrompt("$1")).toContain("> $1")
+    expect(textOfPrompt("$1")).not.toContain("only its first word")
+  })
+
+  it("keeps the test-integrity and secret rules", () => {
+    const text = textOfPrompt("x y")
+    expect(text).toContain("Never loosen or delete an assertion")
+    expect(text).toContain("{{secrets.NAME}}")
+    expect(text).toContain("Do not write test scripts")
+  })
+
+  it("is listed first and reads over an MCP client with its task", async () => {
+    expect(MCP_PROMPTS[0]?.name).toBe("e2e")
+    const client = await connectClient()
+    const { prompts } = await client.listPrompts()
+    expect(prompts.find((p) => p.name === "e2e")?.arguments).toEqual([
+      expect.objectContaining({ name: "task", required: false }),
+    ])
+    const result = await client.getPrompt({ name: "e2e", arguments: { task: "pets crud" } })
+    const text = result.messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
+    expect(text).toContain("> pets crud")
+    await client.close()
+  })
+})
+
 describe("MCP prompts — agent-mediated assertion authoring (no embedded LLM)", () => {
-  it("ships exactly the author_assertions prompt with canonical guidance", () => {
-    expect(MCP_PROMPTS.map((p) => p.name)).toEqual(["author_assertions"])
+  it("ships the e2e and author_assertions prompts, the latter with canonical guidance", () => {
+    expect(MCP_PROMPTS.map((p) => p.name)).toEqual(["e2e", "author_assertions"])
     const { messages } = AUTHOR_ASSERTIONS_PROMPT.build({})
     const text = messages.map((m) => (m.content.type === "text" ? m.content.text : "")).join("")
     // Canonical sources + operators are pulled from the shared enums — assert a few hold.

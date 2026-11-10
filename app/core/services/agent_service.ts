@@ -55,6 +55,13 @@ export interface AgentEnvironment {
   readonly pickDirectory: (options: { readonly title: string; readonly defaultPath?: string }) => Promise<string | null>
   /** Live MCP bridge config, or `null` when the bridge is not running. */
   readonly getMcpConfig: () => McpClientConfig | null
+  /**
+   * True when this agent's own user config already runs APIWeave's stdio
+   * launcher (Connect your agents). The session then gets no per-session
+   * `apiweave` entry: Codex and OpenCode merge one into the user's entry of the
+   * same name, and a stdio entry overlaid with HTTP fields is neither.
+   */
+  readonly hasGlobalMcpEntry?: (agentKey: string) => boolean
   /** APIWeave's own userData subdirectory for generated agent files. */
   readonly agentFilesDir: string
   /**
@@ -716,7 +723,8 @@ export class AgentService {
       mcpWired:
         (definition.mcpConfigArgs.length > 0 ||
           Object.keys(definition.mcpConfigEnv).length > 0 ||
-          Object.keys(definition.configEnv).length > 0) &&
+          Object.keys(definition.configEnv).length > 0 ||
+          this.environment.hasGlobalMcpEntry?.(definition.agentKey) === true) &&
         this.environment.getMcpConfig() !== null,
     })
   }
@@ -814,7 +822,7 @@ export class AgentService {
       this.environment.agentFilesDir,
       sessionId,
       prepared.briefing === null ? null : briefingPathFor(this.environment.agentFilesDir, sessionId),
-      this.environment.getMcpConfig(),
+      this.sessionMcpConfig(prepared.definition),
     )
     return renderConfigEnv(configEnv, configPath)
   }
@@ -1123,11 +1131,21 @@ export class AgentService {
    * gets no file at all — scratch with no reader is still scratch to keep
    * honest.
    */
+  /**
+   * The bridge config this session is wired with: null when the bridge is off,
+   * or when the agent's own user config already runs the launcher and so
+   * already reaches the bridge (see `hasGlobalMcpEntry`).
+   */
+  private sessionMcpConfig(definition: AgentDefinition): McpClientConfig | null {
+    if (this.environment.hasGlobalMcpEntry?.(definition.agentKey) === true) return null
+    return this.environment.getMcpConfig()
+  }
+
   private mcpArgsFor(definition: AgentDefinition, sessionId: string): readonly string[] {
     if (definition.mcpConfigArgs.length === 0) {
       return []
     }
-    const config = this.environment.getMcpConfig()
+    const config = this.sessionMcpConfig(definition)
     if (config === null) {
       return []
     }
@@ -1154,7 +1172,7 @@ export class AgentService {
     if (Object.keys(definition.mcpConfigEnv).length === 0) {
       return {}
     }
-    const config = this.environment.getMcpConfig()
+    const config = this.sessionMcpConfig(definition)
     if (config === null) {
       return {}
     }

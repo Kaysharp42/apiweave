@@ -1,15 +1,26 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { ConfirmDialog } from "../molecules/ConfirmDialog";
 import { ToggleSetting } from "../molecules/ToggleSetting";
+import { TutorialCodeBlock } from "../molecules/TutorialCodeBlock";
+import { AgentConnectionsPanel } from "./AgentConnectionsPanel";
 import { mcp } from "../../utils/apiweaveClient";
 import type { McpStatus } from "@shared/types/McpStatus";
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 
-/** The `mcpServers` config snippet an MCP client pastes to reach the local server.
- * HTTP transport (not stdio) with the per-install bearer token. */
-function clientConfig(url: string, token: string): string {
+/** The `mcpServers` snippet that has the agent run the stdio launcher with Node.
+ * No token: the launcher reads it from the user-data folder it sits in. */
+function launcherConfig(launcherPath: string): string {
+  return JSON.stringify(
+    { mcpServers: { apiweave: { command: "node", args: [launcherPath] } } },
+    null,
+    2,
+  );
+}
+
+/** The `mcpServers` snippet that points a client straight at the loopback HTTP server. */
+function httpConfig(url: string, token: string): string {
   return JSON.stringify(
     {
       mcpServers: {
@@ -25,28 +36,17 @@ function clientConfig(url: string, token: string): string {
   );
 }
 
-function useCopy(): readonly [boolean, (text: string) => void] {
-  const [copied, setCopied] = useState(false);
-  const copy = (text: string): void => {
-    void navigator.clipboard?.writeText(text).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    });
-  };
-  return [copied, copy];
-}
-
 export function McpSetupPanel() {
   const [status, setStatus] = useState<McpStatus>({
     running: false,
     config: null,
+    launcherPath: null,
     autoApproveAgentRuns: false,
   });
   const [busy, setBusy] = useState(false);
   const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
   const [approvals, setApprovals] = useState<readonly AgentRunApproval[]>([]);
   const [revokingId, setRevokingId] = useState<string | null>(null);
-  const [copied, copy] = useCopy();
 
   useEffect(() => {
     void mcp.getStatus().then(setStatus);
@@ -91,9 +91,7 @@ export function McpSetupPanel() {
   };
 
   const config = status.config;
-  const bridgeCommand =
-    config &&
-    `npx mcp-remote ${config.url} --header "Authorization: Bearer ${config.token}"`;
+  const launcherPath = status.launcherPath;
 
   return (
     <div className="space-y-5">
@@ -127,39 +125,40 @@ export function McpSetupPanel() {
             </code>
           </div>
 
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
-                Client config
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => copy(clientConfig(config.url, config.token))}
-              >
-                {copied ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </div>
-            <pre className="overflow-x-auto rounded-xs border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
-              {clientConfig(config.url, config.token)}
-            </pre>
-          </div>
+          {launcherPath && <AgentConnectionsPanel />}
 
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
-              Stdio-only client?
-            </span>
-            <p className="mt-1 text-xs text-text-secondary dark:text-text-secondary-dark">
-              Bridge stdio to this endpoint with:
+          {launcherPath && (
+            <div className="space-y-1.5">
+              <TutorialCodeBlock
+                example={{
+                  caption: "Or add it by hand",
+                  language: "json",
+                  code: launcherConfig(launcherPath),
+                }}
+              />
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                Your agent runs this launcher itself, so APIWeave never shows as
+                disconnected: when APIWeave is closed, the launcher starts it in
+                the tray. The config holds no token. Needs{" "}
+                <strong className="font-semibold">Node.js 20 or newer</strong>{" "}
+                on the PATH the agent runs with.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <TutorialCodeBlock
+              example={{
+                caption: "Direct HTTP config",
+                language: "json",
+                code: httpConfig(config.url, config.token),
+              }}
+            />
+            <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+              No Node.js needed, but APIWeave must already be running when the
+              agent starts, or the agent marks the server as failed until you
+              reconnect it.
             </p>
-            <pre className="mt-1 overflow-x-auto rounded-xs border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark">
-              {bridgeCommand}
-            </pre>
           </div>
 
           <div className="flex items-center justify-between gap-3">

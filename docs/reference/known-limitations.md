@@ -24,6 +24,7 @@ it.*
 | macOS | macOS 13 Ventura or newer, on Intel and Apple Silicon. Electron 44 does not run on macOS 11 or 12. |
 | Linux | x86_64 with glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Fedora 35+). There is no Linux arm64 build. |
 | CLI | Node.js 22.12 or newer. The `@apiweave/cli` tarball runs without Electron and without an APIWeave data folder. |
+| MCP launcher | Node.js 20 or newer on the `PATH` your MCP client runs with. Only the stdio launcher needs it; the direct HTTP config does not. |
 | Source builds | Node.js 22.12 or newer and npm. On Linux, `node-pty` builds a native addon, so a C++ toolchain is needed (`build-essential` on Debian/Ubuntu, or `make`, `python3` and `g++`/`clang++`). The prebuilt installers do not need it. |
 
 The Linux AppImage needs FUSE 2, or `--appimage-extract-and-run` where FUSE is
@@ -170,7 +171,16 @@ page or through the CLI flags.
 
 - **The MCP bridge is loopback only and off by default.** It binds
   `127.0.0.1`, requires a per-install bearer token, and has no remote endpoint,
-  public port, webhook or bundled stdio server. You enable it in Settings.
+  public port or webhook. You enable it in Settings.
+- **The stdio MCP launcher needs Node.js 20 or newer.** It is the recommended
+  client config because it starts APIWeave when it is not running, but the
+  client runs it with your own `node`, which APIWeave does not install. Without
+  Node.js, use the direct HTTP config, and start APIWeave before the client.
+- **Connect your agents covers six clients, at user level only.** It
+  configures Claude Code, Codex, OpenCode, Cursor, VS Code (default profile)
+  and Claude Desktop, and only when you click. It never writes a project's
+  config. Other clients, other VS Code profiles and VS Code Insiders are set up
+  by hand.
 - **Agent CLIs are yours to install.** APIWeave launches a local agent only
   when its CLI is already installed and authenticated on the machine. It does
   not bundle, proxy or resell access to Claude Code, Codex, OpenCode, Gemini or

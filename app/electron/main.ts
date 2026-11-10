@@ -93,7 +93,10 @@ import {
   agentRunApprovalText,
 } from "./agent_run_approval"
 import { askRendererToClose, createQuitGate, type CloseRequestTarget } from "./close_handshake"
-import { createTray, getOpenAtLogin, launchedHidden, setOpenAtLogin } from "./background"
+import { HIDDEN_ARG, createTray, getOpenAtLogin, launchedHidden, setOpenAtLogin } from "./background"
+import { installMcpLauncher } from "./mcp_launcher"
+import { AgentMcpConnectService } from "../core/mcp/connect/service"
+import { MCP_CATALOG_FILE, MCP_TOKEN_FILE } from "../core/mcp/launcher/contract"
 import type { BackgroundSettings } from "@shared/types/BackgroundSettings"
 import type { UpdatePolicy, UpdateStatus } from "@shared/types/UpdateStatus"
 import { isUpdatePolicy } from "@shared/types/UpdateStatus"
@@ -486,7 +489,14 @@ if (!hasSingleInstanceLock) {
   bootstrapLog.info("second instance rejected; quitting")
   app.quit()
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    // The MCP launcher starts the app hidden whenever it cannot reach the MCP
+    // server — including while this instance runs with the server off. That
+    // is not the user asking for the window.
+    if (argv.includes(HIDDEN_ARG)) {
+      bootstrapLog.info("second-instance event from a hidden launch; leaving the window as it is")
+      return
+    }
     bootstrapLog.info("second-instance event; showing existing window")
     // Also the way back to a window hidden on a desktop that shows no tray.
     if (mainWindow !== null) showMainWindow()
@@ -723,10 +733,21 @@ if (!hasSingleInstanceLock) {
     // tool surface is whatever handlers are registered on the router — no
     // separate tool stack. The per-install token is already persisted, so
     // re-enabling reuses it.
-    const mcpTokenPath = path.join(app.getPath("userData"), "mcp-token")
+    const mcpTokenPath = path.join(app.getPath("userData"), MCP_TOKEN_FILE)
+    const mcpCatalogPath = path.join(app.getPath("userData"), MCP_CATALOG_FILE)
+    // The stdio launcher agents run, so they can start this app rather than
+    // finding its server missing. Copied on every launch, MCP on or off: an
+    // agent configured with it is what starts the app the next time.
+    let mcpLauncherPath: string | null = null
+    try {
+      mcpLauncherPath = installMcpLauncher(app.getPath("userData"))
+    } catch (error) {
+      mcpLog.error(`could not install the MCP launcher: ${error instanceof Error ? error.message : String(error)}`)
+    }
     const mcpStatus = (): McpStatus => ({
       running: mcpHost?.isRunning() ?? false,
       config: mcpHost?.getConfig() ?? null,
+      launcherPath: mcpLauncherPath,
       autoApproveAgentRuns: readAutoApproveAgentRuns(),
     })
     const readMcpEnabled = (): boolean => {
@@ -767,6 +788,7 @@ if (!hasSingleInstanceLock) {
           mcpHost = new McpHost({
             router: ipcRouter,
             tokenFilePath: mcpTokenPath,
+            catalogFilePath: mcpCatalogPath,
             version: app.getVersion(),
             broker: runEvents,
           })
@@ -810,11 +832,38 @@ if (!hasSingleInstanceLock) {
         return mcpStatus()
       }),
     )
+    // Connect your agents: write the launcher into each MCP client's own user
+    // config, only on the user's click. Off the router, like every mcp:*
+    // channel — no MCP client may edit another application's files.
+    const agentConnections = mcpLauncherPath === null ? null : new AgentMcpConnectService({ launcherPath: mcpLauncherPath })
+    const requireAgentConnections = (): AgentMcpConnectService => {
+      if (agentConnections === null) throw new Error("The MCP launcher could not be installed; see the log.")
+      return agentConnections
+    }
+    ipcMain.handle(
+      "mcp:listAgentConnections",
+      requireTrustedSender(() => agentConnections?.list() ?? { clients: [], nodePath: null, nodeProblem: null }),
+    )
+    ipcMain.handle(
+      "mcp:connectAgent",
+      requireTrustedSender((clientId: string) => {
+        mcpLog.info(`connecting ${clientId} to the MCP launcher at the user's request`)
+        return requireAgentConnections().connect(clientId)
+      }),
+    )
+    ipcMain.handle(
+      "mcp:disconnectAgent",
+      requireTrustedSender((clientId: string) => {
+        mcpLog.info(`disconnecting ${clientId} from the MCP launcher at the user's request`)
+        return requireAgentConnections().disconnect(clientId)
+      }),
+    )
     // Restore the user's persisted MCP choice on launch.
     if (readMcpEnabled()) {
       mcpHost = new McpHost({
         router: ipcRouter,
         tokenFilePath: mcpTokenPath,
+        catalogFilePath: mcpCatalogPath,
         version: app.getVersion(),
         broker: runEvents,
       })
@@ -1037,6 +1086,7 @@ if (!hasSingleInstanceLock) {
         return result.canceled ? null : (result.filePaths[0] ?? null)
       },
       getMcpConfig: () => mcpHost?.getConfig() ?? null,
+      hasGlobalMcpEntry: (agentKey) => agentConnections?.coversSession(agentKey) ?? false,
       agentFilesDir: path.join(app.getPath("userData"), "agent-files"),
       pty: agentPtyHost,
     })

@@ -56,17 +56,62 @@ delete, import, or run local workflows.
 
 ## Transport
 
-The desktop app exposes one MCP transport:
+The desktop app serves MCP over loopback HTTP, and ships a stdio launcher that
+agents run to reach it:
 
 | Transport | Endpoint | Authentication |
 | --- | --- | --- |
 | Streamable HTTP | `http://127.0.0.1:<port>/mcp` | `Authorization: Bearer <token>` |
+| stdio launcher | `node <user data>/apiweave-mcp.cjs` | Reads the token from the user-data folder it sits in |
 
 The bridge prefers port `47271`. If another process owns that port, APIWeave
 selects a free loopback port and shows the live URL on the **MCP Server**
-settings page. There is
-no Python server, bundled stdio server, remote endpoint, webhook, or public
+settings page. There is no Python server, remote endpoint, webhook, or public
 trigger.
+
+### The stdio launcher
+
+An MCP client connects to its servers once, when it starts, and marks one that
+does not answer as failed until you reconnect it by hand. With a direct HTTP
+config, that is what happens whenever the agent starts before APIWeave does.
+The launcher removes that ordering: the agent starts it, so it is always there.
+
+- **It answers at once.** The handshake and the tool, resource and prompt lists
+  come from `mcp-catalog.json`, which the app writes each time its MCP server
+  starts, so the agent never waits for the app to start.
+- **It starts APIWeave when needed.** If the app's server is not reachable, the
+  launcher starts APIWeave with `--hidden`, in the tray with no window, and
+  waits up to 30 seconds for it. A tool call made meanwhile waits for it. If
+  APIWeave is already running, the hidden launch does not bring its window
+  forward.
+- **Everything else goes to the app unchanged.** Tool calls, resource reads,
+  subscriptions and notifications travel over the same loopback HTTP and token
+  as any other client. The app sees the agent's own name, which is the name
+  secret approvals show. The launcher reads no APIWeave data itself.
+- **It reconnects.** A session the app closed, because it was idle or because
+  APIWeave restarted, is reopened on the next request, along with the agent's
+  resource subscriptions. A read is retried on the new session. A write is not
+  retried when the connection broke during it, because it may already have run:
+  the agent is told to check first.
+- **It needs Node.js 20 or newer** on the `PATH` the agent runs with. It is a
+  single bundled script with no dependencies to install.
+
+The app copies `apiweave-mcp.cjs` into its user-data folder on every launch,
+next to `mcp-token`, `mcp-catalog.json` and `mcp-launch.json`, which records
+how to start the app. The user-data folder is a fixed place, unlike an AppImage's
+temporary mount or an install folder an update replaces:
+
+| Platform | Launcher path |
+| --- | --- |
+| Windows | `%APPDATA%\APIWeave\apiweave-mcp.cjs` |
+| macOS | `~/Library/Application Support/APIWeave/apiweave-mcp.cjs` |
+| Linux | `~/.config/APIWeave/apiweave-mcp.cjs` (under `$XDG_CONFIG_HOME` when set) |
+
+Most clients expand neither `~` nor `%APPDATA%`, so copy the exact path from
+**Settings → MCP Server**. APIWeave must have been opened once with the MCP server
+on, so that the launcher, the token and the catalog exist. Turning the server off
+in Settings still wins. The launcher never turns it back on: after 30 seconds it
+tells the agent to turn it on in Settings.
 
 The transport is hybrid. A sessionless (non-`initialize`) POST is served as a
 stateless one-shot with a JSON response — the simple poll fallback for clients
@@ -88,8 +133,12 @@ SDK supports otherwise.
 1. Start the APIWeave desktop app.
 2. Open **Settings → MCP Server**.
 3. Enable the local MCP server.
-4. Copy the live loopback URL and access token shown by the app.
-5. Add them to the MCP client configuration.
+4. Under **Connect your agents**, click **Connect** for each MCP client you use
+   (see [Connect Your Agents](#connect-your-agents)). Alternatively, copy a
+   config by hand: the launcher config, or the direct HTTP one with the live URL
+   and token.
+5. For a client not in the list, add the config yourself (see
+   [Client Configuration](#client-configuration)).
 6. Restart or reconnect the MCP client, then call `server_info`.
 
 The token is generated on first enable and stored with the selected port in the
@@ -524,8 +573,26 @@ apply a transport rate limit.
 
 ## Prompts
 
-The bridge ships one MCP prompt, discoverable via the standard `prompts/list`
-request and readable via `prompts/get`:
+The bridge ships two MCP prompts, discoverable via the standard `prompts/list`
+request and readable via `prompts/get`. Clients that support prompts show them
+as slash commands: `/apiweave:e2e` in OpenCode and Claude Code. Codex does not
+show MCP prompts.
+
+- `e2e` — the one command for testing with APIWeave, so you never have to tell
+  the agent to use it. The agent finds the workspace (from
+  `APIWEAVE_WORKSPACE_ID` when APIWeave launched it), reads the service's code
+  for real routes and fields, reuses existing workflows and conventions, builds
+  journey-shaped workflows with extracted ids, an assertion after every request
+  and negative cases, fixes every diagnosis error before running, runs, and
+  debugs. It tells a workflow bug from an API bug, never weakens an assertion
+  to make a run pass, asks before the first run against anything that looks
+  like production, and ends with a report.
+
+  The one optional argument, `task`, is what to test. **Quote it**:
+  `/apiweave:e2e "invoice create and list"`. OpenCode 2.x and Claude Code
+  split what you type on spaces and pass only the first word otherwise; the
+  prompt tells the agent to ask when a one-word task looks cut short. With no
+  task the agent asks what to test.
 
 - `author_assertions` — steers the connected agent to turn a natural-language
   assertion request into canonical rules, validate and preview them, get the
@@ -533,12 +600,12 @@ request and readable via `prompts/get`:
 
 APIWeave embeds no model. The prompt is pure instruction text: your agent does
 the language-to-rules translation, and APIWeave only validates and persists the
-result. All arguments (`workspaceId`, `workflowId`, `assertionNodeId`, `runId`)
-are optional so the prompt is discoverable before any data exists; supplied
+result. All of `author_assertions`'s arguments (`workspaceId`, `workflowId`,
+`assertionNodeId`, `runId`) are optional so the prompt is discoverable before any data exists; supplied
 values are woven into the instruction text but no workspace or run data is
 embedded until you pass them.
 
-The prompt directs the agent through this flow:
+`author_assertions` directs the agent through this flow:
 
 1. Inspect with `workflows_get`, and (if a run exists) `runs_get`,
    `workflow_diagnose`, and `assertion_suggest`.
@@ -570,39 +637,91 @@ reference. `assertion_apply` re-validates and enforces the revision guard
 regardless of what the agent sends, so an agent that ignores the prompt still
 cannot apply invalid or stale rules.
 
+## Connect Your Agents
+
+**Settings → MCP Server → Connect your agents** adds the launcher to each MCP
+client's own user settings for you. Every client APIWeave knows is listed with
+the file it would edit and its state: **Connected**, **Old entry** (an
+`apiweave` entry that is not this launcher, such as a direct HTTP one),
+**Not connected**, or **Not found**. Click **Connect** (or **Replace**) for one,
+or **Connect all**, then restart that client. **Disconnect** removes the entry
+again.
+
+| Client | What Connect changes |
+| --- | --- |
+| Claude Code | Runs `claude mcp add --scope user apiweave -- <node> <launcher>`. Any old user-scope `apiweave` entry is removed first. |
+| Codex | Runs `codex mcp add apiweave -- <node> <launcher>`, which writes `[mcp_servers.apiweave]` in `config.toml`. |
+| OpenCode | Edits `opencode.jsonc` or `opencode.json` in `$XDG_CONFIG_HOME/opencode` (default `~/.config/opencode`, Windows included), entry `mcp.apiweave`. |
+| Cursor | Edits `~/.cursor/mcp.json`, entry `mcpServers.apiweave`. |
+| VS Code | Edits `mcp.json` in the default profile's user folder, entry `servers.apiweave`. |
+| Claude Desktop | Edits `claude_desktop_config.json`, entry `mcpServers.apiweave`. On Windows, the Microsoft Store/MSIX install reads a copy under `%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming\Claude`, and that copy is the one edited when it exists. |
+
+- **Nothing is written until you click.** These are other applications' files.
+- **Only the `apiweave` entry changes.** Comments, formatting and every other
+  setting in a JSON file are kept, because the edit is applied in place, not by
+  rewriting the file. A file that is not valid JSON is left alone, and the error
+  names it.
+- **Each entry runs Node.js by its absolute path**, the one APIWeave finds on
+  your `PATH`. A client opened from the Dock or Start menu may not see your
+  shell's `PATH`, so a bare `node` could fail there. If you later remove or
+  move that Node.js, click **Replace**.
+- **Sessions you launch from APIWeave use the same entry.** Once Codex or
+  OpenCode is connected, APIWeave launches it without its own per-session
+  `apiweave` server, because both would merge the two entries into one that
+  neither accepts. Claude Code sessions are unaffected, because their
+  per-session config replaces the user's.
+- Connecting needs Node.js 20 or newer, like the launcher itself.
+
 ## Client Configuration
 
-Always replace the example URL if the **MCP Server** settings page shows a
-fallback port. Replace
-`YOUR_MCP_TOKEN` locally and never commit the populated config.
+To configure a client by hand, there are two ways to connect it:
 
-### Claude Desktop
+- **The stdio launcher (recommended).** The client runs
+  `node <user data>/apiweave-mcp.cjs`, which starts APIWeave when it is not
+  running. See [The stdio launcher](#the-stdio-launcher). It needs **Node.js 20 or
+  newer** on the `PATH` the client runs with. The config holds no token, so it is
+  safe to keep in a dotfiles repository.
+- **Direct HTTP.** The client connects to `http://127.0.0.1:<port>/mcp` with the
+  bearer token. No Node.js is needed, but APIWeave must already be running when
+  the client starts, or the client marks the server as failed until you
+  reconnect it. Replace `YOUR_MCP_TOKEN` locally, never commit the populated
+  config, and replace the example URL if the **MCP Server** settings page shows a
+  fallback port.
 
-Claude Desktop can launch `mcp-remote` as a stdio adapter:
+In the examples, replace `LAUNCHER_PATH` with the path shown in
+**Settings → MCP Server**, for example
+`C:\\Users\\you\\AppData\\Roaming\\APIWeave\\apiweave-mcp.cjs` (backslashes
+doubled in JSON) or `/home/you/.config/APIWeave/apiweave-mcp.cjs`.
+
+### Claude Desktop, Claude Code and Cursor
+
+Launcher (`claude_desktop_config.json`, a project's `.mcp.json`, or
+`.cursor/mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "apiweave": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "http://127.0.0.1:47271/mcp",
-        "--header",
-        "Authorization: Bearer YOUR_MCP_TOKEN"
-      ]
+      "command": "node",
+      "args": ["LAUNCHER_PATH"]
     }
   }
 }
 ```
 
-### Cursor
+With Claude Code you can add it from the command line instead:
+
+```bash
+claude mcp add apiweave -- node "LAUNCHER_PATH"
+```
+
+Direct HTTP, for Claude Code and Cursor:
 
 ```json
 {
   "mcpServers": {
     "apiweave": {
+      "type": "http",
       "url": "http://127.0.0.1:47271/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_TOKEN"
@@ -612,9 +731,25 @@ Claude Desktop can launch `mcp-remote` as a stdio adapter:
 }
 ```
 
+Claude Desktop starts local commands only, so it uses the launcher.
+
 ### VS Code
 
-Put this in `.vscode/mcp.json` or the user MCP configuration:
+Put this in `.vscode/mcp.json` or the user MCP configuration. Launcher:
+
+```json
+{
+  "servers": {
+    "apiweave": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["LAUNCHER_PATH"]
+    }
+  }
+}
+```
+
+Direct HTTP:
 
 ```json
 {
@@ -632,6 +767,21 @@ Put this in `.vscode/mcp.json` or the user MCP configuration:
 
 ### OpenCode
 
+Launcher:
+
+```json
+{
+  "mcp": {
+    "apiweave": {
+      "type": "local",
+      "command": ["node", "LAUNCHER_PATH"]
+    }
+  }
+}
+```
+
+Direct HTTP:
+
 ```json
 {
   "mcp": {
@@ -648,14 +798,23 @@ Put this in `.vscode/mcp.json` or the user MCP configuration:
 
 ### Codex
 
-Store the token in `APIWEAVE_MCP_TOKEN`, then add the server:
+Launcher:
+
+```bash
+codex mcp add apiweave -- node "LAUNCHER_PATH"
+```
+
+Direct HTTP: store the token in `APIWEAVE_MCP_TOKEN`, then add the server:
 
 ```bash
 codex mcp add apiweave --url http://127.0.0.1:47271/mcp --bearer-token-env-var APIWEAVE_MCP_TOKEN
 ```
 
 Checked-in templates are available under `mcp-configs/` for Claude Desktop,
-Cursor, VS Code, and OpenCode. Codex uses the CLI command above.
+Cursor, VS Code, and OpenCode. Codex uses the CLI commands above.
+
+Agents launched from inside APIWeave are given the direct HTTP connection
+automatically: the app is running whenever they are.
 
 ## Agent Workflow Example
 
@@ -738,13 +897,30 @@ sentence in the `start-here` guide telling it to query `graphify-out/` with
 
 ## Troubleshooting
 
-- **Connection refused:** APIWeave must be running and the MCP bridge must be
-  enabled. Copy the current URL from **Settings → MCP Server** instead of
-  assuming `47271`.
+- **The server shows as failed or disconnected:** With a direct HTTP config,
+  APIWeave must be running before the client starts. Switch to the launcher
+  config, which starts APIWeave itself.
+- **`node` is not found, or the launcher exits at once:** The launcher needs
+  Node.js 20 or newer on the `PATH` the client runs with. A client started from
+  the desktop rather than a terminal may not see a `PATH` set in your shell
+  profile. Name Node's full path as the `command`, for example
+  `/usr/local/bin/node` or `C:\\Program Files\\nodejs\\node.exe`.
+- **"APIWeave has not been opened on this computer yet":** The launcher has no
+  record of where APIWeave is installed. Open APIWeave once and turn on
+  **Settings → MCP Server**.
+- **"APIWeave did not start its MCP server within 30 seconds":** APIWeave
+  started, or was already running, but its MCP server is off. Turn on
+  **Settings → MCP Server**. The launcher never turns it on for you.
+- **"APIWeave closed the connection during this call":** APIWeave quit or
+  restarted while a write was in flight. It may have been applied, so check
+  before repeating it.
+- **Connection refused (direct HTTP):** APIWeave must be running and the MCP
+  bridge must be enabled. Copy the current URL from **Settings → MCP Server**
+  instead of assuming `47271`.
 - **401 Unauthorized:** The bearer token is missing or does not match the token
   shown by the app. Update the client configuration and reconnect.
 - **403 Forbidden Origin:** A browser or proxy supplied a non-loopback Origin.
-  Connect through a native MCP client or a local stdio-to-HTTP adapter.
+  Connect through a native MCP client or the stdio launcher.
 - **Tool not found:** Use `tools/list`; old singular names such as
   `workflow_run` and `run_get_status` belonged to the removed backend.
 - **No raw response body:** Run tools other than `runs_getNodeResult` expose

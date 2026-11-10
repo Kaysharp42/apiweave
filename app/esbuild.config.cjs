@@ -57,6 +57,11 @@ const common = {
   //   expects, sharing the one hoisted builder-util-runtime that wrote
   //   latest.yml at build time.
   external: ["electron", ...Object.keys(dependencies)],
+  // jsonc-parser's `main` is a UMD build whose factory requires its own
+  // `./impl/*` files at runtime, which esbuild cannot follow: the bundle then
+  // throws "Cannot find module './impl/format'" on launch. Its ESM build
+  // imports them statically and bundles whole.
+  alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" },
   format: "cjs",
   logLevel: "info",
   platform: "node",
@@ -72,7 +77,7 @@ const noElectron = {
   name: "no-electron",
   setup(build) {
     build.onResolve({ filter: /^electron$/ }, (args) => ({
-      errors: [{ text: `the CLI must not import electron (imported by ${args.importer})` }],
+      errors: [{ text: `plain-Node bundles must not import electron (imported by ${args.importer})` }],
     }))
   },
 }
@@ -106,6 +111,17 @@ const buildDesktop = () => Promise.all([
     ...common,
     entryPoints: ["core/runner/script_worker.ts"],
     outfile: "dist/desktop/script-worker.cjs",
+  }),
+  // The stdio MCP launcher an agent runs with `node`. Main copies it out of
+  // app.asar into the user-data folder, where no node_modules sit beside it,
+  // so it bundles every dependency and must not reach for electron.
+  esbuild.build({
+    ...common,
+    external: [],
+    plugins: [noElectron],
+    sourcemap: false,
+    entryPoints: ["core/mcp/launcher/bin.ts"],
+    outfile: "dist/desktop/apiweave-mcp.cjs",
   }),
 ]).then(() => copyMigrations()).then(copyIcon)
 
