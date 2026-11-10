@@ -80,6 +80,13 @@ release covered by the 1.x compatibility policy.
   import picker and detection, the bundle's `type` identifier, the headless CLI
   and the guides now name the format by its new extension. The JSON shape is
   unchanged.
+- **Sync status no longer re-reads git for nothing.** A workspace's status now
+  comes from what git last reported until the app next writes to the clone, so
+  an edit, a cycle starting and the status Sync now returns cost no git
+  processes of their own. On Windows, where starting git costs ~30 ms, an
+  edit-and-sync drops from 23 to 14 processes and an idle sync from 16 to 10.
+  The one thing it no longer sees is a git command run by hand inside a
+  workspace's clone, until the next sync writes there.
 - **The release pipeline builds both macOS architectures in one job.** That is
   what lets electron-builder write one `latest-mac.yml` covering both zips
   instead of two contradictory half-manifests, and it removes the finalize

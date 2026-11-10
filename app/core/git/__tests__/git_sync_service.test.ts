@@ -509,7 +509,9 @@ describe("GitSyncService", () => {
     harness.repositories.workflows.create({ workspaceId: harness.workspaceId, name: "Login" })
     await harness.sync.commitLocal(harness.workspaceId, { message: "Add login" })
     // The remote's branch is not in this clone: a fetch that never ran, or a branch that went away.
+    // Removed by hand, behind the service's back, so it is a service that has not read this clone yet that reports it.
     rawGit(harness.dir, harness.sandbox.env, "update-ref", "-d", "refs/remotes/origin/main")
+    await harness.restart()
 
     const status = await harness.sync.status(harness.workspaceId)
 

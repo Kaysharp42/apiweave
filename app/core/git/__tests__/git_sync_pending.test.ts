@@ -324,6 +324,9 @@ describe("GitSyncService status announcements", () => {
    * first one is held — with the commit it saw — until `release`. So an
    * announce can be held mid-way while another is asked for and has nothing
    * left to wait on but the first.
+   *
+   * The service is restarted first: one that has already read the clone
+   * answers a status from what it read, and asks git only after it writes.
    */
   async function heldLastCommit() {
     const statuses: WorkspaceGitStatus[] = []
@@ -352,6 +355,7 @@ describe("GitSyncService status announcements", () => {
         },
       }),
     })
+    await harness.restart()
     statuses.length = 0
     control.stubbed = true
     control.holdFirst = true
@@ -364,15 +368,17 @@ describe("GitSyncService status announcements", () => {
     // The first edit's announce asks for the last commit, sees "one", and is held there.
     workflows.create({ workspaceId: harness.workspaceId, name: "First edit" })
     await reached
+    // A commit — "two" — is asked for behind it: its announces as the cycle starts and ends queue after the held one.
     control.subject = "two"
-    const reannounced = harness.sync.setMode(harness.workspaceId, "manual")
+    const committing = harness.sync.commitLocal(harness.workspaceId, { message: "Two" })
     // A tick yield, not a delay: with nothing but memory left to do, an announce that did not wait would have finished.
     await new Promise((resolve) => setImmediate(resolve))
     release()
-    await reannounced
+    await committing
     await harness.sync.settled()
 
-    expect(statuses.map((status) => status.lastCommit?.subject)).toEqual(["one", "two"])
+    // Before the commit, the cycle starting still says "one"; only once it has committed does a status say "two".
+    expect(statuses.map((status) => status.lastCommit?.subject)).toEqual(["one", "one", "two"])
   })
 
   it("reports the row as it is when git has answered, not as it was when the announce began", async () => {
@@ -386,6 +392,25 @@ describe("GitSyncService status announcements", () => {
     await harness.sync.settled()
 
     expect(statuses[statuses.length - 1]).toMatchObject({ state: "error", lastError: { message: "late" } })
+  })
+})
+
+describe("GitSyncService status facts", () => {
+  it("answers statuses from what git last said until the service writes, then asks git again", async () => {
+    const calls: string[] = []
+    const { harness, workflows } = await committedBase({ wrap: counting(calls) })
+    calls.length = 0
+
+    // An edit, its announce and a status after it: the database moved, the clone did not, so git is not asked.
+    workflows.create({ workspaceId: harness.workspaceId, name: "Unsaved" })
+    await harness.sync.settled()
+    expect(await harness.sync.status(harness.workspaceId)).toMatchObject({ uncommitted: true })
+    expect(calls).toEqual([])
+
+    // A commit writes, so the status after it reads the new commit from git.
+    await harness.sync.commitLocal(harness.workspaceId, { message: "Save" })
+    expect(await harness.sync.status(harness.workspaceId)).toMatchObject({ uncommitted: false, lastCommit: { subject: "Save" } })
+    expect(calls).toContain("log")
   })
 })
 

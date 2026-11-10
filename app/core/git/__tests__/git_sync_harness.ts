@@ -18,12 +18,15 @@ export interface Harness {
   readonly db: InitializedDatabase
   readonly sandbox: GitSandbox
   readonly repositories: GitSyncRepositories
-  readonly sync: GitSyncService
+  /** Replaced by {@link Harness.restart}. */
+  sync: GitSyncService
   readonly git: GitService
   readonly cloneRoot: string
   readonly workspaceId: string
   /** The workspace's clone. */
   readonly dir: string
+  /** Quit the service and start another over this database and clone, as the app restarting does: one that has read nothing from git yet. */
+  readonly restart: () => Promise<void>
 }
 
 const harnesses: Harness[] = []
@@ -70,17 +73,33 @@ export function openHarness(options: HarnessOptions = {}): Harness {
   }
   const workspaceId = repositories.workspaces.create({ name: "Acme QA", slug: "acme-qa" }).workspaceId
   const cloneRoot = path.join(sandbox.root, "clones")
-  sync = new GitSyncService({
-    cloneRoot,
-    git: options.wrap?.(git) ?? git,
+  const start = (): GitSyncService =>
+    new GitSyncService({
+      cloneRoot,
+      git: options.wrap?.(git) ?? git,
+      repositories,
+      onStatusChanged: options.onStatusChanged,
+      disposeWaitMs: options.disposeWaitMs,
+      credentials: options.credentials,
+      onImported: options.onImported,
+      onOpened: options.onOpened,
+    })
+  sync = start()
+  const harness: Harness = {
+    db,
+    sandbox,
     repositories,
-    onStatusChanged: options.onStatusChanged,
-    disposeWaitMs: options.disposeWaitMs,
-    credentials: options.credentials,
-    onImported: options.onImported,
-    onOpened: options.onOpened,
-  })
-  const harness = { db, sandbox, repositories, sync, git, cloneRoot, workspaceId, dir: path.join(cloneRoot, workspaceId) }
+    sync,
+    git,
+    cloneRoot,
+    workspaceId,
+    dir: path.join(cloneRoot, workspaceId),
+    restart: async () => {
+      await harness.sync.dispose()
+      sync = start()
+      harness.sync = sync
+    },
+  }
   harnesses.push(harness)
   return harness
 }
