@@ -1,4 +1,4 @@
-import type { AgentMcpConnectionState } from "@shared/types/AgentMcpConnectionState"
+import type { AgentMcpConnectionState } from "@shared/types"
 
 /** The `apiweave` entry every client is given: this install's Node.js running this install's launcher. */
 export interface LauncherEntry {

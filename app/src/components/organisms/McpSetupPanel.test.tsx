@@ -4,8 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { McpSetupPanel } from "./McpSetupPanel";
 import type { McpStatus } from "@shared/types/McpStatus";
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
-import type { AgentMcpConnection } from "@shared/types/AgentMcpConnection";
-import type { AgentMcpConnections } from "@shared/types/AgentMcpConnections";
+import type { AgentMcpConnection, AgentMcpConnections } from "@shared/types";
 
 const status: McpStatus = {
   running: true,

@@ -35,7 +35,7 @@ import type {
   AgentsBridge,
 } from "@shared/types/AgentsBridge";
 import type { McpStatus } from "@shared/types/McpStatus";
-import type { AgentMcpConnections } from "@shared/types/AgentMcpConnections";
+import type { AgentMcpConnections } from "@shared/types";
 import type { AgentRunApproval } from "@shared/types/AgentRunApproval";
 import type { OAuthBridge } from "@shared/types/OAuthBridge";
 import type { OAuthTokenRequest } from "@shared/types/OAuthTokenRequest";

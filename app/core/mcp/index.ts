@@ -1,4 +1,5 @@
-export { McpHost, DEFAULT_MCP_PORT, MCP_PATH, LOOPBACK_HOST } from "./host"
+export { McpHost, DEFAULT_MCP_PORT } from "./host"
+export { LOOPBACK_HOST, MCP_PATH } from "./launcher/contract"
 export type { McpHostOptions } from "./host"
 export { createMcpServer, MCP_SERVER_NAME } from "./server"
 export { registerBridgeTools } from "./bridge"

@@ -4,9 +4,7 @@ import { Badge } from "../atoms/Badge";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { mcp } from "../../utils/apiweaveClient";
-import type { AgentMcpConnection } from "@shared/types/AgentMcpConnection";
-import type { AgentMcpConnections } from "@shared/types/AgentMcpConnections";
-import type { AgentMcpConnectionState } from "@shared/types/AgentMcpConnectionState";
+import type { AgentMcpConnection, AgentMcpConnections, AgentMcpConnectionState } from "@shared/types";
 
 const STATE_LABEL: Record<AgentMcpConnectionState, string> = {
   connected: "Connected",

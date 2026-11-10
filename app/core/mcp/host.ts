@@ -30,7 +30,6 @@ interface Session {
 
 /** Fixed loopback port (decision #15). Falls back to an ephemeral port on collision. */
 export const DEFAULT_MCP_PORT = 47271
-export { LOOPBACK_HOST, MCP_PATH }
 
 export interface McpHostOptions {
   readonly router: IpcRouter

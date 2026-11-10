@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process"
 import os from "node:os"
-import type { AgentMcpConnection } from "@shared/types/AgentMcpConnection"
-import type { AgentMcpConnections } from "@shared/types/AgentMcpConnections"
+import type { AgentMcpConnection, AgentMcpConnections } from "@shared/types"
 import { resolveExecutable, spawnCommandFor } from "../../agents/executable"
 import { MCP_CLIENT_CONNECTORS, SESSION_MERGING_CLIENTS } from "./clients"
 import type { ConnectorContext, McpClientConnector } from "./connector"

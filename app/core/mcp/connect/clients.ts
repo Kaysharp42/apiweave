@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parse as parseToml } from "smol-toml"
 import { resolveExecutable } from "../../agents/executable"
-import { SERVER_NAME, type ConnectorContext, type McpClientConnector } from "./connector"
+import { SERVER_NAME, type ConnectorContext, type ConnectorReading, type LauncherEntry, type McpClientConnector } from "./connector"
 import { UnreadableConfigError, readJsoncEntry } from "./jsonc_file"
 import { isRecord, jsonConnector, lastString, readStdioEntry } from "./json_connector"
 
@@ -26,6 +26,21 @@ function appData(context: ConnectorContext): string {
 
 const argsLauncher = (entry: Record<string, unknown>): string | undefined => lastString(entry["args"])
 
+/** The plain stdio entry Cursor and Claude Desktop share, which has no `type` field. */
+const argsEntry = ({ command, args }: LauncherEntry): Record<string, unknown> => ({ command, args: [...args] })
+
+/**
+ * The reading the two CLI-written clients share: an `apiweave` entry decides
+ * the state, and without one only the client's own command on PATH says
+ * whether it is installed at all.
+ */
+function readCliBacked(entry: unknown, command: string, context: ConnectorContext): ConnectorReading {
+  const reading = readStdioEntry(entry, argsLauncher, context)
+  if (reading !== null) return reading
+  const installed = resolveExecutable(command, context.env) !== undefined
+  return installed ? { state: "not-connected", detail: null } : { state: "not-installed", detail: `${command} was not found on PATH` }
+}
+
 // ---------------------------------------------------------------------------
 // Claude Code: user scope is the top-level `mcpServers` of ~/.claude.json
 // (inside CLAUDE_CONFIG_DIR when that is set). The file also holds Claude
@@ -42,12 +57,8 @@ const claudeCode: McpClientConnector = {
   name: "Claude Code",
   supported: () => true,
   configPath: claudeCodeConfig,
-  read: (context) => {
-    const reading = readStdioEntry(readJsoncEntry(claudeCodeConfig(context), ["mcpServers", SERVER_NAME]), argsLauncher, context)
-    if (reading !== null) return reading
-    const installed = resolveExecutable("claude", context.env) !== undefined
-    return installed ? { state: "not-connected", detail: null } : { state: "not-installed", detail: "claude was not found on PATH" }
-  },
+  read: (context) =>
+    readCliBacked(readJsoncEntry(claudeCodeConfig(context), ["mcpServers", SERVER_NAME]), "claude", context),
   connect: async (context) => {
     await context.runCli("claude", ["mcp", "remove", SERVER_NAME, "--scope", "user"]).catch(() => undefined)
     await context.runCli("claude", ["mcp", "add", "--scope", "user", SERVER_NAME, "--", context.entry.command, ...context.entry.args])
@@ -87,12 +98,7 @@ const codex: McpClientConnector = {
   name: "Codex",
   supported: () => true,
   configPath: codexConfig,
-  read: (context) => {
-    const reading = readStdioEntry(readCodexEntry(codexConfig(context)), argsLauncher, context)
-    if (reading !== null) return reading
-    const installed = resolveExecutable("codex", context.env) !== undefined
-    return installed ? { state: "not-connected", detail: null } : { state: "not-installed", detail: "codex was not found on PATH" }
-  },
+  read: (context) => readCliBacked(readCodexEntry(codexConfig(context)), "codex", context),
   connect: async (context) => {
     await context.runCli("codex", ["mcp", "add", SERVER_NAME, "--", context.entry.command, ...context.entry.args])
   },
@@ -131,7 +137,7 @@ const cursor = jsonConnector({
   name: "Cursor",
   configPath: (context) => path.join(context.home, ".cursor", "mcp.json"),
   serversKey: "mcpServers",
-  entry: ({ command, args }) => ({ command, args: [...args] }),
+  entry: argsEntry,
   launcherOf: argsLauncher,
   installedHints: (context) => ({ commands: ["cursor", "cursor-agent"], paths: [path.join(context.home, ".cursor")] }),
 })
@@ -173,7 +179,7 @@ const claudeDesktop = jsonConnector({
   name: "Claude Desktop",
   configPath: (context) => path.join(claudeDesktopDir(context), "claude_desktop_config.json"),
   serversKey: "mcpServers",
-  entry: ({ command, args }) => ({ command, args: [...args] }),
+  entry: argsEntry,
   launcherOf: argsLauncher,
   installedHints: (context) => ({ paths: [claudeDesktopDir(context)] }),
 })
