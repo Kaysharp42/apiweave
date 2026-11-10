@@ -61,7 +61,7 @@ Variables are not encrypted. They are suitable for non-sensitive configuration. 
 When editing an environment, **Import variables…** reads a file and shows what
 it would change before anything is written. It accepts:
 
-- **A .env file**: `KEY=value` lines, with an optional `export ` prefix,
+- **A .env file**: `KEY=value` lines, with an optional `export` prefix (`export KEY=value`),
   `#` comments (on their own line, or after an unquoted value), and single,
   double or backtick quotes. Quoted values may span several lines; inside
   double quotes `\n`, `\r`, `\t`, `\"` and `\\` are escapes. When a key

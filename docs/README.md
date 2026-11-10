@@ -43,6 +43,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 - [Projects](features/projects.md): ordered groups of workflows and `.aweproject` export and import (references only).
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
 - [Network](features/network.md): proxy, private certificate authorities and client certificates for every request.
+- [Coding Agents](features/coding-agents.md): launch an installed agent CLI beside the canvas, connected to the MCP bridge and briefed on the workflow.
 - [MCP Integration](features/mcp-integration.md): the local loopback HTTP bridge for AI agents on the same machine.
 - [Swagger and OpenAPI Import](features/swagger-import.md): turn a spec into reusable request templates.
 - [Run Tests in CI](guides/ci.md): run exported workflows and projects headless with `apiweave run`, with exit codes and JUnit/HTML reports.
@@ -50,7 +51,7 @@ Jump straight to the feature guide. Each one is self-contained: concepts, prereq
 
 **I'm having trouble (something broke or behaves wrong).**
 
-Use the central FAQ first, then the troubleshooting section in the relevant feature doc. Architecture is the right place when the failure spans processes.
+Start with the Troubleshooting section of the relevant feature doc. Architecture is the right place when the failure spans processes.
 
 1. The Troubleshooting section in the matching [feature guide](#features) below for symptom-to-fix Q&A.
 2. [Architecture](reference/architecture.md): how the pieces fit together when a failure spans the renderer and the main process.
@@ -76,6 +77,7 @@ The feature guides cover everything you can do with APIWeave. Each is a self-con
 - [Visualization and Debugging](features/visualization-and-debugging.md): timeline, provenance, secret confidence, and the run camera.
 - [Projects](features/projects.md): group workflows into ordered runs and export them as `.aweproject` bundles.
 - [Environments and Secrets](features/environments-and-secrets.md): local environments, inheritance, the encrypted secret store, and the metadata-only display.
+- [Coding Agents](features/coding-agents.md): run an agent CLI beside the canvas, with busy/idle status and Resume.
 - [MCP Integration](features/mcp-integration.md): the loopback HTTP bridge for local AI agents.
 - [Swagger and OpenAPI Import](features/swagger-import.md): import endpoints from a spec.
 

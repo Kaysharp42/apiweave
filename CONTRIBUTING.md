@@ -14,7 +14,7 @@ A good bug report includes:
 - Your environment: OS, Node version, desktop app version
 - Whether the issue is consistent or intermittent
 
-For desktop-side bugs, also include the contents of the main process log (the terminal that launched Electron, or your OS console). For renderer-side bugs, the DevTools console and the Network tab are usually enough.
+Attach the app's log file. APIWeave writes one file per day, `apiweave-main-YYYY-MM-DD.log`, to its log folder (`%APPDATA%\APIWeave\logs` on Windows, `~/Library/Logs/APIWeave` on macOS, `~/.config/APIWeave/logs` on Linux); **Settings → Updates → Show update log** opens that folder with today's file selected. It records main-process errors, renderer crashes and update activity. For renderer-side bugs, include the DevTools console output too.
 
 ## Security Issues
 

@@ -10,16 +10,18 @@
 
 ## Build and Run in Five Steps
 
-1. Click **New Workflow** from the sidebar or the empty-state button. A Start node is placed for you.
-2. Drag an **HTTP Request** node from the palette onto the canvas. Set method to `GET` and URL to `https://httpbin.org/get` (a public, auth-free endpoint that always returns 200).
-3. Drag an **Assertion** node onto the canvas. Connect the HTTP node's output to the Assertion's input. Configure a rule: source `status`, operator `equals`, expected value `200`.
-4. Pick your environment in the canvas toolbar selector (create one on the **Environments** page first if the selector is empty), then click **Run**. Within a second or two, both nodes turn green. Click a node to see its response body and assertion result.
-5. The app auto-saves your workflow about 700ms after the last edit, so the database already has the latest version when you run.
+1. Click **New Workflow** from the sidebar or the empty-state button. A **Start** node is placed for you.
+2. Open the **Add Nodes** panel (the plus button at the bottom-right of the canvas) and drag a **GET Request** from the HTTP Requests section onto the canvas. Set its URL to `https://httpbin.org/get` (a public, auth-free endpoint that always returns 200). Drag from the Start node's output handle to the request's input handle to connect them.
+3. Drag an **Assertion** (Validation section) onto the canvas and connect the request's output to the Assertion's input. Configure a rule: source `status`, operator `equals`, expected value `200`.
+4. Drag an **End** (Control Flow section) onto the canvas and connect the Assertion's **pass** output to it.
+5. Click **Run**. This endpoint needs no environment, so you can leave the toolbar's environment selector empty. Within a second or two the request and the Assertion turn green. Click a node to see its response body and assertion result.
 
-A simple login flow looks like this on the canvas:
+The app auto-saves your workflow about 700ms after the last edit, so the database already has the latest version when you run.
+
+The finished workflow looks like this on the canvas:
 
 ```text
-[ Start ] -> [ HTTP Request: GET /get ] -> [ Assertion ] -> [ End ]
+[ Start ] -> [ GET https://httpbin.org/get ] -> [ Assertion: status equals 200 ] --pass--> [ End ]
 ```
 
 ## What Just Happened
@@ -43,7 +45,7 @@ The full secret model lives in [Environments and Secrets](../features/environmen
 ## Troubleshooting
 
 - **If the workflows list is empty and you expected to see existing work**, you have not created any workflows yet. Click **New Workflow** to get started.
-- **If Run does nothing**, the main process is not responsive. Quit the app and relaunch. If the issue persists, check the main process log (the terminal that launched Electron, or your OS console) for stack traces.
+- **If Run does nothing**, the main process is not responsive. Quit the app and relaunch. If the issue persists, look for stack traces in the log file: **Settings → Updates → Show update log** opens the folder with today's `apiweave-main-YYYY-MM-DD.log` selected (see [Where Things Live](installation.md#where-things-live) for the path).
 - **If the HTTP node turns red with a connection error**, your local network may have blocked the outbound call, or the endpoint may be unavailable. Check the URL and your proxy, then try again.
 - **If the Assertion node turns red**, the status code did not match. Click the node to see the actual status, then update the assertion or use a different endpoint.
 - **If the environment selector shows "no environment available"**, you have not created an environment. Open **Environments**, create one, then re-run. You can also pick a default in the header so it is preselected for new workflows.

@@ -81,8 +81,6 @@ platform can self-install.
   projects, workflows, workspace-scoped environments and node presets. It never
   holds secret values, ciphertext, keys, the local list of stored secret names,
   run history, agent sessions, workflow revisions or user-scoped environments.
-  An environment's base id and the workspace's node presets do sync in format
-  version 2.
 - **One remote per workspace, and only committed changes travel.** Auto mode
   commits about 30 seconds after the last edit; manual mode commits only on
   **Sync now** / **Commit now**. A machine that has not pushed has not shared
@@ -90,6 +88,17 @@ platform can self-install.
 - **Git must be installed.** `gh` and `glab` are optional, and a GitLab sign-in
   needs GitLab 17.9 or later plus a `glab` whose account output APIWeave can
   read.
+- **One GitLab account per host.** `glab` keeps a single signed-in account for
+  each GitLab host, so APIWeave can use only that one there. Signing in to a
+  second account on the same host replaces the first in `glab`, and a workspace
+  set to sync as the earlier account reports it as unavailable until you sign
+  in as it again. GitHub accounts are not limited this way.
+- **Repository and owner lists stop at 100.** When you connect a remote or open
+  from git, the list shows at most 100 repositories for each GitHub owner (your
+  account and each organization) and 100 in all on GitLab, and the owners
+  offered for a new repository are your account plus your first 100 GitHub
+  organizations or GitLab groups. A list that reaches the cap says so. Use
+  **Use a URL instead** for a repository that is not listed.
 - **The clone is APIWeave's.** The repository at `<userData>/git/<workspace id>`
   is the app's working copy. Do not edit or commit in it by hand, and set its
   remote through **Connect to remote** / **Disconnect**.
@@ -165,10 +174,22 @@ page or through the CLI flags.
 - **Agent CLIs are yours to install.** APIWeave launches a local agent only
   when its CLI is already installed and authenticated on the machine. It does
   not bundle, proxy or resell access to Claude Code, Codex, OpenCode, Gemini or
-  any other agent.
+  any other agent. See [Coding Agents](../features/coding-agents.md).
+- **Not every agent is wired to the MCP server or briefed.** Cursor Agent,
+  Aider, Crush and Pi have no per-launch way to receive the MCP server, and only
+  Claude Code, OpenCode, Aider and Pi receive the session briefing. APIWeave
+  never writes either into your repository or into a configuration file shared
+  by every session.
 - **Resume support varies by agent.** A finished session is resumable only when
   that agent's CLI exposes a session id and a resume flag APIWeave has confirmed.
-  For other agents, the session runs but no **Resume** action is offered.
+  Cursor Agent and Aider never offer **Resume**, and Codex CLI, OpenCode and
+  Crush offer it only once the agent has printed its session id.
+- **Open at login on Linux uses XDG autostart.** It writes
+  `~/.config/autostart/apiweave.desktop` (under `$XDG_CONFIG_HOME` when set),
+  which GNOME, KDE, XFCE, Cinnamon and systemd's autostart generator read. A
+  compositor that reads none of them, such as Hyprland or Sway without uwsm,
+  needs `exec-once = apiweave --hidden` (or its equivalent) in its own config.
+  Some desktops, such as stock GNOME, show no tray icon at all.
 - **Agent runs that send secrets ask first.** A run an agent starts that would
   send stored secrets waits for a native approval naming the agent, workflow,
   secrets and destinations. **Skip secret approval for agent runs** can turn the
@@ -209,5 +230,6 @@ page or through the CLI flags.
 - [Releases and the Update Channel](release-and-updates.md) — signing, update paths and rollback
 - [Keep Tests in a Git Repository](../guides/git-workflows.md) — repository layout, branches and merge behaviour
 - [MCP Integration](../features/mcp-integration.md) — the loopback bridge and client setup
+- [Coding Agents](../features/coding-agents.md) — launching agent CLIs, Resume and the tray
 - [Compatibility and Deprecation Policy](compatibility.md) — what 1.x keeps stable
 - [Changelog](../../CHANGELOG.md) — what changed in 1.0.0

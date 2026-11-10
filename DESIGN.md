@@ -120,11 +120,13 @@ components:
     padding: "0.75rem 1rem"
 ---
 
+<!-- The front matter's typography.title key reads to markdownlint as a document title. -->
+<!-- markdownlint-disable-next-line MD025 -->
 # Design System: APIWeave
 
 ## 1. Overview
 
-**Creative North Star: "The API Craftsman"**
+Creative North Star: **"The API Craftsman"**
 
 APIWeave is a developer tool for building visual API test workflows. Its design philosophy descends from the workshop, not the gallery: every surface exists to make the tool disappear into the task. The interface is a workbench — organized, well-lit, with every instrument within reach and nothing decorative on the table.
 
@@ -133,6 +135,7 @@ The system rests on a foundation of **earned familiarity.** Users should sit dow
 The Swiss-minimalist tradition is the root, but this is not a design exercise — it's a production tool for API engineers who spend hours in it. Every pixel is justified by the task.
 
 **Key Characteristics:**
+
 - **Restrained palette** — warm paper (light) / zinc neutrals (dark) + one ink-teal accent, used at ≤10% of any given screen
 - **One-family typography** — Inter carries body, headlines, labels, and UI. JetBrains Mono reserved for code
 - **Hairline borders over shadows** — separation via 1px tint-at-10% lines, not drop shadows
@@ -202,7 +205,7 @@ All status colors are paired with distinct icons and text labels — never encod
 **The One Voice Rule.** The ink-teal accent is used on ≤10% of any given screen. Its rarity is the point — when the user sees it, they know it means "act here" or "this is current."
 
 **The No-255 Rule.** No light surface reaches 255 on any channel. The page is
-#fbf8f3, a card #fdfbf7. This is an app someone sits in front of all day; it
+`#fbf8f3`, a card `#fdfbf7`. This is an app someone sits in front of all day; it
 should not be the brightest thing the screen can do. The warmth is also not
 decoration — it is what lets four surfaces be told apart without four borders.
 
@@ -347,7 +350,7 @@ The node layer is governed by its own doctrine — see §7, "The Node Layer: The
 
 ## 6. Do's and Don'ts
 
-### Do:
+### Do
 
 - **Do** use the ink-teal accent sparingly — primary buttons, active states, focus rings only.
 - **Do** separate surfaces with hairline borders (1px) before considering shadows.
@@ -360,7 +363,7 @@ The node layer is governed by its own doctrine — see §7, "The Node Layer: The
 - **Do** use `focus-visible` over `focus` — focus indicators on keyboard navigation only.
 - **Do** respect `prefers-reduced-motion` — disable all non-essential animations.
 
-### Don't:
+### Don't
 
 - **Don't** use the ink-teal accent decoratively — no gradient text, no glassmorphism, no side-stripe accents. On the canvas the accent means "you can touch this": selection, handles, and the insert affordance. It never means "this is executing."
 - **Don't** use fully saturated colors except for semantic status and HTTP methods. No decorative reds, greens, or blues.

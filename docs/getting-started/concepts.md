@@ -10,6 +10,8 @@
 
 - [Workflow](#workflow)
 - [Node](#node)
+- [Node Preset](#node-preset)
+- [Base Environment](#base-environment)
 - [Edge](#edge)
 - [Project](#project)
 - [Workspace](#workspace)
@@ -35,11 +37,11 @@ APIWeave ships eight node types: **HTTP Request**, **SSE Stream**, **Assertion**
 
 ## Node Preset
 
-A node preset is a node's configuration saved under a name and reusable across every workflow in the workspace — a standard auth header block, a house assertion set. Presets live in the local database, so they survive a restart, unlike copy/paste (session-only) and Swagger-imported palette groups (window-only). See [Node Presets](../features/node-presets.md).
+A node preset is a node's configuration saved under a name and reusable across every workflow in the workspace — a standard auth header block, a house assertion set. Presets live in the local database, so they survive a restart, unlike copy/paste (session-only) and Swagger-imported palette groups (window-only). In a workspace tracked in git, presets are written to the repository too, so they travel with it to every machine that syncs it. See [Node Presets](../features/node-presets.md).
 
 ## Base Environment
 
-An environment can extend a **base environment** in the same workspace, inheriting its plain variables and overriding only the ones that differ (`base → staging → staging-eu`). Secrets are never inherited; they keep resolving through the fixed `environment > workspace` scope chain. See [Environment Inheritance](../features/environments-and-secrets.md#environment-inheritance).
+An environment can extend a **base environment** in the same workspace, inheriting its plain variables and overriding only the ones that differ (`base → staging → staging-eu`). Secrets are never inherited; they keep resolving through the fixed `environment > workspace` scope chain. In a workspace tracked in git, the link to the base environment is written to the repository with the environment. See [Environment Inheritance](../features/environments-and-secrets.md#environment-inheritance).
 
 ## Edge
 

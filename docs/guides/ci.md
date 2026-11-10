@@ -93,6 +93,7 @@ apiweave run login.json --var baseUrl=http://localhost:8080
 | `--ca-cert <file>` | Also trust this CA certificate (PEM). Repeatable. |
 | `--use-system-ca` | Also trust the operating system's certificate store. |
 | `--client-cert <spec>` | Present a client certificate (mTLS) to a host. Repeatable. See [Network](#network-proxy-and-certificates). |
+| `-h, --help` | Print the usage text and exit `0`. |
 
 `--env-file`, `--var` and secret values stay in memory for the run. Nothing is written to disk except the reports you ask for.
 

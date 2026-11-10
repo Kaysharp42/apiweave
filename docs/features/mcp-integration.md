@@ -78,7 +78,10 @@ requests get `503`) and idle-evicted. Retained sessions can subscribe to the run
 resource and receive `notifications/resources/updated`; the notification is a
 change signal, so the client re-reads the resource for the new snapshot.
 
-The bridge speaks MCP protocol version `2025-06-18` (negotiated by the SDK).
+The protocol version is negotiated by the official MCP TypeScript SDK the bridge
+is built on: the client proposes a version in `initialize`, and the bridge
+answers with that version when the SDK supports it, or with the newest one the
+SDK supports otherwise.
 
 ## Enable The Bridge
 
@@ -128,8 +131,9 @@ tool includes:
   fallback.
 - Read-only, destructive, idempotent, and open-world annotations.
 
-`runs_create` is marked open-world because it executes the workflow's outbound
-HTTP requests on this machine. Other tools operate on local APIWeave data.
+`runs_create` and `projects_run` are marked open-world because they execute
+workflows' outbound HTTP requests on this machine. Other tools operate on local
+APIWeave data.
 
 `workflows_search`, `workflows_get`, `workflows_patch`, `workflows_debugContext`
 and `runs_create` carry `_meta: {"anthropic/alwaysLoad": true}`, so Claude Code
@@ -467,7 +471,7 @@ written data catch up without the user touching anything:
 | --- | --- |
 | `workspaces` | The workspace list and switcher. Deleting the workspace the user is *in* also sends the app to `/app`, which re-picks one that still exists. |
 | `workflows`, `assertions` | The sidebar's workflow list (the open canvas is already covered by `apiweave:workflow-changed`) and an open project page. |
-| `projects` | The sidebar's projects and collections lists, and an open project page. |
+| `projects` | The sidebar's projects list, and an open project page. |
 | `environments` | The environment store the run-time picker reads, and the workspace environments page. |
 | `nodePresets` | The preset store the Add Nodes palette reads. |
 
@@ -482,8 +486,9 @@ and announcing them would fight its optimistic updates. Besides MCP writes, the
 one publisher is a workspace's [git sync](../guides/git-workflows.md#sync-with-the-remote):
 an import from the remote rewrites records underneath the renderer exactly as an
 agent does, so each import that commits announces `workspaces`, `projects`,
-`workflows` and `environments` with the action `gitImport` and the imported
-`workspaceId`.
+`workflows`, `environments` and `nodePresets` with the action `gitImport` and
+the imported `workspaceId`. Presets synced from the remote therefore appear in
+the Add Nodes palette without a reload.
 
 `secrets` is absent because MCP has no secret write tools, and run history is
 covered by the run channel above.
@@ -668,8 +673,13 @@ Finding everything that touches a route or a credential takes one call each:
 
 ```json
 { "name": "workflows_searchNodes", "arguments": { "workspaceId": "ws-1", "query": "/orders" } }
+```
+
+```json
 { "name": "workflows_searchNodes", "arguments": { "workspaceId": "ws-1", "ref": "secrets.API_KEY" } }
 ```
+
+The second call returns:
 
 ```json
 {

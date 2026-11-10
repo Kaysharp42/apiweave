@@ -84,7 +84,7 @@ These are implementation details. They may change in any release, including a pa
 - Internal IPC handler names and payloads used by the renderer. [IPC API](api.md) documents them for contributors; the MCP tool names above are the public agent surface.
 - The SQLite schema, the data-directory layout under `<userData>`, and migration file names. Upgrades preserve data, and a pre-upgrade backup is taken, but the files are not an interchange format.
 - Log text and format, UI copy, layout, themes, CSS and DOM structure.
-- Undocumented environment variables and development flags such as `APIWEAVE_DEV_UPDATES`.
+- Desktop development and diagnostic variables such as `APIWEAVE_DEV_UPDATES`, `APIWEAVE_FRONTEND_DIST` and `APIWEAVE_LOG_LEVEL`. They are documented in [Environment Variables](environment-variables.md) for contributors, but they are not a contract. The CLI's `APIWEAVE_SECRET_<NAME>` is covered under [CLI](#cli) above.
 - Update-channel internals: `version.json`, `latest*.yml`, the Ed25519 signature fields and the release workflow. Clients use them through the app, not as an API.
 - Single-workflow JSON exports. They are produced and consumed by APIWeave itself, not a supported interchange format.
 

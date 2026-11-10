@@ -9,7 +9,7 @@
   - **macOS**: macOS 13 (Ventura) or newer (Intel and Apple Silicon). Electron 44 does not run on macOS 11 or 12.
   - **Linux**: a current distro with glibc 2.34+ (Ubuntu 22.04+, Debian 12+, Fedora 35+). For the AppImage, FUSE 2 must be installed; on Arch, prefer the `.pacman` package.
 - About 500 MB of free disk space for the installer and the local SQLite database.
-- A network connection on first launch. The database, the secret store and the bundled fonts stay on your machine, and the app loads no third-party UI assets. After launch, an untracked workspace's only automatic network activity is the update check, and a tracked workspace also fetches and pushes its git remote — see [Updates](#updates) and [Keep Tests in a Git Repository](../guides/git-workflows.md).
+- A network connection on first launch. The database, the secret store and the bundled fonts stay on your machine, and the app loads no third-party UI assets, with one exception: once you sign in to a GitHub account, its profile picture is loaded from `https://<host>/<login>.png` (GitLab accounts show initials and make no request). After launch, an untracked workspace's only automatic network activity is the update check, and a tracked workspace also fetches and pushes its git remote — see [Updates](#updates) and [Keep Tests in a Git Repository](../guides/git-workflows.md).
 
 For contributors who want to build the desktop app from source: Node.js 22.12+ and npm. On Linux, the `node-pty` dependency compiles a native addon, so the source build also needs a C++ toolchain (`build-essential` on Debian/Ubuntu, or `make`, `python3` and `g++`/`clang++`). The prebuilt installers do not need it. The build itself is `scripts/desktop.ps1 build` on Windows, `scripts/desktop.sh build` on Linux/macOS. See the [Developer Guide](../../AGENTS.md) for the full dev workflow.
 
@@ -17,7 +17,7 @@ For contributors who want to build the desktop app from source: Node.js 22.12+ a
 
 Grab the latest installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). Each release also includes `SHA256SUMS.txt` for download verification.
 
-- **Windows**: `APIWeave-<version>-win-x64.zip` — extract it and run the `APIWeave-<version>-win-x64.exe` inside (NSIS per-user installer). A bare `.exe` is attached to each release too; that one is the in-app updater's download, not the one to grab by hand.
+- **Windows**: `APIWeave-<version>-win-x64.zip` — extract it and run the `APIWeave-<version>-win-x64.exe` inside (NSIS per-user installer). A bare `.exe` is attached to each release too; that one is the in-app updater's download, not the one to grab by hand. `APIWeave-<version>-win-x64.msi` is also published, for deployment through tools that expect an MSI package (Group Policy, Intune and similar).
 - **macOS**: `APIWeave-<version>-mac-x64.dmg` for Intel or `APIWeave-<version>-mac-arm64.dmg` for Apple Silicon.
 - **Linux**: AppImage, `.deb`, `.rpm`, and `.pacman` x64 builds. Pick the one that matches your distro.
 
@@ -94,8 +94,8 @@ When APIWeave opens for the first time:
 
 The local MCP bridge is opt-in. To enable it for a local AI agent:
 
-1. Open **Settings** from the left navigation rail.
-2. Toggle **Enable MCP bridge**.
+1. Open **Settings → MCP Server** from the left navigation rail.
+2. Turn on **Enable local MCP server**.
 3. The app binds a loopback HTTP server on `127.0.0.1` and writes a per-install token to a file in the data directory. **Regenerate token** in the MCP settings replaces it and closes sessions opened with the old one. The **Settings → MCP Server** page shows the URL and the token; point your local agent at the URL with the token. See [MCP Integration](../features/mcp-integration.md) for setup recipes.
 
 If you do not enable the MCP bridge, nothing is listening on any port. The desktop app has no exposed network surface by default.
@@ -159,7 +159,7 @@ A quick checklist after first launch:
 1. The window opens at the workflows list. No login screen.
 2. The data directory was created and contains `apiweave.db` and `keyfile.json`.
 3. **Settings → Updates** shows the version you installed.
-4. (Optional) Toggle the MCP bridge in **Settings** and confirm **Settings → MCP Server** shows a `127.0.0.1` URL and a token.
+4. (Optional) Turn on **Enable local MCP server** in **Settings → MCP Server** and confirm the page shows a `127.0.0.1` URL and a token.
 
 ## Where Things Live
 
