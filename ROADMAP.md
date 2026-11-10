@@ -48,16 +48,23 @@ the header, create the workspace repository from the app, launch a coding agent
 beside the canvas, keep the app in the tray so the MCP bridge and git sync stay
 reachable, and give agents an outline-first, paged MCP surface.
 
-**1.0 (v1.0.0):** signed and notarized desktop builds that update in place
-(macOS Developer ID and Windows code signing when the release secrets are
-configured), **base environments and node presets sync** with the workspace
-repository (format version 2), **choosing the branch to track and switching it
-later**, the standalone **`@apiweave/cli`** package attached to every release,
-the **1.x compatibility policy** for MCP tools, repository files, bundles and
-the CLI, opening an account's `apiweave-workspace`-tagged repositories after
-signing in, and **GitHub profile pictures** in the accounts menu.
+**1.0 (v1.0.0):** **base environments and node presets sync** with the
+workspace repository (format version 2), **choosing the branch to track and
+switching it later**, the standalone **`@apiweave/cli`** package attached to
+every release, the **1.x compatibility policy** for MCP tools, repository
+files, bundles and the CLI, an **MCP stdio launcher** that lets agents reach
+APIWeave while it is closed, **Connect your agents** for six MCP clients, the
+**`/apiweave:e2e`** prompt, opening an account's `apiweave-workspace`-tagged
+repositories after signing in, **GitHub profile pictures** in the accounts
+menu, and a release pipeline ready for macOS Developer ID and Windows code
+signing. The 1.0.0 installers themselves are unsigned.
 
 ## Next
+
+- **Signed desktop builds.** Ship installers signed with an Apple Developer ID
+  (notarized) and a Windows code-signing certificate, so first launch needs no
+  SmartScreen or Gatekeeper workaround and macOS updates in place. The pipeline
+  already supports it; it waits on the certificates.
 
 - **MCP tool surface expansion.** Additional local-only MCP tools that map to
   existing IPC handlers, staying inside the loopback bridge and the per-install

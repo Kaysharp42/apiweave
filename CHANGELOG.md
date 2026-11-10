@@ -9,7 +9,24 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] — 2026-11-10
+
+APIWeave 1.0 is the first release of the local-first desktop app as a supported
+product. It brings the surface together: a visual canvas for building and
+running API test workflows, git sync for a workspace's projects, workflows,
+environments and node presets, a headless CI runner and standalone CLI package,
+a loopback MCP bridge that agents can reach even while the app is closed, with
+embedded coding agents beside the canvas, signed update manifests and a release
+pipeline ready for OS code signing, and an accessibility-gated UI. It is the
+first release covered by the 1.x compatibility policy.
+
+The 1.0.0 installers are **not code-signed**. Windows SmartScreen may warn on
+first launch (**More info → Run anyway**), and macOS Gatekeeper blocks the
+first launch until you right-click the app and choose **Open**; see
+[Installation](docs/getting-started/installation.md). Windows and the Linux
+AppImage update in place; macOS and the `.deb`/`.rpm`/`.pacman` packages show
+a new-version notice instead. Every update is still verified against the
+update signing key built into the app before it can install.
 
 ### Added
 
@@ -39,37 +56,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
   clears the diagnosis before running, and reports API bugs with evidence
   rather than weakening an assertion to make a run pass.
 
-### Fixed
-
-- **Opening a workflow no longer flashes the graph in the wrong place.** The
-  canvas mounts inside a resizable pane that has no width until after the first
-  commit, so the first painted frame showed every node at ReactFlow's default
-  transform with the toolbar collapsed to its narrowest tier; the correct view
-  arrived a frame later. The canvas's contents now stay invisible until the
-  opening view has been applied, so the first thing drawn is already the graph
-  where it belongs with the toolbar at its full width. A workflow with no nodes
-  opens immediately instead of waiting for a measurement that never comes.
-
-## [1.0.0] — 2026-11-10
-
-APIWeave 1.0 is the first release of the local-first desktop app as a supported
-product. It brings the surface together: a visual canvas for building and
-running API test workflows, git sync for a workspace's projects, workflows,
-environments and node presets, a headless CI runner and standalone CLI package,
-a loopback MCP bridge with embedded coding agents, signed and notarized desktop
-builds that can update in place, and an accessibility-gated UI. It is the first
-release covered by the 1.x compatibility policy.
-
-### Added
-
-- **Signed and notarized desktop releases.** When the release secrets are
-  configured, the workflow signs macOS with a Developer ID certificate and
-  notarizes it with Apple, and signs the Windows installer. A signed macOS
-  build now updates itself in place: both architectures are packaged in one
-  job, so a single `latest-mac.yml` covers the x64 and arm64 zips. Update
-  signatures gained a per-file map so the arm64 download is verified against
-  its own bytes. A release without the certificate secrets still builds,
-  installs and is clearly labelled unsigned.
+- **A release pipeline ready for OS code signing.** Once the certificate
+  secrets are configured, the workflow signs macOS with a Developer ID
+  certificate and notarizes it with Apple, and signs the Windows installer; a
+  signed macOS build then updates itself in place. Both macOS architectures are
+  packaged in one job, so a single `latest-mac.yml` covers the x64 and arm64
+  zips, and update signatures gained a per-file map so the arm64 download is
+  verified against its own bytes. Without the certificate secrets — as for
+  1.0.0 itself — a release still builds, installs and is clearly labelled
+  unsigned.
 - **Base environments sync with a workspace's git repository.** An environment's
   base environment is written as its id in the environment file, validated on
   read (same workspace, no cycle, at most eight environments in a chain), and
@@ -168,6 +163,14 @@ release covered by the 1.x compatibility policy.
 - **Canvas edges stay attached after the shell resizes.** Turning the
   off-screen render optimisation off while the canvas is idle stops React Flow
   pruning edges during a sidebar or navigation collapse (issue #106).
+- **Opening a workflow no longer flashes the graph in the wrong place.** The
+  canvas mounts inside a resizable pane that has no width until after the first
+  commit, so the first painted frame showed every node at ReactFlow's default
+  transform with the toolbar collapsed to its narrowest tier; the correct view
+  arrived a frame later. The canvas's contents now stay invisible until the
+  opening view has been applied, so the first thing drawn is already the graph
+  where it belongs with the toolbar at its full width. A workflow with no nodes
+  opens immediately instead of waiting for a measurement that never comes.
 
 ## [0.22.0] — 2026-11-02
 
