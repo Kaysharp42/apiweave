@@ -1,110 +1,251 @@
+<div align="center">
+
 # APIWeave
 
-Visual API Test Story Builder. Build, run, and inspect API test workflows on a canvas.
+**End-to-end API tests your coding agent can build, run and debug, on a canvas you can see.**
 
-## What Is APIWeave?
+[![Latest release](https://img.shields.io/github/v/release/Kaysharp42/apiweave?label=release)](https://github.com/Kaysharp42/apiweave/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
+![MCP](https://img.shields.io/badge/MCP-ready-8A2BE2)
 
-APIWeave is a local-first, open-source desktop app for visual API testing. You assemble test workflows on a React Flow canvas from drag-and-drop nodes (HTTP request, SSE stream, assertion, delay, merge, call workflow, start, end), chain requests with extracted variables and dynamic functions, run them against an environment, and inspect results node by node. Projects group related workflows in a fixed order. Environments and secrets live on your machine, encrypted at rest. An optional MCP bridge lets a local agent drive the same app; there are no webhooks or remote triggers.
+[Install](#install) · [Connect your agents](#connect-your-coding-agents) · [`/apiweave:e2e`](#test-with-one-command-apiweavee2e) · [Docs](docs/README.md) · [Changelog](CHANGELOG.md)
 
-APIWeave ships as a self-contained Electron app with an embedded SQLite store. There is no server to deploy, no MongoDB to install, no SSO to configure, no ports to expose. Download the installer, run it, and you are inside the canvas in seconds.
+</div>
 
-Git sync is built in: a workspace can be tracked in git and kept in step with a remote you own, on GitHub, GitLab or any host. See [Keep Tests in a Git Repository](docs/guides/git-workflows.md).
+---
 
-## Quick Start
+Your coding agent just wrote an endpoint. Does it work? Does the whole journey work: sign up, log in, create an order, read it back, delete it, and get a 404 afterwards?
 
-**Recommended for most users:** download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases). The installer puts a self-contained app on your machine. No Python, no Node, no database, no Docker.
+APIWeave answers that. It is a local-first desktop app where API tests are **workflows on a visual canvas**: requests, assertions, extracted variables and branches you can see. It ships an **MCP server** that Claude Code, Codex, OpenCode, Cursor, VS Code and Claude Desktop connect to in one click. Type `/apiweave:e2e "checkout flow"` in your agent. It reads your code, builds the workflows, runs them against your environment and fixes its own mistakes. It reports the real API bugs it finds, with evidence. You watch the nodes light up on the canvas while it works.
 
-**For contributors:** clone the repo, install the single `app/` package with `scripts/setup.sh` (Linux/macOS) or `scripts/setup.ps1` (Windows), then run `npm run dev` from `app/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Developer Guide](AGENTS.md) for the dev workflow.
+No cloud account. No server to deploy. No test scripts to maintain. Everything stays on your machine.
 
-> **npm 12+ note:** If your global npm config has `allow-scripts=false`, Electron's postinstall will be blocked; `scripts/setup.sh` downloads the binary manually in that case.
+## Why APIWeave
 
-## Desktop App
+- **AI-native E2E testing.** One slash command takes an agent from "test the invoice API" to tested user journeys, with assertions after every request and negative cases included.
+- **You can see what the agent built.** Agent-written tests are a graph on a canvas, not 400 lines of generated test code. Agent runs animate live, and every agent edit is a version you can undo.
+- **It keeps agents honest.** The `/apiweave:e2e` prompt tells the agent to separate a broken test from a broken API, and never to weaken an assertion to turn a run green. Static diagnosis catches graph mistakes before any HTTP is sent.
+- **Secrets stay secret.** Agents see secret *names*, never values. A run an agent starts that would use a secret waits for your approval in a native dialog, and can reach only the hosts the dialog lists.
+- **It also helps your coding agent.** While it builds features, your agent has a real test harness it can drive: reuse existing workflows, rerun only the failed branch, read one node's response, and confirm the fix, without leaving the conversation.
+- **From canvas to CI.** Track a workspace in git and run it in any pipeline with `apiweave run`, with JUnit and HTML reports and exit codes that fail the build.
+- **Local-first.** One self-contained app with an embedded SQLite store. The MCP bridge listens only on `127.0.0.1`, behind a per-install token. No telemetry.
 
-APIWeave ships as a self-contained Electron app. The main process owns workflow execution, the embedded SQLite store and the optional local MCP bridge; the renderer (the React UI) talks to it over typed IPC. Embedded coding-agent terminals run in a separate PTY host utility process. No external services to install or run. No open ports on your network. No telemetry.
+## How It Works
 
-Download the installer for your OS from the [latest release](https://github.com/Kaysharp42/apiweave/releases), or build it locally with `scripts/desktop.ps1 build` (Windows) or `scripts/desktop.sh build` (Linux/macOS).
+```mermaid
+sequenceDiagram
+    actor You
+    participant Agent as Coding agent<br/>(Claude Code, Codex, OpenCode…)
+    participant AW as APIWeave<br/>(MCP server + canvas)
+    participant API as Your API
 
-### Windows
+    You->>Agent: /apiweave:e2e "orders: create, list, cancel"
+    Agent->>Agent: Reads your routes, handlers and OpenAPI spec
+    Agent->>AW: Finds the workspace, reuses existing workflows
+    Agent->>AW: Builds journey workflows (extract ids, assert every step)
+    AW-->>Agent: Static diagnosis: fix errors before sending any HTTP
+    Agent->>AW: Run (you approve if secrets are used)
+    AW->>API: Real requests
+    AW-->>You: Nodes light up live on the canvas
+    AW-->>Agent: Per-node results and failure context
+    Agent->>Agent: Is it a workflow bug (fix it) or an API bug (report it)?
+    Agent-->>You: Report: workflows, results, API bugs with evidence
+```
 
-Download `APIWeave-<version>-win-x64.zip`, extract it and run the `.exe` inside (the bare `.exe` on the release is the in-app updater's download). It installs per-user (no admin prompt) and adds a Start-menu entry. An `.msi` is also published, for deployment tools that expect an MSI package. Release installers are code-signed when the project's certificate is configured; a build without a signature may make SmartScreen warn on first launch — choose **More info → Run anyway**.
+## Install
 
-### macOS
+Download the installer for your OS from the **[latest release](https://github.com/Kaysharp42/apiweave/releases/latest)**. No Python, Node.js, database or Docker is needed to run the app.
 
-Download the `mac-x64.dmg` build for Intel Macs or the `mac-arm64.dmg` build for Apple Silicon, then drag APIWeave to Applications. Release builds are signed and notarized when the project's Apple Developer certificate and notarization secrets are configured, and a signed build updates itself in place. If you downloaded an unsigned build (a local build, or a release made before signing was configured), Gatekeeper blocks the first launch: right-click the app → **Open**, or clear the quarantine flag with `xattr -dr com.apple.quarantine /Applications/APIWeave.app`.
+| Platform | Download | Notes |
+| --- | --- | --- |
+| **Windows 10/11** (x64) | `APIWeave-<version>-win-x64.zip` | Extract the zip and run the `.exe` inside. Installs per-user with no admin prompt. An `.msi` is published too, for Intune and Group Policy. The bare `.exe` on the release is the in-app updater's download. |
+| **macOS 13+** | `mac-arm64.dmg` (Apple Silicon) or `mac-x64.dmg` (Intel) | Drag APIWeave to Applications. |
+| **Linux** (x64, glibc 2.34+) | `.AppImage`, `.deb`, `.rpm`, `.pacman` | See the commands below. |
 
-### Linux
+```bash
+# Linux: pick the package for your distro
+sudo apt install ./APIWeave-<version>-linux-amd64.deb       # Debian, Ubuntu, Mint
+sudo dnf install ./APIWeave-<version>-linux-x86_64.rpm      # Fedora, RHEL, openSUSE
+sudo pacman -U APIWeave-<version>-linux-x64.pacman          # Arch, Manjaro
+chmod +x APIWeave-<version>-linux-x86_64.AppImage && ./APIWeave-<version>-linux-x86_64.AppImage   # any distro
+```
 
-Four artifacts are published; pick what fits your distro:
+> [!NOTE]
+> **The 1.0 installers are not code-signed.** On Windows, SmartScreen may warn on first launch: choose **More info → Run anyway**. On macOS, right-click the app and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/APIWeave.app`. Every update is still verified against the signing key built into the app before it installs. Windows and the AppImage update in place; macOS and the Linux packages show a notice linking to the new version.
 
-- **AppImage** — portable, runs on any distro. `chmod +x APIWeave-<version>-linux-x86_64.AppImage && ./APIWeave-<version>-linux-x86_64.AppImage`.
-- **`.deb`** — Debian, Ubuntu, and Mint: `sudo apt install ./APIWeave-<version>-linux-amd64.deb`.
-- **`.rpm`** — Fedora, RHEL, and openSUSE: `sudo dnf install ./APIWeave-<version>-linux-x86_64.rpm`.
-- **`.pacman`** — Arch and Manjaro: `sudo pacman -U APIWeave-<version>-linux-x64.pacman`.
+The AppImage needs FUSE 2 (`sudo pacman -S fuse2` on Arch), or run it with `--appimage-extract-and-run`. On Arch, prefer the `.pacman` package. The app runs natively on Wayland, Hyprland included. The full guide, with first-launch details and troubleshooting, is [Installation](docs/getting-started/installation.md).
 
-**Arch Linux + Hyprland (Wayland).** The app requests native Wayland automatically (`ozone-platform-hint=auto`), so it runs directly on Hyprland with no XWayland. Two Arch-specific notes:
+## Connect Your Coding Agents
 
-- The **AppImage** needs FUSE 2 (`sudo pacman -S fuse2`), or run it with `./APIWeave-<version>-linux-x86_64.AppImage --appimage-extract-and-run`. The **`.pacman`** package has no such requirement — prefer it on Arch.
-- If a compositor quirk forces XWayland, launch with an explicit override: `apiweave --ozone-platform=wayland` (or `--ozone-platform=x11` to force XWayland).
+To connect your agents, you turn on one setting and click **Connect**. You edit no config files.
 
-The Linux binaries are built on Ubuntu 22.04 and require glibc 2.34 or newer (Ubuntu 22.04+, Debian 12+, Fedora 35+). They run on Arch's newer glibc without issue.
+1. Open APIWeave and go to **Settings → MCP Server**.
+2. Turn on **Enable local MCP server**.
+3. Under **Connect your agents**, click **Connect all**, or **Connect** next to each client you use.
+4. Restart the agent.
 
-## Features
+| Client | What **Connect** does |
+| --- | --- |
+| **Claude Code** | Runs `claude mcp add --scope user apiweave …` |
+| **Codex** | Runs `codex mcp add apiweave …` |
+| **OpenCode** | Adds `mcp.apiweave` to your global `opencode.json(c)` |
+| **Cursor** | Adds `mcpServers.apiweave` to `~/.cursor/mcp.json` |
+| **VS Code** | Adds `servers.apiweave` to your user `mcp.json` |
+| **Claude Desktop** | Adds `mcpServers.apiweave` to `claude_desktop_config.json` (the Microsoft Store install's copy too) |
 
-The feature guides are the deep reference for everything you can do in APIWeave. Each is a self-contained tutorial with worked examples and a troubleshooting section.
+How the connection behaves:
 
-- [Workflows and Nodes](docs/features/workflows-and-nodes.md): canvas, the eight executable node types plus note and group annotations, toolbar actions, expected-status negative tests.
-- [Variables and Extractors](docs/features/variables-and-extractors.md): the four placeholder namespaces and how to pull values from responses.
-- [Scripting](docs/features/scripting.md): sandboxed pre-request and post-response JavaScript for signing, transforming values and custom checks.
-- [Data-Driven Runs](docs/features/data-driven-runs.md): run a workflow once per row of a CSV or JSON file, in the app or in CI.
-- [Node Presets](docs/features/node-presets.md): save a node's configuration under a name and reuse it across the workspace.
-- [Visualization and Debugging](docs/features/visualization-and-debugging.md): run timeline, variable provenance, secret resolution confidence, and camera-follow during runs.
-- [Projects](docs/features/projects.md): ordered groups of workflows and `.aweproject` v2 export and import (references only).
-- [Keep Tests in a Git Repository](docs/guides/git-workflows.md): track a workspace in git and sync it with a remote, sign in to GitHub or GitLab from the header, create the workspace's repository from the app, and open it on another machine.
-- [Environments and Secrets](docs/features/environments-and-secrets.md): local environments, inheritance from a base environment, the encrypted secret store, and the metadata-only display.
-- [Network](docs/features/network.md): proxy, private certificate authorities and client certificates for every request.
-- [Coding Agents](docs/features/coding-agents.md): launch Claude Code, Codex CLI, Gemini CLI, OpenCode or another installed agent CLI beside the canvas, already connected to the MCP bridge and briefed on the workflow.
-- [MCP Integration](docs/features/mcp-integration.md): a local loopback HTTP bridge for AI agents. The desktop app has no webhooks and no exposed ports.
-- [Swagger and OpenAPI Import](docs/features/swagger-import.md): turn a spec into reusable request templates.
-- [Run Tests in CI](docs/guides/ci.md): `apiweave run` runs a workspace repository, an exported workflow or an `.aweproject` project under plain Node, exits non-zero on failure and writes JUnit or HTML reports. No Electron, no window, secrets from CI variables.
-- [Migrate from Postman](docs/guides/migrating-from-postman.md): import a Postman Collection v2.1 and its environment as a project, and what each part becomes.
+- **Your agents can reach APIWeave even when the app is closed.** Each client runs a small stdio launcher. It answers at once and starts APIWeave hidden in the tray when a tool is needed, so starting your agent before APIWeave is fine.
+- **APIWeave writes only the `apiweave` entry, and only when you click.** Comments, formatting and your other servers are left as they are. **Disconnect** removes the entry.
+- **It needs Node.js 20 or newer** on your machine, because the launcher runs with your own `node`. The settings page tells you if it is missing.
+- **The status of each client is shown**: Connected, Old entry (click **Replace**), Not connected, or Not found.
+
+**Using another MCP client** (Gemini CLI, Copilot CLI, Windsurf, …)? Point it at the launcher. Copy the exact path from **Settings → MCP Server**:
+
+```json
+{
+  "mcpServers": {
+    "apiweave": {
+      "command": "node",
+      "args": ["/home/you/.config/APIWeave/apiweave-mcp.cjs"]
+    }
+  }
+}
+```
+
+The launcher lives in `%APPDATA%\APIWeave\` on Windows, `~/Library/Application Support/APIWeave/` on macOS and `~/.config/APIWeave/` on Linux. A direct HTTP config (`http://127.0.0.1:47271/mcp` with a bearer token) is also available. Recipes for every client are in [MCP Integration](docs/features/mcp-integration.md#client-configuration).
+
+### Or launch the agent inside APIWeave
+
+Open a workflow, click **Set folder** in the canvas toolbar and pick your API's source folder. Then click the agent button. Your agent opens in a dock beside the canvas, already connected to the MCP server and told which workflow, project and workspace it is working on. Ten agents are built in: Claude Code, Codex CLI, Gemini CLI, OpenCode, Cursor Agent, Aider, GitHub Copilot CLI, Qwen Code, Crush and Pi. You can add any other CLI. Most of them can resume a session later. See [Coding Agents](docs/features/coding-agents.md).
+
+## Test With One Command: `/apiweave:e2e`
+
+APIWeave publishes MCP prompts, which agents that support them show as slash commands. The main one is:
+
+```text
+/apiweave:e2e "what to test"
+```
+
+> [!IMPORTANT]
+> **Quote the task.** Claude Code and OpenCode pass only the first word to the command otherwise.
+
+Examples:
+
+```text
+/apiweave:e2e "signup, login and password reset"
+/apiweave:e2e "orders API: create, list with filters, cancel, and the error cases"
+/apiweave:e2e "the endpoints I changed on this branch"
+/apiweave:e2e "run the existing tests and fix what broke"
+/apiweave:e2e
+```
+
+With no task, the agent asks what to test and suggests something based on your workspace and repository.
+
+What the agent then does:
+
+1. **Finds the scope.** It picks the workspace and project that match your repository, or the ones APIWeave launched it on. It reuses existing workflows and copies their base URL, auth and variable conventions.
+2. **Learns the real API.** It reads your routes, handlers, validation and OpenAPI spec, so it tests what the code promises instead of guessing.
+3. **Designs user journeys, not isolated calls.** It authenticates once and reuses the token. It creates, reads back, updates, lists and deletes, extracting ids from responses. It adds an assertion after every request, negative cases (invalid input, not found, unauthorized), and unique test data such as `{{uuid()}}`, so reruns do not collide.
+4. **Diagnoses before running.** Every write returns a static diagnosis, which is free and sends no HTTP. The agent clears the errors before any real request goes out.
+5. **Runs safely.** It says which environment and base URL it will hit, and asks first if that looks like production. Runs that use secrets wait for your approval.
+6. **Debugs honestly.** On a failure it reads the failure context and the evidence. It fixes the workflow when the workflow is wrong. When the API is wrong, it keeps the failing assertion and reports the bug.
+7. **Reports.** It lists the workflows created or changed, what each covers, the last run results, the API bugs found with evidence, and anything you still need to do, such as add a missing secret.
+
+| Command | What it does |
+| --- | --- |
+| `/apiweave:e2e "task"` | Find or build, run, debug and report end-to-end API tests. |
+| `/apiweave:author_assertions` | Turn plain language ("it should return 200 and a token within 500 ms") into validated assertion rules. The agent shows a preview, then applies the rules after you approve. |
+
+**Codex doesn't show MCP prompts**, and some other clients don't either. There you can just ask: *"Use APIWeave to test the checkout flow end to end."* Every connected agent receives APIWeave's instructions when it connects, so it knows how to work with the tools.
+
+### What else your agent can do
+
+Beyond the slash commands, a connected agent has the whole workspace at its disposal through the MCP tools:
+
+- Map a workspace: which workflows call which endpoints, and which variables, environments and secrets they use.
+- Find every node that calls `/orders` or uses `{{secrets.API_KEY}}`, across all workflows.
+- Patch a workflow in place under a revision guard, so it never overwrites your unsaved canvas edits.
+- Rerun only the failed branch, or start again from one node, reusing the upstream results.
+- Read one node's stored request and response, with secrets redacted, to explain a failure.
+- Suggest assertions verified against a real response, and run whole projects in order.
+
+The full tool inventory, the guides served to agents and the security model are in [MCP Integration](docs/features/mcp-integration.md).
+
+## Built for Trust
+
+| Concern | How APIWeave handles it |
+| --- | --- |
+| Network exposure | The MCP bridge is off until you turn it on. It binds to `127.0.0.1` only and requires a per-install token. No webhooks, no remote triggers. |
+| Secrets | They are encrypted at rest, with the key sealed by the OS keychain. Agents get names and metadata only. Secrets cannot be created or read over MCP. |
+| Agent runs | A run that uses secrets waits for your approval (allow once, for this session, or always). It may reach only the hosts the dialog listed. |
+| Agent edits | Every agent write keeps the previous version, so you can undo it. Writes use compare-and-swap against the revision the agent last read. |
+| Exports | `.aweproject` bundles and git repositories hold `{{secrets.NAME}}` references, never values. |
+
+## Everything Else in the Box
+
+- **[Workflows and Nodes](docs/features/workflows-and-nodes.md)**: HTTP, SSE, assertion, delay, merge, call-workflow, start and end nodes, with notes and groups on a React Flow canvas.
+- **[Variables and Extractors](docs/features/variables-and-extractors.md)**: chain requests with `{{variables.x}}`, `{{env.x}}`, `{{prev.x}}`, `{{secrets.x}}` and [dynamic functions](docs/reference/dynamic-functions.md).
+- **[Scripting](docs/features/scripting.md)**: sandboxed pre-request and post-response JavaScript.
+- **[Data-Driven Runs](docs/features/data-driven-runs.md)**: run a workflow once per row of a CSV or JSON file.
+- **[Visualization and Debugging](docs/features/visualization-and-debugging.md)**: run timeline, variable provenance and camera-follow during runs, plus rerun from any node.
+- **[Projects](docs/features/projects.md)**: ordered suites of workflows, with `.aweproject` export and import.
+- **[Environments and Secrets](docs/features/environments-and-secrets.md)**: environments that inherit from a base environment, and an encrypted secret store.
+- **[Keep Tests in Git](docs/guides/git-workflows.md)**: sync a workspace with GitHub, GitLab or any remote, with built-in sign-in and branches.
+- **[Run Tests in CI](docs/guides/ci.md)**: the headless `apiweave run` CLI, with no Electron and no window.
+- **[Swagger / OpenAPI Import](docs/features/swagger-import.md)** and **[Postman Import](docs/guides/migrating-from-postman.md)**.
+- **[Network](docs/features/network.md)**: proxies, private certificate authorities and client certificates.
+- **[Node Presets](docs/features/node-presets.md)**: reusable node configurations across a workspace.
+
+### Run in CI
+
+```bash
+curl -fsSL -o apiweave-cli.tgz \
+  https://github.com/Kaysharp42/apiweave/releases/latest/download/apiweave-cli.tgz
+npm install -g ./apiweave-cli.tgz            # Node.js 22.12+
+
+export APIWEAVE_SECRET_API_TOKEN="$TOKEN"    # secrets come from CI variables
+apiweave run ./tests --env Staging --reporter cli,junit
+```
+
+Exit code `0` means every test passed, `1` means a test failed and `2` means a usage or configuration error. See [Run Tests in CI](docs/guides/ci.md).
 
 ## Documentation
 
-The [Documentation Hub](docs/README.md) is the entry point for every user-facing guide. It routes you through three paths (use it, build with it, fix something) and links to the reference index. Start there for install paths and the first-workflow tutorial. When something breaks, each feature guide ends with its own Troubleshooting section.
+- **[Documentation Hub](docs/README.md)**: start here.
+- **[Your First Workflow](docs/getting-started/first-workflow.md)**: a five-minute tour of the canvas.
+- **[MCP Integration](docs/features/mcp-integration.md)** and **[Coding Agents](docs/features/coding-agents.md)**: everything about agents.
+- **[Compatibility policy](docs/reference/compatibility.md)**: what 1.x keeps stable for MCP tools, workspace repositories, `.aweproject` bundles and the CLI.
+- **[Known limitations](docs/reference/known-limitations.md)** and **[Releases and updates](docs/reference/release-and-updates.md)**.
 
-There is no operations section in the desktop app: no authentication to set up, no deployment to plan, no security guide to follow beyond the encrypted-at-rest secret store, and no audit log. Everything is on your machine. The app checks GitHub Releases for updates on your chosen schedule — see [Release and Updates](docs/reference/release-and-updates.md). The [compatibility policy](docs/reference/compatibility.md) states what 1.x keeps stable for MCP agents, workspace repositories, `.aweproject` bundles and the CLI. The [known limitations](docs/reference/known-limitations.md) list the platform floors, signing and update paths, git sync boundaries, import limits and execution model of the 1.0 line.
+## Build From Source
 
-## Tech Stack
-
-- Frontend (renderer): React 19, React Flow 12 (`@xyflow/react`), Vite 8, Tailwind CSS 4, Zustand 5, TypeScript strict.
-- Desktop shell: Electron 44, esbuild, electron-builder, electron-updater.
-- Local store: better-sqlite3 (embedded SQLite, single file).
-- IPC: a typed handler registry in the main process. The same handlers back the local MCP HTTP bridge on the loopback interface.
-- Secrets: Libsodium sealed-box write-only ingress, opened at run time with the per-install keyfile, which is sealed by the OS keychain where one is available. Resolved values are masked in run history. No plaintext on the wire, no read API for stored values.
-- Execution: an in-process `RunScheduler` driven by IPC events streamed to the renderer.
-
-## Project Layout
-
-```text
-apiweave/
-  app/
-    src/       React app, ReactFlow canvas, contexts, components (the renderer)
-    electron/  Electron main process, preload entry points and the PTY host
-    core/      IPC handlers, repositories, runner, services, MCP bridge, and the headless CLI (core/cli)
-    shared/    Cross-process TypeScript contracts and Zod schemas
-    package.json
-  scripts/     setup / start / build scripts (Linux + Windows)
-  docs/        User-facing documentation (the hub and all guides)
+```bash
+git clone https://github.com/Kaysharp42/apiweave.git
+cd apiweave
+./scripts/setup.sh          # Windows: .\scripts\setup.ps1
+cd app && npm run dev       # launch the desktop app in development mode
 ```
 
-## License
+Source builds need Node.js 22.12+. On Linux, `node-pty` compiles a native addon, so you also need `make`, `python3` and a C++ compiler. Build an installer with `scripts/desktop.sh build` (or `scripts/desktop.ps1 build` on Windows). If your global npm config sets `allow-scripts=false`, `scripts/setup.sh` downloads the Electron binary manually.
 
-MIT. See [LICENSE](LICENSE).
+The stack: Electron 44 with an embedded SQLite store (better-sqlite3), a React 19 + React Flow 12 renderer (Vite, Tailwind CSS 4, Zustand), strict TypeScript, and a typed IPC handler registry that also backs the MCP bridge. See [Architecture](docs/reference/architecture.md).
+
+```text
+app/
+  src/       React renderer: canvas, contexts, components
+  electron/  Electron main process, preload worlds, PTY host
+  core/      IPC handlers, repositories, runner, services, MCP bridge, CLI
+  shared/    Cross-process TypeScript contracts and Zod schemas
+scripts/     setup / start / build (Linux, macOS, Windows)
+docs/        User-facing documentation
+```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching, commit style, and the pull-request flow. The developer workflow lives in [AGENTS.md](AGENTS.md).
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, branching, commit style and the pull-request flow, and [AGENTS.md](AGENTS.md) for the developer guide. What's next is in [ROADMAP.md](ROADMAP.md); what has shipped is in [CHANGELOG.md](CHANGELOG.md).
 
-## Roadmap
+## License
 
-See [ROADMAP.md](ROADMAP.md) for what's next. For historical releases, see [CHANGELOG.md](CHANGELOG.md).
+[MIT](LICENSE)
