@@ -53,7 +53,7 @@ export function NodePaletteSection({
                 <div className="flex items-center gap-1.5 text-sm text-text-primary dark:text-text-primary-dark">
                   {node.method && (
                     <span
-                      className={`inline-block px-1.5 py-0.5 text-2xs font-mono border rounded-xs ${NodePaletteMethodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30"}`}
+                      className={`inline-block px-1.5 py-0.5 text-2xs font-mono border rounded-xs ${NodePaletteMethodBadge[node.method] ?? "text-primary bg-primary/10 border-primary/30 dark:text-primary-light dark:bg-primary-light/10 dark:border-primary-light/30"}`}
                     >
                       {node.method}
                     </span>

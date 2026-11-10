@@ -12,12 +12,11 @@ import type { SecretWriteStore, SecretUpsert } from "../secrets/SecretStore"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
- * Secret service surface — write-only at every layer. Ported from the local
- * subset of Python `secret_service`/`scoped_secrets` (org scope dropped, #12).
+ * Secret service surface — write-only at every layer.
  *
  * Every method returns METADATA ONLY. There is no read-back path for a secret's
  * value: sealing happens client-side, and resolution during a run opens the sealed
- * box in the executor (Task 14), never here. `set` accepts already-sealed bytes.
+ * box in the executor, never here. `set` accepts already-sealed bytes.
  */
 export interface SecretPublicKey {
   readonly keyId: string
@@ -58,7 +57,7 @@ export class SecretService {
   private readonly resolver: ScopedSecretResolver
   // ponytail: seed MUST derive from the persisted keyfile master KEK, never randomBytes —
   // the renderer seals against publicKeyFromSeed(this seed). randomBytes regenerates every
-  // restart and can't open any box sealed in a prior session. Mirrors Python sha256(SECRET_ENCRYPTION_KEY).
+  // restart and can't open any box sealed in a prior session.
   private readonly sealedBoxSeed: Uint8Array
 
   constructor(

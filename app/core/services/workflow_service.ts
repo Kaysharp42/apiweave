@@ -250,7 +250,7 @@ function mergeById<T>(
   return [...merged, ...byId.values()]
 }
 
-/** Workspace-scoped workflow CRUD. Collapses Python `workflow_service` + `scoped_workflow_service`. */
+/** Workspace-scoped workflow CRUD. */
 export class WorkflowService {
   constructor(
     private readonly workflows: WorkflowRepository,

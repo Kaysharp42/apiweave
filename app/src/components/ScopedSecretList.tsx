@@ -291,7 +291,7 @@ export function ScopedSecretList({
             ? `Are you sure you want to delete "${deleteTarget.name}"? This action cannot be undone.`
             : ""
         }
-        confirmLabel={deleting ? "Deleting..." : "Delete"}
+        confirmLabel={deleting ? "Deleting…" : "Delete"}
         intent="error"
       />
     </div>

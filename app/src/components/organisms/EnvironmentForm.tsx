@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
+import { Select } from "../atoms/Select";
 import { TextArea } from "../atoms/TextArea";
 import { FormField } from "../molecules/FormField";
 import { Card } from "../molecules/Card";
@@ -218,13 +219,13 @@ export function EnvironmentForm({
               label="Base Environment"
               hint="Inherit variables from another environment; your own variables override matching names"
             >
-              <select
+              <Select
                 aria-label="Base Environment"
                 value={form.baseEnvironmentId ?? ""}
                 onChange={(e) =>
                   updateField("baseEnvironmentId", e.target.value || null)
                 }
-                className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                className="px-3 py-2 rounded-sm"
               >
                 <option value="">None</option>
                 {baseOptions.map((opt) => (
@@ -232,7 +233,7 @@ export function EnvironmentForm({
                     {opt.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </FormField>
 
             {inheritedGroups.length > 0 && (
@@ -487,7 +488,7 @@ export function EnvironmentForm({
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onCancel} disabled={submitting}>
+          <Button variant="ghost" onClick={onCancel} disabled={submitting}>
             Cancel
           </Button>
           <Button

@@ -1,3 +1,4 @@
-export { AppError, NotFoundError, ValidationError, ConflictError } from "./errors"
-export { IpcRouter, type InvokeRequest, type HandlerRegistration } from "./router"
-export { attachIpcRouter, emitRunProgress, runProgressChannel, INVOKE_CHANNEL } from "./register"
+// The composition root's two imports. Errors, progress channels and router
+// types are imported from the modules that declare them, never through here.
+export { IpcRouter } from "./router"
+export { attachIpcRouter } from "./register"

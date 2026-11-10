@@ -14,6 +14,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Button } from "./atoms/Button";
+import { Select } from "./atoms/Select";
 import { Modal } from "./molecules/Modal";
 import { PanelTabs } from "./molecules/PanelTabs";
 import { CheckboxOption } from "./molecules/CheckboxOption";
@@ -626,7 +627,7 @@ export function CollectionExportImport({
               fullWidth
               icon={<Download size={18} />}
             >
-              {isLoading ? "Exporting..." : "Download Project Bundle"}
+              {isLoading ? "Exporting…" : "Download Project Bundle"}
             </Button>
           </div>
         )}
@@ -655,7 +656,7 @@ export function CollectionExportImport({
               id="collection-export-paste-json"
               label="Or paste JSON:"
               value={pastedJson}
-              placeholder="Paste project JSON here..."
+              placeholder="Paste project JSON here…"
               className="w-full h-32 resize-none"
               rows={6}
               onChange={(value) => {
@@ -744,7 +745,7 @@ export function CollectionExportImport({
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
                     setNewProjectName(e.target.value)
                   }
-                  placeholder="Project name..."
+                  placeholder="Project name…"
                   className="ml-7"
                 />
               )}
@@ -763,12 +764,12 @@ export function CollectionExportImport({
               </label>
 
               {!createNewProject && (
-                <select
+                <Select
                   value={selectedTargetProject || ""}
                   onChange={(e: ChangeEvent<HTMLSelectElement>) =>
                     setSelectedTargetProject(e.target.value)
                   }
-                  className="ml-7 w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+                  className="ml-7 px-3 py-2 rounded-sm"
                 >
                   <option value="">Select project…</option>
                   {projects.map((project) => (
@@ -779,7 +780,7 @@ export function CollectionExportImport({
                       {project.name}
                     </option>
                   ))}
-                </select>
+                </Select>
               )}
             </div>
 
@@ -804,7 +805,7 @@ export function CollectionExportImport({
                 icon={<Upload size={18} />}
                 className="flex-1"
               >
-                {isLoading ? "Importing..." : "Import Project"}
+                {isLoading ? "Importing…" : "Import Project"}
               </Button>
             </div>
           </div>
@@ -889,7 +890,7 @@ export function CollectionExportImport({
               icon={<Upload size={18} />}
               title={!selectedTargetProject ? "Please select a project" : ""}
             >
-              {isLoading ? "Importing..." : "Import to Project"}
+              {isLoading ? "Importing…" : "Import to Project"}
             </Button>
           </div>
         )}

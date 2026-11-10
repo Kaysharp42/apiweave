@@ -170,11 +170,6 @@ const CommandPalette = lazy(() =>
 );
 const canvasLog = getLogger("WorkflowCanvas");
 
-// Kept for validation step 1 toggle — re-enable the commented div below to restore.
-const NOISE_DATA_URI =
-  "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
-void NOISE_DATA_URI;
-
 // Every kind goes through `withNodeBoundary`: a throw while one node renders
 // must cost that one tile, not the canvas — see NodeBoundary. Registering a new
 // kind here is what covers it.
@@ -278,7 +273,7 @@ function NodesInitializedProbe({
   return null;
 }
 
-export function WorkflowCanvas({
+function WorkflowCanvas({
   workflowId,
   workflow,
   draft,
@@ -1939,11 +1934,6 @@ export function WorkflowCanvas({
           pinned to the viewport rather than the canvas, so it did not move
           when the canvas did — the exact opposite of what a backdrop is for.
           The dot grid below is the surface; it pans and zooms with the graph. */}
-      {/* Noise overlay with mix-blend removed for 60fps pan: mix-blend-multiply
-          forces a full-viewport blend on every transform frame, preventing the
-          viewport from staying on a single composited layer. Re-introduce only
-          as a non-blending opacity layer if needed. */}
-      {/* <div aria-hidden="true" className="absolute inset-0 opacity-[0.04] dark:opacity-[0.07] pointer-events-none mix-blend-multiply dark:mix-blend-screen" style={{ backgroundImage: NOISE_DATA_URI, backgroundSize: "240px 240px" }} /> */}
       <ReactFlow
         className="relative z-10 bg-transparent"
         style={reactFlowStyle}

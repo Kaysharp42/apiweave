@@ -150,7 +150,7 @@ export function SaveVariablePopover({
         Value {valuePreview}
       </p>
       <div className="mt-3 flex justify-end gap-2">
-        <Button variant="outline" size="xs" onClick={onCancel}>
+        <Button variant="ghost" size="xs" onClick={onCancel}>
           Cancel
         </Button>
         <Button variant="primary" size="xs" onClick={submit} disabled={!!error}>

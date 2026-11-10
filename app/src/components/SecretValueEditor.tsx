@@ -92,7 +92,7 @@ export default function SecretValueEditor({
             loading={submitting}
           >
             <Lock className="w-3.5 h-3.5" />
-            {submitting ? "Encrypting..." : "Save encrypted"}
+            {submitting ? "Encrypting…" : "Save encrypted"}
           </Button>
         </>
       )}

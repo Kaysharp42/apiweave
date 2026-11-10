@@ -85,13 +85,4 @@ module.exports = [
       "no-console": "off",
     },
   },
-  {
-    files: [
-      "core/runner/harness/**/*.ts",
-      "electron/main.ts",
-    ],
-    rules: {
-      "no-console": "off",
-    },
-  },
 ];

@@ -11,9 +11,8 @@ import { clearDepartingCallTargets } from "./workspace_move"
 import type { ScopeResolver } from "./scope_resolver"
 
 /**
- * Workspace-scoped collection CRUD + workflow membership. Collapses Python
- * `collection_service` and `project_service` — "project" and "collection" are the
- * same aggregate here (the repo carries a `projectId` field). `workflowCount` is
+ * Workspace-scoped collection CRUD + workflow membership. "Project" and
+ * "collection" are the same aggregate here (the repo carries a `projectId` field). `workflowCount` is
  * always recomputed from the workflow table, never trusted from the stored column.
  */
 export class CollectionService {

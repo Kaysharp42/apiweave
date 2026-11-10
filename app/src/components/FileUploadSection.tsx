@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "./atoms/Button";
 import { IconButton } from "./atoms/IconButton";
 import { Input } from "./atoms/Input";
+import { Select } from "./atoms/Select";
 import { TextArea } from "./atoms/TextArea";
 import { EmptyState } from "./molecules/EmptyState";
 import { FormField } from "./molecules/FormField";
@@ -179,7 +180,7 @@ export default function FileUploadSection({
               />
             </FormField>
             <FormField label="Reference type" required>
-              <select
+              <Select
                 value={formData.type}
                 onChange={(event) => {
                   setFormData((previous) => ({
@@ -189,12 +190,12 @@ export default function FileUploadSection({
                   }));
                   setPreviewImage(null);
                 }}
-                className="h-10 w-full cursor-pointer rounded-xs border border-border bg-surface-raised px-3 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) dark:border-border-dark dark:bg-surface-dark-raised dark:text-text-primary-dark"
+                className="h-10 cursor-pointer px-3"
               >
                 <option value="base64">Embedded base64</option>
                 <option value="path">Local file path</option>
                 <option value="variable">Variable reference</option>
-              </select>
+              </Select>
             </FormField>
           </div>
 

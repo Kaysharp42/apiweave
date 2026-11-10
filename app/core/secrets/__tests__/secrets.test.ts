@@ -39,7 +39,7 @@ function loadVector(name: string): CryptoVector {
   return JSON.parse(readFileSync(join(CRYPTO_DIR, `${name}.json`), "utf-8")) as CryptoVector
 }
 
-describe("secrets crypto — byte-equality vs Python fixtures", () => {
+describe("secrets crypto — byte-equality vs known-answer vectors", () => {
   for (const name of VECTOR_NAMES) {
     it(`AES-256-GCM output is byte-identical for the "${name}" vector`, () => {
       const v = loadVector(name)

@@ -3,6 +3,7 @@ import { Info, X } from "lucide-react";
 import { Button } from "../atoms/Button";
 import { IconButton } from "../atoms/IconButton";
 import { Input } from "../atoms/Input";
+import { Select } from "../atoms/Select";
 import { TemplateInput } from "../molecules/TemplateAutocomplete";
 import { Card } from "../molecules/Card";
 import { FormField } from "../molecules/FormField";
@@ -238,21 +239,21 @@ export function WorkflowCallConfigPanel({
           label="Workflow"
           hint="Runs this workflow to completion as a single step, in-process."
         >
-          <select
+          <Select
             value={targetWorkflowId ?? ""}
             onChange={(e) => handleTargetChange(e.target.value)}
             disabled={loading}
-            className="w-full px-3 py-2 border border-border dark:border-border-dark rounded-sm bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark"
+            className="px-3 py-2 rounded-sm"
           >
             <option value="">
-              {loading ? "Loading workflows..." : "Select a workflow"}
+              {loading ? "Loading workflows…" : "Select a workflow"}
             </option>
             {workflows.map((w) => (
               <option key={w.workflowId} value={w.workflowId}>
                 {w.name}
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
       </Card>
 

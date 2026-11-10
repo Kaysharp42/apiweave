@@ -27,7 +27,7 @@ export function EmptyState({
       <div className="flex items-center justify-center">
         {icon ?? defaultIcon}
       </div>
-      <h3 className="font-display text-xl font-semibold text-text-primary dark:text-text-primary-dark">
+      <h3 className="text-base font-semibold text-text-primary dark:text-text-primary-dark">
         {title}
       </h3>
       {description && (

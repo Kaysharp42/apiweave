@@ -2,7 +2,7 @@ import type { SecretMetadata, SecretMetadataStore, SecretScopeType } from "./sco
 
 /**
  * Sealed secret material handed to {@link SecretWriteStore.put}. The value is ALREADY
- * sealed by the client (per-scope sealed box, Task 7) — the store never sees
+ * sealed by the client (per-scope sealed box) — the store never sees
  * plaintext. `sealed` is opaque bytes persisted verbatim.
  */
 export interface SecretUpsert {
@@ -21,7 +21,7 @@ export interface SecretUpsert {
 /**
  * Write seam for stored secrets. Extends the metadata-read store with the small
  * mutation surface the service needs. The concrete SQLite-backed implementation
- * is wired at the repository layer (Task 6/13); tests pass a fake. Implementations
+ * is wired at the repository layer; tests pass a fake. Implementations
  * MUST persist `sealed` opaquely and MUST NEVER return it (or any plaintext) from
  * a read method — the metadata contract carries no secret material.
  */

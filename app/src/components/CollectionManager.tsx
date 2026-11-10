@@ -18,6 +18,7 @@ import {
   ListOrdered,
 } from "lucide-react";
 import { Modal } from "./molecules/Modal";
+import { Select } from "./atoms/Select";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
 import { PromptDialog } from "./molecules/PromptDialog";
 import { Button } from "./atoms/Button";
@@ -597,9 +598,9 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   <h3 className="text-sm font-semibold text-text-secondary dark:text-text-secondary-dark mb-2">
                     Add More Workflows
                   </h3>
-                  <select
+                  <Select
                     onChange={handleSelectChange}
-                    className="w-full rounded-sm border border-border dark:border-border-dark bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark px-3 py-1.5 text-sm focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
+                    className="rounded-sm px-3 py-1.5"
                   >
                     <option value="">Select a workflow to add…</option>
                     <option value="__new__">+ Create New Workflow</option>
@@ -608,7 +609,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                         {w.name}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               )}
 
@@ -668,7 +669,7 @@ export function CollectionManager({ open, onClose }: ProjectManagerProps) {
                   }
                   size="sm"
                   className="w-full bg-surface-raised dark:bg-surface-dark-raised text-text-primary dark:text-text-primary-dark resize-none"
-                  placeholder="Optional description..."
+                  placeholder="Optional description…"
                   rows={3}
                 />
               </div>

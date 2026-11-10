@@ -1,19 +1,13 @@
-/**
- * Extended secret metadata for single-secret views.
- *
- * Includes the same fields as Secret plus optional override information
- * for environment-scoped secrets that shadow a parent scope.
- */
+import type { SecretScopeType } from "./SecretScopeType";
+
+/** Metadata for one stored secret, as the `secrets.*` IPC handlers return it. Carries no secret material. */
 export interface SecretMetadata {
-  secretId: string;
-  name: string;
-  scopeType: string;
-  scopeId: string;
-  keyId: string;
-  createdAt: string;
-  updatedAt: string;
-  /** True when this secret overrides a same-named secret at a broader scope. */
-  isOverride?: boolean;
-  /** The broader scope type that this secret overrides, if any. */
-  overriddenScopeType?: string;
+  readonly secretId: string;
+  readonly name: string;
+  readonly scopeType: SecretScopeType;
+  readonly scopeId: string;
+  readonly keyId: string;
+  readonly label?: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
 }

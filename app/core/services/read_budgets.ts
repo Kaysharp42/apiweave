@@ -21,8 +21,7 @@ export const NODE_SEARCH_MAX_LIMIT = 100
 export const WORKSPACE_MAP_DEFAULT_LIMIT = 30
 export const WORKSPACE_MAP_MAX_LIMIT = 100
 
-/** Default/maximum nodes per `workflows.get` nodes view and evidence page. */
-export const NODE_DETAIL_DEFAULT_LIMIT = 10
+/** Maximum nodes per `workflows.get` nodes view and evidence page. */
 export const NODE_DETAIL_MAX_LIMIT = 50
 
 /** Default/maximum run rows per `runs.history` page. */

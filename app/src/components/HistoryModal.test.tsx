@@ -91,7 +91,7 @@ describe("HistoryModal", () => {
   it("lists run summaries for the workflow", async () => {
     render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={() => {}} onSelectRun={() => {}} />);
 
-    await screen.findByText("completed");
+    await screen.findByText("Completed");
     expect(apiweave.runs.history).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: "ws-1", workflowId: "wf-1" }),
     );
@@ -108,17 +108,19 @@ describe("HistoryModal", () => {
       />,
     );
 
-    await screen.findByText("failed");
+    await screen.findByText("Failed");
     const highlighted = document.querySelectorAll('[data-highlighted="true"]');
     expect(highlighted).toHaveLength(1);
-    expect(highlighted[0]?.textContent).toContain("failed");
+    expect(highlighted[0]?.textContent).toContain("Failed");
+    expect(highlighted[0]?.querySelector('[aria-current="true"]')).not.toBeNull();
+    expect(highlighted[0]?.textContent).toContain("Linked run");
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
   it("marks nothing when opened by hand", async () => {
     render(<HistoryModal workflowId="wf-1" workspaceId="ws-1" onClose={() => {}} onSelectRun={() => {}} />);
 
-    await screen.findByText("completed");
+    await screen.findByText("Completed");
     expect(document.querySelectorAll("[data-highlighted]")).toHaveLength(0);
   });
 
@@ -131,7 +133,7 @@ describe("HistoryModal", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(apiweave.runs.delete).toHaveBeenCalledWith("ws-1", "run-newer"));
-    await waitFor(() => expect(screen.queryByText("completed")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Completed")).toBeNull());
     expect(onSelectRun).not.toHaveBeenCalled();
   });
 });

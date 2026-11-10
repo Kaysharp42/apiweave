@@ -76,11 +76,6 @@ type KeyfileJson =
   | { readonly version: typeof PLAIN_VERSION; readonly masterKekBase64: string }
   | { readonly version: typeof SEALED_VERSION; readonly sealedKekBase64: string }
 
-/** True if a keyfile exists at `path` (says nothing about validity). */
-export function keyfileExists(path: string): boolean {
-  return existsSync(path)
-}
-
 /**
  * Read and validate the keyfile. Throws {@link KeyfileMissing} if absent,
  * {@link KeyfileCorrupted} if present but unparseable / wrong-shape / wrong key

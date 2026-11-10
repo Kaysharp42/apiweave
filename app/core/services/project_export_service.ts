@@ -21,7 +21,8 @@ import {
   sanitizeVariablesForExport,
   type SecretReference,
 } from "./secret_utils"
-import { asRecord, toPlain } from "./withheld_credentials"
+import { asRecord } from "./withheld_credentials"
+import { toPlain } from "@shared/workspace-repo/format"
 import { isSecretKey } from "@shared/credentials/credentials"
 import { assertNoSecretValues } from "@shared/workspace-repo/secret_storage"
 
@@ -116,13 +117,13 @@ function exportEnvironment(environment: Environment, workspaceId: string): Expor
 }
 
 /**
- * Project (collection) export/import for the v2 `.aweproject` format. Ported
- * from Python `project_export_service`. Secret *references* only — ciphertext,
+ * Project (collection) export/import for the v2 `.aweproject` format. Secret
+ * *references* only — ciphertext,
  * private keys, and plaintext NEVER enter a bundle (`assertNoSecretValues` fails
  * closed if a forbidden storage key ever reaches the export layer).
  *
- * `nowIso` is injected so exports are deterministic under test (the harness seeds
- * a fixed clock); default reads the wall clock.
+ * `nowIso` is injected so exports are deterministic under test (tests seed a fixed
+ * clock); default reads the wall clock.
  */
 export class ProjectExportService {
   constructor(

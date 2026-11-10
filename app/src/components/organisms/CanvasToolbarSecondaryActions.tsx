@@ -3,6 +3,7 @@ import { IconButton } from "../atoms/IconButton";
 import { CanvasToolbarButton } from "./CanvasToolbarButton";
 import { CanvasToolbarCameraLock } from "./CanvasToolbarCameraLock";
 import { CanvasToolbarOverflowMenu } from "./CanvasToolbarOverflowMenu";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import type { CanvasToolbarSecondaryActionsProps } from "../../types";
 
 /** Command palette, history, JSON and import, plus the menu they fold into and the camera lock. */
@@ -23,7 +24,7 @@ export function CanvasToolbarSecondaryActions({
       {showSecondaryInline && (
         <IconButton
           onClick={onCommandPalette}
-          tooltip="Command palette (Ctrl+K)"
+          tooltip={`Command palette (${shortcutLabel("openCommandPalette")})`}
           aria-label="Open command palette"
           variant="ghost"
           size="sm"
@@ -57,7 +58,7 @@ export function CanvasToolbarSecondaryActions({
             icon={Code}
             label="JSON"
             onClick={onJsonEditor}
-            tooltip="JSON editor (Ctrl+J)"
+            tooltip={`JSON editor (${shortcutLabel("toggleJsonEditor")})`}
             showLabel={showLabels}
           />
           <CanvasToolbarButton

@@ -38,6 +38,17 @@ if (typeof Blob !== "undefined" && typeof Blob.prototype.text !== "function") {
   };
 }
 
+// jsdom implements no ResizeObserver, which Electron's renderer does. Headless
+// UI's Listbox watches its trigger with one while closing; jsdom has no layout
+// to observe, so an observer that never fires is the faithful stand-in.
+if (typeof window !== "undefined" && typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  };
+}
+
 // ponytail: Map-backed, not jsdom's Storage — no index access (`store.foo`),
 // no StorageEvent, no quota. Swap in jsdom's real one if a test needs those.
 function memoryStorage(): Storage {

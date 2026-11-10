@@ -13,7 +13,7 @@ test("buildEnvironmentOptions includes fallback environment first", () => {
   ]);
 
   assert.deepEqual(options, [
-    { value: "", label: "No Environment" },
+    { value: "", label: "No environment" },
     { value: "env-dev", label: "Development" },
     { value: "env-prod", label: "Production" },
   ]);
@@ -22,7 +22,7 @@ test("buildEnvironmentOptions includes fallback environment first", () => {
 test("buildEnvironmentOptions returns only fallback for empty list", () => {
   const options = buildEnvironmentOptions([]);
 
-  assert.deepEqual(options, [{ value: "", label: "No Environment" }]);
+  assert.deepEqual(options, [{ value: "", label: "No environment" }]);
 });
 
 // The tiers only ever step down, one at a time, from whatever the bar is

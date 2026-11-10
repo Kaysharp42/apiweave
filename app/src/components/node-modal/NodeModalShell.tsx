@@ -219,7 +219,7 @@ export function NodeModalShell({
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-4 py-3 dark:border-border-dark">
-          <Button onClick={onCancel} variant="outline">
+          <Button onClick={onCancel} variant="ghost">
             Cancel
           </Button>
           <Button onClick={onSave} variant="primary">

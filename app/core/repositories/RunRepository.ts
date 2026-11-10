@@ -353,10 +353,6 @@ export class RunRepository {
     ])
   }
 
-  public updateResults(runId: string, results: readonly RunResult[]): Run | undefined {
-    return this.update(runId, { results: [...results] })
-  }
-
   /**
    * Store one completed node result without waiting for the rest of the run:
    * a single-row upsert, so a run of n nodes costs n writes rather than

@@ -29,7 +29,7 @@ export function useJsonEditorDarkTheme(
         iconCollection: { color: "var(--aw-primary)" },
         string: { color: "var(--color-success)" },
         number: { color: "var(--color-info)" },
-        boolean: { color: "var(--color-primary-dark)" },
+        boolean: { color: "var(--color-primary-light)" },
         null: { color: "var(--color-warning)" },
         input: {
           backgroundColor: "var(--color-surface-dark-overlay)",

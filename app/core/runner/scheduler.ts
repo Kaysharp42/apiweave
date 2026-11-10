@@ -137,8 +137,7 @@ export interface EnqueueRequest {
 }
 
 /**
- * In-process async run scheduler. Ports Python `run_service.trigger_workflow_run`
- * + `worker.py` into a single-process queue with a concurrency cap.
+ * In-process async run scheduler: a single-process queue with a concurrency cap.
  *
  * On startup, `reconcileOnStartup()` marks any runs left in `pending`/`running`
  * as `interrupted` (terminal) — never auto-resumes. Re-run is the user's choice.
@@ -925,7 +924,7 @@ function genericErrorClass(error: string): string {
   return "Node execution failed"
 }
 
-/** Recursively collect every string value within a node config (mirrors Python _iter_config_values). */
+/** Recursively collect every string value within a node config. */
 function collectStrings(obj: unknown): string[] {
   if (typeof obj === "string") return [obj]
   if (Array.isArray(obj)) return obj.flatMap(collectStrings)

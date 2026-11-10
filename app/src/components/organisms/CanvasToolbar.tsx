@@ -10,6 +10,7 @@ import { CanvasToolbarStructureActions } from "./CanvasToolbarStructureActions";
 import { AgentLaunchButton } from "./AgentLaunchButton";
 import { useOpenAgentSession } from "../../hooks/useAgentDockControls";
 import { useElementWidth } from "../../hooks/useElementWidth";
+import { shortcutLabel } from "../../constants/keyboardShortcuts";
 import type { CanvasToolbarProps, ToolbarDensity } from "../../types";
 import { nextToolbarDensity, toolbarSlots } from "./canvasToolbarUtils";
 
@@ -127,7 +128,7 @@ export function CanvasToolbar({
             icon={Save}
             label="Save"
             onClick={onSave}
-            tooltip="Save workflow (Ctrl+S)"
+            tooltip={`Save workflow (${shortcutLabel("save")})`}
             showLabel={showLabels}
           />
         </div>

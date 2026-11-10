@@ -5,10 +5,9 @@
  */
 
 /**
- * Key-name patterns deciding whether a dict key *holds* a secret. Ported verbatim
- * from Python `SECRET_KEY_PATTERNS` — the set of keys redacted must match so an
- * exported bundle sanitizes identically across stacks. Scoped to key names (not
- * values) to avoid over-redacting non-secret data like request-token ids.
+ * Key-name patterns deciding whether an object key *holds* a secret. Scoped to
+ * key names (not values) to avoid over-redacting non-secret data like
+ * request-token ids.
  */
 const SECRET_KEY_PATTERNS: readonly RegExp[] = [
   /^api[_-]?key$/i,

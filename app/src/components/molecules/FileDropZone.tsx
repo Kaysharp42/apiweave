@@ -5,9 +5,12 @@ import type { FileDropZoneProps } from "../../types";
 const DEFAULT_HINT_CLASS =
   "text-xs text-text-secondary dark:text-text-secondary-dark";
 const BASE_CLASS =
-  "border border-dashed border-border dark:border-border-dark rounded-sm p-6 text-center transition-colors cursor-pointer";
+  "block w-full border border-dashed rounded-sm p-6 text-center transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)";
 
-/** The dashed file-picker shared by the import dialogs. */
+/**
+ * The dashed file-picker shared by the import dialogs: a real button, so it is
+ * reachable and operable from the keyboard, that also accepts a dropped file.
+ */
 export function FileDropZone({
   title,
   hint,
@@ -41,34 +44,38 @@ export function FileDropZone({
   };
 
   return (
-    <button
-      type="button"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={`${BASE_CLASS} ${
-        isDragging
-          ? "border-(--aw-primary) bg-(--aw-primary)/5"
-          : "hover:bg-surface dark:hover:bg-surface-dark"
-      }`}
-      onClick={() => inputRef.current?.click()}
-    >
-      <Upload
-        size={32}
-        className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
-      />
-      <p className="font-medium text-text-primary dark:text-text-primary-dark">
-        {title}
-      </p>
-      <p className={hintClassName}>{hint}</p>
+    <>
+      <button
+        type="button"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`${BASE_CLASS} ${
+          isDragging
+            ? "border-primary bg-primary/5 dark:border-primary-light dark:bg-primary-light/10"
+            : "border-border hover:bg-surface dark:border-border-dark dark:hover:bg-surface-dark"
+        }`}
+        onClick={() => inputRef.current?.click()}
+      >
+        <Upload
+          size={32}
+          className="mx-auto mb-2 text-text-muted dark:text-text-muted-dark"
+          aria-hidden="true"
+        />
+        <span className="block font-medium text-text-primary dark:text-text-primary-dark">
+          {title}
+        </span>
+        <span className={`block ${hintClassName}`}>{hint}</span>
+      </button>
       <input
         ref={inputRef}
         type="file"
         accept={accept}
         onChange={handleInputChange}
         aria-label={inputAriaLabel}
+        tabIndex={-1}
         className="hidden"
       />
-    </button>
+    </>
   );
 }

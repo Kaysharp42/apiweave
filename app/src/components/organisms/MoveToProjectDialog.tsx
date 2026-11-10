@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "../atoms/Button";
+import { Select } from "../atoms/Select";
 import { Spinner } from "../atoms/Spinner";
 import { Modal } from "../molecules/Modal";
 import { FormField } from "../molecules/FormField";
-import { MOVE_DIALOG_SELECT_CLASS } from "./moveDialogClasses";
 import { useAsyncOptions } from "../../hooks/useAsyncOptions";
 import { apiweave } from "../../utils/apiweaveClient";
 import type { MoveToProjectDialogProps, Project } from "../../types";
@@ -96,9 +96,9 @@ export function MoveToProjectDialog({
               <Spinner size="xs" /> Loading projects…
             </div>
           ) : (
-            <select
+            <Select
               aria-label="Target project"
-              className={MOVE_DIALOG_SELECT_CLASS}
+              className="cursor-pointer"
               value={selectedProjectId}
               onChange={(event) => setSelectedProjectId(event.target.value)}
               disabled={isMoving}
@@ -112,7 +112,7 @@ export function MoveToProjectDialog({
                   </option>
                 );
               })}
-            </select>
+            </Select>
           )}
         </FormField>
       </div>

@@ -186,7 +186,7 @@ export function CanvasNodeContextMenu({
                       />
                       {node.method ? (
                         <span
-                          className={`w-11 shrink-0 rounded-xs border px-1 py-px text-center font-mono text-2xs font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary"}`}
+                          className={`w-11 shrink-0 rounded-xs border px-1 py-px text-center font-mono text-2xs font-semibold ${NodePaletteMethodBadge[node.method] ?? "border-primary/30 bg-primary/10 text-primary dark:border-primary-light/30 dark:bg-primary-light/10 dark:text-primary-light"}`}
                         >
                           {node.method}
                         </span>

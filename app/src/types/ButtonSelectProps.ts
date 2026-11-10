@@ -6,6 +6,11 @@ export interface ButtonSelectProps {
   value?: string;
   onChange?: (value: string) => void;
   placeholder?: string;
+  /**
+   * What the select chooses, e.g. "Environment". When set, the trigger is
+   * named "{label}: {selected}" and the option list is labelled with it.
+   */
+  label?: string;
   buttonClass?: string;
   containerClass?: string;
   /** Leading icon on the trigger, e.g. the canvas toolbar's globe. */

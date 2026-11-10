@@ -175,7 +175,7 @@ export class IpcRouter {
     this.handlers.set(id, registration as unknown as StoredHandler)
   }
 
-  /** Registered `{domain}.{action}` keys — used by the route-reconciliation test. */
+  /** Registered `{domain}.{action}` keys. */
   keys(): readonly string[] {
     return [...this.handlers.keys()]
   }

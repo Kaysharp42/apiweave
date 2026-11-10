@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   CircleStop,
+  Eye,
   FolderOpen,
   TerminalSquare,
   Trash2,
@@ -231,9 +232,10 @@ function SessionRow({
         */}
         <button
           type="button"
-          className="min-w-0 flex-1 text-left disabled:cursor-default"
+          className="min-w-0 flex-1 cursor-pointer rounded-sm text-left disabled:cursor-default focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset)"
           onClick={onOpen}
           disabled={!canOpen}
+          aria-current={isOpen ? "true" : undefined}
           title={
             canOpen
               ? isLive
@@ -255,6 +257,13 @@ function SessionRow({
                 "handed off". The status now says `detached`, and two badges
                 making the same point crowd the agent's name off a 230px row. */}
             <AgentSessionStatusBadge session={session} busy={busy} />
+            {/* The open row is marked by shape as well as tint. */}
+            {isOpen && (
+              <Eye
+                className="h-3.5 w-3.5 shrink-0 text-primary dark:text-primary-light"
+                aria-hidden="true"
+              />
+            )}
           </span>
           {/* What the agent called the work. The only line that tells two
               sessions of the same agent in the same folder apart, which the row

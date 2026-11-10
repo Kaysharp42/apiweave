@@ -7,11 +7,15 @@ import {
   CheckCircle,
   AlertTriangle,
 } from "lucide-react";
-import { resolveWorkflowExportImportInitialTab } from "../utils/workflowExportImportTabs";
+import {
+  normalizeExportImportTab,
+  resolveWorkflowExportImportInitialTab,
+} from "../utils/workflowExportImportTabs";
 import { Button } from "./atoms/Button";
 import { Input } from "./atoms/Input";
 import { CheckboxOption } from "./molecules/CheckboxOption";
 import { Modal } from "./molecules/Modal";
+import { PanelTabs } from "./molecules/PanelTabs";
 import { PasteJsonField } from "./molecules/PasteJsonField";
 import { useScopeContext } from "../hooks/useScopeContext";
 import { apiweave, IpcError } from "../utils/apiweaveClient";
@@ -21,8 +25,11 @@ import type { WorkflowExportImportTab } from "../types/WorkflowExportImportTab";
 import type { WorkflowExportImportProps } from "../types/WorkflowExportImportProps";
 import type { DryRunResult } from "../types/DryRunResult";
 import type { ImportResult } from "../types/ImportResult";
+import type { TabItem } from "../types/TabItem";
 
 const exportImportLog = getLogger("WorkflowExportImport");
+const EXPORT_TAB: TabItem = { key: "export", icon: Download, label: "Export" };
+const IMPORT_TAB: TabItem = { key: "import", icon: Upload, label: "Import" };
 
 // ponytail: surfaces zod `details` from the IPC validation error so the user
 // sees WHICH field failed, not just "request validation failed".
@@ -57,7 +64,7 @@ function formatImportError(error: unknown, fallback: string): string {
   return lines.length ? `${base} — ${lines.join("; ")}` : base;
 }
 
-export function WorkflowExportImport({
+function WorkflowExportImport({
   workflowId,
   workflowName,
   onClose,
@@ -80,6 +87,7 @@ export function WorkflowExportImport({
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createMissingEnvs, setCreateMissingEnvs] = useState<boolean>(true);
+  const visibleTab: WorkflowExportImportTab = workflowId ? activeTab : "import";
 
   const resolveWorkspaceId = async (): Promise<string> => {
     if (effectiveWorkspaceId) return effectiveWorkspaceId;
@@ -209,51 +217,27 @@ export function WorkflowExportImport({
     <Modal
       isOpen
       onClose={onClose}
-      title="Workflow Export / Import"
+      title="Workflow export / import"
       size="xl"
       scrollable
     >
-      {/* Tabs */}
-      <div className="flex border-b border-border dark:border-border-dark">
-        <button
-          type="button"
-          onClick={() => workflowId && setActiveTab("export")}
-          disabled={!workflowId}
-          title={
-            !workflowId
-              ? "Select a workflow from the list to export"
-              : undefined
-          }
-          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${
-            activeTab === "export"
-              ? "border-b-2 border-primary text-primary dark:text-primary-dark"
-              : "text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
-          } ${!workflowId ? "opacity-50 cursor-not-allowed" : ""}`}
-        >
-          <Download className="w-4 h-4 inline mr-2" />
-          Export
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("import")}
-          className={`px-6 py-3 font-medium cursor-pointer focus-visible:outline-2 focus-visible:outline-(--aw-primary) focus-visible:outline-offset-(--aw-focus-ring-offset) ${
-            activeTab === "import"
-              ? "border-b-2 border-primary text-primary dark:text-primary-dark"
-              : "text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark"
-          }`}
-        >
-          <Upload className="w-4 h-4 inline mr-2" />
-          Import
-        </button>
-      </div>
+      {/* Export needs a workflow; without one, Import is the only tab. */}
+      <PanelTabs
+        tabs={workflowId ? [EXPORT_TAB, IMPORT_TAB] : [IMPORT_TAB]}
+        activeTab={visibleTab}
+        onTabChange={(key) => {
+          const tab = normalizeExportImportTab(key);
+          if (tab) setActiveTab(tab);
+        }}
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === "export" ? (
+        {visibleTab === "export" ? (
           <div className="space-y-4">
             <div>
               <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                Export Workflow Bundle
+                Export workflow bundle
               </h3>
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
                 Download a complete workflow bundle including nodes, edges,
@@ -302,14 +286,14 @@ export function WorkflowExportImport({
               fullWidth
               icon={<Download className="w-4 h-4" />}
             >
-              {exporting ? "Exporting..." : "Download Workflow Bundle"}
+              Download workflow bundle
             </Button>
           </div>
         ) : (
           <div className="space-y-4">
             <div>
               <h3 className="text-lg font-medium text-text-primary dark:text-text-primary-dark mb-2">
-                Import Workflow Bundle
+                Import workflow bundle
               </h3>
               <p className="text-sm text-text-secondary dark:text-text-secondary-dark mb-4">
                 Upload a workflow bundle JSON file or paste the JSON content
@@ -323,7 +307,7 @@ export function WorkflowExportImport({
                 htmlFor="workflow-bundle-file"
                 className="block text-sm font-medium text-text-primary dark:text-text-primary-dark mb-2"
               >
-                Upload File
+                Upload file
               </label>
               <div className="flex items-center gap-2">
                 <Input
@@ -346,7 +330,7 @@ export function WorkflowExportImport({
             {/* Or paste JSON */}
             <PasteJsonField
               id="workflow-bundle-json"
-              label="Or Paste JSON"
+              label="Or paste JSON"
               value={importJson}
               placeholder='{"workflow": {...}, "environments": [...], ...}'
               onChange={(value) => {
@@ -488,7 +472,7 @@ export function WorkflowExportImport({
                 fullWidth
                 icon={<Upload className="w-4 h-4" />}
               >
-                {importing ? "Importing..." : "Import Workflow"}
+                Import workflow
               </Button>
             </div>
           </div>

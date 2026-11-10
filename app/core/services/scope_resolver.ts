@@ -8,8 +8,7 @@ import { NotFoundError } from "../ipc/errors"
 export const LOCAL_OWNER_ID = "usr-single-user-owner"
 
 /**
- * Scope reference — what the service is operating on. The `scopeType` +
- * `scopeId` pair mirrors the Python `scope_resolver.py` contract.
+ * Scope reference — what the service is operating on.
  */
 export interface ScopeRef {
   readonly scopeType: "user" | "workspace" | "environment"
@@ -19,7 +18,7 @@ export interface ScopeRef {
 /**
  * Result of binding a `{ scopeType, scopeId }` pair to the local owner.
  *
- * Existence-hiding contract (ported from `backend/app/services/scope_resolver.py`):
+ * Existence-hiding contract:
  * a scope the caller can't see returns `not_found` — NEVER `denied`/`forbidden`.
  * Leaking `denied` for a non-existent scope would confirm its existence to an
  * enumerator.
@@ -31,7 +30,7 @@ export type ScopeResolution =
 /**
  * Existence source the resolver consults. In single-user mode the local owner
  * can see every scope that EXISTS, so visibility collapses to existence.
- * Repositories (Task 6) implement this against SQLite; tests pass a fake.
+ * Repositories implement this against SQLite; tests pass a fake.
  */
 export interface ScopeExistence {
   workspaceExists(workspaceId: string): boolean | Promise<boolean>
@@ -41,9 +40,7 @@ export interface ScopeExistence {
 /**
  * ScopeResolver — decides whether the local owner can SEE a scope at all.
  *
- * The multi-tenant membership graph (org/team/outside-collaborator lookups in
- * the Python source) collapses here to a single owner: seeing a scope means
- * the scope exists.
+ * There is a single local owner, so seeing a scope means the scope exists.
  */
 export class ScopeResolver {
   constructor(private readonly existence: ScopeExistence) {}

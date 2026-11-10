@@ -1,10 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  CheckCircle,
-  XCircle,
-  RefreshCw,
-  Clock,
-  Circle,
   ClipboardList,
   ChevronRight,
   Timer,
@@ -23,11 +18,26 @@ import { apiweave } from "../utils/apiweaveClient";
 import { downloadReport } from "../utils/downloadFile";
 import { IconButton } from "./atoms/IconButton";
 import { Button } from "./atoms/Button";
+import { Spinner } from "./atoms/Spinner";
 import { ConfirmDialog } from "./molecules/ConfirmDialog";
+import { EmptyState } from "./molecules/EmptyState";
 import { Modal } from "./molecules/Modal";
-import type { HistoryModalProps } from "../types";
+import { StatusBadge } from "./molecules/StatusBadge";
+import type { HistoryModalProps, StatusBadgeProps } from "../types";
 
 const PAGE_SIZE = 20;
+/** How each run status reads as a badge. Running is amber, never the accent. */
+const RUN_STATUS_BADGE: Record<
+  RunSummary["status"],
+  { status: StatusBadgeProps["status"]; label: string }
+> = {
+  pending: { status: "idle", label: "Pending" },
+  running: { status: "running", label: "Running" },
+  completed: { status: "success", label: "Completed" },
+  failed: { status: "error", label: "Failed" },
+  cancelled: { status: "skipped", label: "Cancelled" },
+  interrupted: { status: "warning", label: "Interrupted" },
+};
 const LIVE_STATUSES: ReadonlySet<RunSummary["status"]> = new Set([
   "pending",
   "running",
@@ -115,37 +125,6 @@ export default function HistoryModal({
     }
   };
 
-  const getStatusColor = (status: string): string => {
-    switch (status) {
-      case "completed":
-        return "bg-status-success/10 text-status-success dark:bg-status-success/20 dark:text-status-success";
-      case "failed":
-        return "bg-status-error/10 text-status-error dark:bg-status-error/20 dark:text-status-error";
-      case "running":
-        return "bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-dark";
-      case "pending":
-        return "bg-status-warning/10 text-status-warning dark:bg-status-warning/20 dark:text-status-warning";
-      default:
-        return "bg-surface dark:bg-surface-dark-raised text-text-secondary dark:text-text-primary-dark";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    const iconProps = { className: "w-3 h-3" };
-    switch (status) {
-      case "completed":
-        return <CheckCircle {...iconProps} />;
-      case "failed":
-        return <XCircle {...iconProps} />;
-      case "running":
-        return <RefreshCw {...iconProps} className="w-3 h-3 animate-spin motion-reduce:animate-none" />;
-      case "pending":
-        return <Clock {...iconProps} />;
-      default:
-        return <Circle {...iconProps} />;
-    }
-  };
-
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
     const now = new Date();
@@ -174,7 +153,7 @@ export default function HistoryModal({
     <Modal
       isOpen
       onClose={onClose}
-      title="Run History"
+      title="Run history"
       headerExtra={
         runs.length > 0 && (
           <Button
@@ -216,110 +195,106 @@ export default function HistoryModal({
         </p>
       )}
       {isLoading && runs.length === 0 ? (
-        <div className="flex items-center justify-center py-12">
-          <div className="flex flex-col items-center gap-3">
-            <div className="animate-spin motion-reduce:animate-none rounded-full h-10 w-10 border-b-2 border-primary"></div>
-            <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
-              Loading history…
-            </p>
-          </div>
+        <div className="flex flex-col items-center justify-center gap-3 py-12">
+          <Spinner size="lg" />
+          <p className="text-sm text-text-secondary dark:text-text-secondary-dark">
+            Loading history…
+          </p>
         </div>
       ) : runs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 px-6">
-          <ClipboardList className="w-16 h-16 text-text-muted dark:text-text-muted-dark/50 mb-4" />
-          <p className="text-sm font-medium text-text-secondary dark:text-text-primary-dark mb-1">
-            No runs yet
-          </p>
-          <p className="text-xs text-text-secondary dark:text-text-secondary-dark text-center">
-            Click the Run button to execute this workflow
-          </p>
-        </div>
+        <EmptyState
+          icon={
+            <ClipboardList
+              className="w-12 h-12 text-text-muted dark:text-text-muted-dark"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          }
+          title="No runs yet"
+          description="Run this workflow to see its results here."
+        />
       ) : (
         <div
           className={`divide-y divide-border dark:divide-border-dark transition-opacity ${isLoading ? "opacity-50" : "opacity-100"}`}
         >
-          {runs.map((run) => (
-            <div
-              key={run.runId}
-              role="button"
-              tabIndex={0}
-              // Bring the jumped-to run into view. Rows render once per
-              // page load, so this runs on the row that appears, not on
-              // every render.
-              ref={
-                run.runId === highlightRunId
-                  ? (el) => el?.scrollIntoView({ block: "center" })
-                  : null
-              }
-              {...(run.runId === highlightRunId && {
-                "data-highlighted": "true",
-              })}
-              onClick={() => handleRunClick(run)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  handleRunClick(run);
+          {runs.map((run) => {
+            const isHighlighted = run.runId === highlightRunId;
+            const badge = RUN_STATUS_BADGE[run.status];
+            return (
+              <div
+                key={run.runId}
+                // Bring the jumped-to run into view. Rows render once per
+                // page load, so this runs on the row that appears, not on
+                // every render.
+                ref={
+                  isHighlighted
+                    ? (el) => el?.scrollIntoView({ block: "center" })
+                    : null
                 }
-              }}
-              className={`w-full px-5 py-4 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors text-left cursor-pointer focus:outline-hidden focus-visible:ring-2 focus-visible:ring-primary dark:focus-visible:ring-primary-light${
-                run.runId === highlightRunId
-                  ? " bg-primary/5 dark:bg-primary/10 ring-2 ring-inset ring-primary dark:ring-primary-light"
-                  : ""
-              }`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold rounded-sm ${getStatusColor(run.status)}`}
-                    >
-                      <span>{getStatusIcon(run.status)}</span>
-                      <span className="uppercase">{run.status}</span>
-                    </span>
+                {...(isHighlighted && { "data-highlighted": "true" })}
+                className={`flex items-start gap-2 pr-5 hover:bg-surface dark:hover:bg-surface-dark-raised transition-colors${
+                  isHighlighted
+                    ? " bg-primary/5 dark:bg-primary-light/10 ring-1 ring-inset ring-primary dark:ring-primary-light"
+                    : ""
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleRunClick(run)}
+                  aria-current={isHighlighted ? "true" : undefined}
+                  className="flex-1 min-w-0 px-5 py-4 text-left cursor-pointer focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--aw-primary)"
+                >
+                  <span className="flex items-center gap-2 mb-2">
+                    <StatusBadge status={badge.status} label={badge.label} />
                     <span className="text-xs text-text-secondary dark:text-text-secondary-dark">
                       {formatDate(run.createdAt)}
                     </span>
-                  </div>
+                    {isHighlighted && (
+                      <span className="text-2xs font-medium uppercase tracking-wide text-primary dark:text-primary-light">
+                        Linked run
+                      </span>
+                    )}
+                  </span>
 
-                  <div className="flex items-center gap-4 text-xs text-text-secondary dark:text-text-primary-dark">
-                    <div className="flex items-center gap-1">
-                      <Timer className="w-3.5 h-3.5" />
+                  <span className="flex items-center gap-4 text-xs text-text-secondary dark:text-text-secondary-dark">
+                    <span className="flex items-center gap-1">
+                      <Timer className="w-3.5 h-3.5" aria-hidden="true" />
                       <span>{formatDuration(run.duration)}</span>
-                    </div>
+                    </span>
                     {run.trigger && (
-                      <div className="flex items-center gap-1">
-                        <Zap className="w-3.5 h-3.5" />
+                      <span className="flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5" aria-hidden="true" />
                         <span className="capitalize">{run.trigger}</span>
-                      </div>
+                      </span>
                     )}
                     {run.resumeFromRunId && (
-                      <div
+                      <span
                         className="flex items-center gap-1"
                         title={`Reused results from run ${run.resumeFromRunId}`}
                       >
-                        <CornerDownRight className="w-3.5 h-3.5" />
+                        <CornerDownRight className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>Rerun of {run.resumeFromRunId.slice(0, 8)}</span>
-                      </div>
+                      </span>
                     )}
                     {run.iteration && (
-                      <div className="flex items-center gap-1">
-                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span className="flex items-center gap-1">
+                        <FileSpreadsheet className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>
                           Iteration {run.iteration.index}/{run.iteration.count}
                         </span>
-                      </div>
+                      </span>
                     )}
-                  </div>
+                  </span>
 
                   {run.status === "failed" && run.failedNodeCount > 0 && (
-                    <div className="mt-1 text-xs text-status-warning dark:text-status-warning">
+                    <span className="block mt-1 text-xs text-status-warning dark:text-status-warning">
                       {run.failedNodeCount} node
                       {run.failedNodeCount > 1 ? "s" : ""} failed
-                    </div>
+                    </span>
                   )}
-                </div>
+                </button>
 
-                <div className="shrink-0 flex items-center gap-1 text-text-muted dark:text-text-muted-dark">
+                <div className="shrink-0 flex items-center gap-1 pt-4 text-text-muted dark:text-text-muted-dark">
                   {onShowTimeline && (
                     <IconButton
                       onClick={(e) => {
@@ -343,7 +318,6 @@ export default function HistoryModal({
                           onRerunFailed(run.runId);
                           onClose();
                         }}
-                        onKeyDown={(e) => e.stopPropagation()}
                         variant="ghost"
                         size="xs"
                         tooltip="Rerun failed branches"
@@ -359,7 +333,6 @@ export default function HistoryModal({
                           e.stopPropagation();
                           void exportReport(run.runId, "junit");
                         }}
-                        onKeyDown={(e) => e.stopPropagation()}
                         variant="ghost"
                         size="xs"
                         tooltip="Export JUnit XML report"
@@ -372,7 +345,6 @@ export default function HistoryModal({
                           e.stopPropagation();
                           void exportReport(run.runId, "html");
                         }}
-                        onKeyDown={(e) => e.stopPropagation()}
                         variant="ghost"
                         size="xs"
                         tooltip="Export HTML report"
@@ -388,7 +360,6 @@ export default function HistoryModal({
                         e.stopPropagation();
                         setPendingDelete({ kind: "run", runId: run.runId });
                       }}
-                      onKeyDown={(e) => e.stopPropagation()}
                       variant="ghost"
                       size="xs"
                       tooltip="Delete run"
@@ -397,11 +368,11 @@ export default function HistoryModal({
                       <Trash2 className="w-4 h-4" />
                     </IconButton>
                   )}
-                  <ChevronRight className="w-5 h-5" />
+                  <ChevronRight className="w-5 h-5" aria-hidden="true" />
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

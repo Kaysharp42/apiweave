@@ -4,7 +4,7 @@
 // effects) — not how they look. They use @testing-library/react to interact
 // with components the way a user would, and they assert on semantics
 // (roles, labels, attributes, behavior) rather than CSS class names.
-import { createElement, type ReactElement } from "react";
+import { createElement, type FormEvent, type ReactElement } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -89,6 +89,42 @@ describe("Button", () => {
     render(<Button icon={<Save data-testid="icon" />}>Save</Button>);
     expect(screen.getByTestId("icon")).toBeInTheDocument();
   });
+
+  it("stays focusable but inert when disabled with a title that explains why", async () => {
+    const onClick = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <Button disabled title="Select a workflow first" onClick={onClick}>
+        Export
+      </Button>,
+    );
+    const button = screen.getByRole("button", { name: "Export" });
+    expect(button).not.toHaveAttribute("disabled");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+
+    await user.tab();
+    expect(button).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await user.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("cannot submit its form when disabled with a title", async () => {
+    const onSubmit = vi.fn((event: FormEvent) => event.preventDefault());
+    const user = userEvent.setup();
+    render(
+      <form onSubmit={onSubmit}>
+        <input aria-label="Name" />
+        <Button type="submit" disabled title="Fill in the name first">
+          Create
+        </Button>
+      </form>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "x{Enter}");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });
 
 describe("IconButton", () => {
@@ -133,6 +169,24 @@ describe("IconButton", () => {
       </IconButton>,
     );
     await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("keeps its tooltip reachable when disabled, without acting", async () => {
+    const onClick = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <IconButton disabled tooltip="Save" onClick={onClick}>
+        <Save />
+      </IconButton>,
+    );
+    const button = screen.getByRole("button", { name: "Save" });
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toHaveAttribute("disabled");
+
+    await user.hover(button);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Save");
+    await user.click(button);
     expect(onClick).not.toHaveBeenCalled();
   });
 });

@@ -55,7 +55,7 @@ export function buildEnvironmentOptions(
   environments: Array<{ environmentId: string; name: string }>,
 ): EnvironmentOption[] {
   return [
-    { value: "", label: "No Environment" },
+    { value: "", label: "No environment" },
     ...environments.map((env) => ({
       value: env.environmentId,
       label: env.name,

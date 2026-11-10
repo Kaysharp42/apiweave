@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { useNavigate } from "react-router";
 import { Popover, PopoverButton, PopoverPanel } from "@headlessui/react";
-import { GitBranch, Settings, UserRound } from "lucide-react";
+import { GitBranch, Settings, UserPlus, UserRound } from "lucide-react";
 import type { GitAccountRef } from "@shared/types/GitAccountRef";
 import type { GitProvider } from "@shared/types/GitProvider";
 import type { WorkspaceGitStatus } from "@shared/types/WorkspaceGitStatus";
@@ -54,7 +54,7 @@ function GitAccountsMenuPanel({
             aria-label={`${GIT_PROVIDERS[group.provider].name} on ${group.host}`}
           >
             <h3 className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-text-secondary dark:text-text-secondary-dark">
-              {group.host}
+              {GIT_PROVIDERS[group.provider].name} · {group.host}
             </h3>
             <ul className="space-y-2">
               {group.accounts.map((account) => (
@@ -103,6 +103,7 @@ function GitAccountsMenuPanel({
                 size="sm"
                 fullWidth
                 className="justify-start!"
+                icon={<UserPlus className="h-4 w-4" aria-hidden="true" />}
                 disabled={!loaded || missing}
                 onClick={() => onAdd(provider)}
               >
@@ -157,8 +158,8 @@ function triggerLabel(account: GitAccountRef | null): string {
 
 /**
  * The header's accounts menu, where the Cloud account menu used to be: the
- * initials of the account the current workspace syncs as (a neutral person
- * when it has none). The panel lists every `gh`/`glab` account by host, marks
+ * picture (GitHub) or initials (GitLab) of the account the current workspace
+ * syncs as (a neutral person when it has none). The panel lists every `gh`/`glab` account by host, marks
  * the one this workspace uses, and signs in to another. Sync state is not
  * repeated here — the header's sync control is the one place that says it.
  * Absent with no bridge to ask (the browser build).
@@ -185,7 +186,7 @@ export function GitAccountsMenu({ status }: GitAccountsMenuProps) {
               variant="outline"
               intent="muted"
               size="md"
-              className="h-9 w-9 rounded-xs! p-0!"
+              className="h-9 w-9 rounded-xs! p-0! hover:opacity-90"
               aria-label={label}
               title={label}
             >

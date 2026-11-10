@@ -204,7 +204,8 @@ describe("CanvasToolbar", () => {
     renderToolbar({ onRunWithData: vi.fn(), isRunning: true, iteration: { groupId: "g", index: 3, count: 10 } });
 
     expect(screen.getByText("Iteration 3/10")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run with data" })).toBeDisabled();
+    // Soft-disabled: it keeps its tooltip, so it says so with aria-disabled rather than the native attribute.
+    expect(screen.getByRole("button", { name: "Run with data" })).toHaveAttribute("aria-disabled", "true");
   });
 });
 
@@ -259,7 +260,7 @@ describe("CanvasToolbar at the compact density", () => {
     );
     expect(screen.queryByRole("button", { name: "Frame selection" })).toBeNull();
 
-    const environment = screen.getByRole("button", { name: "Production" });
+    const environment = screen.getByRole("button", { name: "Environment: Production" });
     expect(environment.textContent).toBe("");
 
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
