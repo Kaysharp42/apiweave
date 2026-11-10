@@ -9,7 +9,7 @@ coming from an earlier build.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] — 2026-11-09
+## [1.0.0] — 2026-11-10
 
 APIWeave 1.0 is the first release of the local-first desktop app as a supported
 product. It brings the surface together: a visual canvas for building and
