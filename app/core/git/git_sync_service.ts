@@ -61,6 +61,7 @@ import {
 } from "./git_errors"
 import { awaitWithin } from "./git_process"
 import type { GitService } from "./git_service"
+import { GitStatusFactsCache, watchingWrites, type GitStatusFacts } from "./git_status_facts"
 import type { GitAccountToken, GitAheadBehind, GitCredential, GitStatusEntry, GitTreeEntry } from "./git_types"
 import { moveIntoPlace } from "./move_into_place"
 import { describePendingChanges, diffTrees } from "./pending_changes"
@@ -323,6 +324,8 @@ export class GitSyncService {
   private readonly delayMs: number
   private readonly intervalMs: number
   private readonly disposeWaitMs: number
+  /** What git last said about each clone, for the statuses asked while nothing has written since; {@link git} keeps it honest. */
+  private readonly statusFacts = new GitStatusFactsCache()
   private readonly locks = new Map<string, Promise<void>>()
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   /**
@@ -345,7 +348,7 @@ export class GitSyncService {
 
   public constructor(private readonly options: GitSyncServiceOptions) {
     this.repositories = options.repositories
-    this.git = options.git
+    this.git = watchingWrites(options.git, this.statusFacts)
     this.delayMs = options.autoCommitDelayMs ?? AUTO_COMMIT_DELAY_MS
     this.intervalMs = options.syncIntervalMs ?? SYNC_INTERVAL_MS
     this.disposeWaitMs = options.disposeWaitMs ?? DISPOSE_WAIT_MS
@@ -360,8 +363,7 @@ export class GitSyncService {
   public async status(workspaceId: string): Promise<WorkspaceGitStatus> {
     const asked = this.repositories.workspaceGit.get(workspaceId)
     if (asked === undefined) return untrackedStatus(workspaceId)
-    const directory = this.cloneDir(workspaceId)
-    const [{ ahead, behind }, lastCommit] = await Promise.all([this.divergence(directory, asked), this.lastCommit(directory)])
+    const { divergence: { ahead, behind }, lastCommit } = await this.gitFacts(this.cloneDir(workspaceId), asked)
     const binding = this.repositories.workspaceGit.get(workspaceId)
     if (binding === undefined) return untrackedStatus(workspaceId)
     const merge = binding.state === "merging" ? this.repositories.workspaceGit.getMerge(workspaceId) : undefined
@@ -403,12 +405,29 @@ export class GitSyncService {
   }
 
   /**
-   * How this workspace stands against the remote branch. `countAheadBehind`
-   * treats a branch the remote has not got yet as empty, which would report
-   * 0/0 with unpushed commits: with no remote branch every local commit is
-   * outgoing. An unborn HEAD is nothing either way.
+   * The part of a status git answers, read again only once something has
+   * written since it was last read (see {@link GitStatusFactsCache}). A
+   * status is a report, not an operation: a missing clone or git reads as
+   * nothing, which is the next cycle's error to record.
    */
-  private async divergence(directory: string, binding: WorkspaceGitBinding): Promise<GitAheadBehind> {
+  private gitFacts(directory: string, binding: WorkspaceGitBinding): Promise<GitStatusFacts> {
+    const key = [directory, binding.remoteUrl ?? "", binding.branch].join("\n")
+    return this.statusFacts.read(key, async () => {
+      const [divergence, lastCommit] = await Promise.all([this.divergence(directory, binding), this.lastCommit(directory)])
+      return {
+        facts: { divergence: divergence ?? { ahead: 0, behind: 0 }, lastCommit: lastCommit ?? null },
+        cacheable: divergence !== undefined && lastCommit !== undefined,
+      }
+    })
+  }
+
+  /**
+   * How this workspace stands against the remote branch, or undefined when git
+   * failed. `countAheadBehind` treats a branch the remote has not got yet as
+   * empty, which would report 0/0 with unpushed commits: with no remote branch
+   * every local commit is outgoing. An unborn HEAD is nothing either way.
+   */
+  private async divergence(directory: string, binding: WorkspaceGitBinding): Promise<GitAheadBehind | undefined> {
     if (binding.remoteUrl === null) return { ahead: 0, behind: 0 }
     try {
       const remoteRef = `${ORIGIN}/${binding.branch}`
@@ -418,8 +437,7 @@ export class GitSyncService {
       }
       return await this.git.countAheadBehind(directory, "HEAD", remoteRef)
     } catch (error) {
-      // A status is a report, not an operation: a missing clone or git is the next cycle's error to record.
-      if (error instanceof GitError) return { ahead: 0, behind: 0 }
+      if (error instanceof GitError) return undefined
       throw error
     }
   }
@@ -450,8 +468,8 @@ export class GitSyncService {
       } catch (error) {
         if (error instanceof GitIdentityMissingError) throw error
         this.repositories.workspaceGit.delete(workspaceId)
-        if (createdDirectory) await removeDirectory(directory)
-        else if (createdRepository) await removeDirectory(path.join(directory, ".git"))
+        if (createdDirectory) await this.removeClone(directory)
+        else if (createdRepository) await this.removeClone(path.join(directory, ".git"))
         throw error
       }
       return this.announce(workspaceId)
@@ -468,7 +486,7 @@ export class GitSyncService {
     const directory = this.cloneDir(workspaceId)
     this.cancelAutoCommit(workspaceId)
     return this.exclusive(workspaceId, async () => {
-      await removeDirectory(directory)
+      await this.removeClone(directory)
       this.repositories.workspaceGit.delete(workspaceId)
       this.writes.delete(workspaceId)
       this.committedWrites.delete(workspaceId)
@@ -1381,7 +1399,7 @@ export class GitSyncService {
     } finally {
       // Gone already when the clone was moved into place. A scratch clone that
       // will not go is the startup sweep's, and must not hide how the open ended.
-      await removeDirectory(scratch).catch((cleanupError: unknown) => {
+      await this.removeClone(scratch).catch((cleanupError: unknown) => {
         log.warn("could not remove the scratch clone of an open", cleanupError)
       })
     }
@@ -1423,7 +1441,7 @@ export class GitSyncService {
       )
     }
     // An earlier open of this id that never finished: nothing in it but what was downloaded.
-    await removeDirectory(directory)
+    await this.removeClone(directory)
   }
 
   private async openFromScratch(remoteUrl: string, account: GitAccountRef | null, scratch: string, branch: string | undefined): Promise<OpenWorkspaceFromGitResult> {
@@ -1448,7 +1466,7 @@ export class GitSyncService {
     await writeFile(openMarker(scratch), "")
     let movedIntoPlace = false
     try {
-      await moveIntoPlace(scratch, directory)
+      await this.statusFacts.write(() => moveIntoPlace(scratch, directory))
       movedIntoPlace = true
       const name = snapshot.workspace.name
       const slug = uniqueWorkspaceSlug(workspaces, name)
@@ -1473,7 +1491,7 @@ export class GitSyncService {
     } catch (error) {
       // Only the clone this call moved into place: another writer may have won the id in the meantime.
       if (movedIntoPlace) {
-        await removeDirectory(directory).catch((cleanupError: unknown) => {
+        await this.removeClone(directory).catch((cleanupError: unknown) => {
           log.warn(`could not remove the clone of workspace ${workspaceId} after a failed open`, cleanupError)
         })
       }
@@ -1520,7 +1538,7 @@ export class GitSyncService {
         throw error
       })
       const unfinished = await Promise.all(names.map(async (name) => ((await this.isUnfinishedOpen(name)) ? [name] : [])))
-      await Promise.all(unfinished.flat().map((name) => removeDirectory(path.join(this.options.cloneRoot, name))))
+      await Promise.all(unfinished.flat().map((name) => this.removeClone(path.join(this.options.cloneRoot, name))))
     } catch (error) {
       log.warn("could not remove the clones of unfinished opens", error)
     }
@@ -2527,20 +2545,25 @@ export class GitSyncService {
     this.committedWrites.delete(workspaceId)
     if (!RecordIdSchema.safeParse(workspaceId).success) return
     const directory = this.cloneDir(workspaceId)
-    void this.exclusive(workspaceId, () => removeDirectory(directory)).catch((error: unknown) => {
+    void this.exclusive(workspaceId, () => this.removeClone(directory)).catch((error: unknown) => {
       log.warn(`could not delete the repository of deleted workspace ${workspaceId}`, error)
     })
   }
 
-  private async lastCommit(directory: string): Promise<WorkspaceGitCommit | null> {
+  /** The clone's newest commit, null when it has none, or undefined when git failed. */
+  private async lastCommit(directory: string): Promise<WorkspaceGitCommit | null | undefined> {
     try {
       const [head] = await this.git.log(directory, { maxCount: 1 })
       return head === undefined ? null : { sha: head.sha, subject: head.subject, authorDate: head.authorDate }
     } catch (error) {
-      // A status is a report, not an operation: a missing clone or git is the next cycle's error to record.
-      if (error instanceof GitError) return null
+      if (error instanceof GitError) return undefined
       throw error
     }
+  }
+
+  /** Remove a directory under the clone root. A clone may go with it, so it counts as a write to the cached status facts. */
+  private removeClone(directory: string): Promise<void> {
+    return this.statusFacts.write(() => removeDirectory(directory))
   }
 
   /**
